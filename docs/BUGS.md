@@ -96,6 +96,7 @@
 | [BUG-3328](bugs/BUG-3328-video-preview-padding.md) | ✅ | ✅ | 视频句子音频试听不含首尾留白，与写卡区间不一致 |
 | [BUG-3328](bugs/BUG-3328-home-swipe-settings-dead-end.md) | ✅ | ✅ | 移动端横滑切模块滑到设置页后滑不回去 |
 | [BUG-3328](bugs/BUG-3328-wgc-pump-rate.md) | ✅ | ✅ | Windows WebView popup scroll capped near 32 fps by WGC pump timer |
+| [BUG-3328](bugs/BUG-3328-ui-jank-theme-rail.md) | ✅ | ✅ | 设置开关与侧栏收展掉帧 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

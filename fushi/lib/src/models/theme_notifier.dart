@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -1843,12 +1844,31 @@ class ThemeNotifier extends ChangeNotifier {
         () => customThemeLinkColor,
       );
 
-  ThemeData _buildThemeData(Brightness brightness) =>
-      buildThemeDataFor(buildColorScheme(brightness));
+  /// 明 / 暗各一槽的 [ThemeData] 记忆：输入不变就返回同一个实例。
+  ///
+  /// 根 build 在每次 AppModel 通知时都读 [theme] / [darkTheme]；工厂里的
+  /// `WidgetStateProperty.resolveWith` 闭包每次都是新对象，ThemeData 永远判不等，
+  /// MaterialApp 便对任何偏好写入都播一遍 280ms 主题过渡（每帧 lerp + 全树重建，
+  /// 设置页开关等处掉帧，BUG-3328）。工厂是参数的纯函数，按参数判等即可安全复用。
+  final Map<Brightness, (_ThemeDataInputs, ThemeData)> _themeDataCache =
+      <Brightness, (_ThemeDataInputs, ThemeData)>{};
+
+  ThemeData _buildThemeData(Brightness brightness) {
+    final _ThemeDataInputs inputs =
+        _themeDataInputsFor(buildColorScheme(brightness));
+    final (_ThemeDataInputs, ThemeData)? cached = _themeDataCache[brightness];
+    if (cached != null && cached.$1 == inputs) return cached.$2;
+    final ThemeData built = _buildFushiThemeDataFrom(inputs);
+    _themeDataCache[brightness] = (inputs, built);
+    return built;
+  }
 
   /// 用当前主题的字体 / 墨水屏 / 设计系统，把任意 [scheme] 装成完整 ThemeData
   /// （[theme] / [darkTheme] 的唯一实现；工厂本体是 [buildFushiThemeData]）。
-  ThemeData buildThemeDataFor(ColorScheme scheme) => buildFushiThemeData(
+  ThemeData buildThemeDataFor(ColorScheme scheme) =>
+      _buildFushiThemeDataFrom(_themeDataInputsFor(scheme));
+
+  _ThemeDataInputs _themeDataInputsFor(ColorScheme scheme) => _ThemeDataInputs(
         scheme: scheme,
         textTheme: _textThemeBuilder(),
         eink: einkMode,
@@ -1857,6 +1877,18 @@ class ThemeNotifier extends ChangeNotifier {
         glassDesign: designSystem == 'glass',
         // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
         monochromeAccent: appThemeKey == 'system-theme',
+        platform: defaultTargetPlatform,
+      );
+
+  static ThemeData _buildFushiThemeDataFrom(_ThemeDataInputs inputs) =>
+      buildFushiThemeData(
+        scheme: inputs.scheme,
+        textTheme: inputs.textTheme,
+        eink: inputs.eink,
+        designSystem: inputs.designSystem,
+        glass: inputs.glass,
+        glassDesign: inputs.glassDesign,
+        monochromeAccent: inputs.monochromeAccent,
       );
 
   // ── Custom theme prefs ─────────────────────────────────────────────
@@ -3134,4 +3166,56 @@ TooltipThemeData fushiAppleTooltipTheme({
       fontWeight: FontWeight.w400,
     ),
   );
+}
+
+/// [buildFushiThemeData] 的全部输入；值相等即可复用同一份 ThemeData。
+///
+/// [platform] 不是工厂参数：`ThemeData` 构造时自己读 [defaultTargetPlatform]
+/// 定 `ThemeData.platform`，所以它也是产物的隐式输入（测试里会用
+/// `debugDefaultTargetPlatformOverride` 切换）。
+@immutable
+class _ThemeDataInputs {
+  const _ThemeDataInputs({
+    required this.scheme,
+    required this.textTheme,
+    required this.eink,
+    required this.designSystem,
+    required this.glass,
+    required this.glassDesign,
+    required this.monochromeAccent,
+    required this.platform,
+  });
+
+  final ColorScheme scheme;
+  final TextTheme textTheme;
+  final bool eink;
+  final FushiDesignSystem designSystem;
+  final FushiGlassMaterial glass;
+  final bool glassDesign;
+  final bool monochromeAccent;
+  final TargetPlatform platform;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ThemeDataInputs &&
+      other.scheme == scheme &&
+      other.textTheme == textTheme &&
+      other.eink == eink &&
+      other.designSystem == designSystem &&
+      other.glass == glass &&
+      other.glassDesign == glassDesign &&
+      other.monochromeAccent == monochromeAccent &&
+      other.platform == platform;
+
+  @override
+  int get hashCode => Object.hash(
+        scheme,
+        textTheme,
+        eink,
+        designSystem,
+        glass,
+        glassDesign,
+        monochromeAccent,
+        platform,
+      );
 }

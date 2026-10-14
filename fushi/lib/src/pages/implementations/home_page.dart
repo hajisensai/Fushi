@@ -1833,44 +1833,51 @@ class _HomePageState extends BasePageState<HomePage>
         // Two traversal groups so Tab / Shift+Tab walk each region as one block
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.
-        child: Row(
-          children: [
-            // Each rail destination is its own gamepad/keyboard focus target, so
-            // the app focus ring hugs the single selected item; D-pad Up/Down
-            // steps between them and Left/Right leaves to the content.
-            FocusTraversalGroup(
-              child: ValueListenableBuilder<bool?>(
-                valueListenable: appModel.navRailExpandedNotifier,
-                builder: (BuildContext context, bool? userExpanded, _) {
-                  // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
-                  // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
-                  // 抽屉）。玻璃设计系统恒按尺寸档。
-                  final bool extended = adaptiveNavRailExtended(
-                    context,
-                    sizeClass: sizeClass,
-                    userExpanded: userExpanded,
-                  );
-                  return adaptiveNavRail(
-                    context: context,
-                    currentIndex: visualIndex,
-                    onTap: selectVisual,
-                    items: displayItems,
-                    leading: const NavRailBrandButton(),
-                    extended: extended,
-                    onToggleExtended: () =>
-                        unawaited(appModel.setNavRailExpanded(!extended)),
-                  );
-                },
-              ),
-            ),
-            Expanded(
-              child: _GlassContentSurface(
-                child: _withAppleScrollChrome(
-                  FocusTraversalGroup(child: _bodyWithMiniBar()),
+        //
+        // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见
+        // NavRailContentSync，BUG-3328），免得整棵内容树与保活 tab 每帧重排。
+        child: NavRailContentSync(
+          child: Row(
+            children: [
+              // Each rail destination is its own gamepad/keyboard focus target,
+              // so the app focus ring hugs the single selected item; D-pad
+              // Up/Down steps between them and Left/Right leaves to the content.
+              FocusTraversalGroup(
+                child: ValueListenableBuilder<bool?>(
+                  valueListenable: appModel.navRailExpandedNotifier,
+                  builder: (BuildContext context, bool? userExpanded, _) {
+                    // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                    // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                    // 抽屉）。玻璃设计系统恒按尺寸档。
+                    final bool extended = adaptiveNavRailExtended(
+                      context,
+                      sizeClass: sizeClass,
+                      userExpanded: userExpanded,
+                    );
+                    return adaptiveNavRail(
+                      context: context,
+                      currentIndex: visualIndex,
+                      onTap: selectVisual,
+                      items: displayItems,
+                      leading: const NavRailBrandButton(),
+                      extended: extended,
+                      onToggleExtended: () =>
+                          unawaited(appModel.setNavRailExpanded(!extended)),
+                    );
+                  },
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: NavRailSyncedContent(
+                  child: _GlassContentSurface(
+                    child: _withAppleScrollChrome(
+                      FocusTraversalGroup(child: _bodyWithMiniBar()),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
