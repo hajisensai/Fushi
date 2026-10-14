@@ -258,6 +258,7 @@ class WebDavSyncBackend extends SyncBackend
               id: e.href,
               name: _stripTrailingSlash(e.displayName),
               isFolder: e.isCollection,
+              revision: e.isCollection ? null : e.etag,
             ))
         .toList();
   }

@@ -136,11 +136,8 @@ void main() {
       byKey('floating_ball_action_camera_ocr'),
       Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
     );
-    // 应用外查词（独立查词窗）只有 Android 有。
-    expect(
-      byKey('floating_ball_action_popup_lookup'),
-      Platform.isAndroid ? findsOneWidget : findsNothing,
-    );
+    // 应用外查词（独立查词窗）在应用内出厂不勾：在 Fushi 里它与「查词」重复。
+    expect(byKey('floating_ball_action_popup_lookup'), findsNothing);
     // 立即同步出厂不勾（多数人没配同步），要在设置里自己勾上。
     expect(byKey('floating_ball_action_sync'), findsNothing);
     // 反馈出厂勾上、各平台都有（打开反馈中心并附当前画面截图）。
@@ -165,6 +162,17 @@ void main() {
     expect(lookup, findsOneWidget);
     // 竖排：列表里越靠前越在上面。
     expect(tester.getCenter(play).dy, lessThan(tester.getCenter(lookup).dy));
+    // 媒体页出厂只带「查词」与「反馈」：与当前视频无关的应用外入口不进来（截图
+    // 反馈：漫画页一长列应用外按钮）。
+    expect(byKey('floating_ball_action_feedback'), findsOneWidget);
+    for (final String id in <String>[
+      'popup_lookup',
+      'clipboard',
+      'screen_ocr',
+      'camera_ocr',
+    ]) {
+      expect(byKey('floating_ball_action_$id'), findsNothing, reason: id);
+    }
   });
 
   testWidgets('只显示为当前场景勾选的按钮', (WidgetTester tester) async {
@@ -182,15 +190,16 @@ void main() {
   });
 
   testWidgets('各场景的勾选互不影响', (WidgetTester tester) async {
-    // 「其它页面」只留查词，视频场景仍按出厂。
+    // 「其它页面」只留剪贴板，视频场景仍按出厂（专属按钮 + 查词）。
     await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
-      'lookup',
+      'clipboard',
     ]);
     await pumpHost(tester, home: _videoScene());
     await tester.pump();
     await expand(tester);
     expect(byKey('scene_play_pause'), findsOneWidget);
-    expect(byKey('floating_ball_action_clipboard'), findsOneWidget);
+    expect(byKey('floating_ball_action_lookup'), findsOneWidget);
+    expect(byKey('floating_ball_action_clipboard'), findsNothing);
   });
 
   testWidgets('勾选了但页面此刻没提供的专属按钮跳过', (WidgetTester tester) async {
