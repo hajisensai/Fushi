@@ -1,4 +1,4 @@
-## BUG-3365 · iOS 竖排歌词扫过高亮不按阅读顺序跨列
+## BUG-3366 · iOS 竖排歌词扫过高亮不按阅读顺序跨列
 - **报告**：2026-10-14（用户：iOS 竖排歌词模式截图，「ios歌词模式高亮顺序有问题」——当前句「その音に耳を澄ませてみると、扉の向こうでくすくす笑うようなざわめきが起こっている。」三列里每列上半段已亮、下半段仍暗：第一列「扉の向」暗、第二列「なざわめきが」暗、第三列「起こっている。」已亮，屏上是一条横带）
 - **真实性**：✅ 真 bug，是 BUG-3346 修复时明确接受的代价。WebKit 回退（`fushi/lib/src/media/audiobook/lyrics_mode_html.dart:458` 的 `@supports not (box-decoration-break: slice)`）为了让长句不消失把 `.tx` 变成 `inline-block`，于是 BUG-3105 的竖排规则 `linear-gradient(to bottom, … var(--ly-p) …)` 铺在整块原子盒上：渐变只按纵坐标走，所有列在同一高度同时被点亮，跟阅读顺序（右列自上而下扫满再进左列）无关。Blink 走行内盒 + `box-decoration-break: slice`，渐变沿各列接续，不受影响。
 - **[x] ① 已修复** — 仍保留 inline-block（BUG-3346：WebKit 画不出多列行内盒上的 text 裁剪背景），改为按列铺渐变：`_lyLayoutSweepColumns`（`lyrics_mode_html.dart:914`）量出当前句每列的布局几何（跳过 rt / rp 注音、除掉当前句放大 transform），右列在前排序，第 i 列占全句累计长度 `[s, s+len)`，铺一层 `linear-gradient(to bottom, current calc((p - s - 4%) * total/len), upcoming calc((p - s + 4%) * total/len))`，与 Blink slice 的跨列接续逐像素等价（软边同为全长 ±4%）；三个变量 `--ly-cols-bg/-pos/-size` 交给回退规则，未量到时退回整块渐变，末层兜底未读色、文字绝不透明。几何只在换句、起播、重新适配字号时量；进度推进仍只靠 `--ly-p` 的一次 CSS transition，不逐帧回传。

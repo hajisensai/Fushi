@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// BUG-3365：iOS 竖排歌词逐字扫过不按阅读顺序。WebKit 回退（BUG-3346）把 `.tx`
+/// BUG-3366：iOS 竖排歌词逐字扫过不按阅读顺序。WebKit 回退（BUG-3346）把 `.tx`
 /// 变成 inline-block 后整块铺一条 `to bottom` 渐变，各列同步自上而下扫——屏上是
 /// 一条横带，每列上半亮、下半暗。修法是按列铺渐变：右起第一列先扫满，下一列才开始。
 ///

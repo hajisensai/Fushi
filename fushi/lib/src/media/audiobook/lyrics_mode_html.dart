@@ -448,7 +448,7 @@ body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
    box-decoration-break 取 slice 或 clone 都一样消失（BUG-3280 的 clone 回退
    无效），单列短句正常；.tx 改成 inline-block（一个原子盒，渐变铺在整块上）后整句
    可见、扫过照常。
-   BUG-3365：整块铺一条 to bottom 渐变会让各列同步自上而下扫（屏上是一条横带，
+   BUG-3366：整块铺一条 to bottom 渐变会让各列同步自上而下扫（屏上是一条横带，
    每列上半亮、下半暗），不按阅读顺序。JS（_lyLayoutSweepColumns）量出每列的
    位置与长度，给每列铺一层自己的渐变：--ly-cols-* 三个变量一一对应，全局进度
    --ly-p 按累计列长映射到该列内，与 Blink slice 的跨列接续逐像素等价，仍由同一个
@@ -794,7 +794,7 @@ function __lyricsFitCues() {
   var base = _lyricsBaseFontPx();
   var avail = _lyricsAvailExtent(container);
   for (var i = 0; i < _cues.length; i++) _lyricsFitCue(_cues[i], avail, base);
-  // 字号变了列就变了（BUG-3365）。
+  // 字号变了列就变了（BUG-3366）。
   if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
 }
 window.__lyricsFitCues = __lyricsFitCues;
@@ -825,7 +825,7 @@ function setCue(index, scroll) {
     if (d === 0) _cues[i].classList.add('current');
     else _cues[i].classList.add('near-' + d);
   }
-  // 加粗换了字宽，按新句的列重新铺扫过层（BUG-3365）。
+  // 加粗换了字宽，按新句的列重新铺扫过层（BUG-3366）。
   _lyLayoutSweepColumns(_cues[index]);
   // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走；跟随关闭(scroll===false)时也不滚。
   if (scroll !== false && !window.__lyricsCaretActive) scrollToCenter(_cues[index]);
@@ -903,7 +903,7 @@ function _lySweepReset(el) {
   tx.style.transition = 'none';
   tx.style.removeProperty('--ly-p');
 }
-// BUG-3365：WebKit 竖排回退里 .tx 是 inline-block（BUG-3346），整块一条渐变会让
+// BUG-3366：WebKit 竖排回退里 .tx 是 inline-block（BUG-3346），整块一条渐变会让
 // 各列同步扫。这里把当前句按列量出来，给每列铺一层渐变：第 i 列占全句累计长度
 // [s, s+len)，列内位置 = (p - s) / len，软边与整块渐变一样是全长的 ±4%。几何
 // 只在换句 / 起播 / 重新适配字号时量一次，进度推进仍只靠 --ly-p 的 transition。
