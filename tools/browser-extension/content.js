@@ -2130,6 +2130,66 @@ function fushiDrawHighlightOverlay(rects) {
   fushiHighlightLayer = layer;
 }
 
+// BUG-3328：查词后滚动页面（或任何内部可滚动容器），高亮与弹窗都是 position:fixed 的视口
+// 坐标，原地不动——词滚走了，它们还停在旧位置。统一处理：document 上 capture 监听 scroll
+// （scroll 不冒泡，只有 capture 才收得到内部容器的滚动；弹窗自己 shadow 里的滚动不 composed，
+// 天然收不到），每帧最多复算一次：从同一份取词 ranges 重量 rects——
+//   · 词还在视口内：高亮重画到新位置，弹窗按词的位移整体平移（尺寸 / 选边都不动，等于把弹窗
+//     钉在词旁边，像文档里的内容一样跟着滚）；
+//   · 词整个滚出视口：关窗（高亮随之撤）——弹窗指着一个看不见的词没有意义；
+//   · 量不到 rects（宿主页重渲染换掉了文本节点）：无从跟随，撤掉会错位的高亮，弹窗留在原处。
+// 只跟随「从宿主页选区取到 rects 的那一窗」（fushiHighlightTermLen>0）；侧栏交来的权威锚点 /
+// 鼠标坐标兜底没有可重量的词，不动。监听是 passive 的，不影响合成器快速滚动路径。
+let fushiHighlightTermLen = 0;
+let fushiScrollFollowPending = false;
+
+function fushiOnPageScroll() {
+  if (!fushiHost || !(fushiHighlightTermLen > 0) || fushiScrollFollowPending) return;
+  fushiScrollFollowPending = true;
+  requestAnimationFrame(() => {
+    fushiScrollFollowPending = false;
+    fushiFollowLookupAnchor();
+  });
+}
+
+function fushiFollowLookupAnchor() {
+  if (!fushiHost || !fushiPlaceAnchor || !(fushiHighlightTermLen > 0)) return;
+  const hl = fushiSelectionRects(fushiHighlightTermLen);
+  const b = hl.bounds;
+  if (!b) {
+    fushiHighlightTermLen = 0;
+    fushiClearHighlightOverlay();
+    return;
+  }
+  if (b.y + b.height <= 0 || b.y >= window.innerHeight ||
+      b.x + b.width <= 0 || b.x >= window.innerWidth) {
+    fushiRemoveContainer();
+    return;
+  }
+  const dx = b.x - fushiPlaceAnchor.x;
+  const dy = b.y - fushiPlaceAnchor.y;
+  if (!dx && !dy) return;
+  fushiDrawHighlightOverlay(hl.rects);
+  fushiPlaceAnchor = b;
+  fushiShiftPopupBy(dx, dy);
+}
+
+// 弹窗整体平移 (dx, dy) 视口 px：host 的 left/top（带 zoom，写入前除以 zoom）、拖拽把手、
+// 拖拽调尺寸的夹取上下文一起挪，弹窗尺寸与手动尺寸都不动。
+function fushiShiftPopupBy(dx, dy) {
+  const zoom = parseFloat(fushiHost.style.zoom) || 1;
+  fushiHost.style.left = ((parseFloat(fushiHost.style.left) || 0) + dx / zoom) + 'px';
+  fushiHost.style.top = ((parseFloat(fushiHost.style.top) || 0) + dy / zoom) + 'px';
+  if (fushiResizeBox) {
+    fushiResizeBox.left += dx;
+    fushiResizeBox.top += dy;
+    if (fushiResizeBox.aboveWord) fushiResizeBox.maxBottom += dy;
+  }
+  fushiPositionResizeGrip();
+}
+
+document.addEventListener('scroll', fushiOnPageScroll, { capture: true, passive: true });
+
 function fushiRemoveContainer() {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // 音频源菜单挂在独立宿主上，不随弹窗 shadow host 一起移除；不收会残留在页面上并卡住模态计数。
@@ -2203,6 +2263,7 @@ function fushiRemoveContainer() {
   fushiPlaceSide = null;
   fushiPlacedSide = null;
   fushiUserResizedPopup = false;
+  fushiHighlightTermLen = 0;
   fushiNotifySidePanelLookupGone();
 }
 
@@ -3141,11 +3202,14 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 探测。不跳的话，下面 highlightSelection 的无选区兜底会把**上一轮**查词的 bbox 当锚点，
   // 弹窗落到上一个词旁边，还可能把那处重新点亮。
   let wordRect = anchorRect && anchorRect.authoritative === true ? anchorRect : null;
+  // BUG-3328：只有从宿主页选区量到 rects 的这一窗才能随滚动重量、跟随（见 fushiOnPageScroll）。
+  fushiHighlightTermLen = 0;
   if (!wordRect) try {
     const hl = fushiSelectionRects(termLen);
     if (hl.rects.length) {
       fushiDrawHighlightOverlay(hl.rects); // 覆盖层高亮：宿主页 DOM 重绘/事件冲不掉它
       wordRect = hl.bounds;
+      fushiHighlightTermLen = termLen;
     } else if (window.fushiSelection && typeof window.fushiSelection.highlightSelection === 'function' &&
         !(window.fushiSelection.selection && window.fushiSelection.selection.ranges &&
           window.fushiSelection.selection.ranges[0] &&
@@ -3325,6 +3389,8 @@ function fushiApplyPlacement() {
     top: pos.top,
     maxRight: window.innerWidth - 8,
     maxBottom: maxBottom,
+    // BUG-3328：弹窗在词上方时 maxBottom 跟着词走（滚动平移时同步挪），否则是视口底、不动。
+    aboveWord: !!(wordRect && pos.top < ay),
     zoom: zoom,
   };
   fushiEnsureResizeGrip();
