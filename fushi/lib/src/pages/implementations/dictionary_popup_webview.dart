@@ -1260,7 +1260,7 @@ JSON.stringify((function(){
   /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
   /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
-  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`AdvancedMiningDialog`）据此
   /// 提示用户。
   /// 「回点前」这一段（下发 JS → 查重 → 取音 → 组 payload）的上限。BUG-2634：这个
   /// 超时**只盖到宿主接手为止**——宿主的 Dart 代码一旦在跑（可能在等用户从「已有卡」
@@ -1311,10 +1311,10 @@ JSON.stringify((function(){
   /// [releaseWhenPayloadConsumed]：本次往返的宿主是否保证**在首个 `await` 之前**把
   /// 草稿 / 制卡上下文同步读完。
   ///
-  /// * 视频车道（`_openSentenceContextDialogForVideo`）传 true：`_onMineEntryImpl`
+  /// * 视频车道（mixin 的 `_openAdvancedMiningDialog`）传 true：`_onMineEntryImpl`
   ///   在 `await _mineVideoCard(...)` 之前就把草稿、cue、历史快照读完，连当前帧截图
   ///   的 Future 都在点击当下同步启动，所以提前关窗不会截到别的帧。
-  /// * 阅读器车道（`base_source_page` 的 `_openSentenceContextDialog`）传 false：它的
+  /// * 阅读器车道（`base_source_page` 的 `_openAdvancedMiningDialog`）传 false：它的
   ///   `onMineFromPopup` 经制卡串行队列入队（TODO-644 / BUG-357），草稿要等前一次制卡
   ///   整段跑完才被读走；提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿合成——
   ///   卡制出来、toast 报成功、用户刚调的上下文全丢（BUG-2627 第二轮正是修的这个）。

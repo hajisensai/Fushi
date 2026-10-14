@@ -204,8 +204,6 @@ const Map<String, int> _legacy = <String, int>{
       1,
   'lib/src/pages/implementations/onboarding_wizard_page.dart|spring.duration':
       1,
-  'lib/src/pages/implementations/sentence_context_dialog.dart|context.fushiMotion.spatialDefault.duration':
-      1,
   'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart|motion':
       1,
   'lib/src/pages/implementations/shortcut_settings/shortcut_browser.part.dart|fushiMotionDuration(context,FushiMotion.short)':

@@ -1,11 +1,11 @@
-// 视频页「调整上下文 → 确认制卡」真机取证（用户 2026-09-22 报：点确认后弹
+// 视频页「高级制卡 → 确认制卡」真机取证（入口原名「调整上下文」）（用户 2026-09-22 报：点确认后弹
 // 「制卡没能开始——回点制卡按钮时查词弹窗已经关掉了」，即 BUG-2627 那轮把无声失败
 // 改成如实提示之后，往返在保护窗口内**仍然**失败）。
 //
 // 这一跑证明什么：在真 Windows runner 上（真 WebView2 弹窗、真根 Overlay、真对话框）
 // 复演原始路径——seed 带 sidecar 字幕的视频 + 生成词典 → 开播放页 → seek 到 cue 内 →
 // `debugLookupAt` 在字幕句上查词（与 overlay 点字同一条 `_lookupAt`）→ 在弹窗 DOM 里
-// 点「调整上下文」按钮（真走 `openSentenceContextModal` 桥）→ 对话框的确认键 autofocus，
+// 点「高级制卡」按钮（真走 `openAdvancedMining` 桥）→ 对话框的确认键 autofocus，
 // Enter 即「确认制卡」→ 观察：对话框是否关、失败 toast 是否出现、ErrorLogService 里
 // `DictPopupWebview.mineEntryByIndex` 落的是哪一条（无 controller / JS 拒点 / 抛错 /
 // 超时）、弹窗 DOM 此刻 `.entry` / `.mine-button` 的真实状态。
@@ -35,8 +35,8 @@ import 'package:fushi/src/media/video/video_volume_overlays.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebView, DictionaryPopupWebViewState;
-import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart'
-    show SentenceContextDialog;
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart'
+    show AdvancedMiningDialog;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show VideoFushiPage, VideoFushiTestHooks;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -91,7 +91,7 @@ Future<String> _seedVideoWithSrt(VideoBookRepository repo) async {
 bool _videoMounted() => find.byType(Video).evaluate().isNotEmpty;
 
 bool _dialogMounted() => find
-    .byType(SentenceContextDialog, skipOffstage: false)
+    .byType(AdvancedMiningDialog, skipOffstage: false)
     .evaluate()
     .isNotEmpty;
 
@@ -110,7 +110,7 @@ JSON.stringify((() => {
     mineOnclickType: b ? typeof b.onclick : null,
     mining: b ? (b.dataset.mining || '') : null,
     adjustButton: !!root.querySelector('.ctx-adjust-button'),
-    ctxEnabled: !!window.sentenceContextPreviewEnabled,
+    ctxEnabled: !!window.advancedMiningEnabled,
     ready: document.readyState,
   };
 })())
@@ -260,7 +260,7 @@ void main() {
       expect(hooks().debugVolume, volBefore,
           reason: 'barrier 上的滚轮也不得穿透到视频页改音量');
 
-      // ── 点「调整上下文」（真走 openSentenceContextModal 桥）────────────
+      // ── 点「高级制卡」（真走 openAdvancedMining 桥）────────────────────
       final int logBefore = ErrorLogService.instance.entries.length;
       await popup.debugEval(
           "(function(){var b=document.querySelector('.ctx-adjust-button');"
@@ -268,7 +268,7 @@ void main() {
       for (int i = 0; i < 40 && !_dialogMounted(); i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
-      expect(_dialogMounted(), isTrue, reason: '「选择句子上下文」对话框应打开');
+      expect(_dialogMounted(), isTrue, reason: '「高级制卡」对话框应打开');
       await tester.pump(const Duration(seconds: 1));
       await captureFlutterFrame(tester, '03-ctx-dialog');
       debugPrint('[ctx-mine] probe while dialog open: '

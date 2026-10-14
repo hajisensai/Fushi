@@ -152,20 +152,25 @@ void main() {
     });
   });
 
-  group('SentenceContextDialog 顶层对话框本体', () {
-    final String src =
-        File('lib/src/pages/implementations/sentence_context_dialog.dart')
-            .readAsStringSync();
+  group('AdvancedMiningDialog 顶层对话框本体（原「调整上下文」对话框演进）', () {
+    // 对话框拆成了入口 / 状态控制器 / 分区组件三个文件，按整组源码判断。
+    final String src = <String>[
+      'lib/src/mining/advanced_mining/advanced_mining_dialog.dart',
+      'lib/src/mining/advanced_mining/advanced_mining_controller.dart',
+      'lib/src/mining/advanced_mining/advanced_mining_sections.dart',
+    ].map((String p) => File(p).readAsStringSync()).join('
+');
 
-    test('文件存在且是 showAppDialog 弹的 AlertDialog', () {
-      expect(src.contains('class SentenceContextDialog'), isTrue);
-      expect(src.contains('AlertDialog('), isTrue);
+    test('文件存在且由 showAppDialog / 自适应底部面板弹出', () {
+      expect(src.contains('class AdvancedMiningDialog'), isTrue);
+      expect(src.contains('showAppDialog<void>('), isTrue);
     });
 
-    test('文案走 slang t.popup_ctx_*（无需 JS i18nCtx）', () {
+    test('文案走 slang t.popup_ctx_* / t.popup_advanced_mining_*（无需 JS i18nCtx）',
+        () {
       for (final String key in const <String>[
-        't.popup_ctx_modal_title',
-        't.popup_ctx_modal_count',
+        't.popup_advanced_mining_title',
+        't.popup_advanced_mining_sentence_count',
         't.popup_ctx_box_prev',
         't.popup_ctx_box_current',
         't.popup_ctx_box_next',
@@ -184,8 +189,8 @@ void main() {
     });
 
     test('确认走注入 onConfirm、取消还原快照', () {
-      expect(src.contains('widget.onConfirm()'), isTrue);
-      expect(src.contains('_snapPrev') && src.contains('_snapNext'), isTrue);
+      expect(src.contains('capabilities.onConfirm(overrides)'), isTrue);
+      expect(src.contains('restoreSentenceSnapshot()'), isTrue);
     });
   });
 

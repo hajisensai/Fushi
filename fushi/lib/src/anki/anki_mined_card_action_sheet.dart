@@ -61,7 +61,7 @@ class AnkiMinedCardActionResult {
 /// BUG-1040：从底部 sheet 改为**居中对话框**。这是个「必须当场做决定」的模态选择
 /// （覆写哪张 / 新增重复卡 / 去 Anki 看），不是可下拉浏览的内容面板；底部 sheet 贴在
 /// 屏幕下沿、在视频页还会被播放器控件与窗口边缘裁掉半截（用户附图里进度条已被切）。
-/// 与同族的 [showAnkiNoteViewer] / [SentenceContextDialog] 统一走 [showAppDialog]。
+/// 与同族的 [showAnkiNoteViewer] / `showAdvancedMiningDialog` 统一走 [showAppDialog]。
 Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   required BuildContext context,
   required List<MinedNoteRef> matches,
