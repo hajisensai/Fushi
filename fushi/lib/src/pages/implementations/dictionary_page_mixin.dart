@@ -196,6 +196,12 @@ mixin DictionaryPageMixin {
   }) async =>
       AdvancedMiningSections.none;
 
+  /// 「高级制卡」对话框里能不能为这张卡选卡组。默认 true（卡组取本机 Anki 设置）；
+  /// 卡组由别的设备决定的表面覆写成 false（手机遥控页：遥控制卡落在电脑端、用电脑的
+  /// Anki 配置），对话框就不渲染卡组分区。
+  @protected
+  bool get advancedMiningDeckChoiceAvailable => true;
+
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
   ///
@@ -264,8 +270,9 @@ mixin DictionaryPageMixin {
   /// [entryIndex] 个词条的「+」并带上覆盖项。与 reader 车道
   /// （`BaseSourcePageState._openAdvancedMiningDialog`）对称。
   ///
-  /// 结果来自别的设备（[popupResourceSource] 非 null，如手机遥控电脑制卡）时卡片落在
-  /// 那台设备、用它的 Anki 配置，本机的卡组列表对它没有意义——不给卡组分区。
+  /// 结果来自别的设备（[popupResourceSource] 非 null）或表面声明卡组不由本机决定
+  /// （[advancedMiningDeckChoiceAvailable] 为 false）时卡片落在那台设备、用它的 Anki
+  /// 配置，本机的卡组列表对它没有意义——不给卡组分区。
   Future<void> _openAdvancedMiningDialog({
     required GlobalKey<DictionaryPopupWebViewState> webViewKey,
     required int entryIndex,
@@ -278,7 +285,8 @@ mixin DictionaryPageMixin {
     final BuildContext dialogContext = context;
     // BUG-797：对话框期间把弹窗 WebView 停靠屏外，否则原生平台视图盖住对话框。
     await runWithLookupPopupHidden<void>(() async {
-      final AdvancedMiningDeckSection? deck = popupResourceSource == null
+      final AdvancedMiningDeckSection? deck =
+          popupResourceSource == null && advancedMiningDeckChoiceAvailable
           ? await loadAdvancedMiningDeckSection(ref)
           : null;
       final AdvancedMiningSections sections =
