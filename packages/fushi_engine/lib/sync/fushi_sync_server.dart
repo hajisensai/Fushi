@@ -1355,12 +1355,16 @@ class _DavEntry {
     required this.isCollection,
     required this.displayName,
     required this.contentLength,
+    this.modified,
   });
 
   final String href;
   final bool isCollection;
   final String displayName;
   final int contentLength;
+
+  /// 文件在 host 上的修改时间（host 的时钟 = 互联的服务器时间）；目录不填。
+  final DateTime? modified;
 }
 
 /// 视频流短时 token（P4-2）。

@@ -6,6 +6,20 @@ import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:fushi_engine/sync/sync_asset_store.dart'
     show SyncTransferProgress;
 
+/// 云盘 API 的 RFC 3339 / ISO 8601 时间戳（OneDrive `lastModifiedDateTime`、Dropbox
+/// `server_modified` 等）换成 UTC 毫秒。
+///
+/// 只认**带时区**的串（`Z` 或 `±hh:mm`）：不带时区时 [DateTime.parse] 会按本机时区解释，
+/// 结果随设备时区漂移——SRS 同步拿它当服务器时间，宁可为 null 也不能错。
+int? syncIsoTimestampMs(Object? raw) {
+  if (raw is! String) return null;
+  final String v = raw.trim();
+  if (!_kIsoZoneSuffix.hasMatch(v)) return null;
+  return DateTime.tryParse(v)?.toUtc().millisecondsSinceEpoch;
+}
+
+final RegExp _kIsoZoneSuffix = RegExp(r'(?:[zZ]|[+-]\d{2}:?\d{2})$');
+
 /// The single sync root folder name used by every backend (cloud + LAN).
 ///
 /// Historically `ttu-reader-data` (the app began life as a ttu-ebook-reader

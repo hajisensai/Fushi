@@ -141,7 +141,11 @@ class SrsAssetStoreDirectory implements SrsSyncDirectory {
     await write(writerId, srsProbeName, Uint8List.fromList(<int>[1]));
     final String folder = (await _writer(writerId, create: true))!;
     for (final AssetEntry e in await store.listChildren(folder)) {
-      if (e.name == srsProbeName) return e.modifiedAt;
+      if (e.name != srsProbeName) continue;
+      if (e.modifiedAt != null) return e.modifiedAt;
+      // 列目录没带时间（FTP 目录文件多时不逐个 MDTM），退到按名查找——FTP 的
+      // findAsset 总会 MDTM；其它后端 findAsset 不带时间，这里仍为 null。
+      return (await store.findAsset(folder, srsProbeName))?.modifiedAt;
     }
     return null;
   }
