@@ -360,6 +360,12 @@ class BackupRestoreService {
         for (final String t in _deviceLocalTablesParentFirst) {
           await _insertDeviceLocalTableFromBak(db!, t);
         }
+        // v117 SRS 本机状态 / 缓存：覆盖恢复后既不沿用备份里的（导出时已清空，
+        // 这里兜底更老 / 外来的备份），也不从 bak 回灌本机旧的——数据本体已整份
+        // 换成备份的，SRS 引擎须按「无本机状态」换新化身并重建缓存。
+        for (final String t in _srsDeviceLocalDiscardTables) {
+          await db!.customStatement('DELETE FROM $t');
+        }
       });
       await db.customStatement('DETACH DATABASE devbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');

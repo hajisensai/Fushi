@@ -3527,10 +3527,15 @@ class FushiDatabase extends _$FushiDatabase
             // v117（Fushi SRS，docs/specs/2026-10-14-fushi-srs-design.md）：
             // profiles.uid（全局身份，存量行生成 UUIDv7）+ 八张 srs_* 表（三张同步事件表、
             // 不认识事件表、本机元信息 / 状态、两张可重建缓存）。全部幂等守卫。
-            if (!await _columnExists('profiles', 'uid')) {
-              await m.addColumn(profiles, profiles.uid);
+            // profiles 表在迁移阶梯上可能不存在（老库在建它的那一步之后才补 / 合成库），
+            // 与其它加列步同形：表不在就跳过加列 / 回填 / 索引，不得炸掉整条迁移。
+            if (await _tableExists('profiles')) {
+              if (!await _columnExists('profiles', 'uid')) {
+                await m.addColumn(profiles, profiles.uid);
+              }
+              await _backfillProfileUids();
+              await _ensureProfileUidIndex();
             }
-            await _backfillProfileUids();
             for (final TableInfo<Table, Object?> t in <TableInfo<Table, Object?>>[
               srsEntities,
               srsFieldEdits,
@@ -3560,6 +3565,7 @@ class FushiDatabase extends _$FushiDatabase
               'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_uid_created '
               'ON bookmarks (book_uid, created_at DESC)');
           await _ensureIndexes();
+          await _ensureProfileUidIndex();
           await _ensureSrsIndexes();
         },
         beforeOpen: (details) async {

@@ -607,6 +607,26 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_download_subscription_items',
 ];
 
+/// v117 SRS 的**本机发布元信息 / 本机状态 / 可重建缓存**（docs/specs/2026-10-14-
+/// fushi-srs-design.md）。与 [_deviceLocalTables] 同样绝不随备份离开本机（导出时
+/// `_stripCredentials` 清空），但恢复语义**相反**：覆盖恢复后**不**从 bak 回灌，而是
+/// 一律清空——
+///   - `srs_event_local` / `srs_local_state`：发件箱顺序、批次服务器时间、写入者
+///     身份与 seq、已应用上下文、HLC。它们描述的是「这台设备上的这份事件集合」。
+///     覆盖恢复把 SRS 数据本体（`srs_entities` / `srs_field_edits` /
+///     `srs_review_logs` / `srs_unknown_events`）整份换成备份里的，旧的本机状态
+///     与新数据对不上；沿用旧写入者身份续写 seq 还会与恢复前已发布的事件撞号。
+///     清空后 SRS 引擎按「没有本机状态」换新化身（新写入者身份）重新开始。
+///   - `srs_notes_cache` / `srs_cards_cache`：完全由事件推导，清空后由引擎重建，
+///     不能沿用旧数据本体推导出的行。
+/// 这四张表没有外键，删除顺序无约束。
+const List<String> _srsDeviceLocalDiscardTables = <String>[
+  'srs_event_local',
+  'srs_local_state',
+  'srs_notes_cache',
+  'srs_cards_cache',
+];
+
 /// Content tables stripped from the exported DB copy when the `statistics`
 /// category is unticked (TODO-1193). None is FK-targeted by another content
 /// table, so a wholesale DELETE is safe (nothing references `galgame_sessions`,
@@ -1587,6 +1607,10 @@ class BackupService {
       // export copy unconditionally — they are meaningless (or harmful) on any
       // other device and are restored from bak on an overwrite import.
       for (final String table in _deviceLocalTables) {
+        await db.customStatement('DELETE FROM $table');
+      }
+      // v117 SRS 本机状态 / 缓存：同样不离开本机（恢复侧清空、不回灌，见常量注释）。
+      for (final String table in _srsDeviceLocalDiscardTables) {
         await db.customStatement('DELETE FROM $table');
       }
       await db.customStatement('VACUUM');

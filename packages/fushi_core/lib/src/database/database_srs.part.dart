@@ -38,10 +38,17 @@ mixin _FushiDbSrs on _$FushiDatabase {
     }
   }
 
+  /// profiles.uid 的唯一索引。与 [_ensureSrsIndexes] 分开：迁移阶梯上 profiles 表
+  /// 可能不存在（极老 / 合成库），调用方先确认表在再建。
+  Future<void> _ensureProfileUidIndex() async {
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_uid ON profiles (uid) '
+      "WHERE uid IS NOT NULL AND uid != ''",
+    );
+  }
+
   Future<void> _ensureSrsIndexes() async {
     const List<String> stmts = <String>[
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_uid ON profiles (uid) '
-          "WHERE uid IS NOT NULL AND uid != ''",
       'CREATE INDEX IF NOT EXISTS idx_srs_entities_profile_kind '
           'ON srs_entities (profile_uid, kind)',
       'CREATE INDEX IF NOT EXISTS idx_srs_field_edits_entity '
