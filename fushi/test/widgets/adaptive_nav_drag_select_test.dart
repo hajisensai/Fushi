@@ -4,16 +4,23 @@
 // 钉住：长按拖到另一项松手 → 走 onDragSelect（不走 onTap）；拖回原位 / 拖出
 // 胶囊 → 取消；短按仍是普通点击；减弱动态效果下照样能拖选（只是指示器不跟手）。
 //
+// 2026-10-14 起改为 iOS 26 标签栏式「按下直接横拖」（长按后再拖仍可）：不长按、
+// 横向挪过 kTouchSlop 就进入拖选，经过的目的地换成选中态，抬手切到目标；没过线
+// 抬手仍是点按；拖出 / 回原位 / 停在「⋯」取消；纵向抬手、鼠标拖都不触发；
+// 键盘 / 手柄焦点导航不受影响。
+//
 // 设 `FUSHI_PREVIEW=1` 时顺带写两张真实像素截图（拎起、拖动中途），输出目录
 // `FUSHI_PREVIEW_OUT`，缺省 `../.claude/preview/module_swipe`（不入库）。
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/gestures.dart' show kLongPressTimeout;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kLongPressTimeout, kTouchSlop;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -45,9 +52,11 @@ class _Recorder {
 Future<_Recorder> _pumpBar(
   WidgetTester tester, {
   bool reduceMotion = false,
+  List<AdaptiveNavItem>? items,
+  double width = 400,
 }) async {
   const double dpr = 2.5;
-  tester.view.physicalSize = const Size(400, 300) * dpr;
+  tester.view.physicalSize = Size(width, 300) * dpr;
   tester.view.devicePixelRatio = dpr;
   addTearDown(tester.view.reset);
   if (_preview) {
@@ -94,7 +103,7 @@ Future<_Recorder> _pumpBar(
                   recorder.drags.add(i);
                   setState(() => current = i);
                 },
-                items: _items(),
+                items: items ?? _items(),
               ),
             ),
           ),
@@ -154,6 +163,25 @@ Future<TestGesture> _longPressAndDrag(
   }
   return gesture;
 }
+
+/// 不长按：按下后立刻分几步横向挪到 [to]（每步一帧，远短于长按阈值）。
+Future<TestGesture> _pressAndDrag(
+  WidgetTester tester,
+  Offset from,
+  Offset to, {
+  PointerDeviceKind kind = PointerDeviceKind.touch,
+}) async {
+  final TestGesture gesture = await tester.startGesture(from, kind: kind);
+  const int steps = 8;
+  for (int i = 1; i <= steps; i++) {
+    await gesture.moveTo(Offset.lerp(from, to, i / steps)!);
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  return gesture;
+}
+
+FushiFocusController _focusController(WidgetTester tester) =>
+    FushiFocusRoot.controllerOf(tester.element(find.byType(Scaffold)));
 
 void main() {
   testWidgets('长按拖到另一项松手：切到那一项，走 onDragSelect 而不是 onTap', (
@@ -249,5 +277,162 @@ void main() {
     expect(withLongPress, isEmpty);
     expect(recorder.drags, isEmpty);
     handle.dispose();
+  });
+  group('按下直接横拖（不长按，iOS 26 标签栏式）', () {
+    testWidgets('横向挪过 kTouchSlop 即进入拖选：经过的项换成选中态，抬手切到目标', (
+      WidgetTester tester,
+    ) async {
+      final _Recorder recorder = await _pumpBar(
+        tester,
+        items: <AdaptiveNavItem>[
+          AdaptiveNavItem(icon: FushiIcons.home, label: '首页'),
+          AdaptiveNavItem(icon: FushiIcons.books, label: '书架'),
+          AdaptiveNavItem(
+            icon: FushiIcons.manga,
+            selectedIcon: Icons.star,
+            label: '漫画',
+          ),
+          AdaptiveNavItem(icon: FushiIcons.video, label: '视频'),
+        ],
+      );
+      expect(find.byIcon(Icons.star), findsNothing);
+      final TestGesture gesture = await _pressAndDrag(
+        tester,
+        _center(tester, '首页'),
+        _center(tester, '漫画'),
+      );
+      // 全程远短于长按阈值：拖选只能来自横拖识别器。
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        find.byIcon(Icons.star),
+        findsOneWidget,
+        reason: '跟手的指示器罩着「漫画」时，它临时换成选中态图标',
+      );
+      expect(recorder.drags, isEmpty, reason: '抬手前不切换');
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, <int>[2]);
+      expect(recorder.taps, isEmpty, reason: '横拖切换不是一次点击');
+      expect(find.byIcon(Icons.star), findsWidgets, reason: '已切到漫画');
+    });
+
+    testWidgets('没挪过 kTouchSlop 就抬手：仍是点按，归目的地自己', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final Offset video = _center(tester, '视频');
+      final TestGesture gesture = await tester.startGesture(video);
+      await gesture.moveTo(video + const Offset(kTouchSlop - 6, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.taps, <int>[3]);
+      expect(recorder.drags, isEmpty);
+    });
+
+    testWidgets('拖回原位松手：取消，不切换', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final Offset home = _center(tester, '首页');
+      final Offset video = _center(tester, '视频');
+      final TestGesture gesture = await _pressAndDrag(tester, home, video);
+      for (int i = 1; i <= 8; i++) {
+        await gesture.moveTo(Offset.lerp(video, home, i / 8)!);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, isEmpty);
+      expect(recorder.taps, isEmpty);
+    });
+
+    testWidgets('拖出底栏（超出 24dp 容差）再松手：取消，不切换', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final Offset manga = _center(tester, '漫画');
+      final TestGesture gesture = await _pressAndDrag(
+        tester,
+        _center(tester, '首页'),
+        manga,
+      );
+      await gesture.moveTo(manga - const Offset(0, 160));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, isEmpty);
+      expect(recorder.taps, isEmpty);
+    });
+
+    testWidgets('停在「⋯」上松手：取消，不切换', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(
+        tester,
+        width: 320,
+        items: <AdaptiveNavItem>[
+          AdaptiveNavItem(icon: FushiIcons.home, label: '首页'),
+          AdaptiveNavItem(icon: FushiIcons.books, label: '书架'),
+          AdaptiveNavItem(icon: FushiIcons.manga, label: '漫画'),
+          AdaptiveNavItem(icon: FushiIcons.video, label: '视频'),
+          AdaptiveNavItem(icon: FushiIcons.home, label: '游戏库房'),
+          AdaptiveNavItem(icon: FushiIcons.books, label: '浏览发现'),
+          AdaptiveNavItem(icon: FushiIcons.manga, label: '统计中心'),
+          AdaptiveNavItem(icon: FushiIcons.video, label: '设置选项'),
+        ],
+      );
+      final Finder more = find.byWidgetPredicate(
+        (Widget w) =>
+            w is FushiFocusTarget && w.id == const FushiFocusId('nav-bar-more'),
+      );
+      expect(more, findsOneWidget, reason: '窄底栏要有「⋯」格');
+      final TestGesture gesture = await _pressAndDrag(
+        tester,
+        _center(tester, '首页'),
+        tester.getCenter(more),
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, isEmpty);
+      expect(recorder.taps, isEmpty);
+    });
+
+    testWidgets('纵向抬手（如上划手势）不误切', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final Offset manga = _center(tester, '漫画');
+      final TestGesture gesture = await _pressAndDrag(
+        tester,
+        manga,
+        manga - const Offset(4, 120),
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, isEmpty);
+      expect(recorder.taps, isEmpty);
+    });
+
+    testWidgets('鼠标横拖不触发拖选（只认触摸 / 触笔）', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final TestGesture gesture = await _pressAndDrag(
+        tester,
+        _center(tester, '首页'),
+        _center(tester, '漫画'),
+        kind: PointerDeviceKind.mouse,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(recorder.drags, isEmpty);
+    });
+
+    testWidgets('键盘 / 手柄焦点导航不受影响：方向键挪焦点不切，确认才切', (WidgetTester tester) async {
+      final _Recorder recorder = await _pumpBar(tester);
+      final FushiFocusController controller = _focusController(tester);
+      controller.requestById(const FushiFocusId('nav-bar-1'));
+      await tester.pump();
+      expect(controller.move(FushiFocusDirection.right), isTrue);
+      await tester.pump();
+      expect(controller.activeId, const FushiFocusId('nav-bar-2'));
+      expect(recorder.taps, isEmpty);
+      Actions.maybeInvoke<ActivateIntent>(
+        controller.activeContext!,
+        const ActivateIntent(),
+      );
+      await tester.pumpAndSettle();
+      expect(recorder.taps, <int>[2]);
+      expect(recorder.drags, isEmpty);
+    });
   });
 }

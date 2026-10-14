@@ -1607,10 +1607,11 @@ class _SlidingIndicatorScope extends StatefulWidget {
     this.hoverColor,
   });
 
-  /// 长按拖选的目标：目的地焦点 id → 序号。null = 不启用长按拖选。
+  /// 拖选的目标：目的地焦点 id → 序号。null = 不启用拖选。
   ///
-  /// 交互（2026-10-10 用户「底部栏长按拖动、松手到达对应模块」）：长按胶囊
-  /// 任意处，选中指示器被拎起（放大 + 投影，手机上轻触感）；左右拖动时它跟着
+  /// 交互（2026-10-10 用户「底部栏长按拖动、松手到达对应模块」；2026-10-14
+  /// 改为 iOS 26 标签栏式「按下直接横拖」，长按后再拖仍可）：在胶囊任意处按下
+  /// 横拖（或长按），选中指示器被拎起（放大 + 投影）；左右拖动时它跟着
   /// 手指走，经过的目的地亮一层悬停状态层；松手吸附到离手指最近的目的地
   /// （弹簧滑过去，复用切换时的滑动），并经 [onDragSelect] 切过去。拖回原位、
   /// 拖出胶囊或停在「更多」上松手 = 取消，指示器弹回原位。最近目的地按真实
@@ -1731,21 +1732,24 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     return best;
   }
 
-  void _onDragStart(LongPressStartDetails details) {
-    if (widget.dragTargets == null) return;
+  /// 拖选开始。两个入口共用：按下后直接横向拖过触摸判定距离（[kTouchSlop]，
+  /// iOS 26 标签栏式，[lift] = false）；或长按后再拖（[lift] = true，保留
+  /// 「按住不动、想好了再拖」的路径，并给一下拎起触感）。
+  void _beginDrag(Offset localPosition, {required bool lift}) {
+    if (widget.dragTargets == null || _dragging) return;
     _dragFollows = fushiExpressiveMotionEnabled(context);
-    fushiLiftHaptic(context);
+    if (lift) fushiLiftHaptic(context);
     _lift.animateTo(1, animate: _dragFollows);
     setState(() {
-      _dragPoint = details.localPosition;
-      _hoverId = _nearestTarget(details.localPosition);
+      _dragPoint = localPosition;
+      _hoverId = _nearestTarget(localPosition);
     });
   }
 
-  void _onDragMove(LongPressMoveUpdateDetails details) {
+  void _moveDrag(Offset localPosition) {
     if (!_dragging) return;
-    _dragPoint = details.localPosition;
-    final FushiFocusId? hover = _nearestTarget(details.localPosition);
+    _dragPoint = localPosition;
+    final FushiFocusId? hover = _nearestTarget(localPosition);
     if (hover != _hoverId) {
       fushiSelectionHaptic(context);
       setState(() => _hoverId = hover);
@@ -1754,10 +1758,11 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   }
 
   /// 松手：落在胶囊里、不在「更多」上、且最近的目的地不是当前项 → 切过去；
-  /// 否则取消、指示器弹回原位。
-  void _onDragEnd(LongPressEndDetails details) {
-    if (!_dragging) return;
-    final Offset point = details.localPosition;
+  /// 否则取消、指示器弹回原位。落点取最后一次移动的位置（两种识别器的结束
+  /// 回调都不再带新位置）。
+  void _endDrag() {
+    final Offset? point = _dragPoint;
+    if (point == null) return;
     final RenderObject? box = context.findRenderObject();
     final bool inside =
         box is RenderBox &&
@@ -1927,23 +1932,35 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
       child: widget.child,
     );
     if (dragSelect) {
-      // 长按阈值沿用系统长按（kLongPressTimeout）；短按仍由各目的地自己的
-      // InkWell 拿走（长按识别器在超时前不接受）。只认触摸 / 触笔：鼠标在
-      // 桌面窄窗里长按拖动没有这个语义。
+      // 短按仍由各目的地自己的 InkWell 拿走（横拖识别器过线前、长按识别器
+      // 超时前都不接受）。只认触摸 / 触笔：鼠标在桌面窄窗里拖动没有这个语义。
       child = GestureDetector(
         behavior: HitTestBehavior.translucent,
         // 拖选是纯指针手势，不进语义树：长按识别器默认挂的 longPress 语义动作
         // 会以 Offset.zero 回放 start/end，读屏用户「双击按住」就被静默切到
-        // 胶囊最左那一项。读屏切模块走各目的地自己的点击语义。
+        // 胶囊最左那一项；横向拖动识别器同理会挂 scrollLeft / scrollRight。
+        // 读屏切模块走各目的地自己的点击语义。
         excludeFromSemantics: true,
         supportedDevices: const <PointerDeviceKind>{
           PointerDeviceKind.touch,
           PointerDeviceKind.stylus,
           PointerDeviceKind.invertedStylus,
         },
-        onLongPressStart: _onDragStart,
-        onLongPressMoveUpdate: _onDragMove,
-        onLongPressEnd: _onDragEnd,
+        // 按下即可横拖（2026-10-14 用户「像 iOS 26 标签栏一样按住直接拖过去」）：
+        // 横向位移超过触摸判定距离才接受，没过线抬手 = 点按，仍归目的地自己的
+        // InkWell；纵向手势横向分量不过线不会被吃。
+        onHorizontalDragStart: (DragStartDetails d) =>
+            _beginDrag(d.localPosition, lift: false),
+        onHorizontalDragUpdate: (DragUpdateDetails d) =>
+            _moveDrag(d.localPosition),
+        onHorizontalDragEnd: (DragEndDetails _) => _endDrag(),
+        onHorizontalDragCancel: _cancelDrag,
+        // 按住不动超过系统长按时长后再拖，同样拎起指示器（长按只服务拖选）。
+        onLongPressStart: (LongPressStartDetails d) =>
+            _beginDrag(d.localPosition, lift: true),
+        onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) =>
+            _moveDrag(d.localPosition),
+        onLongPressEnd: (LongPressEndDetails _) => _endDrag(),
         onLongPressCancel: _cancelDrag,
         child: child,
       );

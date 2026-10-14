@@ -735,8 +735,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed =
-        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    final bool confirmed = await showAnkiMediaDedupPlanDialog(
+      context,
+      plan,
+      offerDelete: true,
+    );
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -2026,8 +2029,8 @@ class _HomePageState extends BasePageState<HomePage>
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
-            // 长按拎起选中指示器拖到目标模块（MD3 悬浮底栏）：落地走同一个切
-            // tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
+            // 按下横拖（或长按后拖）选中指示器到目标模块（MD3 悬浮底栏）：落地
+            // 走同一个切 tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
             onDragSelect: (int index) {
               final HomeTab tab = homeTabForVisualIndex(
                 tabs: tabs,
@@ -2038,8 +2041,7 @@ class _HomePageState extends BasePageState<HomePage>
               final bool towardEnd = index > visualIndex;
               _selectTabFromNav(tab);
               _moduleSwipe.playEnter(
-                fromScreenRight:
-                    Directionality.of(context) == TextDirection.ltr
+                fromScreenRight: Directionality.of(context) == TextDirection.ltr
                     ? towardEnd
                     : !towardEnd,
               );
