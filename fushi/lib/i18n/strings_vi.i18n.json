@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "Chạm phụ đề nổi để tra từ",
   "floating_lyric_click_lookup_hint": "Bật mục này cùng với khóa vị trí nếu bạn vẫn muốn tra từ.",
   "floating_lyric_close": "Đóng",
-  "floating_lyric_context_lines": "Số dòng ngữ cảnh phụ đề nổi",
-  "floating_lyric_context_lines_hint": "0 chỉ hiển thị dòng hiện tại (một dòng, không thay đổi); đặt 1-3 để hiển thị số dòng đó trước và sau",
   "floating_lyric_corner_radius": "Bán kính bo góc phụ đề nổi",
   "floating_lyric_corner_radius_hint": "0 giữ góc mặc định của mỗi nền tảng; tăng lên để bo tròn thanh và nút hơn",
   "floating_lyric_font_size": "Cỡ chữ phụ đề nổi",
@@ -7481,5 +7479,18 @@
   "anki_pending_mine_landing_host_note": "Thiết bị này là máy chủ kết nối, nên điện thoại đã ghép nối không thể chuyển thẻ theo cách này. Trên các điện thoại đó, hãy bật \"Gửi thẻ đến thiết bị đã ghép nối\" thay thế.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "floating_lyric_visible_lines": "Sentences shown",
+  "floating_lyric_visible_lines_hint": "The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more.",
+  "floating_lyric_visible_lines_auto": "Auto",
+  "floating_lyric_current_line_color": "Current sentence color",
+  "floating_lyric_context_opacity": "Other sentences opacity",
+  "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
+  "floating_lyric_font": "Floating subtitle font",
+  "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",
+  "floating_lyric_appearance_section": "Floating subtitle appearance",
+  "font_target_floating_lyric": "Floating subtitles",
+  "font_target_floating_lyric_short": "Subtitles",
+  "floating_lyric_vertical": "Vertical text",
+  "floating_lyric_vertical_hint": "Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences."
 }

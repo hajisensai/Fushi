@@ -42,7 +42,9 @@ void main() {
       'listening.floating_lyric_button_bg_opacity',
       'listening.floating_lyric_corner_radius',
       'listening.floating_lyric_width',
-      'listening.floating_lyric_context_lines',
+      'listening.floating_lyric_visible_lines',
+      'listening.floating_lyric_color_text',
+      'listening.floating_lyric_color_background',
       // TODO-576: 背景透明度滑杆也要跟字号一样在 Windows 桌面可见。
       'listening.floating_lyric_bg_opacity',
       'listening.floating_lyric_click_lookup',
@@ -51,8 +53,11 @@ void main() {
     for (final String id in floatingIds) {
       test('$id is visible on Windows desktop, not Android-only', () {
         final String block = itemBlock(id);
+        // 总开关内联写判据；其余参数项统一走 _floatingLyricOn（下面单独钉它
+        // 的定义同时放行两端并跟随开关）。
         expect(
-          block.contains('Platform.isAndroid || Platform.isWindows'),
+          block.contains('Platform.isAndroid || Platform.isWindows') ||
+              block.contains('visible: _floatingLyricOn,'),
           isTrue,
           reason:
               '$id must be visible on Android and Windows '
@@ -83,20 +88,23 @@ void main() {
               'The switch must remain reachable after disabling the feature.',
         );
         for (final String id in floatingIds.skip(1)) {
-          final String block = itemBlock(id);
-          final String visibility = block.substring(
-            block.indexOf('visible:'),
-            block.contains('min:')
-                ? block.indexOf('min:')
-                : block.indexOf('value:'),
-          );
           expect(
-            visibility,
-            contains('c.appModel.showFloatingLyric'),
+            itemBlock(id).contains('visible: _floatingLyricOn,'),
+            isTrue,
             reason:
                 '$id is a feature parameter; evaluate enabled state at render time.',
           );
         }
+        final int gate = schema.indexOf(
+          'bool _floatingLyricOn(SettingsContext c)',
+        );
+        expect(gate, greaterThan(0));
+        final String gateBody = schema.substring(
+          gate,
+          schema.indexOf(';', gate),
+        );
+        expect(gateBody, contains('Platform.isAndroid || Platform.isWindows'));
+        expect(gateBody, contains('c.appModel.showFloatingLyric'));
       },
     );
 

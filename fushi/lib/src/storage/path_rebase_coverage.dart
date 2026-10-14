@@ -62,7 +62,9 @@ class PathRebaseColumn {
 
   /// drift 默认的 snake_case SQL 列名。守卫据此断言 must-rebase 列真的出现在迁移器里。
   String get sqlColumn => column.replaceAllMapped(
-      RegExp('[A-Z]'), (Match m) => '_${m[0]!.toLowerCase()}');
+    RegExp('[A-Z]'),
+    (Match m) => '_${m[0]!.toLowerCase()}',
+  );
 
   @override
   String toString() => '$table.$column($kind)';
@@ -127,426 +129,779 @@ class PathRebasePref {
 /// 按 tables.dart 出现顺序排列，便于人工对照。
 const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // ── media_open_history（v80 最近打开流，取代 media_items）──────────
-  PathRebaseColumn('MediaOpenHistory', 'mediaSource', PathRebaseKind.notAPath,
-      '媒体源标识（MediaSource.uniqueKey），不是路径。'),
   PathRebaseColumn(
-      'MediaOpenHistory',
-      'snapshotJson',
-      PathRebaseKind.documentsRooted,
-      '展示/重开载荷 JSON；其中 imageUrl 键可能是本地书封面的 '
-          'file://<绝对路径> URI（候选全在 <documents>/fushi_books 下），由 '
-          '_rebaseMediaOpenHistory 逐行解码改写；其余键（audioUrl/extraUrl 等）为远端 '
-          'URL 或无路径数据，scheme 非 file 时改写器原样跳过。'),
+    'MediaOpenHistory',
+    'mediaSource',
+    PathRebaseKind.notAPath,
+    '媒体源标识（MediaSource.uniqueKey），不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaOpenHistory',
+    'snapshotJson',
+    PathRebaseKind.documentsRooted,
+    '展示/重开载荷 JSON；其中 imageUrl 键可能是本地书封面的 '
+        'file://<绝对路径> URI（候选全在 <documents>/fushi_books 下），由 '
+        '_rebaseMediaOpenHistory 逐行解码改写；其余键（audioUrl/extraUrl 等）为远端 '
+        'URL 或无路径数据，scheme 非 file 时改写器原样跳过。',
+  ),
 
   // ── anki_mappings ─────────────────────────────────────────────────
-  PathRebaseColumn('AnkiMappings', 'exportFieldKeysJson',
-      PathRebaseKind.notAPath, '字段 key 列表 JSON，无路径。'),
-  PathRebaseColumn('AnkiMappings', 'creatorFieldKeysJson',
-      PathRebaseKind.notAPath, '字段 key 列表 JSON，无路径。'),
-  PathRebaseColumn('AnkiMappings', 'creatorCollapsedFieldKeysJson',
-      PathRebaseKind.notAPath, '字段 key 列表 JSON，无路径。'),
   PathRebaseColumn(
-      'AnkiMappings', 'tagsJson', PathRebaseKind.notAPath, '标签字符串列表 JSON，无路径。'),
-  PathRebaseColumn('AnkiMappings', 'enhancementsJson', PathRebaseKind.notAPath,
-      '增强功能 key 映射 JSON，无路径。'),
-  PathRebaseColumn('AnkiMappings', 'actionsJson', PathRebaseKind.notAPath,
-      '快捷操作 key 列表 JSON，无路径。'),
+    'AnkiMappings',
+    'exportFieldKeysJson',
+    PathRebaseKind.notAPath,
+    '字段 key 列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'AnkiMappings',
+    'creatorFieldKeysJson',
+    PathRebaseKind.notAPath,
+    '字段 key 列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'AnkiMappings',
+    'creatorCollapsedFieldKeysJson',
+    PathRebaseKind.notAPath,
+    '字段 key 列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'AnkiMappings',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签字符串列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'AnkiMappings',
+    'enhancementsJson',
+    PathRebaseKind.notAPath,
+    '增强功能 key 映射 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'AnkiMappings',
+    'actionsJson',
+    PathRebaseKind.notAPath,
+    '快捷操作 key 列表 JSON，无路径。',
+  ),
 
   // ── preferences / profile_settings（KV 承载列）──────────────────────
-  PathRebaseColumn('Preferences', 'value', PathRebaseKind.documentsRooted,
-      'KV 承载列：逐 key 的处置见 [kPathRebasePrefs]。documents / support 两族都有。'),
   PathRebaseColumn(
-      'ProfileSettings',
-      'value',
-      PathRebaseKind.documentsRooted,
-      'BUG-1174 最阴的一处：ProfileRepository.snapshotCurrentSettings 把**每一条**非'
-          '排除 Drift pref 原样复制进来（category=pref），applyProfile 再原样写回 '
-          'preferences。迁移只改 preferences 的话，用户切一次 Profile 就把刚 rebase 好的'
-          '路径整体回滚回旧值——迁移当天一切正常、几天后突然坏，极难归因。'
-          '必须与 preferences 用**同一个**改写函数、覆盖**所有** Profile 的快照。'),
+    'Preferences',
+    'value',
+    PathRebaseKind.documentsRooted,
+    'KV 承载列：逐 key 的处置见 [kPathRebasePrefs]。documents / support 两族都有。',
+  ),
+  PathRebaseColumn(
+    'ProfileSettings',
+    'value',
+    PathRebaseKind.documentsRooted,
+    'BUG-1174 最阴的一处：ProfileRepository.snapshotCurrentSettings 把**每一条**非'
+        '排除 Drift pref 原样复制进来（category=pref），applyProfile 再原样写回 '
+        'preferences。迁移只改 preferences 的话，用户切一次 Profile 就把刚 rebase 好的'
+        '路径整体回滚回旧值——迁移当天一切正常、几天后突然坏，极难归因。'
+        '必须与 preferences 用**同一个**改写函数、覆盖**所有** Profile 的快照。',
+  ),
 
   // ── audiobooks ────────────────────────────────────────────────────
   PathRebaseColumn(
-      'Audiobooks',
-      'audioRoot',
-      PathRebaseKind.documentsRooted,
-      '复制导入模式 = <documents>/audiobooks/<hash>；folder 模式的外部目录（遗留、当前'
-          '无写入点）不以旧根开头 → 天然跳过。'),
+    'Audiobooks',
+    'audioRoot',
+    PathRebaseKind.documentsRooted,
+    '复制导入模式 = <documents>/audiobooks/<hash>；folder 模式的外部目录（遗留、当前'
+        '无写入点）不以旧根开头 → 天然跳过。',
+  ),
   PathRebaseColumn(
-      'Audiobooks',
-      'audioPathsJson',
-      PathRebaseKind.documentsRooted,
-      'JSON 字符串数组；复制模式是持久目录内绝对路径，「引用原文件」模式是外部路径（天然跳过）。'),
+    'Audiobooks',
+    'audioPathsJson',
+    PathRebaseKind.documentsRooted,
+    'JSON 字符串数组；复制模式是持久目录内绝对路径，「引用原文件」模式是外部路径（天然跳过）。',
+  ),
   PathRebaseColumn(
-      'Audiobooks',
-      'alignmentPath',
-      PathRebaseKind.documentsRooted,
-      '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。'),
+    'Audiobooks',
+    'alignmentPath',
+    PathRebaseKind.documentsRooted,
+    '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。',
+  ),
 
   // ── srt_books ─────────────────────────────────────────────────────
-  PathRebaseColumn('SrtBooks', 'audioRoot', PathRebaseKind.documentsRooted,
-      '同 Audiobooks.audioRoot。'),
-  PathRebaseColumn('SrtBooks', 'audioPathsJson', PathRebaseKind.documentsRooted,
-      '同 Audiobooks.audioPathsJson。'),
-  PathRebaseColumn('SrtBooks', 'srtPath', PathRebaseKind.documentsRooted,
-      '持久目录内 SRT 副本绝对路径。'),
-  PathRebaseColumn('SrtBooks', 'coverPath', PathRebaseKind.documentsRooted,
-      '<documents>/audiobooks/<hash>/cover.<ext> 绝对路径。'),
+  PathRebaseColumn(
+    'SrtBooks',
+    'audioRoot',
+    PathRebaseKind.documentsRooted,
+    '同 Audiobooks.audioRoot。',
+  ),
+  PathRebaseColumn(
+    'SrtBooks',
+    'audioPathsJson',
+    PathRebaseKind.documentsRooted,
+    '同 Audiobooks.audioPathsJson。',
+  ),
+  PathRebaseColumn(
+    'SrtBooks',
+    'srtPath',
+    PathRebaseKind.documentsRooted,
+    '持久目录内 SRT 副本绝对路径。',
+  ),
+  PathRebaseColumn(
+    'SrtBooks',
+    'coverPath',
+    PathRebaseKind.documentsRooted,
+    '<documents>/audiobooks/<hash>/cover.<ext> 绝对路径。',
+  ),
 
   // ── dictionary_metadata / dictionary_history ──────────────────────
-  PathRebaseColumn('DictionaryMetadata', 'metadataJson',
-      PathRebaseKind.notAPath, '词典元数据 JSON（标题/版本/作者），无路径。'),
-  PathRebaseColumn('DictionaryMetadata', 'hiddenLanguagesJson',
-      PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
-  PathRebaseColumn('DictionaryMetadata', 'collapsedLanguagesJson',
-      PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
-  PathRebaseColumn('DictionaryMetadata', 'expandedLanguagesJson',
-      PathRebaseKind.notAPath, '语言代码列表 JSON，无路径。'),
-  PathRebaseColumn('DictionaryHistory', 'resultJson', PathRebaseKind.notAPath,
-      '查询结果快照 JSON（词条文本），无路径。'),
+  PathRebaseColumn(
+    'DictionaryMetadata',
+    'metadataJson',
+    PathRebaseKind.notAPath,
+    '词典元数据 JSON（标题/版本/作者），无路径。',
+  ),
+  PathRebaseColumn(
+    'DictionaryMetadata',
+    'hiddenLanguagesJson',
+    PathRebaseKind.notAPath,
+    '语言代码列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'DictionaryMetadata',
+    'collapsedLanguagesJson',
+    PathRebaseKind.notAPath,
+    '语言代码列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'DictionaryMetadata',
+    'expandedLanguagesJson',
+    PathRebaseKind.notAPath,
+    '语言代码列表 JSON，无路径。',
+  ),
+  PathRebaseColumn(
+    'DictionaryHistory',
+    'resultJson',
+    PathRebaseKind.notAPath,
+    '查询结果快照 JSON（词条文本），无路径。',
+  ),
 
   // ── epub_books ────────────────────────────────────────────────────
   PathRebaseColumn(
-      'EpubBooks',
-      'coverPath',
-      PathRebaseKind.notAPath,
-      '**相对 href**（相对 extractDir）/ PDF 的 cover.png / 漫画的相对路径。迁移器仍把'
-          '它送进改写器，是防御性 no-op（不以旧根开头 → 原样返回）。'),
+    'EpubBooks',
+    'coverPath',
+    PathRebaseKind.notAPath,
+    '**相对 href**（相对 extractDir）/ PDF 的 cover.png / 漫画的相对路径。迁移器仍把'
+        '它送进改写器，是防御性 no-op（不以旧根开头 → 原样返回）。',
+  ),
   PathRebaseColumn(
-      'EpubBooks',
-      'epubPath',
-      PathRebaseKind.notAPath,
-      '多语义：普通导入 = 裸 basename / PDF = document.pdf / 漫画 = manga.json / '
-          '来源库扫描 = **外部**绝对路径。四种都不是数据根内路径，改写恒 no-op；调用'
-          '保留作防御。'),
-  PathRebaseColumn('EpubBooks', 'extractDir', PathRebaseKind.documentsRooted,
-      '<documents>/fushi_books/<bookKey> 绝对目录。'),
-  PathRebaseColumn('EpubBooks', 'chaptersJson', PathRebaseKind.notAPath,
-      '书内相对 href 列表，无绝对路径。'),
+    'EpubBooks',
+    'epubPath',
+    PathRebaseKind.notAPath,
+    '多语义：普通导入 = 裸 basename / PDF = document.pdf / 漫画 = manga.json / '
+        '来源库扫描 = **外部**绝对路径。四种都不是数据根内路径，改写恒 no-op；调用'
+        '保留作防御。',
+  ),
   PathRebaseColumn(
-      'EpubBooks', 'tocJson', PathRebaseKind.notAPath, '书内相对 href 目录树，无绝对路径。'),
-  PathRebaseColumn('EpubBooks', 'sourceMetadata', PathRebaseKind.notAPath,
-      '来源库扫描元数据 JSON，无本机数据根路径。'),
+    'EpubBooks',
+    'extractDir',
+    PathRebaseKind.documentsRooted,
+    '<documents>/fushi_books/<bookKey> 绝对目录。',
+  ),
+  PathRebaseColumn(
+    'EpubBooks',
+    'chaptersJson',
+    PathRebaseKind.notAPath,
+    '书内相对 href 列表，无绝对路径。',
+  ),
+  PathRebaseColumn(
+    'EpubBooks',
+    'tocJson',
+    PathRebaseKind.notAPath,
+    '书内相对 href 目录树，无绝对路径。',
+  ),
+  PathRebaseColumn(
+    'EpubBooks',
+    'sourceMetadata',
+    PathRebaseKind.notAPath,
+    '来源库扫描元数据 JSON，无本机数据根路径。',
+  ),
 
   // ── video_books ───────────────────────────────────────────────────
   PathRebaseColumn(
-      'VideoBooks',
-      'videoPath',
-      PathRebaseKind.documentsRooted,
-      '三态：数据根内下载副本（<documents>/remote_videos、videos）/ 用户原位外部视频 / '
-          'http(s) 流 URL。后两态不以旧根开头 → 天然跳过。'),
+    'VideoBooks',
+    'videoPath',
+    PathRebaseKind.documentsRooted,
+    '三态：数据根内下载副本（<documents>/remote_videos、videos）/ 用户原位外部视频 / '
+        'http(s) 流 URL。后两态不以旧根开头 → 天然跳过。',
+  ),
   PathRebaseColumn(
-      'VideoBooks',
-      'subtitleSource',
-      PathRebaseKind.documentsRooted,
-      'BUG-1174 漏项。四态编码（video_subtitle_source.dart:362-430）：外挂 = 裸绝对'
-          '路径（多为 <documents>/video_subtitles/<basename> 内部副本）/ 内嵌 = '
-          'embedded:<n> / 关闭 = off: / 无偏好 = null。**只有绝对路径态**参与改写，'
-          '另两个哨兵显式判掉（不靠「不以旧根开头」这个巧合）。video_subtitles 在搬移'
-          '白名单里 → 不改写 = 所有外挂字幕失联，查词与双字幕一并失效。'),
+    'VideoBooks',
+    'subtitleSource',
+    PathRebaseKind.documentsRooted,
+    'BUG-1174 漏项。四态编码（video_subtitle_source.dart:362-430）：外挂 = 裸绝对'
+        '路径（多为 <documents>/video_subtitles/<basename> 内部副本）/ 内嵌 = '
+        'embedded:<n> / 关闭 = off: / 无偏好 = null。**只有绝对路径态**参与改写，'
+        '另两个哨兵显式判掉（不靠「不以旧根开头」这个巧合）。video_subtitles 在搬移'
+        '白名单里 → 不改写 = 所有外挂字幕失联，查词与双字幕一并失效。',
+  ),
   PathRebaseColumn(
-      'VideoBooks',
-      'secondarySubtitleSource',
-      PathRebaseKind.documentsRooted,
-      'BUG-1174 漏项，与 subtitleSource 同款四态编码，处置相同。'),
-  PathRebaseColumn('VideoBooks', 'coverPath', PathRebaseKind.documentsRooted,
-      '<documents>/video_covers/<sanitize(bookUid)>.jpg（TODO-1255 补的漏项）。'),
-  PathRebaseColumn('VideoBooks', 'playlistJson', PathRebaseKind.documentsRooted,
-      'JSON 对象数组 [{title,path}]，path 与 videoPath 同语义。'),
+    'VideoBooks',
+    'secondarySubtitleSource',
+    PathRebaseKind.documentsRooted,
+    'BUG-1174 漏项，与 subtitleSource 同款四态编码，处置相同。',
+  ),
   PathRebaseColumn(
-      'VideoBooks',
-      'streamSpecJson',
-      PathRebaseKind.notAPath,
-      'TODO-1157 流媒体加载凭据 {subtitleUrl,subtitleFileName,referer,userAgent}，'
-          '全是远端 URL / HTTP header，无本机路径。'),
+    'VideoBooks',
+    'coverPath',
+    PathRebaseKind.documentsRooted,
+    '<documents>/video_covers/<sanitize(bookUid)>.jpg（TODO-1255 补的漏项）。',
+  ),
+  PathRebaseColumn(
+    'VideoBooks',
+    'playlistJson',
+    PathRebaseKind.documentsRooted,
+    'JSON 对象数组 [{title,path}]，path 与 videoPath 同语义。',
+  ),
+  PathRebaseColumn(
+    'VideoBooks',
+    'streamSpecJson',
+    PathRebaseKind.notAPath,
+    'TODO-1157 流媒体加载凭据 {subtitleUrl,subtitleFileName,referer,userAgent}，'
+        '全是远端 URL / HTTP header，无本机路径。',
+  ),
 
   // ── video_file_specs（v95 规格探测缓存）────────────────────────────
   PathRebaseColumn(
-      'VideoFileSpecs',
-      'filePath',
-      PathRebaseKind.documentsRooted,
-      '本表的**主键**，与 video_books.video_path 同语义（数据根内下载副本 / 用户原位'
-          '外部文件）。不改写 = 数据根搬家后整张规格缓存的键全部指向旧路径，永远命不中，'
-          '每个条目都要重探一遍（几百个文件的 ffprobe）。虽是可重建的缓存，但改写成本'
-          '只是一条 UPDATE，没有理由让用户白等。'),
+    'VideoFileSpecs',
+    'filePath',
+    PathRebaseKind.documentsRooted,
+    '本表的**主键**，与 video_books.video_path 同语义（数据根内下载副本 / 用户原位'
+        '外部文件）。不改写 = 数据根搬家后整张规格缓存的键全部指向旧路径，永远命不中，'
+        '每个条目都要重探一遍（几百个文件的 ffprobe）。虽是可重建的缓存，但改写成本'
+        '只是一条 UPDATE，没有理由让用户白等。',
+  ),
   PathRebaseColumn(
-      'VideoFileSpecs',
-      'audioTracksJson',
-      PathRebaseKind.notAPath,
-      'ffprobe 音轨事实数组 [{index,codec,channels,language,title,标志位}]，'
-          '全是流属性与语言 tag，无任何文件系统路径。'),
+    'VideoFileSpecs',
+    'audioTracksJson',
+    PathRebaseKind.notAPath,
+    'ffprobe 音轨事实数组 [{index,codec,channels,language,title,标志位}]，'
+        '全是流属性与语言 tag，无任何文件系统路径。',
+  ),
   PathRebaseColumn(
-      'VideoFileSpecs',
-      'subtitleTracksJson',
-      PathRebaseKind.notAPath,
-      '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
-          '外挂字幕路径存在 video_books.subtitle_source，不在本表。'),
+    'VideoFileSpecs',
+    'subtitleTracksJson',
+    PathRebaseKind.notAPath,
+    '内封字幕轨事实数组，与 audioTracksJson 同型——内封轨没有外部文件，'
+        '外挂字幕路径存在 video_books.subtitle_source，不在本表。',
+  ),
 
   // ── anidb_file_identities（v106 AniDB 文件级身份）──────────────────
   PathRebaseColumn(
-      'AnidbFileIdentities',
-      'filePath',
-      PathRebaseKind.documentsRooted,
-      '与 video_books.video_path 同语义的「最近一次看到这份内容的路径」，不是主键'
-          '（主键是 ed2k + file_size），只用于「路径 + 大小 + mtime 命中就免重算哈希」。'
-          '不改写 = 数据根搬家后每个文件都要重算一遍 ED2K（几十 GB 的顺序读）才能'
-          '按内容键命中；改写只是一条 UPDATE。'),
+    'AnidbFileIdentities',
+    'filePath',
+    PathRebaseKind.documentsRooted,
+    '与 video_books.video_path 同语义的「最近一次看到这份内容的路径」，不是主键'
+        '（主键是 ed2k + file_size），只用于「路径 + 大小 + mtime 命中就免重算哈希」。'
+        '不改写 = 数据根搬家后每个文件都要重算一遍 ED2K（几十 GB 的顺序读）才能'
+        '按内容键命中；改写只是一条 UPDATE。',
+  ),
   PathRebaseColumn(
-      'AnidbFileIdentities',
-      'ed2k',
-      PathRebaseKind.notAPath,
-      'ED2K 哈希十六进制，内容键。'),
+    'AnidbFileIdentities',
+    'ed2k',
+    PathRebaseKind.notAPath,
+    'ED2K 哈希十六进制，内容键。',
+  ),
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
-  PathRebaseColumn('FavoriteWords', 'sourceType', PathRebaseKind.notAPath,
-      '统计桶枚举值（book/video/...），不是路径。'),
-  PathRebaseColumn('MiningStatistics', 'sourceType', PathRebaseKind.notAPath,
-      '统计桶枚举值，不是路径。'),
-  PathRebaseColumn('LookupMiningCounters', 'sourceType',
-      PathRebaseKind.notAPath, '统计桶枚举值，不是路径。'),
-  PathRebaseColumn('MinedSentences', 'source', PathRebaseKind.notAPath,
-      '跳转/统计来源标识（book | video | audiobook | lyrics），不是路径。'),
-  PathRebaseColumn('StatisticsTombstones', 'sourceType',
-      PathRebaseKind.notAPath, '统计桶枚举值，不是路径。'),
+  PathRebaseColumn(
+    'FavoriteWords',
+    'sourceType',
+    PathRebaseKind.notAPath,
+    '统计桶枚举值（book/video/...），不是路径。',
+  ),
+  PathRebaseColumn(
+    'MiningStatistics',
+    'sourceType',
+    PathRebaseKind.notAPath,
+    '统计桶枚举值，不是路径。',
+  ),
+  PathRebaseColumn(
+    'LookupMiningCounters',
+    'sourceType',
+    PathRebaseKind.notAPath,
+    '统计桶枚举值，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MinedSentences',
+    'source',
+    PathRebaseKind.notAPath,
+    '跳转/统计来源标识（book | video | audiobook | lyrics），不是路径。',
+  ),
+  PathRebaseColumn(
+    'StatisticsTombstones',
+    'sourceType',
+    PathRebaseKind.notAPath,
+    '统计桶枚举值，不是路径。',
+  ),
 
   // ── media_sources（来源库扫描根）────────────────────────────────────
-  PathRebaseColumn('MediaCollections', 'sourceFolderPath',
-      PathRebaseKind.externalUserPath,
-      '目录自动合集的用户外部目录身份，与 media_sources.rootPath 同源，不随数据根搬迁。'),
   PathRebaseColumn(
-      'MediaSources',
-      'rootPath',
-      PathRebaseKind.externalUserPath,
-      '用户自选的**外部**扫描目录 / 带 scheme 的远端根，不在数据根内。改写它会让整个'
-          '外部库失联（迁移器 :727-728 已显式声明跳过）。'),
-  PathRebaseColumn('MediaSources', 'configJson', PathRebaseKind.notAPath,
-      '远端来源连接参数 JSON（host/port/user/tls），无本机路径。'),
+    'MediaCollections',
+    'sourceFolderPath',
+    PathRebaseKind.externalUserPath,
+    '目录自动合集的用户外部目录身份，与 media_sources.rootPath 同源，不随数据根搬迁。',
+  ),
+  PathRebaseColumn(
+    'MediaSources',
+    'rootPath',
+    PathRebaseKind.externalUserPath,
+    '用户自选的**外部**扫描目录 / 带 scheme 的远端根，不在数据根内。改写它会让整个'
+        '外部库失联（迁移器 :727-728 已显式声明跳过）。',
+  ),
+  PathRebaseColumn(
+    'MediaSources',
+    'configJson',
+    PathRebaseKind.notAPath,
+    '远端来源连接参数 JSON（host/port/user/tls），无本机路径。',
+  ),
 
   // ── 合集 / 系列封面来源 ─────────────────────────────────────────────
-  PathRebaseColumn('Series', 'coverSource', PathRebaseKind.notAPath,
-      '成员引用 <mediaType>|<entryKey>，不是路径。'),
-  PathRebaseColumn('MediaCollections', 'coverSource', PathRebaseKind.notAPath,
-      '成员引用 <mediaType>|<entryKey>，不是路径。'),
   PathRebaseColumn(
-      'MediaCollections',
-      'coverPath',
-      PathRebaseKind.documentsRooted,
-      'BUG-1211 合集自有封面：<documents>/video_covers/collections/<id>.jpg'
-          '（VideoStorage.collectionCoversDir；现有下载导入与历史刮削记录均可能写入）。与 '
-          'video_books.cover_path / galgames.cover_path 完全同型 → 不改写 = '
-          '换过封面的合集在换数据根后全部退回成员借用链，用户看到封面「自己变了」。'),
+    'Series',
+    'coverSource',
+    PathRebaseKind.notAPath,
+    '成员引用 <mediaType>|<entryKey>，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaCollections',
+    'coverSource',
+    PathRebaseKind.notAPath,
+    '成员引用 <mediaType>|<entryKey>，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaCollections',
+    'coverPath',
+    PathRebaseKind.documentsRooted,
+    'BUG-1211 合集自有封面：<documents>/video_covers/collections/<id>.jpg'
+        '（VideoStorage.collectionCoversDir；现有下载导入与历史刮削记录均可能写入）。与 '
+        'video_books.cover_path / galgames.cover_path 完全同型 → 不改写 = '
+        '换过封面的合集在换数据根后全部退回成员借用链，用户看到封面「自己变了」。',
+  ),
 
   // ── book_custom_css ───────────────────────────────────────────────
-  PathRebaseColumn('BookCustomCss', 'relativePath', PathRebaseKind.notAPath,
-      '相对 extractDir 的相对路径，不是绝对路径。'),
+  PathRebaseColumn(
+    'BookCustomCss',
+    'relativePath',
+    PathRebaseKind.notAPath,
+    '相对 extractDir 的相对路径，不是绝对路径。',
+  ),
 
   // ── video_scrape_meta（刮削快照）───────────────────────────────────
-  PathRebaseColumn('VideoScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
-  PathRebaseColumn('VideoScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
-      '标签 JSON 数组，无路径。'),
-  PathRebaseColumn('VideoScrapeMeta', 'infoboxJson', PathRebaseKind.notAPath,
-      'infobox JSON 数组，无路径。'),
-  PathRebaseColumn('VideoScrapeMeta', 'detailUrl', PathRebaseKind.notAPath,
-      '远端条目详情页 URL，不是本机路径。'),
+  PathRebaseColumn(
+    'VideoScrapeMeta',
+    'source',
+    PathRebaseKind.notAPath,
+    'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。',
+  ),
+  PathRebaseColumn(
+    'VideoScrapeMeta',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签 JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'VideoScrapeMeta',
+    'infoboxJson',
+    PathRebaseKind.notAPath,
+    'infobox JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'VideoScrapeMeta',
+    'detailUrl',
+    PathRebaseKind.notAPath,
+    '远端条目详情页 URL，不是本机路径。',
+  ),
 
   // ── collection_scrape_meta（合集级刮削资料，schema v64 / BUG-1310）────
-  PathRebaseColumn('CollectionScrapeMeta', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
-  PathRebaseColumn('CollectionScrapeMeta', 'tagsJson', PathRebaseKind.notAPath,
-      '标签 JSON 数组，无路径。'),
-  PathRebaseColumn('CollectionScrapeMeta', 'infoboxJson',
-      PathRebaseKind.notAPath, 'infobox JSON 数组，无路径。'),
-  PathRebaseColumn('CollectionScrapeMeta', 'detailUrl', PathRebaseKind.notAPath,
-      '远端条目详情页 URL，不是本机路径。'),
   PathRebaseColumn(
-      'CollectionScrapeMeta',
-      'backdropPath',
-      PathRebaseKind.documentsRooted,
-      'BUG-1310 合集横版背景：<documents>/video_covers/collections/'
-          '<id>_backdrop.jpg（与同表兄弟 media_collections.cover_path 同目录、'
-          '现仅作为历史本地刮削资产继续读取）。'
-          '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
-          'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。'),
+    'CollectionScrapeMeta',
+    'source',
+    PathRebaseKind.notAPath,
+    'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionScrapeMeta',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签 JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionScrapeMeta',
+    'infoboxJson',
+    PathRebaseKind.notAPath,
+    'infobox JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionScrapeMeta',
+    'detailUrl',
+    PathRebaseKind.notAPath,
+    '远端条目详情页 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionScrapeMeta',
+    'backdropPath',
+    PathRebaseKind.documentsRooted,
+    'BUG-1310 合集横版背景：<documents>/video_covers/collections/'
+        '<id>_backdrop.jpg（与同表兄弟 media_collections.cover_path 同目录、'
+        '现仅作为历史本地刮削资产继续读取）。'
+        '与 media_collections.cover_path 完全同型 → 不改写 = 换数据根后详情页'
+        'hero 背景变死链，静默退回海报模糊垫底，用户看到背景「自己没了」。',
+  ),
 
   // ── media_images（媒体附加图组，schema v68 / Jellyfin 图组对齐）──────
-  PathRebaseColumn('MediaImages', 'bookUid', PathRebaseKind.notAPath,
-      '归属视频的 bookUid 逻辑外键，不是路径。'),
-  PathRebaseColumn('MediaImages', 'kind', PathRebaseKind.notAPath,
-      'MediaImageKind 枚举值（backdrop/logo/title_card），不是路径。'),
   PathRebaseColumn(
-      'MediaImages',
-      'path',
-      PathRebaseKind.documentsRooted,
-      'v68 附加图组落盘位：<documents>/video_covers/collections/（合集归属）与 '
-          '<documents>/video_covers/images/（视频归属）两个目录族，与合集封面'
-          '完全同型 → 不改写 = 换数据根后 hero 背景/logo、续播横卡全部死链，'
-          '静默退回海报模糊垫底。'),
-  PathRebaseColumn('MediaImages', 'sourceUrl', PathRebaseKind.notAPath,
-      '来源远程 URL（重下/诊断用），不是本机路径。'),
+    'MediaImages',
+    'bookUid',
+    PathRebaseKind.notAPath,
+    '归属视频的 bookUid 逻辑外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaImages',
+    'kind',
+    PathRebaseKind.notAPath,
+    'MediaImageKind 枚举值（backdrop/logo/title_card），不是路径。',
+  ),
+  PathRebaseColumn(
+    'MediaImages',
+    'path',
+    PathRebaseKind.documentsRooted,
+    'v68 附加图组落盘位：<documents>/video_covers/collections/（合集归属）与 '
+        '<documents>/video_covers/images/（视频归属）两个目录族，与合集封面'
+        '完全同型 → 不改写 = 换数据根后 hero 背景/logo、续播横卡全部死链，'
+        '静默退回海报模糊垫底。',
+  ),
+  PathRebaseColumn(
+    'MediaImages',
+    'sourceUrl',
+    PathRebaseKind.notAPath,
+    '来源远程 URL（重下/诊断用），不是本机路径。',
+  ),
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
-  PathRebaseColumn('CollectionRelations', 'source', PathRebaseKind.notAPath,
-      'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。'),
-  PathRebaseColumn('CollectionRelations', 'coverUrl', PathRebaseKind.notAPath,
-      '关联条目封面的远端 URL，不是本机路径。'),
   PathRebaseColumn(
-      'CollectionRelations',
-      'coverPath',
-      PathRebaseKind.documentsRooted,
-      '关联条目封面下载后的本地落盘位（<documents>/video_covers/ 目录族，与'
-          '合集封面同型）。当前尚无写入方（下载归 UI 接力线程），但列语义即'
-          '文档根内路径 —— 不改写 = 换数据根后相关作品卡封面变死链。'),
+    'CollectionRelations',
+    'source',
+    PathRebaseKind.notAPath,
+    'ScrapeSource 枚举名（当前 anidb/tmdb；亦可为历史来源名），不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'coverUrl',
+    PathRebaseKind.notAPath,
+    '关联条目封面的远端 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'coverPath',
+    PathRebaseKind.documentsRooted,
+    '关联条目封面下载后的本地落盘位（<documents>/video_covers/ 目录族，与'
+        '合集封面同型）。当前尚无写入方（下载归 UI 接力线程），但列语义即'
+        '文档根内路径 —— 不改写 = 换数据根后相关作品卡封面变死链。',
+  ),
 
   // ── video_metadata_* / video_sidecar_artifacts（schema v77）────────
-  PathRebaseColumn('VideoMetadataPeople', 'profileUrl', PathRebaseKind.notAPath,
-      '人物头像的远端 provider URL，不是本机路径。'),
   PathRebaseColumn(
-      'VideoMetadataPeople',
-      'profilePath',
-      PathRebaseKind.externalUserPath,
-      '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
-  PathRebaseColumn('VideoMetadataCharacters', 'imageUrl',
-      PathRebaseKind.notAPath, '角色图片的远端 provider URL，不是本机路径。'),
+    'VideoMetadataPeople',
+    'profileUrl',
+    PathRebaseKind.notAPath,
+    '人物头像的远端 provider URL，不是本机路径。',
+  ),
   PathRebaseColumn(
-      'VideoMetadataCharacters',
-      'imagePath',
-      PathRebaseKind.externalUserPath,
-      '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
-  PathRebaseColumn('VideoMetadataProviderIdentities', 'externalUrl',
-      PathRebaseKind.notAPath, 'provider 条目详情页的远端 URL，不是本机路径。'),
-  PathRebaseColumn('VideoMetadataRawSnapshots', 'rawJson',
-      PathRebaseKind.notAPath, 'provider 原始响应的结构化 JSON，不承载本机数据根路径。'),
-  PathRebaseColumn('VideoMetadataImages', 'remoteUrl', PathRebaseKind.notAPath,
-      '待下载或重下的 provider/Fanart 远端图片 URL。'),
+    'VideoMetadataPeople',
+    'profilePath',
+    PathRebaseKind.externalUserPath,
+    '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。',
+  ),
   PathRebaseColumn(
-      'VideoMetadataImages',
-      'localPath',
-      PathRebaseKind.externalUserPath,
-      'v77 来源刮削写在用户媒体目录旁的图片 sidecar 绝对路径；来源根是外部用户路径。'),
-  PathRebaseColumn('VideoSourceScrapeRuns', 'summaryJson',
-      PathRebaseKind.notAPath, '来源刮削运行摘要与错误计数 JSON，无本机路径。'),
+    'VideoMetadataCharacters',
+    'imageUrl',
+    PathRebaseKind.notAPath,
+    '角色图片的远端 provider URL，不是本机路径。',
+  ),
   PathRebaseColumn(
-      'VideoSidecarArtifacts',
-      'path',
-      PathRebaseKind.externalUserPath,
-      'Hibiki 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
+    'VideoMetadataCharacters',
+    'imagePath',
+    PathRebaseKind.externalUserPath,
+    '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataProviderIdentities',
+    'externalUrl',
+    PathRebaseKind.notAPath,
+    'provider 条目详情页的远端 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataRawSnapshots',
+    'rawJson',
+    PathRebaseKind.notAPath,
+    'provider 原始响应的结构化 JSON，不承载本机数据根路径。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataImages',
+    'remoteUrl',
+    PathRebaseKind.notAPath,
+    '待下载或重下的 provider/Fanart 远端图片 URL。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataImages',
+    'localPath',
+    PathRebaseKind.externalUserPath,
+    'v77 来源刮削写在用户媒体目录旁的图片 sidecar 绝对路径；来源根是外部用户路径。',
+  ),
+  PathRebaseColumn(
+    'VideoSourceScrapeRuns',
+    'summaryJson',
+    PathRebaseKind.notAPath,
+    '来源刮削运行摘要与错误计数 JSON，无本机路径。',
+  ),
+  PathRebaseColumn(
+    'VideoSidecarArtifacts',
+    'path',
+    PathRebaseKind.externalUserPath,
+    'Hibiki 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。',
+  ),
 
   // ── video_metadata_extras（schema v69 本地/在线附加内容）──────────
-  PathRebaseColumn('VideoMetadataExtras', 'sourceKind', PathRebaseKind.notAPath,
-      '附加内容来源枚举（local/online），不是路径。'),
-  PathRebaseColumn('VideoMetadataExtras', 'remoteUrl', PathRebaseKind.notAPath,
-      '在线预告或花絮的远端 URL，不是本机路径。'),
-  PathRebaseColumn('VideoMetadataExtras', 'thumbnailUrl',
-      PathRebaseKind.notAPath, '在线附加内容缩略图的远端 URL，不是本机路径。'),
   PathRebaseColumn(
-      'VideoMetadataExtras',
-      'thumbnailPath',
-      PathRebaseKind.documentsRooted,
-      '本地 NCOP/NCED 等附加视频复用 VideoBook.coverPath，位于 '
-          '<documents>/video_covers；必须与原视频封面一起重挂。'),
+    'VideoMetadataExtras',
+    'sourceKind',
+    PathRebaseKind.notAPath,
+    '附加内容来源枚举（local/online），不是路径。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataExtras',
+    'remoteUrl',
+    PathRebaseKind.notAPath,
+    '在线预告或花絮的远端 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataExtras',
+    'thumbnailUrl',
+    PathRebaseKind.notAPath,
+    '在线附加内容缩略图的远端 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'VideoMetadataExtras',
+    'thumbnailPath',
+    PathRebaseKind.documentsRooted,
+    '本地 NCOP/NCED 等附加视频复用 VideoBook.coverPath，位于 '
+        '<documents>/video_covers；必须与原视频封面一起重挂。',
+  ),
 
   // ── web_mine_queue（schema v90，网页播放器自动制卡队列，device-local）──
-  PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
-      '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
+  PathRebaseColumn(
+    'WebMineQueue',
+    'fieldsJson',
+    PathRebaseKind.notAPath,
+    '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。',
+  ),
 
   // ── pending_mine_queue（schema v116，设备端待发制卡队列，device-local）──
   PathRebaseColumn(
-      'PendingMineQueue',
-      'id',
-      PathRebaseKind.notAPath,
-      '128-bit 随机 hex 行身份；载荷文件 <support>/pending_mine_queue/<id>.json 的文件名'
-          '由它派生，表内不存任何路径列——数据根迁移整目录搬 support 即可，无需改写。'),
+    'PendingMineQueue',
+    'id',
+    PathRebaseKind.notAPath,
+    '128-bit 随机 hex 行身份；载荷文件 <support>/pending_mine_queue/<id>.json 的文件名'
+        '由它派生，表内不存任何路径列——数据根迁移整目录搬 support 即可，无需改写。',
+  ),
 
   // ── video_download_*（schema v78，device-local 持久流水线）────────
-  PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
-      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'selectedResourceId',
-      PathRebaseKind.notAPath, 'provider 侧资源 ID，不是路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'resourceTitle',
-      PathRebaseKind.notAPath, '发布标题文本，不是路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'coverUrl', PathRebaseKind.notAPath,
-      '发现来源的远端封面 URL，不是本机路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'identityJson', PathRebaseKind.notAPath,
-      'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
-  PathRebaseColumn('VideoDownloadJobs', 'backendProfileId',
-      PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
   PathRebaseColumn(
-      'VideoDownloadJobs',
-      'observedSavePath',
-      PathRebaseKind.externalUserPath,
-      '下载后端报告的远端或用户外部保存根；由显式 remote→local 映射解释，不能随应用数据根改写。'),
-  PathRebaseColumn('VideoDownloadJobs', 'targetRelativeRoot',
-      PathRebaseKind.notAPath, '受管来源内的相对整理根，不是绝对路径。'),
-  PathRebaseColumn('VideoDownloadJobFiles', 'originalRelativePath',
-      PathRebaseKind.notAPath, '下载后端内的原始相对路径。'),
-  PathRebaseColumn('VideoDownloadJobFiles', 'currentRelativePath',
-      PathRebaseKind.notAPath, '下载后端内保持做种的当前相对路径。'),
-  PathRebaseColumn('VideoDownloadJobFiles', 'targetRelativePath',
-      PathRebaseKind.notAPath, '受管来源内的目标相对路径。'),
+    'VideoDownloadJobs',
+    'resourceProvider',
+    PathRebaseKind.notAPath,
+    '资源 provider/实例身份，不是路径。',
+  ),
   PathRebaseColumn(
-      'VideoDownloadJobFiles',
-      'finalAbsolutePath',
-      PathRebaseKind.externalUserPath,
-      '用户选择的 MediaSource 内最终视频绝对路径；MediaSources.rootPath 同样明确不随应用数据根改写。'),
-  PathRebaseColumn('VideoDownloadJobSubtitles', 'originalFileName',
-      PathRebaseKind.notAPath, 'provider 返回的原始字幕文件名，不是绝对路径。'),
+    'VideoDownloadJobs',
+    'selectedResourceId',
+    PathRebaseKind.notAPath,
+    'provider 侧资源 ID，不是路径。',
+  ),
   PathRebaseColumn(
-      'VideoDownloadJobSubtitles',
-      'stagedPath',
-      PathRebaseKind.externalUserPath,
-      '新任务暂存文件与视频 sidecar 同目录；legacy 导入要求保留原路径语义，均不随应用数据根改写。'),
+    'VideoDownloadJobs',
+    'resourceTitle',
+    PathRebaseKind.notAPath,
+    '发布标题文本，不是路径。',
+  ),
   PathRebaseColumn(
-      'VideoDownloadJobSubtitles',
-      'finalPath',
-      PathRebaseKind.externalUserPath,
-      '安装在用户 MediaSource 中的字幕 sidecar 绝对路径，不随应用数据根改写。'),
-  PathRebaseColumn('VideoDownloadSubscriptions', 'resourceProvider',
-      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
-  PathRebaseColumn('VideoDownloadSubscriptions', 'coverUrl',
-      PathRebaseKind.notAPath, '发现来源的远端封面 URL，不是本机路径。'),
-  PathRebaseColumn('VideoDownloadSubscriptions', 'filterJson',
-      PathRebaseKind.notAPath, '严格版本规则 JSON（组、分辨率、编码、语言），不承载路径或凭据。'),
+    'VideoDownloadJobs',
+    'coverUrl',
+    PathRebaseKind.notAPath,
+    '发现来源的远端封面 URL，不是本机路径。',
+  ),
   PathRebaseColumn(
-      'VideoDownloadSubscriptions',
-      'identityJson',
-      PathRebaseKind.notAPath,
-      'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。'),
-  PathRebaseColumn('VideoDownloadSubscriptions', 'backendProfileId',
-      PathRebaseKind.notAPath, '下载后端配置身份，不是文件路径。'),
-  PathRebaseColumn('VideoDownloadSubscriptionItems', 'resourceProvider',
-      PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),
-  PathRebaseColumn('VideoDownloadSubscriptionItems', 'selectedResourceId',
-      PathRebaseKind.notAPath, 'provider 侧资源 ID，不是路径。'),
+    'VideoDownloadJobs',
+    'identityJson',
+    PathRebaseKind.notAPath,
+    'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobs',
+    'backendProfileId',
+    PathRebaseKind.notAPath,
+    '下载后端配置身份，不是文件路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobs',
+    'observedSavePath',
+    PathRebaseKind.externalUserPath,
+    '下载后端报告的远端或用户外部保存根；由显式 remote→local 映射解释，不能随应用数据根改写。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobs',
+    'targetRelativeRoot',
+    PathRebaseKind.notAPath,
+    '受管来源内的相对整理根，不是绝对路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobFiles',
+    'originalRelativePath',
+    PathRebaseKind.notAPath,
+    '下载后端内的原始相对路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobFiles',
+    'currentRelativePath',
+    PathRebaseKind.notAPath,
+    '下载后端内保持做种的当前相对路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobFiles',
+    'targetRelativePath',
+    PathRebaseKind.notAPath,
+    '受管来源内的目标相对路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobFiles',
+    'finalAbsolutePath',
+    PathRebaseKind.externalUserPath,
+    '用户选择的 MediaSource 内最终视频绝对路径；MediaSources.rootPath 同样明确不随应用数据根改写。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobSubtitles',
+    'originalFileName',
+    PathRebaseKind.notAPath,
+    'provider 返回的原始字幕文件名，不是绝对路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobSubtitles',
+    'stagedPath',
+    PathRebaseKind.externalUserPath,
+    '新任务暂存文件与视频 sidecar 同目录；legacy 导入要求保留原路径语义，均不随应用数据根改写。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadJobSubtitles',
+    'finalPath',
+    PathRebaseKind.externalUserPath,
+    '安装在用户 MediaSource 中的字幕 sidecar 绝对路径，不随应用数据根改写。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptions',
+    'resourceProvider',
+    PathRebaseKind.notAPath,
+    '资源 provider/实例身份，不是路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptions',
+    'coverUrl',
+    PathRebaseKind.notAPath,
+    '发现来源的远端封面 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptions',
+    'filterJson',
+    PathRebaseKind.notAPath,
+    '严格版本规则 JSON（组、分辨率、编码、语言），不承载路径或凭据。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptions',
+    'identityJson',
+    PathRebaseKind.notAPath,
+    'v94 发现页身份快照 JSON（VideoMediaReference：providerId/mediaId/标题/原名/别名/年份/季集号 + tmdb/imdb/tvdb/anidb/anilist/bangumi 等外部 id），全是标识与文本，不承载任何路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptions',
+    'backendProfileId',
+    PathRebaseKind.notAPath,
+    '下载后端配置身份，不是文件路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptionItems',
+    'resourceProvider',
+    PathRebaseKind.notAPath,
+    '资源 provider/实例身份，不是路径。',
+  ),
+  PathRebaseColumn(
+    'VideoDownloadSubscriptionItems',
+    'selectedResourceId',
+    PathRebaseKind.notAPath,
+    'provider 侧资源 ID，不是路径。',
+  ),
 
   // ── galgames ──────────────────────────────────────────────────────
-  PathRebaseColumn('Galgames', 'exePath', PathRebaseKind.externalUserPath,
-      '用户外部游戏安装位置（hook 注入目标），不在数据根内。'),
-  PathRebaseColumn('Galgames', 'workdir', PathRebaseKind.externalUserPath,
-      '游戏工作目录（默认取 exe 所在目录），外部路径。'),
   PathRebaseColumn(
-      'Galgames',
-      'launchArgs',
-      PathRebaseKind.externalUserPath,
-      '用户原样输入的命令行整行，可能内嵌外部绝对路径（如 --save="D:\\My Saves"）。'
-          '**绝不能** rebase：它不是单一路径，切分/改写都会毁掉用户的启动参数。'),
-  PathRebaseColumn('Galgames', 'upscalingMode', PathRebaseKind.notAPath,
-      '窗口超分档位枚举 key（auto/installed_only/off，空串 = 未设置），不是路径。'),
+    'Galgames',
+    'exePath',
+    PathRebaseKind.externalUserPath,
+    '用户外部游戏安装位置（hook 注入目标），不在数据根内。',
+  ),
   PathRebaseColumn(
-      'Galgames',
-      'coverPath',
-      PathRebaseKind.documentsRooted,
-      'BUG-1174 漏项：<documents>/game_covers/<id>.<ext>（AppPaths.gameCoversDirectory，'
-          '落盘唯一入口 galgame_cover_resolver.dart:300-320）。与 TODO-1255 的 '
-          'video_books.cover_path 完全同型 → 不改写 = 整个游戏库封面退化成默认手柄图标。'),
-  PathRebaseColumn('Galgames', 'primarySource', PathRebaseKind.notAPath,
-      '主展示源枚举（bgm/vndb/mixed/custom），不是路径。'),
-  PathRebaseColumn('Galgames', 'customDataJson', PathRebaseKind.notAPath,
-      '用户覆盖层 JSON；其中 coverSource 是**刮削源枚举 key**（bgm/vndb）而非本机文件路径。'),
-  PathRebaseColumn('GalgameSources', 'source', PathRebaseKind.notAPath,
-      '元数据源 key（bgm/vndb），不是路径。'),
-  PathRebaseColumn('GalgameSources', 'dataJson', PathRebaseKind.notAPath,
-      '刮削快照 JSON（远端字段，含远端封面 URL），无本机路径。'),
+    'Galgames',
+    'workdir',
+    PathRebaseKind.externalUserPath,
+    '游戏工作目录（默认取 exe 所在目录），外部路径。',
+  ),
+  PathRebaseColumn(
+    'Galgames',
+    'launchArgs',
+    PathRebaseKind.externalUserPath,
+    '用户原样输入的命令行整行，可能内嵌外部绝对路径（如 --save="D:\\My Saves"）。'
+        '**绝不能** rebase：它不是单一路径，切分/改写都会毁掉用户的启动参数。',
+  ),
+  PathRebaseColumn(
+    'Galgames',
+    'upscalingMode',
+    PathRebaseKind.notAPath,
+    '窗口超分档位枚举 key（auto/installed_only/off，空串 = 未设置），不是路径。',
+  ),
+  PathRebaseColumn(
+    'Galgames',
+    'coverPath',
+    PathRebaseKind.documentsRooted,
+    'BUG-1174 漏项：<documents>/game_covers/<id>.<ext>（AppPaths.gameCoversDirectory，'
+        '落盘唯一入口 galgame_cover_resolver.dart:300-320）。与 TODO-1255 的 '
+        'video_books.cover_path 完全同型 → 不改写 = 整个游戏库封面退化成默认手柄图标。',
+  ),
+  PathRebaseColumn(
+    'Galgames',
+    'primarySource',
+    PathRebaseKind.notAPath,
+    '主展示源枚举（bgm/vndb/mixed/custom），不是路径。',
+  ),
+  PathRebaseColumn(
+    'Galgames',
+    'customDataJson',
+    PathRebaseKind.notAPath,
+    '用户覆盖层 JSON；其中 coverSource 是**刮削源枚举 key**（bgm/vndb）而非本机文件路径。',
+  ),
+  PathRebaseColumn(
+    'GalgameSources',
+    'source',
+    PathRebaseKind.notAPath,
+    '元数据源 key（bgm/vndb），不是路径。',
+  ),
+  PathRebaseColumn(
+    'GalgameSources',
+    'dataJson',
+    PathRebaseKind.notAPath,
+    '刮削快照 JSON（远端字段，含远端封面 URL），无本机路径。',
+  ),
 
   // ── Mihon 漫画扩展（PR#594）────────────────────────────────────────
   // 这一组全部 notAPath，但理由分两类，别混：
@@ -557,69 +912,140 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   //     跟着 `databaseDirectory` 自然变，相对段无需改写——这正是相对存储的意义。
   //     谁要是把它改回绝对路径，就必须同时改成 supportRooted 并在
   //     DataRootMigrator 里补改写，否则换数据根后全部已装扩展当场失效。
-  PathRebaseColumn('MangaExtensionStores', 'indexUrl', PathRebaseKind.notAPath,
-      '扩展仓库的远端 https 索引地址（同时是主键），不是本机路径。'),
-  PathRebaseColumn('MangaExtensionStores', 'extensionListUrl',
-      PathRebaseKind.notAPath, '仓库可选的远端扩展清单地址，不是本机路径。'),
-  PathRebaseColumn('MangaExtensionStores', 'contactJson',
-      PathRebaseKind.notAPath, '仓库维护者联系方式 JSON（远端字段），无本机路径。'),
-  PathRebaseColumn('MangaExtensions', 'storeUrl', PathRebaseKind.notAPath,
-      '该扩展来自哪个远端仓库索引地址，不是本机路径。'),
   PathRebaseColumn(
-      'MangaExtensions',
-      'apkPath',
-      PathRebaseKind.notAPath,
-      '**相对** mihon 根的相对路径（`extensions/<pkg>.apk`），读时由 '
-          'MihonManager.resolveApkPath 现场 join rootDirectory；数据根移动后相对段'
-          '不变，无需 rebase。改成绝对路径就必须改判 supportRooted。'),
-  PathRebaseColumn('MangaOnlineSources', 'sourceId', PathRebaseKind.notAPath,
-      '扩展内的来源数字 ID（字符串化），不是路径。'),
-  PathRebaseColumn('MangaOnlineSources', 'baseUrl', PathRebaseKind.notAPath,
-      '来源站点的远端 https 地址，不是本机路径。'),
-  PathRebaseColumn('MangaSourcePreferences', 'sourceId',
-      PathRebaseKind.notAPath, '同上，来源数字 ID，不是路径。'),
-  PathRebaseColumn('MangaSourcePreferences', 'valueJson',
-      PathRebaseKind.notAPath, '扩展自定义偏好值的 JSON 编码（扩展私有语义），无本机路径。'),
+    'MangaExtensionStores',
+    'indexUrl',
+    PathRebaseKind.notAPath,
+    '扩展仓库的远端 https 索引地址（同时是主键），不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'MangaExtensionStores',
+    'extensionListUrl',
+    PathRebaseKind.notAPath,
+    '仓库可选的远端扩展清单地址，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'MangaExtensionStores',
+    'contactJson',
+    PathRebaseKind.notAPath,
+    '仓库维护者联系方式 JSON（远端字段），无本机路径。',
+  ),
+  PathRebaseColumn(
+    'MangaExtensions',
+    'storeUrl',
+    PathRebaseKind.notAPath,
+    '该扩展来自哪个远端仓库索引地址，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'MangaExtensions',
+    'apkPath',
+    PathRebaseKind.notAPath,
+    '**相对** mihon 根的相对路径（`extensions/<pkg>.apk`），读时由 '
+        'MihonManager.resolveApkPath 现场 join rootDirectory；数据根移动后相对段'
+        '不变，无需 rebase。改成绝对路径就必须改判 supportRooted。',
+  ),
+  PathRebaseColumn(
+    'MangaOnlineSources',
+    'sourceId',
+    PathRebaseKind.notAPath,
+    '扩展内的来源数字 ID（字符串化），不是路径。',
+  ),
+  PathRebaseColumn(
+    'MangaOnlineSources',
+    'baseUrl',
+    PathRebaseKind.notAPath,
+    '来源站点的远端 https 地址，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'MangaSourcePreferences',
+    'sourceId',
+    PathRebaseKind.notAPath,
+    '同上，来源数字 ID，不是路径。',
+  ),
+  PathRebaseColumn(
+    'MangaSourcePreferences',
+    'valueJson',
+    PathRebaseKind.notAPath,
+    '扩展自定义偏好值的 JSON 编码（扩展私有语义），无本机路径。',
+  ),
 
   // ── update_feed_entries（v101 统一更新提醒）────────────────────────
   PathRebaseColumn(
-      'UpdateFeedEntries',
-      'detailJson',
-      PathRebaseKind.notAPath,
-      '提醒条目的跳转身份 JSON：合集 id、书 uid、源内 chapterKey、release 页的远端 '
-          'https 地址。**刻意不存本地文件路径**——真要打开的文件由目标域自己按当前'
-          '数据根解析（合集/书走既有打开链路），这里只存身份，故数据根搬家与本列无关。'),
+    'UpdateFeedEntries',
+    'detailJson',
+    PathRebaseKind.notAPath,
+    '提醒条目的跳转身份 JSON：合集 id、书 uid、源内 chapterKey、release 页的远端 '
+        'https 地址。**刻意不存本地文件路径**——真要打开的文件由目标域自己按当前'
+        '数据根解析（合集/书走既有打开链路），这里只存身份，故数据根搬家与本列无关。',
+  ),
 
   // ── manga_download_jobs（v103 漫画下载队列）──────────────────────
   // 本表**没有路径列**：章目录由消费方按 (bookKey, chapterKey) 在当前数据根下
   // 解析，任务行只存身份 / 状态 / 进度。逐列登记 notAPath 是为了把「无路径」
   // 这个判断写成显式声明，而不是靠守卫正则恰好没命中。
-  PathRebaseColumn('MangaDownloadJobs', 'jobId', PathRebaseKind.notAPath,
-      '由 kind/bookKey/chapterKey 派生的 sha256 前缀，不是路径。'),
-  PathRebaseColumn('MangaDownloadJobs', 'kind', PathRebaseKind.notAPath,
-      '枚举值 chapter / mokuro_volume。'),
-  PathRebaseColumn('MangaDownloadJobs', 'bookKey', PathRebaseKind.notAPath,
-      '在线条目 bookKey 或 mokuro:<seriesName>，是身份不是目录。'),
-  PathRebaseColumn('MangaDownloadJobs', 'chapterKey', PathRebaseKind.notAPath,
-      '源内章 key / mokuro 卷名，是身份不是目录。'),
-  PathRebaseColumn('MangaDownloadJobs', 'runtime', PathRebaseKind.notAPath,
-      '枚举值 mihon / aidoku / interconnect / mokuro_moe。'),
   PathRebaseColumn(
-      'MangaDownloadJobs', 'title', PathRebaseKind.notAPath, '展示用作品名快照。'),
+    'MangaDownloadJobs',
+    'jobId',
+    PathRebaseKind.notAPath,
+    '由 kind/bookKey/chapterKey 派生的 sha256 前缀，不是路径。',
+  ),
   PathRebaseColumn(
-      'MangaDownloadJobs', 'chapterTitle', PathRebaseKind.notAPath, '展示用章名快照。'),
-  PathRebaseColumn('MangaDownloadJobs', 'status', PathRebaseKind.notAPath,
-      '枚举值 queued / running / done / failed / cancelled。'),
+    'MangaDownloadJobs',
+    'kind',
+    PathRebaseKind.notAPath,
+    '枚举值 chapter / mokuro_volume。',
+  ),
   PathRebaseColumn(
-      'MangaDownloadJobs',
-      'lastError',
-      PathRebaseKind.notAPath,
-      '最近一次失败的错误文案（可能夹带异常里的路径片段，但那是诊断文本，'
-          '不会被任何代码当路径解析）。'),
+    'MangaDownloadJobs',
+    'bookKey',
+    PathRebaseKind.notAPath,
+    '在线条目 bookKey 或 mokuro:<seriesName>，是身份不是目录。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'chapterKey',
+    PathRebaseKind.notAPath,
+    '源内章 key / mokuro 卷名，是身份不是目录。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'runtime',
+    PathRebaseKind.notAPath,
+    '枚举值 mihon / aidoku / interconnect / mokuro_moe。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'title',
+    PathRebaseKind.notAPath,
+    '展示用作品名快照。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'chapterTitle',
+    PathRebaseKind.notAPath,
+    '展示用章名快照。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'status',
+    PathRebaseKind.notAPath,
+    '枚举值 queued / running / done / failed / cancelled。',
+  ),
+  PathRebaseColumn(
+    'MangaDownloadJobs',
+    'lastError',
+    PathRebaseKind.notAPath,
+    '最近一次失败的错误文案（可能夹带异常里的路径片段，但那是诊断文本，'
+        '不会被任何代码当路径解析）。',
+  ),
 
   // ── manga_reader_overrides（v112 漫画阅读器每作品覆盖）──────────────
-  PathRebaseColumn('MangaReaderOverrides', 'overridesJson',
-      PathRebaseKind.notAPath, '稀疏阅读器设置 JSON（枚举值与数值），无路径。'),
+  PathRebaseColumn(
+    'MangaReaderOverrides',
+    'overridesJson',
+    PathRebaseKind.notAPath,
+    '稀疏阅读器设置 JSON（枚举值与数值），无路径。',
+  ),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的
@@ -628,110 +1054,155 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
 /// media_source 的私有 key 前缀格式（守卫 `test/media/db_source_pref_key_test.dart`）。
 final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
   PathRebasePref(
-      dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog'),
-      PathRebaseKind.documentsRooted,
-      PathValueShape.fontCatalogJson,
-      '自定义字体 catalog，path 落 <documents>/custom_fonts。无 PrefCodec tag。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'font_catalog'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontCatalogJson,
+    '自定义字体 catalog，path 落 <documents>/custom_fonts。无 PrefCodec tag。',
+  ),
   PathRebasePref(
-      dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
-      PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson,
-      '旧影子字体列表，path 落 <documents>/custom_fonts。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'custom_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '旧影子字体列表，path 落 <documents>/custom_fonts。',
+  ),
   PathRebasePref(
-      dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
-      PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson,
-      '同上（App UI 字体）。'),
-  PathRebasePref(dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
-      PathRebaseKind.documentsRooted, PathValueShape.fontListJson, '同上（词典字体）。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'app_ui_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '同上（App UI 字体）。',
+  ),
   PathRebasePref(
-      dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
-      PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson,
-      '同上（视频字幕字体）。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '同上（词典字体）。',
+  ),
   PathRebasePref(
-      dbSourcePrefKey(kReaderSourcePersistedKey, 'game_lookup_fonts'),
-      PathRebaseKind.documentsRooted,
-      PathValueShape.fontListJson,
-      '同上（游戏查词窗口字体）。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '同上（视频字幕字体）。',
+  ),
   PathRebasePref(
-      'local_audio_dbs',
-      PathRebaseKind.supportRooted,
-      PathValueShape.localAudioDbsJson,
-      '内部副本 local_audio_<ts>.db 落 support 根；按**文件名**重挂（天然幂等），外部'
-          '引用（BUG-483）原样保留。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'game_lookup_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '同上（游戏查词窗口字体）。',
+  ),
   PathRebasePref(
-      'audio_source_configs',
-      PathRebaseKind.supportRooted,
-      PathValueShape.audioSourceConfigsJson,
-      'typed 音频来源配置，仅 localAudio 条目带 path；必须与 local_audio_dbs 同步重挂，'
-          '否则 AppModel 的 path 相等匹配会断（TODO-1171）。'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'floating_lyric_fonts'),
+    PathRebaseKind.documentsRooted,
+    PathValueShape.fontListJson,
+    '同上（有声书悬浮字幕字体）。',
+  ),
   PathRebasePref(
-      'local_audio_db_path',
-      PathRebaseKind.supportRooted,
-      PathValueShape.bare,
-      'BUG-1174 漏项：旧单库绝对路径。只要用户从未调过 setEntries，local_audio_dbs 为空'
-          '时它仍被当回退读（local_audio_manager.dart:140-146）。与 local_audio_dbs 同款'
-          '按文件名重挂。'),
+    'local_audio_dbs',
+    PathRebaseKind.supportRooted,
+    PathValueShape.localAudioDbsJson,
+    '内部副本 local_audio_<ts>.db 落 support 根；按**文件名**重挂（天然幂等），外部'
+        '引用（BUG-483）原样保留。',
+  ),
   PathRebasePref(
-      'galgame_library',
-      PathRebaseKind.documentsRooted,
-      PathValueShape.legacyGalgameLibraryJson,
-      'BUG-1174 漏项：v55 legacy 游戏库 JSON，其中 coverPath 指 <documents>/game_covers。'
-          'v55 迁移刻意只读不删（回滚兜底，database.dart:1523-1526），所以存量数据里它'
-          '还在。同条目的 exePath / workdir 是外部路径，作用域谓词天然跳过。'),
+    'audio_source_configs',
+    PathRebaseKind.supportRooted,
+    PathValueShape.audioSourceConfigsJson,
+    'typed 音频来源配置，仅 localAudio 条目带 path；必须与 local_audio_dbs 同步重挂，'
+        '否则 AppModel 的 path 相等匹配会断（TODO-1171）。',
+  ),
   PathRebasePref(
-      'video_remote_subtitle',
-      PathRebaseKind.documentsRooted,
-      PathValueShape.subtitleSourceMapJson,
-      'BUG-1174 漏项（原调研清单未列出，实查补入）：远端/流媒体视频手选字幕来源 map，'
-          'value 是 subtitleSource 四态编码，本地已下载态是 <documents>/video_subtitles '
-          '下的绝对路径（jimaku_batch_dialog.dart:268 等）。与 video_books.subtitle_source '
-          '同型，只是落在 KV 而非列上。'),
+    'local_audio_db_path',
+    PathRebaseKind.supportRooted,
+    PathValueShape.bare,
+    'BUG-1174 漏项：旧单库绝对路径。只要用户从未调过 setEntries，local_audio_dbs 为空'
+        '时它仍被当回退读（local_audio_manager.dart:140-146）。与 local_audio_dbs 同款'
+        '按文件名重挂。',
+  ),
   PathRebasePref(
-      'download_save_root',
-      PathRebaseKind.documentsRooted,
-      PathValueShape.bare,
-      'BUG-1174 漏项：下载保存根。空串 = 用默认 <documents>/anime_downloads/content；'
-          '用户第一次改设置时那个 documents 派生的默认值会被显式写进来。anime_downloads '
-          '在搬移白名单里（会被物理搬走），不改写就指向不存在的旧位置。用户挑的外部盘不在'
-          '旧根下 → 作用域谓词天然跳过。'),
+    'galgame_library',
+    PathRebaseKind.documentsRooted,
+    PathValueShape.legacyGalgameLibraryJson,
+    'BUG-1174 漏项：v55 legacy 游戏库 JSON，其中 coverPath 指 <documents>/game_covers。'
+        'v55 迁移刻意只读不删（回滚兜底，database.dart:1523-1526），所以存量数据里它'
+        '还在。同条目的 exePath / workdir 是外部路径，作用域谓词天然跳过。',
+  ),
   PathRebasePref(
-      'download_save_root_history',
-      PathRebaseKind.documentsRooted,
-      PathValueShape.jsonStringList,
-      'BUG-1174 漏项：下载根历史（JSON 字符串数组），含被压栈的旧默认根；不改写 → 迁移后'
-          '这些历史根下的老任务在下载页整批失认。'),
+    'video_remote_subtitle',
+    PathRebaseKind.documentsRooted,
+    PathValueShape.subtitleSourceMapJson,
+    'BUG-1174 漏项（原调研清单未列出，实查补入）：远端/流媒体视频手选字幕来源 map，'
+        'value 是 subtitleSource 四态编码，本地已下载态是 <documents>/video_subtitles '
+        '下的绝对路径（jimaku_batch_dialog.dart:268 等）。与 video_books.subtitle_source '
+        '同型，只是落在 KV 而非列上。',
+  ),
   PathRebasePref(
-      'video_download_backend_path_mappings',
-      PathRebaseKind.externalUserPath,
-      PathValueShape.none,
-      'qBittorrent remoteRoot→localRoot 显式映射；localRoot 是用户/后端外部文件系统路径，'
-          '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。'),
-  PathRebasePref('video_mpv_shader_dir', PathRebaseKind.externalUserPath,
-      PathValueShape.none, '用户本机 mpv 着色器目录，外部路径，不随数据根走。'),
+    'download_save_root',
+    PathRebaseKind.documentsRooted,
+    PathValueShape.bare,
+    'BUG-1174 漏项：下载保存根。空串 = 用默认 <documents>/anime_downloads/content；'
+        '用户第一次改设置时那个 documents 派生的默认值会被显式写进来。anime_downloads '
+        '在搬移白名单里（会被物理搬走），不改写就指向不存在的旧位置。用户挑的外部盘不在'
+        '旧根下 → 作用域谓词天然跳过。',
+  ),
   PathRebasePref(
-      'audiobook_material_dirs',
-      PathRebaseKind.externalUserPath,
-      PathValueShape.none,
-      '有声书素材库目录（JSON 字符串数组）。用户自己挑的字幕/正文库位置——通常是外接盘'
-          '或下载目录，不在 Hibiki 数据根下，跟着数据根改写只会把有效路径改坏。'
-          '目录没了不影响已入库的书（素材在导入时已复制进书的存储），设置页按'
-          'missingDirs 如实提示。'),
-  PathRebasePref('manga_external_mokuro_path', PathRebaseKind.externalUserPath,
-      PathValueShape.none, '系统安装的 mokuro 可执行文件路径，外部路径。'),
+    'download_save_root_history',
+    PathRebaseKind.documentsRooted,
+    PathValueShape.jsonStringList,
+    'BUG-1174 漏项：下载根历史（JSON 字符串数组），含被压栈的旧默认根；不改写 → 迁移后'
+        '这些历史根下的老任务在下载页整批失认。',
+  ),
   PathRebasePref(
-      'manga_reading_direction',
-      PathRebaseKind.notAPath,
-      PathValueShape.none,
-      '阅读方向枚举（dir 是 direction 不是 directory）。守卫的 key 正则刻意宽松、宁可'
-          '多要求几条声明，也不放过一个真路径 key。'),
-  PathRebasePref('active_profile_id', PathRebaseKind.notAPath,
-      PathValueShape.none, '当前 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。'),
-  PathRebasePref('profile_fallback_id', PathRebaseKind.notAPath,
-      PathValueShape.none, '绑定临时切换前用户自选 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。'),
-  PathRebasePref('local_audio_db_display_name', PathRebaseKind.notAPath,
-      PathValueShape.none, '旧单库显示名（与 local_audio_db_path 同族），不是路径。'),
+    'video_download_backend_path_mappings',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    'qBittorrent remoteRoot→localRoot 显式映射；localRoot 是用户/后端外部文件系统路径，'
+        '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。',
+  ),
+  PathRebasePref(
+    'video_mpv_shader_dir',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '用户本机 mpv 着色器目录，外部路径，不随数据根走。',
+  ),
+  PathRebasePref(
+    'audiobook_material_dirs',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '有声书素材库目录（JSON 字符串数组）。用户自己挑的字幕/正文库位置——通常是外接盘'
+        '或下载目录，不在 Hibiki 数据根下，跟着数据根改写只会把有效路径改坏。'
+        '目录没了不影响已入库的书（素材在导入时已复制进书的存储），设置页按'
+        'missingDirs 如实提示。',
+  ),
+  PathRebasePref(
+    'manga_external_mokuro_path',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '系统安装的 mokuro 可执行文件路径，外部路径。',
+  ),
+  PathRebasePref(
+    'manga_reading_direction',
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '阅读方向枚举（dir 是 direction 不是 directory）。守卫的 key 正则刻意宽松、宁可'
+        '多要求几条声明，也不放过一个真路径 key。',
+  ),
+  PathRebasePref(
+    'active_profile_id',
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '当前 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。',
+  ),
+  PathRebasePref(
+    'profile_fallback_id',
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '绑定临时切换前用户自选 Profile 的自增 id（撞正则是因为 profile 里含 file）。不是路径。',
+  ),
+  PathRebasePref(
+    'local_audio_db_display_name',
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '旧单库显示名（与 local_audio_db_path 同族），不是路径。',
+  ),
 ];
 
 /// 按 key 查处置；未登记返回 null。

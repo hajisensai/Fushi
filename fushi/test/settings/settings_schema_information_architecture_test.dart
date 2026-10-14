@@ -117,6 +117,8 @@ void main() {
           // buildListeningSections）。同一本 EPUB 的「读」与「听」从此同分类。
           'listening.section.playback',
           'listening.section.floating_lyric',
+          // 悬浮字幕外观与排版（默认折叠，与 galgame 浮窗「窗口与可读性」同构）。
+          'listening.section.floating_lyric_appearance',
         ],
       );
     },

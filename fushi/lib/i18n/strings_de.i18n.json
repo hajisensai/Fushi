@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "Schwebenden Untertitel zum Nachschlagen antippen",
   "floating_lyric_click_lookup_hint": "Lass dies bei gesperrter Position an, wenn du weiterhin Wörter nachschlagen möchtest.",
   "floating_lyric_close": "Schließen",
-  "floating_lyric_context_lines": "Kontextzeilen der schwebenden Untertitel",
-  "floating_lyric_context_lines_hint": "0 zeigt nur die aktuelle Zeile (einzeilig, unverändert); 1–3 zeigt so viele Zeilen davor und danach",
   "floating_lyric_corner_radius": "Eckenradius der schwebenden Untertitel",
   "floating_lyric_corner_radius_hint": "0 behält die plattformüblichen Ecken bei; höhere Werte runden Leiste und Schaltflächen stärker ab",
   "floating_lyric_font_size": "Schriftgröße der schwebenden Untertitel",
@@ -7481,5 +7479,18 @@
   "anki_pending_mine_landing_host_note": "Dieses Gerät ist ein Interconnect-Host, daher können gekoppelte Smartphones ihm auf diesem Weg keine Karten übergeben. Schalte auf diesen Smartphones stattdessen „An gekoppeltes Gerät senden“ ein.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "floating_lyric_visible_lines": "Sentences shown",
+  "floating_lyric_visible_lines_hint": "The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more.",
+  "floating_lyric_visible_lines_auto": "Auto",
+  "floating_lyric_current_line_color": "Current sentence color",
+  "floating_lyric_context_opacity": "Other sentences opacity",
+  "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
+  "floating_lyric_font": "Floating subtitle font",
+  "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",
+  "floating_lyric_appearance_section": "Floating subtitle appearance",
+  "font_target_floating_lyric": "Floating subtitles",
+  "font_target_floating_lyric_short": "Subtitles",
+  "floating_lyric_vertical": "Vertical text",
+  "floating_lyric_vertical_hint": "Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences."
 }

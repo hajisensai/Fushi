@@ -70,9 +70,7 @@ void main() {
     }
   });
 
-  testWidgets('游戏设置分类只属于本机游戏库形态：串流接收端模块开着也不出现', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('游戏设置分类只属于本机游戏库形态：串流接收端模块开着也不出现', (WidgetTester tester) async {
     // 非 Windows 的 games 模块是串流接收端（PR #1616）；游戏分类里的 hook / 捕获
     // 工作台 / 兼容性诊断全是本机 galgame 库的东西，一条都用不上。
     await pumpContext(tester);
@@ -202,9 +200,7 @@ void main() {
     );
   });
 
-  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('听书模块的落地面是「阅读」里的两个分区（分区级门控，非分类级）', (WidgetTester tester) async {
     // 并类之后听书没有自己的 destination，上面按 destination 归属做的三条循环
     // 对它恒为空集。不变式本身没变——「关掉模块 ⇒ 它的设置行看不见也搜不到」——
     // 只是粒度降到了分区，所以这里直接按 item id 前缀断言那条不变式。
@@ -233,8 +229,11 @@ void main() {
     appModel.enabled = ModuleId.values.toSet();
     expect(
       visibleListeningSectionIds(),
-      hasLength(2),
-      reason: '听书模块开着却看不到那两个分区——并入阅读时把分区门写反了，'
+      // 播放 / 悬浮字幕 / 悬浮字幕外观三个分区（外观分区的项全不可见时由
+      // visibleSections 另行过滤，分区门本身只看模块）。
+      hasLength(3),
+      reason:
+          '听书模块开着却看不到那三个分区——并入阅读时把分区门写反了，'
           '或者分区根本没被展开进 buildReadingDestination',
     );
 
@@ -242,7 +241,8 @@ void main() {
     expect(
       visibleListeningSectionIds(),
       isEmpty,
-      reason: '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
+      reason:
+          '关掉听书模块后 listening.* 分区还在阅读里。并类时模块门原本挂在'
           'destination 上，下放到分区时漏了哪一个，这条就会红。',
     );
   });

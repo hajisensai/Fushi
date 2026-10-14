@@ -37,20 +37,25 @@ void main() {
         isTrue,
         reason: 'Reader must install its lookup handler into the session.',
       );
-      expect(session.contains('onLookupText: _onFloatingLyricLookup'), isTrue,
-          reason:
-              'Session wires the strip lookup tap to the installed handler.');
+      expect(
+        session.contains('onLookupText: _onFloatingLyricLookup'),
+        isTrue,
+        reason: 'Session wires the strip lookup tap to the installed handler.',
+      );
       // 签名带 wordRect：native 回传被点字的屏幕矩形，查词卡据此锚定到那个词而不是
       // 鼠标位置。丢了这个参数卡片会退回跟着光标飘。
       //
       // 用正则而不是整段字面量 contains：这个签名在源码里是折行写的，行宽一变
-      // 字面量就不匹配，守卫会红在「格式变了」而不是「参数没了」。
+      // 字面量就不匹配，守卫会红在「格式变了」而不是「参数没了」。tall 格式会在
+      // 末参后补尾逗号再换行收括号，所以 `,?\s*` 也放过。
       expect(
-        RegExp(r'_lookupFromFloatingLyric\(\s*String text,\s*int index,\s*'
-                r'Rect\? wordRect\)')
-            .hasMatch(reader),
+        RegExp(
+          r'_lookupFromFloatingLyric\(\s*String text,\s*int index,\s*'
+          r'Rect\? wordRect,?\s*\)',
+        ).hasMatch(reader),
         isTrue,
-        reason: 'Lookup handler must carry the tapped word rect so the card '
+        reason:
+            'Lookup handler must carry the tapped word rect so the card '
             'anchors to the word instead of the mouse.',
       );
       // The lookup must reuse the existing segmenter + popup path.
@@ -58,8 +63,7 @@ void main() {
       expect(reader.contains('searchDictionaryResult('), isTrue);
     });
 
-    test('desktop failure shows the generic hint, not a false permission hint',
-        () {
+    test('desktop failure shows the generic hint, not a false permission hint', () {
       // TODO-1227: the failure-hint selection moved out of the reader page into
       // the shared pure helper floating_lyric_hint.dart (floatingLyricFailureHint).
       // Assert the branching lives there: Android failure = overlay permission,

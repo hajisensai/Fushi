@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3050 条。点号进各自文件。
+> 共 3052 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3365](bugs/BUG-3365-floating-lyric-quick-font-size-resets-style.md) | ✅ | ✅ | 阅读器快捷设置改悬浮字幕字号会清空圆角与窗宽 |
+| [BUG-3364](bugs/BUG-3364-floating-lyric-context-outline-dim.md) | ✅ | ✅ | 悬浮字幕多句时上下文行描边被降亮字色覆盖 |
 | [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
 | [BUG-3362](bugs/BUG-3362-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |
 | [BUG-3361](bugs/BUG-3361-collection-picker-count.md) | ✅ | ✅ | 「加入合集」弹窗的合集成员数与合集里实际显示的数量不一致 |

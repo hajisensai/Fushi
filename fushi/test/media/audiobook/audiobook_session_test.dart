@@ -78,7 +78,7 @@ void main() {
       audioHandler: () => null,
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => 0,
+      floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
@@ -105,22 +105,22 @@ void main() {
   }
 
   SessionPrefs prefs() => const SessionPrefs(
-        followAudio: true,
-        delayMs: 0,
-        speed: 1.0,
-        positionMs: 0,
-        imagePauseSec: 0,
-        volume: 1.0,
-      );
+    followAudio: true,
+    delayMs: 0,
+    speed: 1.0,
+    positionMs: 0,
+    imagePauseSec: 0,
+    volume: 1.0,
+  );
 
   SessionPersistCallbacks persist() => SessionPersistCallbacks(
-        onPositionWrite: (_, __) async {},
-        onDelayPersist: (_) async {},
-        onSpeedPersist: (_) async {},
-        onVolumePersist: (_) async {},
-        onImagePausePersist: (_) async {},
-        onFollowAudioPersist: (_) async {},
-      );
+    onPositionWrite: (_, __) async {},
+    onDelayPersist: (_) async {},
+    onSpeedPersist: (_) async {},
+    onVolumePersist: (_) async {},
+    onImagePausePersist: (_) async {},
+    onFollowAudioPersist: (_) async {},
+  );
 
   Future<AudiobookSession> startedSession(
     String key, {
@@ -160,104 +160,135 @@ void main() {
     expect(session.book?.bookKey, 'a');
   });
 
-  test('start loads cues so currentCue resolves without a reader (TODO-354)',
-      () async {
-    // 后台听书（书架开悬浮字幕）无 reader 喂 cue。把 cue 随 start 传入后，控制器应在
-    // load 后立即按当前位置解析 currentCue（悬浮窗首帧有字），无需进 reader。
-    final AudiobookSession session = await startedSession(
-      'a',
-      cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
-      positionMs: 1000,
-    );
-    final AudiobookPlayerController c = session.controller!;
-    expect(c.chapterCueCount, 3, reason: 'cue 应灌进控制器供跳句/解析');
-    expect(c.currentCue, isNotNull, reason: '无 reader 也应解析出 currentCue（首帧有字）');
-    expect(c.currentCue?.startMs, 1000,
-        reason: 'currentCue 应对应 initialPositionMs=1000 那一句');
-  });
+  test(
+    'start loads cues so currentCue resolves without a reader (TODO-354)',
+    () async {
+      // 后台听书（书架开悬浮字幕）无 reader 喂 cue。把 cue 随 start 传入后，控制器应在
+      // load 后立即按当前位置解析 currentCue（悬浮窗首帧有字），无需进 reader。
+      final AudiobookSession session = await startedSession(
+        'a',
+        cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
+        positionMs: 1000,
+      );
+      final AudiobookPlayerController c = session.controller!;
+      expect(c.chapterCueCount, 3, reason: 'cue 应灌进控制器供跳句/解析');
+      expect(
+        c.currentCue,
+        isNotNull,
+        reason: '无 reader 也应解析出 currentCue（首帧有字）',
+      );
+      expect(
+        c.currentCue?.startMs,
+        1000,
+        reason: 'currentCue 应对应 initialPositionMs=1000 那一句',
+      );
+    },
+  );
 
-  test('start without cues leaves the controller cue-less (reader path)',
-      () async {
-    // 不传 cue（reader 自己接管 cue 加载）时不动控制器，保留既有逻辑。
-    final AudiobookSession session = await startedSession('a');
-    final AudiobookPlayerController c = session.controller!;
-    expect(c.chapterCueCount, 0);
-    expect(c.currentCue, isNull);
-  });
+  test(
+    'start without cues leaves the controller cue-less (reader path)',
+    () async {
+      // 不传 cue（reader 自己接管 cue 加载）时不动控制器，保留既有逻辑。
+      final AudiobookSession session = await startedSession('a');
+      final AudiobookPlayerController c = session.controller!;
+      expect(c.chapterCueCount, 0);
+      expect(c.currentCue, isNull);
+    },
+  );
 
-  test('attachReader wires the controller WebView callbacks to the reader',
-      () async {
-    final AudiobookSession session = await startedSession('a');
-    final _FakeReader reader = _FakeReader(section: 3);
-    session.attachReader(reader);
+  test(
+    'attachReader wires the controller WebView callbacks to the reader',
+    () async {
+      final AudiobookSession session = await startedSession('a');
+      final _FakeReader reader = _FakeReader(section: 3);
+      session.attachReader(reader);
 
-    final AudiobookPlayerController c = session.controller!;
-    expect(c.getCurrentReaderSection?.call(), 3,
-        reason: 'attach 后跨章判定参照系应是 reader 当前章');
-    expect(c.onCrossChapter, isNotNull);
-    expect(c.onBoundarySkip, isNotNull);
-    expect(session.hasReaderAttached, isTrue);
-  });
+      final AudiobookPlayerController c = session.controller!;
+      expect(
+        c.getCurrentReaderSection?.call(),
+        3,
+        reason: 'attach 后跨章判定参照系应是 reader 当前章',
+      );
+      expect(c.onCrossChapter, isNotNull);
+      expect(c.onBoundarySkip, isNotNull);
+      expect(session.hasReaderAttached, isTrue);
+    },
+  );
 
-  test('detachReader keeps the controller alive (background listening core)',
-      () async {
-    final AudiobookSession session = await startedSession('a');
-    final _FakeReader reader = _FakeReader(section: 3);
-    session.attachReader(reader);
+  test(
+    'detachReader keeps the controller alive (background listening core)',
+    () async {
+      final AudiobookSession session = await startedSession('a');
+      final _FakeReader reader = _FakeReader(section: 3);
+      session.attachReader(reader);
 
-    final AudiobookPlayerController before = session.controller!;
-    session.detachReader(reader);
+      final AudiobookPlayerController before = session.controller!;
+      session.detachReader(reader);
 
-    // 核心：detach 不 dispose 控制器，会话仍活（音频继续播）。
-    expect(session.isActive, isTrue);
-    expect(identical(session.controller, before), isTrue);
-    expect(session.hasReaderAttached, isFalse);
-    // getCurrentReaderSection 复位成 -1：跨章守卫 currentSec<0 分支天然不跨章。
-    expect(before.getCurrentReaderSection?.call(), -1);
-    expect(before.onCrossChapter, isNull);
-    expect(before.onBoundarySkip, isNull);
-  });
+      // 核心：detach 不 dispose 控制器，会话仍活（音频继续播）。
+      expect(session.isActive, isTrue);
+      expect(identical(session.controller, before), isTrue);
+      expect(session.hasReaderAttached, isFalse);
+      // getCurrentReaderSection 复位成 -1：跨章守卫 currentSec<0 分支天然不跨章。
+      expect(before.getCurrentReaderSection?.call(), -1);
+      expect(before.onCrossChapter, isNull);
+      expect(before.onBoundarySkip, isNull);
+    },
+  );
 
-  test('cue change forwards to reader while attached, stops after detach',
-      () async {
-    final AudiobookSession session = await startedSession('a');
-    final _FakeReader reader = _FakeReader(section: 0);
-    session.attachReader(reader);
+  test(
+    'cue change forwards to reader while attached, stops after detach',
+    () async {
+      final AudiobookSession session = await startedSession('a');
+      final _FakeReader reader = _FakeReader(section: 0);
+      session.attachReader(reader);
 
-    final AudiobookPlayerController c = session.controller!;
-    c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000)]);
-    c.debugUpdateCueForPosition(1000);
-    expect(reader.cueChangedCount, greaterThan(0),
-        reason: 'attach 期 cue 变化应转发 reader 接 WebView 高亮');
+      final AudiobookPlayerController c = session.controller!;
+      c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000)]);
+      c.debugUpdateCueForPosition(1000);
+      expect(
+        reader.cueChangedCount,
+        greaterThan(0),
+        reason: 'attach 期 cue 变化应转发 reader 接 WebView 高亮',
+      );
 
-    final int attachedCount = reader.cueChangedCount;
-    session.detachReader(reader);
-    c.debugUpdateCueForPosition(2000);
-    expect(reader.cueChangedCount, attachedCount,
-        reason: 'detach 后 cue 变化不再转发 reader（无 WebView 可动）');
-  });
+      final int attachedCount = reader.cueChangedCount;
+      session.detachReader(reader);
+      c.debugUpdateCueForPosition(2000);
+      expect(
+        reader.cueChangedCount,
+        attachedCount,
+        reason: 'detach 后 cue 变化不再转发 reader（无 WebView 可动）',
+      );
+    },
+  );
 
-  test('starting a second book stops the first (single active session)',
-      () async {
-    final AudiobookSession session = await startedSession('a');
-    final AudiobookPlayerController first = session.controller!;
+  test(
+    'starting a second book stops the first (single active session)',
+    () async {
+      final AudiobookSession session = await startedSession('a');
+      final AudiobookPlayerController first = session.controller!;
 
-    await session.start(
-      info: SessionBookInfo(
-        bookKey: 'b',
-        audiobook: ab('b'),
-        title: 'Book b',
-        mediaIdentifier: 'fushi://book/b',
-      ),
-      audioFiles: <File>[makeFile('hibiki-session-b.mp3')],
-      prefs: prefs(),
-      persist: persist(),
-    );
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'b',
+          audiobook: ab('b'),
+          title: 'Book b',
+          mediaIdentifier: 'fushi://book/b',
+        ),
+        audioFiles: <File>[makeFile('hibiki-session-b.mp3')],
+        prefs: prefs(),
+        persist: persist(),
+      );
 
-    expect(session.book?.bookKey, 'b');
-    expect(identical(session.controller, first), isFalse,
-        reason: '切书应顶掉旧控制器换新');
-  });
+      expect(session.book?.bookKey, 'b');
+      expect(
+        identical(session.controller, first),
+        isFalse,
+        reason: '切书应顶掉旧控制器换新',
+      );
+    },
+  );
 
   test('stop disposes the controller and clears the session', () async {
     final AudiobookSession session = await startedSession('a');
@@ -272,15 +303,18 @@ void main() {
     // → 锁屏 → 经媒体中心继续听」整段没有任何统计写入方。会话自己补一只，与阅读器
     // 那只**互斥**（判据含 hasReaderAttached），两只同时跑就是同一段时间记两遍。
     FushiDatabase memoryDb() {
-      final FushiDatabase db =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       return db;
     }
 
     test('reader 在场不起表、reader 一走接手、重进书再交回（互斥交接）', () async {
-      final AudiobookSession session =
-          await startedSession('a', db: memoryDb());
+      final AudiobookSession session = await startedSession(
+        'a',
+        db: memoryDb(),
+      );
       final AudiobookPlayerController c = session.controller!;
       final _FakeReader reader = _FakeReader(section: 0);
 
@@ -309,8 +343,10 @@ void main() {
     });
 
     test('后台暂停即停表、再播即续表（用户要的「关了有声书就关统计」）', () async {
-      final AudiobookSession session =
-          await startedSession('a', db: memoryDb());
+      final AudiobookSession session = await startedSession(
+        'a',
+        db: memoryDb(),
+      );
       final AudiobookPlayerController c = session.controller!;
       final _FakeReader reader = _FakeReader(section: 0);
       session.attachReader(reader);
@@ -338,8 +374,10 @@ void main() {
     });
 
     test('没在播时 reader 离场不起表（退书时本来就是暂停态）', () async {
-      final AudiobookSession session =
-          await startedSession('a', db: memoryDb());
+      final AudiobookSession session = await startedSession(
+        'a',
+        db: memoryDb(),
+      );
       final _FakeReader reader = _FakeReader(section: 0);
       session.attachReader(reader);
       session.detachReader(reader);
@@ -351,8 +389,10 @@ void main() {
     });
 
     test('停会话结算并放掉时钟', () async {
-      final AudiobookSession session =
-          await startedSession('a', db: memoryDb());
+      final AudiobookSession session = await startedSession(
+        'a',
+        db: memoryDb(),
+      );
       final AudiobookPlayerController c = session.controller!;
       final _FakeReader reader = _FakeReader(section: 0);
       session.attachReader(reader);
@@ -406,121 +446,135 @@ void main() {
     });
   });
 
-  test('BUG-1240 a new session waits for the old generation to release',
-      () async {
-    final _FakePlatform platform = installPlatform();
-    final AudiobookSession session = makeSession();
-    addTearDown(session.dispose);
-    await session.start(
-      info: SessionBookInfo(
-        bookKey: 'old',
-        audiobook: ab('old'),
-        title: 'Old',
-        mediaIdentifier: 'fushi://book/old',
-      ),
-      audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
-      prefs: prefs(),
-      persist: persist(),
-    );
-    await session.controller!.play();
-    platform.disposeGate = Completer<void>();
+  test(
+    'BUG-1240 a new session waits for the old generation to release',
+    () async {
+      final _FakePlatform platform = installPlatform();
+      final AudiobookSession session = makeSession();
+      addTearDown(session.dispose);
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'old',
+          audiobook: ab('old'),
+          title: 'Old',
+          mediaIdentifier: 'fushi://book/old',
+        ),
+        audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
+        prefs: prefs(),
+        persist: persist(),
+      );
+      await session.controller!.play();
+      platform.disposeGate = Completer<void>();
 
-    final Future<void> stopOld = session.stop();
-    await platform.disposeStarted.future;
-    final Future<AudiobookPlayerController?> startNew = session.start(
-      info: SessionBookInfo(
-        bookKey: 'new',
-        audiobook: ab('new'),
-        title: 'New',
-        mediaIdentifier: 'fushi://book/new',
-      ),
-      audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
-      prefs: prefs(),
-      persist: persist(),
-    );
-    await Future<void>.delayed(Duration.zero);
+      final Future<void> stopOld = session.stop();
+      await platform.disposeStarted.future;
+      final Future<AudiobookPlayerController?> startNew = session.start(
+        info: SessionBookInfo(
+          bookKey: 'new',
+          audiobook: ab('new'),
+          title: 'New',
+          mediaIdentifier: 'fushi://book/new',
+        ),
+        audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
+        prefs: prefs(),
+        persist: persist(),
+      );
+      await Future<void>.delayed(Duration.zero);
 
-    expect(session.book, isNull,
-        reason: 'the new generation must not publish before old release');
-    platform.disposeGate!.complete();
-    await stopOld;
-    await startNew;
-    expect(session.book?.bookKey, 'new');
-    expect(session.controller, isNotNull);
-  });
-
-  test('BUG-3197 stop re-encodes the live position against the replaced cues',
-      () async {
-    // 会话期间字幕被整组替换（阅读器内重新导入字幕 -> forceReload 先 stop 旧会话）：
-    // stop 落库的全书毫秒必须按**库里新 cue** 推出的文件时长编码，否则下次开书按
-    // 新 cue 一拆，听书断点落到别的文件 / 偏移。
-    AudioCue fileCue(int index, int file, int endMs) => AudioCue()
-      ..id = index + 1
-      ..bookKey = 'a'
-      ..chapterHref = 'chapter'
-      ..sentenceIndex = index
-      ..textFragmentId = 'cue-$index'
-      ..text = 'cue $index'
-      ..startMs = 0
-      ..endMs = endMs
-      ..audioFileIndex = file;
-
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    // 库里已经是新字幕：文件 0 的末句结束于 12s（旧字幕是 10s）。
-    await AudiobookRepository(db).saveCues(
-      bookKey: 'a',
-      cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
-    );
-
-    installPlatform();
-    final AudiobookSession session = makeSession(db: db);
-    addTearDown(session.dispose);
-    final List<int> writes = <int>[];
-    await session.start(
-      info: SessionBookInfo(
-        bookKey: 'a',
-        audiobook: ab('a'),
-        title: 'Book a',
-        mediaIdentifier: 'fushi://book/a',
-      ),
-      audioFiles: <File>[
-        makeFile('hibiki-session-bug3197-0.mp3'),
-        makeFile('hibiki-session-bug3197-1.mp3'),
-      ],
-      // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
-      prefs: const SessionPrefs(
-        followAudio: true,
-        delayMs: 0,
-        speed: 1.0,
-        positionMs: 13000,
-        imagePauseSec: 0,
-        volume: 1.0,
-      ),
-      persist: SessionPersistCallbacks(
-        onPositionWrite: (_, int ms) async => writes.add(ms),
-        onDelayPersist: (_) async {},
-        onSpeedPersist: (_) async {},
-        onVolumePersist: (_) async {},
-        onImagePausePersist: (_) async {},
-        onFollowAudioPersist: (_) async {},
-      ),
-      cues: <AudioCue>[fileCue(0, 0, 10000), fileCue(1, 1, 20000)],
-    );
-    final AudiobookPlayerController c = session.controller!;
-    expect(c.globalPosition.inMilliseconds, 13000,
-        reason: 'precondition: restored to file 1 at 3s under the old cues');
-
-    writes.clear();
-    await session.stop();
-
-    expect(writes, isNotEmpty);
-    expect(writes.last, 12000 + 3000,
-        reason: 'file 1 at 3s, encoded with the new per-file cue durations');
-  });
+      expect(
+        session.book,
+        isNull,
+        reason: 'the new generation must not publish before old release',
+      );
+      platform.disposeGate!.complete();
+      await stopOld;
+      await startNew;
+      expect(session.book?.bookKey, 'new');
+      expect(session.controller, isNotNull);
+    },
+  );
 
   test(
-      'BUG-3251 replacing the cues while playing switches periodic writes '
+    'BUG-3197 stop re-encodes the live position against the replaced cues',
+    () async {
+      // 会话期间字幕被整组替换（阅读器内重新导入字幕 -> forceReload 先 stop 旧会话）：
+      // stop 落库的全书毫秒必须按**库里新 cue** 推出的文件时长编码，否则下次开书按
+      // 新 cue 一拆，听书断点落到别的文件 / 偏移。
+      AudioCue fileCue(int index, int file, int endMs) => AudioCue()
+        ..id = index + 1
+        ..bookKey = 'a'
+        ..chapterHref = 'chapter'
+        ..sentenceIndex = index
+        ..textFragmentId = 'cue-$index'
+        ..text = 'cue $index'
+        ..startMs = 0
+        ..endMs = endMs
+        ..audioFileIndex = file;
+
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      // 库里已经是新字幕：文件 0 的末句结束于 12s（旧字幕是 10s）。
+      await AudiobookRepository(db).saveCues(
+        bookKey: 'a',
+        cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
+      );
+
+      installPlatform();
+      final AudiobookSession session = makeSession(db: db);
+      addTearDown(session.dispose);
+      final List<int> writes = <int>[];
+      await session.start(
+        info: SessionBookInfo(
+          bookKey: 'a',
+          audiobook: ab('a'),
+          title: 'Book a',
+          mediaIdentifier: 'fushi://book/a',
+        ),
+        audioFiles: <File>[
+          makeFile('hibiki-session-bug3197-0.mp3'),
+          makeFile('hibiki-session-bug3197-1.mp3'),
+        ],
+        // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
+        prefs: const SessionPrefs(
+          followAudio: true,
+          delayMs: 0,
+          speed: 1.0,
+          positionMs: 13000,
+          imagePauseSec: 0,
+          volume: 1.0,
+        ),
+        persist: SessionPersistCallbacks(
+          onPositionWrite: (_, int ms) async => writes.add(ms),
+          onDelayPersist: (_) async {},
+          onSpeedPersist: (_) async {},
+          onVolumePersist: (_) async {},
+          onImagePausePersist: (_) async {},
+          onFollowAudioPersist: (_) async {},
+        ),
+        cues: <AudioCue>[fileCue(0, 0, 10000), fileCue(1, 1, 20000)],
+      );
+      final AudiobookPlayerController c = session.controller!;
+      expect(
+        c.globalPosition.inMilliseconds,
+        13000,
+        reason: 'precondition: restored to file 1 at 3s under the old cues',
+      );
+
+      writes.clear();
+      await session.stop();
+
+      expect(writes, isNotEmpty);
+      expect(
+        writes.last,
+        12000 + 3000,
+        reason: 'file 1 at 3s, encoded with the new per-file cue durations',
+      );
+    },
+  );
+
+  test('BUG-3251 replacing the cues while playing switches periodic writes '
       'to the new encoding at once', () async {
     // 书架 / 互联「只更新字幕」在会话**播放中**换掉库里的 cue：此前要等到 stop 才
     // 换编码，期间 app 被直接杀掉，库里留下的就是旧编码。
@@ -576,22 +630,27 @@ void main() {
       cues: oldCues,
     );
     final AudiobookPlayerController c = session.controller!;
-    expect(c.globalPosition.inMilliseconds, 13000,
-        reason: 'precondition: file 1 at 3s under the old cues');
+    expect(
+      c.globalPosition.inMilliseconds,
+      13000,
+      reason: 'precondition: file 1 at 3s under the old cues',
+    );
 
     // 播放中换字幕：文件 0 的末句改为 12s 结束。
     await AudiobookRepository(db).saveCues(
       bookKey: 'a',
       cues: <AudioCue>[fileCue(0, 0, 12000), fileCue(1, 1, 25000)],
     );
-    for (int i = 0;
-        i < 50 && c.globalPosition.inMilliseconds != 15000;
-        i++) {
+    for (int i = 0; i < 50 && c.globalPosition.inMilliseconds != 15000; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
-    expect(c.globalPosition.inMilliseconds, 12000 + 3000,
-        reason: 'the live controller adopts the new cues before any stop, so '
-            'periodic writes are encoded with the new per-file durations');
+    expect(
+      c.globalPosition.inMilliseconds,
+      12000 + 3000,
+      reason:
+          'the live controller adopts the new cues before any stop, so '
+          'periodic writes are encoded with the new per-file durations',
+    );
   });
 }
 
@@ -634,7 +693,8 @@ class _FakePlatform extends JustAudioPlatform {
 
   @override
   Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
+    DisposePlayerRequest request,
+  ) async {
     if (!disposeStarted.isCompleted) disposeStarted.complete();
     await disposeGate?.future;
     await player?.dispose(DisposeRequest());
@@ -643,7 +703,8 @@ class _FakePlatform extends JustAudioPlatform {
 
   @override
   Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
+    DisposeAllPlayersRequest request,
+  ) async {
     await player?.dispose(DisposeRequest());
     return DisposeAllPlayersResponse();
   }
@@ -655,16 +716,18 @@ class _FakePlayer extends AudioPlayerPlatform {
       StreamController<PlaybackEventMessage>.broadcast();
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: state,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -672,9 +735,11 @@ class _FakePlayer extends AudioPlayerPlatform {
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.initialPosition?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return LoadResponse(duration: const Duration(seconds: 100));
   }
 
@@ -684,26 +749,28 @@ class _FakePlayer extends AudioPlayerPlatform {
   Future<PlayResponse> play(PlayRequest request) async => PlayResponse();
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.position?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return SeekResponse();
   }
 
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
+    SetAndroidAudioAttributesRequest request,
+  ) async => SetAndroidAudioAttributesResponse();
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  setAutomaticallyWaitsToMinimizeStalling(
+    SetAutomaticallyWaitsToMinimizeStallingRequest request,
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
       SetLoopModeResponse();
@@ -712,20 +779,20 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetPitchResponse();
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
+    SetPreferredPeakBitRateRequest request,
+  ) async => SetPreferredPeakBitRateResponse();
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
+    SetShuffleModeRequest request,
+  ) async => SetShuffleModeResponse();
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
+    SetShuffleOrderRequest request,
+  ) async => SetShuffleOrderResponse();
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
+    SetSkipSilenceRequest request,
+  ) async => SetSkipSilenceResponse();
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
       SetSpeedResponse();
@@ -734,8 +801,8 @@ class _FakePlayer extends AudioPlayerPlatform {
       SetVolumeResponse();
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
+    SetWebCrossOriginRequest request,
+  ) async => SetWebCrossOriginResponse();
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
     if (!_events.isClosed) await _events.close();

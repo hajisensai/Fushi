@@ -50,6 +50,13 @@ void main() {
         <String>['Klee One'],
       );
     });
+
+    test('有声书悬浮字幕与游戏浮窗同一 native 窗：跳过 WOFF/WOFF2，只取第一款', () {
+      expect(
+        effectiveFontTargetFamilies(FontTarget.floatingLyric, chain),
+        <String>['Klee One'],
+      );
+    });
   });
 
   for (final FontTarget target in FontTarget.values) {
@@ -166,9 +173,7 @@ void main() {
     expect(find.text(t.font_target_body_short), findsOneWidget);
   });
 
-  testWidgets('详情页标出顺位，系统里找不到的系统字体条目给出提示', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('详情页标出顺位，系统里找不到的系统字体条目给出提示', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(420, 1600);
     addTearDown(tester.view.reset);

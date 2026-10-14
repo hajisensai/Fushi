@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "Tap floating subtitle to look up",
   "floating_lyric_click_lookup_hint": "Keep this on with position lock if you still want word lookup.",
   "floating_lyric_close": "Close",
-  "floating_lyric_context_lines": "Floating subtitle context lines",
-  "floating_lyric_context_lines_hint": "0 shows only the current line (single-line, unchanged); set 1-3 to show that many lines before and after it",
   "floating_lyric_corner_radius": "Floating subtitle corner radius",
   "floating_lyric_corner_radius_hint": "0 keeps each platform's default corners; raise it to round the bar and buttons more",
   "floating_lyric_font_size": "Floating subtitle font size",
@@ -7481,5 +7479,18 @@
   "anki_pending_mine_landing_host_note": "This device is an interconnect host, so paired phones can't hand cards to it this way. On those phones, turn on Mine to Fushi Interconnect server instead.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "floating_lyric_visible_lines": "Sentences shown",
+  "floating_lyric_visible_lines_hint": "The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more.",
+  "floating_lyric_visible_lines_auto": "Auto",
+  "floating_lyric_current_line_color": "Current sentence color",
+  "floating_lyric_context_opacity": "Other sentences opacity",
+  "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
+  "floating_lyric_font": "Floating subtitle font",
+  "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",
+  "floating_lyric_appearance_section": "Floating subtitle appearance",
+  "font_target_floating_lyric": "Floating subtitles",
+  "font_target_floating_lyric_short": "Subtitles",
+  "floating_lyric_vertical": "Vertical text",
+  "floating_lyric_vertical_hint": "Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences."
 }

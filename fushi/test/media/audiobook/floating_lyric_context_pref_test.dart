@@ -3,21 +3,21 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// TODO-708 P4: 悬浮字幕「上下文行数」偏好 + 端到端接线守卫。
-//   1) 默认哨兵 0（= 只当前行 = 今天单行观感，never-break userspace）；
-//   2) 读写往返 + 跨 reload 持久化 + 归一夹到 [0, 3]；
-//   3) session/channel/app_model/settings 各层把 N 接对（源级守卫，原生渲染另需真机）。
+// 悬浮字幕「同时显示句数」偏好 + 端到端接线守卫（取代 TODO-708 P4 的对称上下文 N）。
+//   1) 默认 3 句；新键没写过时从旧 N 换算 2N+1（老用户观感不变）；
+//   2) 读写往返 + 跨 reload 持久化 + 归一夹到 [0, 15]（0 = 按窗口高度自动）；
+//   3) 句数 → 前后句分布（当前句居中、偶数下文多一句；自动档按平台）；
+//   4) session/app_model/settings 各层把句数接对（源级守卫，原生渲染另需真机）。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
-  group('PreferencesRepository 上下文行数（对称单值，0=只当前行）', () {
+  group('PreferencesRepository 同时显示句数', () {
     late FushiDatabase db;
     late PreferencesRepository repo;
 
@@ -31,83 +31,130 @@ void main() {
       await db.close();
     });
 
-    test('默认哨兵 = 0（不改动即单行观感）', () {
-      expect(repo.floatingLyricContextLines, 0);
-      expect(PreferencesRepository.floatingLyricContextLinesDefault, 0);
-      expect(PreferencesRepository.floatingLyricContextLinesMax, 3);
+    test('两个键都没写过：默认 3 句', () {
+      expect(repo.floatingLyricVisibleLines, 3);
+      expect(PreferencesRepository.floatingLyricVisibleLinesDefault, 3);
     });
 
-    test('set/get 往返并跨 reload 持久化', () async {
+    test('只写过旧上下文 N：按 2N+1 换算，老用户观感不变', () async {
       await repo.setFloatingLyricContextLines(2);
-      expect(repo.floatingLyricContextLines, 2);
+      expect(repo.floatingLyricVisibleLines, 5);
+    });
+
+    test('旧 N=0（显式单行）不算迁移来源，仍落默认', () async {
+      await repo.setFloatingLyricContextLines(0);
+      expect(repo.floatingLyricVisibleLines, 3);
+    });
+
+    test('新键优先于旧 N，并跨 reload 持久化', () async {
+      await repo.setFloatingLyricContextLines(3);
+      await repo.setFloatingLyricVisibleLines(1);
+      expect(repo.floatingLyricVisibleLines, 1);
 
       final PreferencesRepository reloaded = PreferencesRepository(db);
       await reloaded.loadFromDb();
-      expect(reloaded.floatingLyricContextLines, 2);
+      expect(reloaded.floatingLyricVisibleLines, 1);
     });
 
-    test('夹到 [0, 3]', () async {
-      await repo.setFloatingLyricContextLines(-1);
-      expect(repo.floatingLyricContextLines, 0);
-      await repo.setFloatingLyricContextLines(5);
-      expect(repo.floatingLyricContextLines, 3);
-    });
-
-    test('归一纯函数：负->0，正常保留，超上界->3', () {
-      expect(PreferencesRepository.normalizeFloatingLyricContextLines(-1), 0);
-      expect(PreferencesRepository.normalizeFloatingLyricContextLines(0), 0);
-      expect(PreferencesRepository.normalizeFloatingLyricContextLines(2), 2);
-      expect(PreferencesRepository.normalizeFloatingLyricContextLines(5), 3);
+    test('夹到 [0, 15]，0 = 自动', () async {
+      await repo.setFloatingLyricVisibleLines(-1);
+      expect(repo.floatingLyricVisibleLines, 0);
+      await repo.setFloatingLyricVisibleLines(99);
+      expect(repo.floatingLyricVisibleLines, 15);
+      await repo.setFloatingLyricVisibleLines(
+        PreferencesRepository.floatingLyricVisibleLinesAuto,
+      );
+      expect(repo.floatingLyricVisibleLines, 0);
     });
   });
 
-  group('source guards: 上下文行数各层接线', () {
-    test('app_model 委托 getter/setter + session 注入闭包', () {
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+  group('floatingLyricVisibleSpan：句数 → 前后句', () {
+    test('1 句 = 只当前句（走单行 payload）', () {
+      expect(floatingLyricVisibleSpan(1, autoFillsWindow: true), (
+        before: 0,
+        after: 0,
+      ));
+    });
+
+    test('奇数句当前句居中', () {
+      expect(floatingLyricVisibleSpan(5, autoFillsWindow: true), (
+        before: 2,
+        after: 2,
+      ));
+    });
+
+    test('偶数句下文多一句（往下读的方向）', () {
+      expect(floatingLyricVisibleSpan(4, autoFillsWindow: true), (
+        before: 1,
+        after: 2,
+      ));
+    });
+
+    test('自动：Windows 前后各送 autoRadius 句，交给原生按窗高裁', () {
       expect(
-        appModel.contains(
-            'int get floatingLyricContextLines => prefsRepo.floatingLyricContextLines'),
-        isTrue,
-      );
-      expect(
-        appModel.contains(
-            'floatingLyricContextLines: () => floatingLyricContextLines'),
-        isTrue,
-        reason: 'AudiobookSession 构造必须注入上下文行数闭包',
+        floatingLyricVisibleSpan(0, autoFillsWindow: true, autoRadius: 12),
+        (before: 12, after: 12),
       );
     });
 
-    test('session _syncFloatingLyric: N<=0 走单行原分支，N>0 组装块', () {
+    test('自动：没有可裁视口的平台（Android）退回 3 句', () {
+      expect(floatingLyricVisibleSpan(0, autoFillsWindow: false), (
+        before: 1,
+        after: 1,
+      ));
+    });
+  });
+
+  group('source guards: 句数各层接线', () {
+    test('app_model 委托 getter/setter + session 注入闭包', () {
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        appModel.contains(
+          'int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines',
+        ),
+        isTrue,
+      );
+      expect(
+        appModel.contains(
+          'floatingLyricVisibleLines: () => floatingLyricVisibleLines',
+        ),
+        isTrue,
+        reason: 'AudiobookSession 构造必须注入句数闭包',
+      );
+    });
+
+    test('session _syncFloatingLyric：单句走原单行分支，多句组装块', () {
       final String session = File(
         'lib/src/media/audiobook/audiobook_session.dart',
       ).readAsStringSync();
-      expect(session.contains('_floatingLyricContextLines()'), isTrue);
-      expect(session.contains('buildFloatingLyricBlock('), isTrue);
+      expect(session.contains('_floatingLyricVisibleLines()'), isTrue);
+      expect(session.contains('floatingLyricVisibleSpan('), isTrue);
+      expect(session.contains('buildFloatingLyricBlockRange('), isTrue);
       expect(session.contains('resyncFloatingLyricText'), isTrue);
-      // N<=0 零变化分支：仍旧用裸 updateText(cue?.text ?? '')。
       expect(
         session.contains("updateText(cue?.text ?? '')"),
         isTrue,
-        reason: 'N<=0 必须保留今天的单行 updateText 分支',
+        reason: '单句必须保留无行标记的单行 updateText 分支',
       );
     });
 
-    test('settings schema 暴露上下文行数 stepper 且改值即时重推', () {
-      final String schema =
-          File('lib/src/settings/settings_schema_listening.dart')
-              .readAsStringSync();
+    test('settings schema 暴露句数 stepper 且改值即时重推', () {
+      final String schema = File(
+        'lib/src/settings/settings_schema_listening.dart',
+      ).readAsStringSync();
       expect(
-        schema.contains("id: 'listening.floating_lyric_context_lines'"),
+        schema.contains("id: 'listening.floating_lyric_visible_lines'"),
         isTrue,
       );
-      expect(schema.contains('t.floating_lyric_context_lines'), isTrue);
+      expect(schema.contains('t.floating_lyric_visible_lines'), isTrue);
       expect(
         RegExp(
-          r'setFloatingLyricContextLines\([\s\S]*?resyncFloatingLyricText\(\)',
+          r'setFloatingLyricVisibleLines\([\s\S]*?resyncFloatingLyricText\(\)',
         ).hasMatch(schema),
         isTrue,
-        reason: '改 N 后必须调 resyncFloatingLyricText 即时重推',
+        reason: '改句数后必须调 resyncFloatingLyricText 即时重推',
       );
     });
   });

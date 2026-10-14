@@ -16,7 +16,8 @@ void main() {
   // new root, leaving system fonts (path == null) and unrelated paths alone.
   group('rebaseFontListJson', () {
     test('rebases each file-font path from old root onto the new root', () {
-      const String json = '['
+      const String json =
+          '['
           '{"name":"Klee One","path":"/old/app/custom_fonts/Klee_1.ttf",'
           '"enabled":true},'
           '{"name":"Mincho","path":"/old/app/custom_fonts/Mincho_2.otf",'
@@ -116,13 +117,14 @@ void main() {
 
   // ── BUG-183 integration: export packs fonts + import restores & rebases ──
   group('BackupService custom-font round-trip', () {
-    test(
-        'export packs the custom_fonts tree and import restores files + '
+    test('export packs the custom_fonts tree and import restores files + '
         'rebases font config keys onto this device', () async {
-      final Directory srcDir =
-          await Directory.systemTemp.createTemp('bug183_src_db_');
-      final Directory srcFontsDir =
-          await Directory.systemTemp.createTemp('bug183_src_fonts_');
+      final Directory srcDir = await Directory.systemTemp.createTemp(
+        'bug183_src_db_',
+      );
+      final Directory srcFontsDir = await Directory.systemTemp.createTemp(
+        'bug183_src_fonts_',
+      );
       addTearDown(() async {
         if (srcDir.existsSync()) await cleanupTempDir(srcDir);
         if (srcFontsDir.existsSync()) await cleanupTempDir(srcFontsDir);
@@ -168,6 +170,12 @@ void main() {
         ]),
       );
       await srcDb.setPref(
+        'src:reader_fushi:floating_lyric_fonts',
+        jsonEncode(<Map<String, dynamic>>[
+          {'name': 'Mincho', 'path': uiFontPath, 'enabled': true},
+        ]),
+      );
+      await srcDb.setPref(
         'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
@@ -196,12 +204,16 @@ void main() {
             'game_lookup_fonts': <Map<String, dynamic>>[
               {'fontId': 'font_1', 'enabled': true},
             ],
+            'floating_lyric_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_2', 'enabled': true},
+            ],
           },
         }),
       );
 
-      final Directory zipDir =
-          await Directory.systemTemp.createTemp('bug183_zip_');
+      final Directory zipDir = await Directory.systemTemp.createTemp(
+        'bug183_zip_',
+      );
       addTearDown(() async {
         if (zipDir.existsSync()) await cleanupTempDir(zipDir);
       });
@@ -221,10 +233,12 @@ void main() {
       final result = await BackupRestoreService.validateBackup(zipPath);
       expect(result, isNotNull);
 
-      final Directory dstDir =
-          await Directory.systemTemp.createTemp('bug183_dst_db_');
-      final Directory dstFontsDir =
-          await Directory.systemTemp.createTemp('bug183_dst_fonts_');
+      final Directory dstDir = await Directory.systemTemp.createTemp(
+        'bug183_dst_db_',
+      );
+      final Directory dstFontsDir = await Directory.systemTemp.createTemp(
+        'bug183_dst_fonts_',
+      );
       addTearDown(() async {
         if (dstDir.existsSync()) await cleanupTempDir(dstDir);
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);
@@ -276,7 +290,8 @@ void main() {
       expect(
         (videoSub[0] as Map)['path'],
         isNot(contains(srcFontsDir.path)),
-        reason: 'video subtitle font absolute path must not leak the source '
+        reason:
+            'video subtitle font absolute path must not leak the source '
             'device root',
       );
       final List<dynamic> gameLookup =
@@ -286,7 +301,22 @@ void main() {
       expect(
         (gameLookup[0] as Map)['path'],
         isNot(contains(srcFontsDir.path)),
-        reason: 'game lookup font absolute path must not leak the source '
+        reason:
+            'game lookup font absolute path must not leak the source '
+            'device root',
+      );
+      final List<dynamic> floatingLyric =
+          jsonDecode(prefs['src:reader_fushi:floating_lyric_fonts']!)
+              as List<dynamic>;
+      expect(
+        (floatingLyric[0] as Map)['path'],
+        '${dstFontsDir.path}/Mincho_2.otf',
+      );
+      expect(
+        (floatingLyric[0] as Map)['path'],
+        isNot(contains(srcFontsDir.path)),
+        reason:
+            'floating lyric font absolute path must not leak the source '
             'device root',
       );
 
@@ -314,11 +344,15 @@ void main() {
           targetRows['game_lookup_fonts'] as List<dynamic>;
       expect((gameRows.single as Map<dynamic, dynamic>)['fontId'], 'font_1');
       expect((gameRows.single as Map<dynamic, dynamic>)['enabled'], true);
+      final List<dynamic> lyricRows =
+          targetRows['floating_lyric_fonts'] as List<dynamic>;
+      expect((lyricRows.single as Map<dynamic, dynamic>)['fontId'], 'font_2');
     });
 
     test('legacy backup (no fontsRoot) imports without crashing', () async {
-      final Directory srcDir =
-          await Directory.systemTemp.createTemp('bug183_legacy_src_');
+      final Directory srcDir = await Directory.systemTemp.createTemp(
+        'bug183_legacy_src_',
+      );
       addTearDown(() async {
         if (srcDir.existsSync()) await cleanupTempDir(srcDir);
       });
@@ -328,8 +362,9 @@ void main() {
         dbDirectory: srcDir.path,
         appVersion: '0.9.0',
       );
-      final Directory zipDir =
-          await Directory.systemTemp.createTemp('bug183_legacy_zip_');
+      final Directory zipDir = await Directory.systemTemp.createTemp(
+        'bug183_legacy_zip_',
+      );
       addTearDown(() async {
         if (zipDir.existsSync()) await cleanupTempDir(zipDir);
       });
@@ -338,10 +373,12 @@ void main() {
       expect(meta.fontsRoot, isNull);
       await onDisk.close();
 
-      final Directory dstDir =
-          await Directory.systemTemp.createTemp('bug183_legacy_dst_');
-      final Directory dstFontsDir =
-          await Directory.systemTemp.createTemp('bug183_legacy_dst_fonts_');
+      final Directory dstDir = await Directory.systemTemp.createTemp(
+        'bug183_legacy_dst_',
+      );
+      final Directory dstFontsDir = await Directory.systemTemp.createTemp(
+        'bug183_legacy_dst_fonts_',
+      );
       addTearDown(() async {
         if (dstDir.existsSync()) await cleanupTempDir(dstDir);
         if (dstFontsDir.existsSync()) await cleanupTempDir(dstFontsDir);

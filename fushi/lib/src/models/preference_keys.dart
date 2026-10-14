@@ -158,13 +158,36 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
+  // bool：悬浮字幕粗体（默认 true）。
+  'floating_lyric_bold',
   'floating_lyric_button_bg_opacity',
   'floating_lyric_click_lookup',
+  // int ARGB，0 = 跟随主题：底 / 非当前句字 / 当前句字 / 描边。
+  'floating_lyric_color_background',
+  'floating_lyric_color_current',
+  'floating_lyric_color_outline',
+  'floating_lyric_color_text',
+  // 旧「上下文行数 N」，只作 floating_lyric_visible_lines 未写时的迁移来源。
   'floating_lyric_context_lines',
+  // int 0..100：多行时非当前句不透明度。
+  'floating_lyric_context_opacity',
   'floating_lyric_corner_radius',
   'floating_lyric_font_size',
+  // double：字距 / 行高 / 描边宽。
+  'floating_lyric_letter_spacing',
+  'floating_lyric_line_height',
+  'floating_lyric_outline_width',
+  // int：水平对齐（0 居中 / 1 左）、文字内边距。
+  'floating_lyric_text_alignment',
   'floating_lyric_text_opacity',
+  'floating_lyric_text_padding',
+  // bool：竖排（Windows 原生窗）。
+  'floating_lyric_vertical',
+  // int 0..15：同时显示句数（0 = 按窗口高度自动）。
+  'floating_lyric_visible_lines',
   'floating_lyric_width',
+  // String JSON：Windows 悬浮字幕窗口矩形（物理 px）。
+  'floating_lyric_window_rect',
   'gal_card_lookup_independent_size',
   'gal_card_lookup_max_height',
   'gal_card_lookup_max_width',

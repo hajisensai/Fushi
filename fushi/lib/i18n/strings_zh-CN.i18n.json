@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "点击悬浮字幕查词",
   "floating_lyric_click_lookup_hint": "锁定悬浮字幕位置时仍可保留点击查词。",
   "floating_lyric_close": "关闭",
-  "floating_lyric_context_lines": "悬浮字幕上下文行数",
-  "floating_lyric_context_lines_hint": "0 只显示当前行(单行,与今天一致);设 1-3 在当前行上下各显示这么多行上下文",
   "floating_lyric_corner_radius": "悬浮字幕圆角",
   "floating_lyric_corner_radius_hint": "0 = 各平台默认圆角；调大让字幕条与按钮更圆",
   "floating_lyric_font_size": "悬浮字幕字号",
@@ -7481,5 +7479,18 @@
   "anki_pending_mine_landing_host_note": "本机是互联主机，配对的手机没法经这条路把卡交过来：请在那些手机上改开「制卡到 Fushi 互联服务端」。",
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。",
-  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）"
+  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
+  "floating_lyric_visible_lines": "同时显示句数",
+  "floating_lyric_visible_lines_hint": "当前句居中显示，与歌词模式一致。自动＝按窗口高度显示，拖高悬浮窗即可看到更多句。",
+  "floating_lyric_visible_lines_auto": "自动",
+  "floating_lyric_current_line_color": "当前句颜色",
+  "floating_lyric_context_opacity": "其余句不透明度",
+  "floating_lyric_context_opacity_hint": "同时显示多句时，非当前句的淡化程度。",
+  "floating_lyric_font": "悬浮字幕字体",
+  "floating_lyric_font_hint": "从管理字体库中选择，按顺序使用第一个启用的 TTF/OTF 字体。",
+  "floating_lyric_appearance_section": "悬浮字幕外观与排版",
+  "font_target_floating_lyric": "悬浮字幕",
+  "font_target_floating_lyric_short": "悬浮字幕",
+  "floating_lyric_vertical": "竖排",
+  "floating_lyric_vertical_hint": "字从上往下、行从右往左排列，与竖排歌词一致。拉宽悬浮窗即可看到更多句。"
 }

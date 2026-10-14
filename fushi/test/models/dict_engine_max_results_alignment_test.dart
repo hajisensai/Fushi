@@ -87,31 +87,41 @@ void main() {
           maximumTerms: maxTerms,
         );
 
-        expect(fromCapped.entries.length, fromFull.entries.length,
-            reason: '条目数必须不变');
+        expect(
+          fromCapped.entries.length,
+          fromFull.entries.length,
+          reason: '条目数必须不变',
+        );
         for (int i = 0; i < fromFull.entries.length; i++) {
-          expect(fromCapped.entries[i].dictionaryName,
-              fromFull.entries[i].dictionaryName);
+          expect(
+            fromCapped.entries[i].dictionaryName,
+            fromFull.entries[i].dictionaryName,
+          );
           expect(fromCapped.entries[i].word, fromFull.entries[i].word);
           expect(fromCapped.entries[i].reading, fromFull.entries[i].reading);
           expect(fromCapped.entries[i].meaning, fromFull.entries[i].meaning);
         }
         // bestLength 是用户可见的整词高亮长度（global_lookup_controller）。
-        expect(fromCapped.bestLength, fromFull.bestLength,
-            reason: 'bestLength 变了会让横幅高亮跨度变化');
+        expect(
+          fromCapped.bestLength,
+          fromFull.bestLength,
+          reason: 'bestLength 变了会让横幅高亮跨度变化',
+        );
       });
 
       test('maxTerms=$maxTerms：popupJson 逐字节一致', () {
         final List<FushiLookupResult> full = engineResults(count: 200);
         expect(
           buildPopupJsonFromLookup(
-              results: full.take(maxTerms).toList(),
-              maximumTerms: maxTerms,
-              hiddenDictionaries: const <String>{}),
+            results: full.take(maxTerms).toList(),
+            maximumTerms: maxTerms,
+            hiddenDictionaries: const <String>{},
+          ),
           buildPopupJsonFromLookup(
-              results: full,
-              maximumTerms: maxTerms,
-              hiddenDictionaries: const <String>{}),
+            results: full,
+            maximumTerms: maxTerms,
+            hiddenDictionaries: const <String>{},
+          ),
         );
       });
     }
@@ -146,8 +156,10 @@ void main() {
 
     test('键格式 len:term/maxResults，term.length 用 UTF-16 code units', () {
       expect(buildFfiLookupCacheKey(term: '図書館', maxResults: 10), '3:図書館/10');
-      expect(buildFfiLookupCacheKey(term: '\u{2000B}', maxResults: 1),
-          '2:\u{2000B}/1');
+      expect(
+        buildFfiLookupCacheKey(term: '\u{2000B}', maxResults: 1),
+        '2:\u{2000B}/1',
+      );
     });
 
     test('load-more 的新上限不会命中首查的短结果集', () {
@@ -156,8 +168,11 @@ void main() {
           <String, List<FushiLookupResult>>{};
       cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 10)] =
           engineResults(count: 10);
-      expect(cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 20)], isNull,
-          reason: '若命中，load-more 拿不到新条目、allLoaded 会提前为 true');
+      expect(
+        cache[buildFfiLookupCacheKey(term: '図書館', maxResults: 20)],
+        isNull,
+        reason: '若命中，load-more 拿不到新条目、allLoaded 会提前为 true',
+      );
     });
   });
 
@@ -196,8 +211,11 @@ void main() {
       // 逐点列名（而不是「至少一个」）：新增第三条查词路径必须来这里登记，顺带把
       // 「传硬编码 200」挡在门外——数字字面量虽然也能被 `[A-Za-z0-9_]+` 捕获，
       // 但绝不会等于登记表里的任何一个变量名。
-      expect(budgets, engineBudgets,
-          reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量');
+      expect(
+        budgets,
+        engineBudgets,
+        reason: 'BUG-1307：上限必须等于本次消费的词头预算，不得是硬编码常量',
+      );
     });
 
     test('每条路径的 FFI 缓存键上限与它自己的引擎上限同源', () {
@@ -215,16 +233,28 @@ void main() {
     });
 
     test('不再存在 maximumDictionarySearchResults 这个独立上限常量', () {
-      expect(source.contains('maximumDictionarySearchResults'), isFalse,
-          reason: '独立的 200 常量已被删除；恢复它就是恢复 20 倍白解压');
+      expect(
+        source.contains('maximumDictionarySearchResults'),
+        isFalse,
+        reason: '独立的 200 常量已被删除；恢复它就是恢复 20 倍白解压',
+      );
     });
 
     test('FFI 缓存读写都走带上限的 ffiCacheKey', () {
+      // dart format 会把调用拆行 / 补尾逗号，比对前去空白与尾逗号。
+      final String flat = source
+          .replaceAll(RegExp(r'\s+'), '')
+          .replaceAll(',)', ')');
       expect(
-          source.contains('dictRepo.getCachedFfiLookup(ffiCacheKey)'), isTrue,
-          reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿');
-      expect(source.contains('dictRepo.cacheFfiLookup(ffiCacheKey,'), isTrue,
-          reason: '写 FFI 缓存必须用带上限的键');
+        flat.contains('dictRepo.getCachedFfiLookup(ffiCacheKey)'),
+        isTrue,
+        reason: '读 FFI 缓存必须用带上限的键，否则 load-more 被短结果集击穿',
+      );
+      expect(
+        flat.contains('dictRepo.cacheFfiLookup(ffiCacheKey,'),
+        isTrue,
+        reason: '写 FFI 缓存必须用带上限的键',
+      );
     });
   });
 }

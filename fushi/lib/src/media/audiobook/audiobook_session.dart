@@ -36,33 +36,34 @@ class AudiobookSession extends ChangeNotifier {
     required bool Function() showFloatingLyric,
     required bool Function() showMediaNotification,
     required FloatingLyricStyle Function() floatingLyricStyle,
-    required int Function() floatingLyricContextLines,
+    required int Function() floatingLyricVisibleLines,
     required bool Function() floatingLyricClickLookup,
     required FloatingLyricLookupHandler onFloatingLyricLookup,
     required AudioControlStreams controlStreams,
     required FushiDatabase? Function() database,
     required Duration Function() studyIdleTimeout,
-  })  : _audioHandlerGetter = audioHandler,
-        _showFloatingLyric = showFloatingLyric,
-        _showMediaNotification = showMediaNotification,
-        _floatingLyricStyle = floatingLyricStyle,
-        _floatingLyricContextLines = floatingLyricContextLines,
-        _floatingLyricClickLookup = floatingLyricClickLookup,
-        _onFloatingLyricLookup = onFloatingLyricLookup,
-        _defaultFloatingLyricStyle = floatingLyricStyle,
-        _defaultFloatingLyricLookup = onFloatingLyricLookup,
-        _controlStreams = controlStreams,
-        _databaseGetter = database,
-        _studyIdleTimeout = studyIdleTimeout;
+  }) : _audioHandlerGetter = audioHandler,
+       _showFloatingLyric = showFloatingLyric,
+       _showMediaNotification = showMediaNotification,
+       _floatingLyricStyle = floatingLyricStyle,
+       _floatingLyricVisibleLines = floatingLyricVisibleLines,
+       _floatingLyricClickLookup = floatingLyricClickLookup,
+       _onFloatingLyricLookup = onFloatingLyricLookup,
+       _defaultFloatingLyricStyle = floatingLyricStyle,
+       _defaultFloatingLyricLookup = onFloatingLyricLookup,
+       _controlStreams = controlStreams,
+       _databaseGetter = database,
+       _studyIdleTimeout = studyIdleTimeout;
 
   final FushiAudioHandler? Function() _audioHandlerGetter;
   final bool Function() _showFloatingLyric;
   final bool Function() _showMediaNotification;
   final bool Function() _floatingLyricClickLookup;
 
-  /// TODO-708 P4: 悬浮字幕上下文行数 N（对称）。0=只当前行=今天单行观感。
-  /// 闭包注入（照 floatingLyricStyle 范式），每次 _syncFloatingLyric 读实时值。
-  final int Function() _floatingLyricContextLines;
+  /// 悬浮字幕同时显示句数（1 = 只当前句；0 = 按窗口高度自动，见
+  /// [floatingLyricVisibleSpan]）。闭包注入（照 floatingLyricStyle 范式），每次
+  /// _syncFloatingLyric 读实时值。
+  final int Function() _floatingLyricVisibleLines;
   final AudioControlStreams _controlStreams;
 
   /// 后台听书学习时钟的库句柄来源（BUG-2558）。闭包注入，照本类其余依赖的范式——
@@ -169,6 +170,13 @@ class AudiobookSession extends ChangeNotifier {
 
   /// 悬浮窗关闭后落偏好的回调（设置 show_floating_lyric=false），由 AppModel 注入。
   Future<void> Function()? onFloatingLyricClosePersist;
+
+  /// 悬浮窗上次的窗口矩形（Windows；null = 平台默认位置）。AppModel 注入。
+  FloatingLyricWindowRect? Function()? floatingLyricWindowRect;
+
+  /// 用户拖动 / 缩放悬浮窗后的持久化回调（AppModel 注入）。
+  Future<void> Function(FloatingLyricWindowRect rect)?
+  onFloatingLyricBoundsPersist;
 
   /// 启动一个后台听书会话：创建并 load 控制器、装 persist 回调、订阅 cue 变化与
   /// audioHandler 控制流、按偏好拉起悬浮窗 / 媒体通知。
@@ -507,10 +515,9 @@ class AudiobookSession extends ChangeNotifier {
   static Future<List<AudioCue>> _storedCuesFor(
     FushiDatabase db,
     SessionBookInfo book,
-  ) =>
-      book.isSrtBookSource
-          ? SrtBookRepository(db).cuesFor(book.bookKey)
-          : AudiobookRepository(db).cuesForBook(book.bookKey);
+  ) => book.isSrtBookSource
+      ? SrtBookRepository(db).cuesFor(book.bookKey)
+      : AudiobookRepository(db).cuesForBook(book.bookKey);
 
   /// BUG-3197：按库里当前那份全书 cue 给 [controller] 的 stop 位置换编码（仅当
   /// 两者推出的文件时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
@@ -631,15 +638,18 @@ class AudiobookSession extends ChangeNotifier {
 
   void _syncFloatingLyric(AudiobookPlayerController controller) {
     if (!_showFloatingLyric()) return;
-    final int n = _floatingLyricContextLines();
-    if (n <= 0) {
-      // N=0（默认）：payload 只有 text（无行标记键）。改用 display cue
+    final ({int before, int after}) span = floatingLyricVisibleSpan(
+      _floatingLyricVisibleLines(),
+      autoFillsWindow: !Platform.isAndroid,
+    );
+    if (span.before == 0 && span.after == 0) {
+      // 单句：payload 只有 text（无行标记键）。改用 display cue
       // （TODO-1065, BUG-509）：音频引子期先显示首句、句间 gap 提前显示下一句，
       // 消除首句空窗 / 「等上一句播完才出现」。reader 高亮仍用 currentCue，不受影响。
       final AudioCue? cue = controller.displayCueForFloatingLyric;
       FloatingLyricChannel.updateText(cue?.text ?? '');
     } else {
-      // N>0：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
+      // 多句：与 lyrics.part.dart 同源的列表/索引选择（全书快照优先，否则章内），
       // 切上下文窗口 → 组装多行块 + 当前行块内区间，推给原生渲染。
       final List<AudioCue> cues = controller.allBookCuesSnapshot.isNotEmpty
           ? controller.allBookCuesSnapshot
@@ -647,8 +657,12 @@ class AudiobookSession extends ChangeNotifier {
       // display cue 在选定列表中的下标（TODO-1065, BUG-509）：与 N=0 分支同源，
       // 首句前=首句、gap=下一句，让上下文窗口在引子期 / gap 也对齐即将播的句。
       final int index = controller.displayCueIndexIn(cues);
-      final FloatingLyricBlock block =
-          buildFloatingLyricBlock(cues: cues, index: index, n: n);
+      final FloatingLyricBlock block = buildFloatingLyricBlockRange(
+        cues: cues,
+        index: index,
+        before: span.before,
+        after: span.after,
+      );
       FloatingLyricChannel.updateText(
         block.text,
         currentLineStart: block.start,
@@ -658,7 +672,7 @@ class AudiobookSession extends ChangeNotifier {
     FloatingLyricChannel.setPlaybackState(playing: controller.isPlaying);
   }
 
-  /// TODO-708 P4: 设置页改上下文行数 N 后即时重推悬浮字幕文本（对称 [applyFloatingLyricStyle]）。
+  /// 设置页改同时显示句数后即时重推悬浮字幕文本（对称 [applyFloatingLyricStyle]）。
   /// 无活动会话时为 no-op（幂等）。
   Future<void> resyncFloatingLyricText() async {
     final AudiobookPlayerController? controller = _controller;
@@ -766,6 +780,8 @@ class AudiobookSession extends ChangeNotifier {
       windowWidth: style.windowWidth,
       clickLookupEnabled: _floatingLyricClickLookup(),
       slotTooltips: _slotTooltips,
+      rect: floatingLyricWindowRect?.call(),
+      styleExtras: style.nativeStyleArgs,
     );
     if (!shown) return false;
     await _applyFloatingLyricStyle(style);
@@ -783,13 +799,13 @@ class AudiobookSession extends ChangeNotifier {
   /// 而是「说明指向另一件事」。删 native 槽时必须同拍删掉这里对应的那条。
   /// 守卫：`test/build/gal_hook_toolbar_tooltip_guard_test.dart`。
   List<String> get _slotTooltips => <String>[
-        t.floating_lyric_previous,
-        t.floating_lyric_play_pause,
-        t.floating_lyric_next,
-        t.floating_lyric_lock,
-        t.floating_lyric_topmost,
-        t.floating_lyric_close,
-      ];
+    t.floating_lyric_previous,
+    t.floating_lyric_play_pause,
+    t.floating_lyric_next,
+    t.floating_lyric_lock,
+    t.floating_lyric_topmost,
+    t.floating_lyric_close,
+  ];
 
   Future<void> _applyFloatingLyricStyle(FloatingLyricStyle style) async {
     await FloatingLyricChannel.updateStyle(
@@ -802,9 +818,11 @@ class AudiobookSession extends ChangeNotifier {
       activeColor: style.activeColor,
       cornerRadius: style.cornerRadius,
       windowWidth: style.windowWidth,
+      styleExtras: style.nativeStyleArgs,
     );
     await FloatingLyricChannel.setClickLookupEnabled(
-        _floatingLyricClickLookup());
+      _floatingLyricClickLookup(),
+    );
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
       playPause: t.floating_lyric_play_pause,
@@ -816,9 +834,8 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 同步悬浮窗样式（reader 改主题 / 字号后调用）。无活动会话也允许（幂等）。
-  Future<void> applyFloatingLyricStyle() => _applyFloatingLyricStyle(
-        _floatingLyricStyle(),
-      );
+  Future<void> applyFloatingLyricStyle() =>
+      _applyFloatingLyricStyle(_floatingLyricStyle());
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
@@ -842,6 +859,17 @@ class AudiobookSession extends ChangeNotifier {
       },
       onLockChanged: (bool locked) {
         debugPrint('[Fushi] floating-lyric position lock -> $locked');
+      },
+      // 用户拖动 / 拖角缩放后记住窗口矩形，下次拉起原样恢复（Windows）。
+      onBoundsChanged: (int left, int top, int width, int height) {
+        final FloatingLyricWindowRect rect = FloatingLyricWindowRect(
+          left: left,
+          top: top,
+          width: width,
+          height: height,
+        );
+        if (!rect.isValid) return;
+        unawaited(onFloatingLyricBoundsPersist?.call(rect));
       },
     );
   }
@@ -1052,6 +1080,19 @@ class FloatingLyricStyle {
     required this.activeColor,
     this.cornerRadius = 0,
     this.windowWidth = 0,
+    this.fontFamily = '',
+    this.fontPath,
+    this.bold = true,
+    this.verticalText = false,
+    this.lineHeight = 1.0,
+    this.letterSpacing = 0,
+    this.textAlignment = 0,
+    this.textPadding = 20,
+    this.outlineColor = 0xE0000000,
+    this.outlineWidth = 1.6,
+    this.currentLineColor = 0,
+    this.contextLineOpacity = 0.55,
+    this.toolbarArgs = const <String, Object?>{},
   });
 
   final double fontSize;
@@ -1070,6 +1111,52 @@ class FloatingLyricStyle {
   /// 720dip 起始 + 可拖拽），>0 时两端都按该 dp 设窗宽（居中）。
   final int windowWidth;
 
+  // ── 以下字段只有 Windows 原生窗（与 galgame hook 台词浮窗同一个
+  // `FloatingLyricWindow`）消费；Android overlay 读不到这些 key，多传是 no-op。
+  // 默认值 = 原生 `Style` 结构体默认，老调用点不传时观感不变。
+
+  /// 字族名 / 字体文件（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。
+  final String fontFamily;
+  final String? fontPath;
+  final bool bold;
+
+  /// 竖排（字从上往下、行从右往左）。只有 Windows 原生窗支持。
+  final bool verticalText;
+  final double lineHeight;
+  final double letterSpacing;
+
+  /// 0 = 居中，1 = 左对齐。
+  final int textAlignment;
+  final double textPadding;
+  final int outlineColor;
+  final double outlineWidth;
+
+  /// 多行时当前句字色；alpha 0 = 沿用 [textColor]。
+  final int currentLineColor;
+
+  /// 多行时非当前句相对 [textColor] 的不透明度（0..1）。
+  final double contextLineOpacity;
+
+  /// M3E 浮动工具条配色（`galHookToolbarThemeArgs` 产出的那组 key）。
+  final Map<String, Object?> toolbarArgs;
+
+  /// 下发给原生 `show` / `updateStyle` 的扩展样式字段（历史具名参数之外的部分）。
+  Map<String, Object?> get nativeStyleArgs => <String, Object?>{
+    'fontFamily': fontFamily,
+    if (fontPath != null) 'fontPath': fontPath,
+    'bold': bold,
+    'verticalText': verticalText,
+    'lineHeight': lineHeight,
+    'letterSpacing': letterSpacing,
+    'textAlignment': textAlignment,
+    'textPadding': textPadding,
+    'outlineColor': outlineColor,
+    'outlineWidth': outlineWidth,
+    'currentLineColor': currentLineColor,
+    'contextLineOpacity': contextLineOpacity,
+    ...toolbarArgs,
+  };
+
   /// TODO-370: 按百分比（0..100）缩放某个 ARGB 颜色的 alpha 通道。100 = 原 alpha 不变
   /// （保持各表面历史观感），调小变更透明。两个悬浮字幕样式构造点（app 级 / reader 级）
   /// 共用此唯一实现，保证「同一个透明度设置，两处一致」。
@@ -1086,12 +1173,11 @@ class FloatingLyricStyle {
 bool mediaPlayIntentNeedsToggle(
   MediaPlayIntent intent, {
   required bool isPlaying,
-}) =>
-    switch (intent) {
-      MediaPlayIntent.play => !isPlaying,
-      MediaPlayIntent.pause => isPlaying,
-      MediaPlayIntent.toggle => true,
-    };
+}) => switch (intent) {
+  MediaPlayIntent.play => !isPlaying,
+  MediaPlayIntent.pause => isPlaying,
+  MediaPlayIntent.toggle => true,
+};
 
 /// 把系统媒体控制意图落到控制器上。复用 [AudiobookPlayerController.togglePlayPause]
 /// 的完整语义（清单句试听终点等），不另开第二条播放入口。
