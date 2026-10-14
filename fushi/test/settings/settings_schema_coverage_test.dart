@@ -991,11 +991,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   //   不画（+ 首页接线源码守卫）。
   'appearance/Show navigation bar labels':
       'test/widgets/nav_bar_labels_setting_effect_test.dart',
-  // · 底栏中央展开（2026-10-14 原型）：同上，只影响首页底栏形态；专项测试走
-  //   设置行写偏好 → 生产 adaptiveBottomBar 平铺 / 左右各两项 + 「+」切换
-  //   （+ 首页接线源码守卫）。
-  'appearance/Bottom bar: center launcher':
-      'test/widgets/nav_bar_center_launcher_setting_effect_test.dart',
+  // · 底栏样式（2026-10-15 原型）：同上，只影响首页底栏形态；专项测试走
+  //   设置行写偏好 → 生产 adaptiveBottomBar 平铺 / 中央展开 / 分页滑动 /
+  //   中央展开 + 翻页四态切换（+ 首页接线源码守卫）。
+  'appearance/Bottom bar style':
+      'test/widgets/nav_bar_style_setting_effect_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。

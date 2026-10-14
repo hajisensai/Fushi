@@ -306,8 +306,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
-  // bool（默认 false）：手机底栏「中央展开」形态（左右各两项 + 中央「+」弹出其余）。
-  'nav_bar_center_launcher',
+  // String（默认 '' = flat）：手机底栏形态 flat / launcher / pager /
+  // launcher_pager（AdaptiveNavBarStyle.prefValue）。
+  'nav_bar_style',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
   'nav_rail_expanded',

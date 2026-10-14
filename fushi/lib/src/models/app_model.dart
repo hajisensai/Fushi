@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -6456,9 +6457,9 @@ class AppModel with ChangeNotifier {
   bool get navBarLabelsVisible => prefsRepo.navBarLabelsVisible;
   Future<void> setNavBarLabelsVisible(bool value) =>
       prefsRepo.setNavBarLabelsVisible(value);
-  bool get navBarCenterLauncher => prefsRepo.navBarCenterLauncher;
-  Future<void> setNavBarCenterLauncher(bool value) =>
-      prefsRepo.setNavBarCenterLauncher(value);
+  AdaptiveNavBarStyle get navBarStyle => prefsRepo.navBarStyle;
+  Future<void> setNavBarStyle(AdaptiveNavBarStyle value) =>
+      prefsRepo.setNavBarStyle(value);
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;

@@ -7482,5 +7482,9 @@
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。",
   "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
-  "home_nav_bar_center_launcher": "底栏中央展开"
+  "home_nav_bar_style": "底栏样式",
+  "home_nav_bar_style_flat": "平铺",
+  "home_nav_bar_style_launcher": "中央展开",
+  "home_nav_bar_style_pager": "分页滑动",
+  "home_nav_bar_style_launcher_pager": "中央展开 + 翻页"
 }

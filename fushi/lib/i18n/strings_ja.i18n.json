@@ -7482,5 +7482,9 @@
   "manga_series_manage_volume": "この巻を管理",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
-  "home_nav_bar_center_launcher": "Bottom bar: center launcher"
+  "home_nav_bar_style": "Bottom bar style",
+  "home_nav_bar_style_flat": "Flat",
+  "home_nav_bar_style_launcher": "Center launcher",
+  "home_nav_bar_style_pager": "Paged swipe",
+  "home_nav_bar_style_launcher_pager": "Center launcher + paging"
 }

@@ -18,6 +18,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_launcher_fan.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
@@ -260,10 +261,12 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// 胶囊收起时也缩向末端，紧贴 FAB 的另一侧不留空洞。目的地顺序本身由调用方
 /// 传入的 [items] 决定（已按反转排好）。
 ///
-/// [centerLauncher]：底栏「中央展开」形态（用户偏好 `nav_bar_center_launcher`）。
-/// 目的地超过 5 个时胶囊只留首尾各两项，正中是「+」格，其余目的地（含查词，
-/// 不再拆成 FAB / 圆钮）点「+」后从它沿弧线弹出，见 [showNavLauncherFan]。
-/// 不超过 5 个时与平铺形态相同。
+/// [barStyle]：底栏形态（用户偏好 `nav_bar_style`，见 [AdaptiveNavBarStyle]）。
+/// 非平铺形态都把查词收进胶囊；目的地不超过 5 个时都与平铺相同。
+/// - 中央展开：胶囊只留首尾各两项，正中「+」，其余从它沿弧线弹出
+///   （点开或按住划过去），见 [showNavLauncherFan]；
+/// - 分页滑动 / 中央展开 + 翻页：底栏左右滑翻页（MD3；Apple 胶囊暂按平铺 /
+///   中央展开画）。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -277,7 +280,7 @@ Widget adaptiveBottomBar({
   AdaptiveNavFab? materialFab,
   bool searchLeading = false,
   ValueChanged<int>? onDragSelect,
-  bool centerLauncher = false,
+  AdaptiveNavBarStyle barStyle = AdaptiveNavBarStyle.flat,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -320,7 +323,7 @@ Widget adaptiveBottomBar({
     materialFab: materialFab,
     searchLeading: searchLeading,
     onDragSelect: onDragSelect,
-    centerLauncher: centerLauncher,
+    barStyle: barStyle,
   );
 }
 
@@ -347,11 +350,11 @@ class _MaterialNavCluster extends StatelessWidget {
     this.materialFab,
     this.searchLeading = false,
     this.onDragSelect,
-    this.centerLauncher = false,
+    this.barStyle = AdaptiveNavBarStyle.flat,
   });
 
   /// 底栏「中央展开」形态，见 [adaptiveBottomBar]；侧栏不读。
-  final bool centerLauncher;
+  final AdaptiveNavBarStyle barStyle;
 
   /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
   /// [onTap] 的序号）。null = 不启用长按拖选（侧栏、玻璃底栏、调用方没接）。
@@ -425,7 +428,8 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 5 个（或没开这个形态）时返回 null，照平铺形态画。收起项按用户的模块
   /// 顺序列（反转底栏方向时 [indices] 是倒序，这里翻回来）。
   _LauncherSplit? _launcherSplit(List<int> indices) {
-    if (!centerLauncher || indices.length <= 2 * _kLauncherPinnedPerSide + 1) {
+    if (!barStyle.hasLauncher ||
+        indices.length <= 2 * _kLauncherPinnedPerSide + 1) {
       return null;
     }
     final List<int> leading = indices.sublist(0, _kLauncherPinnedPerSide);
@@ -468,13 +472,49 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
+  /// 分页形态的一排（MD3）：
+  /// - 分页滑动：每页 5 格；
+  /// - 中央展开 + 翻页：每页两侧 4 格，正中「+」不随页移动，「+」里是当前页
+  ///   之外的全部目的地。
+  /// 底栏横滑归翻页，所以不挂滑动指示器 / 拖选，各格自己画选中药丸。
+  Widget _buildPagedRow(BuildContext context, double width, List<int> indices) {
+    final bool center = barStyle.hasLauncher;
+    final int perPage = center ? 2 * _kLauncherPinnedPerSide : 5;
+    final List<List<int>> pages = <List<int>>[
+      for (int start = 0; start < indices.length; start += perPage)
+        indices.sublist(start, math.min(indices.length, start + perPage)),
+    ];
+    final double cellWidth = width / 5;
+    return _NavPagedRow(
+      pages: pages,
+      currentIndex: currentIndex,
+      centerGap: center,
+      cellBuilder: (int i) => _cell(context, i, cellWidth: cellWidth),
+      centerBuilder: !center
+          ? null
+          : (List<int> onPage) {
+              final List<int> hidden = <int>[
+                for (final int i in indices)
+                  if (!onPage.contains(i)) i,
+              ];
+              return _NavLauncherCell(
+                items: items,
+                hidden: searchLeading ? hidden.reversed.toList() : hidden,
+                currentIndex: currentIndex,
+                onTap: onTap,
+                cellWidth: cellWidth,
+              );
+            },
+    );
+  }
+
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
   /// 只剩当前项图标的圆（宽度动画；减弱动态效果下瞬间到位），其余目的地
   /// 淡出并移出焦点遍历 / 命中测试。焦点 id 与展开态一致（`nav-bar-<序号>`），
   /// 最小化圆用单独的 `nav-mini-bar`。
   Widget _buildGlassTabBar(BuildContext context) {
-    final int? rawSearch = centerLauncher ? null : glassSearchIndex;
+    final int? rawSearch = barStyle.lookupInBar ? null : glassSearchIndex;
     final int? search =
         rawSearch != null &&
             rawSearch >= 0 &&
@@ -624,7 +664,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final int? rawSearch = glassSearchIndex;
     int? search;
     if (materialFab == null &&
-        !centerLauncher &&
+        !barStyle.lookupInBar &&
         rawSearch != null &&
         rawSearch >= 0 &&
         rawSearch < items.length &&
@@ -739,6 +779,10 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
+    if (this.barStyle.pages &&
+        indices.length > 2 * _kLauncherPinnedPerSide + 1) {
+      return _buildPagedRow(context, width, indices);
+    }
     final _LauncherSplit? split = _launcherSplit(indices);
     if (split != null) {
       final List<int> pinned = <int>[...split.leading, ...split.trailing];
@@ -2315,6 +2359,208 @@ class _FloatingNavSurface extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// 底栏分页行：[pages] 每页一组目的地，手指在底栏上左右拖跟手、松手按距离 /
+/// 速度吸附到相邻页（spatial 弹簧带回弹）；底部一排小圆点提示页数与当前页。
+/// 当前项换到别的页（如正文横滑切模块）时自动翻过去。[centerGap] 为真时每页
+/// 两侧各两格、中间空一格给 [centerBuilder] 画的「+」（它不随页移动）。
+class _NavPagedRow extends StatefulWidget {
+  const _NavPagedRow({
+    required this.pages,
+    required this.currentIndex,
+    required this.cellBuilder,
+    this.centerGap = false,
+    this.centerBuilder,
+  });
+
+  final List<List<int>> pages;
+  final int currentIndex;
+  final Widget Function(int index) cellBuilder;
+  final bool centerGap;
+  final Widget Function(List<int> onPage)? centerBuilder;
+
+  @override
+  State<_NavPagedRow> createState() => _NavPagedRowState();
+}
+
+class _NavPagedRowState extends State<_NavPagedRow>
+    with SingleTickerProviderStateMixin {
+  /// 以「页」为单位的连续位置：0 = 第一页，1 = 第二页……拖动时取小数。
+  late final AnimationController _position = AnimationController.unbounded(
+    vsync: this,
+  );
+  late int _page = _pageOf(widget.currentIndex) ?? 0;
+  double _width = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _position.value = _page.toDouble();
+  }
+
+  @override
+  void didUpdateWidget(_NavPagedRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final int last = widget.pages.length - 1;
+    if (_page > last) _settleTo(last);
+    if (oldWidget.currentIndex != widget.currentIndex) {
+      final int? page = _pageOf(widget.currentIndex);
+      if (page != null && page != _page) _settleTo(page);
+    }
+  }
+
+  @override
+  void dispose() {
+    _position.dispose();
+    super.dispose();
+  }
+
+  int? _pageOf(int index) {
+    for (int p = 0; p < widget.pages.length; p++) {
+      if (widget.pages[p].contains(index)) return p;
+    }
+    return null;
+  }
+
+  void _settleTo(int page, {double velocity = 0}) {
+    setState(() => _page = page);
+    // 减弱动态效果 / 墨水屏下 token 是降级版，直接落到终值。
+    unawaited(
+      _position.fushiSpringTo(
+        page.toDouble(),
+        context.fushiMotion.spatialFast,
+        velocity: velocity,
+      ),
+    );
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final int last = widget.pages.length - 1;
+    double next = _position.value - details.delta.dx / _width;
+    // 首页 / 末页之外有阻尼，不让整排被拖空。
+    if (next < 0) next = _position.value - details.delta.dx / _width / 3;
+    if (next > last) next = _position.value - details.delta.dx / _width / 3;
+    _position.value = next.clamp(-0.3, last + 0.3);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = -details.velocity.pixelsPerSecond.dx / _width;
+    final double pos = _position.value;
+    int target = pos.round();
+    if (velocity.abs() > 0.8) {
+      target = velocity > 0 ? pos.floor() + 1 : pos.ceil() - 1;
+    }
+    target = target.clamp(0, widget.pages.length - 1);
+    if (target != _page) fushiSelectionHaptic(context);
+    _settleTo(target, velocity: velocity);
+  }
+
+  Widget _pageRow(List<int> page) {
+    final List<Widget?> slots = List<Widget?>.filled(5, null);
+    if (widget.centerGap) {
+      const List<int> order = <int>[0, 1, 3, 4];
+      for (int k = 0; k < page.length && k < order.length; k++) {
+        slots[order[k]] = widget.cellBuilder(page[k]);
+      }
+    } else {
+      for (int k = 0; k < page.length && k < 5; k++) {
+        slots[k] = widget.cellBuilder(page[k]);
+      }
+    }
+    return Row(
+      children: <Widget>[
+        for (final Widget? slot in slots)
+          Expanded(child: slot ?? const SizedBox.shrink()),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
+    final Color dot = bar?.content ?? Theme.of(context).colorScheme.onSurface;
+    final Widget Function(List<int>)? center = widget.centerBuilder;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        _width = math.max(1, box.maxWidth);
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          // 翻页是纯指针手势；读屏 / 手柄靠各格自己的焦点与点击语义，焦点移到
+          // 别页的格子上时随当前项自动翻过去。
+          excludeFromSemantics: true,
+          onHorizontalDragUpdate: _onDragUpdate,
+          onHorizontalDragEnd: _onDragEnd,
+          child: Stack(
+            children: <Widget>[
+              ClipRect(
+                child: AnimatedBuilder(
+                  animation: _position,
+                  builder: (BuildContext context, Widget? _) {
+                    final double pos = _position.value;
+                    return Stack(
+                      children: <Widget>[
+                        for (int p = 0; p < widget.pages.length; p++)
+                          if ((p - pos).abs() < 1.5)
+                            Positioned.fill(
+                              child: Transform.translate(
+                                offset: Offset((p - pos) * _width, 0),
+                                // 看不见的页不进焦点遍历 / 命中。
+                                child: ExcludeFocus(
+                                  excluding: p != _page,
+                                  child: IgnorePointer(
+                                    ignoring: p != _page,
+                                    child: _pageRow(widget.pages[p]),
+                                  ),
+                                ),
+                              ),
+                            ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              if (center != null)
+                Align(
+                  child: SizedBox(
+                    width: _width / 5,
+                    child: center(widget.pages[_page]),
+                  ),
+                ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 3,
+                child: IgnorePointer(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      for (int p = 0; p < widget.pages.length; p++)
+                        AnimatedContainer(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          width: p == _page ? 10 : 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: dot.withValues(
+                              alpha: p == _page ? 0.9 : 0.35,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

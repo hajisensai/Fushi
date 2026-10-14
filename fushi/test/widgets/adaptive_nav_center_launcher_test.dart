@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_launcher_fan.dart';
 
 // 2026-10-14 底栏「中央展开」原型：目的地多于 5 个时胶囊只留首尾各两项 +
@@ -33,7 +34,7 @@ void main() {
                 currentIndex: currentIndex,
                 onTap: taps.add,
                 items: itemsOf(count),
-                centerLauncher: true,
+                barStyle: AdaptiveNavBarStyle.launcher,
               ),
             ),
           ),
@@ -118,7 +119,7 @@ void main() {
                 onTap: taps.add,
                 onDragSelect: dragSelects.add,
                 items: itemsOf(9),
-                centerLauncher: true,
+                barStyle: AdaptiveNavBarStyle.launcher,
               ),
             ),
           ),
@@ -162,6 +163,96 @@ void main() {
     expect(shown('Tab4'), findsNothing);
     expect(taps, isEmpty);
     expect(dragSelects, isEmpty);
+  });
+
+  // 分页形态：底栏上左右滑翻页（跟手 + 吸附），小圆点提示页数。
+  Future<List<int>> pumpStyled(
+    WidgetTester tester,
+    AdaptiveNavBarStyle style, {
+    int currentIndex = 0,
+  }) async {
+    final List<int> taps = <int>[];
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: currentIndex,
+                onTap: taps.add,
+                items: itemsOf(9),
+                barStyle: style,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return taps;
+  }
+
+  List<String> barLabels() => <String>[
+    for (int i = 0; i < 9; i++)
+      if (shown('Tab$i').evaluate().isNotEmpty) 'Tab$i',
+  ];
+
+  Future<void> swipeBar(WidgetTester tester, double dx) async {
+    final double y = tester.getCenter(find.byType(Scaffold)).dy + 360;
+    await tester.dragFrom(Offset(200 - dx / 2, y), Offset(dx, 0));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('分页滑动：一页 5 个，左滑翻到下一页，点第二页的项照常切', (WidgetTester tester) async {
+    final List<int> taps = await pumpStyled(tester, AdaptiveNavBarStyle.pager);
+    expect(barLabels(), <String>['Tab0', 'Tab1', 'Tab2', 'Tab3', 'Tab4']);
+    expect(shown(t.home_nav_more), findsNothing);
+    await swipeBar(tester, -220);
+    expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
+    await tester.tap(shown('Tab6'));
+    await tester.pumpAndSettle();
+    expect(taps, <int>[6]);
+    // 右滑回第一页；首页再右滑不动。
+    await swipeBar(tester, 220);
+    expect(barLabels().first, 'Tab0');
+    await swipeBar(tester, 220);
+    expect(barLabels().first, 'Tab0');
+  });
+
+  testWidgets('分页滑动：当前项在第二页时直接停在第二页', (WidgetTester tester) async {
+    await pumpStyled(tester, AdaptiveNavBarStyle.pager, currentIndex: 7);
+    expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
+  });
+
+  testWidgets('中央展开 + 翻页：两侧 4 个随页翻，「+」里是当前页之外的全部', (WidgetTester tester) async {
+    await pumpStyled(tester, AdaptiveNavBarStyle.launcherPager);
+    expect(barLabels(), <String>['Tab0', 'Tab1', 'Tab2', 'Tab3']);
+    final Offset plus = tester.getCenter(shown(t.home_nav_more));
+    expect(
+      plus.dx,
+      moreOrLessEquals(tester.getCenter(find.byType(Scaffold)).dx, epsilon: 1),
+    );
+    await tester.tap(shown(t.home_nav_more));
+    await tester.pumpAndSettle();
+    expect(barLabels(), <String>['Tab4', 'Tab5', 'Tab6', 'Tab7', 'Tab8']);
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    await swipeBar(tester, -220);
+    expect(barLabels(), <String>['Tab4', 'Tab5', 'Tab6', 'Tab7']);
+    // 「+」不随页移动。
+    expect(
+      tester.getCenter(shown(t.home_nav_more)).dx,
+      moreOrLessEquals(plus.dx, epsilon: 1),
+    );
+    await tester.tap(shown(t.home_nav_more));
+    await tester.pumpAndSettle();
+    expect(barLabels(), <String>['Tab0', 'Tab1', 'Tab2', 'Tab3', 'Tab8']);
   });
 
   testWidgets('不多于 5 个入口时照常平铺，没有「+」', (WidgetTester tester) async {

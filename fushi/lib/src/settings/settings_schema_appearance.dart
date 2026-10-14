@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -425,22 +426,39 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
-          // 手机底栏「中央展开」：左右各两项 + 中央「+」，其余模块点「+」弧形
-          // 弹出（MD3 与 Apple 设计系统都读）。
-          SettingsSwitchItem(
-            id: 'appearance.nav_bar_center_launcher',
-            title: t.home_nav_bar_center_launcher,
+          // 手机底栏形态：平铺 / 中央展开（左右各两项 + 「+」弧形弹出，可按住
+          // 划过去）/ 分页滑动 / 中央展开 + 翻页。四个选项标签偏长，用下拉。
+          SettingsSegmentedItem<AdaptiveNavBarStyle>(
+            id: 'appearance.nav_bar_style',
+            title: t.home_nav_bar_style,
             icon: FushiIcons.add,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.navBarCenterLauncher,
-            onChanged: (SettingsContext settingsContext, bool value) {
-              unawaited(
-                settingsContext.appModel
-                    .setNavBarCenterLauncher(value)
-                    .then((_) => settingsContext.refresh()),
-              );
-            },
-            defaultValue: false,
+            dropdown: true,
+            options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.flat,
+                label: t.home_nav_bar_style_flat,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.launcher,
+                label: t.home_nav_bar_style_launcher,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.pager,
+                label: t.home_nav_bar_style_pager,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.launcherPager,
+                label: t.home_nav_bar_style_launcher_pager,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.navBarStyle,
+            onChanged:
+                (SettingsContext settingsContext, AdaptiveNavBarStyle value) =>
+                    settingsContext.appModel
+                        .setNavBarStyle(value)
+                        .then((_) => settingsContext.refresh()),
+            defaultValue: AdaptiveNavBarStyle.flat,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；
