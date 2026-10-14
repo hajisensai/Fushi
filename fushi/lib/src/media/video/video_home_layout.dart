@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 
 /// 视频首页（hayase 式改版，TODO-2486）的布局与筛选纯函数。
@@ -244,6 +245,13 @@ class VideoSeriesPlaybackState {
   final int lastWatchedAtMs;
   final int positionMs;
   final bool completed;
+
+  /// 换成合集续播的共享输入，锚点判据只走 [latestPlayedMemberIndex] 一处。
+  CollectionMemberProgress get progress => CollectionMemberProgress(
+    positionMs: positionMs,
+    completed: completed,
+    lastPlayedAt: lastWatchedAtMs,
+  );
 }
 
 /// 成员的有效「最近观看时刻」（epoch 毫秒，0 = 没看过）。纯函数。
@@ -273,49 +281,42 @@ int effectiveWatchedAtMs({
 /// Legacy rows without a watch timestamp fall back to the last traced member in
 /// stable episode order.
 ///
-/// 只有时刻、没有进度也没看完的成员（连播进下一集几秒就退出、或进度被拖回 0）
-/// 不算锚点：此前它会被选成「最近播放」，于是「继续观看」按「进度为 0」把整部
-/// 合集丢掉，「下一集」却跳到它**后面**那集——这一集本身从此在首页无入口
-/// （用户实报：K-ON! 看完第 7 集自动连播第 8 集几秒后退出，首页只剩「下一集 ·
-/// 第 9 集」）。跳过它后锚点落回上一集，两行都指向这一集。
-int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) {
-  int? bestIndex;
-  int bestWatchedAt = 0;
-  for (int index = 0; index < members.length; index++) {
-    final VideoSeriesPlaybackState member = members[index];
-    if (!member.completed && member.positionMs <= 0) continue;
-    if (member.lastWatchedAtMs >= bestWatchedAt) {
-      bestWatchedAt = member.lastWatchedAtMs;
-      bestIndex = index;
-    }
-  }
-  return bestIndex;
-}
+/// 判据委托 [latestPlayedMemberIndex]（与详情大卡 [continueMemberIndex] 同一
+/// 实现，BUG-3370）：只打开过、进度 0 的那集也是锚点。
+int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) =>
+    latestPlayedMemberIndex(<CollectionMemberProgress>[
+      for (final VideoSeriesPlaybackState member in members) member.progress,
+    ]);
 
-/// The Next Episode target is always the member immediately after the episode
-/// returned by [latestPlayedSeriesIndex].
+/// 「下一集」行的目标集（Next-Up）：
+///
+/// * 锚点（[latestPlayedSeriesIndex]）**已开始看**（看完或有进度）→ 紧接的下一集；
+///   没有下一集 → null；
+/// * 锚点**只打开过**（有时刻、进度 0、未完成）→ 停在它自己——它就是还没看的
+///   下一集。此前一律取锚点 +1：看完第 7 集自动连播第 8 集几秒退出，「下一集」
+///   跳到第 9 集，第 8 集在首页无入口（BUG-3370）。
 int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
-  if (current == null || current + 1 >= members.length) return null;
+  if (current == null) return null;
+  if (!members[current].progress.hasStarted) return current;
+  if (current + 1 >= members.length) return null;
   return current + 1;
 }
 
 /// 「继续观看」行的合集目标集（Next-Up 语义，与 hero 大卡的
-/// `continueMemberIndex` 同口径）：
+/// [continueMemberIndex] 同一锚点、给同一答案）：
 ///
-/// * 最近实际播放的那集**没看完**（有进度）→ 停在它；
+/// * 最近实际播放的那集**没看完**（有进度，或只打开过、进度 0）→ 停在它；
 /// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
-/// * 没有播放痕迹、或有痕迹但位置被拖回 0 且未标完成 → null（与改动前一致）。
+/// * 整部合集没有任何播放痕迹 → null。
 ///
-/// 此前本行只认第一种情况：一集从头看到尾再退出，`completedAt` 一落库合集就从
-/// 「继续观看」消失、只剩「下一集」行有它；中途退出的反而在。用户视角是同一部番
-/// 在首页时有时无。看完一集的用户下一步显然是看下一集——那就是「继续观看」。
+/// 「只打开过」也进本行（BUG-3370）：用户确实打开过这部合集，此前按「进度为 0」
+/// 整部丢掉，只碰过第 1 集几秒的合集在首页彻底消失，大卡却显示「继续看 第1集」。
 int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
   if (current == null) return null;
-  final VideoSeriesPlaybackState state = members[current];
-  if (state.completed) return nextEpisodeAfterLatestPlayed(members);
-  return state.positionMs > 0 ? current : null;
+  if (!members[current].completed) return current;
+  return current + 1 < members.length ? current + 1 : null;
 }
 
 /// 条目级看完状态判定（本地即筛）：
