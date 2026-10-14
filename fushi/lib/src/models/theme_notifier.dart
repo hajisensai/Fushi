@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -1860,6 +1861,7 @@ class ThemeNotifier extends ChangeNotifier {
     glassDesign: designSystem == 'glass',
     // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
     monochromeAccent: appThemeKey == 'system-theme',
+    platform: defaultTargetPlatform,
   );
 
   static ThemeData _buildFushiThemeDataFrom(_ThemeDataInputs inputs) =>
@@ -3177,6 +3179,10 @@ TooltipThemeData fushiAppleTooltipTheme({
 }
 
 /// [buildFushiThemeData] 的全部输入；值相等即可复用同一份 ThemeData。
+///
+/// [platform] 不是工厂参数：`ThemeData` 构造时自己读 [defaultTargetPlatform]
+/// 定 `ThemeData.platform`，所以它也是产物的隐式输入（测试里会用
+/// `debugDefaultTargetPlatformOverride` 切换）。
 @immutable
 class _ThemeDataInputs {
   const _ThemeDataInputs({
@@ -3187,6 +3193,7 @@ class _ThemeDataInputs {
     required this.glass,
     required this.glassDesign,
     required this.monochromeAccent,
+    required this.platform,
   });
 
   final ColorScheme scheme;
@@ -3196,6 +3203,7 @@ class _ThemeDataInputs {
   final FushiGlassMaterial glass;
   final bool glassDesign;
   final bool monochromeAccent;
+  final TargetPlatform platform;
 
   @override
   bool operator ==(Object other) =>
@@ -3206,7 +3214,8 @@ class _ThemeDataInputs {
       other.designSystem == designSystem &&
       other.glass == glass &&
       other.glassDesign == glassDesign &&
-      other.monochromeAccent == monochromeAccent;
+      other.monochromeAccent == monochromeAccent &&
+      other.platform == platform;
 
   @override
   int get hashCode => Object.hash(
@@ -3217,5 +3226,6 @@ class _ThemeDataInputs {
     glass,
     glassDesign,
     monochromeAccent,
+    platform,
   );
 }
