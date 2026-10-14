@@ -31,13 +31,14 @@ void main() {
       'lib/src/pages/implementations/video_fushi/side_panel.part.dart',
     ).readAsStringSync();
     final RegExp settingsCase = RegExp(
-      r'case _VideoSidePanelKind\.settings:[\s\S]{0,400}?'
+      r'case _VideoSidePanelKind\.settings:[\s\S]{0,800}?'
       r'return fushiQuickSettingsPanelWidth\(',
     );
     expect(
       settingsCase.hasMatch(source),
       isTrue,
-      reason: '设置侧栏宽度（_videoSidePanelWidth 的 settings 分支）必须调用 '
+      reason:
+          '设置侧栏宽度（_videoSidePanelWidth 的 settings 分支）必须调用 '
           'fushiQuickSettingsPanelWidth 自适应，不允许回退固定 560 窄条',
     );
   });

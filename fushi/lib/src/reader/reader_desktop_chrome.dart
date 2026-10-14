@@ -68,8 +68,7 @@ const double kReaderSideSheetWidth = 400;
 bool readerNavigationAutofocusesSearch({
   required bool navigationPresentation,
   required bool desktop,
-}) =>
-    navigationPresentation && desktop;
+}) => navigationPresentation && desktop;
 
 /// 顶部工具栏的顶部预留高。
 ///
@@ -109,8 +108,8 @@ const double kReaderSideSheetTabletWidth = 380;
 /// 铺满整窗。
 double readerSideSheetWidth(double windowWidth) {
   const double minBlank = 48;
-  final double preferred = readerPanelTierFor(windowWidth) ==
-          ReaderPanelTier.tablet
+  final double preferred =
+      readerPanelTierFor(windowWidth) == ReaderPanelTier.tablet
       ? kReaderSideSheetTabletWidth
       : kReaderSideSheetWidth;
   if (windowWidth - minBlank < preferred) {
@@ -249,13 +248,13 @@ class ReaderDesktopHeader extends StatelessWidget {
   final double height;
 
   Widget _button(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
-        key: a.key,
-        icon: a.icon,
-        tooltip: a.tooltipText,
-        color: textColor,
-        semanticsId: a.semanticsId,
-        onPressed: a.onPressed,
-      );
+    key: a.key,
+    icon: a.icon,
+    tooltip: a.tooltipText,
+    color: textColor,
+    semanticsId: a.semanticsId,
+    onPressed: a.onPressed,
+  );
 
   /// 标题槽：`书名 · 章名`。章名与书名重复（单章书的 TOC 常把章名写成书名）时只画书名。
   ///
@@ -330,7 +329,8 @@ class ReaderDesktopHeader extends StatelessWidget {
             builder: (BuildContext context, BoxConstraints constraints) {
               final bool compact = readerHeaderCompactForActions(
                 width: constraints.maxWidth,
-                actionCount: leading.length +
+                actionCount:
+                    leading.length +
                     trailing.length +
                     (overflowActions.isEmpty ? 0 : 1),
                 showsTitle: title.isNotEmpty,
@@ -354,9 +354,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                           if (!compact || a.pinned) _button(a),
                       ],
                     ),
-                    Expanded(
-                      child: _buildTitleSlot(titleStyle, chapterStyle),
-                    ),
+                    Expanded(child: _buildTitleSlot(titleStyle, chapterStyle)),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
@@ -367,30 +365,29 @@ class ReaderDesktopHeader extends StatelessWidget {
                             key: const ValueKey<String>(
                               'fushi_desktop_header_overflow',
                             ),
-                            tooltip: MaterialLocalizations.of(context)
-                                .moreButtonTooltip,
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).moreButtonTooltip,
                             icon: FushiIcon(Icons.more_vert, color: textColor),
                             iconSize: 22,
                             onSelected: (ReaderHeaderAction a) =>
                                 a.onPressed?.call(),
                             itemBuilder: (BuildContext context) =>
                                 <PopupMenuEntry<ReaderHeaderAction>>[
-                              for (final ReaderHeaderAction a in overflow)
-                                PopupMenuItem<ReaderHeaderAction>(
-                                  value: a,
-                                  enabled: a.onPressed != null,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: <Widget>[
-                                      FushiIcon(a.icon, size: 20),
-                                      const SizedBox(width: 12),
-                                      Flexible(
-                                        child: Text(a.label),
+                                  for (final ReaderHeaderAction a in overflow)
+                                    PopupMenuItem<ReaderHeaderAction>(
+                                      value: a,
+                                      enabled: a.onPressed != null,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: <Widget>[
+                                          FushiIcon(a.icon, size: 20),
+                                          const SizedBox(width: 12),
+                                          Flexible(child: Text(a.label)),
+                                        ],
                                       ),
-                                    ],
-                                  ),
-                                ),
-                            ],
+                                    ),
+                                ],
                           ),
                       ],
                     ),
@@ -621,8 +618,9 @@ class _ReaderPanelDragHandle extends StatelessWidget {
               width: 32,
               height: 4,
               decoration: BoxDecoration(
-                color: fushiNeutralSecondaryForeground(context)
-                    .withValues(alpha: 0.4),
+                color: fushiNeutralSecondaryForeground(
+                  context,
+                ).withValues(alpha: 0.4),
                 borderRadius: const BorderRadius.all(Radius.circular(2)),
               ),
             ),
@@ -672,8 +670,7 @@ enum ReaderSideSheetSide { left, right }
 bool readerWebViewPointerClosesSideSheet({
   required bool sideSheetOpen,
   required bool readerRouteIsCurrent,
-}) =>
-    sideSheetOpen && !readerRouteIsCurrent;
+}) => sideSheetOpen && !readerRouteIsCurrent;
 
 /// 侧板原地换内容的切换器（约定：四类侧板同一时刻只开一个，从一个切到另一个
 /// 不关再开）。桌面 / 平板档在侧板朝正文的一侧挂一条纵向 M3E 悬浮工具栏
@@ -785,74 +782,83 @@ Future<T?> showReaderSideSheet<T>({
         ? Colors.transparent
         : Theme.of(context).colorScheme.scrim.withValues(alpha: scrim),
     transitionDuration: motion ? FushiMotion.long : Duration.zero,
-    pageBuilder: (BuildContext route, Animation<double> a, Animation<double> b) {
-      Widget buildSheet(BuildContext ctx) {
-        final ReaderPanelPresentation presentation = presentationOf(ctx);
-        if (presentation == ReaderPanelPresentation.bottom) {
-          return _ReaderBottomPanel(builder: builder);
-        }
-        if (sideController == null) {
-          return _ReaderSidePanel(
-            side: side,
-            builder: builder,
-            switcher: switcher,
-          );
-        }
-        return ValueListenableBuilder<ReaderSideSheetSide>(
-          valueListenable: sideController,
-          builder:
-              (BuildContext context, ReaderSideSheetSide current, Widget? _) {
-            return _ReaderSidePanel(
-              side: current,
-              builder: builder,
-              animateSide: true,
-              switcher: switcher,
+    pageBuilder:
+        (BuildContext route, Animation<double> a, Animation<double> b) {
+          Widget buildSheet(BuildContext ctx) {
+            final ReaderPanelPresentation presentation = presentationOf(ctx);
+            if (presentation == ReaderPanelPresentation.bottom) {
+              return _ReaderBottomPanel(builder: builder);
+            }
+            if (sideController == null) {
+              return _ReaderSidePanel(
+                side: side,
+                builder: builder,
+                switcher: switcher,
+              );
+            }
+            return ValueListenableBuilder<ReaderSideSheetSide>(
+              valueListenable: sideController,
+              builder:
+                  (
+                    BuildContext context,
+                    ReaderSideSheetSide current,
+                    Widget? _,
+                  ) {
+                    return _ReaderSidePanel(
+                      side: current,
+                      builder: builder,
+                      animateSide: true,
+                      switcher: switcher,
+                    );
+                  },
             );
-          },
-        );
-      }
+          }
 
-      final Widget child = Builder(builder: buildSheet);
-      if (themeHost == null) return themes.wrap(child);
-      return _ReaderSideSheetThemes(
-        source: context,
-        initialThemes: themes,
-        changes: themeHost.themeChanges,
-        child: child,
-      );
-    },
-    transitionBuilder: (
-      BuildContext ctx,
-      Animation<double> animation,
-      Animation<double> secondary,
-      Widget child,
-    ) {
-      final CurvedAnimation curved = CurvedAnimation(
-        parent: animation,
-        curve: readerPanelEnterCurve(
-          presentationOf(ctx),
-          apple: isGlassDesign(ctx),
-        ),
-        reverseCurve: FushiMotion.exit,
-      );
-      final Offset begin = switch (presentationOf(ctx)) {
-        ReaderPanelPresentation.bottom => const Offset(0, 1),
-        ReaderPanelPresentation.side =>
-          (sideController?.value ?? side) == ReaderSideSheetSide.left
-              ? const Offset(-1, 0)
-              : const Offset(1, 0),
-      };
-      return SlideTransition(
-        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved),
-        child: FadeTransition(
-          opacity: CurvedAnimation(
+          final Widget child = Builder(builder: buildSheet);
+          if (themeHost == null) return themes.wrap(child);
+          return _ReaderSideSheetThemes(
+            source: context,
+            initialThemes: themes,
+            changes: themeHost.themeChanges,
+            child: child,
+          );
+        },
+    transitionBuilder:
+        (
+          BuildContext ctx,
+          Animation<double> animation,
+          Animation<double> secondary,
+          Widget child,
+        ) {
+          final CurvedAnimation curved = CurvedAnimation(
             parent: animation,
-            curve: const Interval(0, 0.5, curve: Curves.easeOut),
-          ),
-          child: child,
-        ),
-      );
-    },
+            curve: readerPanelEnterCurve(
+              presentationOf(ctx),
+              apple: isGlassDesign(ctx),
+            ),
+            reverseCurve: FushiMotion.exit,
+          );
+          final Offset begin = switch (presentationOf(ctx)) {
+            ReaderPanelPresentation.bottom => const Offset(0, 1),
+            ReaderPanelPresentation.side =>
+              (sideController?.value ?? side) == ReaderSideSheetSide.left
+                  ? const Offset(-1, 0)
+                  : const Offset(1, 0),
+          };
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: begin,
+              end: Offset.zero,
+            ).animate(curved),
+            child: FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: const Interval(0, 0.5, curve: Curves.easeOut),
+              ),
+              child: child,
+            ),
+          );
+        },
   );
 }
 
@@ -915,12 +921,23 @@ Color _readerPanelColor(BuildContext ctx) => isGlassDesign(ctx)
     ? appleColorsOf(ctx).groupedBackground
     : Theme.of(ctx).colorScheme.surfaceContainerLow;
 
-/// 侧板旁的面板切换工具栏（纵向 M3E 悬浮工具栏，选中项 secondaryContainer；
-/// Apple 下由 [FushiFloatingToolbar] 自己换成分组玻璃胶囊、选中项强调色字形）。
-class _ReaderPanelSwitcherRail extends StatelessWidget {
-  const _ReaderPanelSwitcherRail({required this.switcher});
+/// 侧板旁的面板切换工具栏（M3E 悬浮工具栏，选中项 secondaryContainer；Apple 下
+/// 由 [FushiFloatingToolbar] 自己换成分组玻璃胶囊、选中项强调色字形）。
+///
+/// 阅读器侧板与视频页浮层面板共用：侧板旁是纵向（[axis] 默认），视频页手机贴底
+/// 面板顶上是横向一排（贴底面板盖住了控制条，关掉再点要多走几步）。[keyPrefix]
+/// 决定工具栏与各项的稳定 key（测试 / 焦点驱动按它命中）。
+class ReaderPanelSwitcherRail extends StatelessWidget {
+  const ReaderPanelSwitcherRail({
+    required this.switcher,
+    this.axis = Axis.vertical,
+    this.keyPrefix = 'fushi_reader_panel',
+    super.key,
+  });
 
   final ReaderPanelSwitcher switcher;
+  final Axis axis;
+  final String keyPrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -928,15 +945,15 @@ class _ReaderPanelSwitcherRail extends StatelessWidget {
       valueListenable: switcher.current,
       builder: (BuildContext context, String current, Widget? _) {
         return FushiFloatingToolbar(
-          key: const ValueKey<String>('fushi_reader_panel_switcher'),
-          axis: Axis.vertical,
+          key: ValueKey<String>('${keyPrefix}_switcher'),
+          axis: axis,
           compact: true,
           groups: <List<FushiToolbarItem>>[
             <FushiToolbarItem>[
               for (final ({String id, IconData icon, String label}) item
                   in switcher.items)
                 FushiToolbarItem(
-                  key: ValueKey<String>('fushi_reader_panel_switch_${item.id}'),
+                  key: ValueKey<String>('${keyPrefix}_switch_${item.id}'),
                   icon: item.icon,
                   label: item.label,
                   selected: item.id == current,
@@ -1009,7 +1026,7 @@ class _ReaderSidePanel extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 76, 12, 12),
           child: Align(
             alignment: Alignment.topCenter,
-            child: _ReaderPanelSwitcherRail(switcher: sw),
+            child: ReaderPanelSwitcherRail(switcher: sw),
           ),
         ),
       );
@@ -1019,8 +1036,9 @@ class _ReaderSidePanel extends StatelessWidget {
         children: left ? <Widget>[panel, rail] : <Widget>[rail, panel],
       );
     }
-    final Alignment alignment =
-        left ? Alignment.centerLeft : Alignment.centerRight;
+    final Alignment alignment = left
+        ? Alignment.centerLeft
+        : Alignment.centerRight;
     if (!animateSide) return Align(alignment: alignment, child: panel);
     return AnimatedAlign(
       duration: fushiMotionDuration(ctx, FushiMotion.short),
@@ -1068,8 +1086,10 @@ class _ReaderBottomPanelState extends State<_ReaderBottomPanel>
   void _onDragUpdate(DragUpdateDetails details) {
     // 半屏档可向上拖回满高（负偏移，至多两档差）；满高档不能再往上。
     final double minOffset = _half ? -(_height - _halfHeight) : 0;
-    _drag.value =
-        (_drag.value + details.delta.dy).clamp(minOffset, _restHeight);
+    _drag.value = (_drag.value + details.delta.dy).clamp(
+      minOffset,
+      _restHeight,
+    );
   }
 
   void _settle() {
@@ -1115,8 +1135,10 @@ class _ReaderBottomPanelState extends State<_ReaderBottomPanel>
       topPadding: MediaQuery.paddingOf(ctx).top,
       keyboardInset: keyboard,
     );
-    _halfHeight = (size.height * kReaderPanelBottomSheetHalfFraction)
-        .clamp(0.0, _height);
+    _halfHeight = (size.height * kReaderPanelBottomSheetHalfFraction).clamp(
+      0.0,
+      _height,
+    );
     final double width = size.width < kReaderPanelBottomSheetMaxWidth
         ? size.width
         : kReaderPanelBottomSheetMaxWidth;

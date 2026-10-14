@@ -153,7 +153,7 @@ import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderHeaderAction, readerSideSheetWidth;
+    show ReaderHeaderAction, ReaderPanelSwitcher, readerSideSheetWidth;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
@@ -224,6 +224,10 @@ import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
+// 前缀：fushi_engine 的文件名解析器也导出了一个 VideoGroup。
+import 'package:fushi/src/settings/settings_destination.dart'
+    as settings_dest
+    show VideoGroup;
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
     show VideoSubtitleSyncRow;
 import 'package:fushi_engine/media/video/video_sidecar.dart';
@@ -984,6 +988,10 @@ abstract class VideoFushiTestHooks {
 enum _VideoSidePanelKind {
   speed,
   settings,
+  // 字幕 / 音频：从设置面板拆出的独立面板（面板切换条上与章节、画质、设置并列；
+  // 字幕轨 / 音频轨按钮直接打开它们）。
+  subtitle,
+  audio,
   // TODO-1351：`subtitleSources` / `audioTracks` 两个「外面浮的轨切换器」已删——字幕轨
   // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。TODO-1350：`secondarySubtitleSources`
   // 副字幕浮层也删——副字幕源改内联在「字幕」分类的可展开区里就地切换（不再跳独立窗口）。
@@ -8153,6 +8161,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         on = panel == _VideoSidePanelKind.chapters;
       case VideoControlItem.settings:
         on = panel == _VideoSidePanelKind.settings;
+      case VideoControlItem.subtitleTrack
+          when panel == _VideoSidePanelKind.subtitle:
+        on = true;
+      case VideoControlItem.audioTrack when panel == _VideoSidePanelKind.audio:
+        on = true;
       // 弹幕开关：开着 = secondary tonal 选中态（M3E toggle），关 = 中性。
       case VideoControlItem.danmaku:
         on = appModel.videoDanmakuEnabled;
@@ -10451,11 +10464,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 能力槽——把页面权威值 getter 与既有回调（[_setDelayMs] / [_setSpeed] /
   /// [_persistSubtitleStyle] 等，均即时生效 + 持久化 + 实时预览）接进去。关闭后把
   /// 键盘焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
-  Widget _buildVideoQuickSettingsSheet() {
+  Widget _buildVideoQuickSettingsSheet({
+    List<settings_dest.VideoGroup> groups =
+        VideoQuickSettingsSheet.settingsGroups,
+  }) {
     return VideoQuickSettingsSheet(
       appModel: appModel,
       ref: ref,
-      initialCategory: _settingsInitialCategory,
+      // 单分组面板（字幕 / 音频）恒开在自己的分组；字幕面板挂载即触发字幕源加载。
+      initialCategory: groups.length == 1
+          ? groups.single.name
+          : _settingsInitialCategory,
+      groups: groups,
       host: _buildVideoQuickSettingsHost(),
     );
   }
@@ -10694,8 +10714,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
+    // 字幕 / 音频已是独立面板：这两个分类直接开对应面板，其余开设置面板并定位。
+    final _VideoSidePanelKind kind = switch (initialCategory) {
+      'subtitle' => _VideoSidePanelKind.subtitle,
+      'audio' => _VideoSidePanelKind.audio,
+      _ => _VideoSidePanelKind.settings,
+    };
     _settingsInitialCategory = initialCategory;
-    _showVideoSidePanel(_VideoSidePanelKind.settings, sourceSlot: sourceSlot);
+    _showVideoSidePanel(kind, sourceSlot: sourceSlot);
   }
 
   /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化
