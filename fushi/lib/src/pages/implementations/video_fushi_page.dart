@@ -40,6 +40,10 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart'
+    show probeSynchronizedClipSupport;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -64,6 +68,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/manga/ocr/ocr_llm_default_consent.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
@@ -148,7 +153,7 @@ import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderHeaderAction, readerSideSheetWidth;
+    show ReaderHeaderAction, ReaderPanelSwitcher, readerSideSheetWidth;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
@@ -175,6 +180,7 @@ import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
         GamepadButtonIntent,
+        GamepadButtonReleaseIntent,
         GamepadLongPressIntent,
         focusedEditableText,
         tryDictionaryPopupGamepadButton;
@@ -218,6 +224,10 @@ import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
+// 前缀：fushi_engine 的文件名解析器也导出了一个 VideoGroup。
+import 'package:fushi/src/settings/settings_destination.dart'
+    as settings_dest
+    show VideoGroup;
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
     show VideoSubtitleSyncRow;
 import 'package:fushi_engine/media/video/video_sidecar.dart';
@@ -327,6 +337,7 @@ part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
 part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
+part 'video_fushi/advanced_mining.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -977,6 +988,10 @@ abstract class VideoFushiTestHooks {
 enum _VideoSidePanelKind {
   speed,
   settings,
+  // 字幕 / 音频：从设置面板拆出的独立面板（面板切换条上与章节、画质、设置并列；
+  // 字幕轨 / 音频轨按钮直接打开它们）。
+  subtitle,
+  audio,
   // TODO-1351：`subtitleSources` / `audioTracks` 两个「外面浮的轨切换器」已删——字幕轨
   // 收进设置面板「字幕」分类顶部、音频轨收进「音频」分类。TODO-1350：`secondarySubtitleSources`
   // 副字幕浮层也删——副字幕源改内联在「字幕」分类的可展开区里就地切换（不再跳独立窗口）。
@@ -1729,11 +1744,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoBookRow? _bookRow;
   String? _title;
 
-  /// 播放列表（系列）名（TODO-761，方案 B）。仅当本视频是播放列表（多集，
-  /// [_isPlaylist] 为真）时记 [VideoBookRow.title]（系列名）；单视频 / 远端视频
-  /// 保持 null。制卡时 [DictionaryPageMixin] 的 `documentTitle` 据此拼成
-  /// 「系列名 - 剧集名」，老 Anki 卡片模板的 `{document-title}` 自动带上系列名，
-  /// 无需改模板。**只用于制卡 documentTitle**，不影响播放器标题栏（仍是剧集名 [_title]）。
+  /// 播放列表（系列）名（TODO-761，方案 B）。本地仅当本视频是播放列表（多集，
+  /// [_isPlaylist] 为真）时记合集名；远端 / 在线视频记其合集归属名
+  /// （[remoteVideoWorkTitle]，BUG-3332）；本地单视频保持 null。制卡时
+  /// `documentTitle` 据此拼成「系列名 - 剧集名」，老 Anki 卡片模板的
+  /// `{document-title}` 自动带上系列名；作品名标签与 Jimaku 检索种子也读它。
+  /// 不影响播放器标题栏（仍是剧集名 [_title]）。
   String? _playlistTitle;
   List<VideoDanmakuItem> _danmakuItems = const <VideoDanmakuItem>[];
 
@@ -2348,6 +2364,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
 
+  /// 最近一次字幕查词那一刻的播放位置（播放器轴毫秒）。「高级制卡」的「查词时画面」
+  /// 指的就是这一刻；对话框里的试听会挪动播放头，关闭时据此放回（[_lookupAt] 写入）。
+  int? _lastLookupPositionMs;
+
+  /// 正开着的「高级制卡」对话框会话（锁住的查词画面、在线流缓冲副本、缩略图缓存）。
+  /// [buildAdvancedMiningSections] 建，对话框 onClosed 释放；制卡在同步前缀里读它。
+  _VideoAdvancedMiningSession? _advancedMiningSession;
+
   /// 最近一次字幕查词命中的词在字幕上的范围（BUG-2091），由 [_lookupAt] 按引擎回报的
   /// 匹配长度写入；查无结果写 null。**不**在关栈路径复位——overlay 拿到的是
   /// [_activeSubtitleLookupHighlight] 这个派生值：弹窗栈全关即 null，任何关闭路径都
@@ -2397,7 +2421,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   Future<void> Function()? get onStopSentenceAudioPreviewToDraft =>
-      () async => _controller?.pause();
+      () async => _controller?.stopPlayRange();
+
+  /// 「高级制卡」对话框的句子 / 音频 / 图片分区（视频车道）。实现见
+  /// [_VideoAdvancedMining]；在任何 await 之前锁住查词画面。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) => _buildAdvancedMiningSectionsImpl();
 
   /// TODO-382「+句」可撤销（视频车道）：弹窗点「清空已加句子」清掉本会话累积的全部草稿
   /// 句，回传清空后的句数（恒 0）。不动字幕列表「选入词卡」的 cue 选择集（两套独立机制）。
@@ -2762,6 +2793,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘按住临时倍速的触发键（非空 = 正按住中）。keyup/repeat 只按此键识别、
   /// 不看修饰键，按住期间先松修饰键也不会把倍速卡在加速态。
   LogicalKeyboardKey? _holdSpeedTriggerKey;
+
+  /// 手柄按住临时倍速的触发按钮（非空 = 正按住中，BUG-3330）。与键盘触发键同一个
+  /// 状态机 [resolveHoldSpeedTransition]，松开沿来自 Android 原生 KeyUpEvent 或桌面
+  /// 轮询的 [GamepadButtonReleaseIntent]。
+  GamepadButton? _holdSpeedGamepadButton;
 
   /// TODO-1154：长按倍速指示徽章的跟随锚点（局部坐标，即 GestureDetector/Stack 同一坐标系
   /// 的 `details.localPosition`）+ 当前速度。非空时在指针上方渲染「Nx」徽章跟手移动
@@ -3691,6 +3727,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         const <RemoteVideoInfo>[];
     _activeRemoteMember = null;
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
+    // BUG-3332：远端 / 在线视频的作品名（合集名）进同一个槽位，制卡的作品名标签与
+    // 「系列名 - 剧集名」documentTitle 才有作品名；此前远端恒 null，扩展在线看的卡只剩
+    // 「Episode 2」这种几乎无用的标签。
+    _playlistTitle = remoteVideoWorkTitle(info);
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     // 远端音轨恢复（BUG-1636 → 播放偏好同步泛化批）：本地带戳选择与 host 下发值
@@ -5659,6 +5699,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void dispose() {
     _unregisterVideoRemote();
+    // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
+    _discardAdvancedMiningSession();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();
@@ -6496,6 +6538,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       controller: controller,
       fit: videoFitModeToBoxFit(_videoFitMode),
       scope: appModel.videoPauseOcrScope,
+      onEnableRequested: () => unawaited(_enablePauseOcrForGraphicSubtitles()),
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
           unawaited(
@@ -6518,6 +6561,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _videoButtonBarHeight +
           8 * _videoUiScale,
     );
+  }
+
+  /// BUG-3339：暂停 OCR 默认关闭，用户在图片字幕帧的提示上点「开启」——只开到
+  /// 「仅图片字幕」（提示只在图片字幕上出现，用户要的就是这一档）；要扩到所有视频去
+  /// 设置里选。写完偏好重建本页，覆盖层拿到新 scope 后立即识别当前帧。
+  Future<void> _enablePauseOcrForGraphicSubtitles() async {
+    await appModel.setVideoPauseOcrScope(VideoPauseOcrScope.graphicSubtitles);
+    if (mounted) setState(() {});
   }
 
   /// 图形字幕整轨转文字的进度卡（左上角、顶栏下方；没在跑时零尺寸）。进度经
@@ -6603,7 +6654,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       confirmLensUpload: () async =>
           mounted &&
           await _focusOwnership.guardOverlay(
-            () => ensureGoogleLensDisclosure(context),
+            () => ensureGoogleLensDisclosure(
+              context,
+              scene: GoogleLensDisclosureScene.videoFrames,
+            ),
           ),
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,
@@ -7162,9 +7216,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 经 [videoActionCallbacks]）共用同一份 [VideoPlayerShortcutActions]，保证两条输入
   /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsShortcuts] 沉浸门控与控制
   /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
+  ///
+  /// [input]：本次派发来自哪类输入（BUG-3339）。只有「上一句字幕」随它变——键盘是
+  /// 方向键心智（太远退化成回退），手柄 / 鼠标侧键 / 屏幕按钮是按钮心智（恒跳句）。
   VideoPlayerShortcutActions _buildVideoShortcutActions(
-    VideoPlayerController controller,
-  ) {
+    VideoPlayerController controller, {
+    required VideoActionInput input,
+  }) {
     return VideoPlayerShortcutActions(
       togglePlayPause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.playOrPause()),
@@ -7174,10 +7232,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       pause: () =>
           _runWhenImmersiveAllowsShortcuts(() => unawaited(controller.pause())),
       // Ctrl+←/→ = 上/下一句字幕（TODO-090）。**键盘方向键**语义：上一句太远时 Ctrl+←
-      // 退化成回退 seekSeconds 秒（TODO-085，故 degradeFarCueToTimeSeek: true）；无 cue
-      // 时也直接当回退键。下一句保持纯句子跳（无 cue 时前进 seekSeconds 秒）。
-      // 底栏 / 手柄 / 双击的「上一句」按钮走 skipToPrevCueOrSeekBack 的默认（不退化，
-      // 恒跳句，BUG-942）——按钮心智是「跳句」，不是方向键 seek。
+      // 退化成回退 seekSeconds 秒（TODO-085）；无 cue 时也直接当回退键。下一句保持纯
+      // 句子跳（无 cue 时前进 seekSeconds 秒）。手柄 / 鼠标侧键 / 屏幕按钮是按钮心智，
+      // 恒跳句不退化（BUG-942 / BUG-3339），由 [input] 决定，见 [VideoActionInput]。
       // 键盘 / 手柄跳句只**续命**控制条、不唤起（BUG-2030）：控制条本就在显示时连按跳句
       // 不该让它 2 秒消失（BUG-176 ②/BUG-215 的诉求），但它隐藏时按快捷键也不该把底栏弹
       // 出来 + 顶一次字幕（用户报「快捷键上下句字幕会弹出 OSC」）。两者的分界就是
@@ -7189,7 +7246,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
-              degradeFarCueToTimeSeek: true,
+              degradeFarCueToTimeSeek: videoPrevSubtitleDegradesFarCue(input),
             ),
           );
         });
@@ -7235,8 +7292,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
       resetSpeed: () =>
           _runWhenImmersiveAllowsShortcuts(() => unawaited(_setSpeed(1.0))),
-      // 手柄通道的按住临时倍速（键盘通道不经此表，见 _handleHoldSpeedKey）：
-      // 手柄没有可靠的松开事件管线，退化成按一下开/再按恢复的翻转语义。
+      // 没有松开沿的入口（鼠标侧键、屏幕自定义按钮）的按住临时倍速：退化成按一下
+      // 开 / 再按恢复。键盘（_handleHoldSpeedKey）与手柄（_handleHoldSpeedGamepadEdge）
+      // 有松开沿，都不经此表（BUG-3330）。
       toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
       previousFrame: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.frameStep(forward: false)),
@@ -7442,12 +7500,48 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return true;
     }
     if (controller == null) return false;
+    // BUG-3330：按住临时倍速走按住语义（与键盘同一状态机），松开沿见
+    // [_handleVideoGamepadButtonRelease]。不进下面的翻转回调。
+    if (action == ShortcutAction.videoHoldSpeed) {
+      _handleHoldSpeedGamepadEdge(HoldSpeedEdge.press, button);
+      return true;
+    }
     final VoidCallback? callback = videoActionCallbacks(
-      _buildVideoShortcutActions(controller),
+      _buildVideoShortcutActions(controller, input: VideoActionInput.button),
     )[action];
     if (callback == null) return false;
     callback();
     return true;
+  }
+
+  /// 手柄按钮松开沿（BUG-3330）：桌面轮询经 [GamepadButtonReleaseIntent]、Android
+  /// 经原生 [KeyUpEvent] 到这里。只有「按住」类动作关心松开，目前只有按住临时倍速。
+  bool _handleVideoGamepadButtonRelease(GamepadButton button) =>
+      _handleHoldSpeedGamepadEdge(HoldSpeedEdge.release, button);
+
+  /// 手柄的按住临时倍速：与键盘 [_handleHoldSpeedKey] 共用纯状态机
+  /// [resolveHoldSpeedTransition]。按下沿只在调用方已解析出 videoHoldSpeed 时传入，
+  /// 故按下沿恒视为命中绑定。返回是否消费。
+  bool _handleHoldSpeedGamepadEdge(HoldSpeedEdge edge, GamepadButton button) {
+    switch (resolveHoldSpeedTransition<GamepadButton>(
+      edge: edge,
+      trigger: button,
+      activeTrigger: _holdSpeedGamepadButton,
+      matchesHoldSpeedBinding: edge == HoldSpeedEdge.press,
+    )) {
+      case HoldSpeedKeyTransition.none:
+        return false;
+      case HoldSpeedKeyTransition.swallow:
+        return true;
+      case HoldSpeedKeyTransition.release:
+        _holdSpeedGamepadButton = null;
+        _releaseHoldSpeed();
+        return true;
+      case HoldSpeedKeyTransition.engage:
+        _holdSpeedGamepadButton = button;
+        _runWhenImmersiveAllowsShortcuts(_engageHoldSpeed);
+        return true;
+    }
   }
 
   /// TODO-1342：Android/原生手柄按键入口。控制器按键在移动端以 [KeyEvent] 到达，冒泡
@@ -7455,12 +7549,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 冒泡）；仅当事件确实来自控制器类设备（[GamepadButton.fromKeyEvent] 非空）才接管，
   /// 其余键（普通键盘键、方向键光标编辑等）一律放行不消费，交回既有解析路径。
   KeyEventResult _handleVideoGamepadNativeKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final GamepadButton? button = GamepadButton.fromKeyEvent(event);
     if (button == null) return KeyEventResult.ignored;
-    return _handleVideoGamepadButton(button)
-        ? KeyEventResult.handled
-        : KeyEventResult.ignored;
+    final bool handled = switch (event) {
+      KeyDownEvent() => _handleVideoGamepadButton(button),
+      // BUG-3330：按住类动作要松开沿与重复沿（重复沿只在按住中被吞掉，其余放行）。
+      KeyUpEvent() => _handleVideoGamepadButtonRelease(button),
+      KeyRepeatEvent() => _handleHoldSpeedGamepadEdge(
+        HoldSpeedEdge.repeat,
+        button,
+      ),
+      _ => false,
+    };
+    return handled ? KeyEventResult.handled : KeyEventResult.ignored;
   }
 
   /// BUG-853 / TODO-847 对齐：Windows 微软 IME 激活时裸 Space 的 `logicalKey` 被引擎
@@ -7646,7 +7747,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (controller == null) return false;
       // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
       final VoidCallback? run = videoActionCallbacks(
-        _buildVideoShortcutActions(controller),
+        _buildVideoShortcutActions(controller, input: VideoActionInput.button),
       )[action];
       if (run == null) return false;
       run();
@@ -7728,7 +7829,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // controller——播放器还没建好时那些动作本来也无事可做。不消费，交回既有路径。
         if (controller == null) return false;
         final Map<ShortcutAction, VoidCallback> callbacks =
-            videoActionCallbacks(_buildVideoShortcutActions(controller));
+            videoActionCallbacks(
+              _buildVideoShortcutActions(
+                controller,
+                input: VideoActionInput.keyboard,
+              ),
+            );
         final VoidCallback? callback = callbacks[action];
         // 解析到了但本页没接线（universal scope 里 globalBack 之外的动作）：不消费，
         // 交回既有路径——与 [_handleVideoGamepadButton] 的 `callback == null` 同款。
@@ -7747,6 +7853,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
           onInvoke: (GamepadButtonIntent intent) =>
               _handleVideoGamepadButton(intent.button),
+        ),
+        // BUG-3330：桌面轮询的松开沿（按住临时倍速松手恢复）。
+        GamepadButtonReleaseIntent: CallbackAction<GamepadButtonReleaseIntent>(
+          onInvoke: (GamepadButtonReleaseIntent intent) =>
+              _handleVideoGamepadButtonRelease(intent.button),
         ),
         // 手柄长按 A：选词光标在弹窗面上时等价阅读器「长按标记词典」；其余情况
         // 返回 false 交回 GamepadService 全局兜底（与阅读器同款接线）。
@@ -8050,6 +8161,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         on = panel == _VideoSidePanelKind.chapters;
       case VideoControlItem.settings:
         on = panel == _VideoSidePanelKind.settings;
+      case VideoControlItem.subtitleTrack
+          when panel == _VideoSidePanelKind.subtitle:
+        on = true;
+      case VideoControlItem.audioTrack when panel == _VideoSidePanelKind.audio:
+        on = true;
       // 弹幕开关：开着 = secondary tonal 选中态（M3E toggle），关 = 中性。
       case VideoControlItem.danmaku:
         on = appModel.videoDanmakuEnabled;
@@ -9011,7 +9127,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return;
       }
       final VoidCallback? callback = videoActionCallbacks(
-        _buildVideoShortcutActions(controller),
+        _buildVideoShortcutActions(controller, input: VideoActionInput.button),
       )[action];
       // 表里没有该动作（动作在新版被删）时静默 no-op，不崩。
       if (callback == null) return;
@@ -10348,11 +10464,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 能力槽——把页面权威值 getter 与既有回调（[_setDelayMs] / [_setSpeed] /
   /// [_persistSubtitleStyle] 等，均即时生效 + 持久化 + 实时预览）接进去。关闭后把
   /// 键盘焦点还给 Video（覆盖层夺焦后不会自动归还），恢复空格等快捷键。
-  Widget _buildVideoQuickSettingsSheet() {
+  Widget _buildVideoQuickSettingsSheet({
+    List<settings_dest.VideoGroup> groups =
+        VideoQuickSettingsSheet.settingsGroups,
+  }) {
     return VideoQuickSettingsSheet(
       appModel: appModel,
       ref: ref,
-      initialCategory: _settingsInitialCategory,
+      // 单分组面板（字幕 / 音频）恒开在自己的分组；字幕面板挂载即触发字幕源加载。
+      initialCategory: groups.length == 1
+          ? groups.single.name
+          : _settingsInitialCategory,
+      groups: groups,
       host: _buildVideoQuickSettingsHost(),
     );
   }
@@ -10420,7 +10543,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? null
           : buildVideoPlayerShortcutsFromRegistry(
               appModel.shortcutRegistry,
-              _buildVideoShortcutActions(_controller!),
+              _buildVideoShortcutActions(
+                _controller!,
+                input: VideoActionInput.keyboard,
+              ),
               exclude: const <ShortcutAction>{
                 ShortcutAction.globalBack,
                 ShortcutAction.videoToggleFullscreen,
@@ -10588,8 +10714,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     // TODO-1351：记住目标分类（音频轨/字幕轨按钮传 'audio'/'subtitle'，设置按钮传 null），
     // 供 _buildVideoQuickSettingsSheet 读；面板 didUpdateWidget 据其变化跳分类。
+    // 字幕 / 音频已是独立面板：这两个分类直接开对应面板，其余开设置面板并定位。
+    final _VideoSidePanelKind kind = switch (initialCategory) {
+      'subtitle' => _VideoSidePanelKind.subtitle,
+      'audio' => _VideoSidePanelKind.audio,
+      _ => _VideoSidePanelKind.settings,
+    };
     _settingsInitialCategory = initialCategory;
-    _showVideoSidePanel(_VideoSidePanelKind.settings, sourceSlot: sourceSlot);
+    _showVideoSidePanel(kind, sourceSlot: sourceSlot);
   }
 
   /// 把用户挑选/拖入的外部字幕文件 [srcPath] 拷到持久化

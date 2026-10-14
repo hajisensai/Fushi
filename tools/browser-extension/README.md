@@ -1,7 +1,7 @@
 # Fushi 浏览器扩展（Fushi Reader Bridge）
 
 在任意网页上用 Fushi 的词典查词、采集/加载流媒体字幕、批量制卡。扩展本身没有词典和
-Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server（默认
+Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器（兼容 yomitan-api，默认
 `http://127.0.0.1:19633`，HTTP + Basic auth）完成。**没有构建步骤**：纯 JS 散文件，MV3。
 
 ## 文件地图

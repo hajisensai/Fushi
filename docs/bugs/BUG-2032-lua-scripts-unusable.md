@@ -14,6 +14,7 @@
   - 状态收口：`_resetLuaScriptState()` 统一清去重集/状态表/日志订阅，dispose 与 `_releaseMediaHandles` 两处都走它。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_lua_script_diagnostics_test.dart`（能力解析含 Windows/Android 真实构建串、mpv 名字改写、日志归因五种形状、OSD 属性）+ `fushi/test/media/video/video_lua_script_wiring_guard_test.dart`（日志订阅 / 两处收口 / OSD 先于 load-script / 探测→装载→open 顺序 / 导入走同一写穿 / 状态表交 host / 能力落 pref，注释剥离后匹配，逐条变异实测红）。
 - **备注**：
+  - **已落地（2026-10-13，BUG-3325）**：随包 jar 已换成编入 Lua 5.2.4 的四 ABI 构建（fork 分支 `fushi/lua-enabled` / Actions run 38391453531，详见 BUG-3325「范围缺口」Android 条），同时 Fushi 每次 `open` 前下发 `ytdl=no`；能力探测会自动翻绿，真机复测仍待做。以下为当时的调研记录。
   - **Android 真根治 = 重编 jar 带 Lua**，这是 fork 构建仓 `hajisensai/libmpv-android-video-build` 的活，本 PR 做不到、只做诚实门控。子代理调研的最小改动清单（约 60 行）：`buildscripts/scripts/lua.sh` 新建（抄上游 mpv-android，Lua 5.2.4，三条 bionic 兼容 CFLAGS + 手工 `lua.pc`）；`include/depinfo.sh` 加 `v_lua=5.2.4`、`dep_mpv=(ffmpeg libass lua)`；`include/download-deps.sh` 加 lua 下载；`scripts/mpv.sh` `-Dlua=disabled`→`-Dlua=lua`。产 jar 的 CI 跑在该仓 `main`（`workflow_dispatch`），产物人工 `gh release upload vendor-libmpv`（建议新文件名 `-ffmpeg6.1.6-lua`，不覆盖旧资产），再改 `build.gradle` URL/MD5。体积估算 +0.4–0.5 MB/ABI；选 Lua 5.2 不选 LuaJIT（纯 C，四架构零特例）。Lua 一开 `ytdl=yes` 默认生效，Hibiki 侧应同时显式 `ytdl=no`。
   - iOS / macOS 随包 libmpv 未验证，门控同样靠运行时探测，不需要预判。
   - 本机正式版数据根 `Documents\Fushi\data` 下没有 `mpv_scripts`，拿不到用户实际导入的脚本；四条修复不依赖脚本内容。

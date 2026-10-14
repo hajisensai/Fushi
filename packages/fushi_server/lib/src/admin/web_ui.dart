@@ -145,7 +145,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div class="card"><h2>Anki 落地</h2>
 <p class="small muted">打开后，其它设备（没装 Anki 的手机等）经互联同步过来的待发卡片由本机写进 Anki，再同步到 AnkiWeb 或你的自建 Anki 同步服务器。本机需要随包的 fushi-anki-sync。</p>
 <div class="grid" id="anki-status"></div>
-<div class="row" style="margin-top:12px"><label><input type="checkbox" id="anki-landing"> 本机负责落地其它设备的卡片</label>
+<div class="row" style="margin-top:12px"><label><input type="checkbox" id="anki-landing"> 接收其他设备的卡片</label>
 <button class="b sec" id="btn-anki-run">立即落地</button><button class="b sec" id="btn-anki-retry">重试失败的卡</button></div>
 </div>
 <div class="card"><h2>Anki 同步账号</h2><div id="anki-account"></div></div>

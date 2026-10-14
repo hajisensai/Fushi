@@ -290,7 +290,6 @@ class _MediaServerAggregateSearchViewState
           onTap: () =>
               openMediaServerItem(context, session, item, siblings: items),
           onLongPress: () => openMediaServerItemDetail(context, session, item),
-          onInfo: () => openMediaServerItemDetail(context, session, item),
         );
       },
     );

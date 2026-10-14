@@ -254,7 +254,7 @@ void main() {
         String fontFamily,
         String fontFaces,
         List<String> families,
-        List<({String family, String src, String format})> faceSources,
+        List<DictionaryFontFaceSource> faceSources,
       }) css = DictionaryFontCss.build(
         injected!.dictionaryFonts,
         allowedDirectories: <String>[allowed.path],

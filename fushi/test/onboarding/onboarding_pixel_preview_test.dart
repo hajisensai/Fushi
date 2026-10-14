@@ -158,16 +158,6 @@ Widget _wizardFrame({required int current, required Widget step}) {
   return FushiPageScaffold(
     automaticallyImplyLeading: false,
     headerCompact: true,
-    leading: FushiIconButton(
-      tooltip: 'Back',
-      icon: FushiIcons.back,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(
-        minWidth: kMinInteractiveDimension,
-        minHeight: kMinInteractiveDimension,
-      ),
-      onTap: () {},
-    ),
     title: '新手引导',
     headerBottom: OnboardingProgressBar(current: current, total: 9),
     body: OnboardingWizardBody(

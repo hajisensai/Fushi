@@ -52,10 +52,7 @@ void main() {
       describeOnlineSourceError(Exception('Log in via WebView to read')),
       'Log in via WebView to read',
     );
-    expect(
-      describeOnlineSourceError(StateError('No chapters')),
-      'No chapters',
-    );
+    expect(describeOnlineSourceError(StateError('No chapters')), 'No chapters');
     expect(
       describeOnlineSourceError(
         const FormatException('Exception: unexpected token'),
@@ -65,7 +62,10 @@ void main() {
   });
 
   test('空消息落到通用文案', () {
-    expect(describeOnlineSourceError(Exception()), t.online_source_error_generic);
+    expect(
+      describeOnlineSourceError(Exception()),
+      t.online_source_error_generic,
+    );
     expect(describeOnlineSourceError(''), t.online_source_error_generic);
   });
 
@@ -104,9 +104,34 @@ void main() {
       );
       expect(
         describeOnlineSourceErrorText(
-          'MihonRuntimeException(BRIDGE_HTTP_503): upstream failed',
+          'MihonRuntimeException(SOURCE_HTTP_503): Manga source returned HTTP 503',
         ),
         t.online_source_error_http(code: '503'),
+      );
+    });
+
+    test('BRIDGE_HTTP_* 是 sidecar 信封状态：露出扩展自己的说明，不说成 HTTP 500', () {
+      expect(
+        describeOnlineSourceErrorText(
+          'MihonRuntimeException(BRIDGE_HTTP_500): Log in via WebView to read',
+        ),
+        'Log in via WebView to read',
+      );
+      expect(
+        describeOnlineSourceErrorText(
+          'MihonRuntimeException(BRIDGE_HTTP_503): upstream failed',
+        ),
+        'upstream failed',
+      );
+    });
+
+    test('桌面 sidecar 没有内置浏览器：明说来源需要 WebView（反馈 iFzLzVLYAd 原文）', () {
+      expect(
+        describeOnlineSourceErrorText(
+          'OnlineMangaUnavailable(OnlineMangaUnavailableReason.runtimeFailure): '
+          'MihonRuntimeException(BRIDGE_HTTP_500): Cef was not initialized.',
+        ),
+        t.online_source_error_webview_unavailable,
       );
     });
 

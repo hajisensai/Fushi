@@ -26,6 +26,7 @@ void main() {
         'sentenceOffset': 5,
         'verticalWriting': true,
         'mangaPageIndex': 2,
+        'mangaSentenceGroup': 4,
         'sentenceNormalizedOffset': 10,
         'sentenceNormalizedLength': 8,
         'audioCuePayload': '{"type":"frag","id":"cue-2"}',
@@ -45,6 +46,7 @@ void main() {
       expect(data.sentenceOffset, 5);
       expect(data.verticalWriting, isTrue);
       expect(data.mangaPageIndex, 2);
+      expect(data.mangaSentenceGroup, 4);
       expect(data.sentenceNormalizedOffset, 10);
       expect(data.sentenceNormalizedLength, 8);
       expect(data.audioCuePayload, '{"type":"frag","id":"cue-2"}');
@@ -66,6 +68,7 @@ void main() {
       expect(data.sentenceOffset, 0);
       expect(data.verticalWriting, isFalse);
       expect(data.mangaPageIndex, isNull);
+      expect(data.mangaSentenceGroup, isNull);
       expect(data.sentenceNormalizedOffset, isNull);
       expect(data.sentenceNormalizedLength, isNull);
       expect(data.audioCuePayload, isNull);

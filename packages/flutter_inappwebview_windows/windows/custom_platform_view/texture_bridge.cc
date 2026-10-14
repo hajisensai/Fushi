@@ -20,7 +20,13 @@ namespace flutter_inappwebview_plugin
 {
   const int kNumBuffers = 1;
   const int kMaxFramesPerPump = 4;
-  const int64_t kPumpInterval100ns = 166667; // ~60Hz
+  // BUG-3352: DispatcherQueueTimer 按系统计时器一格（默认 15.625ms）向上取整
+  // 触发：间隔写 16.67ms（「60Hz」）实测平均 31.3ms 才 Tick 一次，所有 Windows
+  // WebView 的画面只有 ~32 帧，查词弹窗滚动发顿、缓动看不出来。间隔必须明显短于
+  // 一格才每格都触发：8.33ms 在默认精度下实测 65Hz，进程提了计时精度（mpv 会
+  // timeBeginPeriod）时 ~113Hz，可跟上 120Hz 屏；再短只会在高精度下空转。无新帧时
+  // TryGetNextFrame 直接返回空，多出来的 Tick 不推 Flutter 帧。
+  const int64_t kPumpInterval100ns = 83333; // 请求 ~120Hz，默认精度下实得 ~64Hz
 
   // TODO-618 fix3: 进程级退出态总闸（详见 texture_bridge.h 声明处注释）。
   // 进程退出期间置位后，所有 TextureBridge::PumpFrameLocked 的帧上报回调短路早返回。

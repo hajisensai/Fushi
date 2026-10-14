@@ -31,8 +31,6 @@ Push-Location $angle
 try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\vendored\ANGLE.7z')) }
 finally { Pop-Location }
 $include = (Join-Path $angle 'include').Replace('\', '/')
-# BUG-3276: keep Lua (LuaJIT) - the user mpv script feature (BUG-2032) loads
-# .lua files via load-script, which silently does nothing on a -Dlua=disabled build.
 Run 'meson' @('setup', $build, $source, '--buildtype=release', '-Dlibmpv=true',
   '-Dcplayer=false', '-Dlibbluray=enabled', '-Dlua=luajit', '-Djavascript=disabled',
   '-Dtests=true', '-Degl-angle=enabled', "-Dc_args=-I$include")

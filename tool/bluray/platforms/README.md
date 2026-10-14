@@ -11,6 +11,10 @@
 | FFmpeg | 保留既有 `6.1.6` 与 full 解码器变体 |
 | libbluray | `1.5.0`，内嵌 libudfread |
 | libplacebo | `7.360.1` |
+| Lua（仅 Android） | `5.2.4`，静态链接，`-Dlua=lua`（BUG-3325：用户 mpv 脚本要能跑） |
+
+`patches/android-build.patch` 即 fork 分支 `fushi/lua-enabled`
+（`8a496a2`）相对基线的 `buildscripts/` 改动，与随包 jar 的云构建同源。
 
 `patches/mpv-gl-dovi-p5.patch` 保留纹理渲染器 `gl_video` 的 Dolby Vision
 profile 5 处理。新版 mpv 的 `mpi->dovi` 类型已改变，补丁从保留的 FFmpeg

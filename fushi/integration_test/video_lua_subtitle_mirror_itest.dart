@@ -13,10 +13,10 @@
 //   ② `setDelayMs(500)` 后从句首前播放 → 暂停点后移约 500ms（调轴烘进镜像 SRT）。
 //   ③ 负向：Lua 开关关 → `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
 //
-// 暂停由**真 Lua 脚本**执行：Windows 随包 libmpv 必须编入 Lua（BUG-3325，`-lua1`
-// 起 `-Dlua=luajit`；此前两版 `-Dlua=disabled` 时 `load-script` 静默成功、脚本不跑）。
+// 暂停由**真 Lua 脚本**执行：随包 libmpv 必须编入 Lua（BUG-3325，Windows `-lua1`
+// 起 `-Dlua=luajit`；此前 `-Dlua=disabled` 时 `load-script` 静默成功、脚本不跑）。
 // 随包 libmpv 退回无 Lua 的构建会让本测试直接失败，而不是悄悄换成别的验证。
-// 同时断言 mpv 内置脚本（ytdl_hook / console 等）没有被加载（media_kit overlay 关掉）。
+// 同时断言 mpv 内置脚本（console / select 等）没有被加载（media_kit overlay 关掉）。
 //
 // 输入全部走 controller 公开 API / 页面 test hook（无坐标点击）。mpv 属性经
 // `controller.videoController.player.platform.getProperty` 读（公开 API，未改 lib/）。
@@ -56,8 +56,9 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const String _kTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
-const String _kFfmpeg =
-    'D:/ffmpeg/ffmpeg-2025-06-11-git-f019dd69f0-full_build/bin/ffmpeg.exe';
+// 素材生成用的 ffmpeg：`FUSHI_FFMPEG` 显式指定，否则走 PATH（不写死某台机器的
+// 绝对路径——旧值在别的机器上不存在，测试在造素材这一步就 ProcessException）。
+final String _kFfmpeg = Platform.environment['FUSHI_FFMPEG'] ?? 'ffmpeg';
 
 // 第一句 1.5s–3.5s；第二句远在后面，保证暂停判定只看第一句。
 const int _kCue1StartMs = 1500;
@@ -77,21 +78,25 @@ const String _kSrt =
     '\n';
 
 /// 典型「字幕结束自动暂停」脚本（无按键绑定）。记录写到 [logPath]。
+///
+/// `sub-end` 变成 nil（句子消失）时**保留**上一句的句尾：25 fps 素材一帧 40 ms，
+/// 比 30 ms 的提前窗口宽；句尾正好落在帧边界时（调轴 +500 ms 后第一句尾 = 4.000 s），
+/// 3.960 s 那帧还没进窗口，4.000 s 那帧句子已消失、`sub-end` 已是 nil——丢掉句尾
+/// 就会整句漏停（2026-10-13 随包 libmpv 编入 Lua 后真跑出来的）。同理，暂停记录里的
+/// 句子用最后一次非空的 `sub-text`，不在暂停那一刻现读（那帧句子可能已消失）。
 String _autoPauseScript(String logPath) {
   final String path = logPath.replaceAll(r'\', '/');
   return '''
 local out = "$path"
 local sub_end = nil
 local paused_for = nil
+local sub_text = ""
 local function log(s)
   local f = io.open(out, "a")
   if f then f:write(s .. "\\n"); f:close() end
   mp.msg.info(s)
 end
 log("LOADED")
--- Keep the last sub-end: mpv clears it on the first frame past the line, and
--- with 25 fps (40 ms frames) the last frame before the end can sit just
--- outside a narrower window (3.96 vs end 4.00), so the margin covers a frame.
 mp.observe_property("sub-end", "number", function(_, v)
   if v then
     sub_end = v
@@ -99,16 +104,18 @@ mp.observe_property("sub-end", "number", function(_, v)
   end
 end)
 mp.observe_property("sub-text", "string", function(_, v)
-  if v and v ~= "" then log("SUBTEXT " .. v) end
+  if v and v ~= "" then
+    sub_text = v
+    log("SUBTEXT " .. v)
+  end
 end)
 mp.add_periodic_timer(0.01, function()
   if not sub_end or paused_for == sub_end then return end
   local pos = mp.get_property_number("time-pos")
-  if pos and pos >= sub_end - 0.05 then
+  if pos and pos >= sub_end - 0.03 then
     paused_for = sub_end
     mp.set_property_bool("pause", true)
-    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end,
-      mp.get_property("sub-text") or ""))
+    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end, sub_text))
   end
 end)
 ''';
@@ -359,7 +366,6 @@ void main() {
       );
       // mpv 自带的 Lua 脚本不该跟着跑（media_kit overlay 在 mpv_initialize 前关掉）。
       for (final String option in <String>[
-        'ytdl',
         'load-stats-overlay',
         'load-console',
         'load-select',
@@ -367,6 +373,7 @@ void main() {
       ]) {
         expect(await prop(c, option), 'no', reason: '$option 应在初始化前关掉');
       }
+      expect(await prop(c, 'ytdl'), 'no', reason: '每次 open 前的基线属性');
 
       // ── ① 从 0 播放 → 第一句结束处自动暂停 ──────────────────────────────
       String? overlayText;

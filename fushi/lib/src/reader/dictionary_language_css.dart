@@ -27,6 +27,7 @@ library;
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 
 /// 一本词典在字体分流里需要的全部信息。
 class DictionaryLanguageEntry {
@@ -76,8 +77,20 @@ String dictionaryLanguageFontCss({
   /// 弹窗活在网页的 shadow root 里，那里没有 html/body，根是 `#entries-container`
   /// （与 content-css 生成器对 popup.css 的 html/body 重定根同一个选择器）。
   String rootSelector = 'html, body',
+
+  /// 有导入字体文件生效时为 true：在根上关掉字重合成（`font-synthesis` 继承，
+  /// 整个弹窗生效）。导入字体只有常规字面时，词头等粗体被 WebView 合成加粗，
+  /// 轮廓自相交的字形（Klee One「費」）会被描成中空；关掉后没有粗体文件就按常规
+  /// 字重显示，有粗体文件时由 `@font-face` 的真实字重选中它。见
+  /// `ReaderCustomFontCss.noWeightSynthesisDeclarations`。
+  bool suppressWeightSynthesis = false,
 }) {
   final StringBuffer out = StringBuffer();
+  if (suppressWeightSynthesis) {
+    out.writeln(
+      '$rootSelector { ${ReaderCustomFontCss.noWeightSynthesisDeclarations} }',
+    );
+  }
 
   // 第 1 层：兜底链。语言未知也给受控顺序（见 library 注释）。
   final String rootChain = contentFontFamilyCss(

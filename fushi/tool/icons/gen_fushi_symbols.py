@@ -63,6 +63,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("statistics", "insights", "insights_outlined", "insights", "统计"),
     ("ankiCard", "style", "style_outlined", "style", "制卡 / Anki"),
     ("ocr", "document_scanner", "document_scanner_outlined", "document_scanner", "OCR / 识别"),
+    ("crop", "crop", "crop_outlined", "crop", "裁切 / 按分格裁图"),
     ("lyrics", "lyrics", "lyrics_outlined", "lyrics", "歌词模式"),
     ("game", "videogame_asset", "videogame_asset_outlined", "videogame_asset", "游戏条目"),
     ("tv", "live_tv", "live_tv_outlined", "live_tv", "电视 / 番剧"),

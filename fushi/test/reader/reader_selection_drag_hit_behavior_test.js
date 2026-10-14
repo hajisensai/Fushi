@@ -606,6 +606,20 @@ function buildDocument(spec) {
     innerHeight: body.__rect.bottom,
     getSelection: () => null,
     __fushiCssHighlightsSupported: false,
+    // The shared DOM-surgery guard (selection script top level, not part of the
+    // fushiSelection literal loaded here) reduced to the plain DOM steps on this
+    // fake DOM. Its live Range / selection-point bookkeeping runs against real
+    // Chrome in favorite_removal_lookup_selection_test.dart (BUG-3328).
+    __fushiLiveRanges: {
+      unwrap(wrapper) {
+        const parent = wrapper.parentNode;
+        if (!parent) return null;
+        while (wrapper.firstChild) parent.insertBefore(wrapper.firstChild, wrapper);
+        parent.removeChild(wrapper);
+        return parent;
+      },
+      normalize(node) { if (node) node.normalize(); },
+    },
     // endRangeSelection hands Dart the confirm menu; nothing in this harness needs
     // to observe it, but the call must not throw.
     flutter_inappwebview: { callHandler() {} },

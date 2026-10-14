@@ -2122,9 +2122,17 @@ namespace flutter_inappwebview_plugin
     }
 
     if (horizontal) {
+      // 两个滚轮轴的符号约定相反：WM_MOUSEWHEEL 正值 = 向上滚（内容下移），
+      // WM_MOUSEHWHEEL 正值 = 向右滚（内容左移；Chromium 的 Win 输入构建器把它取反
+      // 成 WebKit 的「正 = 向左」，DOM deltaX 因而为正）。本入口的 delta 是「内容
+      // 移动量」（Dart 侧传 -scrollDelta / 触控板 panDelta，两者都是内容跟着走的
+      // 方向），纵向正好对上 WHEEL 的约定，横向必须取反才对上 HWHEEL。此前横向原样
+      // 下发 → 倾斜滚轮向右滚成向左、触控板两指横滑内容逆着手指走，阅读器横向
+      // 翻页随之反向（反馈 794gISjvgV）。
       webViewCompositionController->SendMouseInput(
         COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL,
-        virtualKeys_.state() | extraKeys, offset, lastCursorPos_);
+        virtualKeys_.state() | extraKeys, static_cast<short>(-offset),
+        lastCursorPos_);
     }
     else {
       webViewCompositionController->SendMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL,

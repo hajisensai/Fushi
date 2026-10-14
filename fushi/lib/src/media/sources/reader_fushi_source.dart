@@ -562,6 +562,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         final bool? imported = await showAppDialog<bool>(
           context: context,
           builder: (_) => BookImportDialog(
+            prefs: appModel.prefsRepo,
             repo: SrtBookRepository(appModel.database),
             audiobookRepo: AudiobookRepository(appModel.database),
             db: appModel.database,
@@ -1597,6 +1598,16 @@ class ReaderFushiSource extends ReaderMediaSource {
       key: 'dismiss_popup_on_scroll',
       value: value,
     );
+  }
+
+  /// 制卡被收下（成功 / 进待发队列）后关掉整个查词弹窗栈（用户建议 q16Apecgbg：
+  /// 「查词框妨碍阅读」）。默认关闭 = 制卡后弹窗照旧留着（既有行为）。接线在
+  /// `closePopupAfterAcceptedMine`（阅读器 / 有声书 / 视频两条弹窗车道共用）。
+  bool get closePopupAfterMining =>
+      getPreference<bool>(key: 'close_popup_after_mining', defaultValue: false);
+
+  Future<void> setClosePopupAfterMining(bool value) async {
+    await setPreference<bool>(key: 'close_popup_after_mining', value: value);
   }
 
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。

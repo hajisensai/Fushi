@@ -12,6 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-1364（BUG-797 / BUG-1040 / BUG-1327 同族遗留）：查词浮层子树里「搜索中」的
 /// 加载占位卡此前没接 `_popupHidingDialogDepth`。
@@ -146,7 +147,10 @@ class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
 
 Widget _wrap(AppModel appModel, GlobalKey<_PlaceholderHostPageState> key) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((Ref ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (BuildContext context, Widget? child) =>

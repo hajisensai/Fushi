@@ -59,8 +59,14 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   late MediaServerItem _detail = widget.item;
 
-  /// 当前选中的版本在 [MediaServerItem.versions] 里的下标（详情回来后按记住的
-  /// 选择解析；单版本 / 无版本 -1，版本区不显示）。
+  /// 「版本」区展示的那条可播叶子（BUG-3329）：电影 = 自身详情；剧 = 当前季续播
+  /// 那一集的详情——选中按「本集 + 同剧」记住，其余集取流时按同名 / 同规格版本
+  /// 跟上（[resolveMediaServerVersionIndex]），与 Emby 网页端在集上选版本同一效果。
+  /// 清单不带 MediaSources（BUG-1891），所以剧要单独取这一集的详情。
+  MediaServerItem? _versionItem;
+
+  /// 当前选中的版本在 [_versionItem] 的 [MediaServerItem.versions] 里的下标
+  /// （按记住的选择解析；单版本 / 无版本 -1，版本区不显示）。
   int _versionIndex = -1;
   List<MediaServerItem> _seasons = const <MediaServerItem>[];
   String? _seasonId;
@@ -119,17 +125,38 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       if (!mounted) return;
       setState(() {
         _detail = detail;
-        _versionIndex = detail.versions.length > 1
-            ? resolveMediaServerVersionIndex(
-                serverId: _browser.serverId,
-                itemId: detail.id,
-                seriesId: detail.seriesId,
-                versions: detail.versions,
-              )
-            : -1;
+        if (!_isSeries) _showVersionsOf(detail);
       });
     } catch (e) {
       debugPrint('[media-server] item detail failed: $e');
+    }
+  }
+
+  /// 版本区换成 [item] 的版本（只在 setState 里调）。
+  void _showVersionsOf(MediaServerItem? item) {
+    _versionItem = item;
+    _versionIndex = item != null && item.versions.length > 1
+        ? resolveMediaServerVersionIndex(
+            serverId: _browser.serverId,
+            itemId: item.id,
+            seriesId: item.seriesId,
+            versions: item.versions,
+          )
+        : -1;
+  }
+
+  /// 剧：取当前季续播那一集（都看完取第一集）的详情，拿它的版本表给版本区。
+  /// 换季后旧季的响应丢掉；失败就不显示版本区（播放页画质菜单里照样能换）。
+  Future<void> _loadEpisodeVersions(int generation) async {
+    if (_episodes.isEmpty) return;
+    final int index = _continueIndex;
+    final MediaServerItem episode = _episodes[index >= 0 ? index : 0];
+    try {
+      final MediaServerItem detail = await _browser.itemDetail(episode.id);
+      if (!mounted || generation != _generation) return;
+      setState(() => _showVersionsOf(detail));
+    } catch (e) {
+      debugPrint('[media-server] episode versions failed: $e');
     }
   }
 
@@ -175,6 +202,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       _episodesLoading = true;
       _episodesLoadingMore = false;
       _episodesError = null;
+      _showVersionsOf(null);
     });
     try {
       final MediaServerPage page = await _browser.listEpisodes(
@@ -189,6 +217,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
         _episodesLoading = false;
         _episodeEpoch += 1;
       });
+      unawaited(_loadEpisodeVersions(generation));
       WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
     } catch (e) {
       if (!mounted || generation != _generation) return;
@@ -231,12 +260,13 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   /// 选版本：记住（本条目 + 同剧），「播放」/ 下载取流时按它带 MediaSourceId。
   void _selectVersion(int index) {
-    if (index == _versionIndex) return;
+    final MediaServerItem? item = _versionItem;
+    if (item == null || index == _versionIndex) return;
     rememberMediaServerVersion(
       serverId: _browser.serverId,
-      itemId: _detail.id,
-      seriesId: _detail.seriesId,
-      version: _detail.versions[index],
+      itemId: item.id,
+      seriesId: item.seriesId,
+      version: item.versions[index],
     );
     setState(() => _versionIndex = index);
   }
@@ -390,20 +420,22 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
               secondaryAction: _buildDownloadAction(),
             ),
             slivers: <Widget>[
+              // 版本在选集之上：剧的集清单可能很长（分页触底追加），放在后面就沉底看不见。
+              if (_versionItem case final MediaServerItem versionItem
+                  when _versionIndex >= 0)
+                SliverToBoxAdapter(
+                  child: MediaServerVersionSection(
+                    versions: versionItem.versions,
+                    selectedIndex: _versionIndex,
+                    focusPrefix:
+                        '${widget.session.serverId}-version-${versionItem.id}',
+                    onSelected: _selectVersion,
+                  ),
+                ),
               if (_isSeries) ...<Widget>[
                 SliverToBoxAdapter(child: _buildEpisodeSectionHeader(tokens)),
                 ..._buildEpisodeSlivers(tokens),
               ],
-              if (_versionIndex >= 0)
-                SliverToBoxAdapter(
-                  child: MediaServerVersionSection(
-                    versions: _detail.versions,
-                    selectedIndex: _versionIndex,
-                    focusPrefix:
-                        '${widget.session.serverId}-version-${_detail.id}',
-                    onSelected: _selectVersion,
-                  ),
-                ),
               // 简介已在 hero 里（可展开）；这里只留事实行。
               SliverToBoxAdapter(
                 child: CollectionWorkDetailsSection(

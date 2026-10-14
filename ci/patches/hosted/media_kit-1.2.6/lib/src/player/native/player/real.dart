@@ -2388,12 +2388,12 @@ class NativePlayer extends PlatformPlayer {
         // [VideoController] internally sets --vid=auto upon attachment to enable video rendering & decoding.
         if (!test) 'vid': 'no',
         // FUSHI BUG-3325: mpv's built-in Lua scripts. The `libmpv` profile only
-        // turns off the OSC, so a Lua-enabled build would otherwise run
-        // ytdl_hook on every http(s) open (spawning yt-dlp when it is on PATH)
-        // and keep stats/console/select/... interpreters alive in every
-        // player. Only user scripts (`load-script`) should run. Builds without
-        // Lua reject these names; mpv_set_option_string's error is ignored.
-        'ytdl': 'no',
+        // turns off the OSC, so a Lua-enabled build would otherwise keep
+        // stats/console/select/... interpreters alive in every player. Only
+        // user scripts (`load-script`) should run. These options are read once
+        // by mpv_initialize, so they cannot move to the per-open baseline
+        // (`ytdl=no` lives there: buildLuaHostBaselineProperties). Builds
+        // without Lua reject the names; mpv_set_option_string's error is ignored.
         'load-stats-overlay': 'no',
         'load-console': 'no',
         'load-auto-profiles': 'no',

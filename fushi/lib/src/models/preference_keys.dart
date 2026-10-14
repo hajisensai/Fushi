@@ -68,6 +68,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 停在「缺字幕」，用户手动配对）。见 media/audiobook/audiobook_auto_transcribe.dart。
   'audiobook_auto_transcribe',
   'audiobook_background_play',
+  // bool：有声书导入时音频「引用原文件」而不是复制进应用目录（两个导入对话框
+  // 共用）。默认 false。见 PreferencesRepository.audiobookImportReferenceOriginal。
+  'audiobook_import_reference_original',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
@@ -248,6 +251,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  // bool（默认 false）：一键制卡的卡图默认裁到查词那句话所在的分镜（需分镜模型，
+  // 非条漫；否则整页）。与「分镜导航」开关无关。
+  'manga_mining_crop_to_panel',
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',

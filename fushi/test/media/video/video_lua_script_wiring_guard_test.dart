@@ -88,6 +88,21 @@ void main() {
       );
     });
 
+    test('load()：ytdl 基线不看有没有用户脚本、且在 open 之前下发', () {
+      // 编了 Lua 的 libmpv 自带 ytdl_hook（ytdl 默认 yes），钩子挂在 loadfile 上，
+      // open 之后再关已经太迟；放进 applyLuaScripts 又会在没装脚本时被跳过。
+      final int probe = src.indexOf('await _probeLuaCapability();');
+      final int baseline = src.indexOf(
+        'await _setMpvProperties(buildLuaHostBaselineProperties());',
+      );
+      final int open = src.indexOf('await player.open(', probe);
+      expect(baseline, greaterThan(probe));
+      expect(open, greaterThan(baseline));
+      final int fn = src.indexOf('Future<void> applyLuaScripts(');
+      final String applyBody = src.substring(fn, src.indexOf('\n  }\n', fn));
+      expect(applyBody, isNot(contains('buildLuaHostBaselineProperties')));
+    });
+
     // #2014：字幕由 overlay 画、libmpv sid 恒为 no，sub-text 类脚本（字幕结束暂停）
     // 永远收不到字幕。镜像轨的接线点任何一处断掉都是静默失效。
     group('Lua 字幕镜像', () {

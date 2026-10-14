@@ -82,34 +82,60 @@ void main() {
           isTrue,
           reason: '视频库分区导航应出现',
         );
+        // 顶栏是分组导航（媒体库 / 发现 / 媒体服务器 …），媒体库组内的首页 /
+        // 系列 / 全部视频在二级胶囊里（焦点前缀 video-library-subview）。
+        Finder nav(String prefix) => find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is FushiAdjustableSegmented<VideoLibrarySection> &&
+              widget.focusIdPrefix == prefix,
+        );
+        VideoLibrarySection selectedOf(Finder finder) => tester
+            .widget<FushiAdjustableSegmented<VideoLibrarySection>>(finder)
+            .selected;
         for (final VideoLibrarySection section in const <VideoLibrarySection>[
           VideoLibrarySection.series,
           VideoLibrarySection.allVideos,
-          VideoLibrarySection.mediaServers,
         ]) {
+          final Finder sub = nav('video-library-subview');
           expect(
             await driver.requestFocusInside(
-              navigation,
+              sub,
+              debugLabelContains: 'video-library-subview-sections',
+            ),
+            isTrue,
+          );
+          await driver.adjust(steps: 1);
+          expect(
+            await _waitFor(tester, () => selectedOf(sub) == section),
+            isTrue,
+            reason: '分区导航应切到 $section',
+          );
+        }
+        final Finder top = nav('video-library-view');
+        for (
+          int step = 0;
+          step < 4 && selectedOf(top) != VideoLibrarySection.mediaServers;
+          step++
+        ) {
+          final VideoLibrarySection before = selectedOf(top);
+          expect(
+            await driver.requestFocusInside(
+              top,
               debugLabelContains: 'video-library-view-sections',
             ),
             isTrue,
           );
           await driver.adjust(steps: 1);
           expect(
-            await _waitFor(
-              tester,
-              () =>
-                  tester
-                      .widget<FushiAdjustableSegmented<VideoLibrarySection>>(
-                        navigation,
-                      )
-                      .selected ==
-                  section,
-            ),
+            await _waitFor(tester, () => selectedOf(top) != before),
             isTrue,
-            reason: '分区导航应切到 $section',
           );
         }
+        expect(
+          selectedOf(top),
+          VideoLibrarySection.mediaServers,
+          reason: '顶栏分组导航应切到媒体服务器',
+        );
 
         // 单台服务器 → 首帧后自动进首页；等媒体库行出现（真网络，给足时间）。
         final Finder libraryCards = _keyPrefix('media-server-library-');

@@ -1099,12 +1099,20 @@ SettingsDestination buildVideoDestination() {
           ),
           // 暂停 OCR 点字查词的范围：以前只在图形字幕时识别，2026-10-13 用户要求扩大到
           // 所有视频（硬字幕 / 画面文字）。每次暂停都跑整帧识别，所以可以收窄或关掉。
+          // BUG-3342（2026-10-14 用户）：默认关闭、由用户手动开启；暂停到图片字幕帧时
+          // 播放页会提示一键开启（只开到「仅图片字幕」）。
           SettingsSegmentedItem<VideoPauseOcrScope>(
             id: 'video.subtitle.pause_ocr_scope',
             title: t.video_setting_pause_ocr_scope,
             subtitle: t.video_setting_pause_ocr_scope_hint,
             icon: FushiIcons.ocr,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 60),
+            // 接替被它取代的「无字幕轨也暂停 OCR」开关的位置（字幕行为小节、显形开关
+            // 之后的 58）；60 已是外观小节的「遵循 ASS 样式」。
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 58,
+              section: t.section_video_subtitle_behavior,
+            ),
             options: <SettingsSegmentOption<VideoPauseOcrScope>>[
               SettingsSegmentOption<VideoPauseOcrScope>(
                 value: VideoPauseOcrScope.all,
@@ -1129,7 +1137,7 @@ SettingsDestination buildVideoDestination() {
                   await settingsContext.appModel.setVideoPauseOcrScope(scope);
                   settingsContext.refresh();
                 },
-            defaultValue: VideoPauseOcrScope.all,
+            defaultValue: VideoPauseOcrScope.defaultScope,
           ),
           // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
           // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
@@ -1869,7 +1877,7 @@ SettingsDestination buildVideoDestination() {
           // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
           // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
           // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
-          // BUG-2032：随包 libmpv 没编 Lua 的平台（Android 实测 `-Dlua=disabled`）
+          // BUG-2032：随包 libmpv 没编 Lua 的平台（Windows / Android 随包自 BUG-3325 起均已编入；iOS / macOS 未验证）
           // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
           // （settings_schema_widgets.dart `_switch` 的既定约定）。
           SettingsSwitchItem(

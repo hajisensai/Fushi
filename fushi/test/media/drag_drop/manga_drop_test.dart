@@ -126,6 +126,65 @@ void main() {
     });
   });
 
+  // 用户实报：「我在漫画页面拖 epub，先弹 epub 导入流程，然后告诉我可能是漫画。
+  // 我明明已经在漫画里面了，应该优先告诉是漫画。」落点本身已经说明了意图。
+  group('classifyDroppedFiles — 漫画库落点（preferManga）', () {
+    test('图片型 .epub 归 mangas → 漫画库直接 importNewManga，不先进书籍框', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/vol1.epub'],
+        isImageArchive: (String pth) => pth == '/a/vol1.epub',
+        preferManga: true,
+      );
+      expect(files.mangas, <String>['/a/vol1.epub']);
+      expect(files.books, isEmpty, reason: '同时落 books 会让归属歧义');
+      expect(
+        decideDropIntent(
+            surface: DropSurface.manga, files: files, cardHit: false),
+        DropIntent.importNewManga,
+      );
+    });
+
+    test('文字 .epub（判据为假）仍归 books：漫画库拖文字书照旧导去书架', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/novel.epub'],
+        isImageArchive: (String _) => false,
+        preferManga: true,
+      );
+      expect(files.mangas, isEmpty);
+      expect(files.books, <String>['/a/novel.epub']);
+    });
+
+    test('.pdf 在漫画库直接归 mangas（漫画框会逐页栅格化）', () {
+      final DroppedFiles files =
+          classifyDroppedFiles(<String>['/a/vol1.pdf'], preferManga: true);
+      expect(files.mangas, <String>['/a/vol1.pdf']);
+      expect(files.books, isEmpty);
+    });
+
+    test('书架落点（默认）不变：.epub 不开包、.pdf 仍是书', () {
+      final List<String> probed = <String>[];
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/vol1.epub', '/a/doc.pdf'],
+        isImageArchive: (String pth) {
+          probed.add(pth);
+          return true;
+        },
+      );
+      expect(probed, isEmpty);
+      expect(files.books, <String>['/a/vol1.epub', '/a/doc.pdf']);
+      expect(files.mangas, isEmpty);
+    });
+
+    test('多选拖入：每个漫画都留在 mangas 里（落点再整批交给漫画框）', () {
+      final DroppedFiles files = classifyDroppedFiles(
+        <String>['/a/v1.epub', '/a/v2.epub', '/a/v3.cbz'],
+        isImageArchive: (String _) => true,
+        preferManga: true,
+      );
+      expect(files.mangas, <String>['/a/v1.epub', '/a/v2.epub', '/a/v3.cbz']);
+    });
+  });
+
   group('decideDropIntent — manga 表面', () {
     DroppedFiles files({
       List<String> mangas = const <String>[],

@@ -16,6 +16,7 @@ class ReaderSelectionData {
     this.sentenceMatchableLength,
     this.verticalWriting = false,
     this.mangaPageIndex,
+    this.mangaSentenceGroup,
     this.audioCuePayload,
     this.fromHover = false,
   });
@@ -52,6 +53,7 @@ class ReaderSelectionData {
           ?.toInt(),
       verticalWriting: json['verticalWriting'] as bool? ?? false,
       mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
+      mangaSentenceGroup: (json['mangaSentenceGroup'] as num?)?.toInt(),
       audioCuePayload: json['audioCuePayload'] as String?,
       fromHover: json['fromHover'] as bool? ?? false,
     );
@@ -102,6 +104,13 @@ class ReaderSelectionData {
   /// reader must use this page, rather than the spread's first page, as the
   /// image attached to a mined card.
   final int? mangaPageIndex;
+
+  /// 命中的 OCR 块所在的句子分组（overlay 的 `data-manga-sentence-group`）。
+  ///
+  /// 宿主据此把这句话映射回该页的 OCR 块，在**原页图坐标系**里求出句子矩形
+  /// （制卡裁切用）；[rect] 是 WebView 视口像素，经过缩放 / 旋转 / 拆页后对不上原图。
+  /// EPUB 与旧 payload 为 null。
+  final int? mangaSentenceGroup;
 
   /// 这次选词来自指针扫过（Shift 悬停 / 悬停查词），而不是一次明确的点击 / 按键。
   ///

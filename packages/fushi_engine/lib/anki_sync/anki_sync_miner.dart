@@ -86,24 +86,30 @@ class AnkiSyncMiner with AnkiNoteComposer {
     String rawPayloadJson,
     AnkiMiningContext context,
   ) async {
-    final AnkiDeck? deck = resolveSelectedDeck(settings);
     final AnkiNoteType? noteType = selectedNoteType(settings);
-    if (deck == null || noteType == null) {
-      return const MineOutcome.notConfigured();
-    }
+    if (noteType == null) return const MineOutcome.notConfigured();
 
+    // 「高级制卡」的卡组覆盖在 payload 里，目标卡组必须在 payload 解析之后才能定
+    // （与 AnkiConnect / AnkiDroid / AnkiMobile 三个后端同一判据，见
+    // resolveTargetDeck）；互联转发到无头服务端的卡同样要落进用户这一次挑的卡组。
     final AnkiMiningPayload payload;
     try {
       payload = AnkiMiningPayload.fromJson(
         Map<String, dynamic>.from(jsonDecode(rawPayloadJson) as Map),
       );
     } catch (e, stack) {
+      if (resolveSelectedDeck(settings) == null) {
+        return const MineOutcome.notConfigured();
+      }
       return MineOutcome.failure(
         'Invalid card data (payload parse failed): $e',
         error: e,
         stackTrace: stack,
       );
     }
+
+    final AnkiDeck? deck = resolveTargetDeck(settings, payload);
+    if (deck == null) return const MineOutcome.notConfigured();
 
     final List<(String, String)> media = <(String, String)>[];
     final RenderedMinedFields rendered = await _render(

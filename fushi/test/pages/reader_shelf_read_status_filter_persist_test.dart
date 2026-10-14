@@ -20,21 +20,23 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/utils.dart' show FushiPageHeader;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
 MediaItem _book(String title, {required int position}) => MediaItem(
-      mediaIdentifier: 'shelf-test-$title',
-      title: title,
-      mediaTypeIdentifier: 'reader',
-      mediaSourceIdentifier: 'shelf_test_source',
-      position: position,
-      duration: 100,
-      canDelete: false,
-      canEdit: true,
-    );
+  mediaIdentifier: 'shelf-test-$title',
+  title: title,
+  mediaTypeIdentifier: 'reader',
+  mediaSourceIdentifier: 'shelf_test_source',
+  position: position,
+  duration: 100,
+  canDelete: false,
+  canEdit: true,
+);
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -90,44 +92,39 @@ void main() {
   Widget buildApp({
     Key? pageKey,
     List<MediaItem> books = const <MediaItem>[],
-  }) =>
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) => Future<List<MediaItem>>.value(books),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                key: pageKey,
-                remoteBookClientLoader: () async => null,
-              ),
-            ),
+  }) => ProviderScope(
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(books),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            key: pageKey,
+            remoteBookClientLoader: () async => null,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  final Finder sortButton =
-      find.byKey(const ValueKey<String>('library_sort_menu_button'));
+  final Finder sortButton = find.byKey(
+    const ValueKey<String>('library_sort_menu_button'),
+  );
 
   Finder statusItem(String name) =>
       find.byKey(ValueKey<String>('shelf_filter_read_status_$name'));
 
-  double badgeScale(WidgetTester tester) => tester
-      .widget<AnimatedScale>(
-        find.descendant(
-          of: sortButton,
-          matching:
-              find.byKey(const ValueKey<String>('library_filter_badge_dot')),
-        ),
-      )
-      .scale;
+  // 单行页头（2026-10-14）：排序按钮是页头里的 FushiIconButton，筛选生效时
+  // 亮它自己的圆点（badge）。
+  double badgeScale(WidgetTester tester) =>
+      tester.widget<FushiIconButton>(sortButton).badge ? 1 : 0;
 
   Future<void> pickStatus(WidgetTester tester, String name) async {
     await tester.tap(sortButton);
@@ -137,9 +134,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('阅读状态在排序菜单里：选中落偏好、亮圆点，页面重建（重启）后读回', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('阅读状态在排序菜单里：选中落偏好、亮圆点，页面重建（重启）后读回', (WidgetTester tester) async {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
     // 工具行上不再有阅读状态下拉 chip。
@@ -189,9 +184,7 @@ void main() {
     expect(find.text('Beta'), findsNothing);
   });
 
-  testWidgets('窄屏：标签筛选并进排序菜单（多选），工具条一行、选中后亮圆点', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('窄屏：标签 chip 在页头下方独占一行，排序菜单里不再有标签组', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
@@ -200,32 +193,31 @@ void main() {
 
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
-    // 标签 chip 行不再单独占一行。
-    expect(find.text('TagA'), findsNothing);
+    // 2026-10-14 单行页头：搜索 / 多选 / 排序并进页头，标签 chip 在下面一行。
+    expect(find.text('TagA'), findsOneWidget);
     expect(badgeScale(tester), 0);
 
     await tester.tap(sortButton);
     await tester.pumpAndSettle();
-    final Finder tagItem =
-        find.byKey(ValueKey<String>('library_menu_tag_$tagA'));
-    expect(tagItem, findsOneWidget);
-    await tester.tap(tagItem);
+    expect(
+      find.byKey(ValueKey<String>('library_menu_tag_$tagA')),
+      findsNothing,
+      reason: '标签已有自己的 chip 行，排序菜单不再重复一组',
+    );
+    expect(statusItem('all'), findsOneWidget, reason: '阅读状态组仍在排序菜单里');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    // 多选：点了菜单不关，选中写进共享的标签筛选状态。
-    expect(tagItem, findsOneWidget, reason: '标签组是多选，点一个不关菜单');
+
+    await tester.tap(find.text('TagA'));
+    await tester.pumpAndSettle();
     final ProviderContainer container = ProviderScope.containerOf(
       tester.element(find.byType(ReaderFushiHistoryPage)),
     );
     expect(container.read(selectedTagIdsProvider), <int>{tagA});
-    await tester.tapAt(const Offset(5, 830));
-    await tester.pumpAndSettle();
-    expect(badgeScale(tester), 1, reason: '标签筛选生效同样亮圆点');
     container.read(selectedTagIdsProvider.notifier).state = <int>{};
   });
 
-  testWidgets('宽屏：标签 chip 嵌在工具行里（搜索框右边），不另起一行', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('宽屏：页头只占一行，标签 chip 在页头下方', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 800);
     addTearDown(tester.view.reset);
@@ -235,14 +227,18 @@ void main() {
     await tester.pumpAndSettle();
     final Finder chip = find.text('TagA');
     expect(chip, findsOneWidget);
-    final Rect search = tester.getRect(find.byType(LibrarySearchField));
+    final Rect header = tester.getRect(find.byType(FushiPageHeader).first);
     final Rect chipRect = tester.getRect(chip);
     expect(
-      (chipRect.center.dy - search.center.dy).abs(),
-      lessThan(4),
-      reason: '标签 chip 与搜索框同一行',
+      chipRect.top,
+      greaterThanOrEqualTo(header.bottom - 1),
+      reason: '标签 chip 不进页头行',
     );
-    expect(chipRect.left, greaterThan(search.right));
+    expect(
+      find.byKey(const ValueKey<String>('fushi-header-search-button')),
+      findsOneWidget,
+      reason: '搜索平时收成页头里的 🔍',
+    );
   });
 
   testWidgets('偏好里的未知值按「全部」处理', (WidgetTester tester) async {

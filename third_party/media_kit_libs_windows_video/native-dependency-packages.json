@@ -97,6 +97,16 @@
     ]
   },
   {
+    "name": "mingw-w64-x86_64-gcc-libs",
+    "version": "16.2.0-3",
+    "upstream": "https://gcc.gnu.org",
+    "dlls": [
+      "libgcc_s_seh-1.dll",
+      "libgomp-1.dll",
+      "libstdc++-6.dll"
+    ]
+  },
+  {
     "name": "mingw-w64-x86_64-gdk-pixbuf2",
     "version": "2.44.7-1",
     "upstream": "https://gitlab.gnome.org/GNOME/gdk-pixbuf",
@@ -269,27 +279,11 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-libgcc",
-    "version": "16.2.0-6",
-    "upstream": "https://gcc.gnu.org",
-    "dlls": [
-      "libgcc_s_seh-1.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-libgme",
     "version": "0.6.5-2",
     "upstream": "https://github.com/libgme/game-music-emu",
     "dlls": [
       "libgme.dll"
-    ]
-  },
-  {
-    "name": "mingw-w64-x86_64-libgomp",
-    "version": "16.2.0-6",
-    "upstream": "https://gcc.gnu.org",
-    "dlls": [
-      "libgomp-1.dll"
     ]
   },
   {
@@ -407,14 +401,6 @@
     ]
   },
   {
-    "name": "mingw-w64-x86_64-libstdc++",
-    "version": "16.2.0-6",
-    "upstream": "https://gcc.gnu.org",
-    "dlls": [
-      "libstdc++-6.dll"
-    ]
-  },
-  {
     "name": "mingw-w64-x86_64-libtasn1",
     "version": "4.21.0-1",
     "upstream": "https://www.gnu.org/software/libtasn1/",
@@ -509,7 +495,7 @@
   },
   {
     "name": "mingw-w64-x86_64-libwinpthread",
-    "version": "14.0.0.r426.g4564ee4b5-2",
+    "version": "14.0.0.r302.gd7f3c5201-1",
     "upstream": "https://www.mingw-w64.org/",
     "dlls": [
       "libwinpthread-1.dll"
@@ -533,7 +519,7 @@
   },
   {
     "name": "mingw-w64-x86_64-luajit",
-    "version": "2.1.1788460057-2",
+    "version": "2.1.1785606157-1",
     "upstream": "https://luajit.org/",
     "dlls": [
       "lua51.dll"

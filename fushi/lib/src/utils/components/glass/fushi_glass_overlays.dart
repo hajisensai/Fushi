@@ -4,6 +4,7 @@ import 'dart:ui' show SemanticsRole, lerpDouble;
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/menu_overlay_scroll_boundary.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -20,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 浮层族（对话框 / 弹出菜单 / 下拉 / 提示条）的「设计系统分派」包装：构造参数
@@ -2907,7 +2909,10 @@ class FushiMenuAnchor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
-    return MenuAnchor(
+    final MenuAnchorChildBuilder? anchorBuilder = builder;
+    // BUG-3359：菜单面板的滚动通知截在锚点这一层，不冒泡进页面（见
+    // [MenuOverlayScrollBoundary]）；锚点自身（child / builder 的产物）照常冒泡。
+    final Widget menu = MenuAnchor(
       controller: controller,
       childFocusNode: childFocusNode,
       // Apple 下调用方的 MenuStyle（MD3 底色 / 圆角 / 内边距 / 描边 / 尺寸）
@@ -2942,9 +2947,17 @@ class FushiMenuAnchor extends StatelessWidget {
       menuChildren: glass && menuChildren.isNotEmpty
           ? <Widget>[_FushiGlassMenuPanel(children: menuChildren)]
           : menuChildren,
-      builder: builder,
-      child: child,
+      builder: anchorBuilder == null
+          ? null
+          : (BuildContext context, MenuController controller, Widget? child) =>
+                MenuOverlayScrollBoundary.anchor(
+                  child: anchorBuilder(context, controller, child),
+                ),
+      child: anchorBuilder == null && child != null
+          ? MenuOverlayScrollBoundary.anchor(child: child!)
+          : child,
     );
+    return MenuOverlayScrollBoundary(child: menu);
   }
 }
 
@@ -3422,7 +3435,10 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return DropdownMenu<T>(
+      // BUG-3359：下拉面板是 OverlayPortal 浮层，滚动通知会冒泡进页面（顶栏跟着
+      // 收起、下拉被重建后滚回选中项，列表拨不下去）。截在下拉这一层；锚点是本
+      // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
+      final Widget dropdown = DropdownMenu<T>(
         enabled: widget.enabled,
         width: widget.width,
         menuHeight: widget.menuHeight,
@@ -3463,6 +3479,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
         menuController: widget.menuController,
         scrollPadding: widget.scrollPadding,
       );
+      return MenuOverlayScrollBoundary(child: dropdown);
     }
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
@@ -3576,22 +3593,60 @@ class FushiSnackBar extends SnackBar {
     super.clipBehavior,
   });
 
+  /// 是否由本组件补一个显式关闭按钮。
+  ///
+  /// 带动作的 SnackBar 默认 [persist]（`persist ?? action != null`）：不会自己
+  /// 消失，而 [showCloseIcon] 默认关——用户只剩「横滑」这一条想不到的路，提示就
+  /// 一直钉在底部（反馈 9WaqDjw84y）。凡是常驻的提示条都必须有看得见的关闭入口；
+  /// 调用方显式要了原生关闭图标（`showCloseIcon: true`）就不重复画。
+  bool get _closable => persist && super.showCloseIcon != true;
+
   @override
-  Widget get content =>
-      _FushiSnackBarContent(content: super.content, action: super.action);
+  Widget get content => _FushiSnackBarContent(
+    content: super.content,
+    action: super.action,
+    closable: _closable,
+  );
 
   @override
   SnackBarAction? get action {
     final SnackBarAction? raw = super.action;
-    return raw == null ? null : _FushiSnackBarAction(raw);
+    return raw == null ? null : _FushiSnackBarAction(raw, closable: _closable);
+  }
+}
+
+/// 常驻提示条的关闭按钮（MD3 画在动作槽里动作之后，玻璃画在胶囊内动作之后）。
+class _FushiSnackBarCloseButton extends StatelessWidget {
+  const _FushiSnackBarCloseButton({required this.glass});
+
+  final bool glass;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiIconButtonControl(
+      key: const ValueKey<String>('fushi-snackbar-close'),
+      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+      onPressed: () => ScaffoldMessenger.of(
+        context,
+      ).hideCurrentSnackBar(reason: SnackBarClosedReason.dismiss),
+      icon: FushiIcon(
+        glass ? CupertinoIcons.xmark : FushiIcons.close,
+        size: glass ? 17 : 20,
+      ),
+    );
   }
 }
 
 class _FushiSnackBarContent extends StatelessWidget {
-  const _FushiSnackBarContent({required this.content, required this.action});
+  const _FushiSnackBarContent({
+    required this.content,
+    required this.action,
+    required this.closable,
+  });
 
   final Widget content;
   final SnackBarAction? action;
+  final bool closable;
 
   @override
   Widget build(BuildContext context) {
@@ -3612,7 +3667,7 @@ class _FushiSnackBarContent extends StatelessWidget {
           child: Padding(
             padding: EdgeInsetsDirectional.only(
               start: 20,
-              end: action != null ? 8 : 20,
+              end: action != null || closable ? 8 : 20,
               top: 4,
               bottom: 4,
             ),
@@ -3637,6 +3692,7 @@ class _FushiSnackBarContent extends StatelessWidget {
                   const SizedBox(width: 8),
                   _FushiGlassSnackBarActionButton(action: action!),
                 ],
+                if (closable) const _FushiSnackBarCloseButton(glass: true),
               ],
             ),
           ),
@@ -3649,7 +3705,7 @@ class _FushiSnackBarContent extends StatelessWidget {
 /// SnackBar 自己动作槽里的那一个：MD3 下原样渲染原 [SnackBarAction]，
 /// 玻璃下让空（动作已在玻璃胶囊里）。
 class _FushiSnackBarAction extends SnackBarAction {
-  _FushiSnackBarAction(this.raw)
+  _FushiSnackBarAction(this.raw, {required this.closable})
     : super(
         textColor: raw.textColor,
         disabledTextColor: raw.disabledTextColor,
@@ -3660,6 +3716,7 @@ class _FushiSnackBarAction extends SnackBarAction {
       );
 
   final SnackBarAction raw;
+  final bool closable;
 
   @override
   State<SnackBarAction> createState() => _FushiSnackBarActionState();
@@ -3669,7 +3726,15 @@ class _FushiSnackBarActionState extends State<SnackBarAction> {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return const SizedBox.shrink();
-    return (widget as _FushiSnackBarAction).raw;
+    final _FushiSnackBarAction action = widget as _FushiSnackBarAction;
+    if (!action.closable) return action.raw;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        action.raw,
+        const _FushiSnackBarCloseButton(glass: false),
+      ],
+    );
   }
 }
 

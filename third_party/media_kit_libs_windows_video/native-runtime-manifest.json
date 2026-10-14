@@ -506,9 +506,9 @@
   {
     "name": "fbdgcc_s_seh-1.dll",
     "source_name": "libgcc_s_seh-1.dll",
-    "source_sha256": "661f70dc19fde8c25bb56387b807b7a9ab7e532cf58fa8aeee078256c19d8980",
-    "sha256": "275bc9328c13d9c933abc6cb5653a4ca702c8fd19743d8eda561c90591c75b96",
-    "bytes": 149364,
+    "source_sha256": "b37c1770c8ca092700875845b34918803ee6311573eba1c32ff4b1166e4a0e1e",
+    "sha256": "51974adaf50c753b75991c0c0176c76bbc29ce310b6787bd40e945af71a8eb2f",
+    "bytes": 150998,
     "rewritten_references": 2,
     "imports_and_forwarders": [
       "fbdwinpthread-1.dll",
@@ -667,9 +667,9 @@
   {
     "name": "fbdgomp-1.dll",
     "source_name": "libgomp-1.dll",
-    "source_sha256": "d68f23cb133886921ff2200bc279e1fea096c7ea2ae81eb8e48da97cbd1afd8d",
-    "sha256": "4fe7584eb17945ea526e9d80f964296004f28dfd4449cb5254349473729c9be4",
-    "bytes": 328648,
+    "source_sha256": "acf25eeee8cb358db82e3f42c96d1934b915d62b883ea8bef31d766946f1c326",
+    "sha256": "b7ea6a4eb7ced826b8772ff4d585039ede85c72b073fe2e47258fc9667808a8c",
+    "bytes": 329299,
     "rewritten_references": 2,
     "imports_and_forwarders": [
       "fbdwinpthread-1.dll",
@@ -945,9 +945,9 @@
   {
     "name": "libmpv-2.dll",
     "source_name": "libmpv-2.dll",
-    "source_sha256": "43d2af6fe15a92cafd089aeff5db22c4e095cdc98661a90d401d94a61bec3cb7",
-    "sha256": "a3e0ced96d551288111e1c61d4440f8b2bacc8b0287864b230af67f589053b75",
-    "bytes": 4136039,
+    "source_sha256": "6c97afa7ccfa059b3cfd5a849dcf8abc898a71aba961d22861250ff77e797e83",
+    "sha256": "d16c19a8e6f4b7d3d483bf0c095073413de14347bf1c3329ca662b843c366492",
+    "bytes": 4553988,
     "rewritten_references": 23,
     "imports_and_forwarders": [
       "ADVAPI32.dll",
@@ -1338,8 +1338,8 @@
       "fbdpango-1.0-0.dll",
       "fbdpangocairo-1.0-0.dll",
       "fbdxml2-16.dll",
-      "KERNEL32.dll",
       "kernel32.dll",
+      "KERNEL32.dll",
       "msvcrt.dll",
       "ntdll.dll",
       "USERENV.dll",
@@ -1498,9 +1498,9 @@
   {
     "name": "fbdstdc++-6.dll",
     "source_name": "libstdc++-6.dll",
-    "source_sha256": "b720a96289bcd6d9ec6f5f1f5612f1b1a523ce15d3ada20fe119791274cb512f",
-    "sha256": "cb5e0dccce5d685ad1f55eb44e15abf213e9a90d9eb5663ed7c78b8e7eab1bd7",
-    "bytes": 2659216,
+    "source_sha256": "887c21dbe2a211ac4d1a790e4f608b7dee27fae12352856963004e7a715d2e6c",
+    "sha256": "519f106617712e1d3eaaf9014d1252693c6d93f4373f600515c65cdefd2f4b20",
+    "bytes": 2661299,
     "rewritten_references": 3,
     "imports_and_forwarders": [
       "fbdgcc_s_seh-1.dll",
@@ -1755,9 +1755,9 @@
   {
     "name": "fbdwinpthread-1.dll",
     "source_name": "libwinpthread-1.dll",
-    "source_sha256": "c26528202c73151e4bff49d0fae08c7e6dd6b78c0d45278253d46e33f2f1417e",
-    "sha256": "e99e318f93217ae0ab032f23f225a2b29cfec0d8613ec6b68d64a3a8745c4d62",
-    "bytes": 66333,
+    "source_sha256": "029d3d2e7bc8651b4b7886708424914790e0225b6a47f650a441e5e697d2111e",
+    "sha256": "f8c439827e9d6d2604ed78567e663429291e5554a5c9e17b80cf1f3c4b100639",
+    "bytes": 63875,
     "rewritten_references": 3,
     "imports_and_forwarders": [
       "KERNEL32.dll",
@@ -1851,9 +1851,9 @@
   {
     "name": "fbd51.dll",
     "source_name": "lua51.dll",
-    "source_sha256": "0e8585feaa6cd4eebd2c800c297b7e89255145dde8322e18dbccec1d12e4c9ae",
-    "sha256": "e0f9f36436ee3cec366585ce9f1fe8aa9d7a89cfa2922efd26738d9daaf148a5",
-    "bytes": 609070,
+    "source_sha256": "b8d327510b35553b949313b44a6775f8916a0b073e6214e36095a15806ca81fb",
+    "sha256": "3818953cecd29dddc698d27c48f7a10f2dab375fe5bf14bf1b6ffe21c68f5aea",
+    "bytes": 611189,
     "rewritten_references": 1,
     "imports_and_forwarders": [
       "KERNEL32.dll",

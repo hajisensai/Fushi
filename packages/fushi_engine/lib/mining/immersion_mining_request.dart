@@ -404,6 +404,8 @@ class ImmersionMiningRequest {
     this.providedAudioBytes,
     this.providedAudioName,
     this.requireAudio = true,
+    this.omitAudio = false,
+    this.omitCover = false,
     this.imageMode = VideoMiningImageMode.gif,
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
@@ -474,6 +476,19 @@ class ImmersionMiningRequest {
 
   /// true = 无音频则中止制卡（本地/YouTube 默认）；false = 允许无音频卡（Netflix 2A 截图卡）。
   final bool requireAudio;
+
+  /// 用户为**这一张卡**明确选了「不要句子音频」（高级制卡，`MiningRequestOverrides
+  /// .omitAudio`）。与 [requireAudio] 不是一回事：后者是来源能力（拿不到音频算不算
+  /// 失败），本字段是用户意图——引擎不启动音频抽取，也就不会因为「缺音频」中止。
+  ///
+  /// 为什么不在 [VideoMiningImageMode] 里加一个 none：那个枚举是持久化偏好的值域，
+  /// 「不要」只对单张卡有意义，不能变成一键制卡的设置值。
+  final bool omitAudio;
+
+  /// 用户为这一张卡明确选了「不要图片」：封面阶梯（动图 / 起点帧 / 当前帧）与外部
+  /// 给好的封面字节一律跳过。与 [omitAudio] 都为真时出纯文本卡（用户要的就是它，
+  /// 不再按「无封面也无音频」当空壳卡中止）。
+  final bool omitCover;
 
   /// 视频制卡封面图片模式（见 [VideoMiningImageMode]）。值对象默认
   /// [VideoMiningImageMode.gif]（不读偏好的调用方行为不变；偏好默认是 videoClip）。仅本地/有 range 的封面解析路径读取；providedCoverBytes 路径不受影响。
@@ -606,6 +621,8 @@ class ImmersionMiningRequest {
         providedAudioBytes: providedAudioBytes,
         providedAudioName: providedAudioName,
         requireAudio: requireAudio,
+        omitAudio: omitAudio,
+        omitCover: omitCover,
         imageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
@@ -669,6 +686,8 @@ class ImmersionMiningRequest {
         : Uint8List.fromList(providedAudioBytes!),
     providedAudioName: providedAudioName,
     requireAudio: requireAudio,
+    omitAudio: omitAudio,
+    omitCover: omitCover,
     imageMode: imageMode,
     animatedFormat: animatedFormat,
     stillFormat: stillFormat,
