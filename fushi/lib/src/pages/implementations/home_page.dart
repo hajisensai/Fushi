@@ -735,8 +735,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed =
-        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    final bool confirmed = await showAnkiMediaDedupPlanDialog(
+      context,
+      plan,
+      offerDelete: true,
+    );
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -1933,13 +1936,11 @@ class _HomePageState extends BasePageState<HomePage>
   bool _inMobileLayout = false;
 
   /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
-  /// 单独保持 iOS 的点按切换语义），且当前 tab 是参与横滑的模块页。
+  /// 单独保持 iOS 的点按切换语义），且当前 tab 在横滑序列里（[homeModuleSwipeArmed]，
+  /// 含设置，BUG-3328）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeSwipeTabs(
-      tabs: _activeTabs(),
-      reversed: false,
-    ).contains(_visibleTab);
+    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
@@ -2038,8 +2039,7 @@ class _HomePageState extends BasePageState<HomePage>
               final bool towardEnd = index > visualIndex;
               _selectTabFromNav(tab);
               _moduleSwipe.playEnter(
-                fromScreenRight:
-                    Directionality.of(context) == TextDirection.ltr
+                fromScreenRight: Directionality.of(context) == TextDirection.ltr
                     ? towardEnd
                     : !towardEnd,
               );
