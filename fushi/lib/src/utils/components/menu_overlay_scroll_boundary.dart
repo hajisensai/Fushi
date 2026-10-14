@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 
 /// 菜单浮层（[MenuAnchor] / [DropdownMenu] 的 OverlayPortal 面板）的滚动通知边界。
 ///
-/// BUG-3330：浮层在**渲染树**上画在 Overlay 里，在**元素树**上却仍是锚点的后代
+/// BUG-3359：浮层在**渲染树**上画在 Overlay 里，在**元素树**上却仍是锚点的后代
 /// ——面板自己那个 `SingleChildScrollView` 发出的滚动通知会一路冒泡进锚点所在的
 /// 页面。页面层的监听者（浮动顶栏 / 页头的「滚动收起」、`FushiPageScaffold` 的
 /// 标题淡入与顶部遮罩）把它当成正文在滚：用户在漫画「来源」下拉里拨滚轮，顶栏

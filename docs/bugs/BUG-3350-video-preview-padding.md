@@ -1,4 +1,4 @@
-## BUG-3328 · 视频句子音频试听不含首尾留白，与写卡区间不一致
+## BUG-3350 · 视频句子音频试听不含首尾留白，与写卡区间不一致
 - **报告**：2026-10-14（实现「高级制卡」视频车道时沿代码路径发现）
 - **真实性**：✅ 真 bug。视频页「调整上下文」对话框的试听 `_previewSentenceContextAudio`（`fushi/lib/src/pages/implementations/video_fushi/lookup_mining.part.dart`，修前约 125–164 行）把草稿合并区间交给 `_replaySubtitleSpan` → `VideoPlayerController.replayCue(first, until: last)`，从首句**句首**放到末句**句尾**就停；而写卡走 `_resolveVideoMiningRange`（同文件修前约 251–264 行）先 `padSentenceRange` 加首尾留白、再 `miningClipTimeMs` 换到播放器轴。于是用户试听到的永远比卡上的句子音频短一截首尾留白（默认头 120 ms / 尾部更长），尾音被切掉的问题在试听里根本听不出来。手机遥控的试听（`remote_control.part.dart` 的 `previewAudio`，修前约 122–129 行）同一根因。另外 `replayCue` 只能停在 cue 边界，接不了毫秒级的起止微调。
 - **[x] ① 已修复** — 试听与写卡改调同一对函数：`_videoMiningAudioWindow` = `_resolveVideoMiningRange` + `applyVideoMiningOverrides`（`fushi/lib/src/mining/advanced_mining/video_advanced_mining.dart`），`_onMineEntryImpl` / `_onUpdateEntryImpl` 写卡用的也是这一对；播放改走新增的 `VideoPlayerController.playRangeMs`（毫秒级一次性终点，`seekMs` / `_rawSeekMs` / `setCues` 作废，试听期间不让全局「字幕结束暂停」截断）。遥控试听与遥控写卡共用 `_remoteVideoMiningWindow`（含首尾留白）。旧 `_replaySubtitleSpan` 删除。提交见 am/video 分支 `feat(mining): advanced mining video lane …`。

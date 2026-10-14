@@ -120,7 +120,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       },
       mine: _mineRemoteVideoCue,
       // 手机试听放的是电脑会写进卡片的那段（与 [_mineRemoteVideoCue] 同一个
-      // [_remoteVideoMiningWindow]，含首尾留白与调轴），不是按 cue 边界放（BUG-3328）。
+      // [_remoteVideoMiningWindow]，含首尾留白与调轴），不是按 cue 边界放（BUG-3350）。
       previewAudio: (VideoRemoteCue anchor, int startMs, int endMs) async {
         final ({int clipStartMs, int clipEndMs}) window =
             _remoteVideoMiningWindow(controller, anchor, startMs, endMs);

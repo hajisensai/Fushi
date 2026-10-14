@@ -7,7 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 
-/// BUG-3328：库页（视频 › 媒体服务器等）外壳页签胶囊正下方横穿一条水平细线。
+/// BUG-3338：库页（视频 › 媒体服务器等）外壳页签胶囊正下方横穿一条水平细线。
 ///
 /// 外壳那层遮罩在「下面还有页面自己的工具行」时本应停在薄纱不透明度、由嵌套层
 /// 接着画，但 [FushiTopFadeScrim] 把渐隐段下限钳在 1 px：外层在接缝处多画一条
@@ -68,7 +68,7 @@ void main() {
   }
 
   for (final double dpr in <double>[1.0, 1.25, 1.5]) {
-    testWidgets('BUG-3328 外层与嵌套遮罩接缝处没有暗线 / 亮缝（DPR $dpr）', (
+    testWidgets('BUG-3338 外层与嵌套遮罩接缝处没有暗线 / 亮缝（DPR $dpr）', (
       WidgetTester tester,
     ) async {
       tester.view.devicePixelRatio = dpr;

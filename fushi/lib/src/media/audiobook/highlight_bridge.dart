@@ -13,7 +13,7 @@ class HighlightBridge {
 (function() {
   if (window.__fushiHighlightsInstalled) return;
   window.__fushiHighlightsInstalled = true;
-  // BUG-3328：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+  // BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
   window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 
   var BASE_COLORS = {
@@ -241,7 +241,7 @@ class HighlightBridge {
     return groups;
   }
 
-  // BUG-3328: removing a favourite on an engine without CSS Custom Highlights
+  // BUG-3343: removing a favourite on an engine without CSS Custom Highlights
   // (iOS / macOS Safari before 17.2) unwraps its spans and merges the text nodes
   // back. Both steps go through the reader's shared __fushiLiveRanges: the move
   // keeps live Ranges and the native selection, and the merge lets the lookup
@@ -389,7 +389,7 @@ class HighlightBridge {
             span.style.textDecorationColor = markColor;
             span.style.textDecorationThickness = '0.12em';
             span.style.textUnderlineOffset = '0.18em';
-            // BUG-3328: split + move (node identity kept), never surroundContents --
+            // BUG-3343: split + move (node identity kept), never surroundContents --
             // it copies the text into a new node and truncates the original, so the
             // lookup selection's "node + offset" would point at other characters.
             // Groups run in reverse document order, so a split only affects text

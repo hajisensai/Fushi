@@ -378,7 +378,7 @@ const JAPANESE_RANGES = [
   [0x3000, 0x303f],
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
-// BUG-3328：判据唯一出处是 Dart 的 kReaderCssHighlightsSupportedJs（reader_css_highlight_capability.dart，
+// BUG-3343：判据唯一出处是 Dart 的 kReaderCssHighlightsSupportedJs（reader_css_highlight_capability.dart，
 // 旧 Blink 竖排 ::highlight 画错位置 → 退回包裹兜底）。本源码是原始字符串、被多份 node 行为测试按
 // 文本切出来直接跑，所以这里放逐字副本；与常量逐字相等由 reader_css_highlight_capability_bug3328_test 钉住。
 window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\/(\d+)\./.exec(ua);return !!m && +m[1] < 120;})());
@@ -504,7 +504,7 @@ if (!window.__fushiLiveRanges) {
       });
       return parent;
     },
-    // BUG-3328：Node.normalize() 把相邻文本节点并进第一个、其余移出文档。live Range 与原生选区由
+    // BUG-3343：Node.normalize() 把相邻文本节点并进第一个、其余移出文档。live Range 与原生选区由
     // DOM 规范自己换算到合并后的节点；查词选区与拖选锚点是「节点 + 偏移」普通对象，指向被并掉
     // 节点的点会失效（删除收藏 / 标注时高亮桥拆包裹并 normalize，查词选区随之丢失）。合并一律走
     // 这里，由选区的拥有者（trackTextPoints）在合并期间跟踪这些点、合并完写回。
@@ -2488,7 +2488,7 @@ window.fushiSelection = {
       CSS.highlights.set('fushi-selection', selHl);
     } else {
       // 拆旧包裹时合并文本节点，trimmedRanges（= selection.matchedRanges）的段由 trackTextPoints
-      // 就地换算。包裹走 __fushiLiveRanges.wrapText（BUG-3328）：extractContents 会把选中的字复制进
+      // 就地换算。包裹走 __fushiLiveRanges.wrapText（BUG-3343）：extractContents 会把选中的字复制进
       // 新节点、原节点截掉这段，选区的「节点 + 偏移」从此指向别的字。倒序包裹：切开只影响切点之后。
       this.clearHighlightWrappers();
       for (var i = trimmedRanges.length - 1; i >= 0; i--) {
@@ -2573,7 +2573,7 @@ window.fushiSelection = {
   clearHighlightWrappers: function() {
     if (!this.highlightWrappers.length) return;
     for (var i = 0; i < this.highlightWrappers.length; i++) {
-      // BUG-3328：拆包裹与合并都经 __fushiLiveRanges，查词选区（highlightSelection 重画时仍要用）
+      // BUG-3343：拆包裹与合并都经 __fushiLiveRanges，查词选区（highlightSelection 重画时仍要用）
       // 与 live Range 换算到合并后的节点。
       window.__fushiLiveRanges.normalize(window.__fushiLiveRanges.unwrap(this.highlightWrappers[i]));
     }
@@ -2621,7 +2621,7 @@ window.fushiSelection = {
       anchor.endNode = e.node; anchor.endOffset = e.offset;
     }
   },
-  // BUG-3328：合并相邻文本节点（__fushiLiveRanges.normalize）前调这里。选区与拖选锚点里的每个
+  // BUG-3343：合并相邻文本节点（__fushiLiveRanges.normalize）前调这里。选区与拖选锚点里的每个
   // 「节点 + 偏移」各由一个折叠的 live Range 跟踪——DOM 规范在 normalize() 里对 live Range 做的
   // 换算（并进前一个节点、偏移加上前面的长度）正是这些点该有的换算；返回的函数在合并之后把
   // 换算结果原地写回（ranges / matchedRanges 的段对象就地改，别处持有的同一批段也一起更新）。

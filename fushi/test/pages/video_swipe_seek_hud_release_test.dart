@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-/// BUG-3329（反馈 #J1NJL1a75F「横滑改进度松手那一刻显示的进度变回滑动起始」）。
+/// BUG-3354（反馈 #J1NJL1a75F「横滑改进度松手那一刻显示的进度变回滑动起始」）。
 ///
 /// 用**真实的** vendored 移动控制条（[AdaptiveVideoControls] → `MaterialVideoControls`）
 /// 做一次触屏横滑：HUD 在松手后淡出（AnimatedOpacity），淡出期间仍随 setState 重建。

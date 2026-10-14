@@ -76,7 +76,7 @@ class MediaDetailBackdrop extends StatelessWidget {
   /// 上半基本透明，起始侧（两栏布局的信息栏 / 单列 hero 的文字）与底部才落到底色。
   final double blurSigma;
 
-  /// [AnimatedSwitcher] 的铺满版布局：新旧子项都拿紧约束（见 BUG-3329）。
+  /// [AnimatedSwitcher] 的铺满版布局：新旧子项都拿紧约束（见 BUG-3355）。
   static Widget _expandedSwitcherLayout(
     Widget? currentChild,
     List<Widget> previousChildren,
@@ -102,7 +102,7 @@ class MediaDetailBackdrop extends StatelessWidget {
           if (image != null)
             AnimatedSwitcher(
               duration: motion.effectsSlow.duration,
-              // BUG-3329：默认 layoutBuilder 是 `Stack(alignment: center)`，子项拿到
+              // BUG-3355：默认 layoutBuilder 是 `Stack(alignment: center)`，子项拿到
               // 的是**松**约束——Image 于是按自己的宽高比缩成「整高、居中」的一条
               // 竖图（BoxFit.cover 在松约束下不生效），两栏详情页顶部就剩窗口中间
               // 一块模糊竖条，用户看来是「莫名的毛玻璃」。背景必须铺满，交叉淡入

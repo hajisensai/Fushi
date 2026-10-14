@@ -183,7 +183,7 @@ void main() {
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
   });
 
-  group('BUG-3328 暂停 OCR 默认关闭、仅图片字幕提示开启', () {
+  group('BUG-3342 暂停 OCR 默认关闭、仅图片字幕提示开启', () {
     final Finder hint = find.byKey(
       const ValueKey<String>('graphic_subtitle_ocr_enable_hint'),
     );

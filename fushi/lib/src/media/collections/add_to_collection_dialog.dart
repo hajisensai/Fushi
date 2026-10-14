@@ -12,7 +12,7 @@ typedef CollectionMemberVisibility = bool Function(
 );
 
 /// 各合集的成员数：只数 [isMemberVisible] 认可的行（null = 全数），与合集详情页
-/// 显示的成员同一口径（BUG-3331）。
+/// 显示的成员同一口径（BUG-3361）。
 Map<int, int> countVisibleCollectionMembers(
   Iterable<MediaCollectionItemRow> items,
   CollectionMemberVisibility? isMemberVisible,
@@ -41,7 +41,7 @@ Map<int, int> countVisibleCollectionMembers(
 /// [isMemberVisible]：成员行在调用方库页上是否真的画得出来（与合集详情页
 /// `memberCardBuilder` 同一判据）。成员表没有指向媒体的外键，删掉的书、配对
 /// 有声书的伴生行、别的库页的条目都会留下画不出来的行；按原始行数计数，弹窗
-/// 写「10 项」、点进合集只有 6 本（BUG-3331）。null = 按原始行数（调用方没有
+/// 写「10 项」、点进合集只有 6 本（BUG-3361）。null = 按原始行数（调用方没有
 /// 可见性判据时的旧行为）。
 Future<bool> showAddToCollectionDialog({
   required BuildContext context,

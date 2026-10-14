@@ -1,4 +1,4 @@
-## BUG-3328 · Windows WebView popup scroll capped near 32 fps by WGC pump timer
+## BUG-3352 · Windows WebView popup scroll capped near 32 fps by WGC pump timer
 - **报告**：2026-10-14（用户：查词弹窗查完词后鼠标滚动帧率很低、没有平滑滚动，滚起来怪怪的；不限于小说，别处弹窗也一样）
 - **真实性**：✅ 真 bug。Windows 上所有 InAppWebView 都是 WebView2 离屏合成 → WGC 抓帧 → Flutter 纹理，抓帧不订阅 FrameArrived，靠 UI 线程 `DispatcherQueueTimer` 定时拉帧（`packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc:23` 的 `kPumpInterval100ns = 166667`，即 16.67ms「60Hz」）。这种定时器按系统计时器一格（默认 15.625ms）向上取整触发，16.67ms 超过一格就变成每两格一次。本机独立程序实测（UI 消息循环线程 + `DQTYPE_THREAD_CURRENT`，各 120 次 Tick 取均值）：
 

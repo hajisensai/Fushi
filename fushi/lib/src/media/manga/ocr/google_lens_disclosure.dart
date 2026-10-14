@@ -8,7 +8,7 @@ const int kGoogleLensDisclosureVersion = 1;
 const String kGoogleLensDisclosurePreferenceKey =
     'manga_google_lens_disclosure_version';
 
-/// 视频画面 / 图片字幕上传同意的设备本地键（BUG-3328）。与漫画分开：漫画那份同意书
+/// 视频画面 / 图片字幕上传同意的设备本地键（BUG-3342）。与漫画分开：漫画那份同意书
 /// 说的是「漫画页面」，用户没同意过把视频画面发给 Google。
 const String kVideoGoogleLensDisclosurePreferenceKey =
     'video_google_lens_disclosure_version';
@@ -49,7 +49,7 @@ enum GoogleLensDisclosureScene {
 /// every device that uploads page images.
 ///
 /// [scene] 决定文案与同意记录：视频调用方必须传 [GoogleLensDisclosureScene.videoFrames]，
-/// 否则用户看到的是「将漫画页面发送到 Google Lens？」（BUG-3328）。
+/// 否则用户看到的是「将漫画页面发送到 Google Lens？」（BUG-3342）。
 Future<bool> ensureGoogleLensDisclosure(
   BuildContext context, {
   GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,

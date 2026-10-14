@@ -297,7 +297,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   List<int> _visibleCollectionIds = const <int>[];
 
   /// 合集格子里折进去的远端占位成员（合集 id → 成员槽，组内序），与
-  /// [_visibleCollectionIds] 同帧、同一份 shelfGroups 推出（BUG-3328）：多选里勾了
+  /// [_visibleCollectionIds] 同帧、同一份 shelfGroups 推出（BUG-3337）：多选里勾了
   /// 合集再点「下载」，下的就是这个合集格子里画着的那些云端成员——此前批量下载只认
   /// 散卡远端键，只勾合集时按钮恒灰。
   Map<int, List<_ShelfBookSlot>> _remoteMembersByCollection =
@@ -796,7 +796,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         setState(() => _selection.updateRangeDrag(slot)),
                     onDragEnd: () => setState(_selection.endRangeDrag),
                     child: books.when(
-                      // BUG-3328：书集合一变（下载 / 导入落库）fushiBooksProvider
+                      // BUG-3337：书集合一变（下载 / 导入落库）fushiBooksProvider
                       // 就因依赖变化重算，AsyncValue 进 reload 态。默认
                       // skipLoadingOnReload=false 会把整个网格换成转圈再换回来——
                       // CustomScrollView 被卸掉重建，滚动位置归零跳回顶部，卡片
@@ -1233,7 +1233,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ///
   /// title 必须是卡片上**显示**的名字（改名覆盖层 ?? 原名），与
   /// [_buildSrtBookCard] / EPUB 卡同源：读 DB 原始列会让改过名的条目按看不见的
-  /// 旧名（常是导入文件名）参与「名称」排序，同系列各卷被拆散（BUG-3328）。
+  /// 旧名（常是导入文件名）参与「名称」排序，同系列各卷被拆散（BUG-3337）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
     String titleOf(_ShelfBookSlot s) {
       final SrtBook? srt = s.srt;
@@ -2533,7 +2533,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 接进该成员卡长按 / 右键对话框（键盘/手柄用户聚焦长按 A 走此对话框而非网格指针菜单，
   /// 不注入就没有移出项）。
   /// 合集成员行 → 本页能画出来的条目（详情页成员卡与「加入合集」弹窗计数同一
-  /// 判据，BUG-3331）。null = 本页画不出来（孤儿行 / 被过滤 / 别的库页的条目）。
+  /// 判据，BUG-3361）。null = 本页画不出来（孤儿行 / 被过滤 / 别的库页的条目）。
   _ShelfBookSlot? _resolveCollectionMember(String mediaType, String entryKey) {
     final MediaKind? kind = MediaKind.tryParse(mediaType);
     if (kind == MediaKind.srt) {
@@ -2993,7 +2993,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openIllustrations(item, bookKey),
       ),
       // 有声书导入仍受听书模块门控（develop 侧）；「重命名」不受它管。
-      // BUG-3328：漫画阅读器不播有声书，漫画卡这两格是 OCR 入口（「这里应该是
+      // BUG-3337：漫画阅读器不播有声书，漫画卡这两格是 OCR 入口（「这里应该是
       // OCR 吧，为什么是导入有声书」）——同受漫画模块门控。
       if (isManga && modules.isEnabled(ModuleId.manga))
         DialogQuickAction(

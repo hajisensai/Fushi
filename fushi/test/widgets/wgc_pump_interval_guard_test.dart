@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-3328 guard: the WGC timer pump must tick every system timer tick.
+/// BUG-3352 guard: the WGC timer pump must tick every system timer tick.
 ///
 /// `DispatcherQueueTimer` 按系统计时器一格（默认 15.625ms）向上取整触发。
 /// 间隔写成 16.67ms（「60Hz」）时实测平均 31.3ms 才 Tick 一次，所有 Windows
@@ -20,7 +20,7 @@ String _read(List<String> candidates, String name) {
 }
 
 void main() {
-  test('BUG-3328: WGC pump interval fires on every default timer tick', () {
+  test('BUG-3352: WGC pump interval fires on every default timer tick', () {
     final String src = maskComments(
       _read(<String>[
         'packages/flutter_inappwebview_windows/windows/custom_platform_view/texture_bridge.cc',

@@ -133,7 +133,7 @@ void main() {
     );
     expect(preview, contains('_videoMiningAudioWindow('));
     expect(preview, contains('controller.playRangeMs('));
-    // 旧「调整上下文」试听也改走同一个最终区间（BUG-3328：曾按 cue 边界放、缺首尾留白）。
+    // 旧「调整上下文」试听也改走同一个最终区间（BUG-3350：曾按 cue 边界放、缺首尾留白）。
     expect(
       maskComments(
         methodBody(src, 'Future<bool> _previewSentenceContextAudio('),

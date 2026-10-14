@@ -1,4 +1,4 @@
-## BUG-3328 · Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见
+## BUG-3343 · Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见
 - **报告**：2026-10-13（反馈 9GvPvaQQMq、YIP4vKSIJn，同一台 HUAWEI XYAO-W00 / 鸿蒙 4.2（Android 12, SDK 31）：阅读器竖排正文点击查词，「価値」（章标题）的选中高亮画在左上方邻列、形状是横条；「時間」（正文）完全看不到高亮。查词本身命中正确）
 - **真实性**：✅ 真 bug（WebView 内核缺陷 + 我方判据只问「API 在不在」）。
   - `window.__fushiCssHighlightsSupported` 原先在四处各写一份 `!!(window.CSS && CSS.highlights && window.Highlight)`（`fushi/lib/src/reader/reader_selection_scripts.dart:381`、`fushi/lib/src/media/audiobook/highlight_bridge.dart:16`、`fushi/lib/src/reader/reader_pagination_scripts.dart:2415` / `:3488`，修复前行号），Chromium 105 起这个 API 就在，于是查词选区一律走 `::highlight(fushi-selection)`（`reader_selection_scripts.dart` `highlightSelection`）。

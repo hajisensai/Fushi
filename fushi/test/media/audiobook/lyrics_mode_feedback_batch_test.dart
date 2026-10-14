@@ -144,8 +144,8 @@ void main() {
     });
   });
 
-  group('BUG-3280 / BUG-3328 WebKit 竖排长句扫过不消失', () {
-    // BUG-3328：iOS 模拟器实测 clone 与 slice 一样整句消失，只有把 .tx 变成
+  group('BUG-3280 / BUG-3346 WebKit 竖排长句扫过不消失', () {
+    // BUG-3346：iOS 模拟器实测 clone 与 slice 一样整句消失，只有把 .tx 变成
     // inline-block（原子盒）长句才看得见。CI 没有 WebKit，这里钉住规则形态。
     test('识别不了无前缀 slice 的引擎把 .tx 变成 inline-block', () {
       final String html = _html();

@@ -1835,7 +1835,7 @@ class _HomePageState extends BasePageState<HomePage>
         // between the rail and the content pane row-by-row.
         //
         // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见
-        // NavRailContentSync，BUG-3328），免得整棵内容树与保活 tab 每帧重排。
+        // NavRailContentSync，BUG-3351），免得整棵内容树与保活 tab 每帧重排。
         child: NavRailContentSync(
           child: Row(
             children: [
@@ -1941,7 +1941,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
   /// 单独保持 iOS 的点按切换语义），且当前 tab 在横滑序列里（[homeModuleSwipeArmed]，
-  /// 含设置，BUG-3328）。
+  /// 含设置，BUG-3351）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
     return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);

@@ -1849,7 +1849,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 根 build 在每次 AppModel 通知时都读 [theme] / [darkTheme]；工厂里的
   /// `WidgetStateProperty.resolveWith` 闭包每次都是新对象，ThemeData 永远判不等，
   /// MaterialApp 便对任何偏好写入都播一遍 280ms 主题过渡（每帧 lerp + 全树重建，
-  /// 设置页开关等处掉帧，BUG-3328）。工厂是参数的纯函数，按参数判等即可安全复用。
+  /// 设置页开关等处掉帧，BUG-3353）。工厂是参数的纯函数，按参数判等即可安全复用。
   final Map<Brightness, (_ThemeDataInputs, ThemeData)> _themeDataCache =
       <Brightness, (_ThemeDataInputs, ThemeData)>{};
 

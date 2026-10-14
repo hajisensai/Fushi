@@ -1099,7 +1099,7 @@ SettingsDestination buildVideoDestination() {
           ),
           // 暂停 OCR 点字查词的范围：以前只在图形字幕时识别，2026-10-13 用户要求扩大到
           // 所有视频（硬字幕 / 画面文字）。每次暂停都跑整帧识别，所以可以收窄或关掉。
-          // BUG-3328（2026-10-14 用户）：默认关闭、由用户手动开启；暂停到图片字幕帧时
+          // BUG-3342（2026-10-14 用户）：默认关闭、由用户手动开启；暂停到图片字幕帧时
           // 播放页会提示一键开启（只开到「仅图片字幕」）。
           SettingsSegmentedItem<VideoPauseOcrScope>(
             id: 'video.subtitle.pause_ocr_scope',

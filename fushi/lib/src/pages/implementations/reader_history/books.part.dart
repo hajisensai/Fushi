@@ -501,7 +501,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_download'),
-          // BUG-3328：勾中的合集里有云端成员也可下载（合集一键全部下载）。
+          // BUG-3337：勾中的合集里有云端成员也可下载（合集一键全部下载）。
           enabled: remoteKeys.isNotEmpty ||
               _selectedCollectionRemoteMembers.isNotEmpty,
           onTap: _batchDownloadSelectedRemote,
@@ -525,7 +525,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
         ),
-        // BUG-3328：漫画库多选补「识别文字」——与卡菜单同一条排队路径
+        // BUG-3337：漫画库多选补「识别文字」——与卡菜单同一条排队路径
         // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
         if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
           FushiIconButton(
@@ -555,7 +555,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
   }
 
-  /// 卡菜单 / 多选「识别文字」（BUG-3328）：[bookKeys] 里每本漫画还没识别的部分
+  /// 卡菜单 / 多选「识别文字」（BUG-3337）：[bookKeys] 里每本漫画还没识别的部分
   /// （在线作品 = 已下载未识别的章，本地卷 = 未识别的卷）排进 OCR 队列。
   /// [dialog] 为真时先收起卡片长按菜单。
   Future<void> _ocrMangaBooks(Iterable<String> bookKeys,

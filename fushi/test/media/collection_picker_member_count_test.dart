@@ -8,7 +8,7 @@ import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3331（反馈 ow9_1sxU16「合集数和实际合集数量不一致」）：「加入合集」弹窗按
+/// BUG-3361（反馈 ow9_1sxU16「合集数和实际合集数量不一致」）：「加入合集」弹窗按
 /// 成员表**原始行数**写「N 项」，合集详情页只画得出库页上真实存在的成员。成员表
 /// 没有指向媒体的外键——删掉的书、配对有声书的伴生行都会留行——于是弹窗写「10 项」、
 /// 点进去只有 6 本。修复后弹窗按调用方给的可见性判据计数（与详情页同一判据）。

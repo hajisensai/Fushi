@@ -6563,7 +6563,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// BUG-3328：暂停 OCR 默认关闭，用户在图片字幕帧的提示上点「开启」——只开到
+  /// BUG-3339：暂停 OCR 默认关闭，用户在图片字幕帧的提示上点「开启」——只开到
   /// 「仅图片字幕」（提示只在图片字幕上出现，用户要的就是这一档）；要扩到所有视频去
   /// 设置里选。写完偏好重建本页，覆盖层拿到新 scope 后立即识别当前帧。
   Future<void> _enablePauseOcrForGraphicSubtitles() async {
@@ -7217,7 +7217,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsShortcuts] 沉浸门控与控制
   /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
   ///
-  /// [input]：本次派发来自哪类输入（BUG-3328）。只有「上一句字幕」随它变——键盘是
+  /// [input]：本次派发来自哪类输入（BUG-3339）。只有「上一句字幕」随它变——键盘是
   /// 方向键心智（太远退化成回退），手柄 / 鼠标侧键 / 屏幕按钮是按钮心智（恒跳句）。
   VideoPlayerShortcutActions _buildVideoShortcutActions(
     VideoPlayerController controller, {
@@ -7234,7 +7234,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // Ctrl+←/→ = 上/下一句字幕（TODO-090）。**键盘方向键**语义：上一句太远时 Ctrl+←
       // 退化成回退 seekSeconds 秒（TODO-085）；无 cue 时也直接当回退键。下一句保持纯
       // 句子跳（无 cue 时前进 seekSeconds 秒）。手柄 / 鼠标侧键 / 屏幕按钮是按钮心智，
-      // 恒跳句不退化（BUG-942 / BUG-3328），由 [input] 决定，见 [VideoActionInput]。
+      // 恒跳句不退化（BUG-942 / BUG-3339），由 [input] 决定，见 [VideoActionInput]。
       // 键盘 / 手柄跳句只**续命**控制条、不唤起（BUG-2030）：控制条本就在显示时连按跳句
       // 不该让它 2 秒消失（BUG-176 ②/BUG-215 的诉求），但它隐藏时按快捷键也不该把底栏弹
       // 出来 + 顶一次字幕（用户报「快捷键上下句字幕会弹出 OSC」）。两者的分界就是

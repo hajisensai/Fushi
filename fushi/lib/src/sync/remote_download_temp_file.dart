@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
-/// 远端书 / 有声书下载的临时落点：`<root>/<identity 摘要>/<fileName>`（BUG-3328）。
+/// 远端书 / 有声书下载的临时落点：`<root>/<identity 摘要>/<fileName>`（BUG-3337）。
 ///
 /// [identity] 必须是**下载任务的身份**（[InterconnectDownloadManager] 的任务键，
 /// 如 `book:<downloadId>` / `srt:<uid>`）——管理器按它去重，同一身份同一时刻至多

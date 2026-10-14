@@ -442,7 +442,7 @@ body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
   background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
       var(--ly-upcoming) calc(var(--ly-p) + 4%));
 }
-/* BUG-3280 / BUG-3328：WebKit（iOS / macOS WKWebView）画不出折成多列的竖排行内盒
+/* BUG-3280 / BUG-3346：WebKit（iOS / macOS WKWebView）画不出折成多列的竖排行内盒
    上的 background-clip: text——文字是透明填充、背景又没画上，长句在播放（扫过生效）
    时整列消失或只剩一截；暂停时扫过规则不生效，所以又完整了。iOS 模拟器实测：
    box-decoration-break 取 slice 或 clone 都一样消失（BUG-3280 的 clone 回退

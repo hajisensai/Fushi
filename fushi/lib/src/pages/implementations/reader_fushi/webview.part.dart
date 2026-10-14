@@ -1923,7 +1923,7 @@ updateLive: function(patch) {
         // CSS Custom Highlight）不受影响。上面的原生 ContextMenu 在触屏本就因 1279
         // 无原生选区而不可达，这里不改变其可达性。其它平台保持默认 true。
         isTextInteractionEnabled: !isIOSPlatform,
-        // BUG-3329：WKWebView 的 `allowsBackForwardNavigationGestures` 在 inappwebview
+        // BUG-3356：WKWebView 的 `allowsBackForwardNavigationGestures` 在 inappwebview
         // 里默认 true——屏幕左 / 右缘横滑是 WebView **自己的历史前进 / 后退**。阅读器
         // 每次跨章都 `loadUrl`，历史里堆着之前的章节 URL，于是用户习惯性的 iOS 侧滑返回
         // 不是退出阅读器（页面 PopScope 已关掉路由侧滑），而是把 WebView 退回上一章 /

@@ -460,8 +460,8 @@ void main() {
     });
   });
 
-  // BUG-3328：引擎给的字级区域与文字对不上时，整块改走行几何，不逐个丢字。
-  group('mangaEffectiveTextRegions 字级区域对不上文字时整块回退 (BUG-3328)', () {
+  // BUG-3333：引擎给的字级区域与文字对不上时，整块改走行几何，不逐个丢字。
+  group('mangaEffectiveTextRegions 字级区域对不上文字时整块回退 (BUG-3333)', () {
     MangaOcrTextRegion region(double left, int start, int end) =>
         MangaOcrTextRegion(
           rectangle: MokuroRect.fromLTWH(left, 0, 10, 10),

@@ -1,4 +1,4 @@
-## BUG-3329 · WebView横向滚轮符号反了致触控板翻页方向反
+## BUG-3358 · WebView横向滚轮符号反了致触控板翻页方向反
 - **报告**：2026-10-14（应用内反馈 794gISjvgV，Windows 11 触控板：「触摸板的小说阅读方向反转，试过反转音量键 / 反转滑动翻页 / 反转键盘左右键几个开关，都对触摸板没用」）
 - **真实性**：✅ 真 bug，两处根因：
   1. `packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp` `sendScroll` 横向分支：入参是「内容移动量」（Dart 侧传 `-scrollDelta` / 触控板 `panDelta`），纵向正好对上 `WM_MOUSEWHEEL`「正 = 向上」，但 `WM_MOUSEHWHEEL` 的约定相反（正 = 向右，Flutter 引擎 `flutter_window.cc:787` 与 Chromium 都按此解释），横向原样下发 ⇒ 倾斜滚轮向右滚成向左、触控板两指横滑内容逆着手指走、DOM `deltaX` 符号反。

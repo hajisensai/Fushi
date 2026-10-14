@@ -1,4 +1,4 @@
-// BUG-3328：Google Lens 上传同意框按调用场景给文案——视频调用方以前直接用漫画
+// BUG-3342：Google Lens 上传同意框按调用场景给文案——视频调用方以前直接用漫画
 // 那份（「将漫画页面发送到 Google Lens？」），用户在视频页看到的是漫画文案。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';

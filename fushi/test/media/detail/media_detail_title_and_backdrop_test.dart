@@ -88,7 +88,7 @@ void main() {
       reason: 'ImageFiltered 默认不裁剪，模糊晕边会画到 hero 底边之外形成「阴影硬边」',
     );
   });
-  // BUG-3329（反馈 kVwc9NMu2x「漫画点开顶上有莫名的毛玻璃」）：AnimatedSwitcher 的
+  // BUG-3355（反馈 kVwc9NMu2x「漫画点开顶上有莫名的毛玻璃」）：AnimatedSwitcher 的
   // 默认布局给子项松约束，Image 不铺满、按宽高比缩成居中的一条竖图——两栏详情页
   // 顶部只剩窗口中间一块模糊竖条。两种背景（模糊封面 / 原样 fanart）都必须铺满。
   for (final double sigma in <double>[28, 0]) {

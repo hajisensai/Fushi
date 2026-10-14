@@ -1,4 +1,4 @@
-## BUG-3328 · 设置开关与侧栏收展掉帧
+## BUG-3353 · 设置开关与侧栏收展掉帧
 - **报告**：2026-10-14（用户：设置 › 外观与交互 › 功能模块的开关打开关闭掉帧、左侧导航栏展开收起掉帧，「其他地方好像也有」；疑为限帧率）
 - **真实性**：✅ 真 bug，但**不是限帧率**（无 `timeDilation` / 自定义帧调度 / 节流；runner 只钉 Skia；HDR 引擎补丁不改默认交换链与 vsync）。三条根因：
   - **任何偏好写入都播一遍 280ms 全 app 主题过渡**：`fushi/lib/src/models/theme_notifier.dart` 的 `theme` / `darkTheme` getter 每次现建 `ThemeData`，工厂 `buildFushiThemeData` 里 14 处 `WidgetStateProperty.resolveWith` 每次都是新闭包，ThemeData 永远判不等；根 build（`fushi/lib/main.dart` 的 `MaterialApp(theme:, darkTheme:, themeAnimationStyle: fushiThemeAnimationStyle)`）随每次 AppModel 通知拿到「新」主题，AnimatedTheme 便 280ms 逐帧 lerp + 重建所有依赖 `Theme.of` 的组件。偏好仓库的通知经 `prefsRepo.addListener(notifyListeners)` 全部转成 AppModel 通知，所以「其他地方」的设置开关同样卡。

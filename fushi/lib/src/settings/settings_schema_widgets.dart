@@ -333,7 +333,7 @@ class SettingsSchemaItem extends StatefulWidget
       onChanged: (bool next) async {
         // 偏好写入在首个 await 之前就把新值放进内存缓存（`setPref`），先刷一次让
         // 滑块立刻开始动画，不必等 DB 事务落盘 + 全局通知才动（等待期正是手感上的
-        // 「卡一下」，BUG-3328）。处理器若先 await 别的再写，这次刷新读到的仍是
+        // 「卡一下」，BUG-3353）。处理器若先 await 别的再写，这次刷新读到的仍是
         // 旧值，无副作用。
         final FutureOr<void> pending = toggle.onChanged(settingsContext, next);
         settingsContext.refresh();

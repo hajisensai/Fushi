@@ -1,4 +1,4 @@
-## BUG-3328 · 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本
+## BUG-3348 · 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本
 - **报告**：2026-10-14（用户：「我在漫画页面，拖动 epub 到漫画页面里面，会先弹出 epub 导入流程，然后告诉我可能是漫画。但是我明明已经在漫画里面了，应该优先告诉是漫画。而且我多选拖动的时候只会导出一本」）
 - **真实性**：✅ 真 bug，两个独立根因：
   1. 拖放分类层刻意不对 `.epub` 开包（`fushi/lib/src/media/drag_drop/drop_classification.dart` 的 `kDragMangaExtensions` 注释：「书籍框会再判一次，最终照样导成漫画」），漫画库表面又把非漫画载体委托给书架规则（`drop_decision.dart` `DropSurface.manga` 分支）→ 图片型 EPUB 得到 `importNewBook`，先进 `BookImportDialog`，再被其 `_handoffIfManga` 提示「这看起来是漫画」。这个理由在书架成立，在漫画库不成立——落点已经说明了意图。`.pdf` 同理（漫画框本就能逐页栅格化成漫画）。

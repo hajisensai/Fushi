@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3329：iOS 上阅读器左缘横滑（用户习惯的侧滑返回）把正文跳走。
+/// BUG-3356：iOS 上阅读器左缘横滑（用户习惯的侧滑返回）把正文跳走。
 ///
 /// 根因：flutter_inappwebview 的 `allowsBackForwardNavigationGestures` 默认 true，
 /// WKWebView 把边缘横滑当成**自己的历史前进 / 后退**；阅读器跨章 `loadUrl`、歌词文档

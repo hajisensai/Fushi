@@ -88,7 +88,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   final void Function(String mediaType, String entryKey)? onOpenMember;
 
   /// 与 [memberCardBuilder] 同一判据、但不建卡的可见性谓词：「移到其他合集」
-  /// 弹窗按它数各合集的成员（BUG-3331）。null = 按原始成员行数。
+  /// 弹窗按它数各合集的成员（BUG-3361）。null = 按原始成员行数。
   final CollectionMemberVisibility? isMemberVisible;
 
   /// 成员卡的上下文菜单（网格右键 / 触摸长按松手）。非 null 时整个菜单交给调用方：

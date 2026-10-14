@@ -7,7 +7,7 @@ import 'package:fushi/src/reader/reader_css_highlight_capability.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
-/// BUG-3328：Blink 105–119 的 `::highlight()` 在竖排里画在转置后的错误位置（标题字高亮
+/// BUG-3343：Blink 105–119 的 `::highlight()` 在竖排里画在转置后的错误位置（标题字高亮
 /// 跑到左上邻列，正文字高亮落到别处 / 看不见）。修法是把「能否用 CSS Custom Highlight」
 /// 收成一个判据 [kReaderCssHighlightsSupportedJs]，旧 Blink 退回元素包裹兜底。
 ///

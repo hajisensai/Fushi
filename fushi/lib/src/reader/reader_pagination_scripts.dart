@@ -2004,7 +2004,7 @@ window.__fushiInstallShell = function(C) {
     this.cueWrappers.clear();
     this.activeCueId = null;
   },
-  // BUG-3328：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
+  // BUG-3343：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
   // 「节点 + 偏移」与 live Range 换算到合并后的节点，不随被并掉的节点一起失效。
   unwrap: function(wrappers) {
     var guard = window.__fushiLiveRanges;
@@ -2409,7 +2409,7 @@ if (document.readyState === 'complete') {
 
     return '''<script>
 window.__fushiShells.paginated = function(C) {
-// BUG-3328：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+// BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
 window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。
@@ -3483,7 +3483,7 @@ $_sharedInitBoot
 
     return '''<script>
 window.__fushiShells.continuous = function(C) {
-// BUG-3328：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+// BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
 window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 window.fushiReader = {
   // 跨章分段计时总开关（Dart [ReaderChapterPerfTrace.enabled] → C.perfTraceEnabled）。

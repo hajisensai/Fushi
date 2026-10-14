@@ -259,7 +259,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // （_bookCardShell.onSecondaryTap 同绑 onLongPress）改弹选项面板，与本地
       // 书卡长按一致（TODO-768 / BUG-416）。
       onLongPress: () => _showRemoteBookDialog(book),
-      // 下载态订阅挂在卡自己这层（BUG-3328，见 [_remoteBookTaskBadge]）。
+      // 下载态订阅挂在卡自己这层（BUG-3337，见 [_remoteBookTaskBadge]）。
       child: Consumer(builder: (BuildContext _, WidgetRef taskRef, Widget? __) {
         final Widget? taskBadge = _remoteBookTaskBadge(
           taskRef: taskRef,
@@ -315,7 +315,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 让批量与用户逐张点的节奏等价。服务不可达在进循环前判一次，只提示一次
   /// （单本路径每次各弹一条）。
   ///
-  /// BUG-3328：勾中的**合集**也参与——下它格子里画着的云端成员
+  /// BUG-3337：勾中的**合集**也参与——下它格子里画着的云端成员
   /// （[_remoteMembersByCollection]），即「合集一键全部下载」。散卡与合集成员按
   /// 下载身份去重，同一本不会排两次。
   Future<void> _batchDownloadSelectedRemote() async {
@@ -379,7 +379,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 再点一次下载即重试（新任务顶掉旧失败态）。与视频侧
   /// `_remoteDownloadBadge`（home_video_page.dart）同范式。
   ///
-  /// [taskRef] 必须是卡片**自己**那层 [Consumer] 的 ref（BUG-3328）：合集详情页是
+  /// [taskRef] 必须是卡片**自己**那层 [Consumer] 的 ref（BUG-3337）：合集详情页是
   /// push 在书架之上的独立路由，成员卡由书架经 `memberCardBuilder` 造出来，但详情页
   /// 不会因书架重建而重建——此前这里用书架页自己的 `ref.watch`，订阅挂在书架上，
   /// 详情页里的卡永远停在点击那一刻的状态（进度不走、和合集外不一致）。订阅跟着卡
@@ -1478,7 +1478,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 长按 / 右键：弹动作面板，与远端 EPUB 卡（[_showRemoteBookDialog]）一致
       // （巡检 PR-3——旧行为长按直接开始下载，重手势与轻点击等价且不可预览动作）。
       onLongPress: () => _showRemoteSrtDialog(book),
-      // 下载态订阅挂在卡自己这层（BUG-3328，见 [_remoteBookTaskBadge]）。
+      // 下载态订阅挂在卡自己这层（BUG-3337，见 [_remoteBookTaskBadge]）。
       child: Consumer(builder: (BuildContext _, WidgetRef taskRef, Widget? __) {
         final Widget? taskBadge = _remoteBookTaskBadge(
           taskRef: taskRef,
@@ -1886,7 +1886,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     );
   }
 
-  /// 三种远端下载临时落点的共用骨架（BUG-3328）：按**任务身份**分目录
+  /// 三种远端下载临时落点的共用骨架（BUG-3337）：按**任务身份**分目录
   /// （[remoteDownloadTempFile]），书名派生的 [fileName] 只作 basename。
   Future<File> _remoteTempFile({
     required String dirName,

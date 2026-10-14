@@ -2909,7 +2909,7 @@ class FushiMenuAnchor extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
     final MenuAnchorChildBuilder? anchorBuilder = builder;
-    // BUG-3330：菜单面板的滚动通知截在锚点这一层，不冒泡进页面（见
+    // BUG-3359：菜单面板的滚动通知截在锚点这一层，不冒泡进页面（见
     // [MenuOverlayScrollBoundary]）；锚点自身（child / builder 的产物）照常冒泡。
     final Widget menu = MenuAnchor(
       controller: controller,
@@ -3434,7 +3434,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      // BUG-3330：下拉面板是 OverlayPortal 浮层，滚动通知会冒泡进页面（顶栏跟着
+      // BUG-3359：下拉面板是 OverlayPortal 浮层，滚动通知会冒泡进页面（顶栏跟着
       // 收起、下拉被重建后滚回选中项，列表拨不下去）。截在下拉这一层；锚点是本
       // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
       final Widget dropdown = DropdownMenu<T>(

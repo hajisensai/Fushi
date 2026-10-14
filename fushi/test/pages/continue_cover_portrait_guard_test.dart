@@ -28,7 +28,7 @@ void main() {
       source,
       isNot(contains('_kContinueVideoCoverWidth')),
       reason: '不得回退成按媒体类型写死的视频 16:9 宽度常量：横竖只看实际用到的那张图'
-          '（用户 2026-10-14「卡片比例跟着实际用到的图走」，BUG-3330）',
+          '（用户 2026-10-14「卡片比例跟着实际用到的图走」，BUG-3360）',
     );
     // 本机 / 远端视频封面与游戏封面的渲染都收在 `_coverImage` 一处
     // （`PortraitCoverImage`，横槽 / 竖槽由探测出的真实宽高比决定）；远端书封面仍是

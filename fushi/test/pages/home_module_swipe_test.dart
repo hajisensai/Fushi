@@ -51,14 +51,14 @@ void main() {
       expect(target(HomeTab.books, left: false), HomeTab.home);
       expect(target(HomeTab.home, left: false), isNull);
       expect(target(HomeTab.settings, left: true), isNull);
-      // BUG-3328：设置是最后一站，进得去也出得来。
+      // BUG-3351：设置是最后一站，进得去也出得来。
       expect(target(HomeTab.browse, left: true), HomeTab.settings);
       expect(target(HomeTab.settings, left: false), HomeTab.browse);
       // 不参与横滑的 tab 上不切。
       expect(target(HomeTab.dictionaries, left: false), isNull);
     });
 
-    test('BUG-3328：外壳在设置页上照样挂横滑识别器，查词（FAB）上不挂', () {
+    test('BUG-3351：外壳在设置页上照样挂横滑识别器，查词（FAB）上不挂', () {
       for (final HomeTab tab in _tabs) {
         expect(
           homeModuleSwipeArmed(tabs: _tabs, current: tab),
@@ -315,7 +315,7 @@ void main() {
       expect(host.current, HomeTab.books);
     });
 
-    testWidgets('BUG-3328：落到设置上右滑回到前一个模块（不是死胡同）', (WidgetTester tester) async {
+    testWidgets('BUG-3351：落到设置上右滑回到前一个模块（不是死胡同）', (WidgetTester tester) async {
       final _SwipeHostState host = await pumpHost(
         tester,
         initial: HomeTab.settings,
@@ -326,7 +326,7 @@ void main() {
       expect(host.current, HomeTab.browse);
     });
 
-    testWidgets('BUG-3328：最后一个模块左滑进设置，再右滑原路回来', (WidgetTester tester) async {
+    testWidgets('BUG-3351：最后一个模块左滑进设置，再右滑原路回来', (WidgetTester tester) async {
       final _SwipeHostState host = await pumpHost(
         tester,
         initial: HomeTab.browse,

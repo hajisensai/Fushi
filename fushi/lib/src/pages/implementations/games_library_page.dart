@@ -534,7 +534,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
-  /// BUG-3331：合集成员数与合集详情页（[buildGameCollectionMemberCard]）同一判据。
+  /// BUG-3361：合集成员数与合集详情页（[buildGameCollectionMemberCard]）同一判据。
   bool _isGameCollectionMemberVisible(String mediaType, String entryKey) =>
       MediaKind.tryParse(mediaType) == MediaKind.game &&
       _games.any((GalgameEntry g) => g.id == entryKey);

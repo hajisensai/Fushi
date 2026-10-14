@@ -20,7 +20,7 @@ namespace flutter_inappwebview_plugin
 {
   const int kNumBuffers = 1;
   const int kMaxFramesPerPump = 4;
-  // BUG-3328: DispatcherQueueTimer 按系统计时器一格（默认 15.625ms）向上取整
+  // BUG-3352: DispatcherQueueTimer 按系统计时器一格（默认 15.625ms）向上取整
   // 触发：间隔写 16.67ms（「60Hz」）实测平均 31.3ms 才 Tick 一次，所有 Windows
   // WebView 的画面只有 ~32 帧，查词弹窗滚动发顿、缓动看不出来。间隔必须明显短于
   // 一格才每格都触发：8.33ms 在默认精度下实测 65Hz，进程提了计时精度（mpv 会

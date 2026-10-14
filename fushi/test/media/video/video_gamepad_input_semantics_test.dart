@@ -8,7 +8,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 
 /// 视频页手柄输入的两条语义（反馈 #e6hKBVvAcQ / #m32Z1LFu2u）。
 ///
-/// BUG-3328：手柄「上一句字幕」曾复用键盘 Ctrl+← 的执行体，上一句离得远时退化成
+/// BUG-3339：手柄「上一句字幕」曾复用键盘 Ctrl+← 的执行体，上一句离得远时退化成
 /// 回退 3 秒（用户：「像固定秒数倒退，连跳一两下才到句首」），而屏幕双击一直恒跳句。
 /// 输入种类现在是构造动作表的显式参数 [VideoActionInput]。
 ///
@@ -16,7 +16,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// 同一个按住状态机 [resolveHoldSpeedTransition]，手柄的松开沿来自 Android 原生
 /// KeyUpEvent 或桌面轮询的 GamepadButtonReleaseIntent。
 void main() {
-  group('BUG-3328：上一句字幕按输入种类分语义', () {
+  group('BUG-3339：上一句字幕按输入种类分语义', () {
     test('只有键盘把太远的上一句退化成时间回退；按钮类输入恒跳句', () {
       expect(
         videoPrevSubtitleDegradesFarCue(VideoActionInput.keyboard),

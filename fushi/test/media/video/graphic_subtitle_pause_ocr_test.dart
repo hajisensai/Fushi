@@ -136,7 +136,7 @@ void main() {
   });
 
   group('VideoPauseOcrScope', () {
-    test('BUG-3328：默认关闭（需用户手动开启）；未知值回退默认；存过的值照旧', () {
+    test('BUG-3342：默认关闭（需用户手动开启）；未知值回退默认；存过的值照旧', () {
       expect(VideoPauseOcrScope.defaultScope, VideoPauseOcrScope.off);
       expect(VideoPauseOcrScope.fromWireName(null), VideoPauseOcrScope.off);
       expect(VideoPauseOcrScope.fromWireName('x'), VideoPauseOcrScope.off);
@@ -145,7 +145,7 @@ void main() {
       }
     });
 
-    test('BUG-3328：只有识别关着且是图片字幕时才提示开启', () {
+    test('BUG-3342：只有识别关着且是图片字幕时才提示开启', () {
       expect(
         VideoPauseOcrScope.off.offersEnableHint(graphicSubtitleActive: true),
         isTrue,

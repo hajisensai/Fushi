@@ -122,7 +122,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// 「选择句子上下文」对话框的试听（[DictionaryPageMixin.onPreviewSentenceAudioToDraft]
   /// 的私有目标）：放**这张卡会写进去的那段**——与写卡同一个函数算出的最终区间
   /// （[_videoMiningAudioWindow]，含首尾留白、A/V 偏移），不再按 cue 边界放
-  /// （BUG-3328：旧实现按 cue 边界 replayCue，试听比卡上的句子音频少了
+  /// （BUG-3339：旧实现按 cue 边界 replayCue，试听比卡上的句子音频少了
   /// 首尾留白）。
   Future<bool> _previewSentenceContextAudio() =>
       _previewVideoMiningAudio(startDeltaMs: 0, endDeltaMs: 0);

@@ -781,7 +781,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             // effects 弹簧临界阻尼不过冲；clamp 只吸收收敛容差。
             final double opacity = fade.value.clamp(0.0, 1.0);
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
-            // BUG-3328：本层遮罩的起点 / 终点（本层坐标）。嵌套层从外层此刻的
+            // BUG-3338：本层遮罩的起点 / 终点（本层坐标）。嵌套层从外层此刻的
             // 可见下沿起画（BUG-3283），外层画到本层可见下沿；两者在接缝处必须
             // **恰好拼接**——接缝 y 对齐到物理像素格（两层用同一个取整），不然
             // 非整数 DPR / 小数高度下两块矩形的抗锯齿边各盖半个像素，叠出一条
@@ -794,7 +794,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             );
             // 下面还接着嵌套工具行：本层在接缝处硬停在薄纱不透明度，由下一层
             // 接着画。曾经在这里多画 1 px 渐隐（0.72 → 0），叠在下一层顶端的
-            // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3328）。
+            // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3338）。
             final bool continuesBelow =
                 _nestedReach.value > outer + shown * _chromeHeight + 0.5;
             return Stack(
@@ -930,7 +930,7 @@ class FushiTopFadeScrim extends StatelessWidget {
     final double solid = math.max(0.0, solidHeight);
     // 0 = 不渐隐，在肩段末端硬停（下面紧接着另一段遮罩，见
     // [FushiFloatingChromeOverlay]）。不能偷偷钳成 1 px：多出的那一条会叠在
-    // 下一段的顶端上，合成出一条横线（BUG-3328）。
+    // 下一段的顶端上，合成出一条横线（BUG-3338）。
     final double fade = math.max(0.0, fadeExtent);
     final double height = solid + fade;
     if (height <= 0) return const SizedBox.shrink();

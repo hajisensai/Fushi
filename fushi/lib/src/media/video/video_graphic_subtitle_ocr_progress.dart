@@ -442,7 +442,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
   final GraphicSubtitlePauseOcrStatus status;
 
   /// 这一帧是不是图片字幕帧。「所有视频」档下普通画面也会识别，那时说「识别画面
-  /// 文字」，不说「识别字幕」（BUG-3328：画面上根本没有字幕时文案对不上）。
+  /// 文字」，不说「识别字幕」（BUG-3342：画面上根本没有字幕时文案对不上）。
   final bool graphicSubtitle;
 
   @override
@@ -545,7 +545,7 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
   }
 }
 
-/// 暂停到图片字幕帧、而暂停 OCR 关着时的提示（BUG-3328）：图片字幕要 OCR 才能点字
+/// 暂停到图片字幕帧、而暂停 OCR 关着时的提示（BUG-3342）：图片字幕要 OCR 才能点字
 /// 查词，给一个「开启」和一个关掉本次提示的按钮。识别默认关闭、由用户手动开启；文本
 /// 字幕与没有字幕的视频不出现这条提示（判据见 `VideoPauseOcrScope.offersEnableHint`）。
 class VideoPauseOcrEnableHint extends StatelessWidget {

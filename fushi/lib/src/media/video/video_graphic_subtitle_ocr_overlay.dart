@@ -68,7 +68,7 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   /// 哪些视频暂停时识别（用户设置）。
   final VideoPauseOcrScope scope;
 
-  /// 用户点了「开启」提示（BUG-3328）。识别关着、暂停在图片字幕帧上时才出现提示；
+  /// 用户点了「开启」提示（BUG-3342）。识别关着、暂停在图片字幕帧上时才出现提示；
   /// null 时不提示。页面负责把范围写成开启并以新 [scope] 重建本层。
   final VoidCallback? onEnableRequested;
 
@@ -122,7 +122,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   /// 当前状态标记对应的帧是不是图片字幕帧（决定标记说「字幕」还是「画面文字」）。
   bool _statusGraphic = true;
 
-  /// 暂停在图片字幕帧上、识别又关着：显示「可开启 OCR」提示（BUG-3328）。
+  /// 暂停在图片字幕帧上、识别又关着：显示「可开启 OCR」提示（BUG-3342）。
   bool _offerEnable = false;
 
   /// 用户关掉了本次播放的开启提示。

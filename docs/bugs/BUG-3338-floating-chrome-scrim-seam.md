@@ -1,4 +1,4 @@
-## BUG-3328 · 库页外壳页签胶囊下方横穿一条细线（浮动工具区两层遮罩接缝叠加）
+## BUG-3338 · 库页外壳页签胶囊下方横穿一条细线（浮动工具区两层遮罩接缝叠加）
 - **报告**：2026-10-14（用户：视频 › 媒体服务器等 M3E 浮动顶栏库页，外壳页签胶囊正下方有一条贯穿的水平细线，暗色主题下明显）
 - **真实性**：✅ 真 bug。根因在 `fushi/lib/src/utils/components/fushi_floating_chrome.dart`，修复前（upstream/develop `f82cd7d1e9`）的两处：
   1. `_FushiFloatingChromeOverlayState.build` 中外层遮罩在「下面还接着嵌套工具行」时传 `fadeExtent: 1`（原 :817–821），而 `FushiTopFadeScrim.build` 用 `math.max(1.0, fadeExtent)`（原 :914）把渐隐段下限钳在 1 px，所以外层在接缝处一定会多画一条 0.72 → 0 的渐变。这一条正好叠在嵌套层顶端 0.72 的薄纱上（嵌套层 `Positioned(top: outer * shown)` 从同一个 y 起画），合成后比上下都深。

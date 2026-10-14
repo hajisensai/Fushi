@@ -1,4 +1,4 @@
-## BUG-3329 · iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走
+## BUG-3356 · iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走
 - **报告**：2026-10-13（反馈 Ee6__I3uxJ，iPhone18,3 / iOS 27.2：「ios 侧滑返回会到达位置坐标，需要禁用侧滑返回」，附 15 秒录屏：在有声书阅读中从屏幕左缘横滑，正文出现两页交叠的过渡后跳到别的段落，随后又被拉回 / 跳到其它页）
 - **真实性**：✅ 真 bug。路由层侧滑早被阅读器页的 `PopScope(canPop: false)`（`fushi/lib/src/pages/implementations/reader_fushi_page.dart:3774`）关掉，剩下的是 WebView 自己的手势：flutter_inappwebview 的 `InAppWebViewSettings.allowsBackForwardNavigationGestures` 默认 true（`flutter_inappwebview_ios-1.1.2` `InAppWebViewSettings.swift:46`），WKWebView 把屏幕边缘横滑当成**WebView 历史后退 / 前进**。阅读器跨章走 `loadUrl`（`reader_fushi/webview.part.dart:60`、`navigation.part.dart`）、歌词覆盖层 `loadData`，都往历史里压条目；正文 WebView 的 `initialSettings`（`reader_fushi/webview.part.dart:1907`，修复前）与歌词 WebView（`reader_fushi/lyrics.part.dart:937`）都没关它，于是侧滑把正文退回上一章 / 上一处 URL。录屏里的「两页交叠过渡」正是 WKWebView 历史回退的快照滑动。
 - **[x] ① 已修复** — （提交见 PR）：两个阅读器 WebView 显式 `allowsBackForwardNavigationGestures: false`（只作用于 iOS / macOS）。章节导航完全由宿主拥有，WebView 历史不对应任何阅读动作。

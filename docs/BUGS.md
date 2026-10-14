@@ -33,70 +33,46 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3015 条。点号进各自文件。
+> 共 3050 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3328](bugs/BUG-3328-favorite-removal-drops-lookup-selection.md) | ✅ | ✅ | 阅读器删除收藏 / 标注高亮后查词选区丢失 |
-| [BUG-3328](bugs/BUG-3328-manga-ocr-stale-regions-dropped.md) | ✅ | ✅ | 漫画 OCR 覆盖层字级区域对不上文字时逐个丢弃，部分字无可点区域 |
-| [BUG-3328](bugs/BUG-3328-log-upload-no-retry.md) | ✅ | ✅ | 日志上传遇瞬时网络故障直接失败 |
-| [BUG-3328](bugs/BUG-3328-startup-idle-wavy-ticker.md) | ✅ | ✅ | 启动后持续卡顿：静止的确定态波浪进度条常驻 ticker 每帧重绘 |
-> 共 3016 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3329](bugs/BUG-3329-emby-movie-detail.md) | ✅ | ✅ | 媒体服务器电影点卡直接播放，没有详情页与版本选择 |
-| [BUG-3328](bugs/BUG-3328-ext-scroll-follow.md) | ✅ | ✅ | 浏览器扩展查词后滚动页面，高亮与弹窗停在原位 |
-| [BUG-3328](bugs/BUG-3328-peer-book-concurrent-download.md) | ✅ | ✅ | 同时下载多本对端书籍崩溃 / 合集内进度不实时 / 多选合集下载无效 / 下载完成书架跳顶 |
-| [BUG-3328](bugs/BUG-3328-floating-chrome-scrim-seam.md) | ✅ | ✅ | 库页外壳页签胶囊下方横穿一条细线（浮动工具区两层遮罩接缝叠加） |
-> 共 3019 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
+| [BUG-3362](bugs/BUG-3362-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |
+| [BUG-3361](bugs/BUG-3361-collection-picker-count.md) | ✅ | ✅ | 「加入合集」弹窗的合集成员数与合集里实际显示的数量不一致 |
+| [BUG-3360](bugs/BUG-3360-dashboard-video-cover-placeholder.md) | ✅ | ✅ | 首页继续区视频作品海报文件不在时直接显示占位，不回落到集封面 |
+| [BUG-3359](bugs/BUG-3359-dropdown-menu-scroll-leak.md) | ✅ | ✅ | 下拉选择框（漫画源等）滚轮滚不动、页面顶栏反而跟着收起 |
+| [BUG-3358](bugs/BUG-3358-webview-hwheel-sign-trackpad-page-turn.md) | ✅ | ✅ | WebView横向滚轮符号反了致触控板翻页方向反 |
+| [BUG-3357](bugs/BUG-3357-persistent-snackbar-no-close.md) | ✅ | ✅ | 带动作的提示条常驻且没有关闭按钮，只能横滑关 |
+| [BUG-3356](bugs/BUG-3356-ios-reader-edge-swipe-webview-history.md) | ✅ | ✅ | iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走 |
+| [BUG-3355](bugs/BUG-3355-detail-backdrop-contained.md) | ✅ | ✅ | 两栏详情页模糊背景只画成窗口中间一块竖条（像莫名的毛玻璃） |
+| [BUG-3354](bugs/BUG-3354-swipe-seek-hud-resets-on-release.md) | ✅ | ✅ | 横滑跳转松手瞬间 HUD 显示回滑动起始进度 |
+| [BUG-3353](bugs/BUG-3353-ui-jank-theme-rail.md) | ✅ | ✅ | 设置开关与侧栏收展掉帧 |
+| [BUG-3352](bugs/BUG-3352-wgc-pump-rate.md) | ✅ | ✅ | Windows WebView popup scroll capped near 32 fps by WGC pump timer |
+| [BUG-3351](bugs/BUG-3351-home-swipe-settings-dead-end.md) | ✅ | ✅ | 移动端横滑切模块滑到设置页后滑不回去 |
+| [BUG-3350](bugs/BUG-3350-video-preview-padding.md) | ✅ | ✅ | 视频句子音频试听不含首尾留白，与写卡区间不一致 |
+| [BUG-3349](bugs/BUG-3349-popup-imported-font-synthetic-bold.md) | ✅ | ✅ | 查词弹窗导入字体只有常规字重时词头被合成加粗、字形中空 |
+| [BUG-3348](bugs/BUG-3348-manga-drop-epub-multi.md) | ✅ | ✅ | 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本 |
+| [BUG-3347](bugs/BUG-3347-shelf-name-sort-display-title.md) | ✅ | ✅ | 书架/漫画库按名称排序与显示名不一致、全角数字不按数值排 |
+| [BUG-3346](bugs/BUG-3346-ios-lyrics-vertical-long-cue-sweep-vanish.md) | ✅ | ✅ | iOS 竖排歌词播放时长句整列消失（BUG-3280 修复无效） |
+| [BUG-3345](bugs/BUG-3345-popup-trackpad-slow-scroll-locked-as-pinch.md) | ✅ | ✅ | 查词弹窗触控板慢滑被锁成捏合滑不动 |
+| [BUG-3344](bugs/BUG-3344-online-source-bridge-error-raw.md) | ✅ | ✅ | AI 下载漫画失败时把 BRIDGE_HTTP_500 原始异常甩给用户 |
+| [BUG-3343](bugs/BUG-3343-blink-vertical-highlight-misplaced.md) | ✅ | ✅ | Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见 |
+| [BUG-3342](bugs/BUG-3342-video-pause-ocr-opt-in.md) | ✅ | ✅ | 视频暂停 OCR 默认自动运行并弹漫画文案的 Lens 同意框 |
+| [BUG-3341](bugs/BUG-3341-manga-card-menu-ocr.md) | ✅ | ✅ | 漫画卡菜单显示「导入有声书」而没有 OCR，多选也没有批量 OCR |
+| [BUG-3340](bugs/BUG-3340-pill-equal-height.md) | ✅ | ✅ | 库页工具行按钮组胶囊比搜索框高 |
+| [BUG-3339](bugs/BUG-3339-gamepad-prev-subtitle-degrades.md) | ✅ | ✅ | 手柄「上一句字幕」退化成固定秒数回退 |
+| [BUG-3338](bugs/BUG-3338-floating-chrome-scrim-seam.md) | ✅ | ✅ | 库页外壳页签胶囊下方横穿一条细线（浮动工具区两层遮罩接缝叠加） |
+| [BUG-3337](bugs/BUG-3337-peer-book-concurrent-download.md) | ✅ | ✅ | 同时下载多本对端书籍崩溃 / 合集内进度不实时 / 多选合集下载无效 / 下载完成书架跳顶 |
+| [BUG-3336](bugs/BUG-3336-ext-scroll-follow.md) | ✅ | ✅ | 浏览器扩展查词后滚动页面，高亮与弹窗停在原位 |
+| [BUG-3335](bugs/BUG-3335-startup-idle-wavy-ticker.md) | ✅ | ✅ | 启动后持续卡顿：静止的确定态波浪进度条常驻 ticker 每帧重绘 |
+| [BUG-3334](bugs/BUG-3334-log-upload-no-retry.md) | ✅ | ✅ | 日志上传遇瞬时网络故障直接失败 |
+| [BUG-3333](bugs/BUG-3333-manga-ocr-stale-regions-dropped.md) | ✅ | ✅ | 漫画 OCR 覆盖层字级区域对不上文字时逐个丢弃，部分字无可点区域 |
 | [BUG-3332](bugs/BUG-3332-remote-video-mining-work-tag.md) | ✅ | ✅ | 在线视频制卡标签只有「Episode 2」，缺作品名 |
 | [BUG-3331](bugs/BUG-3331-anime-source-download-mining-uid.md) | ✅ | ✅ | 扩展下载到本地的集制卡失败：Invalid library UID |
 | [BUG-3330](bugs/BUG-3330-gamepad-hold-speed-toggles.md) | ✅ | ✅ | 手柄「按住临时倍速」变成点按切换，长按也只算一次点按 |
-| [BUG-3329](bugs/BUG-3329-swipe-seek-hud-resets-on-release.md) | ✅ | ✅ | 横滑跳转松手瞬间 HUD 显示回滑动起始进度 |
-| [BUG-3328](bugs/BUG-3328-gamepad-prev-subtitle-degrades.md) | ✅ | ✅ | 手柄「上一句字幕」退化成固定秒数回退 |
-| [BUG-3328](bugs/BUG-3328-pill-equal-height.md) | ✅ | ✅ | 库页工具行按钮组胶囊比搜索框高 |
-> 共 3018 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3331](bugs/BUG-3331-collection-picker-count.md) | ✅ | ✅ | 「加入合集」弹窗的合集成员数与合集里实际显示的数量不一致 |
-| [BUG-3330](bugs/BUG-3330-dropdown-menu-scroll-leak.md) | ✅ | ✅ | 下拉选择框（漫画源等）滚轮滚不动、页面顶栏反而跟着收起 |
-| [BUG-3329](bugs/BUG-3329-detail-backdrop-contained.md) | ✅ | ✅ | 两栏详情页模糊背景只画成窗口中间一块竖条（像莫名的毛玻璃） |
-| [BUG-3328](bugs/BUG-3328-manga-card-menu-ocr.md) | ✅ | ✅ | 漫画卡菜单显示「导入有声书」而没有 OCR，多选也没有批量 OCR |
-| [BUG-3328](bugs/BUG-3328-video-pause-ocr-opt-in.md) | ✅ | ✅ | 视频暂停 OCR 默认自动运行并弹漫画文案的 Lens 同意框 |
-> 共 3016 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3329](bugs/BUG-3329-ios-reader-edge-swipe-webview-history.md) | ✅ | ✅ | iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走 |
-| [BUG-3328](bugs/BUG-3328-blink-vertical-highlight-misplaced.md) | ✅ | ✅ | Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见 |
-> 共 3019 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3332](bugs/BUG-3332-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
-| [BUG-3331](bugs/BUG-3331-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |
-| [BUG-3330](bugs/BUG-3330-dashboard-video-cover-placeholder.md) | ✅ | ✅ | 首页继续区视频作品海报文件不在时直接显示占位，不回落到集封面 |
-| [BUG-3329](bugs/BUG-3329-persistent-snackbar-no-close.md) | ✅ | ✅ | 带动作的提示条常驻且没有关闭按钮，只能横滑关 |
-| [BUG-3328](bugs/BUG-3328-online-source-bridge-error-raw.md) | ✅ | ✅ | AI 下载漫画失败时把 BRIDGE_HTTP_500 原始异常甩给用户 |
-> 共 3016 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3329](bugs/BUG-3329-webview-hwheel-sign-trackpad-page-turn.md) | ✅ | ✅ | WebView横向滚轮符号反了致触控板翻页方向反 |
-| [BUG-3328](bugs/BUG-3328-popup-trackpad-slow-scroll-locked-as-pinch.md) | ✅ | ✅ | 查词弹窗触控板慢滑被锁成捏合滑不动 |
-| [BUG-3328](bugs/BUG-3328-ios-lyrics-vertical-long-cue-sweep-vanish.md) | ✅ | ✅ | iOS 竖排歌词播放时长句整列消失（BUG-3280 修复无效） |
-| [BUG-3328](bugs/BUG-3328-shelf-name-sort-display-title.md) | ✅ | ✅ | 书架/漫画库按名称排序与显示名不一致、全角数字不按数值排 |
-| [BUG-3328](bugs/BUG-3328-manga-drop-epub-multi.md) | ✅ | ✅ | 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本 |
-| [BUG-3328](bugs/BUG-3328-popup-imported-font-synthetic-bold.md) | ✅ | ✅ | 查词弹窗导入字体只有常规字重时词头被合成加粗、字形中空 |
-| [BUG-3328](bugs/BUG-3328-video-preview-padding.md) | ✅ | ✅ | 视频句子音频试听不含首尾留白，与写卡区间不一致 |
-| [BUG-3328](bugs/BUG-3328-home-swipe-settings-dead-end.md) | ✅ | ✅ | 移动端横滑切模块滑到设置页后滑不回去 |
-| [BUG-3328](bugs/BUG-3328-wgc-pump-rate.md) | ✅ | ✅ | Windows WebView popup scroll capped near 32 fps by WGC pump timer |
-| [BUG-3328](bugs/BUG-3328-ui-jank-theme-rail.md) | ✅ | ✅ | 设置开关与侧栏收展掉帧 |
+| [BUG-3329](bugs/BUG-3329-emby-movie-detail.md) | ✅ | ✅ | 媒体服务器电影点卡直接播放，没有详情页与版本选择 |
+| [BUG-3328](bugs/BUG-3328-favorite-removal-drops-lookup-selection.md) | ✅ | ✅ | 阅读器删除收藏 / 标注高亮后查词选区丢失 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

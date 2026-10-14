@@ -1,4 +1,4 @@
-## BUG-3331 · galgame 详情简介不能选择复制
+## BUG-3362 · galgame 详情简介不能选择复制
 - **报告**：2026-10-14（用户：反馈 2DmrXg-wtD，Windows，「刮削元数据以后游戏简介不能复制」）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/galgame_detail_page.dart:1136` 简介正文与 `_summarySection` 的值（别名 / 全部标题 / 发行日等）都是普通 `Text`，不可选择。
 - **[x] ① 已修复** — 简介正文与资料值改 `SelectableText`（无简介时的占位文案仍是 `Text`）。提交 d8830baef6（分支 `cc/fb-misc-ui`）。
