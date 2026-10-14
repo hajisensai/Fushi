@@ -47,7 +47,7 @@ void main() {
     });
 
     test('yomitan api server 在 dispose 内被 stop', () {
-      expect(disposeBody(source), contains('stopYomitanApiServer()'),
+      expect(disposeBody(source), contains('stopFushiApiServer()'),
           reason: 'initialise 起的 yomitan-api server 必须在 dispose 关停');
     });
 
@@ -86,12 +86,12 @@ void main() {
   group('BUG-911 yomitan 自启动 fail-open 补日志', () {
     test('自启动 catchError 不再是空吞', () {
       expect(source,
-          isNot(contains('startYomitanApiServer().catchError((Object _) {})')),
+          isNot(contains('startFushiApiServer().catchError((Object _) {})')),
           reason: 'BUG-911：空 catchError 静默吞异常必须移除');
     });
 
     test('自启动失败经 ErrorLogService 留痕', () {
-      expect(source, contains('AppModel.startYomitanApiServer.autostart'),
+      expect(source, contains('AppModel.startFushiApiServer.autostart'),
           reason: 'fail-open 保持不变，但失败须记日志（与邻居 startSyncServer 一致）');
     });
   });

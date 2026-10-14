@@ -158,12 +158,12 @@ void main() {
       'server parses the reported build from the status body (tolerant)',
       () {
         final String src = File(
-          'lib/src/sync/yomitan_api_server.dart',
+          'lib/src/sync/fushi_api_server.dart',
         ).readAsStringSync();
         expect(
           src.contains('onExtensionReport'),
           isTrue,
-          reason: 'yomitan_api_server.dart must expose the report callback',
+          reason: 'fushi_api_server.dart must expose the report callback',
         );
         expect(
           src.contains('_handleExtensionStatus'),

@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "Интервал перелистывания колёсиком",
   "word_favorite_added": "Слово добавлено в избранное",
   "word_favorite_removed": "Слово удалено из избранного",
-  "yomitan_api_key": "Ключ Fushi API (необязательно)",
-  "yomitan_api_server": "Сервер Fushi API",
-  "yomitan_api_server_hint": "Разрешить расширению браузера и клиентам, совместимым с yomitan-api, запрашивать словари Fushi (порт 19633)",
-  "yomitan_api_server_started": "Сервер Fushi API запущен",
+  "fushi_api_key": "Ключ Fushi API (необязательно)",
+  "fushi_api_server": "Сервер Fushi API",
+  "fushi_api_server_hint": "Разрешить расширению браузера и клиентам, совместимым с yomitan-api, запрашивать словари Fushi (порт 19633)",
+  "fushi_api_server_started": "Сервер Fushi API запущен",
   "yomitan_port_kill_action": "Завершить процесс и повторить",
   "yomitan_port_kill_confirm": "Завершить процесс",
   "yomitan_port_kill_confirm_message": "Порт сейчас используется: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Это устройство — хост взаимосвязи, поэтому сопряжённым устройствам эта опция не нужна. Включите на них «Добывать на сопряжённое устройство», и их карточки будут сразу попадать в Anki на этом устройстве.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

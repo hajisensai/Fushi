@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "Mausrad-Blätterintervall",
   "word_favorite_added": "Wort in Favoriten gespeichert",
   "word_favorite_removed": "Wort aus Favoriten entfernt",
-  "yomitan_api_key": "Fushi-API-Schlüssel (optional)",
-  "yomitan_api_server": "Fushi-API-Server",
-  "yomitan_api_server_hint": "Browsererweiterung und yomitan-api-kompatible Clients Fushis Wörterbücher abfragen lassen (Port 19633)",
-  "yomitan_api_server_started": "Fushi-API-Server gestartet",
+  "fushi_api_key": "Fushi-API-Schlüssel (optional)",
+  "fushi_api_server": "Fushi-API-Server",
+  "fushi_api_server_hint": "Browsererweiterung und yomitan-api-kompatible Clients Fushis Wörterbücher abfragen lassen (Port 19633)",
+  "fushi_api_server_started": "Fushi-API-Server gestartet",
   "yomitan_port_kill_action": "Prozess beenden und erneut versuchen",
   "yomitan_port_kill_confirm": "Prozess beenden",
   "yomitan_port_kill_confirm_message": "Der Port wird derzeit verwendet von: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Dieses Gerät ist ein Interconnect-Host, gekoppelte Geräte brauchen diese Option daher nicht. Schalte auf diesen Geräten „An gekoppeltes Gerät senden“ ein, dann landen ihre Karten direkt im Anki dieses Geräts.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

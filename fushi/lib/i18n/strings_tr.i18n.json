@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "Fare tekerleğiyle sayfa çevirme aralığı",
   "word_favorite_added": "Kelime favorilere kaydedildi",
   "word_favorite_removed": "Kelime favorilerden kaldırıldı",
-  "yomitan_api_key": "Fushi API anahtarı (isteğe bağlı)",
-  "yomitan_api_server": "Fushi API sunucusu",
-  "yomitan_api_server_hint": "Tarayıcı uzantısının ve yomitan-api uyumlu istemcilerin Fushi sözlüklerini sorgulamasına izin ver (port 19633)",
-  "yomitan_api_server_started": "Fushi API sunucusu başlatıldı",
+  "fushi_api_key": "Fushi API anahtarı (isteğe bağlı)",
+  "fushi_api_server": "Fushi API sunucusu",
+  "fushi_api_server_hint": "Tarayıcı uzantısının ve yomitan-api uyumlu istemcilerin Fushi sözlüklerini sorgulamasına izin ver (port 19633)",
+  "fushi_api_server_started": "Fushi API sunucusu başlatıldı",
   "yomitan_port_kill_action": "İşlemi sonlandır ve tekrar dene",
   "yomitan_port_kill_confirm": "İşlemi sonlandır",
   "yomitan_port_kill_confirm_message": "Port şu anda şu tarafından kullanılıyor: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Bu cihaz bir ara bağlantı sunucusu, bu yüzden eşleştirilmiş cihazların bu seçeneğe ihtiyacı yok. O cihazlarda \"Eşleştirilmiş cihaza çıkar\" seçeneğini açın; kartları doğrudan bu cihazdaki Anki'ye gider.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

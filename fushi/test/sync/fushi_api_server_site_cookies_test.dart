@@ -12,7 +12,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -63,11 +63,11 @@ Map<String, Object?> _cookie(
 };
 
 void main() {
-  late YomitanApiServer server;
+  late FushiApiServer server;
 
   setUp(() async {
     BrowserCookieImportGate.resetForTesting();
-    server = YomitanApiServer(
+    server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
       tokenizer: _noopTokenize,

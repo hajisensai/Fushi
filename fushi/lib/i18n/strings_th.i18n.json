@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "ระยะเวลาเลื่อนหน้าด้วยล้อเมาส์",
   "word_favorite_added": "บันทึกคำลงรายการโปรดแล้ว",
   "word_favorite_removed": "ลบคำออกจากรายการโปรดแล้ว",
-  "yomitan_api_key": "Fushi API key (ไม่บังคับ)",
-  "yomitan_api_server": "เซิร์ฟเวอร์ Fushi API",
-  "yomitan_api_server_hint": "ให้ส่วนขยายเบราว์เซอร์และไคลเอนต์ที่เข้ากันได้กับ yomitan-api ค้นพจนานุกรมของ Fushi ได้ (พอร์ต 19633)",
-  "yomitan_api_server_started": "เซิร์ฟเวอร์ Fushi API เริ่มทำงานแล้ว",
+  "fushi_api_key": "Fushi API key (ไม่บังคับ)",
+  "fushi_api_server": "เซิร์ฟเวอร์ Fushi API",
+  "fushi_api_server_hint": "ให้ส่วนขยายเบราว์เซอร์และไคลเอนต์ที่เข้ากันได้กับ yomitan-api ค้นพจนานุกรมของ Fushi ได้ (พอร์ต 19633)",
+  "fushi_api_server_started": "เซิร์ฟเวอร์ Fushi API เริ่มทำงานแล้ว",
   "yomitan_port_kill_action": "จบโปรเซสแล้วลองใหม่",
   "yomitan_port_kill_confirm": "จบโปรเซส",
   "yomitan_port_kill_confirm_message": "พอร์ตนี้กำลังถูกใช้โดย: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "อุปกรณ์นี้เป็นโฮสต์การเชื่อมต่อ อุปกรณ์ที่จับคู่ไว้จึงไม่ต้องใช้ตัวเลือกนี้ เปิด \"สร้างบัตรไปยังอุปกรณ์ที่จับคู่\" บนอุปกรณ์เหล่านั้น แล้วการ์ดจะถูกเพิ่มลงใน Anki ของอุปกรณ์นี้โดยตรง",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

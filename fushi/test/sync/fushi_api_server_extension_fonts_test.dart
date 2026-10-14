@@ -1,5 +1,5 @@
 /// 浏览器扩展字幕外观「字体」下拉框的三路端点（`/api/extension/fonts` /
-/// `fonts/file` / `fonts/download`）在 [YomitanApiServer] 上的 HTTP 契约：
+/// `fonts/file` / `fonts/download`）在 [FushiApiServer] 上的 HTTP 契约：
 /// 列表形状、字节端点的 200/404/HEAD/CORS/鉴权、下载的 unknown_font / download_failed。
 library;
 
@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/extension_font_api.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 import 'package:path/path.dart' as p;
 
@@ -117,11 +117,11 @@ void main() {
 
   late Directory tmp;
   late _FakeFontApi api;
-  late YomitanApiServer server;
+  late FushiApiServer server;
 
   Future<void> startServer(
       {String? apiKey = 'k123', bool withApi = true}) async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
       tokenizer: tok,

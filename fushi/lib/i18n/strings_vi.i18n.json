@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "Khoảng cách lật trang bằng con lăn chuột",
   "word_favorite_added": "Đã lưu từ vào yêu thích",
   "word_favorite_removed": "Đã xóa từ khỏi yêu thích",
-  "yomitan_api_key": "Fushi API key (tùy chọn)",
-  "yomitan_api_server": "Máy chủ Fushi API",
-  "yomitan_api_server_hint": "Cho phép tiện ích mở rộng trình duyệt và máy khách tương thích yomitan-api truy vấn từ điển của Fushi (cổng 19633)",
-  "yomitan_api_server_started": "Đã khởi động máy chủ Fushi API",
+  "fushi_api_key": "Fushi API key (tùy chọn)",
+  "fushi_api_server": "Máy chủ Fushi API",
+  "fushi_api_server_hint": "Cho phép tiện ích mở rộng trình duyệt và máy khách tương thích yomitan-api truy vấn từ điển của Fushi (cổng 19633)",
+  "fushi_api_server_started": "Đã khởi động máy chủ Fushi API",
   "yomitan_port_kill_action": "Kết thúc tiến trình và thử lại",
   "yomitan_port_kill_confirm": "Kết thúc tiến trình",
   "yomitan_port_kill_confirm_message": "Cổng hiện đang được sử dụng bởi: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Thiết bị này là máy chủ kết nối, nên các thiết bị đã ghép nối không cần tùy chọn này. Hãy bật \"Gửi thẻ đến thiết bị đã ghép nối\" trên các thiết bị đó, thẻ của chúng sẽ được thêm thẳng vào Anki trên thiết bị này.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

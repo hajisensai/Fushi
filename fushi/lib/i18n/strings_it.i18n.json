@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "Intervallo cambio pagina con la rotellina",
   "word_favorite_added": "Parola salvata nei preferiti",
   "word_favorite_removed": "Parola rimossa dai preferiti",
-  "yomitan_api_key": "Chiave Fushi API (opzionale)",
-  "yomitan_api_server": "Server Fushi API",
-  "yomitan_api_server_hint": "Consenti all'estensione del browser e ai client compatibili con yomitan-api di interrogare i dizionari di Fushi (porta 19633)",
-  "yomitan_api_server_started": "Server Fushi API avviato",
+  "fushi_api_key": "Chiave Fushi API (opzionale)",
+  "fushi_api_server": "Server Fushi API",
+  "fushi_api_server_hint": "Consenti all'estensione del browser e ai client compatibili con yomitan-api di interrogare i dizionari di Fushi (porta 19633)",
+  "fushi_api_server_started": "Server Fushi API avviato",
   "yomitan_port_kill_action": "Termina processo e riprova",
   "yomitan_port_kill_confirm": "Termina processo",
   "yomitan_port_kill_confirm_message": "La porta è attualmente usata da: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Questo dispositivo è un host di interconnessione, quindi ai dispositivi associati questa opzione non serve. Attiva «Invia al dispositivo accoppiato» su quei dispositivi e le loro carte andranno direttamente nell'Anki di questo.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

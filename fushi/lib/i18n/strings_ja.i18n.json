@@ -4368,10 +4368,10 @@
   "wheel_page_turn_interval": "マウスホイールのページめくり間隔",
   "word_favorite_added": "単語をお気に入りに保存しました",
   "word_favorite_removed": "単語をお気に入りから削除しました",
-  "yomitan_api_key": "Fushi API キー（任意）",
-  "yomitan_api_server": "Fushi API サーバー",
-  "yomitan_api_server_hint": "ブラウザ拡張機能や yomitan-api 互換クライアントから Fushi の辞書を検索できるようにします（ポート 19633）",
-  "yomitan_api_server_started": "Fushi API サーバーが起動しました",
+  "fushi_api_key": "Fushi API キー（任意）",
+  "fushi_api_server": "Fushi API サーバー",
+  "fushi_api_server_hint": "ブラウザ拡張機能や yomitan-api 互換クライアントから Fushi の辞書を検索できるようにします（ポート 19633）",
+  "fushi_api_server_started": "Fushi API サーバーが起動しました",
   "yomitan_port_kill_action": "プロセスを終了して再試行",
   "yomitan_port_kill_confirm": "プロセスを終了",
   "yomitan_port_kill_confirm_message": "現在このポートは次のプロセスが使用中です: $process",
@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "このデバイスは Interconnect ホストなので、ペアリングしたデバイスではこの設定は不要です。それらのデバイスで「ペアリングデバイスに制カード」をオンにすると、カードはこのデバイスの Anki に直接追加されます。",
   "manga_series_manage_volume": "この巻を管理",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }

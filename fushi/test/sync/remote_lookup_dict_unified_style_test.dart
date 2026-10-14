@@ -95,7 +95,7 @@ void main() {
         reason: '必须读 app 内弹窗注入用的同一个偏好，不得另存一份',
       );
       final String manager = File(
-        'lib/src/sync/yomitan_api_server_manager.dart',
+        'lib/src/sync/fushi_api_server_manager.dart',
       ).readAsStringSync();
       expect(
         manager,
@@ -104,7 +104,7 @@ void main() {
         ),
       );
       final String server = File(
-        'lib/src/sync/yomitan_api_server.dart',
+        'lib/src/sync/fushi_api_server.dart',
       ).readAsStringSync();
       expect(
         server,

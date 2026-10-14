@@ -53,7 +53,7 @@ class BrowserExtensionServerConfig {
   /// server 监听主机。本机扩展连本机 app，固定环回地址。
   final String host;
 
-  /// server 端口（默认 kYomitanApiDefaultPort=19633，用户可在 app 内改）。
+  /// server 端口（默认 kFushiApiDefaultPort=19633，用户可在 app 内改）。
   final int port;
 
   /// 配对 token（yomitan-api key）。空串表示 app 侧未设 token。
