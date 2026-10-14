@@ -138,6 +138,19 @@ abstract final class SrsIds {
   static String card(String noteId, String templateId, int clozeOrd) =>
       uuidV5(noteId, '$templateId/$clozeOrd');
 
+  /// 牌组：UUIDv5(NS, profileUid/deck/<规范全名>)，全名按「父::子」，每段去首尾空白。
+  ///
+  /// 两台设备离线各建（或各导入）同名牌组，合并后是同一个牌组（与 Anki 按名字合并牌组一致）。
+  /// 改名不改 ID；之后有人再按旧名新建，会落到同一个 ID（行被复活并改回该名字），这是按名字认身份的代价。
+  static String deck(String profileUid, String fullPath) =>
+      uuidV5(srsNamespace, '$profileUid/deck/${normalizeDeckPath(fullPath)}');
+
+  static String normalizeDeckPath(String fullPath) => fullPath
+      .split('::')
+      .map((String s) => s.trim())
+      .where((String s) => s.isNotEmpty)
+      .join('::');
+
   /// 内置默认牌组。
   static String builtinDefaultDeck(String profileUid) =>
       uuidV5(srsNamespace, '$profileUid/builtin-deck/default');

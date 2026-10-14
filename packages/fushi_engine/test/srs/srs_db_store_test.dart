@@ -394,4 +394,21 @@ void main() {
     expect((await restored.cardRow(cardId))!.reps, 1);
     expect(await restored.unpublishedEvents(), isNotEmpty);
   });
+
+  test('两台设备离线各建同名牌组，同步后只有一个（确定性牌组 ID）', () async {
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final String da = await a.ensureDeckPath('日本語::N2');
+    final String db = await b.ensureDeckPath('日本語 :: N2');
+    expect(da, db);
+    await syncAll(<SrsDbStore>[a, b]);
+    final List<SrsDeckSummary> decks = await b.deckSummaries();
+    expect(
+      decks.map((SrsDeckSummary d) => d.fullName),
+      <String>['Default', '日本語', '日本語::N2'],
+    );
+    await a.deleteDeck(da);
+    expect(await a.ensureDeckPath('日本語::N2'), da, reason: '删除后按同名再建 = 复活同一行');
+    expect((await a.deckTree())[da], isNotNull);
+  });
 }

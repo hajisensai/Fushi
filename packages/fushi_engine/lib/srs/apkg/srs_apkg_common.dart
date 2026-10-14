@@ -19,12 +19,10 @@ const List<String> srsFushiExtDeckKeys = <String>[
   SrsFieldKeys.deckMaxInterval,
 ];
 
-/// 从 Anki 导入时按全名新建的牌组 ID（确定性：多台设备各自导入同一个包，合并后是同一个牌组）。
-///
-/// SrsIds 里没有这条规则（牌组只有内置默认牌组是确定性的），SrsDbStore.ensureDeckPath 用 UUIDv7，
-/// 两台设备各导一次会得到两个同名牌组；所以导入不走 ensureDeckPath，而在这里派生。
+/// 从 Anki 导入时按全名新建的牌组 ID：与 Fushi 里新建牌组同一条规则（[SrsIds.deck]），
+/// 多台设备各自导入同一个包、或一端导入一端手建同名牌组，合并后都是同一个牌组。
 String srsImportedDeckId(String profileUid, String fullName) =>
-    uuidV5(srsNamespace, '$profileUid/anki-deck/$fullName');
+    SrsIds.deck(profileUid, fullName);
 
 // Anki rslib text.rs 的 HTML 媒体引用：img/audio/video/object/source/iframe 的 src / data。
 final RegExp _htmlMediaRef = RegExp(
