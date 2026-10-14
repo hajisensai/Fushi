@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show FushiShellHeaderActions;
+    show FushiHeaderCrampScope, FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbar;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -20,11 +20,10 @@ import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
         FushiPageChromeTitle,
         fushiAppleChromeSpatial,
         fushiChromeRevealFadeSpring,
-        fushiChromeRevealSpring;
+        fushiChromeRevealSpring,
+        kFushiPageChromeExtent;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
-import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show HorizontalDragScrollable;
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
     show SmoothWheelScrollScope;
 
@@ -1318,17 +1317,11 @@ class _FloatingActionsBody extends StatelessWidget {
       // Apple：iOS 26 / macOS 26 工具栏按钮组——[FushiToolbar] 的悬浮形态就是
       // 一枚无色玻璃胶囊 + 柔和投影（高 [fushiAppleFloatingExtent]），按钮在组里
       // 不再各自带玻璃底。不再外套 56 高的悬浮面（玻璃叠玻璃两圈折射边、
-      // 比工具栏高一截）。放不下时横滑兜底；横滑视口不裁投影。
-      return HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const ClampingScrollPhysics(),
-          clipBehavior: Clip.none,
-          child: FushiToolbar(
-            floating: true,
-            children: (actions as FushiShellHeaderActions).actions,
-          ),
-        ),
+      // 比工具栏高一截）。放不下时与 MD3 同一套判据逐颗收进 ⋯，全收仍不够才
+      // 横滑兜底；横滑视口不裁投影。
+      return FushiShellHeaderActions(
+        actions: (actions as FushiShellHeaderActions).actions,
+        appleFloating: true,
       );
     } else if (actions is FushiShellHeaderActions) {
       // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊（与页签
@@ -1382,8 +1375,9 @@ const double kFushiFloatingChromeGap = 8;
 
 /// 浮动工具栏一行：左边分区页签胶囊（[tabs]），右边悬浮动作组（[slot]）。
 ///
-/// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右；窄屏上
-/// 动作组最多占一半行宽，再多由 [FushiShellHeaderActions] 收进 ⋯。整行跟随
+/// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右。动作组
+/// 可用宽 = 页签上报的自然宽（[FushiHeaderCrampScope]）之外的剩余宽，且至少
+/// 半行；放不下的由 [FushiShellHeaderActions] 按优先级逐颗收进 ⋯。整行跟随
 /// [FushiFloatingChromeOverlay] 显隐（由外壳把整行叠在内容上）。
 /// 首页外壳告诉本 tab 里的 [FushiFloatingChromeBar]：外壳**不**另画大标题行，
 /// 页面名由工具栏行自己在页签胶囊左边画一枚标题胶囊（宽窗 M3E 库页 / 浏览，
@@ -1409,7 +1403,7 @@ class FushiShellInlineTitle extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
-class FushiFloatingChromeBar extends StatelessWidget {
+class FushiFloatingChromeBar extends StatefulWidget {
   const FushiFloatingChromeBar({
     required this.tabs,
     required this.slot,
@@ -1427,7 +1421,28 @@ class FushiFloatingChromeBar extends StatelessWidget {
   final Widget? leading;
 
   @override
+  State<FushiFloatingChromeBar> createState() => _FushiFloatingChromeBarState();
+}
+
+class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
+  /// 页签胶囊（经 [FushiHeaderCrampScope]）最近一次上报的自然宽；null = 未上报，
+  /// 动作组按半行封顶（旧口径）。
+  double? _tabsNaturalWidth;
+
+  void _onTabsWidthReported(double width) {
+    if (_tabsNaturalWidth == width) return;
+    // 上报发生在页签 build 期，不能同帧 setState；post-frame 再落。自然宽只依赖
+    // 文案 / 字号 / 缩放，与本行布局结果无关，不会形成反馈环。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _tabsNaturalWidth == width) return;
+      setState(() => _tabsNaturalWidth = width);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Widget? leading = widget.leading;
+    final EdgeInsetsGeometry? padding = widget.padding;
     // 首页外壳把页面名交给本行画（[FushiShellInlineTitle]，宽窗 M3E 库页）：
     // 标题胶囊排在页签胶囊左边，不再单独占页签上面那一行（2026-10-10「库页
     // 顶部只留两行」）。
@@ -1461,14 +1476,29 @@ class FushiFloatingChromeBar extends StatelessWidget {
           final double minActions = isGlassDesign(context)
               ? fushiAppleFloatingExtent(context)
               : kFushiFloatingToolbarCompactExtent;
-          final double maxActions = constraints.maxWidth.isFinite
-              ? math.max(minActions, constraints.maxWidth / 2)
-              : double.infinity;
           // 标题胶囊是 Row 里的非弹性子项，不限宽时长页面名会按自然宽把页签
           // 胶囊挤没（甚至整行溢出）。限到行宽的 1/3，超长名在胶囊里省略号
           // 截断；页签保有剩余宽度（2026-10-10 审查，BUG-3250）。
           final double maxTitle = constraints.maxWidth.isFinite
               ? constraints.maxWidth / 3
+              : double.infinity;
+          // 动作组至少拿半行（页签很宽时页签在胶囊里横滑）；页签自然宽放得下
+          // 时，剩下的宽度都归动作组——位置够就不收进 ⋯。
+          final double? tabsNatural = _tabsNaturalWidth;
+          final double leadReserve = lead == null
+              ? 0
+              : (inlineTitle ? maxTitle : kFushiPageChromeExtent) +
+                    kFushiFloatingChromeGap;
+          final double maxActions = constraints.maxWidth.isFinite
+              ? math.max(
+                  math.max(minActions, constraints.maxWidth / 2),
+                  tabsNatural == null
+                      ? 0
+                      : constraints.maxWidth -
+                            leadReserve -
+                            tabsNatural -
+                            kFushiFloatingChromeGap,
+                )
               : double.infinity;
           return FocusTraversalGroup(
             child: Row(
@@ -1484,11 +1514,16 @@ class FushiFloatingChromeBar extends StatelessWidget {
                     lead,
                   const SizedBox(width: kFushiFloatingChromeGap),
                 ],
-                Expanded(child: tabs),
+                Expanded(
+                  child: FushiHeaderCrampScope(
+                    reportTitleNaturalWidth: _onTabsWidthReported,
+                    child: widget.tabs,
+                  ),
+                ),
                 const SizedBox(width: kFushiFloatingChromeGap),
                 ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxActions),
-                  child: FushiFloatingActionsPill(slot: slot),
+                  child: FushiFloatingActionsPill(slot: widget.slot),
                 ),
               ],
             ),
