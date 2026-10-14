@@ -1,4 +1,4 @@
-// Hibiki 报错日志接收 Worker（零服务器）。
+// Fushi 报错日志接收 Worker（零服务器）。
 // 安全：日志只当字符串存 D1、原样 text/plain 吐回，绝不执行/解释。
 // 上传验 X-Upload-Token；查看 HTTP Basic Auth；缺 secret 则 fail-closed。
 
@@ -213,9 +213,9 @@ export function renderList(ids, linkBase = '') {
     `<!doctype html>\n<html lang="zh"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<meta name="robots" content="noindex,nofollow">` +
-    `<title>Hibiki 日志</title><style>${LIST_STYLE}</style></head>\n` +
+    `<title>Fushi 日志</title><style>${LIST_STYLE}</style></head>\n` +
     `<body><div class="wrap">` +
-    `<header><h1>Hibiki 报错日志</h1><span class="count">${ids.length}</span></header>` +
+    `<header><h1>Fushi 报错日志</h1><span class="count">${ids.length}</span></header>` +
     `${body}` +
     `<footer>时间为 UTC · 点条目看原文</footer>` +
     `</div></body></html>`
@@ -257,7 +257,7 @@ function unauthorized() {
   return new Response('unauthorized', {
     status: 401,
     headers: securityHeaders({
-      'WWW-Authenticate': 'Basic realm="hibiki-logs", charset="UTF-8"',
+      'WWW-Authenticate': 'Basic realm="fushi-logs", charset="UTF-8"',
     }),
   });
 }

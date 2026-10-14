@@ -42,7 +42,7 @@ void main() {
       isTrue,
       reason: '手动 IP 配对编排方法 _attemptManualPair 丢失',
     );
-    // 探测走 /api/ping 客户端——配对前先确认可达 + 是 hibiki。BUG-1741 起必须用
+    // 探测走 /api/ping 客户端——配对前先确认可达 + 是 Fushi。BUG-1741 起必须用
     // 带失败分型的 probeFushiPing：丢原因的封装会让 UI 只能说一句「此地址未找到
     // Fushi 设备」，把证书不符/超时/端口没人全说成同一件事。
     //
@@ -55,13 +55,13 @@ void main() {
       isTrue,
       reason: '手动 IP 配对未先跑 reachability 探测（probeFushiPing）',
     );
-    // 探测失败 / 非 hibiki 必须有 UI 反馈（向后兼容：仍保留地址供手粘 token）。
+    // 探测失败 / 非 Fushi 必须有 UI 反馈（向后兼容：仍保留地址供手粘 token）。
     // 注意用带尾逗号的精确锚点：裸子串 `t.sync_pair_not_fushi` 会被后加的
     // `t.sync_pair_not_fushi_discovered` 假阳性命中（同前缀）。
     expect(
       source.contains('t.sync_pair_not_fushi\n'),
       isTrue,
-      reason: '探测不可达 / 非 hibiki 时缺少 UI 反馈（手动路径的「已保存该地址」文案）',
+      reason: '探测不可达 / 非 Fushi 时缺少 UI 反馈（手动路径的「已保存该地址」文案）',
     );
   });
 

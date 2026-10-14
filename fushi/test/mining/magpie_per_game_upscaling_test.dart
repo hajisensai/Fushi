@@ -98,7 +98,7 @@ void main() {
           bridge: _NotRunningBridge(),
           isWindowsOverride: true,
           configPathOverride: '${Directory.systemTemp.path}'
-              '${Platform.pathSeparator}hibiki_magpie_absent_config.json',
+              '${Platform.pathSeparator}fushi_magpie_absent_config.json',
           processLauncher: (String exe, List<String> args) async {
             throw StateError('档位没生效才会走到这');
           },

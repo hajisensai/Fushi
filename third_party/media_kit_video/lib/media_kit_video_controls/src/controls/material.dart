@@ -12,7 +12,7 @@ import 'package:media_kit_video/media_kit_video_controls/src/controls/extensions
 import 'package:media_kit_video/media_kit_video_controls/src/controls/methods/video_state.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/widgets/video_controls_theme_data_injector.dart';
 
-/// Hibiki patch (BUG-1485): injection point for the horizontal drag-to-seek
+/// Fushi patch (BUG-1485): injection point for the horizontal drag-to-seek
 /// pixel→time mapping.
 ///
 /// Upstream hard-codes `seconds = dragDx * duration / horizontalGestureSensitivity`,
@@ -198,11 +198,11 @@ class MaterialVideoControlsThemeData {
 
   /// Gesture sensitivity on horizontal drag gestures, the higher the value is the less sensitive the gesture.
   ///
-  /// NOTE (Hibiki patch, BUG-1485): ignored when [horizontalSeekResolver] is
+  /// NOTE (Fushi patch, BUG-1485): ignored when [horizontalSeekResolver] is
   /// non-null — the resolver fully replaces the built-in mapping.
   final double horizontalGestureSensitivity;
 
-  /// Hibiki patch (BUG-1485): replaces the built-in horizontal drag-to-seek
+  /// Fushi patch (BUG-1485): replaces the built-in horizontal drag-to-seek
   /// pixel→time mapping. See [HorizontalSeekResolver]. `null` = upstream formula.
   final HorizontalSeekResolver? horizontalSeekResolver;
 
@@ -312,12 +312,12 @@ class MaterialVideoControlsThemeData {
   /// [Alignment] of seek bar inside the seek bar container.
   final Alignment seekBarAlignment;
 
-  /// Hibiki patch (glass design system): corner radius of the seek bar track
+  /// Fushi patch (glass design system): corner radius of the seek bar track
   /// (and its buffer / position fills). `0` (default) keeps the upstream
   /// square-ended track pixel-for-pixel.
   final double seekBarRadius;
 
-  /// Hibiki patch (glass design system): track height while the seek bar is
+  /// Fushi patch (glass design system): track height while the seek bar is
   /// pressed / dragged (iOS 26 thickens the scrubber under the finger). `null`
   /// (default) keeps the upstream constant [seekBarHeight].
   final double? seekBarActiveHeight;
@@ -327,35 +327,35 @@ class MaterialVideoControlsThemeData {
   /// Whether to shift the subtitles upwards when the controls are visible.
   final bool shiftSubtitlesOnControlsVisibilityChange;
 
-  // VISIBILITY (Hibiki patch)
+  // VISIBILITY (Fushi patch)
 
   /// Optional notifier the controls push their real `visible` state into on
-  /// every change (tap toggle / auto-hide timer / mount). Hibiki consumes this
+  /// every change (tap toggle / auto-hide timer / mount). Fushi consumes this
   /// single source of truth for its subtitle dodge instead of duplicating the
   /// visibility state machine with a separate timer that drifts out of phase
   /// (TODO-364). Null (upstream default) = no publishing, behaviour identical to
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final ValueNotifier<bool>? visibilityNotifier;
 
-  // AUTO-HIDE TIMER RESTART (Hibiki patch)
+  // AUTO-HIDE TIMER RESTART (Fushi patch)
 
   /// Optional [Listenable] the host pokes to *restart* the controls auto-hide
   /// timer without toggling visibility. On mobile the controls' hide timer is
   /// only reset by a full-screen tap or a seek — pressing the bottom button-bar
   /// buttons (play / skip forward / back) does NOT reset it, so the controls
   /// vanish 3s after the last tap even while the user is still pressing a button
-  /// (mis-tap on the video underneath, TODO-1059). The host (Hibiki) fires this
+  /// (mis-tap on the video underneath, TODO-1059). The host (Fushi) fires this
   /// signal from those button presses; the controls listen and, while visible,
   /// cancel + reschedule the hide timer for another [controlsHoverDuration].
   /// Null (upstream default) = no listener, behaviour identical to pub.dev.
   /// See third_party/media_kit_video/PATCHES.md.
   final Listenable? restartHideTimerSignal;
 
-  // SEEK START (Hibiki patch)
+  // SEEK START (Fushi patch)
 
   /// Optional callback fired the moment the user starts dragging / tapping the
   /// seek bar. The seek bar drives `player.seek` directly inside media_kit and
-  /// exposes no host-level seek hook, so Hibiki uses this to invalidate its
+  /// exposes no host-level seek hook, so Fushi uses this to invalidate its
   /// "active jump target" snapshot (TODO-565): without it, dragging the bar to
   /// an earlier cue during the brief in-flight grace window of a list tap would
   /// be mis-detected as the in-flight seek and snap the highlight back to the
@@ -363,33 +363,33 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function()? onSeekStart;
 
-  /// Hibiki patch (BUG-796 follow-up): fires when the user **commits** a seek-bar
+  /// Fushi patch (BUG-796 follow-up): fires when the user **commits** a seek-bar
   /// seek (drag release / tap), with the target [Duration]. The seek bar drives
   /// `player.seek` directly inside media_kit, bypassing the host's
-  /// `VideoPlayerController.seekMs` in-flight protection; Hibiki uses this to
+  /// `VideoPlayerController.seekMs` in-flight protection; Fushi uses this to
   /// re-sync the subtitle to the destination + suppress the lagging post-seek
   /// position (else seeking to a gap, esp. while paused, leaves the previous
   /// subtitle on screen). Null (upstream default) = no callback, behaviour
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Duration)? onSeekEnd;
 
-  /// Hibiki patch (BUG-2731 follow-up): fires right after a **committed** seek
+  /// Fushi patch (BUG-2731 follow-up): fires right after a **committed** seek
   /// has been handed to `player.seek`, with that call's [Future]. `player.seek`
   /// first waits on the player's internal lock (and video-controller
   /// initialisation) before the mpv command is actually issued; until then the
-  /// old content keeps playing normally. Hibiki waits on this future before it
+  /// old content keeps playing normally. Fushi waits on this future before it
   /// starts treating "playing, not buffering, advancing" as evidence that the
   /// seek has finished, so a slow dispatch can't clear the in-flight target
   /// early. Null (upstream default) = no callback, behaviour identical to
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Future<void> seek)? onSeekDispatched;
 
-  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// Fushi patch (M3 Expressive chrome): host-painted seek-bar track. Null
   /// (upstream default) = upstream track. Gestures stay in the fork. See
   /// PATCHES.md.
   final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
 
-  /// Hibiki patch (BUG-2731 follow-up): the base position that **relative**
+  /// Fushi patch (BUG-2731 follow-up): the base position that **relative**
   /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
   /// stream a seek re-buffers for seconds while `player.state.position` still
   /// reports the pre-seek position; measuring the next swipe from it silently
@@ -676,7 +676,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   late bool mount;
   late bool visible;
   Timer? _timer;
-  // Hibiki patch (TODO-1059): the host's restart-hide-timer signal we are
+  // Fushi patch (TODO-1059): the host's restart-hide-timer signal we are
   // currently subscribed to, kept so dispose() / a theme change can detach the
   // exact listener we attached (the theme's listenable identity can change).
   Listenable? _restartHideTimerSignal;
@@ -693,14 +693,14 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
   Offset _dragInitialDelta =
       Offset.zero; // Initial position for horizontal drag
-  // Hibiki patch (BUG-1485): retyped from `int swipeDuration` (whole seconds) to
+  // Fushi patch (BUG-1485): retyped from `int swipeDuration` (whole seconds) to
   // a `Duration` so a host-supplied [HorizontalSeekResolver] can express
   // sub-second deltas (the old whole-second quantisation made fine-grained
   // scrubbing impossible).
   Duration swipeDuration = Duration.zero; // Duration to seek in video
   bool showSwipeDuration = false; // Whether to show the seek duration overlay
 
-  /// Hibiki patch (BUG-3354): what the seek indicator displays. The indicator
+  /// Fushi patch (BUG-3354): what the seek indicator displays. The indicator
   /// fades out (AnimatedOpacity) after release, and it keeps rebuilding during
   /// that fade. [swipeDuration] is the *pending commit* and must be zeroed on
   /// release (BUG-1485), so an indicator reading it showed "base + 0:00" — the
@@ -791,7 +791,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       );
 
       // Publish the initial visibility so the host's mirror starts in phase
-      // with this State (Hibiki patch, TODO-364). Deferred to a post-frame
+      // with this State (Fushi patch, TODO-364). Deferred to a post-frame
       // callback: didChangeDependencies runs during mount, and a synchronous
       // notifier write could re-enter a host listener's setState mid-build.
       final ValueNotifier<bool>? notifier = _theme(context).visibilityNotifier;
@@ -818,7 +818,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       }
     }
 
-    // Hibiki patch (TODO-1059): (re)bind the host's restart-hide-timer signal.
+    // Fushi patch (TODO-1059): (re)bind the host's restart-hide-timer signal.
     // Runs on every didChangeDependencies (not gated by subscriptions.isEmpty)
     // because the theme — and thus the signal's identity — can change across
     // rebuilds; detach the old one and attach the current one when it differs.
@@ -830,7 +830,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     }
   }
 
-  /// Hibiki patch (TODO-1059): restart the auto-hide timer without toggling
+  /// Fushi patch (TODO-1059): restart the auto-hide timer without toggling
   /// visibility, fired by the host when a bottom button-bar button is pressed.
   /// Only acts while the controls are already [visible] (a press on a visible
   /// button should keep them alive); does nothing when hidden (the button isn't
@@ -860,7 +860,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     _onBrightnessReset?.call();
     _timerSeekBackwardButton?.cancel();
     _timerSeekForwardButton?.cancel();
-    // Hibiki patch (TODO-1059): detach the host's restart-hide-timer listener.
+    // Fushi patch (TODO-1059): detach the host's restart-hide-timer listener.
     _restartHideTimerSignal?.removeListener(_restartHideTimer);
     _restartHideTimerSignal = null;
     super.dispose();
@@ -889,7 +889,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   }
 
   /// Push the current real [visible] into the host's single-source-of-truth
-  /// notifier (Hibiki patch, TODO-364). Called after every [visible] mutation so
+  /// notifier (Fushi patch, TODO-364). Called after every [visible] mutation so
   /// the host's subtitle dodge follows this State's authoritative visibility
   /// instead of a separate, drift-prone mirror. No-op when unmounted or when no
   /// notifier was injected (upstream default).
@@ -938,7 +938,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     });
   }
 
-  /// Hibiki patch (BUG-2731 follow-up): where relative seeks start from. A
+  /// Fushi patch (BUG-2731 follow-up): where relative seeks start from. A
   /// pending seek's target wins over the lagging `player.state.position`, so
   /// back-to-back swipes / double-taps accumulate instead of overwriting each
   /// other. See [MaterialVideoControlsThemeData.relativeSeekBasePosition].
@@ -946,7 +946,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       _theme(context).relativeSeekBasePosition?.call() ??
       controller(context).player.state.position;
 
-  /// Hibiki patch (BUG-2731 follow-up): the base snapshotted when the current
+  /// Fushi patch (BUG-2731 follow-up): the base snapshotted when the current
   /// horizontal drag started. Re-reading [_relativeSeekBase] on every update
   /// would make the HUD / preview jump mid-drag whenever the host's in-flight
   /// target lands or clears; one drag measures from one base. Null = no drag.
@@ -956,7 +956,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   Duration _currentSwipeBase(BuildContext context) =>
       _swipeBase ?? _relativeSeekBase(context);
 
-  /// Hibiki patch (BUG-2731 follow-up): commit a relative seek and hand the
+  /// Fushi patch (BUG-2731 follow-up): commit a relative seek and hand the
   /// dispatch [Future] to the host (see
   /// [MaterialVideoControlsThemeData.onSeekDispatched]).
   void _dispatchSeek(BuildContext context, Duration target) {
@@ -973,7 +973,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
     final resolver = _theme(context).horizontalSeekResolver;
     if (resolver != null) {
-      // Hibiki patch (BUG-1485): host-supplied mapping. Signed drag displacement
+      // Fushi patch (BUG-1485): host-supplied mapping. Signed drag displacement
       // from the drag origin, positive = forward.
       final delta = resolver(
         dragDx: details.localPosition.dx - _dragInitialDelta.dx,
@@ -1011,14 +1011,14 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
   void onHorizontalDragEnd() {
     if (swipeDuration != Duration.zero) {
-      // Hibiki patch (BUG-2731 follow-up): measured from the pending seek
+      // Fushi patch (BUG-2731 follow-up): measured from the pending seek
       // target when one is in flight, not the lagging player position.
       Duration newPosition = _currentSwipeBase(context) + swipeDuration;
       newPosition = newPosition.clamp(
         Duration.zero,
         controller(context).player.state.duration,
       );
-      // Hibiki patch (BUG-2731): surface the committed target like the seek
+      // Fushi patch (BUG-2731): surface the committed target like the seek
       // bars do (BUG-796 follow-up), so the host knows where playback is headed
       // while the seek is still in flight. See PATCHES.md.
       _theme(context).onSeekEnd?.call(newPosition);
@@ -1029,7 +1029,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     setState(() {
       _dragInitialDelta = Offset.zero;
       showSwipeDuration = false;
-      // Hibiki patch (BUG-1485): clear the committed delta, otherwise a following
+      // Fushi patch (BUG-1485): clear the committed delta, otherwise a following
       // degenerate drag (one that never reaches a second update) would re-apply
       // the previous drag's delta on release.
       swipeDuration = Duration.zero;
@@ -1157,7 +1157,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                           color: _theme(context).backdropColor,
                         ),
                       ),
-                      // Hibiki patch (TODO-1073/BUG-555): tap hit-region MUST
+                      // Fushi patch (TODO-1073/BUG-555): tap hit-region MUST
                       // cover the whole video area, otherwise a single tap in an
                       // inset band can no longer toggle the controls back on.
                       // Upstream lumped the "show controls" [onTap] together
@@ -1174,7 +1174,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                       // which is why iOS could only reveal controls from the
                       // small regions outside the inset drag layer.
                       Positioned.fill(
-                        // Hibiki patch (TODO-916): route "show controls" through
+                        // Fushi patch (TODO-916): route "show controls" through
                         // the gesture arena's [onTap] instead of a raw
                         // [Listener.onPointerDown]. A pointer-down fires
                         // synchronously without arena arbitration, so the old
@@ -1223,7 +1223,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                               // (e.g. swiping to: show status-bar, show
                               // navigation-bar, go back in navigation) not
                               // activate the swipe gesture annoyingly.
-                              // Hibiki patch (TODO-1073/BUG-555): this layer
+                              // Fushi patch (TODO-1073/BUG-555): this layer
                               // carries ONLY drag recognizers; tap/long-press
                               // stay on the full-cover parent so every point can
                               // reveal the controls.
@@ -1356,7 +1356,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         _timer?.cancel();
                                       },
                                       onSeekEnd: (Duration target) {
-                                        // Hibiki patch (BUG-796 follow-up):
+                                        // Fushi patch (BUG-796 follow-up):
                                         // surface the committed seek target to the
                                         // host so it re-syncs the subtitle +
                                         // suppresses the lagging post-seek
@@ -1411,7 +1411,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                             if (_theme(context).displaySeekBar)
                               MaterialSeekBar(
                                 delta: _seekBarDeltaValueNotifier,
-                                // Hibiki patch (BUG-2731 follow-up): preview
+                                // Fushi patch (BUG-2731 follow-up): preview
                                 // from the same base the commit will use.
                                 deltaBase: () => _currentSwipeBase(context),
                               ),
@@ -1674,7 +1674,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                   child: AnimatedOpacity(
                     duration: _theme(context).controlsTransitionDuration,
                     opacity: showSwipeDuration ? 1 : 0,
-                    // Hibiki patch (BUG-3354): the displayed delta, not the
+                    // Fushi patch (BUG-3354): the displayed delta, not the
                     // pending commit (which release zeroes mid-fade).
                     child: _theme(context)
                             .seekIndicatorBuilder
@@ -1736,7 +1736,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         setState(() {
                                           _hideSeekBackwardButton = true;
                                         });
-                                        // Hibiki patch (BUG-2731 follow-up):
+                                        // Fushi patch (BUG-2731 follow-up):
                                         // measured from the pending seek target.
                                         var result =
                                             _relativeSeekBase(context) - value;
@@ -1747,7 +1747,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                               .state
                                               .duration,
                                         );
-                                        // Hibiki patch (BUG-2731): see
+                                        // Fushi patch (BUG-2731): see
                                         // onHorizontalDragEnd.
                                         _theme(context).onSeekEnd?.call(result);
                                         _dispatchSeek(context, result);
@@ -1794,7 +1794,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                           _hideSeekForwardButton = true;
                                         });
 
-                                        // Hibiki patch (BUG-2731 follow-up):
+                                        // Fushi patch (BUG-2731 follow-up):
                                         // measured from the pending seek target.
                                         var result =
                                             _relativeSeekBase(context) + value;
@@ -1805,7 +1805,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                               .state
                                               .duration,
                                         );
-                                        // Hibiki patch (BUG-2731): see
+                                        // Fushi patch (BUG-2731): see
                                         // onHorizontalDragEnd.
                                         _theme(context).onSeekEnd?.call(result);
                                         _dispatchSeek(context, result);
@@ -1835,12 +1835,12 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 class MaterialSeekBar extends StatefulWidget {
   final ValueNotifier<Duration>? delta;
 
-  /// Hibiki patch (BUG-2731 follow-up): base position the [delta] preview is
+  /// Fushi patch (BUG-2731 follow-up): base position the [delta] preview is
   /// added to. Null = `player.state.position` (upstream).
   final Duration Function()? deltaBase;
   final VoidCallback? onSeekStart;
 
-  /// Hibiki patch (BUG-796 follow-up): retyped from `VoidCallback?` to carry the
+  /// Fushi patch (BUG-796 follow-up): retyped from `VoidCallback?` to carry the
   /// committed seek target [Duration] to the host (theme `onSeekEnd`). See
   /// third_party/media_kit_video/PATCHES.md.
   final void Function(Duration)? onSeekEnd;
@@ -1907,7 +1907,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
             });
           }),
           controller(context).player.stream.position.listen((event) {
-            // Hibiki patch (TODO-1243): mirror of the desktop seek bar. Drop
+            // Fushi patch (TODO-1243): mirror of the desktop seek bar. Drop
             // redundant frame-rate rebuilds — drag already suppresses position
             // (uses `slider`); while not dragging, quantize to
             // kPositionUiThrottleStep so the fill re-rasters at ~5fps instead of
@@ -1944,9 +1944,9 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerMove(PointerMoveEvent e, BoxConstraints constraints) {
-    // Hibiki patch (BUG-566, mirrors BUG-235): bail out if this State was
+    // Fushi patch (BUG-566, mirrors BUG-235): bail out if this State was
     // already disposed. `controller(context)` below dereferences
-    // `State.context`; after dispose (Hibiki tears down the controls subtree
+    // `State.context`; after dispose (Fushi tears down the controls subtree
     // on fullscreen enter/exit and on episode switch via
     // VideoControlsFocusGate) that throws
     // "Null check operator used on a null value". Mirrors the existing
@@ -1968,7 +1968,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   }
 
   void onPointerUp() {
-    // Hibiki patch (BUG-566, mirrors BUG-235): guard against use-after-dispose.
+    // Fushi patch (BUG-566, mirrors BUG-235): guard against use-after-dispose.
     // The pointer-up event can arrive after the controls widget tree is
     // unmounted (release the seek bar drag right as the player exits
     // fullscreen / switches episode), and `controller(context)` below
@@ -1977,7 +1977,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
     // unmounted, matching the State's existing `if (mounted)` setState guard.
     // See third_party/media_kit_video/PATCHES.md.
     if (!mounted) return;
-    // Hibiki patch (BUG-796 follow-up): carry the committed seek target so the
+    // Fushi patch (BUG-796 follow-up): carry the committed seek target so the
     // host can re-sync the subtitle to the destination + suppress the lagging
     // post-seek position (progress-bar seek bypasses seekMs). See PATCHES.md.
     widget.onSeekEnd?.call(duration * slider);
@@ -1986,7 +1986,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
       tapped = false;
       position = duration * slider;
     });
-    // Hibiki patch (BUG-2731 follow-up): hand the dispatch future to the host.
+    // Fushi patch (BUG-2731 follow-up): hand the dispatch future to the host.
     final Future<void> seek =
         controller(context).player.seek(duration * slider);
     _theme(context).onSeekDispatched?.call(seek);
@@ -2038,7 +2038,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
 
   @override
   Widget build(BuildContext context) {
-    // Hibiki patch (TODO-1243): isolate the seek bar into its own compositor
+    // Fushi patch (TODO-1243): isolate the seek bar into its own compositor
     // layer so its ~5fps fill re-raster (kPositionUiThrottleStep throttle) does
     // not re-record the full-screen controls picture it shares with the
     // full-video-area gradient scrims. Caps the re-raster to the thin seek bar
@@ -2068,7 +2068,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
                 width: constraints.maxWidth,
                 alignment: _theme(context).seekBarAlignment,
                 height: _theme(context).seekBarContainerHeight,
-                // Hibiki patch (M3 Expressive chrome): host-painted track.
+                // Fushi patch (M3 Expressive chrome): host-painted track.
                 child: _theme(context).seekBarTrackBuilder != null
                     ? SizedBox(
                         width: constraints.maxWidth,
@@ -2093,7 +2093,7 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
                   children: [
                     Container(
                       width: constraints.maxWidth,
-                      // Hibiki patch (glass design system): optional thicker
+                      // Fushi patch (glass design system): optional thicker
                       // track while pressed + rounded track; defaults keep the
                       // upstream constant-height square track.
                       height: tapped &&
@@ -2414,7 +2414,7 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
       subscriptions.addAll(
         [
           controller(context).player.stream.position.listen((event) {
-            // Hibiki patch (TODO-1243): the clock text only shows whole seconds,
+            // Fushi patch (TODO-1243): the clock text only shows whole seconds,
             // so quantizing to kPositionUiThrottleStep (which divides 1000ms)
             // yields the identical string while collapsing ~60fps rebuilds to
             // ~5fps. Skip setState entirely when the quantized value is unchanged.
@@ -2444,7 +2444,7 @@ class MaterialPositionIndicatorState extends State<MaterialPositionIndicator> {
 
   @override
   Widget build(BuildContext context) {
-    // Hibiki patch (TODO-1243): isolate the mm:ss clock so its second-boundary
+    // Fushi patch (TODO-1243): isolate the mm:ss clock so its second-boundary
     // repaint does not re-raster the shared full-screen controls picture (same
     // integrated-GPU root cause as the seek bar). See PATCHES.md.
     return RepaintBoundary(

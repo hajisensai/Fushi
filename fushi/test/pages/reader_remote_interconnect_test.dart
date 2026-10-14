@@ -37,7 +37,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_book_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -82,7 +82,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_book_store');
+        Directory.systemTemp.createTempSync('fushi_remote_book_store');
     remoteBookCover = File('${storeDir.path}/remote-book-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())

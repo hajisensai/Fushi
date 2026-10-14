@@ -3164,7 +3164,7 @@ void _playTrackerWiringGuard() {
   });
 }
 
-/// BUG-1892：附着并捕获（游戏已在跑，Hibiki 只是挂上去）同样要产生游玩记录。
+/// BUG-1892：附着并捕获（游戏已在跑，Fushi 只是挂上去）同样要产生游玩记录。
 /// 身份链是 `window.pid → exe 全路径 → galgames 行`，与库页启动共用同一套解析。
 void _playTrackerAttachWiring() {
   final String gameDir = p.join(p.rootPrefix(p.current), 'Games', 'Attached');

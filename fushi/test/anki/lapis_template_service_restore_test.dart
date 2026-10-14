@@ -1,5 +1,5 @@
 // PR#457 审查 §10-4 守卫：从备份恢复时，卡模板写入失败被静默吞掉，UI 仍报
-// 「恢复成功」；且 Hibiki 侧客制化状态（settings）与已落地的 styling 之间存在
+// 「恢复成功」；且 Fushi 侧客制化状态（settings）与已落地的 styling 之间存在
 // 顺序造成的过期窗口。这里锁死修复后的契约：
 //   styling 写成功 → 立刻对齐 settings → 再写卡模板 → 卡模板失败必须上抛。
 import 'dart:convert';

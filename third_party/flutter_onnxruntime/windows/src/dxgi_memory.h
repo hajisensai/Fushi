@@ -1,4 +1,4 @@
-// Hibiki fork: DXGI video-memory budget query.
+// Fushi fork: DXGI video-memory budget query.
 //
 // Static-shape DirectML graphs allocate every intermediate tensor up front and
 // keep the pool resident per session; on a card whose budget cannot hold them

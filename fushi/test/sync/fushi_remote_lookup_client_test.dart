@@ -389,7 +389,7 @@ void main() {
   // 「RPC 往返延迟」和「整包字节传输」不是一个量纲。第二跳资产下载最大 16 MiB，
   // 却曾与 /api/lookup/audio 的 POST 共用同一个 3s 预算，且超时被译成
   // InterconnectAssetUnreachableError → RemoteLookupUnreachableError → 上层把整个
-  // hibiki-remote 源关进 45s 失败冷却。结果是「活着但网慢的 peer」被判成「设备
+  // fushi-remote 源关进 45s 失败冷却。结果是「活着但网慢的 peer」被判成「设备
   // 死了」。传输阶段必须有独立预算，且超时 = 可达但慢 = 无音频，不制造假冷却。
   test(
       'a slow asset transfer is "no audio" (null), never a false unreachable '

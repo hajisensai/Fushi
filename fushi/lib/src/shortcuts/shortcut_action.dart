@@ -580,7 +580,7 @@ enum ShortcutAction {
   // 修复「app 外查词快捷键没办法设置」。
   globalExternalLookup(ShortcutScope.globalExternal, 'global_external_lookup'),
 
-  // 用户请求：一个键把 Hibiki 主窗**唤到前台**并直接落在**查词页**上。
+  // 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上。
   //
   // 与上面的 globalExternalLookup 是两件不同的事，别合并：
   //   · globalExternalLookup —— 取当前前台程序的选中文本，在**无边框覆盖窗**里出

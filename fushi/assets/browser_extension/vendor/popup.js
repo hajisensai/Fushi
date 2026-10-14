@@ -77,7 +77,7 @@ function __fushiEventInsidePopup(e){
     }
 }
 /* BUG-688: the extension floating popup scrolls on the SHADOW HOST
-   (#hibiki-popup-host has overflow-y:auto + max-height; #entries-container is
+   (#fushi-popup-host has overflow-y:auto + max-height; #entries-container is
    neutralized to overflow:visible inside the shadow), while the in-app popup
    scrolls the document itself. These two resolve the wheel-scroll surface:
    - __fushiShadowHost(): the shadow host element, or null in-app / pre-shadow.
@@ -142,7 +142,7 @@ window.__fushiReportJsError = function(source, message, stack) {
 
 //
 //  popup.js
-//  Hibiki (adapted from Hoshi Reader for Android InAppWebView)
+//  Fushi (adapted from Hoshi Reader for Android InAppWebView)
 //
 //  Copyright © 2026 Manhhao.
 //  Copyright © 2023-2025 Yomitan Authors.
@@ -3606,7 +3606,7 @@ function showAudioError(button) {
 }
 
 // BUG-842：Windows 桌面查词弹窗是 WebView2 离屏合成（CompositionController→DirectComposition
-// visual→WGC 捕获→Flutter texture，再经 HibikiAppUiScale 的 FittedBox 拉伸）。HTML `title`
+// visual→WGC 捕获→Flutter texture，再经 FushiAppUiScale 的 FittedBox 拉伸）。HTML `title`
 // 的原生工具提示是 WebView2 生成的独立 top-level OS 窗口，按「父 HWND 原点 + WebView 内部未
 // 拉伸的逻辑坐标」定位，与纹理真正合成的位置（弹窗卡片）错位，于是提示「飞」到窗口角落。
 // 同型的原生右键菜单错位已由 dictionary_popup_webview.dart 换 Flutter showMenu 规避，但 title
@@ -6515,7 +6515,7 @@ function _firePopupRendered(stillRendering) {
 }
 
 // ===== N 列 masonry 词典方框排列（照抄 Niratan Features/Popup/popup.js layoutMasonry，
-//        一般化到 Hibiki 的 --dict-columns N 列）=====
+//        一般化到 Fushi 的 --dict-columns N 列）=====
 // develop 原本用 CSS grid `.glossary-section > .category-body`(repeat(--dict-columns,1fr))
 // 行对齐排列：同一行的词典卡片被该行最高者顶到同一水平线，矮卡片下方留空隙（Niratan 的
 // 紧密堆则无此空隙）。这里在 grid 之上叠一层运行时 masonry——cols>1 且多卡时用 inline-style

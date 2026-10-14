@@ -67,7 +67,7 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir = Directory.systemTemp.createTempSync('hibiki_dash_gate');
+    pathProviderDir = Directory.systemTemp.createTempSync('fushi_dash_gate');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -97,7 +97,7 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_dash_gate_store');
+    storeDir = Directory.systemTemp.createTempSync('fushi_dash_gate_store');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)

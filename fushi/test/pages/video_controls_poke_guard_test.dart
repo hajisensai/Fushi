@@ -136,7 +136,7 @@ void main() {
     });
 
     test('media_kit fork 的桌面 onHover 仍是无条件唤起（BUG-2030 门控前提）', () {
-      // 本条守的是「为什么门控必须在 Hibiki 侧、发信号之前」这个前提：wakeSignal 的处理
+      // 本条守的是「为什么门控必须在 Fushi 侧、发信号之前」这个前提：wakeSignal 的处理
       // 就是调 onHover()（video_controls_wake_signal_guard_test.dart 钉），一旦上游/fork 把
       // onHover 改成条件式唤起，_keepControlsAliveIfVisible 的实现方式就该重新评估，
       // 而不是让它继续基于一个已经不成立的事实。

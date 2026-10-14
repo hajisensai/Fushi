@@ -23,7 +23,7 @@ void main() {
     late InterconnectDownloadManager manager;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki-dl-lifecycle');
+      dir = await Directory.systemTemp.createTemp('fushi-dl-lifecycle');
       manager = InterconnectDownloadManager();
     });
 

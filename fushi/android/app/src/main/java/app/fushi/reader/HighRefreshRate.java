@@ -24,7 +24,7 @@ import android.view.WindowManager;
  * {@code addView} 之前改 {@link WindowManager.LayoutParams}）。
  */
 public final class HighRefreshRate {
-    private static final String TAG = "hibiki-refresh";
+    private static final String TAG = "fushi-refresh";
 
     private HighRefreshRate() {}
 

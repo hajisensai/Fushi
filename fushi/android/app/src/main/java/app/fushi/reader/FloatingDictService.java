@@ -133,7 +133,7 @@ public class FloatingDictService extends BaseFloatingService {
         }
 
         return builder
-                .setContentTitle("Hibiki Dictionary")
+                .setContentTitle("Fushi Dictionary")
                 .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)
@@ -363,7 +363,7 @@ public class FloatingDictService extends BaseFloatingService {
                     + "Use the search bar to look up words manually.");
                 // resultView.setText(
                 //     "Android 13+ restricts clipboard access.\n\n"
-                //     + "Enable Hibiki accessibility service in "
+                //     + "Enable Fushi accessibility service in "
                 //     + "Settings → Accessibility for automatic text detection,"
                 //     + " or use the search bar to look up words manually.");
             }

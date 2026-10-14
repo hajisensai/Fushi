@@ -32,7 +32,7 @@ def _request(url: str, token: str) -> Tuple[list, Dict[str, str]]:
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github.star+json")
     req.add_header("X-GitHub-Api-Version", "2022-11-28")
-    req.add_header("User-Agent", "hibiki-star-history")
+    req.add_header("User-Agent", "fushi-star-history")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(req, timeout=30) as resp:

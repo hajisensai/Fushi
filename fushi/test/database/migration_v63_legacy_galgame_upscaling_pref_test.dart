@@ -336,7 +336,7 @@ void main() {
       'backup source opened through atFile upgrades once and cannot resurrect '
       'the obsolete rows on reopen', () async {
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_v63_backup_upgrade');
+        Directory.systemTemp.createTempSync('fushi_v63_backup_upgrade');
     final String dbPath =
         '${tempDir.path}${Platform.pathSeparator}backup-source.db';
     addTearDown(() {
@@ -390,7 +390,7 @@ void main() {
   test('a failure in the second delete rolls the first delete back as a batch',
       () async {
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_v63_rollback');
+        Directory.systemTemp.createTempSync('fushi_v63_rollback');
     final String dbPath = '${tempDir.path}${Platform.pathSeparator}rollback.db';
     addTearDown(() {
       if (tempDir.existsSync()) {

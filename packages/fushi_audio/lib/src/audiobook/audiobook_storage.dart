@@ -46,7 +46,7 @@ abstract final class AudiobookStorage {
 
   /// TODO-1236：app 层注入的 documents 根解析器（默认平台 Documents）。
   ///
-  /// 本包是 `hibiki` 的上游依赖（`hibiki_audio` 不依赖 `hibiki`），故**无法**导入 app
+  /// 本包是 `fushi` 的上游依赖（`fushi_audio` 不依赖 `fushi`），故**无法**导入 app
   /// 层的 `AppPaths`。为让有声书持久写入随桌面「自定义数据根」走（否则新导入会落回平台
   /// Documents，与 TODO-1226 迁移白名单里的 `audiobooks` 分家），app 启动期
   /// (`AppModel._prepareRuntimeDirectories`) 把此钩子接到 `AppPaths.documentsRootDirectory`
@@ -59,7 +59,7 @@ abstract final class AudiobookStorage {
   /// 而不是静默落到某个猜出来的目录。
   static Future<Directory> Function()? documentsRootResolver;
 
-  /// `hibiki_audio` 包内 documents 根的**单一解析点**。
+  /// `fushi_audio` 包内 documents 根的**单一解析点**。
   static Future<Directory> _documentsRoot() =>
       (documentsRootResolver ?? _unassignedDocumentsRoot)();
 
@@ -113,8 +113,8 @@ abstract final class AudiobookStorage {
     return probe(path);
   }
 
-  /// FNV-1a 32 位（UTF-8 逐字节），委托 hibiki_core 单一真相源；输出与历史手写
-  /// 副本逐字节一致（金标锁在 hibiki_core 的 stable_hash_test.dart）——哈希已
+  /// FNV-1a 32 位（UTF-8 逐字节），委托 fushi_core 单一真相源；输出与历史手写
+  /// 副本逐字节一致（金标锁在 fushi_core 的 stable_hash_test.dart）——哈希已
   /// 固化进 `<docs>/audiobooks/<hash>/` 持久目录名，不得漂移。
   static String _stableHash(String input) => fnv1a32Hex(utf8.encode(input));
 
@@ -195,7 +195,7 @@ abstract final class AudiobookStorage {
       );
     }
 
-    fushiDebugPrint('[hibiki-import] persisted ${src.path} → $dest '
+    fushiDebugPrint('[fushi-import] persisted ${src.path} → $dest '
         '(${(totalBytes / 1024 / 1024).toStringAsFixed(1)} MB)');
     return dest;
   }
@@ -220,7 +220,7 @@ abstract final class AudiobookStorage {
       throw StateError('FLAC transcode produced no output: $dest');
     }
     onProgress?.call(totalBytes, totalBytes);
-    fushiDebugPrint('[hibiki-import] transcoded ${src.path} → $dest');
+    fushiDebugPrint('[fushi-import] transcoded ${src.path} → $dest');
     return dest;
   }
 
@@ -402,14 +402,14 @@ abstract final class AudiobookStorage {
     final Directory dir = Directory(p.join(docs.path, 'audiobooks', hash));
     if (dir.existsSync()) {
       await dir.delete(recursive: true);
-      fushiDebugPrint('[hibiki-import] deleted persist dir: ${dir.path}');
+      fushiDebugPrint('[fushi-import] deleted persist dir: ${dir.path}');
     }
     final Directory oldDir = Directory(
         p.join(docs.path, 'audiobooks', bookUid.hashCode.toRadixString(16)));
     if (oldDir.existsSync()) {
       await oldDir.delete(recursive: true);
       fushiDebugPrint(
-          '[hibiki-import] deleted legacy persist dir: ${oldDir.path}');
+          '[fushi-import] deleted legacy persist dir: ${oldDir.path}');
     }
   }
 }

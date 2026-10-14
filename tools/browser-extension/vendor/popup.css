@@ -260,7 +260,7 @@ html.global-lookup {
 /* TODO-1065 -- mobile / external floating-subtitle popup (popup_main host) ONLY:
    same washout root cause as .global-lookup above, different host chrome. The
    external popup runs inside a TRANSPARENT floating window whose rounded card is
-   a Flutter `HibikiPopupSurface` (Material radius/border/fill), NOT drawn by the
+   a Flutter `FushiPopupSurface` (Material radius/border/fill), NOT drawn by the
    iframe. Left alone, the `<html>` documentElement fills the whole WebView
    viewport with the opaque near-white --background-color (set inline by
    dictionary_popup_webview / popup_settings_injection), which paints OVER the
@@ -1342,7 +1342,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
    (.glossary-group) 逐字对齐 Niratan Features/Popup/popup.css `.glossary-group` ——
    描边卡而非填充玻璃卡：1px 半透明描边(rgba 0,0,0,.14) + 顶部 inset 白高光 + 薄贴地投影，
    无 background 填充，观感更扁平、与 Niratan 一致。padding 6px 8px、radius 8px 亦照抄
-   (Niratan 的 calc(8px*--popup-scale) 在 Hibiki 走 documentElement.zoom 整体缩放，故直接 8px)。
+   (Niratan 的 calc(8px*--popup-scale) 在 Fushi 走 documentElement.zoom 整体缩放，故直接 8px)。
    皮肤纯 CSS，不改 DOM/JS，四端(in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：
    行距仍走 margin-top(grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距
    不撑 grid track。暗色变体：描边转白(rgba 255,255,255,.09) + 加深贴地投影(照抄 Niratan 暗色分支)。 */

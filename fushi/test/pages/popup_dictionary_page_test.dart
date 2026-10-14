@@ -130,7 +130,7 @@ void main() {
     expect(closed, isTrue);
   });
 
-  testWidgets('desktop lookup opens in-app instead of launching hibiki url', (
+  testWidgets('desktop lookup opens in-app instead of launching fushi url', (
     WidgetTester tester,
   ) async {
     final AppModel appModel = AppModel(testPlatformServices());

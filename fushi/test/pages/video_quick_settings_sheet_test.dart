@@ -181,7 +181,7 @@ void main() {
     // 旋转进度条让 pumpAndSettle 超时）。给个空初值让其即时返回、回退默认根。
     SharedPreferences.setMockInitialValues(<String, Object>{});
     shaderTempDir = Directory.systemTemp.createTempSync(
-      'hibiki_video_shader_settings',
+      'fushi_video_shader_settings',
     );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),

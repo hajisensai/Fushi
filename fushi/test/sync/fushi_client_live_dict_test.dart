@@ -12,7 +12,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-// ── fake 库服务（与 hibiki_sync_server_library_test 同款）─────────────────
+// ── fake 库服务（与 fushi_sync_server_library_test 同款）─────────────────
 
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。

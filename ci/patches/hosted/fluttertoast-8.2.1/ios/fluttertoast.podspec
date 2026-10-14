@@ -1,7 +1,7 @@
 #
 # To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html
 #
-# HIBIKI PATCH (TODO-1107): upstream fluttertoast 8.2.1 excludes the iOS
+# FUSHI PATCH (TODO-1107): upstream fluttertoast 8.2.1 excludes the iOS
 # simulator arm64 slice via EXCLUDED_ARCHS[sdk=iphonesimulator*] = i386, arm64
 # (and arm64 on the user target). On Apple Silicon that removes the only slice
 # the simulator can run, so `flutter build ios --simulator` fails with

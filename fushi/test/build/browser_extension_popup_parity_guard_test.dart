@@ -23,7 +23,7 @@ import '../helpers/source_guard.dart';
 ///     document-level rule may leak to the host page.
 ///  3. The two extension content.css mirrors stay byte-identical.
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const String appPopup = 'assets/popup';
   const String extAssets = 'assets/browser_extension';

@@ -18,7 +18,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_db_failure_kind_');
+    tempDir = Directory.systemTemp.createTempSync('fushi_db_failure_kind_');
   });
 
   tearDown(() {

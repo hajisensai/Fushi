@@ -9,7 +9,7 @@ import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
 import 'test_helpers.dart';
 
-/// Integration tests for the highest-risk Hibiki user paths:
+/// Integration tests for the highest-risk Fushi user paths:
 /// EPUB import → Hoshi reader → dictionary lookup.
 ///
 /// Requires:

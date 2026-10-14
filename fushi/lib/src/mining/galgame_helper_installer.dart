@@ -345,7 +345,7 @@ class GalgameHelperInstaller {
 
   /// exe 同级的 `voice_hook/<arch>` 目录（安装器写入落点，与 defaultInjectorResolver /
   /// GalHookSessionController 注入器解析的读取落点一致）。安装包 Inno Setup
-  /// 默认装到 {localappdata}\Hibiki（PrivilegesRequired=lowest），此目录用户可写、无需提权。
+  /// 默认装到 {localappdata}\Fushi（PrivilegesRequired=lowest），此目录用户可写、无需提权。
   Directory _archDir(String arch) {
     final Directory Function(String arch)? override = _installDirectoryOverride;
     if (override != null) return override(arch);

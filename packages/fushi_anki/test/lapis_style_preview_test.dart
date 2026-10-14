@@ -74,7 +74,7 @@ void main() {
       expect(markup, contains('<ol>'));
       expect(markup, contains('<li data-dictionary='));
       // 这些是 vendored Lapis 为 JPMN 导入卡准备的锚点 / 旧 mock 的自造类名，
-      // Hibiki 自产卡从不产出；预览里出现它们就会重新养出假 selector。
+      // Fushi 自产卡从不产出；预览里出现它们就会重新养出假 selector。
       expect(markup, isNot(contains('data-details=')));
       expect(markup, isNot(contains('dict-group')));
       expect(markup, isNot(contains('data-sc-content="example"')));

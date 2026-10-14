@@ -28,7 +28,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('hibiki_carrier_dict_');
+    tempDir = await Directory.systemTemp.createTemp('fushi_carrier_dict_');
   });
 
   tearDown(() async {

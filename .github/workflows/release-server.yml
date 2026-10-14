@@ -16,7 +16,7 @@
 #   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
 #   不再依赖「记得 make_latest 恒 false」。
 # * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 hibiki 的
+#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 fushi 的
 #   checkout 上算，别再造第二条）。
 # * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
 #   debug 包没有消费者。
@@ -115,7 +115,7 @@ jobs:
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
-          # 源码 sha 是 hibiki checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
+          # 源码 sha 是 fushi checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
           SOURCE_SHA="$(git rev-parse --short HEAD)"
           SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
@@ -307,7 +307,7 @@ jobs:
           test -f "$share/transforms/manifest.json"
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
       # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
-      # fushi-anki-sync.SOURCE.txt（commit 取 hibiki checkout 的 HEAD——这里 GITHUB_SHA
+      # fushi-anki-sync.SOURCE.txt（commit 取 fushi checkout 的 HEAD——这里 GITHUB_SHA
       # 是调用方仓库的）并对装好的副本跑 version 冒烟。
       - name: Set up fushi-anki-sync toolchain
         uses: ./.github/actions/setup-fushi-anki-sync

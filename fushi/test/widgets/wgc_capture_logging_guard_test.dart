@@ -50,11 +50,11 @@ void main() {
     // TODO-398 regression: native wide-string path literals must use an
     // escaped double backslash. A single backslash separator is an illegal
     // escape -- MSVC raises C4129 and drops it, so the log would land at
-    // "...LocalAppDataHibikiwgc_capture.log" and the Dart reader
-    // (Hibiki + separator + wgc_capture.log) never finds it. Pin it here.
+    // "...LocalAppDataFushiwgc_capture.log" and the Dart reader
+    // (Fushi + separator + wgc_capture.log) never finds it. Pin it here.
     expect(logSrc.contains(r'L"\\Fushi"'), isTrue,
         reason:
-            r'wgc_log.cpp must use escaped separator L"\\Hibiki", not single backslash');
+            r'wgc_log.cpp must use escaped separator L"\\Fushi", not single backslash');
     expect(logSrc.contains(r'L"\\wgc_capture.log"'), isTrue,
         reason:
             r'wgc_log.cpp must use escaped separator L"\\wgc_capture.log", not single backslash');
@@ -65,7 +65,7 @@ void main() {
         reason: 'log line must carry thread id');
     expect(logSrc.contains('GetCurrentProcessId'), isTrue,
         reason:
-            'log line must carry process id so uploaded WGC logs can be attributed to the crashed Hibiki process');
+            'log line must carry process id so uploaded WGC logs can be attributed to the crashed Fushi process');
     expect(logSrc.contains('GetSystemTime'), isTrue,
         reason: 'log line must carry timestamp');
   });
@@ -255,7 +255,7 @@ void main() {
     // separator, so dumps would land at a malformed concatenated path.
     expect(crashCpp.contains(r'L"\\Fushi"'), isTrue,
         reason:
-            r'crash_dump.cpp must use escaped separator L"\\Hibiki", not single backslash');
+            r'crash_dump.cpp must use escaped separator L"\\Fushi", not single backslash');
     expect(crashCpp.contains(r'L"\\crashdumps"'), isTrue,
         reason:
             r'crash_dump.cpp must use escaped separator L"\\crashdumps", not single backslash');

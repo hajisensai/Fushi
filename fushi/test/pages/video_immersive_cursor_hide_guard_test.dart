@@ -6,7 +6,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 源码守卫：沉浸/锁屏 + 控制条淡出时 OS 光标在所有 chrome 上统一隐藏（TODO-318 / BUG-258）。
 ///
 /// 根因：media_kit 用 `MouseRegion(cursor: none)`（hideMouseOnControlsRemoval）隐藏光标，但
-/// hibiki 把 overlay chrome（锁按钮 rail / OSD / 字幕面板）叠在其上 → 最前层 MouseRegion 的
+/// fushi 把 overlay chrome（锁按钮 rail / OSD / 字幕面板）叠在其上 → 最前层 MouseRegion 的
 /// cursor 胜出 → 鼠标放到 chrome 上光标重现；沉浸锁态 IgnorePointer 又剥了 media_kit region。
 ///
 /// 修复：单一真相源 [_cursorHidden]（镜像 controls 隐藏 2s 计时 + 沉浸锁态），在 controls

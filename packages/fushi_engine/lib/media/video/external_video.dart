@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/media_extensions.dart';
 
-/// 支持「从 app 外用 Hibiki 打开」的视频扩展名（小写，不含点）。
+/// 支持「从 app 外用 Fushi 打开」的视频扩展名（小写，不含点）。
 ///
 /// 派生自共享真相源 [kVideoExtensions]（media_extensions.dart，导入 / 目录扫描 /
 /// 刮削同表）± 显式增删——此前这里手写第三份整表并已静默漂移（`.rmvb` 能导入却

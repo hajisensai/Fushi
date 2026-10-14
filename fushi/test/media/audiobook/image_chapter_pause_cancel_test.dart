@@ -284,7 +284,7 @@ class _Harness {
     final _FakeJustAudioPlatform registry = _installFakeAudioPlatform();
     final AudiobookPlayerController controller = AudiobookPlayerController();
     final File audioFile = File(
-      '${Directory.systemTemp.path}/hibiki-image-chapter-pause-2389.mp3',
+      '${Directory.systemTemp.path}/fushi-image-chapter-pause-2389.mp3',
     );
     if (!audioFile.existsSync()) {
       audioFile.writeAsBytesSync(const <int>[0]);

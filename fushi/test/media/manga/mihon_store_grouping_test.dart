@@ -235,7 +235,7 @@ void main() {
 
     setUp(() async {
       LocaleSettings.setLocale(AppLocale.en);
-      root = await Directory.systemTemp.createTemp('hibiki-mihon-grouping-');
+      root = await Directory.systemTemp.createTemp('fushi-mihon-grouping-');
       database = FushiDatabase.forTesting(NativeDatabase.memory());
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(

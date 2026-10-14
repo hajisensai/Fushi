@@ -19,7 +19,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     //
     // 兼容性：LAN 内且 host 未开「LAN 也要 PIN」时（默认）v1 行为逐字不变，
     // 旧客户端继续可配对；变的只是「本就该要 PIN 的会话」——那些会话以前能拿到
-    // 共享 token 本身就是漏洞，现在必须走 v2（Hibiki 自己的 client 早已先试 v2，
+    // 共享 token 本身就是漏洞，现在必须走 v2（Fushi 自己的 client 早已先试 v2，
     // 只在对端不支持 v2 时才回落 v1）。
     final String? pairRemote = _remoteAddress(request);
     final bool v1PinRequired = FushiPairingProtocol.computePinRequired(

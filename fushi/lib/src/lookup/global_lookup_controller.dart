@@ -554,7 +554,7 @@ class GlobalLookupController {
     }
   }
 
-  /// 用户请求：一个键把 Hibiki 主窗**唤到前台**并直接落在**查词页**上
+  /// 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上
   /// （[ShortcutAction.globalExternalOpenLookupPage] 的执行体）。
   ///
   /// 与 [triggerSelectionLookup] 是**相反**的产品取舍，别合并成一个动作：那条刻意
@@ -2938,7 +2938,7 @@ String _normalizeGlobalLookupMediaPath(String path) {
 
 /// Returns the image MIME type for [path]'s extension.
 ///
-/// 命名统一轮 G8：查 hibiki_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
+/// 命名统一轮 G8：查 fushi_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
 /// switch 副本之一），与 app 内 `dictionary_media_types.dart` 自动同源。
 String _globalLookupImageMime(String path) => mimeTypeForFilePath(path);
 

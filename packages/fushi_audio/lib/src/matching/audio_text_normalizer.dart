@@ -8,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart'
 ///
 /// 白名单规则：只保留假名/汉字/CJK 扩展/字母数字，其余剥掉。
 /// `audiobook_bridge.dart` 的 JS `__fushiIsSkippable` 必须与此严格镜像。
-/// 值折叠（全角→ASCII / 半角片假名→全角 / 片假名→平假名）走 hibiki_core 的
+/// 值折叠（全角→ASCII / 半角片假名→全角 / 片假名→平假名）走 fushi_core 的
 /// 共享码点原语（`jp_codepoint_fold.dart`），与其它 normalizer 同源。
 class AudioTextNormalizer {
   AudioTextNormalizer._();

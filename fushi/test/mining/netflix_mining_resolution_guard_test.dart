@@ -20,7 +20,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 /// 「bundled extension matches source」守卫覆盖；此处只守具体数值不被回退。
 void main() {
   group('TODO-1145 Netflix 制卡分辨率守卫', () {
-    // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
+    // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
     final List<File> offscreenMirrors = <File>[
       File('assets/browser_extension/offscreen.js'),
       File('../tools/browser-extension/offscreen.js'),

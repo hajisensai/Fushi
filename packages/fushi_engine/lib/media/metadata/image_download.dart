@@ -167,7 +167,7 @@ Future<File> downloadImageToTempFile(
     final Directory dir = tempDir ?? Directory.systemTemp;
     await dir.create(recursive: true);
     final File file = File(
-      p.join(dir.path, 'hibiki_scrape_${url.hashCode.toRadixString(16)}.img'),
+      p.join(dir.path, 'fushi_scrape_${url.hashCode.toRadixString(16)}.img'),
     );
     await file.writeAsBytes(bytes, flush: true);
     return file;

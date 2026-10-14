@@ -36,7 +36,7 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// real.dart:2421），mpv 在 `set_osd_msg_va` 里 `level > osd_level` 直接丢弃
 /// （player/osd.c），脚本最常用的 `mp.osd_message` 一个字都画不出来。装载脚本时
 /// 同批下发 [buildLuaOsdProperties] 把文字 OSD 层打开，并用 `osd-on-seek=no` 防止
-/// Hibiki 自己的 seek 顺带弹出原生进度条。没装脚本的播放器保持 media_kit 默认。
+/// Fushi 自己的 seek 顺带弹出原生进度条。没装脚本的播放器保持 media_kit 默认。
 ///
 /// **诊断**：mpv 对 `load-script` 成功不打任何日志，失败只打 error/fatal 日志
 /// （`Could not load lua script <path>` / `<脚本名>: Lua error: ...`），
@@ -114,7 +114,7 @@ List<List<String>> buildLoadScriptCommands(List<String> absolutePaths) {
 ///
 /// `osd-level=1`：文字 OSD 只在有人主动 `show-text` / `mp.osd_message` 时出现
 /// （不常驻时间/状态行）。`osd-on-seek=no`：seek 命令不再顺带画原生进度条——
-/// Hibiki 的进度条是 Flutter 层自己的，两条叠着就是 bug。
+/// Fushi 的进度条是 Flutter 层自己的，两条叠着就是 bug。
 Map<String, String> buildLuaOsdProperties() => const <String, String>{
       'osd-level': '1',
       'osd-on-seek': 'no',

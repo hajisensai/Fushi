@@ -2,7 +2,7 @@ import 'audiobook_model.dart';
 
 /// 一本有声书的对齐健康度语义。
 ///
-/// 上游 Sasayaki 只有"match rate / search window"两个原始数字；hibiki 把它
+/// 上游 Sasayaki 只有"match rate / search window"两个原始数字；fushi 把它
 /// 抽象成 kind + 可选 ratePct + reason 三段：
 ///
 /// - UI 永远 `switch(kind)`，不会因为某种格式没有 ratePct 就瘫掉。

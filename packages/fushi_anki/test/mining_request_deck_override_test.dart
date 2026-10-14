@@ -76,7 +76,7 @@ AnkiSettings _settings({int selectedDeckId = 1, String? selectedDeckName}) =>
       availableNoteTypes: const <AnkiNoteType>[
         AnkiNoteType(
           id: 2,
-          name: 'Hibiki',
+          name: 'Fushi',
           fields: <String>['Expression', 'Reading'],
         ),
       ],

@@ -72,7 +72,7 @@ void main() {
       expect(normalizeSubdlLanguages(<String>[]), isEmpty);
     });
 
-    test('maps response codes back to Hibiki family codes', () {
+    test('maps response codes back to Fushi family codes', () {
       expect(subdlLanguageToHibiki('EN'), 'en');
       expect(subdlLanguageToHibiki('ZH_BG'), 'zh');
       expect(subdlLanguageToHibiki('BR_PT'), 'pt');

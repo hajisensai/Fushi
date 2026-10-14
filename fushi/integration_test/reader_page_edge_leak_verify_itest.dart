@@ -42,7 +42,7 @@ void main() {
     final String? env = Platform.environment['FUSHI_LEAK_EVIDENCE_DIR'];
     final String base = (env != null && env.trim().isNotEmpty)
         ? env.trim()
-        : '${Directory.systemTemp.path}/hibiki-leak-evidence';
+        : '${Directory.systemTemp.path}/fushi-leak-evidence';
     final Directory d = Directory(base);
     if (!d.existsSync()) d.createSync(recursive: true);
     return d.path;

@@ -670,19 +670,19 @@ extension _VideoLookupMining on _VideoFushiPageState {
             return const MineOutcome.success();
           };
     }
-    // BUG-891：远端 Hibiki 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
+    // BUG-891：远端 Fushi 库视频的 miningSource 是自签 https 流 URL。把该 host 当前会话
     // 已 TOFU 钉扎的证书指纹带给引擎，使 ffmpeg（自编 ffmpeg-kit `--enable-gnutls` + pin
-    // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Hibiki host（本地 /
+    // 补丁）按指纹接受自签流抽音频/帧，绕过「Protocol not found」。非 Fushi host（本地 /
     // YouTube / 直链）为 null，不钉扎。
     final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
     final String? mediaSourceTlsPin = remoteClient is InterconnectSyncBackend
         ? remoteClient.activeFingerprintSha256
         : null;
-    // BUG-1004：互联 host（LAN Hibiki 库）远端流——注入「host 端裁音频段」裁切器：host 用
+    // BUG-1004：互联 host（LAN Fushi 库）远端流——注入「host 端裁音频段」裁切器：host 用
     // 本地文件裁好句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，
     // 从根上绕开 client ffmpeg 打不开 host 自签 https/token 流的整类失败（BUG-891 pin 路径
     // 的残余缺口：移动端指纹缺失/URL 编码/网络脆弱仍 I/O error）。老 host 无 clipaudio 端点
-    // → 404 → 裁切器返 null → 引擎回退现有 ffmpeg-over-URL 抽取。非 Hibiki host（本地/
+    // → 404 → 裁切器返 null → 引擎回退现有 ffmpeg-over-URL 抽取。非 Fushi host（本地/
     // YouTube/直链）不注入。
     final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
     Future<String?> Function({

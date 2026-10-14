@@ -96,7 +96,7 @@ void main() {
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_danmaku_test');
+      tempDir = Directory.systemTemp.createTempSync('fushi_danmaku_test');
     });
 
     tearDown(() {

@@ -140,8 +140,10 @@ public class IconSwitchHelper {
             .setClass(context, MainActivity.class)
             .addCategory(Intent.CATEGORY_LAUNCHER);
 
+        // 快捷方式 id 是改名前的历史值：已固定到桌面的快捷方式按 id 认领，改 id 会让旧快捷方式
+        // 无法再被本 app 更新 / 停用，故冻结不改。
         ShortcutInfoCompat shortcut = new ShortcutInfoCompat.Builder(context, "hibiki_custom_icon")
-            .setShortLabel("Hibiki")
+            .setShortLabel("Fushi")
             .setIcon(icon)
             .setIntent(launchIntent)
             .build();

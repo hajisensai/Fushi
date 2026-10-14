@@ -132,7 +132,7 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     Uri? artUri,
   }) {
     mediaItem.add(ag.MediaItem(
-      id: 'hibiki_audiobook',
+      id: 'fushi_audiobook',
       title: title,
       artist: artist,
       duration: duration,

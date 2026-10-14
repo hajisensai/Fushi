@@ -1,7 +1,7 @@
 // IPA transcription meta e2e guard: importing a Yomitan dictionary that ships
 // term_meta_bank records with mode "ipa" must let query() surface the IPA
 // strings on the matching TermResult (PitchEntry.transcriptions), with the
-// right values. This is the upstream 918744d feature ported into Hibiki's
+// right values. This is the upstream 918744d feature ported into Fushi's
 // BlobReader-based query path (TODO-687 block3).
 //
 // Why this matters: IPA records reuse the PITCH dict bucket and the pitch

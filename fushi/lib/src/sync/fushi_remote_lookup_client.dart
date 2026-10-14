@@ -16,7 +16,7 @@ import 'package:path/path.dart' as p;
 /// 返回过 HTTP 响应**（连接拒绝 / 超时 / DNS 解析失败等传输层失败）——即
 /// 「配对设备不可达」。与「设备可达但没有这个词的结果」（返回 null，含
 /// 404/405/非 2xx/正常空结果）在传输层严格区分，供上层（WordAudioResolver）
-/// 对 hibiki-remote 音频源做失败冷却（对齐 remoteAudio 源的 TODO-1057/BUG-488
+/// 对 fushi-remote 音频源做失败冷却（对齐 remoteAudio 源的 TODO-1057/BUG-488
 /// 机制）。音频路径 [FushiRemoteLookupClient.lookupAudioUrl] 与词典路径
 /// [FushiRemoteLookupClient.searchDictionary] 现在**对称**抛出：词典路径此前是
 /// 全仓唯一不消费 `allUnreachable` 的调用点，导致配对设备离线时每次查词都要把

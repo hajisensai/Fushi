@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// native 侧（`packages/flutter_inappwebview_windows/windows/utils/wgc_log.cpp`）在
 /// 帧池 create / retire / stop / recreate / createSession-fail / startCapture-fail 等
 /// 生命周期点，把带时间戳 + 线程 id + 帧池指针的结构化行写进固定文件
-/// `%LOCALAPPDATA%\Hibiki\wgc_capture.log`（始终编译，Release 也写，不依赖 Dart 下发
+/// `%LOCALAPPDATA%\Fushi\wgc_capture.log`（始终编译，Release 也写，不依赖 Dart 下发
 /// 路径——避免「下发前 capture 已发生」的时机赌注）。
 ///
 /// 启动时（[ErrorLogService.init] 之后）调用本函数：把上次运行残留的 WGC 日志读出
@@ -23,7 +23,7 @@ class WgcCaptureLog {
   WgcCaptureLog._();
 
   /// 日志文件相对 `%LOCALAPPDATA%` 的子路径（native 端 wgc_log.cpp 用同一常量
-  /// `%LOCALAPPDATA%\Hibiki\wgc_capture.log`——两边硬钉同一确定路径，无 bundle id 推测）。
+  /// `%LOCALAPPDATA%\Fushi\wgc_capture.log`——两边硬钉同一确定路径，无 bundle id 推测）。
   static const String _relativePath = r'Fushi\wgc_capture.log';
 
   /// 解析日志文件（仅 Windows）。环境变量 `LOCALAPPDATA` 缺失或非 Windows 返回 null。

@@ -18,7 +18,7 @@ void main() {
   late Directory dir;
 
   setUp(() async {
-    dir = await Directory.systemTemp.createTemp('hibiki_subfail_');
+    dir = await Directory.systemTemp.createTemp('fushi_subfail_');
   });
 
   tearDown(() async {

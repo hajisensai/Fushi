@@ -391,7 +391,7 @@ jobs:
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
       # 内置 libtorrent 引擎 DLL：vcpkg 编 libtorrent + bridge，产物随发布包（下面
-      # flutter build 的 copy-if-present 拷到 hibiki.exe 旁）。发布版必须带上，故此步
+      # flutter build 的 copy-if-present 拷到 fushi.exe 旁）。发布版必须带上，故此步
       # 失败即让发布失败（不静默出无内置引擎的包）。
       #
       # TODO-2668｜缓存 key 必须带 runner 镜像版本，否则这条链路每次都在冷编 + 拉网。
@@ -613,7 +613,7 @@ jobs:
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
             .\tool\mihon\build_desktop_runtime.ps1 `
               -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
@@ -698,7 +698,7 @@ jobs:
           # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+            -DownloadCache "$env:RUNNER_TEMP\fushi-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # fushi-anki-sync（native/fushi_anki_sync）：链接 Anki 官方 rslib 的独立 helper 进程，
       # Dart 侧在 fushi.exe 同级找 fushi-anki-sync.exe。它是 AGPL-3.0-or-later，所以旁边
@@ -800,16 +800,16 @@ jobs:
           }
           Get-Item -LiteralPath ($runtimeFiles | ForEach-Object { Join-Path $targetDir $_ }) |
             Select-Object FullName, Length
-      # TODO-1242 (P0): hibiki's C++ modules link the MSVC CRT dynamically (/MD)
+      # TODO-1242 (P0): fushi's C++ modules link the MSVC CRT dynamically (/MD)
       # and reference newer STL/EH symbols (VCRUNTIME140_1!__CxxFrameHandler4).
       # The installer did NOT ship the CRT, so machines whose system VC++
       # Redistributable is stale (stuck at 2019 14.24) lack those exports and
-      # hibiki.exe dies at launch with a faulting MSVCP140.dll / c0000005 access
+      # fushi.exe dies at launch with a faulting MSVCP140.dll / c0000005 access
       # violation. Standard Flutter Windows distribution practice: copy the CRT
       # DLLs next to the exe (app-directory DLL search precedes System32, needs
       # no elevation) so the payload is self-contained regardless of the target
       # machine's system redist. The DLLs land in the same Release dir that
-      # hibiki.iss packages via `Source: {#SourceDir}\*`, so they ride into the
+      # fushi.iss packages via `Source: {#SourceDir}\*`, so they ride into the
       # installer automatically. Sourced from the VS2022 redist on windows-2022.
       - name: Bundle VC++ CRT runtime into Windows bundle
         shell: pwsh
@@ -885,7 +885,7 @@ jobs:
           # NOTE: keep the FULL literal bundle paths below (no $releaseDir
           # indirection). release_workflow_diagnostics_guard_test asserts on
           # these literals to prove the release smokes the exact binaries copied
-          # beside hibiki.exe -- splitting them into a variable silently blinds
+          # beside fushi.exe -- splitting them into a variable silently blinds
           # that guard.
           $target = Join-Path $PWD 'fushi\build\windows\x64\runner\Release\ffmpeg.exe'
           if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
@@ -1695,7 +1695,7 @@ jobs:
           built="$RUNNER_TEMP/mihon-runtime"
           if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
           fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -1911,7 +1911,7 @@ jobs:
           MACOS_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-macos-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/fushi-macos-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           P12_PATH="$RUNNER_TEMP/developer-id.p12"
           printf '%s' "$MACOS_DEVELOPER_ID_P12_BASE64" | base64 --decode > "$P12_PATH"
@@ -2057,7 +2057,7 @@ jobs:
           APP="build/macos/Build/Products/Release/fushi.app"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPSTORE_API_KEY_ID}.p8"
           printf '%s\n' "$APPSTORE_API_PRIVATE_KEY" > "$KEY_PATH"
-          NOTARIZE_ZIP="$RUNNER_TEMP/hibiki-notarize.zip"
+          NOTARIZE_ZIP="$RUNNER_TEMP/fushi-notarize.zip"
           # 公证服务只吃 zip/dmg/pkg，且必须 ditto 保留 .app 的符号链接与扩展属性。
           ditto -c -k --keepParent "$APP" "$NOTARIZE_ZIP"
           # 成败以公证服务的 status 为准（被拒时 notarytool 照样退出 0），被拒会打印拒绝日志。
@@ -2495,7 +2495,7 @@ jobs:
           set -euo pipefail
           app_dir="build/ios/iphoneos/Runner.app"
           out_dir="build/release-artifacts"
-          payload_dir="$RUNNER_TEMP/hibiki-ios-payload"
+          payload_dir="$RUNNER_TEMP/fushi-ios-payload"
           if [ ! -d "$app_dir" ]; then
             echo "::error title=iOS app missing::Expected $app_dir"
             exit 1
@@ -2624,7 +2624,7 @@ jobs:
           IOS_DIST_CERT_P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_P12_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYCHAIN_PATH="$RUNNER_TEMP/hibiki-ios-signing.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/fushi-ios-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           P12_PATH="$RUNNER_TEMP/ios-distribution.p12"
           printf '%s' "$IOS_DIST_CERT_P12_BASE64" | base64 --decode > "$P12_PATH"
@@ -2666,8 +2666,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          PROFILE_PATH="$RUNNER_TEMP/hibiki.mobileprovision"
-          PROFILE_PLIST="$RUNNER_TEMP/hibiki-profile.plist"
+          PROFILE_PATH="$RUNNER_TEMP/fushi.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/fushi-profile.plist"
           printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
           # .mobileprovision 是 CMS 签名信封，先解出里面的 plist 才能读字段。
           security cms -D -i "$PROFILE_PATH" > "$PROFILE_PLIST"
@@ -3089,7 +3089,7 @@ jobs:
           fi
           ASSET_NAMES=("${PLATFORM_ASSETS[@]}")
           # Asset names embed the versionName token `-<base>-debug.<seq>-` (e.g.
-          # hibiki-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
+          # fushi-0.11.1-debug.5633-3cf5905-windows-setup.exe). Parse the current
           # build's seq from BUILD_VERSION_NAME (0.11.1-debug.5633), extract every
           # asset's seq the same way, keep the top KEEP_SEQS distinct seqs (numeric
           # desc), and delete only assets whose seq is NOT in that set. Assets with

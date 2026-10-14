@@ -25,7 +25,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_fav_words_collections_pp');
+        Directory.systemTemp.createTempSync('fushi_fav_words_collections_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,

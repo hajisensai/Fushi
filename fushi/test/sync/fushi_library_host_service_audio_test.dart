@@ -255,7 +255,7 @@ void main() {
 
     setUp(() async {
       db = _memDb();
-      temp = await Directory.systemTemp.createTemp('hibiki-standalone-svc-');
+      temp = await Directory.systemTemp.createTemp('fushi-standalone-svc-');
     });
 
     tearDown(() async {
@@ -422,7 +422,7 @@ void main() {
     late FushiDatabase db;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_local_audio_svc');
+      tmp = Directory.systemTemp.createTempSync('fushi_local_audio_svc');
       db = _memDb();
     });
 
@@ -580,7 +580,7 @@ void main() {
     late FushiDatabase db;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_audiobook_svc');
+      tmp = Directory.systemTemp.createTempSync('fushi_audiobook_svc');
       db = _memDb();
       // deleteAudiobook 经 AudiobookStorage.audiobooksRootDir() →
       // getApplicationDocumentsDirectory()；mock path_provider 让持久根落在受控

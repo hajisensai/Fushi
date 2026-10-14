@@ -642,7 +642,7 @@ void main() {
 
     test('memo 键字段失效：lookupAudioVolume（查词发音音量）', () async {
       final Directory tempDir = await Directory.systemTemp.createTemp(
-        'hibiki_volmemo',
+        'fushi_volmemo',
       );
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
@@ -777,7 +777,7 @@ void main() {
     late File fontFile;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('hibiki_fontmemo');
+      tempDir = await Directory.systemTemp.createTemp('fushi_fontmemo');
       final Directory fontsDir = await Directory(
         '${tempDir.path}/custom_fonts',
       ).create();

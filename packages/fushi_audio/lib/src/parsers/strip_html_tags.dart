@@ -46,7 +46,7 @@ final RegExp _inlineTagPattern = RegExp('<[^>]+>');
 /// 例外是注音标注（`<rt>` / `<rp>` / `<rtc>`）：内容随标签一起丢弃，只留 ruby base
 /// （`<ruby>震<rt>ふる</rt></ruby>` → `震`），见 [_rubyAnnotationPattern]。
 ///
-/// 注意：hibiki_anki 的 `BaseAnkiRepository.previewFromFieldValue` 有一份
+/// 注意：fushi_anki 的 `BaseAnkiRepository.previewFromFieldValue` 有一份
 /// **故意不同**的实现——那边把标签替换成**空格**再统一折叠（Anki 字段 HTML 里
 /// `<br>` / 块级标签承担换行分词，直接删空会把相邻词粘连）；而字幕行内标签
 /// 紧贴正文，替换成空格反而会在日文句中引入假空格。两份实现不强并。

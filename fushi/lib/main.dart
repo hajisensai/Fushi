@@ -229,7 +229,7 @@ void popupMain() {
 ///
 /// [args] are the Dart entrypoint arguments. On Windows the runner forwards the
 /// process argv (minus the binary name) via `set_dart_entrypoint_arguments`, so
-/// opening a video with Hibiki (file association / drag-onto-exe / CLI) lands the
+/// opening a video with Fushi (file association / drag-onto-exe / CLI) lands the
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
@@ -734,7 +734,7 @@ void main([List<String> args = const <String>[]]) {
     }
 
     // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1292）。
-    // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
+    // 版本与 app 强绑定：要新组件就更新 Fushi。不要恢复后台静默下载或旧包联网兜底。
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {
@@ -835,7 +835,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   String? _openingCardSourceUrl;
 
   /// TODO-904 P0 回归：Windows 单实例守卫下，第二实例（文件关联 / 拖到 exe / CLI
-  /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
+  /// `fushi.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
   /// （见 `windows/runner/external_video_handoff.*` + `flutter_window.cpp`）。首实例
   /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
   /// 打开链路。Linux 同一条通道：GTK runner 以 GApplication 单实例注册到会话
@@ -947,7 +947,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
-    // ⌘Q / 菜单「退出 Hibiki」/ Dock 右键退出 走的是 NSApplication 的
+    // ⌘Q / 菜单「退出 Fushi」/ Dock 右键退出 走的是 NSApplication 的
     // applicationShouldTerminate:——它完全不经过 [onWindowClose]，于是整条
     // [_flushAndExitForWindowClose]（窗口几何落盘 → ExitFlushRegistry 把活跃
     // 阅读/听书/观看页尚未落库的位置与统计写穿 → 关书同步 drain → close
@@ -1944,7 +1944,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return null;
   }
 
-  /// 处理「从 app 外用 Hibiki 打开视频」：建/取一条外部视频 VideoBook（videoPath
+  /// 处理「从 app 外用 Fushi 打开视频」：建/取一条外部视频 VideoBook（videoPath
   /// 存外部绝对路径，不复制文件），然后用全局 navigator push [VideoFushiPage]
   /// 播放。bookUid 用 [externalVideoBookUid]（全路径 sha1）派生，幂等——同一文件
   /// 重复打开复用同条记录、保留上次进度。入库后书架视频分区自动出现该条目。
@@ -2299,7 +2299,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     }
     // TODO-905: the DB could not be opened even after WAL/sidecar recovery —
-    // the main hibiki.db is corrupt. Show an actionable notice (the recovery
+    // the main fushi.db is corrupt. Show an actionable notice (the recovery
     // ladder already ran inside the open path, so a plain Retry would loop
     // forever against the same un-openable file). Checked BEFORE the generic
     // init-error screen so the user gets the corrupt-DB guidance, not a raw

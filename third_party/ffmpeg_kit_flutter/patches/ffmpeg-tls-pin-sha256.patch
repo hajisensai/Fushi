@@ -4,7 +4,7 @@
      char *host;
      char *http_proxy;
  
-+    /* Hibiki: SHA-256 fingerprint (hex, colons optional) the peer leaf
++    /* Fushi: SHA-256 fingerprint (hex, colons optional) the peer leaf
 +     * certificate must match. When set, it authoritatively replaces the
 +     * CA/hostname checks (accepts exactly this cert, e.g. a self-signed LAN
 +     * host pinned via TOFU). Empty/NULL = unchanged upstream behaviour. */
@@ -23,7 +23,7 @@
  
  int ff_tls_open_underlying(TLSShared *c, URLContext *parent, const char *uri, AVDictionary **options);
  
-+/* Hibiki: return 0 when the DER-encoded [der_cert] SHA-256 fingerprint matches
++/* Fushi: return 0 when the DER-encoded [der_cert] SHA-256 fingerprint matches
 + * [pin] (hex, colons/whitespace ignored, case-insensitive); a negative AVERROR
 + * on mismatch or malformed input. [pin] NULL/empty returns 0 (no-op). Shared by
 + * every TLS backend so pinning behaves identically across gnutls/openssl/etc. */
@@ -43,9 +43,9 @@
  #include "libavutil/parseutils.h"
 +#include "libavutil/sha.h"
 +
-+/* Hibiki: certificate fingerprint pinning shared by all TLS backends. Mirrors
++/* Fushi: certificate fingerprint pinning shared by all TLS backends. Mirrors
 + * the app's TOFU pinning (SHA-256 over the leaf certificate DER); see
-+ * hibiki_tls_identity.dart fingerprintOf(). Backend code calls this after the
++ * fushi_tls_identity.dart fingerprintOf(). Backend code calls this after the
 + * handshake with the peer leaf certificate; a match authoritatively accepts the
 + * connection without CA/hostname checks (self-signed LAN hosts), a mismatch
 + * fails the handshake. */
@@ -123,7 +123,7 @@
      p->need_shutdown = 1;
 -    if (c->verify) {
 +    if (c->pin_sha256 && *c->pin_sha256) {
-+        /* Hibiki: certificate fingerprint pinning. When a pin is supplied it is
++        /* Fushi: certificate fingerprint pinning. When a pin is supplied it is
 +         * authoritative and replaces the CA/hostname checks below, so a
 +         * self-signed LAN host (pinned via TOFU) is accepted iff its leaf
 +         * certificate matches, and rejected otherwise. */
@@ -154,7 +154,7 @@
      }
  
 +    if (c->pin_sha256 && *c->pin_sha256) {
-+        /* Hibiki: certificate fingerprint pinning. Authoritative — replaces the
++        /* Fushi: certificate fingerprint pinning. Authoritative — replaces the
 +         * (here disabled by default) CA/hostname verification, so a self-signed
 +         * LAN host is accepted iff its leaf certificate matches the pin. */
 +        X509 *peer = SSL_get_peer_certificate(p->ssl);
@@ -196,7 +196,7 @@
              SecTrustRef peerTrust;
              SecTrustResultType trustResult;
 +            if (s->pin_sha256 && *s->pin_sha256) {
-+                /* Hibiki: certificate fingerprint pinning is authoritative and
++                /* Fushi: certificate fingerprint pinning is authoritative and
 +                 * replaces the anchor/hostname trust evaluation below, so a
 +                 * self-signed LAN host is accepted iff its leaf certificate
 +                 * matches the pin. */
@@ -232,7 +232,7 @@
          goto fail;
  
 +    if (s->pin_sha256 && *s->pin_sha256) {
-+        /* Hibiki: certificate fingerprint pinning replaces the chain validation
++        /* Fushi: certificate fingerprint pinning replaces the chain validation
 +         * we disabled via SCH_CRED_MANUAL_CRED_VALIDATION, accepting exactly the
 +         * pinned self-signed leaf certificate (and rejecting anything else). */
 +        PCCERT_CONTEXT cert_ctx = NULL;

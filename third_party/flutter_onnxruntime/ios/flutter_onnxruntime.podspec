@@ -20,7 +20,7 @@ Flutter plugin for running ONNX models with the native ONNX Runtime, supporting 
   # so it is never compiled as Objective-C.
   s.public_header_files = 'flutter_onnxruntime/Sources/flutter_onnxruntime_objc/include/**/*.h'
   s.dependency 'Flutter'
-  # HIBIKI FORK: upstream declares 16.0, but that floor comes from upstream also
+  # FUSHI FORK: upstream declares 16.0, but that floor comes from upstream also
   # shipping a Package.swift that pulls onnxruntime-swift-package-manager. This
   # fork deletes the Apple Package.swift manifests, so the only real constraint
   # is the `onnxruntime-objc` 1.23.0 pod itself, which declares ios 15.1.
@@ -32,8 +32,8 @@ Flutter plugin for running ONNX models with the native ONNX Runtime, supporting 
   # 1.23.0: last ORT without the KleidiAI conv memory regression of 1.24.x
   # (microsoft/onnxruntime#29538); bump both pins together once ORT >= 1.28 ships.
   s.dependency 'onnxruntime-objc', '1.23.0'
-  # HIBIKI FORK: `onnxruntime-c` / `onnxruntime-objc` ship static binaries, and
-  # Hibiki's Podfile uses `use_frameworks!`. Without this, CocoaPods aborts with
+  # FUSHI FORK: `onnxruntime-c` / `onnxruntime-objc` ship static binaries, and
+  # Fushi's Podfile uses `use_frameworks!`. Without this, CocoaPods aborts with
   # "target has transitive dependencies that include statically linked binaries".
   # Upstream never hit it because their example project only builds via SwiftPM
   # (there is no example Podfile in the published package at all).

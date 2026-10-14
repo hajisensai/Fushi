@@ -113,9 +113,9 @@ typedef _FushiSchemeKey = (
   bool neutralDerived,
   bool pureBlack,
 );
-final Map<_FushiSchemeKey, ColorScheme> _hibikiSchemeCache =
+final Map<_FushiSchemeKey, ColorScheme> _fushiSchemeCache =
     <_FushiSchemeKey, ColorScheme>{};
-const int _hibikiSchemeCacheLimit = 64;
+const int _fushiSchemeCacheLimit = 64;
 
 /// [surface]：用户钉死的界面底色（页面 / 卡片 / 菜单）。给了就用
 /// [deriveSurfaceRolesFrom] 从它推出整套中性角色（容器梯度、文字、描边、反色），
@@ -148,7 +148,7 @@ ColorScheme buildFushiColorScheme({
     neutralDerived,
     pureBlack,
   );
-  final ColorScheme? cached = _hibikiSchemeCache[key];
+  final ColorScheme? cached = _fushiSchemeCache[key];
   if (cached != null) return cached;
   // 中性派生：标签 / 选中项 / 菜单 / 表面这些「派生色」一律灰阶，只留主题色本身
   // 作强调（Windows 亮色主题那种观感）。两种情况走这条路：用户显式开了
@@ -190,8 +190,8 @@ ColorScheme buildFushiColorScheme({
       secondary != null ? _deriveContainer(secondary, brightness) : null;
   final Color? terContainer =
       tertiary != null ? _deriveContainer(tertiary, brightness) : null;
-  if (_hibikiSchemeCache.length >= _hibikiSchemeCacheLimit) {
-    _hibikiSchemeCache.remove(_hibikiSchemeCache.keys.first);
+  if (_fushiSchemeCache.length >= _fushiSchemeCacheLimit) {
+    _fushiSchemeCache.remove(_fushiSchemeCache.keys.first);
   }
   final SurfaceRoles? surfaceRoles =
       surface != null ? deriveSurfaceRolesFrom(surface) : null;
@@ -225,11 +225,11 @@ ColorScheme buildFushiColorScheme({
         : base.onPrimaryContainer,
   );
   if (surfaceRoles == null) {
-    return _hibikiSchemeCache[key] = pureBlack
+    return _fushiSchemeCache[key] = pureBlack
         ? applyFushiPureBlackSurfaceLadder(withRoles)
         : applyFushiSurfaceLadder(withRoles);
   }
-  return _hibikiSchemeCache[key] = withRoles.copyWith(
+  return _fushiSchemeCache[key] = withRoles.copyWith(
     surface: surfaceRoles.surface,
     surfaceDim: surfaceRoles.surfaceDim,
     surfaceBright: surfaceRoles.surfaceBright,
@@ -278,12 +278,12 @@ typedef SurfaceRoles = ({
   Color onInverseSurface,
 });
 
-/// Hibiki 的表面层级 tone 表（顺序：containerLowest / surface / containerLow /
+/// Fushi 的表面层级 tone 表（顺序：containerLowest / surface / containerLow /
 /// container / containerHigh / containerHighest）。
 ///
 /// M3 baseline 的六级容器色在亮色下是 tone 100/98/96/94/92/90——相邻只差 2
 /// tone，折合 WCAG 对比度约 **1.05**，远低于大面积色块的可辨阈值。M3 本来指望
-/// elevation 阴影与 surfaceTint 叠层承担层次，色差只作辅助；但 Hibiki 是
+/// elevation 阴影与 surfaceTint 叠层承担层次，色差只作辅助；但 Fushi 是
 /// 「扁平 + 描边」的视觉语言，全局 `elevation: 0` 且 surfaceTint 一律
 /// [Colors.transparent]，阴影和叠层都不存在——层次就只剩这 1.05 的色差。
 ///
@@ -588,7 +588,7 @@ typedef LegacyThemePreset = ({
 });
 
 /// Default seed for a brand-new / unconfigured custom theme. Matches the legacy
-/// `custom_theme_seed` default (the Hibiki brand teal); used by migration to
+/// `custom_theme_seed` default (the Fushi brand teal); used by migration to
 /// decide whether a legacy custom theme was ever actually configured.
 const int kCustomThemeDefaultSeed = 0xFF1F4959;
 

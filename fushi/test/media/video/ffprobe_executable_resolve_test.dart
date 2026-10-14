@@ -23,8 +23,8 @@ void main() {
       );
       expect(
         resolveFfprobeExecutableFrom(
-            override: '   ', bundledPath: r'C:\Hibiki\ffprobe.exe'),
-        r'C:\Hibiki\ffprobe.exe',
+            override: '   ', bundledPath: r'C:\Fushi\ffprobe.exe'),
+        r'C:\Fushi\ffprobe.exe',
       );
     });
 
@@ -45,12 +45,12 @@ void main() {
       final List<String> calls = <String>[];
       final FfmpegRunResult result = await runCliFfprobeForTesting(
         override: null,
-        bundledPath: r'C:\App\Hibiki\ffprobe.exe',
+        bundledPath: r'C:\App\Fushi\ffprobe.exe',
         args: <String>['-show_format', 'x.m4b'],
         timeout: const Duration(seconds: 1),
         runner: (String executable, List<String> args, Duration timeout) async {
           calls.add(executable);
-          if (executable.endsWith(r'Hibiki\ffprobe.exe')) {
+          if (executable.endsWith(r'Fushi\ffprobe.exe')) {
             throw ProcessException(executable, args, 'launch failed', 193);
           }
           return const FfmpegRunResult(
@@ -62,7 +62,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.output, contains('"title":"ok"'));
-      expect(calls, <String>[r'C:\App\Hibiki\ffprobe.exe', 'ffprobe']);
+      expect(calls, <String>[r'C:\App\Fushi\ffprobe.exe', 'ffprobe']);
       expect(result.executable, 'ffprobe');
       expect(result.fallbackReason, contains('launch failed'));
     });
@@ -92,7 +92,7 @@ void main() {
       await expectLater(
         runCliFfprobeForTesting(
           override: r'D:\Custom\ffprobe.exe',
-          bundledPath: r'C:\App\Hibiki\ffprobe.exe',
+          bundledPath: r'C:\App\Fushi\ffprobe.exe',
           args: <String>['-show_format', 'x.m4b'],
           timeout: const Duration(seconds: 1),
           runner:

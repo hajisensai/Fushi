@@ -234,7 +234,7 @@ void main() {
 
     // ② 复用 backup_service 的字体 JSON 遍历器时**必须**注入 rewritePath —— 它们默认
     //    走裸 rebasePath。这正是 BUG-1174 被幂等测试抓到的那条旁路：新根落在旧根内部
-    //    时字体路径被改写两遍，产出 .../Hibiki/data/Hibiki/data/custom_fonts/...。
+    //    时字体路径被改写两遍，产出 .../Fushi/data/Fushi/data/custom_fonts/...。
     final int fontCalls =
         RegExp(r'rebaseFontCatalogJson\(').allMatches(src).length +
             RegExp(r'rebaseFontListJson\(').allMatches(src).length;

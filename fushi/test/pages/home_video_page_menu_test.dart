@@ -134,7 +134,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir = Directory.systemTemp.createTempSync(
-      'hibiki_home_video_pp',
+      'fushi_home_video_pp',
     );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -174,9 +174,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_home_video_store');
+    storeDir = Directory.systemTemp.createTempSync('fushi_home_video_store');
     externalVideoDir = Directory.systemTemp.createTempSync(
-      'hibiki_home_video_external',
+      'fushi_home_video_external',
     );
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();

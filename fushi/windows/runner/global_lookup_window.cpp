@@ -455,7 +455,7 @@ std::wstring OverlayUserDataFolder(const std::wstring& leaf) {
 // 的行序怪癖（游戏 Layer 的 pitch 可能为负，那是注入侧搬运时的事）。
 //
 // [max_width]/[max_height] 是硬裁剪上界（不是缩放）：超出就按左上角切，并置 [clamped]。
-// 缩放会让卡片文字糊掉，而卡片的价值就是"与 Hibiki 自身像素一致"——宁可切也不缩。
+// 缩放会让卡片文字糊掉，而卡片的价值就是"与 Fushi 自身像素一致"——宁可切也不缩。
 // 全程 HRESULT 校验、零异常（runner 以 _HAS_EXCEPTIONS=0 编译）。
 bool DecodeCaptureStreamToStraightBgra(IStream* stream, uint32_t max_width,
                                        uint32_t max_height,

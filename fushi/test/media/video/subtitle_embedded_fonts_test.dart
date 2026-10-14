@@ -138,7 +138,7 @@ void main() {
   group('SubtitleEmbeddedFontLoader missing-ffprobe degrade (BUG-829)', () {
     test('缺 ffprobe（ProcessException）时降级空集且不刷错误日志', () async {
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_embfont_');
+          Directory.systemTemp.createTempSync('fushi_embfont_');
       addTearDown(() {
         try {
           dir.deleteSync(recursive: true);

@@ -24,7 +24,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 ///   *全部* Drift prefs 逐行复制进快照，而备份导出只 DELETE `preferences`。
 ///   默认导出类别包含 `profiles`（见 `defaultBackupExportCategories()`），所以
 ///   只要用户切换过一次 Profile，`preferences` 那份删了也白删——凭据以
-///   `category='pref'` 行原样躺在导出的 `hibiki.db` 里。
+///   `category='pref'` 行原样躺在导出的 `fushi.db` 里。
 ///
 /// 所以判定必须收敛成一个谓词，由所有出境通道共用。形状兜底不再限定 `sync_`
 /// 前缀：一个 key 只要长得像凭据，无论属于哪个子系统都不出境。

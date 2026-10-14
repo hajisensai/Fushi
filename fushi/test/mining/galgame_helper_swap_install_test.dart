@@ -13,7 +13,7 @@ void main() {
   late Directory target;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki_swap_test_');
+    root = await Directory.systemTemp.createTemp('fushi_swap_test_');
     staging = Directory(p.join(root.path, 'staging'))..createSync();
     target = Directory(p.join(root.path, 'target'))..createSync();
   });

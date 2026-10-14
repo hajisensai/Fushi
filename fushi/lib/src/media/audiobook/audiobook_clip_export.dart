@@ -406,7 +406,7 @@ AudioPlaybackRange? audiobookClipPlanRange({
 // 编码器**全平台统一** `libx264`（[_clipVideoCodecArgs]，TODO-2357），无平台分支：
 // - 桌面 ffmpeg-min 自 `e039cf760`（2026-07-07，TODO-1257）编入 `libx264` + `mp4` muxer。
 // - 移动端自编 ffmpeg-kit 自 TODO-2357 起同样编入 `libx264`（`--enable-gpl
-//   --enable-x264`，产物许可 LGPLv3 → GPLv3，与 Hibiki 自身 GPL-3.0 一致；桌面
+//   --enable-x264`，产物许可 LGPLv3 → GPLv3，与 Fushi 自身 GPL-3.0 一致；桌面
 //   ffmpeg-min 早已同样处理，见 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的许可说明）。
 //   AAR 实证：`libavcodec.so` 含 `libx264` 精确串 + `x264 - core` 版本串，configure
 //   串含 `--enable-gpl --enable-libx264`，且 `--enable-openssl` / `tls_pin_sha256`
@@ -551,7 +551,7 @@ List<String> buildFfmpegImageAudioToVideoArgs({
 /// 严格的硬件解码器有权拒绝——而 ffmpeg 仍 exit 0 产出文件，形成**静默产出打不开的
 /// 文件**（与更早的 mjpeg 同型失败）。
 ///
-/// TODO-2357 根治：移动端 ffmpeg-kit 重编时加 `--enable-gpl --enable-x264`（Hibiki 自身
+/// TODO-2357 根治：移动端 ffmpeg-kit 重编时加 `--enable-gpl --enable-x264`（Fushi 自身
 /// 即 GPL-3.0，与 x264 许可一致；`android.sh`/`ios.sh` 会写入 LICENSE.GPLv3），
 /// 两端遂共用同一个 `libx264`。**特殊情况就此消失**：不再有 `h264` 开关、不再有按平台
 /// 分叉的参数表、不再有"能编码但可能解不了"的规格盲区。

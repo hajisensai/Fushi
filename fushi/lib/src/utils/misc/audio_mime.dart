@@ -13,7 +13,7 @@
 /// （RFC 7587）是 RTP 载荷格式的类型，不用于文件。浏览器 `<audio>` 对
 /// `data:audio/ogg` 的解码支持也远好于非标的 audio/opus。
 ///
-/// 与 hibiki_core 通用表 `kMimeTypeByExtension`（mime_types.dart）的关系：
+/// 与 fushi_core 通用表 `kMimeTypeByExtension`（mime_types.dart）的关系：
 /// 那张是「文件下发/上传」的通用推断（`.mp4`→video/mp4、`.aac`→audio/aac、
 /// `.webm`→video/webm）；本表是**单词音频语境**的刻意收窄——查词音频解析出的
 /// `.mp4/.aac` 一定是音频轨（audio/mp4 让 `<audio>` 选对解码器）、`.webm` 同理

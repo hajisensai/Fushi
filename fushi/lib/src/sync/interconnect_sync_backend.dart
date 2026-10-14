@@ -36,7 +36,7 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
 
-/// Probes whether a single Hibiki server URL is reachable with [token].
+/// Probes whether a single Fushi server URL is reachable with [token].
 /// Returns true if reachable, false on connectivity failure/timeout, and
 /// throws [SyncAuthError] if the server rejects the token.
 typedef FushiProbe = Future<bool> Function(String url, String token);
@@ -156,7 +156,7 @@ String interconnectRequestTimeoutMessage(
 ) =>
     'interconnect request timed out after $limit: $method ${uri.path}';
 
-/// Sync backend for connecting to another Hibiki instance's embedded server.
+/// Sync backend for connecting to another Fushi instance's embedded server.
 ///
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
 /// credentials in dedicated keys to avoid collision with the user's
@@ -576,7 +576,7 @@ class InterconnectSyncBackend extends SyncBackend
   // ── Metadata sync ─────────────────────────────────────────────────
 
   // get{Progress,Stats,AudioBook}File 三件套由 SyncBackendFileTrioMixin 提供；
-  // 这里只给出 hibiki client 的下载原语（size-capped GET + jsonDecode，见
+  // 这里只给出互联 client 的下载原语（size-capped GET + jsonDecode，见
   // WebDavOps.downloadJson）。读取不经 _ensureResolved（沿用原实现，直接用 _ops!）。
   @override
   Future<Object?> readJsonById(String fileId) => _ops!.downloadJson(fileId);

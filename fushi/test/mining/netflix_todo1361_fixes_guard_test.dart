@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// browser_extension_dict_media_mirror_guard_test.dart; here we lock the
 /// behaviour presence so a regression that silently drops any fix turns red.
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',

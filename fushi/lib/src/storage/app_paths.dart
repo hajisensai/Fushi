@@ -20,7 +20,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 /// [AppPaths] 把三个根的解析收敛到这里：
 ///   - [documentsRoot] —— 内容/书库根。EPUB 正文、有声书音频、视频封面/字幕、词典资源、
 ///     缩略图等用户数据都派生自它。默认（未配置自定义数据根）落平台 Documents 下的
-///     Hibiki 专属容器 `<Documents>/Hibiki/data`；**老安装**仍锚定历史扁平布局
+///     Fushi 专属容器 `<Documents>/Fushi/data`（存量 nested 安装仍是 `Hibiki/data`）；
+///     **老安装**仍锚定历史扁平布局
 ///     `<Documents>` 本身（见 [_resolveDefaultDocumentsRoot]）。
 ///   - [supportRoot] —— 数据库根（`getApplicationSupportDirectory`，
 ///     Windows = `%APPDATA%\<pkg>`）。`fushi.db` 与 per-source local-audio DB 落这里。
@@ -164,14 +165,15 @@ class AppPaths {
   /// 目录」漂移，同一台机器两次启动就可能解析出两个不同的内容根 = 用户书库凭空消失。
   static const String documentsLayoutPrefKey = 'documents_layout';
 
-  /// 历史扁平布局：documents 根 = 平台 `Documents` **本身**，16 个 Hibiki 子目录直接摊在
+  /// 历史扁平布局：documents 根 = 平台 `Documents` **本身**，16 个 Fushi 子目录直接摊在
   /// 用户文档根下。老安装锚定于此（零迁移，见 [_resolveDefaultDocumentsRoot]）。
   static const String documentsLayoutFlat = 'flat';
 
-  /// 当前默认布局：documents 根 = `<Documents>/Hibiki/data`（Hibiki 专属容器）。
+  /// 当前默认布局：documents 根 = `<Documents>/Fushi/data`（Fushi 专属容器；存量 nested
+/// 安装的容器名仍是 `Hibiki`，见 [documentsContainerPrefKey]）。
   ///
   /// BUG-1188：迁移把数据归一化到默认位置时，提交阶段必须把这个锚点写成本值——否则下次
-  /// 启动仍按 `flat` 把 documents 根解析回共享 `Documents`，而数据已经在 `Hibiki/data` 里。
+  /// 启动仍按 `flat` 把 documents 根解析回共享 `Documents`，而数据已经在 `<容器>/data` 里。
   static const String documentsLayoutNested = 'nested';
 
   /// [documentsLayoutNested] 下平台 Documents 到 documents 根的相对路径段。
@@ -306,8 +308,8 @@ class AppPaths {
   ///
   /// 历史上这里直接返回平台 `Documents`，于是 [fushiOwnedDocumentsEntries] 那 16 个目录
   /// 全摊在用户文档根下（TODO-935 E0 收敛十几处 `getApplicationDocumentsDirectory()` 时
-  /// 刻意保持零迁移，把「默认根 = 共享用户目录」固化成了常态）。现在默认改为 Hibiki 专属
-  /// 容器 `<Documents>/Hibiki/data`；**老安装保持扁平布局不动**（见
+  /// 刻意保持零迁移，把「默认根 = 共享用户目录」固化成了常态）。现在默认改为 Fushi 专属
+  /// 容器 `<Documents>/Fushi/data`（存量 nested 安装为 `Hibiki/data`）；**老安装保持扁平布局不动**（见
   /// [_useLegacyFlatDocumentsRoot]），一个字节都不搬。
   ///
   /// 老用户要收进子目录，走设置里的「数据存储位置」（[DataRootMigrator] 会连 DB 里的绝对
@@ -319,8 +321,8 @@ class AppPaths {
     return defaultLocationDocumentsRoot();
   }
 
-  /// BUG-1188：**「默认位置」这个概念本身**的 documents 根 = `<Documents>/Hibiki/data`，
-  /// 与本机布局锚点无关。
+  /// BUG-1188：**「默认位置」这个概念本身**的 documents 根 = `<Documents>/<容器>/data`
+  /// （新装 `Fushi`、存量 `Hibiki`，见 [defaultDocumentsChildSegments]），与本机布局锚点无关。
   ///
   /// [_resolveDefaultDocumentsRoot] 会因老安装锚定 [documentsLayoutFlat] 而返回平台
   /// `Documents`；而「用户在目录选择器里挑的就是默认位置吗」这个判断问的是**全新安装会落
@@ -500,12 +502,12 @@ class AppPaths {
         Directory(p.join(dataRootPath, dataRootSupportChild)),
       );
 
-  /// TODO-1226：documents 根顶层**属于 Hibiki 的目录名全集**（数据根迁移白名单）。
+  /// TODO-1226：documents 根顶层**属于 Fushi 的目录名全集**（数据根迁移白名单）。
   ///
   /// **老安装（[documentsLayoutFlat]）** 的 documents 根 = 整个用户 `Documents`（共享目录，含
   /// 用户自己的文件和 shell junction）。迁移引擎对共享根**只搬这份白名单里的顶层项**，
   /// 绝不整树搬移 / 整树删除用户 `Documents`。BUG-1115 之后新装走
-  /// `<Documents>/Hibiki/data`（Hibiki 专属根，迁移走整树语义），白名单对它不生效——但
+  /// `<Documents>/Fushi/data`（Fushi 专属根，迁移走整树语义），白名单对它不生效——但
   /// 老安装可能永远停在扁平布局，故白名单及其守卫**长期有效**，新增
   /// `<documents>/<child>` 派生点仍必须收进来。每一项都必须对应仓库里一个真实的派生点：
   ///
@@ -583,7 +585,7 @@ class AppPaths {
   /// 一般规则是「新数据根不能位于旧数据目录内部」（自我嵌套 → 边搬边把目标搬进自己）。
   /// 但共享根是个例外：那里的迁移是**白名单选择性搬移**——只有
   /// [fushiOwnedDocumentsEntries] 里的顶层项会被搬走，别的顶层项一律不碰。所以只要新根
-  /// 的顶层段不是白名单里的名字，它在搬移中就是个旁观者，`Documents\Hibiki` 这种「把散
+  /// 的顶层段不是白名单里的名字，它在搬移中就是个旁观者，`Documents\Fushi` 这种「把散
   /// 落的 16 个目录收进一个自己的子目录」的迁移是安全的，不该被一刀切拒绝。
   ///
   /// 顶层段比较**大小写不敏感**：`p.canonicalize` 在 Windows 上会把路径转小写，直接与

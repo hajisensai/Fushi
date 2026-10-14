@@ -259,7 +259,7 @@ jobs:
         keytool -genkeypair -v -keystore fushi-release.jks \
           -storepass ci_throwaway -keypass ci_throwaway -alias ci \
           -keyalg RSA -keysize 2048 -validity 1 \
-          -dname "CN=Hibiki CI, O=CI, C=US"
+          -dname "CN=Fushi CI, O=CI, C=US"
         cat > key.properties <<EOF
         storePassword=ci_throwaway
         keyPassword=ci_throwaway

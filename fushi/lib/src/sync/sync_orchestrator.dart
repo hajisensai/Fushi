@@ -578,7 +578,7 @@ class SyncOrchestrator {
 
   File _tmpFile(String suffix) {
     _tmpCounter++;
-    return File(p.join(_tempDir.path, 'hibiki_sync_$_tmpCounter$suffix'));
+    return File(p.join(_tempDir.path, 'fushi_sync_$_tmpCounter$suffix'));
   }
 
   /// Runs the full sweep. File-content switches are upload-only: remote-only
@@ -632,7 +632,7 @@ class SyncOrchestrator {
     //
     // 注意：音频文件（有声书 .m4a/.mp3 等）在 SyncManager 里也被 syncContent 门控
     // （_exportContentIfMissing / _importContentIfMissing 同时处理 epub + 音频）。
-    // 互联下有声书文件走 syncAudioBookFiles（hibikiaudio 包路径），不走此处，
+    // 互联下有声书文件走 syncAudioBookFiles（fushiaudio 包路径），不走此处，
     // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
     // 音频文件 live 同步，请参考本方法的分流模式扩展。
     final bool managerSyncContent = isInterconnect ? false : syncContent;
@@ -1629,7 +1629,7 @@ class SyncOrchestrator {
           itemIndex: i, itemTotal: total, title: book.title);
       // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
       // title, so an empty key means ensureBookFolder would collapse onto the
-      // sync root and scatter the .fushiaudio package into hibiki-data/ instead
+      // sync root and scatter the .fushiaudio package into fushi-data/ instead
       // of the per-book folder. (requireBookFolderName is the precise backstop.)
       if (book.bookKey.isEmpty) continue;
       File? tmp;
@@ -1744,7 +1744,7 @@ Future<bool> importRemoteBookFolder({
   tempDir.createSync(recursive: true);
   final File tmp = File(p.join(
     tempDir.path,
-    'hibiki_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
+    'fushi_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
   ));
   try {
     await backend.getAsset(epub.id, tmp,

@@ -37,7 +37,7 @@ data class TimeStamp(
 /**
  * The instance that contains the data needed to watch a video.
  *
- * Hibiki host ABI: this is the extensions-lib 16 shape (the data-class primary
+ * Fushi host ABI: this is the extensions-lib 16 shape (the data-class primary
  * constructor, `videoTitle` / `resolution` / `preferred` / `initialized`), which is
  * what the yuzono / Anikku ecosystem and the Aniyomi main line compile against,
  * **plus** the lib-14 surface as a compatibility layer: the `(url, quality, videoUrl,

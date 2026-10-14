@@ -294,15 +294,15 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   Widget _buildSourceRowContent(FushiDesignTokens tokens, int index) {
     final AudioSourceConfig source = _sources[index];
-    final bool isHibiki = source.kind == AudioSourceKind.fushiRemote;
+    final bool isFushiRemote = source.kind == AudioSourceKind.fushiRemote;
     final bool isLocal = source.kind == AudioSourceKind.localAudio;
     final bool isRemoteUrl = source.kind == AudioSourceKind.remoteAudio;
     final bool isEditingThis =
         _editingSource != null && _editingSource == source;
     final String title =
-        isHibiki ? t.audio_source_fushi_interconnect : source.displayLabel;
+        isFushiRemote ? t.audio_source_fushi_interconnect : source.displayLabel;
     final bool loopbackWarn = source.pointsAtLoopbackHost;
-    final String baseSubtitle = isHibiki
+    final String baseSubtitle = isFushiRemote
         ? t.remote_audio_source
         : (isLocal ? (source.path ?? '') : (source.url ?? ''));
     // 换机后指向本机回环地址的远端音频源本机通常无服务→静默失败。附一行可见
@@ -380,7 +380,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             icon: FushiIcons.delete,
             size: 18,
             tooltip: t.dialog_delete,
-            enabled: !isHibiki,
+            enabled: !isFushiRemote,
             padding: EdgeInsets.all(tokens.spacing.gap / 2),
             onTap: () => setState(() {
               _sources.removeAt(index);
@@ -416,7 +416,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
           suffixIcon: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 编辑态下不再暴露「加入 Hibiki 互联源」——那是新增动作，与当前正在改的
+              // 编辑态下不再暴露「加入 Fushi 互联源」——那是新增动作，与当前正在改的
               // 那一行无关，混在一起只会让 ✓ 的语义变模糊。
               if (!editing &&
                   !_sources.any((AudioSourceConfig s) =>
@@ -591,13 +591,13 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     setState(() {
       // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
       _cancelEdit();
-      final bool hadHibiki = _sources
+      final bool hadFushiRemote = _sources
           .any((AudioSourceConfig s) => s.kind == AudioSourceKind.fushiRemote);
       final List<AudioSourceConfig> locals = _sources
           .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio)
           .toList();
       _sources = <AudioSourceConfig>[
-        if (hadHibiki) AudioSourceConfig.fushiRemote(),
+        if (hadFushiRemote) AudioSourceConfig.fushiRemote(),
         // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
         AudioSourceConfig.remoteAudio(
           url: AppModel.ankiLocalAudioUrl,

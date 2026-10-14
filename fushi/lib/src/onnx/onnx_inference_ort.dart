@@ -5,7 +5,7 @@
 ///
 /// 历史：这套实现最初以 `Ocr*` 前缀住在 `lib/src/ocr/ocr_inference_ort.dart`，
 /// 有声书 ASR 接入后抬到本文件成为唯一实现；OCR 层只剩薄封装
-/// （manga-ocr 导出名兼容的输入名对齐 + `hibiki.ocr` 日志通道）。
+/// （manga-ocr 导出名兼容的输入名对齐 + `fushi.ocr` 日志通道）。
 library;
 
 import 'dart:developer' as developer;
@@ -14,18 +14,18 @@ import 'dart:typed_data';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter/services.dart';
 
-// `kOnnxLogName` 两边都有：本仓这份是 'hibiki.onnx' 日志通道，明确 hide 掉
+// `kOnnxLogName` 两边都有：本仓这份是 'fushi.onnx' 日志通道，明确 hide 掉
 // 包里那份，别靠「本地声明遮蔽 import」这条隐式规则。
 import 'package:fushi_asr_core/asr_core.dart' hide kOnnxLogName;
 import 'package:fushi_engine/ocr/ocr_tensor_handles.dart'
     show OcrHandleRunResult, OcrHandleSession, OcrTensorHandle;
 /// 共享层默认的 `dart:developer` 日志通道名。子系统可经 [logName] 参数换成自己
-/// 的通道（OCR 用 `hibiki.ocr`），日志读者按通道过滤即可分清是谁在建会话。
+/// 的通道（OCR 用 `fushi.ocr`），日志读者按通道过滤即可分清是谁在建会话。
 ///
 /// 用 `dart:developer` 而不是 `debugPrint`：整卷 OCR / 整本转录跑在
 /// `Isolate.spawn` 出来的后台 isolate 里，那里没有 Flutter binding，`debugPrint`
 /// 的节流实现依赖 binding 的 Timer 调度；`developer.log` 在任何 isolate 都可直接用。
-const String kOnnxLogName = 'hibiki.onnx';
+const String kOnnxLogName = 'fushi.onnx';
 
 OrtProvider _toOrtProvider(OnnxExecutionProvider provider) {
   switch (provider) {

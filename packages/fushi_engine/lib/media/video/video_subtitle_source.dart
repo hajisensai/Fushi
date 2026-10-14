@@ -1396,7 +1396,7 @@ Directory embeddedSubtitleCacheDir(String videoPath) {
   }
   final String key = embeddedSubtitleCacheKey(base, size, mtimeMs);
   return Directory(
-    p.join(Directory.systemTemp.path, 'hibiki_vsub_cache', key),
+    p.join(Directory.systemTemp.path, 'fushi_vsub_cache', key),
   );
 }
 

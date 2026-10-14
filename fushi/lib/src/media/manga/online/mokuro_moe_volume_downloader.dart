@@ -85,7 +85,7 @@ class MokuroMoeVolumeDownloader {
     this.progressByteInterval = kMokuroMoeProgressInterval,
   })  : _createClient = createClient ?? _defaultClient,
         _stagingRoot = stagingRoot ??
-            Directory(p.join(Directory.systemTemp.path, 'hibiki_mokuro_moe'));
+            Directory(p.join(Directory.systemTemp.path, 'fushi_mokuro_moe'));
 
   final MokuroMoeClient client;
   final HttpClient Function() _createClient;

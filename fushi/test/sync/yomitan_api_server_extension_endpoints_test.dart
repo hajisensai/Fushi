@@ -244,7 +244,7 @@ void main() {
       expect(j['popupJson'], contains('走る'));
     });
 
-    test('/api/extension/status identifies Hibiki on the configured port',
+    test('/api/extension/status identifies Fushi on the configured port',
         () async {
       await startServer(apiKey: 'k123');
       final HttpClientResponse resp = await _post(

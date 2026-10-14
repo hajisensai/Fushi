@@ -114,7 +114,7 @@ Future<AudiobookPlayerController> _loadPlayingController() async {
   _installHangingAudioPlatform();
   final AudiobookPlayerController controller = AudiobookPlayerController();
   final File audioFile = File(
-    '${Directory.systemTemp.path}/hibiki-reentrant-1037.mp3',
+    '${Directory.systemTemp.path}/fushi-reentrant-1037.mp3',
   );
   if (!audioFile.existsSync()) {
     audioFile.writeAsBytesSync(const <int>[0]);

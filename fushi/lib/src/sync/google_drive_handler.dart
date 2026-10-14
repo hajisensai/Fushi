@@ -449,7 +449,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   /// 便宜。字段只取 id/name/parents/mimeType——不要内容、不要时间戳，因为同步方向本来
   /// 就只看文件名（progress 的时间戳与分数编码在名字里）。
   Future<RemoteListingSnapshot?> snapshotListing(String rootFolder) async {
-    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Hibiki 自己的同步
+    // 只在隐藏的 App Data 空间启用。那个空间按 app 隔离，里面除了 Fushi 自己的同步
     // 数据什么都没有，所以「列出空间里的全部文件」等价于「列出同步根下的全部文件」。
     //
     // 「与 Hoshi/ッツ 共享」开关打开时空间是用户**可见的 My Drive**（完整 drive

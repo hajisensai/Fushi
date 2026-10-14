@@ -487,7 +487,7 @@ void main() {
       // download must surface an error (caught upstream -> SnackBar) rather
       // than being fed to Process.start (and then exit(0) vanishing the app).
       final Directory tmp =
-          await Directory.systemTemp.createTemp('hibiki-update-test');
+          await Directory.systemTemp.createTemp('fushi-update-test');
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });
@@ -520,7 +520,7 @@ void main() {
       // the two tests above race the 30s default test timeout on a busy box.
       // Validation must come first, so diagnostics are never collected at all.
       final Directory tmp =
-          await Directory.systemTemp.createTemp('hibiki-update-nodiag');
+          await Directory.systemTemp.createTemp('fushi-update-nodiag');
       addTearDown(() async {
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       });

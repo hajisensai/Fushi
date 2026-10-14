@@ -34,7 +34,7 @@ void main() {
     );
   });
 
-  test('iOS SceneDelegate preserves Hibiki URL callbacks under UIScene', () {
+  test('iOS SceneDelegate preserves Fushi URL callbacks under UIScene', () {
     final File sceneDelegate = File('ios/Runner/SceneDelegate.swift');
     expect(sceneDelegate.existsSync(), isTrue);
     final String src = sceneDelegate.readAsStringSync();

@@ -216,7 +216,7 @@ void main() {
     late _FixtureServer server;
 
     setUp(() async {
-      tmp = await Directory.systemTemp.createTemp('hibiki-anime-dl-');
+      tmp = await Directory.systemTemp.createTemp('fushi-anime-dl-');
       server = await _FixtureServer.start();
     });
 

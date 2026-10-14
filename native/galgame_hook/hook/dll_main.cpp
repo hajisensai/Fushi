@@ -397,7 +397,7 @@ void WriteMarkerFile(DWORD pid) {
   if (f == INVALID_HANDLE_VALUE) {
     return;
   }
-  const char msg[] = "hibiki voice hook attached\n";
+  const char msg[] = "fushi voice hook attached\n";
   DWORD written = 0;
   WriteFile(f, msg, sizeof(msg) - 1, &written, nullptr);
   CloseHandle(f);

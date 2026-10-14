@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1012: Hibiki 浏览器扩展的取词引擎 selection.js `getCaretRange` 只在顶层
+/// BUG-1012: Fushi 浏览器扩展的取词引擎 selection.js `getCaretRange` 只在顶层
 /// `document` 上调用 `caretPositionFromPoint` / `elementFromPoint`，不穿透 open
 /// Shadow DOM。B 站新版评论区用 Web Component（<bili-comments>，shadow root 渲染），
 /// 这些 API 命中的是 shadow 宿主元素（元素节点）而非内部文字节点，`getCharacterAtPoint`

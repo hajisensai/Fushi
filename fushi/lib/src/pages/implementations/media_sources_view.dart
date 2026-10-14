@@ -110,7 +110,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// null = 仍在加载；非 null = 已加载（可能为空列表）。
   List<SourceLibraryRow>? _rows;
 
-  /// Hibiki 互联不是 `media_sources` 扫描根，但它确实是**本机之外的同一批本地
+  /// Fushi 互联不是 `media_sources` 扫描根，但它确实是**本机之外的同一批本地
   /// 文件**（局域网里另一台自己的设备），所以与扫描根同列。
   ///
   /// 🔴 别再往这里加「网站」型来源（BUG-1431）：mokuro.moe 曾挂在这一节，用户口径

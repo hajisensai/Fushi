@@ -337,9 +337,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           )),
         ],
         // 默认标签区（TODO-135）：三个「自动给卡片加什么标签」的开关并到一处，
-        // 且无条件显示——它们写的都是 pref（hibiki/分类写 AnkiSettings，书名写
+        // 且无条件显示——它们写的都是 pref（fushi/分类写 AnkiSettings，书名写
         // AppModel.autoAddBookNameToTags），与 Anki 是否已连接无关，所以不再藏在
-        // `uiState.isConfigured` 门控里。方案 A 的取舍：未配置 Anki 时 hibiki/分类
+        // `uiState.isConfigured` 门控里。方案 A 的取舍：未配置 Anki 时 fushi/分类
         // 两开关也会露出（用户已接受），换来三个语义同类的开关视觉聚在一起。
         // 标题/各开关 key 沿用 TODO-115/117 现有 i18n 与覆盖率 accounting 键。
         enter('anki_section_tags', AdaptiveSettingsSection(
@@ -530,7 +530,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             icon: FushiIcons.fontSize,
             showIcon: true,
             selected: settings.lapisFontScalePercent,
-            // 档位表来自 hibiki_anki 的单一真相源：从备份恢复时
+            // 档位表来自 fushi_anki 的单一真相源：从备份恢复时
             // splitLapisUserSectionBody 会优先反解出这些档位，选择器与
             // 反解各写一份迟早漂成「显示了一个档位表里没有的值」。
             options: <AdaptiveSettingsPickerOption<int>>[
@@ -1386,7 +1386,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 渲染用，编辑器据此自我门控（卡型里没有的字段一律不显示）。
     final List<String> localNoteTypeFields =
         settings.selectedNoteType?.fields ?? const <String>[];
-    // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段），编辑器里
+    // 预览基线取用户 Anki 里现有的 Lapis CSS（剥掉 Fushi 托管区段），编辑器里
     // 看到的才是他自己那张卡。读不到就退回内置副本——只影响预览观感，不影响写入。
     // 「制卡到已配对设备」开启时这条读取走互联，返回的是**主机端**的 Lapis。
     String? baseCss;
@@ -1506,7 +1506,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     try {
       final LapisRestoreFactoryResult result = await vm.lapisTemplateService
           .restoreFactoryDefaults();
-      // 恢复会清空 Hibiki 侧客制化（字号/CSS/自定义区域），UI 必须跟着刷新，
+      // 恢复会清空 Fushi 侧客制化（字号/CSS/自定义区域），UI 必须跟着刷新，
       // 否则设置页还显示恢复前的字号、编辑器打开还是旧区域。
       await vm.refreshSettingsFromStore();
       final String message = switch (result) {

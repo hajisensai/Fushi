@@ -261,9 +261,9 @@ Future<DesktopOAuthResult> runDesktopOAuthLoopback({
 String _resultPage({required bool success, String? error}) {
   final title = success ? 'Fushi — Sign-in complete' : 'Fushi — Sign-in failed';
   final body = success
-      ? 'You can close this tab and return to Hibiki.'
+      ? 'You can close this tab and return to Fushi.'
       : 'Authorization failed${error != null ? ': $error' : ''}. '
-          'You can close this tab and try again in Hibiki.';
+          'You can close this tab and try again in Fushi.';
   return '<!DOCTYPE html><html><head><meta charset="utf-8">'
       '<title>$title</title></head>'
       '<body style="font-family:sans-serif;text-align:center;padding:48px">'

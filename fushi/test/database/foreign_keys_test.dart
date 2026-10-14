@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 Future<FushiDatabase> _openRealDb() async {
-  final dir = await Directory.systemTemp.createTemp('hibiki_fk_test_');
+  final dir = await Directory.systemTemp.createTemp('fushi_fk_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });

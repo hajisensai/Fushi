@@ -13,7 +13,7 @@ Future<FushiDatabase> _openDb() async {
 
 /// FK cascade（foreign_keys=ON）只在真实库 PRAGMA 下生效，与 tags_test 一致。
 Future<FushiDatabase> _openRealDb() async {
-  final dir = await Directory.systemTemp.createTemp('hibiki_video_tags_test_');
+  final dir = await Directory.systemTemp.createTemp('fushi_video_tags_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });

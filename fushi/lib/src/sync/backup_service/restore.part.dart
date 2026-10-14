@@ -340,7 +340,7 @@ class BackupRestoreService {
     }
     if (!hasSqliteHeader) {
       // A few low-level restore callers intentionally swap opaque fixture
-      // bytes rather than a Hibiki database. Such a snapshot cannot contain
+      // bytes rather than a Fushi database. Such a snapshot cannot contain
       // device-local rows, so there is nothing to retry or retain.
       debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak is not a SQLite database; no local tables to '
@@ -949,7 +949,7 @@ class BackupRestoreService {
       }
 
       // 2c) Restore local-audio databases into the support directory. These are
-      //     individual files sharing the directory with hibiki.db, so they are
+      //     individual files sharing the directory with fushi.db, so they are
       //     extracted file-by-file (never the destructive tree swap). When the
       //     backup carries no localAudio/ prefix the existing local-audio DBs
       //     are left untouched (same preserve-on-absent contract as the trees).
@@ -1770,10 +1770,10 @@ class BackupRestoreService {
 
   /// Extracts the packed local-audio databases (`localAudio/<file>`) into the
   /// support directory [dbDirectory]. Unlike the content TREES these are
-  /// individual files SHARING the directory with `hibiki.db`, so they are
+  /// individual files SHARING the directory with `fushi.db`, so they are
   /// written file-by-file rather than via the destructive tree swap. Only file
   /// names matching [_localAudioFileName] are accepted (defense in depth: an
-  /// archive entry naming `hibiki.db` under `localAudio/` is rejected).
+  /// archive entry naming `fushi.db` under `localAudio/` is rejected).
   ///
   /// When the backup carries no `localAudio/` entries this is a no-op, so an
   /// audio-less backup leaves this device's local-audio DBs intact (the same
@@ -1797,7 +1797,7 @@ class BackupRestoreService {
       final String name = rawName.substring(_localAudioPrefix.length + 1);
       // Reject nested paths / traversal / non-local-audio names: these files
       // must land flat in the support dir and never escape it or clobber
-      // hibiki.db.
+      // fushi.db.
       if (name.isEmpty ||
           name.contains('/') ||
           !_localAudioFileName.hasMatch(name)) {
@@ -2101,7 +2101,7 @@ class BackupRestoreService {
   }
 
   /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
-  /// whole entry. Hibiki backups are written STORE (see
+  /// whole entry. Fushi backups are written STORE (see
   /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
   /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
   /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in

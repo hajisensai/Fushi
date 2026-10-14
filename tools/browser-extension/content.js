@@ -1898,7 +1898,7 @@ function fushiEnsureContainer() {
     // BUG-688：shadow 宿主元素只负责 fixed 定位 + 层级；弹窗内容全在其 shadow root 内，
     // 宿主页 CSS 无法穿透 → 与 in-app 弹窗渲染一致（不再被宿主站点 line-height/ruby 等污染）。
     fushiHost = document.createElement('div');
-    fushiHost.id = 'hibiki-popup-host';
+    fushiHost.id = 'fushi-popup-host';
     // BUG-688：尺寸盒 + zoom 落在 host（视口坐标系，确定宽度），弹窗内容尺寸不再受
     // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 fushiRender
     // 按查词响应下发的 --fushi-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
@@ -3046,7 +3046,7 @@ function fushiMirrorPopupSize(width, height) {
 // 尺寸盒**（width/maxWidth/maxHeight/zoom），保留当前落点计算出来的 maxHeight。
 // 查词弹窗外观（样式在 content-css-overlay.css）。风格 = 扩展设置 extensionStyle：
 // · 液态玻璃（@supports 段，取不到 backdrop-filter 的内核整段不生效、卡片保持不透明）：弹窗根 c 挂
-//   .fushi-glass = 半透明填充；c 所在 shadow root 的宿主（#hibiki-popup-host，固定尺寸、内部滚动的
+//   .fushi-glass = 半透明填充；c 所在 shadow root 的宿主（#fushi-popup-host，固定尺寸、内部滚动的
 //   那只卡）挂 data-fushi-glass="light|dark" = 背景模糊 + 圆角 + 细描边。
 // · M3E：不挂玻璃钩子，宿主挂 data-style="m3e" = 实色卡 + 大圆角 + MD3 投影。
 // 圆角变量 --fushi-radius-card 原本只 setProperty 在 c 上，宿主是 c 的父级读不到，这里同值补到
@@ -3175,7 +3175,7 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 右侧滚动条那一列与卡片同色（用户群 10-09「右侧条」）：卡片底色画在 shadow 里的
   // #entries-container 上，而它的宽度不含宿主滚动条那一列——那一列此前透出网页底色，深色弹窗
   // 贴在浅色网页上就是一条白边。明暗 / 液态玻璃 / 调色板都已落到卡片上，此刻量到的底色就是
-  // 那一列该有的颜色；content.css 的 #hibiki-popup-host 规则用它只画最右一列（见那里的说明）。
+  // 那一列该有的颜色；content.css 的 #fushi-popup-host 规则用它只画最右一列（见那里的说明）。
   fushiPaintHostGutter(fushiHost, c);
 }
 

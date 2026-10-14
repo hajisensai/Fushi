@@ -41,7 +41,7 @@ final RegExp _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 ///    native 一个字也认不出，而这是纯粹的输入法噪声，不是用户意图。
 ///
 /// **刻意不碰码本身的结构**（不补/不删开头的 `/`、不改大小写、不重排 `@` 后的地址）：
-/// Hibiki 从头到尾把 hook code 当**不透明字符串**搬运，真正的词法解析在 LunaHost DLL
+/// Fushi 从头到尾把 hook code 当**不透明字符串**搬运，真正的词法解析在 LunaHost DLL
 /// 里（本仓 `third_party/lunahook/` 只有二进制，没有源码可复用）。在这里替 native
 /// 猜格式，就是开第二个真相源。
 String normalizeGalHookCode(String raw) {

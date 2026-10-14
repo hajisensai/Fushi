@@ -55,7 +55,7 @@ void main() {
 
     test('产出 URL 而非 data:，且完全不含 base64 字节', () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont_url',
+        'fushi_dictfont_url',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -90,7 +90,7 @@ void main() {
 
     test('与内联模式产出同一组 families（门槛必须一致）', () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont_parity',
+        'fushi_dictfont_parity',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -122,7 +122,7 @@ void main() {
 
     test('文件不存在 / 超上限时同样跳过（只 stat，不读内容）', () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont_skip',
+        'fushi_dictfont_skip',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -151,10 +151,10 @@ void main() {
     test('白名单之外的路径不得产出 URL（越权读盘的入口不能因换模式而放开）',
         () async {
       final Directory allowed = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont_allow',
+        'fushi_dictfont_allow',
       );
       final Directory other = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont_other',
+        'fushi_dictfont_other',
       );
       addTearDown(() async {
         if (allowed.existsSync()) await allowed.delete(recursive: true);
@@ -177,7 +177,7 @@ void main() {
     'imported file inside the allowed dir → base64 data: @font-face',
     () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_dictfont',
+        'fushi_dictfont',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -201,10 +201,10 @@ void main() {
 
   test('file outside the allowed dir is rejected (no inlining)', () async {
     final Directory allowed = await Directory.systemTemp.createTemp(
-      'hibiki_allowed',
+      'fushi_allowed',
     );
     final Directory other = await Directory.systemTemp.createTemp(
-      'hibiki_other',
+      'fushi_other',
     );
     addTearDown(() async {
       if (allowed.existsSync()) await allowed.delete(recursive: true);
@@ -224,7 +224,7 @@ void main() {
 
   test('oversized file is skipped (data: payload bound)', () async {
     final Directory dir = await Directory.systemTemp.createTemp(
-      'hibiki_bigfont',
+      'fushi_bigfont',
     );
     addTearDown(() async {
       if (dir.existsSync()) await dir.delete(recursive: true);
@@ -244,7 +244,7 @@ void main() {
 
   test('unknown extension is skipped', () async {
     final Directory dir = await Directory.systemTemp.createTemp(
-      'hibiki_badext',
+      'fushi_badext',
     );
     addTearDown(() async {
       if (dir.existsSync()) await dir.delete(recursive: true);
@@ -261,7 +261,7 @@ void main() {
   });
 
   test('woff2 maps to the correct mime + format hint', () async {
-    final Directory dir = await Directory.systemTemp.createTemp('hibiki_woff2');
+    final Directory dir = await Directory.systemTemp.createTemp('fushi_woff2');
     addTearDown(() async {
       if (dir.existsSync()) await dir.delete(recursive: true);
     });
@@ -290,7 +290,7 @@ void main() {
     'BUG-712 P3: unchanged (mtime,size) hits the cache — no disk re-read',
     () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_fontcache',
+        'fushi_fontcache',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -337,7 +337,7 @@ void main() {
     'BUG-712 P3: overwrite with a changed mtime invalidates the cache',
     () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_fontstale',
+        'fushi_fontstale',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -378,7 +378,7 @@ void main() {
     // 守回归：maxBytes 检查必须留在缓存命中之前——大文件已被（默认上限的调用方）
     // 缓存后，更小 maxFileBytes 的调用方仍须拒绝它，不得因命中缓存而绕过上限。
     final Directory dir = await Directory.systemTemp.createTemp(
-      'hibiki_fontcap',
+      'fushi_fontcap',
     );
     addTearDown(() async {
       if (dir.existsSync()) await dir.delete(recursive: true);
@@ -431,7 +431,7 @@ void main() {
 
     test('mtime bump changes the key (file overwrite invalidates)', () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_fp_mtime',
+        'fushi_fp_mtime',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);
@@ -458,7 +458,7 @@ void main() {
 
     test('missing file keys differently from an existing one', () async {
       final Directory dir = await Directory.systemTemp.createTemp(
-        'hibiki_fp_missing',
+        'fushi_fp_missing',
       );
       addTearDown(() async {
         if (dir.existsSync()) await dir.delete(recursive: true);

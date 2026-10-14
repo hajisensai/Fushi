@@ -6,7 +6,7 @@
 
 ## 1. 简介
 
-Hibiki app 报错日志上传的接收端：部署在自有 Linux 服务器、前挂腾讯 EdgeOne 反代，对上传的日志**只当哑字节存取、绝不执行/解释**（写盘、原样读回，无任何 eval / 反序列化 / exec）。
+Fushi app 报错日志上传的接收端：部署在自有 Linux 服务器、前挂腾讯 EdgeOne 反代，对上传的日志**只当哑字节存取、绝不执行/解释**（写盘、原样读回，无任何 eval / 反序列化 / exec）。
 
 ## 2. 构建
 
@@ -97,16 +97,16 @@ GOOS=linux GOARCH=amd64 go build -o hibiki-log-collector .
 5. 装 systemd 单元并启动：
 
    ```bash
-   sudo cp systemd/hibiki-logs.service /etc/systemd/system/
+   sudo cp systemd/fushi-logs.service /etc/systemd/system/
    sudo systemctl daemon-reload
-   sudo systemctl enable --now hibiki-logs
+   sudo systemctl enable --now fushi-logs
    ```
 
 6. 查状态 / 日志：
 
    ```bash
-   systemctl status hibiki-logs
-   journalctl -u hibiki-logs
+   systemctl status fushi-logs
+   journalctl -u fushi-logs
    ```
 
    若四个密钥没设全，启动失败，`journalctl` 里会看到 `refusing to start: missing required secrets: ...`。

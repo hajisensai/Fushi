@@ -8,7 +8,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// TODO-057 守卫：视频画面「左半区竖滑调屏幕亮度 / 右半区竖滑调音量 + 指示条」。
 ///
 /// 实现复用 media_kit 移动控制条内建的 volumeGesture/brightnessGesture，但 HUD
-/// 由 Hibiki 自己接管：右侧音量、左侧亮度，均显示 0..100%。亮度落设备背光经
+/// 由 Fushi 自己接管：右侧音量、左侧亮度，均显示 0..100%。亮度落设备背光经
 /// [ScreenBrightnessController]（移动端真生效、桌面诚实门控）；音量不依赖亮度能力。
 /// 没有可在宿主里跑的真手势/真亮度，故走源码扫描守卫；撤掉接线转红。
 void main() {
@@ -63,7 +63,7 @@ void main() {
       expect(videoPage.contains('seekGesture: true'), isTrue);
       // BUG-1506：换算入口在 BUG-1485 换掉了，这条锚点没跟上，把 develop 守成恒红。
       // 旧断言钉的是 fork 内建的 `horizontalGestureSensitivity:`（每像素时间与总时长
-      // 成正比 = 「一拽就起飞」的根因）；现在换算由 Hibiki 侧注入的
+      // 成正比 = 「一拽就起飞」的根因）；现在换算由 Fushi 侧注入的
       // [VideoHorizontalSeekGesture.resolveDelta] 接管，fork 的比例制灵敏度在 resolver
       // 在场时根本不被读。三条一起断，才既守住新契约又堵回旧公式：
       // ① resolver 字段在；② 它真接到了那个可单测的纯函数（只有字段名等于没接线）；
@@ -71,7 +71,7 @@ void main() {
       //    `video_fushi_page.dart` 里那条解释性注释命中（本文件读的是合并语料）。
       // 三条都走 containsCodeLine 剥注释，注释里的同名字面量一律不算数。
       expect(containsCodeLine(videoPage, 'horizontalSeekResolver:'), isTrue,
-          reason: 'BUG-1485/1506：横滑换算必须经 Hibiki 侧 resolver 注入');
+          reason: 'BUG-1485/1506：横滑换算必须经 Fushi 侧 resolver 注入');
       expect(
         containsCodeLine(videoPage, 'VideoHorizontalSeekGesture.resolveDelta('),
         isTrue,
@@ -108,7 +108,7 @@ void main() {
           reason:
               'Right-half vertical volume drag should explicitly suppress media_kit HUD.');
       expect(body.contains('const SizedBox.shrink()'), isTrue,
-          reason: 'Hibiki page-level HUD owns the visible volume feedback.');
+          reason: 'Fushi page-level HUD owns the visible volume feedback.');
       expect(videoPage.contains('_showVolumeOsd(clamped)'), isTrue,
           reason: 'onVolumeChanged must feed the sustained page HUD.');
     });
@@ -123,7 +123,7 @@ void main() {
       expect(
         body.contains('const SizedBox.shrink()'),
         isTrue,
-        reason: 'Hibiki page-level HUD owns the visible brightness feedback.',
+        reason: 'Fushi page-level HUD owns the visible brightness feedback.',
       );
       expect(videoPage.contains('_showBrightnessOsd(clamped * 100.0)'), isTrue,
           reason: 'onBrightnessChanged must feed the sustained page HUD.');

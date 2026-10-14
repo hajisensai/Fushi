@@ -6,7 +6,7 @@ part of '../backup_service.dart';
 /// that clears once an external handle is released. The recursive delete of
 /// the export's temp dir runs right after [_stripCredentials] /
 /// [_stripDictionaryState] closed their sqlite connections; on Windows the OS
-/// (and Defender / search-indexer scanning the just-written `hibiki.db` copy)
+/// (and Defender / search-indexer scanning the just-written `fushi.db` copy)
 /// can keep a handle open for a brief window after `close()` returns, so the
 /// delete fails with ERROR_ACCESS_DENIED(5), ERROR_SHARING_VIOLATION(32) or
 /// ERROR_DIR_NOT_EMPTY(145, a child file still locked). Same family as the

@@ -16,7 +16,7 @@ enum LapisApplyResult {
   /// 已是最新，无需推送。
   upToDate,
 
-  /// Anki 端模板与 Hibiki 已知产物不一致（疑似手改），需要用户确认后带
+  /// Anki 端模板与 Fushi 已知产物不一致（疑似手改），需要用户确认后带
   /// `force: true` 重试。
   needsConfirm,
 
@@ -155,7 +155,7 @@ class LapisTemplateService {
     if (def == null) return LapisApplyResult.notFound;
 
     // 基线取**用户 Anki 里现有的内容**（剥掉我们上一轮的托管区段），不是
-    // Hibiki 内置的 vendored 副本。用户反馈「Hibiki 把我的字体改了」的病根就在
+    // Fushi 内置的 vendored 副本。用户反馈「Hibiki 把我的字体改了」的病根就在
     // 这里：我们没写过 font-family，但拿 vendored 全文当基线推送，等于把他那份
     // Lapis（别的版本 / 自己调过字体）整体顶掉。改成叠加之后，字体、版本差异、
     // 他自己的手改全部原样保留。
@@ -201,8 +201,8 @@ class LapisTemplateService {
     return LapisApplyResult.applied;
   }
 
-  /// 恢复出厂 Lapis：把 Anki 端的卡型**整体**推回 Hibiki 内置的 vendored 版本
-  /// （样式 + 正反面模板），并清空 Hibiki 侧的全部客制化。
+  /// 恢复出厂 Lapis：把 Anki 端的卡型**整体**推回 Fushi 内置的 vendored 版本
+  /// （样式 + 正反面模板），并清空 Fushi 侧的全部客制化。
   ///
   /// 与「从备份恢复」的分工：备份恢复是回到**某个历史时刻**，前提是那时候落过
   /// 备份；本方法是回到**出厂**，不依赖任何历史。卡片长歪了又没有可用备份时，
@@ -272,7 +272,7 @@ class LapisTemplateService {
     return LapisStylingDecision.safeUpdate;
   }
 
-  /// 启动自动迁移：**只有 Hibiki 出厂基线真的变了**才自动备份并推送新
+  /// 启动自动迁移：**只有 Fushi 出厂基线真的变了**才自动备份并推送新
   /// styling。手改内容（foreignEdit）绝不自动覆盖。每进程最多跑一次；Anki
   /// 未运行时静默跳过（常态，不是错误，下次启动再试）。
   ///
@@ -328,7 +328,7 @@ class LapisTemplateService {
               lapisMigratedBaselineSha: baselineSha,
             ));
       case LapisStylingDecision.safeUpdate:
-        // **不再自动写 Anki。** 这条路径原本的意义是「Hibiki 出厂基线升级了，
+        // **不再自动写 Anki。** 这条路径原本的意义是「Fushi 出厂基线升级了，
         // 把新基线同步过去」——而基线现在取自用户自己的 Lapis，我们根本不再
         // 拥有基线，这个动作失去了前提。它同时是唯一一条「用户没点任何按钮就
         // 改他 Anki」的路径（用户反馈字体被改，这里是最大嫌疑）。保留判定只为
@@ -347,7 +347,7 @@ class LapisTemplateService {
 
   /// 从备份恢复（styling + 卡模板）。恢复前先快照当前状态。
   ///
-  /// 恢复后把 Hibiki 侧客制化状态与备份**对齐**，否则下次启动的自动迁移会把
+  /// 恢复后把 Fushi 侧客制化状态与备份**对齐**，否则下次启动的自动迁移会把
   /// 刚恢复的内容又覆写回去（根因：期望态与 Anki 态不一致 + 指纹仍认识
   /// Anki 态 = safeUpdate）：
   /// - 备份含用户区段 → 正文用 [splitLapisUserSectionBody] **拆回**「字号
@@ -374,9 +374,9 @@ class LapisTemplateService {
     final bool stylingOk =
         await _repository.updateNoteTypeStyling(def.name, def.css);
     if (!stylingOk) throw StateError('Backend rejected styling update');
-    // styling 一旦落地，Hibiki 侧客制化状态必须**立刻**对齐：settings 里
+    // styling 一旦落地，Fushi 侧客制化状态必须**立刻**对齐：settings 里
     // lapisCustomCss / lapisAppliedCssSha 描述的就是 styling，晚一步对齐就有一段
-    // 「Anki 是恢复态、Hibiki 期望态还是旧的」窗口，下次启动的漂移判定读到过期
+    // 「Anki 是恢复态、Fushi 期望态还是旧的」窗口，下次启动的漂移判定读到过期
     // 期望态。所以对齐排在卡模板写入之前——卡模板失败不该连累 styling 状态。
     final String? body = extractLapisUserSectionBody(def.css);
     final LapisUserSectionSplit? split =
@@ -398,7 +398,7 @@ class LapisTemplateService {
       if (!templatesOk) {
         throw StateError('Backend rejected card template update');
       }
-      // 恢复出来的模板同样是 Hibiki 亲手写进去的，记下指纹——否则下次 Apply 会
+      // 恢复出来的模板同样是 Fushi 亲手写进去的，记下指纹——否则下次 Apply 会
       // 把自己刚写的内容当成「疑似手改」，凭空多弹一次确认框。
       final AnkiCardTemplate? card = def.templates
           .where((AnkiCardTemplate t) => t.name == LapisNoteType.cardName)
@@ -418,7 +418,7 @@ class LapisTemplateService {
   /// 指纹**。
   ///
   /// 两个指纹分开记而不是等两步都成功再一起记：任一步失败时，已落地的那步的
-  /// Hibiki 侧状态与 Anki 端保持一致，重试只会重做真正没成功的那一步。合并记录
+  /// Fushi 侧状态与 Anki 端保持一致，重试只会重做真正没成功的那一步。合并记录
   /// 反而会让重试把已经正确的一边再判成「要更新」。
   ///
   /// 先 styling 后模板：模板写入是风险更高的一步，放在后面能让它失败时前一步

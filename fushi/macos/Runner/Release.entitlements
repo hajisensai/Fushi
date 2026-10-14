@@ -4,7 +4,7 @@
 <dict>
 	<!--
 		全平台自动更新 Phase 3（去沙盒决策）：移除 com.apple.security.app-sandbox。
-		应用内更新需要 Process 替换 /Applications/hibiki.app 并重启（见 MacInstaller），
+		应用内更新需要 Process 替换 /Applications/fushi.app 并重启（见 MacInstaller），
 		沙盒容器禁止写 /Applications，故去沙盒是真自动更新的前提。代价：放弃 Mac App
 		Store 上架（商店强制沙盒）——已与用户确认接受（docs/specs/2026-06-04-all-
 		platform-auto-update-design.md §5）。

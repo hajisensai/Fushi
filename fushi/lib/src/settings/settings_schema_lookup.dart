@@ -66,7 +66,7 @@ Future<void> _terminatePortOwnerAndRetry(
   int port,
 ) async {
   final AppModel appModel = settingsContext.appModel;
-  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；hibiki 旧实例
+  // 杀前必须确认：弹窗展示实际占用者（进程名 + PID + 路径；Fushi 旧实例
   // 特别标注），关键系统进程直接拒杀。端口是用户可配置偏好，占用者完全可能
   // 是 IDE 辅助进程/dev server，未经确认一键 taskkill 不可接受。
   final PortKillDecision decision = await decidePortKill(
@@ -683,7 +683,7 @@ SettingsDestination buildLookupDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_lookup_audio,
         items: <SettingsItem>[
-          // 「管理音频来源」抽成共享 builder：查词分类与 Hibiki 互联分类都引用同一份
+          // 「管理音频来源」抽成共享 builder：查词分类与 Fushi 互联分类都引用同一份
           // 定义（互联音频源 fushiRemote 就在该对话框里管，故互联分类也提供入口）。
           buildManageAudioSourcesItem(),
           SettingsSwitchItem(
@@ -1155,7 +1155,7 @@ SettingsDestination buildLookupDestination() {
               );
             },
           ),
-          // 远端词典查询抽成共享 builder：查词分类与 Hibiki 互联分类都引用（它直连
+          // 远端词典查询抽成共享 builder：查词分类与 Fushi 互联分类都引用（它直连
           // 互联对端的词典，逻辑上属互联，故互联分类也提供入口）。
           buildRemoteDictionaryLookupItem(),
           SettingsSwitchItem(
@@ -1225,7 +1225,7 @@ SettingsDestination buildLookupDestination() {
   );
 }
 
-/// 「管理音频来源」配置项。查词分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 「管理音频来源」配置项。查词分类与 Fushi 互联分类共享同一份定义（单一真相源）：
 /// 音频来源对话框统管远端(含互联 fushiRemote)/本地音频源，逻辑上与互联相关，故两处
 /// 都用同一入口。id 沿用 `lookup.` 前缀（历史命名，非持久化 key，两处同 id 无冲突——
 /// 覆盖遍历按 `<destId>/<title>` 去重，action 型行不产生持久化断言）。
@@ -1347,8 +1347,8 @@ Future<void> showAudioSourcesManagerDialog({
   );
 }
 
-/// 远端词典查询开关。查词分类与 Hibiki 互联分类共享同一份定义：本地查不到时向已配置
-/// 的 Hibiki 互联对端查询，逻辑上属互联。id 沿用 `lookup.` 前缀（非持久化 key）。
+/// 远端词典查询开关。查词分类与 Fushi 互联分类共享同一份定义：本地查不到时向已配置
+/// 的 Fushi 互联对端查询，逻辑上属互联。id 沿用 `lookup.` 前缀（非持久化 key）。
 SettingsItem buildRemoteDictionaryLookupItem() {
   return SettingsSwitchItem(
     id: 'lookup.remote_lookup',

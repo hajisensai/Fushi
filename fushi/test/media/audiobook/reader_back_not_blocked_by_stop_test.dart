@@ -119,7 +119,7 @@ void main() {
           title: 'Book b1',
           mediaIdentifier: 'fushi://book/b1',
         ),
-        audioFiles: <File>[makeFile('hibiki-back-stop-b1.mp3')],
+        audioFiles: <File>[makeFile('fushi-back-stop-b1.mp3')],
         prefs: const SessionPrefs(
           followAudio: true,
           delayMs: 0,

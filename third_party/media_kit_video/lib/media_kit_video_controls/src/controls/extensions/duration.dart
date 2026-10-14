@@ -4,7 +4,7 @@
 /// All rights reserved.
 /// Use of this source code is governed by MIT license that can be found in the LICENSE file.
 
-/// Hibiki patch (TODO-1243): the on-screen controls (seek bar fill + `mm:ss`
+/// Fushi patch (TODO-1243): the on-screen controls (seek bar fill + `mm:ss`
 /// position clock) quantize the libmpv playback position to this step before
 /// they rebuild.
 ///
@@ -33,7 +33,7 @@ extension DurationExtension on Duration {
     return this;
   }
 
-  /// Floors this [Duration] down to the nearest multiple of [step] (Hibiki patch,
+  /// Floors this [Duration] down to the nearest multiple of [step] (Fushi patch,
   /// TODO-1243). Used to quantize the controls' displayed playback position so
   /// they rebuild at ~`1000/step.inMilliseconds` fps instead of the libmpv frame
   /// rate. Non-positive [step] returns `this` unchanged (no quantization).

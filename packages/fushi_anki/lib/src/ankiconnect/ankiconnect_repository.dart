@@ -464,7 +464,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     final String? audioWarning = rendered.audioWarning;
 
     try {
-      // BUG/TODO-062: every Hibiki-mined card gets the `hibiki` tag appended to
+      // BUG/TODO-062: every Fushi-mined card gets the `fushi` tag appended to
       // the user's configured tags (de-duped, order preserved) via the shared
       // base helper, so both backends behave identically.
       final tags = buildNoteTags(
@@ -563,7 +563,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
 
   String _addNoteCommitUnknownMessage() =>
       'AnkiConnect may have created the card, but the response was lost. '
-      'Hibiki could not safely confirm the result. Please check Anki before '
+      'Fushi could not safely confirm the result. Please check Anki before '
       'retrying.';
 
   /// 把 [payload] + [context] 按 [settings] 的字段映射渲染成 Anki note 字段。
@@ -699,7 +699,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
     await _serviceForSettings(settings).updateNoteFields(noteId, fields);
   }
 
-  /// TODO-270 C1：更新一张**已存在**的 Hibiki 制卡（[noteId]）的字段。
+  /// TODO-270 C1：更新一张**已存在**的 Fushi 制卡（[noteId]）的字段。
   ///
   /// 复用 [_renderMinedFields]（与制卡同一字段渲染 + 媒体上传链路）从
   /// [rawPayloadJson] + [context] 生成 fields，再调 [AnkiConnectService.updateNoteFields]
@@ -1095,7 +1095,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   //
   // 光发 guiBrowse 不够：Anki 若已经在后台开着「浏览」窗口，它内部只是 raise 一个
   // **已存在**的窗口，会被 Windows 前台锁定降级成「闪任务栏」而不真正跳出来。解锁
-  // 权握在此刻的前台进程（用户刚点按钮的 Hibiki）手里，所以在这里前后各夹一步
+  // 权握在此刻的前台进程（用户刚点按钮的 Fushi）手里，所以在这里前后各夹一步
   // 让渡/兜底，机制详见 [AnkiDesktopForeground]。
   //
   // 只对本机 Anki 生效：host 非 loopback 时说的是另一台机器上的 AnkiConnect，
@@ -1459,9 +1459,9 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   /// styling 被去重改写后，把 Lapis 客制化指纹跟着对齐。
   ///
   /// 根因：`decideLapisStylingAction` 用 `lapisAppliedCssSha` 认「Anki 端这份
-  /// CSS 是 Hibiki 自己推的产物」。去重改写 styling 后 Anki 端内容变了而指纹
+  /// CSS 是 Fushi 自己推的产物」。去重改写 styling 后 Anki 端内容变了而指纹
   /// 没变，判定退化成 `foreignEdit` —— Lapis 的启动自动迁移从此**永久停手**，
-  /// 用户完全无感知（模板再也不自动更新）。改写的确实是 Hibiki 自己的产物，
+  /// 用户完全无感知（模板再也不自动更新）。改写的确实是 Fushi 自己的产物，
   /// 指纹理应跟着走。
   ///
   /// 只在改写前的内容确实等于已记录指纹时才对齐：本来就是用户手改（指纹对

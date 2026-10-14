@@ -42,7 +42,7 @@ void Utils::EnterNativeFullscreen(HWND window) {
     ::GetMonitorInfo(::MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST),
                      &monitor);
     ::SetWindowLongPtr(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
-    // Hibiki BUG(桌面视频全屏锁死桌面)：媒体窗口全屏必须保持“可切走的窗口化
+    // Fushi BUG(桌面视频全屏锁死桌面)：媒体窗口全屏必须保持“可切走的窗口化
     // 全屏”，绝不能变成 DWM 独占式全屏（Fullscreen Optimization / 独占 MPO
     // flip）。上游默认把无边框窗口精确铺满整块显示器（rcMonitor）并落 HWND_TOP，
     // 这会被 DWM 提升为独占全屏：z-order 被霸占，用户无法 Alt+Tab / 点任务栏切到

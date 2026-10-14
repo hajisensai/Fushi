@@ -23,7 +23,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() async {
-    tempDir = await Directory.systemTemp.createTemp('hibiki_dict_zip_guard_');
+    tempDir = await Directory.systemTemp.createTemp('fushi_dict_zip_guard_');
   });
 
   tearDown(() async {

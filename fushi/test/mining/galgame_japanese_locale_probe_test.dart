@@ -481,7 +481,7 @@ void main() {
     late Directory temp;
 
     setUp(() async {
-      temp = await Directory.systemTemp.createTemp('hibiki_gal_locale_probe_');
+      temp = await Directory.systemTemp.createTemp('fushi_gal_locale_probe_');
     });
 
     tearDown(() async {
@@ -568,7 +568,7 @@ void main() {
     late File game;
 
     setUp(() async {
-      temp = await Directory.systemTemp.createTemp('hibiki_gal_locale_engine_');
+      temp = await Directory.systemTemp.createTemp('fushi_gal_locale_engine_');
       injector = File('${temp.path}${Platform.pathSeparator}injector.exe');
       await injector.writeAsBytes(const <int>[0]);
       game = File('${temp.path}${Platform.pathSeparator}game.exe');

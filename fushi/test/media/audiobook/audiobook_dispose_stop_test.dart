@@ -31,7 +31,7 @@ void main() {
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
-      final File audioFile = _tempAudio('hibiki-audiobook-exit-stop.mp3');
+      final File audioFile = _tempAudio('fushi-audiobook-exit-stop.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
@@ -76,7 +76,7 @@ void main() {
       _installFakeAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
-      final File audioFile = _tempAudio('hibiki-audiobook-exit-dispose.mp3');
+      final File audioFile = _tempAudio('fushi-audiobook-exit-dispose.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
@@ -110,7 +110,7 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          _tempAudio('hibiki-audiobook-immediate-play-stop.mp3');
+          _tempAudio('fushi-audiobook-immediate-play-stop.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
@@ -148,7 +148,7 @@ void main() {
       final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
-      final File audioFile = _tempAudio('hibiki-audiobook-repeat-stop.mp3');
+      final File audioFile = _tempAudio('fushi-audiobook-repeat-stop.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
@@ -172,7 +172,7 @@ void main() {
         () async {
       final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
       final AudiobookPlayerController controller = AudiobookPlayerController();
-      final File audioFile = _tempAudio('hibiki-audiobook-stop-error.mp3');
+      final File audioFile = _tempAudio('fushi-audiobook-stop-error.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });
@@ -209,7 +209,7 @@ void main() {
       final _FakeJustAudioPlatform plat = _installFakeAudioPlatform();
 
       final AudiobookPlayerController controller = AudiobookPlayerController();
-      final File audioFile = _tempAudio('hibiki-audiobook-migrate-release.mp3');
+      final File audioFile = _tempAudio('fushi-audiobook-migrate-release.mp3');
       addTearDown(() {
         if (audioFile.existsSync()) audioFile.deleteSync();
       });

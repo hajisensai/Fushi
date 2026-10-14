@@ -1,6 +1,6 @@
 #pragma once
 
-// Hibiki patch (BUG-2838): no cached ToastNotifier / ToastNotificationHistory.
+// Fushi patch (BUG-2838): no cached ToastNotifier / ToastNotificationHistory.
 // They are cross-process COM proxies that disconnect when the notification
 // platform restarts (CO_E_OBJNOTCONNECTED); ffi_api.cpp obtains fresh ones per
 // call. See the header of ffi_api.cpp.

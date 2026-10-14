@@ -174,7 +174,7 @@ flutter windows 构建也不便注入 vcpkg 工具链文件。故：
    流程各自现产或从 release 拉取）。
 2. **随包**：`fushi/windows/CMakeLists.txt` 在 fushidicts 之后加了
    **copy-if-present** 块——`prebuilt/windows-x64/*.dll` 存在则 `install` 到
-   `hibiki.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
+   `fushi.exe` 旁，不存在则跳过。因此 `flutter build windows` **不依赖
    vcpkg/libtorrent**：没跑过产出脚本的机器照常构建，只是 app 运行期
    `EmbeddedTorrentHost.open` 因 DLL 缺失返回 null → 自动回退外接 qb。
 3. **加载**：`EmbeddedTorrentEngine._openByPlatformDefault` 用
@@ -218,7 +218,7 @@ connections_limit, limit_local_peers)`：`limit_local_peers` 非 0 时把同一�
   global class 里），所以开启后是"局域网这一路也被限到同样的数值"，不是"广域网
   + 局域网合起来不超过这个数值"。
 - **符号可能不存在**：随包 DLL 是 vendored 预编译产物，Dart 侧
-  `HibikiTorrentBindings.hasApplyLimitsEx` 会先探符号，缺失时降级走
+  `FushiTorrentBindings.hasApplyLimitsEx` 会先探符号，缺失时降级走
   `ht_apply_limits` 并让 `applyLimits(limitLocalPeers: true)` 返回 false，
   绝不崩。CI 的 windows job 每次都用 vcpkg 现编 DLL，故发布产物总是有该符号。
 

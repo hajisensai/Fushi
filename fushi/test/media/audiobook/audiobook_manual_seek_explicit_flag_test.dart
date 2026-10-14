@@ -139,7 +139,7 @@ Future<AudiobookPlayerController> _loadController(List<AudioCue> cues) async {
   _installFakeAudioPlatform();
   final AudiobookPlayerController controller = AudiobookPlayerController();
   final File audioFile = File(
-    '${Directory.systemTemp.path}/hibiki-manual-seek-${cues.length}.mp3',
+    '${Directory.systemTemp.path}/fushi-manual-seek-${cues.length}.mp3',
   );
   if (!audioFile.existsSync()) {
     audioFile.writeAsBytesSync(const <int>[0]);

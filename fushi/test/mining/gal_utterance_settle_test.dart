@@ -434,7 +434,7 @@ void main() {
 
   test('BUG-1109 awaitStableVoiceDumpFile 等到 dump 文件停止增长才放行', () async {
     final Directory dir =
-        await Directory.systemTemp.createTemp('hibiki-gal-dump-');
+        await Directory.systemTemp.createTemp('fushi-gal-dump-');
     addTearDown(() => dir.delete(recursive: true));
     final File file = File('${dir.path}${Platform.pathSeparator}voice.ogg');
     await file.writeAsBytes(Uint8List(100), flush: true);
@@ -465,7 +465,7 @@ void main() {
 
   test('BUG-1109 awaitStableVoiceDumpFile 到上限仍在写则 fail-open，不挂死', () async {
     final Directory dir =
-        await Directory.systemTemp.createTemp('hibiki-gal-dump-');
+        await Directory.systemTemp.createTemp('fushi-gal-dump-');
     addTearDown(() => dir.delete(recursive: true));
     final File file = File('${dir.path}${Platform.pathSeparator}voice.ogg');
     await file.writeAsBytes(Uint8List(100), flush: true);
@@ -490,7 +490,7 @@ void main() {
 
   test('BUG-1109 dump 文件不存在时立即返回，交调用方按缺文件处理', () async {
     final Directory dir =
-        await Directory.systemTemp.createTemp('hibiki-gal-dump-');
+        await Directory.systemTemp.createTemp('fushi-gal-dump-');
     addTearDown(() => dir.delete(recursive: true));
     final Stopwatch elapsed = Stopwatch()..start();
     await awaitStableVoiceDumpFile(

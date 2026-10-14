@@ -8,7 +8,7 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 /// 表面层级阶梯（[applyFushiSurfaceLadder]）的不变式。
 ///
 /// 背景：M3 baseline 的六级容器色相邻只差 2 tone（对比度 ≈ 1.05），本意是让
-/// elevation 阴影与 surfaceTint 叠层承担层次。Hibiki 是「扁平 + 描边」的语言，
+/// elevation 阴影与 surfaceTint 叠层承担层次。Fushi 是「扁平 + 描边」的语言，
 /// 全局 `elevation: 0` 且 surfaceTint 一律透明，于是层次只剩这 1.05 的色差；
 /// 而 token 映射（page=surface / group=surfaceContainerLow / card=
 /// surfaceContainer）恰好落在阶梯最挤的一段，三层总跨度只有 1.11——设置页、
@@ -259,7 +259,7 @@ void main() {
     // 预设 / 自定义分支：未钉死 surface 时的出口。
     expect(
       RegExp(
-        r'_hibikiSchemeCache\[key\] = pureBlack\s*\?\s*'
+        r'_fushiSchemeCache\[key\] = pureBlack\s*\?\s*'
         r'applyFushiPureBlackSurfaceLadder\(withRoles\)\s*:\s*'
         r'applyFushiSurfaceLadder\(withRoles\)',
       ).hasMatch(src),

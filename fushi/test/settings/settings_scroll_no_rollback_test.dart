@@ -57,7 +57,7 @@ void main() {
     addTearDown(themeNotifier.dispose);
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_settings_scroll_');
+        Directory.systemTemp.createTempSync('fushi_settings_scroll_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 
-/// BUG-891 守卫：远端自签 Hibiki 主机制卡时，抽取器必须把该 host 的 TOFU 钉扎证书指纹
+/// BUG-891 守卫：远端自签 Fushi 主机制卡时，抽取器必须把该 host 的 TOFU 钉扎证书指纹
 /// 下发给 ffmpeg 的 `-tls_pin_sha256`——否则移动端自编 ffmpeg-kit（无 https/min 变体，
 /// 或加了 gnutls 但默认接受任意证书）要么 `Protocol not found`、要么无钉扎放行。
 ///

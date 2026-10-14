@@ -1548,7 +1548,7 @@ class VideoDownloadPipelineService {
     wake();
   }
 
-  /// Cancels Hibiki's durable workflow without deleting downloaded data.
+  /// Cancels Fushi's durable workflow without deleting downloaded data.
   /// When the original backend supports user pause, its exact task is paused
   /// before the lifecycle CAS so cancellation never leaves an actively
   /// downloading task behind merely because the UI stopped tracking it.
@@ -3757,7 +3757,7 @@ class VideoDownloadPipelineService {
   /// Copies old JSON-plan subtitle staging files without consuming them.
   /// This mirrors the pre-v78 workflow: a video that already has any sidecar
   /// is left untouched, because that sidecar may have been placed or edited by
-  /// the user outside Hibiki.
+  /// the user outside Fushi.
   Future<void> _installLegacyStagedSubtitles(VideoDownloadJobRow job) async {
     final VideoDownloadSubtitlePolicy policy =
         VideoDownloadSubtitlePolicy.values.asNameMap()[job.subtitlePolicy] ??

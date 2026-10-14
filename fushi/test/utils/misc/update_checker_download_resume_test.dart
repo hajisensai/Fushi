@@ -13,7 +13,7 @@ void main() {
     late Directory updatesDir;
 
     setUp(() async {
-      updatesDir = await Directory.systemTemp.createTemp('hibiki-update-cache');
+      updatesDir = await Directory.systemTemp.createTemp('fushi-update-cache');
     });
 
     tearDown(() async {
@@ -178,7 +178,7 @@ void main() {
       );
 
       final Directory restartDir =
-          await Directory.systemTemp.createTemp('hibiki-update-restart');
+          await Directory.systemTemp.createTemp('fushi-update-restart');
       addTearDown(() => _deleteDirectoryWithRetry(restartDir));
       final UpdateDownloadPaths restartPaths =
           UpdateDownloadPaths.forAsset(restartDir, asset);

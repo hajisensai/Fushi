@@ -3,7 +3,7 @@
 //
 // 修复前 `maybeAutoMigrateOnStartup` 只看「期望 styling ≠ Anki 端 且 Anki 端
 // 是自有产物」，于是拖一下字号、下次启动就静默推送。现在多一道基线闸门：只有
-// Hibiki 出厂基线真的变了才自动推。
+// Fushi 出厂基线真的变了才自动推。
 import 'dart:convert';
 import 'dart:io';
 
@@ -126,7 +126,7 @@ void main() {
 
   // 契约变更（不是回归）：自动迁移**不再写 Anki**。
   //
-  // 它原本的意义是「Hibiki 出厂基线升级了，把新基线同步过去」——而基线现在取自
+  // 它原本的意义是「Fushi 出厂基线升级了，把新基线同步过去」——而基线现在取自
   // 用户自己的 Lapis（见 stripLapisUserSection / composeLapisCssOnBase），我们
   // 根本不再拥有基线，这个动作失去了前提。它同时是唯一一条「用户没点任何按钮
   // 就改他 Anki」的路径，正是用户反馈「Hibiki 把我的字体改了」的最大嫌疑。

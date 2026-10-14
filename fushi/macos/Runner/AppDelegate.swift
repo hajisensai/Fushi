@@ -63,7 +63,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
           result(FlutterError(code: "window_unavailable", message: nil, details: nil))
           return
         }
-        if ProcessInfo.processInfo.environment["HIBIKI_TEST_HIDDEN"] == nil {
+        if !fushiHiddenTestMode() {
           window.orderOut(nil)
           window.alphaValue = 1
           window.animationBehavior = .documentWindow

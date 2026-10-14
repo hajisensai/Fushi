@@ -23,7 +23,7 @@ void main() {
   late FushiDatabase db;
 
   setUp(() async {
-    docsDir = await Directory.systemTemp.createTemp('hibiki_launcher_heal_');
+    docsDir = await Directory.systemTemp.createTemp('fushi_launcher_heal_');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),

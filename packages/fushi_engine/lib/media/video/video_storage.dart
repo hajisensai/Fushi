@@ -178,7 +178,7 @@ class VideoStorage {
   }
 
   /// Deletes the temp cache directory used for extracted embedded subtitles of
-  /// [videoPath]. This only touches Hibiki's derived temp cache, never the
+  /// [videoPath]. This only touches Fushi's derived temp cache, never the
   /// original video file.
   static Future<bool> deleteEmbeddedSubtitleCacheForVideoPath(
     String? videoPath,

@@ -4,7 +4,7 @@ import 'package:gamepads_platform_interface/gamepads_platform_interface.dart';
 
 /// No-op Android implementation of the `gamepads` platform interface.
 ///
-/// Hibiki reads Android controllers through the Flutter engine's native
+/// Fushi reads Android controllers through the Flutter engine's native
 /// key-event path (gameButton*/arrow keys → reader/home `_handleKeyEvent`), so
 /// the gamepads plugin is never used on Android. The upstream `gamepads_android`
 /// is `ActivityAware` and casts the host Activity to `GamepadsCompatibleActivity`

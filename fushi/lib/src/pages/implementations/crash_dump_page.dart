@@ -12,7 +12,7 @@ import 'package:fushi/src/settings/settings_kit.dart';
 
 /// TODO-607 P0-3：「诊断区 → 崩溃转储」页（Windows-only）。
 ///
-/// 列出 native runner 写在 `%LOCALAPPDATA%\Hibiki\crashdumps\` 的 minidump
+/// 列出 native runner 写在 `%LOCALAPPDATA%\Fushi\crashdumps\` 的 minidump
 /// （[CrashDumpLocator]），让用户一键**打开文件夹**（资源管理器）或**分享 .dmp**
 /// 给开发者。纯 native 闪退（嵌套查词把进程带崩等）不会进 Dart 错误日志，这些
 /// `.dmp` 是定位它的唯一二进制证据；过去散落在 `%LOCALAPPDATA%` 用户找不到。

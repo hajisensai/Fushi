@@ -182,7 +182,7 @@ List<OcrExecutionProvider> selectOcrExecutionProviders({
 // ── 从 app 的 ocr_inference_ort.dart 下沉的纯 Dart 助手（OCR 输入名对齐、日志名、
 //    provider 回退），app 与无头服务端两边的会话工厂共用。 ──
 
-const String kOcrLogName = 'hibiki.ocr';
+const String kOcrLogName = 'fushi.ocr';
 
 /// 本平台是否内置 ONNX Runtime native 库（本地 OCR 推理是否可用）。
 ///
@@ -248,7 +248,7 @@ Map<String, OcrTensor> resolveOcrSessionInputs({
 /// [resolveOcrSessionInputs] 适配到共享工厂钩子的位置参数形态。
 
 /// OCR 用的 flutter_onnxruntime 会话工厂：共享 [OrtOnnxSessionFactory] +
-/// manga-ocr 输入名对齐钩子 + `hibiki.ocr` 日志通道。
+/// manga-ocr 输入名对齐钩子 + `fushi.ocr` 日志通道。
 ///
 /// `availableAcceleratedProviders()`（BUG-2050 的探测语义边界）与带
 /// `onProviderResolved` 的 `createSession` 均由父类提供，注释见那里。

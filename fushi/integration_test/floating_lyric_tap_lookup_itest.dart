@@ -27,7 +27,7 @@
 //      exact regression signature the user kept reporting.
 //   4. FAULT INJECTION (the mid-session death matching the user's log): kill
 //      the overlay's own WebView2 process tree - scoped strictly to this
-//      run's isolated LOCALAPPDATA Hibiki/GlobalLookupWebView2 user-data
+//      run's isolated LOCALAPPDATA Fushi/GlobalLookupWebView2 user-data
 //      folder, never the user's real instances - then tap the strip again
 //      and require the card to be HOST-rendered again. Without the
 //      ProcessFailed self-heal in global_lookup_window.cpp the overlay stays
@@ -378,7 +378,7 @@ void main() {
               reason: 'LOCALAPPDATA must exist (isolated by the runner)');
           final String sep = Platform.pathSeparator;
           final String overlayUdf =
-              '$localAppData${sep}Hibiki${sep}GlobalLookupWebView2';
+              '$localAppData${sep}Fushi${sep}GlobalLookupWebView2';
           final int killedCount = await _killOverlayWebViewProcs(overlayUdf);
           debugPrint('[float-tap] killed overlay WebView2 procs: '
               '$killedCount (udf=$overlayUdf)');

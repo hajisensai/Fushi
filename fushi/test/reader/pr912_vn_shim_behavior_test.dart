@@ -26,7 +26,7 @@ void main() {
   test('VN shim 行为级：搜索坐标换算 / 搜索高亮 / cue await ready / restore 兜底', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     final Directory temp =
-        Directory.systemTemp.createTempSync('hibiki-pr912-vn-js-');
+        Directory.systemTemp.createTempSync('fushi-pr912-vn-js-');
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
     // 跑手与本文件同名同目录（范式同 test/anki/exported_glossary_anchor_deeplink_test）。

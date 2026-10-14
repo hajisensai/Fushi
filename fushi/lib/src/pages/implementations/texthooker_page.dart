@@ -558,7 +558,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   /// BUG-1799：切回前台就复核「已制卡」徽章。用户的原始路径正是「在本页制卡 →
-  /// 切到 Anki 删掉那张卡 → 切回 Hibiki」，`resumed` 就是这条路径回到 app 的那一刻。
+  /// 切到 Anki 删掉那张卡 → 切回 Fushi」，`resumed` 就是这条路径回到 app 的那一刻。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -884,7 +884,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       return null;
     }
     if (!context.mounted) return null;
-    // BUG-1049：Hibiki 自己启动的游戏必须在这份列表里「已经选好」。会话知道游戏 pid，
+    // BUG-1049：Fushi 自己启动的游戏必须在这份列表里「已经选好」。会话知道游戏 pid，
     // 却把它和一屏无关窗口平铺在一起，等于让用户替 app 认自己刚拉起的进程。按 pid
     // 把它排到第一条、标注出来并预置焦点：打开即落在正确的窗口上，回车就绑。
     final int? gamePid = _session.state.gamePid;
@@ -947,7 +947,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 底层能力一直都在（injector `--pid` attach + [GalHookSessionController.
   /// startAttachedCapture] 的完整注入编排），但此前唯一入口是「更多」溢出菜单里
   /// 那个叫「外部窗口挖矿」的模式开关——名字看不出是「附着到已经在跑的游戏」，
-  /// 等于把一条主路径藏进溢出菜单，用户只能每次都让 Hibiki 把游戏拉起来。
+  /// 等于把一条主路径藏进溢出菜单，用户只能每次都让 Fushi 把游戏拉起来。
   ///
   /// 直接调 [GalHookSessionController.startAttachedCapture]，不拼
   /// 「[GalHookSessionController.bindWindow] + [GalHookSessionController
@@ -1119,7 +1119,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _exportLunaHookProfiles() async {
     try {
       final String? path = await FilePicker.platform.saveFile(
-        fileName: 'hibiki_luna_hook_profiles.tsv',
+        fileName: 'fushi_luna_hook_profiles.tsv',
         type: FileType.custom,
         allowedExtensions: <String>['tsv'],
       );
@@ -1663,7 +1663,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           tooltip: t.game_launch_and_capture,
           onTap: _launchGalgameEngineHook,
         ),
-      // 「游戏已经自己在跑」是和「让 Hibiki 拉起游戏」同等常见的起点（Steam / 启动器 /
+      // 「游戏已经自己在跑」是和「让 Fushi 拉起游戏」同等常见的起点（Steam / 启动器 /
       // 转区工具拉起的进程都属此列），两条起点并列摆出来，用户不必为了捕获而重启游戏。
       if (Platform.isWindows && !primaryStart)
         FushiIconButton(
@@ -2829,7 +2829,7 @@ class _SessionOverviewCard extends StatelessWidget {
     final String phase = galHookSessionPhaseLabel(state.phase);
     // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
     // `auto` 档在设置页只显示「自动」，真正转没转是启动时按证据判定 + 系统 ACP + 目标
-    // 位数现算的，判错时用户看到的只有游戏文字乱码，没有任何线索指向 Hibiki 改了区域。
+    // 位数现算的，判错时用户看到的只有游戏文字乱码，没有任何线索指向 Fushi 改了区域。
     // BUG-2047：`auto` 判为「不需要 / 证据不足」而未转区时同样要亮短标记——证据空白的
     // 日文原版会先乱码，用户得知道是「没转」而不是「转坏了」，才会去改「始终开启」。
     final GalJapaneseLocaleVerdict? verdict = state.japaneseLocaleVerdict;
@@ -2904,7 +2904,7 @@ class _SessionOverviewCard extends StatelessWidget {
       if (state.japaneseLocaleApplied && !compact)
         Text(
           // `auto` 判定转区时把判据列在处置后面：用户看到「版本资源为日语」
-          // 才知道 Hibiki 凭什么转、判错了该怀疑哪条。`on` 档没有判定，只有处置。
+          // 才知道 Fushi 凭什么转、判错了该怀疑哪条。`on` 档没有判定，只有处置。
           verdict == null || verdict.evidence.isEmpty
               ? t.game_session_japanese_locale_hint
               : '${t.game_session_japanese_locale_hint}\n'
@@ -2923,7 +2923,7 @@ class _SessionOverviewCard extends StatelessWidget {
           style: hintStyle,
         ),
       // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
-      // 请同样以管理员身份启动 Hibiki」之类）。没有结构化原因时才退回代码。
+      // 请同样以管理员身份启动 Fushi」之类）。没有结构化原因时才退回代码。
       //
       // **窄屏也必须显示**：状态 chip 在 compact 下照常亮「已降级」，若同时把原因
       // 藏掉，用户看到的就是「出事了 + 不告诉你出了什么事」。compact 要省的是次要

@@ -2254,7 +2254,7 @@ class VideoDownloadJobs extends Table {
   TextColumn get identityJson => text().nullable()();
 
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
-  /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
+  /// 的字符串身份，不是 Fushi 用户 Profile，故没有 FK 到 Profiles。
   TextColumn get backendKind => text()();
   TextColumn get backendTaskId => text().nullable()();
   TextColumn get backendProfileId => text().nullable()();
@@ -3065,7 +3065,7 @@ class VideoFileSpecs extends Table {
 
 // ── update_feed_entries ─────────────────────────────────────────────
 /// v101：全应用**统一的更新事件流**。番剧新集、漫画新章、漫画扩展新版本、
-/// Hibiki 自身新版本，四个域投递到同一张表，UI 只消费这一处。
+/// Fushi 自身新版本，四个域投递到同一张表，UI 只消费这一处。
 ///
 /// 为什么必须是一张表而不是四套提醒：在此之前「有更新」这个事实散在四个互不
 /// 知情的地方——番剧靠首页一行现算（`video_subscription_updates.dart`）、扩展靠

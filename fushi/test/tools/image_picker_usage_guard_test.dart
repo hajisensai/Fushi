@@ -26,7 +26,7 @@ const Set<String> _allowedFiles = <String>{
   'lib/src/creator/enhancements/camera_enhancement.dart',
 };
 
-/// 从当前 cwd 向上找 hibiki 包根（含 lib/src/utils/misc/gallery_image_picker.dart）。
+/// 从当前 cwd 向上找 fushi 包根（含 lib/src/utils/misc/gallery_image_picker.dart）。
 Directory _packageRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
@@ -38,7 +38,7 @@ Directory _packageRoot() {
     if (parent.path == dir.path) break;
     dir = parent;
   }
-  fail('找不到 hibiki 包根（从 ${Directory.current.path} 向上）');
+  fail('找不到 fushi 包根（从 ${Directory.current.path} 向上）');
 }
 
 void main() {

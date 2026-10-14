@@ -39,7 +39,7 @@ class VideoSheetHarness {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir = Directory.systemTemp.createTempSync(
-      'hibiki_video_sheet_',
+      'fushi_video_sheet_',
     );
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)

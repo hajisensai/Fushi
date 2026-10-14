@@ -2,7 +2,7 @@
 ///
 /// 真实现——EP 枚举映射、OnnxTensor <-> OrtValue 转换、provider 回退、资源释放
 /// ——如今**唯一**住在 `lib/src/onnx/onnx_inference_ort.dart`（OCR / ASR 共用）。
-/// 本文件只剩 OCR 特有的两样东西：`hibiki.ocr` 日志通道，以及 manga-ocr 下载源
+/// 本文件只剩 OCR 特有的两样东西：`fushi.ocr` 日志通道，以及 manga-ocr 下载源
 /// 不同导出版本的输入名对齐（[resolveOcrSessionInputs]，经共享工厂的
 /// `resolveInputs` 钩子注入）。`createOcrSessionWithProviderFallback` /
 /// `isLocalOnnxRuntimeAvailable` 保留为转发入口，OCR 调用方与测试零改动。

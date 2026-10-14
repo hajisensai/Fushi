@@ -32,7 +32,7 @@ class PortKillDecision {
 typedef PortListenerFinder = Future<PortListenerInfo?> Function(int port);
 
 /// 杀前确认流程：找出占用者 → 关键系统进程守卫 → 确认弹窗展示占用者
-/// （进程名 + PID + 可执行路径；hibiki 自身旧实例特别标注）→ 确认后复核
+/// （进程名 + PID + 可执行路径；Fushi 自身旧实例特别标注）→ 确认后复核
 /// 占用者 PID 未变（确认弹窗把 find→kill 的 TOCTOU 窗口拉长了，换人必须放弃）。
 ///
 /// 只做决策不做杀；[findListener] / [isSelfInstance] 可注入以便 widget 测试

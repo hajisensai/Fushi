@@ -83,7 +83,7 @@ void main() {
         swipeFastVelocity: 300,
       );
       final Directory temp =
-          Directory.systemTemp.createTempSync('hibiki-pr912-wheel-js-');
+          Directory.systemTemp.createTempSync('fushi-pr912-wheel-js-');
       final File payload = File('${temp.path}/payload.json')
         ..writeAsStringSync(jsonEncode(<String, String>{'html': html}));
       late final ProcessResult result;

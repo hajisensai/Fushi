@@ -89,7 +89,7 @@ void main() {
 
   group('writer 入口', () {
     late Directory dir;
-    setUp(() => dir = Directory.systemTemp.createTempSync('hibiki_cover_w'));
+    setUp(() => dir = Directory.systemTemp.createTempSync('fushi_cover_w'));
     tearDown(() => dir.deleteSync(recursive: true));
 
     test('writeCoverBytesAtomically：非图片抛出、不动旧封面、不留 tmp', () async {

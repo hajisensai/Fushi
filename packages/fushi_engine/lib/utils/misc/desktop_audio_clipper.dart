@@ -296,7 +296,7 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
       _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
   final String? referer = headers.referer;
   return <String>[
-    // BUG-891：远端自签 Hibiki 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
+    // BUG-891：远端自签 Fushi 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
     // 见 third_party/ffmpeg_kit_flutter/patches/）——把 host 的 TOFU 钉扎指纹下发给
     // ffmpeg 的 TLS 层，握手后按证书 SHA-256 钉扎接受自签，非无条件放行。空 = 公网源
     // （YouTube 等有效证书）不钉扎，走 ffmpeg 默认。必须在 `-i` 前（TLS 输入选项）。

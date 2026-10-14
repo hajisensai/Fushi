@@ -33,7 +33,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_dl_register_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_dl_register_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -77,7 +77,7 @@ void main() {
     // 的是下载登记，不是系列筛选，固定看全部。
     await prefs.setVideoAllSeriesFilterName('all');
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_dl_register_store');
+        Directory.systemTemp.createTempSync('fushi_remote_dl_register_store');
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);

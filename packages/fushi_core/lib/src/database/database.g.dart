@@ -42746,7 +42746,7 @@ class VideoDownloadJobRow extends DataClass
   final String? identityJson;
 
   /// 后端连接身份与去重身份。敏感凭据不进数据库；backendProfileId 是下载配置档
-  /// 的字符串身份，不是 Hibiki 用户 Profile，故没有 FK 到 Profiles。
+  /// 的字符串身份，不是 Fushi 用户 Profile，故没有 FK 到 Profiles。
   final String backendKind;
   final String? backendTaskId;
   final String? backendProfileId;

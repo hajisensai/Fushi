@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-732: Hibiki 的浏览器扩展把 popup.js 作为 content script 注入到所有网页
+/// BUG-732: Fushi 的浏览器扩展把 popup.js 作为 content script 注入到所有网页
 /// （`<all_urls>`）。popup.js 的 document 'wheel' 监听为「查词弹窗」重写了滚动
 /// （按 POPUP_WHEEL_PIXEL_FACTOR=0.24 缩放 + preventDefault）。当滚轮落在宿主页
 /// （不在弹窗 shadow 内）时，旧代码回落到 `window.scrollBy`，等于把每个普通网页的

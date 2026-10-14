@@ -4,10 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// BUG-1049 的静态守卫：捕获目标的窗口选择器必须把 **Hibiki 自己启动的游戏**当成
+/// BUG-1049 的静态守卫：捕获目标的窗口选择器必须把 **Fushi 自己启动的游戏**当成
 /// 已选中的那一项。
 ///
-/// 用户实测：从 Hibiki 启动游戏后点「捕获目标」条，弹出的窗口列表把游戏和一屏无关
+/// 用户实测：从 Fushi 启动游戏后点「捕获目标」条，弹出的窗口列表把游戏和一屏无关
 /// 窗口平铺在一起、没有任何预选，等于让用户替 app 认它刚拉起来的进程。
 ///
 /// 这条路径没法用 widget 测试可移植地覆盖：选择器首行就是 `Platform.isWindows` 门
@@ -99,7 +99,7 @@ void main() {
     expect(rest, isNonNegative,
         reason: '排序语句里必须有互补的一段按 `pid != gamePid` 收尾其余窗口');
     expect(matching, lessThan(rest),
-        reason: 'Hibiki 启动的游戏窗口应排在列表最前，命中段必须拼在其余段之前');
+        reason: 'Fushi 启动的游戏窗口应排在列表最前，命中段必须拼在其余段之前');
   });
 
   test('当前游戏那一项预置焦点（打开即选中、回车即绑）', () {

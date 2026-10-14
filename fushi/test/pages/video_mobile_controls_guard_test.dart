@@ -140,7 +140,7 @@ void main() {
     expect(src.contains('_buildVolumeButton(controller'), isTrue,
         reason: 'bottom bar should expose a volume adjustment entry');
     expect(src.contains('_buildFullscreenButton('), isTrue,
-        reason: 'bottom bar should use Hibiki neutralized fullscreen');
+        reason: 'bottom bar should use Fushi neutralized fullscreen');
     // TODO-067: ±10s 按钮用左右对称的 fast_rewind/forward（取代显歪的 replay_10/forward_10），
     // 守卫意图仍是「宽屏保留 ±N 秒 seek 按钮」。BUG-257 合并后各只出现一次。
     expect(src.contains('Icons.fast_rewind_rounded'), isTrue,

@@ -7,7 +7,7 @@ void main() {
     'lib/src/sync/sync_settings_schema/interconnect.part.dart',
   );
 
-  group('Hibiki interconnect manual URL scheme guard', () {
+  group('Fushi interconnect manual URL scheme guard', () {
     test('manual URL hint matches the default plain HTTP LAN server', () {
       final String source = interconnectSource.readAsStringSync();
 

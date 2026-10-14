@@ -919,7 +919,7 @@ class ImmersionMiningEngine {
     // 同 tryGif：`audioSrc != null` 已判源，这里只问窗几何。
     if (audioSrc == null || !req.hasClipWindow) return null;
 
-    // BUG-1004：互联 host（LAN Hibiki 库）远端流优先走 **host 端裁**——host 用本地文件裁好
+    // BUG-1004：互联 host（LAN Fushi 库）远端流优先走 **host 端裁**——host 用本地文件裁好
     // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
     // 「client ffmpeg 打不开 host 自签 https / token 流」的整类失败（见 BUG-891 残余缺口：
     // 移动端自编 ffmpeg-kit 的 TLS pin 仍会因指纹缺失/URL 编码/网络脆弱而 I/O error）。命中
@@ -972,7 +972,7 @@ class ImmersionMiningEngine {
       audioBitrate: compression.audioBitrate,
       onFailure: reportAudio,
       // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
-      // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
+      // 的远端判定忽略；Fushi muxed 时 cutInput 是远端 https host，pin 生效。
       tlsPinSha256: req.mediaSourceTlsPinSha256,
       httpHeaders: req.mediaSourceHttpHeaders,
     );

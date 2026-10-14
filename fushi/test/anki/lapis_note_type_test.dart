@@ -55,7 +55,7 @@ void main() {
           '${LapisNoteType.css}\n${LapisNoteType.fushiCssOverride}');
     });
 
-    test('Hibiki css override separates the def-info label from the sentence',
+    test('Fushi css override separates the def-info label from the sentence',
         () {
       // BUG-056 follow-up: upstream `.def-info` has no top margin so the
       // "Primary Definition N/M" label crowds the sentence on multi-def desktop
@@ -72,7 +72,7 @@ void main() {
       expect(
         RegExp(r'BUG-\d+').hasMatch(LapisNoteType.css),
         isFalse,
-        reason: 'Hibiki 的 CSS 补丁只能写在 fushiCssOverride 里，'
+        reason: 'Fushi 的 CSS 补丁只能写在 fushiCssOverride 里，'
             '不能改 vendored 的 css 常量',
       );
       expect(LapisNoteType.fushiCssOverride, contains('.def-info'));

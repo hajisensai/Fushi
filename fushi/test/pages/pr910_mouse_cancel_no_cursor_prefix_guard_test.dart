@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// PR#910 审查必修 ②（BUG-1419 症状回归守卫）：`onPointerCancel` 绝不前置坐标。
 ///
-/// 为什么在 hibiki 侧做源码扫描：真值来源 `custom_platform_view.dart` 属 vendored fork
+/// 为什么在 fushi 侧做源码扫描：真值来源 `custom_platform_view.dart` 属 vendored fork
 /// （`packages/flutter_inappwebview_windows`），且 `flutter_inappwebview_windows` 只在
 /// `dependency_overrides` 里（不是 fushi 的直接依赖），fushi 的测试无法 import 它的
 /// Dart API（`depend_on_referenced_packages` 会让 `dart analyze` 直接 exit 1）。行为侧

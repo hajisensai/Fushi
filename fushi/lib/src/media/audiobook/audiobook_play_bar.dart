@@ -215,7 +215,7 @@ class AudiobookPlayBar extends StatelessWidget {
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_settings'),
           key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
-          semanticsIdentifier: 'hibiki.reader.audiobook.settings',
+          semanticsIdentifier: 'fushi.reader.audiobook.settings',
           icon: const FushiIcon(FushiIcons.settings),
           iconSize: 20,
           style: flatStyle,
@@ -821,7 +821,7 @@ class AudiobookPlayFab extends StatelessWidget {
             morphing: true,
             rounded: playing,
             size: size,
-            semanticsId: 'hibiki.reader.audiobook.play_fab',
+            semanticsId: 'fushi.reader.audiobook.play_fab',
             onPressed: () => controller.togglePlayPause(),
           ),
         );

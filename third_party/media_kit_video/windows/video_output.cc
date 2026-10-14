@@ -73,7 +73,7 @@ VideoOutput::VideoOutput(int64_t handle,
           is_hardware_acceleration_enabled = true;
           std::cout << "media_kit: VideoOutput: Using H/W rendering."
                     << std::endl;
-          // HIBIKI FORK: makes it observable whether libmpv can decode straight
+          // FUSHI FORK: makes it observable whether libmpv can decode straight
           // into the same Direct3D 11 device ANGLE renders with (`d3d11va`) or
           // has to round-trip every frame through system memory
           // (`d3d11va-copy`). See |ANGLESurfaceManager::EnsureSharedEGLDisplay|.
@@ -92,7 +92,7 @@ VideoOutput::VideoOutput(int64_t handle,
     }
     if (!is_hardware_acceleration_enabled) {
       std::cout << "media_kit: VideoOutput: Using S/W rendering." << std::endl;
-      // HIBIKI FORK (BUG-1657): make the real cost of this downgrade visible.
+      // FUSHI FORK (BUG-1657): make the real cost of this downgrade visible.
       // MPV_RENDER_API_TYPE_SW is not vo=gpu, so libmpv's `glsl-shaders`
       // (Anime4K / upscalers), the `scale`/`cscale` filters and the HDR
       // tone-mapping options (`tone-mapping`, `hdr-compute-peak`) silently
@@ -182,7 +182,7 @@ void VideoOutput::Render() {
     if (surface_manager_ != nullptr) {
       surface_manager_->Draw([&]() {
         if (surface_manager_->half_float()) {
-          // HIBIKI FORK (HDR): linear light into a half-float framebuffer,
+          // FUSHI FORK (HDR): linear light into a half-float framebuffer,
           // then encoded into the shared texture. Same orientation as the
           // 8-bit path's pbuffer framebuffer (no MPV_RENDER_PARAM_FLIP_Y;
           // verified with a top/bottom split clip).
@@ -387,7 +387,7 @@ void VideoOutput::Resize(int64_t required_width, int64_t required_height) {
     texture->height = texture->visible_height = surface_manager_->height();
     texture->release_context = nullptr;
     texture->release_callback = [](void*) {};
-    // HIBIKI FORK (HDR): the patched engine's kFlutterDesktopPixelFormatRGBA16F
+    // FUSHI FORK (HDR): the patched engine's kFlutterDesktopPixelFormatRGBA16F
     // (appended after BGRA8888, i.e. 3; spelled numerically so this still
     // compiles against a stock engine's headers, which never see it because
     // half-float output is only enabled once the engine reported support).

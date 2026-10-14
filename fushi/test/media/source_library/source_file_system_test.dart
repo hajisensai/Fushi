@@ -238,7 +238,7 @@ void main() {
           reason: 'source_types/ 单文件目录已并入 media/sources/，禁止复活');
 
       // source_library/ 域内禁止声明任何 MediaSource* 前缀类型（class/mixin/enum/
-      // typedef/extension type）。MediaSourceRow 只能来自 hibiki_core 的 drift
+      // typedef/extension type）。MediaSourceRow 只能来自 fushi_core 的 drift
       // 生成层（DB 契约），消费侧一律用 SourceLibraryRow 别名。
       final RegExp forbiddenDecl = RegExp(
         r'^(?:abstract |base |final |sealed |interface )*'

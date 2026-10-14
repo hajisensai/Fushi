@@ -56,7 +56,7 @@ void main() {
   test('VN 切屏切点遵守禁则（node 行为级）', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     final Directory temp = Directory.systemTemp.createTempSync(
-      'hibiki-bug2888-vn-js-',
+      'fushi-bug2888-vn-js-',
     );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));

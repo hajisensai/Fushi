@@ -87,13 +87,13 @@ Widget _maybeBadge({
 /// so integration tests can locate the top-level destinations without depending
 /// on the private widget type or the stock NavigationBar/NavigationRail (which
 /// this no longer uses on Material).
-const Key fushiMaterialNavKey = ValueKey<String>('hibiki-material-nav');
+const Key fushiMaterialNavKey = ValueKey<String>('fushi-material-nav');
 
 /// Marks the macOS-native (macos_ui) shell's content subtree so integration
 /// tests can locate the top-level destinations without depending on the
 /// MacosWindow/Sidebar internals. Mirrors [fushiMaterialNavKey] for the macOS
 /// design system.
-const Key fushiMacosNavKey = ValueKey<String>('hibiki-macos-nav');
+const Key fushiMacosNavKey = ValueKey<String>('fushi-macos-nav');
 
 /// Height of the mobile bottom bar's **content box**, in logical pixels —
 /// the system gesture inset is let through by [SafeArea] on top of this.

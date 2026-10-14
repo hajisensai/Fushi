@@ -144,13 +144,13 @@ test('宿主滚动条：页面级样式无箭头、透明轨道、圆角滑块�
     assert.ok(at >= 0, 'content.css 缺 ' + sel);
     return css.slice(at, css.indexOf('}', at));
   };
-  assert.match(block('#hibiki-popup-host'), /scrollbar-width: auto !important;[\s\S]*scrollbar-color: auto !important;/);
-  assert.match(block('#hibiki-popup-host::-webkit-scrollbar-button'), /display: none/);
-  assert.match(css, /#hibiki-popup-host::-webkit-scrollbar-track,[\s\S]*?background: transparent/);
-  assert.match(block('#hibiki-popup-host::-webkit-scrollbar-thumb'), /border-radius: 999px/);
+  assert.match(block('#fushi-popup-host'), /scrollbar-width: auto !important;[\s\S]*scrollbar-color: auto !important;/);
+  assert.match(block('#fushi-popup-host::-webkit-scrollbar-button'), /display: none/);
+  assert.match(css, /#fushi-popup-host::-webkit-scrollbar-track,[\s\S]*?background: transparent/);
+  assert.match(block('#fushi-popup-host::-webkit-scrollbar-thumb'), /border-radius: 999px/);
   // 滚动条那一列与卡片同色：只给最右 10px（= 滚动条宽）上色，用 content.js 量到的卡片底色。
-  assert.match(block('#hibiki-popup-host'), /linear-gradient\(to left, var\(--fushi-host-gutter, transparent\) 10px, transparent 10px\)/);
-  assert.match(block('#hibiki-popup-host::-webkit-scrollbar'), /width: 10px/);
+  assert.match(block('#fushi-popup-host'), /linear-gradient\(to left, var\(--fushi-host-gutter, transparent\) 10px, transparent 10px\)/);
+  assert.match(block('#fushi-popup-host::-webkit-scrollbar'), /width: 10px/);
   // 宿主 inline 样式不得再写标准滚动条属性（会把上面整族伪元素禁用）。
   const src = fs.readFileSync(CONTENT, 'utf8');
   assert.doesNotMatch(src, /fushiHost\.style\.scrollbar(Color|Width)|host\.style\.scrollbar(Color|Width)/);

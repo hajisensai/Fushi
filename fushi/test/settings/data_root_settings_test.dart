@@ -145,7 +145,7 @@ void main() {
         oldDocumentsRoot: oldDocs,
         oldSupportRoot: oldSupport,
         existsAndHasFiles: alwaysEmpty,
-        // 默认 false = Hibiki 专属根（<dataRoot>/documents），整树搬移语义。
+        // 默认 false = Fushi 专属根（<dataRoot>/documents），整树搬移语义。
       );
       expect(r, DataRootTargetRejection.insideCurrentRoot);
     });

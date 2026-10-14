@@ -17,11 +17,11 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 ///
 /// 旧值的 `42` 是 media_kit 导出常量 [kDefaultMaterialVideoControlsThemeData] 那套含
 /// `bottomButtonBarMargin.bottom: 42` 的整体离底留白——它是控制条离屏幕底边的空白，
-/// 不是遮挡字幕的实体，叠进避让只会凭空多抬一个 margin。Hibiki 实际 new 的桌面主题
+/// 不是遮挡字幕的实体，叠进避让只会凭空多抬一个 margin。Fushi 实际 new 的桌面主题
 /// （`MaterialDesktopVideoControlsThemeData`）走构造器默认（`bottomButtonBarMargin`
-/// 只有左右、vertical=0），本就没有这 42px，故去掉它也更贴合 Hibiki 真实几何。
+/// 只有左右、vertical=0），本就没有这 42px，故去掉它也更贴合 Fushi 真实几何。
 ///
-/// Hibiki 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
+/// Fushi 用自绘 `VideoSubtitleOverlay`（非 media_kit 内置字幕视图）。TODO-129 起字幕
 /// **动态**避让：控制条出现时把字幕在用户位置之上抬到 `max(用户位置, 本值)`、隐藏时
 /// 落回用户位置（由 [VideoSubtitleOverlay] 的 `controlsVisible` 驱动 `AnimatedPadding`，
 /// TODO-161 取下限而非加法），不再像 TODO-089 那样把本值恒加进默认
@@ -179,7 +179,7 @@ double videoSeekBarContainerBottom({
 ///
 /// 真相源是 fork `third_party/media_kit_video/.../controls/material.dart` 的
 /// `_theme(context).padding ?? (isFullscreen(context) ? MediaQuery.padding : EdgeInsets.zero)`。
-/// Hibiki 的移动 / 桌面 theme 都**没有**设 `padding` 字段，故恒走后半段。
+/// Fushi 的移动 / 桌面 theme 都**没有**设 `padding` 字段，故恒走后半段。
 ///
 /// **为什么不能图省事写 `SafeArea`**：`SafeArea` 恒吃 `MediaQuery.padding`，与上式只在
 /// 「真的处于 media_kit 全屏路由」时才等价。而移动端视频**永不进 media_kit 全屏路由**

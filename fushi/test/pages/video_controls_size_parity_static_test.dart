@@ -209,7 +209,7 @@ void main() {
       source,
       contains('Future<void> _pushNeutralizedVideoFullscreen('),
       reason:
-          'media_kit default fullscreen route is outside VideoFushiPage.neutralized; Hibiki must push its own neutralized route',
+          'media_kit default fullscreen route is outside VideoFushiPage.neutralized; Fushi must push its own neutralized route',
     );
     final int helper = source.indexOf(
       'Future<void> _pushNeutralizedVideoFullscreen(',
@@ -240,7 +240,7 @@ void main() {
       source,
       contains('toggleFullscreenOnDoublePress: false'),
       reason:
-          'package default double-click route is unneutralized; Hibiki should replace it with its own double-click handler',
+          'package default double-click route is unneutralized; Fushi should replace it with its own double-click handler',
     );
     expect(
       source,

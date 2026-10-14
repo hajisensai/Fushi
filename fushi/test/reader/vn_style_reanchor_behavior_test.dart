@@ -16,7 +16,7 @@ void main() {
   test('VN shim 行为级：样式两阶段重锚 begin/commit', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     final Directory temp = Directory.systemTemp.createTempSync(
-      'hibiki-bug2261-vn-js-',
+      'fushi-bug2261-vn-js-',
     );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));

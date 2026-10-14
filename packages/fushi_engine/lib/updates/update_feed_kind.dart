@@ -17,7 +17,7 @@ enum UpdateFeedKind {
   /// 已装漫画扩展有新版本。
   mangaExtension('mangaExtension'),
 
-  /// Hibiki 自身有新发布版本。
+  /// Fushi 自身有新发布版本。
   appRelease('appRelease');
 
   const UpdateFeedKind(this.dbValue);

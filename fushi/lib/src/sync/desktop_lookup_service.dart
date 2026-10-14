@@ -77,7 +77,7 @@ class DesktopLookupService extends ChangeNotifier {
     _pendingRequest = null;
   }
 
-  /// TODO-341：在桌面词典页里复制文本会让 Windows 任务栏的 Hibiki 图标高亮
+  /// TODO-341：在桌面词典页里复制文本会让 Windows 任务栏的 Fushi 图标高亮
   /// （图标闪烁/请求注意），用户得点一下 app 才能消掉。
   ///
   /// 根因：`window_manager` 的 `show()`/`focus()` 在 Windows 上都调
@@ -146,9 +146,9 @@ class DesktopLookupService extends ChangeNotifier {
     return true;
   }
 
-  /// 判断 Hibiki 是否已经占据前台。Windows 上不能只信
+  /// 判断 Fushi 是否已经占据前台。Windows 上不能只信
   /// [windowManager.isFocused]：词典 WebView/原生子窗口拿焦点时，插件可能报告
-  /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Hibiki 进程。此时继续
+  /// 主窗未聚焦，但 `GetForegroundWindow` 仍属于当前 Fushi 进程。此时继续
   /// show/focus 主窗会触发任务栏请求注意态。
   Future<bool> _isFushiForeground() async {
     if (DesktopForegroundGuard.isForegroundOwnedByCurrentProcess()) {

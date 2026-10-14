@@ -6,14 +6,14 @@ import '../helpers/workspace_pubspec.dart';
 /// TODO-364 source-scan guard: the vendored `media_kit_video` controls must keep
 /// publishing their **real** `visible` into the host's `visibilityNotifier`.
 ///
-/// Root cause: Hibiki renders its own subtitle overlay and dodges the bottom
+/// Root cause: Fushi renders its own subtitle overlay and dodges the bottom
 /// controls bar. It used to keep a *separate* mirror of controls visibility with
 /// its own timer, which drifted out of phase with each control State's private
 /// `visible` + private `Timer` and made the subtitle dodge reverse direction
 /// under concurrent input. The fix exposes a single source of truth: both theme
 /// data classes gain an optional `visibilityNotifier`, and every control State
 /// pushes its real `visible` into it after each mutation (`_publishVisibility()`).
-/// Hibiki consumes that one notifier instead of duplicating the state machine.
+/// Fushi consumes that one notifier instead of duplicating the state machine.
 ///
 /// This guards the *patch* — if a future re-vendor of media_kit_video drops the
 /// `visibilityNotifier` field or stops publishing after a `visible` change, the

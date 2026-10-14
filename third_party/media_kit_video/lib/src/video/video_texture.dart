@@ -238,7 +238,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
   @override
   void didUpdateWidget(Video oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // HIBIKI FORK: follow the `hidden` flag of whichever controller we bind.
+    // FUSHI FORK: follow the `hidden` flag of whichever controller we bind.
     if (!identical(oldWidget.controller, widget.controller)) {
       oldWidget.controller.hidden.removeListener(_onHiddenChanged);
       widget.controller.hidden.addListener(_onHiddenChanged);
@@ -308,7 +308,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // HIBIKI FORK: HDR passthrough hole (see `VideoController.hidden`).
+    // FUSHI FORK: HDR passthrough hole (see `VideoController.hidden`).
     widget.controller.hidden.addListener(_onHiddenChanged);
     // --------------------------------------------------
     // Do not show the video frame until width & height are available.
@@ -386,7 +386,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
       child: ValueListenableBuilder<VideoViewParameters>(
         valueListenable: videoViewParametersNotifier,
         builder: (context, videoViewParameters, _) {
-          // HIBIKI FORK: `controller.hidden` (Windows HDR passthrough) turns the
+          // FUSHI FORK: `controller.hidden` (Windows HDR passthrough) turns the
           // picture area into a transparent hole — no fill, no Texture — while
           // the subtitle view / controls below keep rendering on top of it.
           // Rebuilt through _onHiddenChanged (listener added in initState).
@@ -484,7 +484,7 @@ class VideoState extends State<Video> with WidgetsBindingObserver {
     );
   }
 
-  // HIBIKI FORK: see `VideoController.hidden`.
+  // FUSHI FORK: see `VideoController.hidden`.
   void _onHiddenChanged() {
     if (mounted) setState(() {});
   }

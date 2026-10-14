@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-/// ッツ 全局字符偏移 ↔ Hibiki (sectionIndex, normCharOffset) 双向转换。
+/// ッツ 全局字符偏移 ↔ Fushi (sectionIndex, normCharOffset) 双向转换。
 ///
 /// ッツ 用 `exploredCharCount`（全书已读字符总数）表示进度；
-/// Hibiki 用 `(sectionIndex, normCharOffset)` 表示（章节 + 章内 0-10000 归一化偏移）。
+/// Fushi 用 `(sectionIndex, normCharOffset)` 表示（章节 + 章内 0-10000 归一化偏移）。
 ///
 /// 转换依赖 `EpubBooks.chaptersJson` 中每章的 `characters` 字段。
 
@@ -30,7 +30,7 @@ int totalCharacterCount(List<ChapterCharInfo> chapters) {
   return total;
 }
 
-/// Hibiki → ッツ：`(sectionIndex, normCharOffset)` → `exploredCharCount`
+/// Fushi → ッツ：`(sectionIndex, normCharOffset)` → `exploredCharCount`
 int toExploredCharCount({
   required int sectionIndex,
   required int normCharOffset,
@@ -50,7 +50,7 @@ int toExploredCharCount({
   return count;
 }
 
-/// ッツ → Hibiki：`exploredCharCount` → `(sectionIndex, normCharOffset)`
+/// ッツ → Fushi：`exploredCharCount` → `(sectionIndex, normCharOffset)`
 ({int sectionIndex, int normCharOffset}) fromExploredCharCount({
   required int exploredCharCount,
   required List<ChapterCharInfo> chapters,

@@ -54,7 +54,7 @@ class ANGLESurfaceManager {
 
   void MakeCurrent(bool value);
 
-  // HIBIKI FORK (HDR in the Flutter compositor): half-float output.
+  // FUSHI FORK (HDR in the Flutter compositor): half-float output.
   //
   // Off (default): libmpv renders into the B8G8R8A8 shared texture through
   // the pbuffer's default framebuffer, exactly as upstream.
@@ -102,7 +102,7 @@ class ANGLESurfaceManager {
 
   bool CreateAndBindEGLSurface();
 
-  // HIBIKI FORK (HDR): half-float variant of |CreateAndBindEGLSurface|.
+  // FUSHI FORK (HDR): half-float variant of |CreateAndBindEGLSurface|.
   bool CreateHalfFloatTargets();
   void ReleaseHalfFloatTargets();
   bool EnsureEncodeProgram();
@@ -149,7 +149,7 @@ class ANGLESurfaceManager {
   EGLContext context_ = nullptr;
   EGLConfig config_ = nullptr;
 
-  // HIBIKI FORK (HDR): see |SetHalfFloat|.
+  // FUSHI FORK (HDR): see |SetHalfFloat|.
   bool half_float_ = false;
   EGLImageKHR output_image_ = EGL_NO_IMAGE_KHR;
   GLuint output_texture_ = 0;
@@ -212,7 +212,7 @@ class ANGLESurfaceManager {
   // Number of active instances of ANGLESurfaceManager.
   static int32_t instance_count_;
 
-  // HIBIKI FORK: process wide Direct3D 11 device.
+  // FUSHI FORK: process wide Direct3D 11 device.
   //
   // Upstream created one |ID3D11Device| per |ANGLESurfaceManager| *and* let
   // ANGLE create yet another, hidden one (|EGL_DEFAULT_DISPLAY|). libmpv's

@@ -184,7 +184,7 @@ bool _isUpdateTempFileName(String name) {
 /// 纯函数（TODO-1010 / TODO-1149）：给定 updates 目录条目列表，挑出**应删除的旧完整
 /// 安装包**与**过期的 `.staging` 下载暂存根目录**。
 ///
-/// 根因：下载完成的安装包（`Hibiki-x.y.z-setup.exe` / `.apk` / `.AppImage` …）落在
+/// 根因：下载完成的安装包（`fushi-x.y.z-windows-setup.exe` / `.apk` / `.AppImage` …）落在
 /// updates 目录后，旧版历史只清临时文件（`.part`/`.meta.json`/`.owner.json`），完整
 /// 产物**从不回收**，每升级一版就多堆一个几十~几百 MB 的包（TODO-1010）；同理下载
 /// promote（[_promoteCompleteDownload]）只删内层 `{id}` 子目录、留下的空

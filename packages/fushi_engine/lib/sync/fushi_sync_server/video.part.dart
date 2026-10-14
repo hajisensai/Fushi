@@ -314,7 +314,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         final String suffix =
             _decodeHeaderValue(request, 'x-hibiki-subtitle-suffix') ?? '';
         final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_subtitle_in');
+            Directory.systemTemp.createTempSync('fushi_subtitle_in');
         final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
         final IOSink sink = tmp.openWrite();
         try {
@@ -578,7 +578,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final String? fileName =
           _decodeHeaderValue(request, 'x-hibiki-video-filename');
       final Directory tmpDir =
-          Directory.systemTemp.createTempSync('hibiki_video_in');
+          Directory.systemTemp.createTempSync('fushi_video_in');
       final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
       final IOSink sink = tmp.openWrite();
       try {

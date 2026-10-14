@@ -54,10 +54,10 @@ void main() {
       final String css = ReaderContentStyles.css(settings: settings);
       await controller.evaluateJavascript(source: '''
         (function() {
-          var s = document.getElementById('hibiki-test-style');
+          var s = document.getElementById('fushi-test-style');
           if (!s) {
             s = document.createElement('style');
-            s.id = 'hibiki-test-style';
+            s.id = 'fushi-test-style';
             document.head.appendChild(s);
           }
           s.textContent = ${jsonEncode(css)};

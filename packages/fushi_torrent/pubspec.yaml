@@ -1,7 +1,7 @@
 name: fushi_torrent
 resolution: workspace
 description: >-
-  Embedded torrent engine (libtorrent 2.x) C ABI FFI bindings for Hibiki.
+  Embedded torrent engine (libtorrent 2.x) C ABI FFI bindings for Fushi.
   阶段1a walking skeleton：只证明 libtorrent 构建 → 自写 C ABI → Dart FFI
   在桌面端打通，尚未实现下载管线。
 publish_to: none

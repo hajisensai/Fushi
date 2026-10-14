@@ -56,7 +56,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_switch_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_switch_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -89,7 +89,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_switch_store');
+        Directory.systemTemp.createTempSync('fushi_remote_switch_store');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = AppModel(platformServices)

@@ -11,7 +11,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 ///
 /// 历史行为是 documents 根 = 平台 `Documents` **本身**，于是
 /// [AppPaths.fushiOwnedDocumentsEntries] 那 16 个目录全摊在用户文档根下。现在：
-///  - 全新安装 → `<Documents>/Hibiki/data`（Hibiki 专属容器）；
+///  - 全新安装 → `<Documents>/Fushi/data`（Fushi 专属容器）；
 ///  - 老安装（support 根下已有 `hibiki.db`）→ 仍是扁平的平台 `Documents`，零迁移；
 ///  - 判定结果**一次性固化**进 SharedPreferences，之后不再探测——布局在同一台机器上
 ///    绝不能随「此刻磁盘上有没有某个文件」漂移（漂一次就是整个书库凭空消失）。
@@ -39,7 +39,7 @@ void main() {
     AppPaths.debugDataRootReader = () async => '';
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
-    tmp = Directory.systemTemp.createTempSync('hibiki_docs_layout_');
+    tmp = Directory.systemTemp.createTempSync('fushi_docs_layout_');
     platformDocuments = Directory(p.join(tmp.path, 'Documents'))
       ..createSync(recursive: true);
     platformSupport = Directory(p.join(tmp.path, 'AppData', 'hibiki'))
@@ -74,7 +74,7 @@ void main() {
   });
 
   group('BUG-1115 默认 documents 布局判定', () {
-    test('全新安装 → <Documents>/Hibiki/data，用户文档根下不再摊开', () async {
+    test('全新安装 → <Documents>/Fushi/data，用户文档根下不再摊开', () async {
       // 布局判定只在启动期的 resolve() 里做一次（解析路径本身不许碰文件系统）。
       final Directory root = (await AppPaths.resolve()).documentsRoot;
 

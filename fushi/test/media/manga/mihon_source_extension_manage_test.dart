@@ -39,7 +39,7 @@ void main() {
 
       setUp(() async {
         LocaleSettings.setLocale(AppLocale.en);
-        root = await Directory.systemTemp.createTemp('hibiki-src-ext-manage-');
+        root = await Directory.systemTemp.createTemp('fushi-src-ext-manage-');
         database = FushiDatabase.forTesting(NativeDatabase.memory());
         runtime = _RecordingRuntime();
         await database.upsertMangaExtensionStore(

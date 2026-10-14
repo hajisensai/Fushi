@@ -19,7 +19,7 @@ void main() {
           'app': 'fushi',
           'pairing': <String, dynamic>{'v2': true},
           'tls': <String, dynamic>{'enabled': true, 'fingerprint': 'aa:bb'},
-          'deviceName': 'Hibiki · mac',
+          'deviceName': 'Fushi · mac',
         }),
         200,
       );
@@ -32,7 +32,7 @@ void main() {
     expect(r.supportsPairV2, isTrue);
     expect(r.tlsEnabled, isTrue);
     expect(r.fingerprint, 'aa:bb');
-    expect(r.deviceName, 'Hibiki · mac');
+    expect(r.deviceName, 'Fushi · mac');
   });
 
   test('非 fushi 响应（app 字段缺失）→ null', () async {
@@ -71,7 +71,7 @@ void main() {
   });
 
   // BUG-1741：探测失败必须带出原因。此前整个函数是 `on Object { return null; }`，
-  // 「证书指纹对不上」（安全事件）、「对端超时」、「端口没人」和「那不是 Hibiki」
+  // 「证书指纹对不上」（安全事件）、「对端超时」、「端口没人」和「那不是 Fushi」
   // 在调用方眼里长得一模一样，UI 只能挑最含糊的一句说。
   group('probeFushiPing 失败分型', () {
     test('钉扎指纹不符（TlsException）→ tls，而不是裸 null', () async {
@@ -115,7 +115,7 @@ void main() {
       expect(o.failure, FushiPingFailure.unreachable);
     });
 
-    test('连上但不是 Hibiki → notFushi（与 unreachable 必须可分辨）', () async {
+    test('连上但不是 Fushi → notFushi（与 unreachable 必须可分辨）', () async {
       final MockClient mock = MockClient(
         (http.Request req) async =>
             http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200),

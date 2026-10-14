@@ -844,7 +844,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
 /// 移动端底部按钮栏的 play / 快进 / 快退按钮各按自己的 `onPressed` 执行，media_kit
 /// fork 的隐藏 `Timer` 只在整屏 tap 与 seek 时重置，按按钮不重置 → 用户还在按按钮，
 /// 控制条已到点自动隐藏，手指落到按钮下方的画面上（误触，用户报「持续点按钮仍自动
-/// 隐藏易误触」）。Hibiki 在这些按钮按下时 [poke]，fork 侧订阅本信号（经
+/// 隐藏易误触」）。Fushi 在这些按钮按下时 [poke]，fork 侧订阅本信号（经
 /// `MaterialVideoControlsThemeData.restartHideTimerSignal`），在控制条可见时取消并重排
 /// 隐藏 Timer，续命一个 `controlsHoverDuration`。是 [ChangeNotifier] 的极薄包装：
 /// [poke] 仅 `notifyListeners()`，不携带状态，纯边沿触发。
@@ -2012,7 +2012,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 控制条 State 在每次 `visible` 变化时推进来。
   ///
   /// 历史根因（TODO-129 旧实现）：media_kit 把控制条可见性 `visible` 与隐藏 `Timer` 藏在
-  /// 私有 State，旧 Hibiki 侧另建一份 **镜像** [_videoControlsVisible] + 一个独立隐藏
+  /// 私有 State，旧 Fushi 侧另建一份 **镜像** [_videoControlsVisible] + 一个独立隐藏
   /// `Timer`（已删）复刻同一套触发源喂给字幕避让。两套 `Timer` 各自计时、
   /// 各入口（hover / 移动 tap / 键盘 poke）独立维护 → 镜像与真实控制条 **相位会反**：
   /// 进度条起落动画中又来一次操作时，镜像翻成与真实可见态相反，字幕避让方向就反了
@@ -2084,7 +2084,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// OS 鼠标光标是否应隐藏的单一真相源（TODO-318 / BUG-258）。
   ///
   /// 根因：media_kit 自己用 `MouseRegion(cursor: none)`（`hideMouseOnControlsRemoval`）在
-  /// 控制条淡出时隐藏光标，但 hibiki 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
+  /// 控制条淡出时隐藏光标，但 fushi 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
   /// 叠在 media_kit 之上 → 最上层 MouseRegion 的 cursor 解析胜出 → 鼠标放到这些 chrome 上时
   /// 光标重现；沉浸锁态下 [IgnorePointer] 又剥了 media_kit 的 region，光标更无人隐藏。
   ///
@@ -5624,13 +5624,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   String _remoteSubtitleTempFileName(String videoId, String? hostFileName) {
-    final String fallback = 'hibiki_remote_${_safeFileName(videoId)}.srt';
+    final String fallback = 'fushi_remote_${_safeFileName(videoId)}.srt';
     if (hostFileName == null || hostFileName.trim().isEmpty) return fallback;
     final String baseName = p.basename(hostFileName.trim());
     if (subtitleFormatForPath(baseName) == null) return fallback;
     final String stem = _safeFileName(p.basenameWithoutExtension(baseName));
     final String safeStem = stem.isEmpty ? _safeFileName(videoId) : stem;
-    return 'hibiki_remote_$safeStem${p.extension(baseName)}';
+    return 'fushi_remote_$safeStem${p.extension(baseName)}';
   }
 
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
@@ -8782,7 +8782,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// the real top bar, so the buttons are injected into the same [topButtonBar]
   /// array as the back / title / track-track chrome — they inherit the theme's
   /// `buttonBarButtonColor` / `buttonBarButtonSize` and fade in / out with the
-  /// rest of the controls (a plain Hibiki [IconButton] would not).
+  /// rest of the controls (a plain Fushi [IconButton] would not).
   ///
   /// Renders **every** chip-renderable item in the slot ([_slotChipItems]), not
   /// just the five learning keys: the customization editor's palette
@@ -11304,11 +11304,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
 
-    // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Hibiki 侧另做镜像
+    // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Fushi 侧另做镜像
     // （TODO-364）：本外层 [Listener] 是 translucent，同一次点击会继续命中下方 media_kit
     // 移动控制条自己的手势层 → 其 `onTap` 翻 `visible` 并推送 [_mediaKitControlsVisible]，
     // 字幕避让由 [_applyControlsVisibilityFromMediaKit] 派生，与真实控制条同相位（旧实现在此
-    // 用 Hibiki 镜像独立 toggle，与 media_kit 各自计时 → 并发操作时方向反，是本 BUG 根因）。
+    // 用 Fushi 镜像独立 toggle，与 media_kit 各自计时 → 并发操作时方向反，是本 BUG 根因）。
 
     final DateTime now = DateTime.now();
     final DateTime? lastAt = _lastVideoPointerUpAt;

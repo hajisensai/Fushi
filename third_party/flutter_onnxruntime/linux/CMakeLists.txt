@@ -246,7 +246,7 @@ endif()
 # libraries, or libraries created by an external build triggered from this build file.
 if(NOT USE_SYSTEM_ONNXRUNTIME AND ONNXRUNTIME_LIBRARY)
   # When using the downloaded version, we need to bundle the library.
-  # Hibiki: the ORT tarball ships lib/libonnxruntime.so -> libonnxruntime.so.1
+  # Fushi: the ORT tarball ships lib/libonnxruntime.so -> libonnxruntime.so.1
   # -> libonnxruntime.so.1.22.0. Bundling ONNXRUNTIME_LIBRARY (the unversioned
   # symlink) made the app's install(FILES) copy a *dangling symlink* into
   # bundle/lib, while both the runner and this plugin carry

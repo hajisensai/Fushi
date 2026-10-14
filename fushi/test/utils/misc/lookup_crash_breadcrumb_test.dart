@@ -18,7 +18,7 @@ void main() {
   File importBreadcrumb() => File('${tmp.path}/import_crash_breadcrumb.txt');
 
   setUp(() async {
-    tmp = Directory.systemTemp.createTempSync('hibiki_lookup_bc_test');
+    tmp = Directory.systemTemp.createTempSync('fushi_lookup_bc_test');
     await svc.init(directoryOverride: tmp);
     await svc.clear();
   });

@@ -18,7 +18,7 @@ void main() {
   DateTime fakeNow = DateTime.utc(2026, 1, 1, 12, 0, 0);
 
   Future<void> startServer({bool approve = true}) async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_rl_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_rl_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
@@ -152,7 +152,7 @@ void main() {
   });
 
   test('PIN-free sessions are never rate limited', () async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_rl_free_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_rl_free_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,

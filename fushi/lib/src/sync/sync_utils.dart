@@ -9,9 +9,9 @@ import 'package:fushi_engine/sync/sync_asset_store.dart'
 /// The single sync root folder name used by every backend (cloud + LAN).
 ///
 /// Historically `ttu-reader-data` (the app began life as a ttu-ebook-reader
-/// fork). Renamed to `hibiki-data`; there are no historical cloud users, so no
-/// migration is performed — first sync on the new name simply recreates the
-/// root. One library must sync identically across all backends, so every
+/// fork), then `hibiki-data` (no cloud users yet, so no migration), now
+/// `fushi-data` (migrated from the old root, see [kLegacySyncRootFolderName]).
+/// One library must sync identically across all backends, so every
 /// backend MUST derive its root from this constant — never hardcode the literal.
 const String kSyncRootFolderName = 'fushi-data';
 
@@ -63,7 +63,7 @@ SyncFileRef? findSyncFileByPrefix(List<SyncFileRef> files, String prefix) {
 
 /// 按文件扩展名猜测同步上传的 Content-Type（各云端后端共用的薄 shim）。
 ///
-/// 命名统一轮 G8：MIME 推断收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]
+/// 命名统一轮 G8：MIME 推断收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]
 /// （旧本地副本只认 epub/m4b/m4a/mp3/ogg/flac，其余上传一律 octet-stream）。
 String guessSyncContentType(String fileName) => mimeTypeForFilePath(fileName);
 
@@ -72,7 +72,7 @@ String guessSyncContentType(String fileName) => mimeTypeForFilePath(fileName);
 /// 它们的 clearCache / restoreCache / cachedRootFolderId / cachedFolderIds /
 /// cacheBookFolderIds / evictFolderId 六个方法。抽成 mixin 消除六份逐字节相同的副本。
 ///
-/// 路径式后端（WebDAV、hibiki 互联）把 folderId 当作裸路径前缀用（`folderId +
+/// 路径式后端（WebDAV、Fushi 互联）把 folderId 当作裸路径前缀用（`folderId +
 /// fileName` 不插分隔符），要求 folderId 必须以 `/` 结尾，否则文件会溢出到同步根
 /// （BUG-845）。这类后端覆写 [normalizeFolderId] 在每个入缓存点归一化尾斜杠；其余
 /// 后端沿用默认恒等实现，行为逐字节不变。

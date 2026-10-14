@@ -36,7 +36,7 @@ String _ruleBody(String css, String selector) {
 }
 
 void main() {
-  // flutter test cwd is the hibiki package root.
+  // flutter test cwd is the fushi package root.
   final Map<String, String> popupCssFiles = <String, String>{
     'in-app popup': 'assets/popup/popup.css',
     'extension vendor (assets)': 'assets/browser_extension/vendor/popup.css',

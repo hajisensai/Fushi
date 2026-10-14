@@ -13,7 +13,7 @@ AnkiSettings _settings({String? audioMapping}) => AnkiSettings(
   availableNoteTypes: <AnkiNoteType>[
     AnkiNoteType(
       id: 2,
-      name: 'Hibiki',
+      name: 'Fushi',
       fields: <String>[
         'Expression',
         if (audioMapping != null) 'Audio',

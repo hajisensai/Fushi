@@ -11,7 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 服务端 `catch` 成 `HTTP 500`，互联/自动同步的书籍推送整体失效——`SyncRunReport`
 /// 只看得到裸 `HTTP 500`（client 侧丢弃了服务端的 `Import failed: <e>` 响应体）。
 ///
-/// 单元测试无法挡住这个回归：`hibiki_library_host_service_*` 测试都自己注入了
+/// 单元测试无法挡住这个回归：`fushi_library_host_service_*` 测试都自己注入了
 /// `importBookFromFile` 假回调，生产忘了注入照样绿。故在源码级钉死：生产工厂必须
 /// 把 `importBookFromFile` 接到真实导入原语 `EpubImporter.importFromPath`。
 void main() {

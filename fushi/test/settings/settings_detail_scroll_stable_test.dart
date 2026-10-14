@@ -47,7 +47,7 @@ Future<ScrollController> _pumpSyncDetail(
   final FushiDatabase db = _testDb();
   final PreferencesRepository prefs = PreferencesRepository(db);
   await prefs.loadFromDb();
-  final Directory storeDir = Directory.systemTemp.createTempSync('hibiki_sync');
+  final Directory storeDir = Directory.systemTemp.createTempSync('fushi_sync');
   final SyncRepository repo = SyncRepository(db);
   await repo.setBackendType(SyncBackendType.fushiServer);
   // Several URLs → a tall, variable-height URL list, exaggerating the unequal
@@ -127,7 +127,7 @@ void main() {
 
   late Directory ppDir;
   setUpAll(() {
-    ppDir = Directory.systemTemp.createTempSync('hibiki_pp');
+    ppDir = Directory.systemTemp.createTempSync('fushi_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => ppDir.path,

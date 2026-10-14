@@ -4,7 +4,7 @@ import 'dart:io';
 /// macOS 应用内自动更新的「跨重启握手」标记（Phase 3）。
 ///
 /// 与 Windows 的 [WindowsUpdateHandoff] 同构但更精简：macOS 的替换发生在一段
-/// **分离 shell 脚本**里（等本进程退出→替换 `/Applications/hibiki.app`→重启，见
+/// **分离 shell 脚本**里（等本进程退出→替换 `/Applications/fushi.app`→重启，见
 /// `MacInstaller`），本进程 `exit(0)` 后无法直接观测替换结果。因此在退出前写一份
 /// pending 标记（目标版本 + 目标 app 路径），脚本再把成功/失败写进一份 result 文件；
 /// 下次启动 [reconcile] 据「当前版本是否已到目标」+ result 文件判定：

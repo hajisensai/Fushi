@@ -118,7 +118,7 @@ void main() {
 
   test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {
     expectScanScale(_scannedDartFiles(roots).length,
-        what: 'lib/ + test/ + hibiki_core/lib 下的 .dart（已排除生成物与冻结文件）',
+        what: 'lib/ + test/ + fushi_core/lib 下的 .dart（已排除生成物与冻结文件）',
         atLeast: 3590,
         measured: 4492);
   });

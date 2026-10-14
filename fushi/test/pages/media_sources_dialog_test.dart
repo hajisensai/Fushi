@@ -1,5 +1,5 @@
 // TODO-817 M1c MediaSourcesDialog widget 行为 + 源码守卫测试：
-//  (1) 空扫描根仍显示 Hibiki 互联；漫画**不再**在这里显示 Mokuro.moe（BUG-1431）。
+//  (1) 空扫描根仍显示 Fushi 互联；漫画**不再**在这里显示 Mokuro.moe（BUG-1431）。
 //  (2) 预置 video 来源 -> 按 sortOrder 渲染 label/rootPath/统计文案。
 //  (3) lastScanError != null -> 显示 media_source_scan_error。
 //  (4) 移除来源 -> 确认对话框含 media_source_remove_keeps_media；确认后该来源消失，

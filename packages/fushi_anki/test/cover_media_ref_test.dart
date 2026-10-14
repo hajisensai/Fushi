@@ -65,7 +65,7 @@ void main() {
     availableNoteTypes: <AnkiNoteType>[
       AnkiNoteType(
         id: 2,
-        name: 'Hibiki',
+        name: 'Fushi',
         fields: <String>['Expression', 'Picture'],
       ),
     ],
@@ -80,7 +80,7 @@ void main() {
   late Directory dir;
   late File mp4;
   setUp(() {
-    dir = Directory.systemTemp.createTempSync('hibiki_cover_media_ref');
+    dir = Directory.systemTemp.createTempSync('fushi_cover_media_ref');
     mp4 = File('${dir.path}/external_window.mp4')..writeAsBytesSync(mp4Bytes);
   });
   tearDown(() {
@@ -115,7 +115,7 @@ void main() {
           service: service,
           settings: settings.copyWith(
             availableNoteTypes: const <AnkiNoteType>[
-              AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
+              AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
             ],
             fieldMappings: <String, String>{
               ...settings.fieldMappings,
@@ -206,7 +206,7 @@ void main() {
     final int uploadsBefore = mimeTypes.length;
     final synchronized = await _ConfiguredAnkiRepository(settings.copyWith(
       availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
+        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression', 'Picture', 'SentenceAudio']),
       ],
       fieldMappings: <String, String>{
         ...settings.fieldMappings,

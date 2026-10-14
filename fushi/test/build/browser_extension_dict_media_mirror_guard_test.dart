@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// GET /api/media/dictionary endpoint. This locks the fix in place and keeps the
 /// two extension mirrors (bundled assets/ + real source tools/) byte-identical.
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',
@@ -582,7 +582,7 @@ void main() {
         );
       });
 
-      test('[$name] background diagnoses Hibiki/Yomitan port ownership', () {
+      test('[$name] background diagnoses Fushi/Yomitan port ownership', () {
         final String src = File('$root/background.js').readAsStringSync();
         final String diagnostic = File(
           '$root/connection-diagnostics.js',
@@ -595,7 +595,7 @@ void main() {
         expect(
           src.contains("'/api/extension/status'"),
           isTrue,
-          reason: '$root background.js must identify Hibiki explicitly',
+          reason: '$root background.js must identify Fushi explicitly',
         );
         expect(
           src.contains("'/serverVersion'"),

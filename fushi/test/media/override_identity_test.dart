@@ -129,7 +129,7 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
-      storeDir = Directory.systemTemp.createTempSync('hibiki_override_thumb');
+      storeDir = Directory.systemTemp.createTempSync('fushi_override_thumb');
       appModel = AppModel(testPlatformServices())
         ..wireDatabaseForTesting(db)
         ..wireLocalAudioForTesting(
@@ -430,7 +430,7 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
-      storeDir = Directory.systemTemp.createTempSync('hibiki_override_1317');
+      storeDir = Directory.systemTemp.createTempSync('fushi_override_1317');
       appModel = AppModel(testPlatformServices())
         ..wireDatabaseForTesting(db)
         ..wireLocalAudioForTesting(

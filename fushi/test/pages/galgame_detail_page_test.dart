@@ -36,7 +36,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_detail_');
+        Directory.systemTemp.createTempSync('fushi_game_detail_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

@@ -225,7 +225,7 @@ jobs:
     # contract - no APK build and no signing happen here (main.yml still builds
     # and unit-tests the release APK), so the coverage currently at risk is
     # exactly integration_test/app_smoke_test.dart, which is nonetheless the only
-    # gate exercising Hibiki on a real Android runtime.
+    # gate exercising Fushi on a real Android runtime.
     # Removal condition: once runs with KVM enabled show the appSmoke class gone,
     # drop continue-on-error so this contract becomes a real gate again.
     #
@@ -913,7 +913,7 @@ jobs:
           built="$RUNNER_TEMP/mihon-runtime"
           if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
             chmod +x tool/mihon/build_desktop_runtime.sh
-            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/fushi-mihon-downloads"
           fi
           app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
@@ -1517,7 +1517,7 @@ jobs:
           if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
             .\tool\mihon\build_desktop_runtime.ps1 `
               -OutputDirectory $built `
-              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+              -DownloadCache "$env:RUNNER_TEMP\fushi-mihon-downloads"
             if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
           }
           $runtime = "fushi\build\windows\x64\runner\Debug\mihon_bridge"
@@ -1612,7 +1612,7 @@ jobs:
           # （LGPL，官方 GitHub 镜像 + SHA-256 钉死，fail-closed）。
           pwsh -NoProfile -ExecutionPolicy Bypass -File tools/bundle_7za.ps1 `
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
+            -DownloadCache "$env:RUNNER_TEMP\fushi-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # fushi-anki-sync：同 release-desktop.yml 的发布步骤，PR 门编 debug 抓编译断裂，
       # 装进 Debug bundle（fushi.exe 同级）并由 build.ps1 跑 version 冒烟。

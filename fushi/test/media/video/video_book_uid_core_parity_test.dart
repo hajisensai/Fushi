@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart' as app;
 import 'package:fushi_core/fushi_core.dart';
 
-/// 守卫：hibiki_core 的视频 bookUid 派生（v38 拆集迁移用）必须与 app 层
+/// 守卫：fushi_core 的视频 bookUid 派生（v38 拆集迁移用）必须与 app 层
 /// `video_import_dialog.dart` 逐字节等价。两处若漂移，迁移拆出的集 uid 会与导入
 /// 路径不一致 → 跨设备同步对不齐 / 重复导入不去重。
 void main() {

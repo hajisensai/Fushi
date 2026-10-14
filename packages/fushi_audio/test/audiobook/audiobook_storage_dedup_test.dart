@@ -11,7 +11,7 @@ void main() {
   test('persistFileWithProgress dedupes colliding basenames instead of '
       'overwriting', () async {
     final Directory tmp =
-        await Directory.systemTemp.createTemp('hibiki_persist_test_');
+        await Directory.systemTemp.createTemp('fushi_persist_test_');
     addTearDown(() => tmp.delete(recursive: true));
 
     final Directory persistDir = Directory(p.join(tmp.path, 'persist'))

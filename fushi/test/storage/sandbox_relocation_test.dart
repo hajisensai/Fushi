@@ -287,10 +287,10 @@ void main() {
       );
     });
 
-    test('旧根**之下**的非 Hibiki 路径同样原样不动', () async {
+    test('旧根**之下**的非 Fushi 路径同样原样不动', () async {
       // 上一条用例的外部路径落在 `<sandbox>/external/nas`，压根不在 oldRoot 之下
       // —— `isInScope` 第一句就返回 false，scopeTopLevelNames 传什么都能通过。
-      // 真正要守的形状是**位于旧根之内、但不属于 Hibiki 顶层项**的路径：用户把
+      // 真正要守的形状是**位于旧根之内、但不属于 Fushi 顶层项**的路径：用户把
       // 外部媒体库放在数据根旁边，它就长这样。
       await seedMovedBook();
       final Directory foreign =
@@ -319,7 +319,7 @@ void main() {
       expect(
         kept.extractDir,
         foreign.path,
-        reason: 'MyNasLibrary 不是 Hibiki 的顶层项，重基不该碰它 —— '
+        reason: 'MyNasLibrary 不是 Fushi 的顶层项，重基不该碰它 —— '
             'scopeTopLevelNames 传 null 时这里会被一起改写',
       );
     });

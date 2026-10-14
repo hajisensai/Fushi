@@ -183,7 +183,7 @@ canplay.call(deniedAudio[0]);
     late Directory dir;
     late File webm;
     setUp(() {
-      dir = Directory.systemTemp.createTempSync('hibiki_inline_video');
+      dir = Directory.systemTemp.createTempSync('fushi_inline_video');
       // 内容不需要真能播：两端都只按扩展名与字节哈希落媒体。
       webm = File('${dir.path}/immersion_video.webm')
         ..writeAsBytesSync(<int>[
@@ -217,7 +217,7 @@ canplay.call(deniedAudio[0]);
                 availableNoteTypes: const <AnkiNoteType>[
                   AnkiNoteType(
                     id: 2,
-                    name: 'Hibiki',
+                    name: 'Fushi',
                     fields: <String>['Expression', 'Picture', 'SentenceAudio'],
                   ),
                 ],

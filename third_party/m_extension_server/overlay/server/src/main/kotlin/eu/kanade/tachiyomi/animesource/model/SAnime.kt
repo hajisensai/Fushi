@@ -5,7 +5,7 @@ package eu.kanade.tachiyomi.animesource.model
 import java.io.Serializable
 
 /**
- * Hibiki host ABI: the extensions-lib 16 property set (`background_url`,
+ * Fushi host ABI: the extensions-lib 16 property set (`background_url`,
  * `fetch_type`, `season_number` on top of the lib-14 fields). Extensions built
  * against the yuzono / Anikku lib assign these from their parsers, so a host that
  * lacks the accessors fails with NoSuchMethodError on the first details parse.

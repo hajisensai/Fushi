@@ -48,7 +48,7 @@ void main() {
     db = _testDb();
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    directory = Directory.systemTemp.createTempSync('hibiki_local_audio_mgr');
+    directory = Directory.systemTemp.createTempSync('fushi_local_audio_mgr');
     manager = LocalAudioManager(
       prefsRepo: prefs,
       databaseDirectory: directory,

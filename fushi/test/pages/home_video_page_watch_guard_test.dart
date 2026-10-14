@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-793 source-scan guard：视频库页（[HomeVideoPage]）的列表是一次性
 /// `FutureBuilder` + 保活 tab，对 `videoBooks` 表变更零自动感知；非本页发起的
-/// 导入路径（外部「用 Hibiki 打开」直接落库、远端下载等）落库后不 `_refresh()`，
+/// 导入路径（外部「用 Fushi 打开」直接落库、远端下载等）落库后不 `_refresh()`，
 /// 用户要下拉刷新/重启才看得到新导入的视频。
 ///
 /// 根因修复：库页在 `initState` 订阅 [VideoBookRepository.watchVideoBookUids]（Drift

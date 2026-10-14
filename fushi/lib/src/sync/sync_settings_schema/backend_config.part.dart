@@ -311,7 +311,7 @@ bool _isBackendSelectable(SyncBackendType type) {
     // BUG-1088：互联回到「同步方式」选择器。解耦（独立分类 + 独立开关，可与云备份
     // 并存）保留，但把备份后端指向互联必须能从这里直接选——曾经唯一的入口是互联页
     // 的「设为备份后端」按钮，而它又被 host 门控藏掉，host 设备上入口彻底消失。
-    // 选中后连接配置仍在「Hibiki 互联」分类（选择器下方有指引行）。
+    // 选中后连接配置仍在「Fushi 互联」分类（选择器下方有指引行）。
     case SyncBackendType.fushiServer:
       return true;
     case SyncBackendType.googleDrive:

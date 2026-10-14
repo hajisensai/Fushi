@@ -12,16 +12,16 @@
 
 // galgame 一键制卡 C 阶段（docs/specs/galgame-mining）—— 引擎级 voice hook 的**进程间契约**。
 //
-// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `hibiki.exe` 物理隔离、
+// 部署红线：这套 injector + hook DLL 是**独立可选 helper 组件**，和 `fushi.exe` 物理隔离、
 // 分离分发（`CreateRemoteThread`/`WriteProcessMemory` 注入必被杀软启发式报毒，编进本体会污
-// 染整个 app 的分发口碑）。Hibiki 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
+// 染整个 app 的分发口碑）。Fushi 主进程把 injector 当子进程拉起、通过下面这块共享内存消费
 // 干净语音 PCM——被标记的注入代码只待在这个隔离组件里。
 //
 // 数据流（混音前的干净语音轨）：
 //   game.exe 内的 hook DLL：在 XAudio2/DirectSound 把语音送进混音**之前** memcpy 进环形缓冲
 //     → 只在音频回调里 memcpy + 更新 write_pos（零阻塞：写盘/编码/IPC 全部移出回调，爆音红线）
 //   共享内存：header + 紧随其后的 PCM 环形缓冲
-//   Hibiki host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
+//   Fushi host（经 injector）：读环形缓冲最近 N 毫秒 → 波形选区 → 制卡出口（复用 A 阶段流水线）
 namespace fushi_voice_hook {
 
 // 共享内存魔数 'HVH1'（小端）与当前契约版本。跨进程读到不匹配即拒绝，防旧/坏映射。
@@ -65,7 +65,7 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     lookup_frame_applied_seq。host 只有看到该确认才能抓游戏窗口；发布成功不等于游戏渲染树
 //     已经干净，拿普通 dismiss 的 MethodChannel 返回值当屏障会稳定把 popup 拍进卡片图片。
 // v16：在头部最尾追加 injected WASAPI loopback 的 fail-closed 控制/确认。旧实现只门控
-//     Hibiki 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
+//     Fushi 宿主进程里的 loopback，却让游戏内 DLL 一加载就无条件创建另一个系统混音捕获线程；
 //     cleanOnly/resourceOnly 因而仍会录音。request_seq 最后发布请求，applied_seq 最后确认
 //     Stop/Release/线程退出；版本不匹配时 DLL 拒绝映射，旧 helper 不能绕过默认 deny。
 // v17：在头部最尾追加**本次注入所用 hook DLL 的 SHA-256**（`hook_module_sha256`）。
@@ -603,7 +603,7 @@ constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFired = 0x01000000u;     /
 constexpr uint32_t kXAudioDiag2KirikiriLookupBootstrapFaulted = 0x02000000u;   // TVPExecuteScript 抛了（SEH 拦下）
 // bootstrap 脚本跑完之后，TJS 侧那个 System.addContinuousHandler 回调每帧都在前置条件
 // `typeof global.kag == "Object" && typeof global.kag.addHook == "Object"` 上静默 return，
-// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [HibikiLookup] 行）。
+// 症状与「脚本没跑」完全同形（都是 fushiLookupNotify 不存在、控制台无 [FushiLookup] 行）。
 // 这三位把前置条件拆开量：脚本活着吗 / kag 出来了吗 / 这个 KAG 分支有 addHook 吗。
 constexpr uint32_t kXAudioDiag2KirikiriLookupTjsBootstrapFnAlive = 0x04000000u;  // global.fushiLookupBootstrap 仍在
 constexpr uint32_t kXAudioDiag2KirikiriLookupKagObjectReady = 0x08000000u;       // global.kag 是对象
@@ -766,7 +766,7 @@ struct LoopbackMarker {
 
 // ══ v14 游戏内查词区 ════════════════════════════════════════════════════
 // KiriKiri/KAGEX 在**游戏渲染树内部**显示词典卡片。注入侧只做几何传感、
-// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Hibiki 既有
+// 位图落地和输入转发；分词、查词、排版、卡片像素全部由 host（Fushi 既有
 // popup.html + WebView2 离屏合成）负责。跨进程边界上因此只有一块位图和一串整数。
 //
 // 三条通道各自单写单读，无锁：
@@ -1267,7 +1267,7 @@ struct SharedHeader {
   uint32_t clip_region_offset;      // clip 索引起始
   volatile uint64_t text_write_count;  // 单调：已写文本事件数（host 取 last..count 的新事件）
   volatile uint64_t clip_write_count;  // 单调：已写语音 clip 数
-  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Hibiki 选择的 TextSlot::thread_id。
+  // 0=尚未选定（v12 起文本环恒空）；非 0=用户在 Fushi 选择的 TextSlot::thread_id。
   // injector 无条件过滤重复伪影，再仅写该线程/同一 hook face。
   volatile uint64_t selected_text_thread_id;
   // LunaHook（引擎精确）出干净行后 injector 置 1；置 1 后游戏内 GDI 文本 hook 让位不再写文本，

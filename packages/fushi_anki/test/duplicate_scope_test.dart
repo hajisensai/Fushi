@@ -8,8 +8,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 查重范围（[AnkiDuplicateScope]）守卫。
 ///
 /// 用户报告：Yomitan 在把制卡目标选成 Lapis 的某个子卡组时，仍能查到整个 Lapis
-/// （含全部子卡组）里的卡；Hibiki 只查所选的那一个。根因不是 bug 而是缺配置——
-/// Anki 的 `deck:X` 包含 X 的子卡组，但不含父卡组与兄弟子卡组，而 Hibiki 恒发
+/// （含全部子卡组）里的卡；Fushi 只查所选的那一个。根因不是 bug 而是缺配置——
+/// Anki 的 `deck:X` 包含 X 的子卡组，但不含父卡组与兄弟子卡组，而 Fushi 恒发
 /// `deck:"<所选卡组>"`。这里钉死新配置项的查询语义与默认值。
 void main() {
   group('ankiDuplicateDeckFilter — 范围到 Anki 搜索子句', () {

@@ -93,7 +93,7 @@ void main() {
   }
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-manga-probe-');
+    root = await Directory.systemTemp.createTemp('fushi-manga-probe-');
     EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     adapter = _ScriptedAdapter();

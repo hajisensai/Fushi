@@ -4,7 +4,7 @@
 // assets/popup/popup.js 与两份扩展 vendor 镜像逐字节一致），但两个表面的滚动者不同：
 //   - in-app：弹窗即整个 WebView 文档，document 自身滚动（window.scrollBy），
 //     zoom 由 popup_settings_injection.dart 设在 document.documentElement.style.zoom；
-//   - 扩展（Shadow DOM 化后）：滚动者是 shadow host（#hibiki-popup-host，
+//   - 扩展（Shadow DOM 化后）：滚动者是 shadow host（#fushi-popup-host，
 //     overflow-y:auto + max-height），#entries-container 在 shadow 内被中和为
 //     overflow:visible，不可滚；zoom 由 content.js fushiRender 设在 host.style.zoom。
 //
@@ -13,7 +13,7 @@
 // 计算变量（in-app 从不下发该变量 → 恒 1）。结果：扩展弹窗与 in-app 弹窗滚轮全部失效，
 // 且无任何测试能抓住（镜像字节守卫只保同步、不保行为）。
 //
-// flutter test cwd 是 hibiki 包根。
+// flutter test cwd 是 fushi 包根。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

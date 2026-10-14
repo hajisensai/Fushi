@@ -33,8 +33,8 @@ class _TestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Hibiki',
-        packageName: 'jp.hibiki.test',
+        appName: 'Fushi',
+        packageName: 'jp.fushi.test',
         version: '1.0.0',
         buildNumber: '1',
       );

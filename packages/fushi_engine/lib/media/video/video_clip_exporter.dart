@@ -1155,7 +1155,7 @@ Future<_BurnFrames?> _renderClipBurnFrames({
 Future<Directory?> _writeTempSubtitleFiles(List<String> contents) async {
   Directory? dir;
   try {
-    dir = await Directory.systemTemp.createTemp('hibiki_clip_sub');
+    dir = await Directory.systemTemp.createTemp('fushi_clip_sub');
     for (int i = 0; i < contents.length; i++) {
       // flush: true——ffmpeg 进程随后立刻读这些文件，不能停在 OS 写缓冲里。
       // encoding: utf8 且不写 BOM：ffmpeg 的 srt demuxer 默认按 UTF-8 解析。

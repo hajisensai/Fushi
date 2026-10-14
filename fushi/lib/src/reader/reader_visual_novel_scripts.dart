@@ -8,7 +8,7 @@
 // screens, renders one screen at a time onto a `fushi-vn-stage`, advances on
 // `paginate("forward")`, and restores by char-offset -> screen index.
 //
-// Hibiki adaptations vs hoshi a (see [vnShellScript]):
+// Fushi adaptations vs hoshi a (see [vnShellScript]):
 //   * The 4 injected dependency scripts (text-semantics / vn-content-stream /
 //     vn-range-map / media-semantics) are inlined ahead of `window.fushiReader`.
 //   * `notifyRestoreComplete` forwards to InAppWebView's `onRestoreComplete`
@@ -18,7 +18,7 @@
 //     image semantics.
 //   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
 //     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
-//     (`popupHost.renderSentenceAudioHighlight`); Hibiki never ported that host,
+//     (`popupHost.renderSentenceAudioHighlight`); Fushi never ported that host,
 //     so the branch rendered nothing at all and the read-along highlight was
 //     invisible in VN + e-ink. The wrapper class is what the e-ink CSS bar rule
 //     in `ReaderContentStyles` targets, so one path now serves every mode.
@@ -918,8 +918,8 @@ $kSentenceAudioRubyGapJs
     return rect || target.getBoundingClientRect();
   },
   notifyRestoreComplete: function() {
-    // Hibiki adaptation: hoshi a posts to a native @JavascriptInterface
-    // (FushiReaderRestore). Hibiki is InAppWebView, so forward to the same
+    // Fushi adaptation: hoshi a posts to a native @JavascriptInterface
+    // (FushiReaderRestore). Fushi is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler(
@@ -3163,7 +3163,7 @@ $sharedInitViewport
 
 
 
-// ── Hibiki host-compat shims (TODO-909) ──────────────────────────────────────
+// ── Fushi host-compat shims (TODO-909) ──────────────────────────────────────
 // The Dart side calls a few methods on window.fushiReader that hoshi a's VN
 // object does not define. Add minimal, correct equivalents so the shared Dart
 // reader paths behave under VN mode.
@@ -3503,7 +3503,7 @@ $sharedInitViewport
   }
 })();
 
-// Hibiki adaptation: initialize on load, then run the restore script. This MUST
+// Fushi adaptation: initialize on load, then run the restore script. This MUST
 // run AFTER the host-compat shim IIFE above: a charOffset restore calls
 // window.fushiReader.restoreToCharOffset, which only the shim defines. Placed
 // before the shim it threw a synchronous TypeError that aborted the outer

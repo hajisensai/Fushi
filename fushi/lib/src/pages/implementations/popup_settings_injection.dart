@@ -519,10 +519,10 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
 /// backend is actually reachable.
 const String _globalLookupIconFontJs = '''
     (function(){
-      var s = document.getElementById('hibiki-overlay-style');
+      var s = document.getElementById('fushi-overlay-style');
       if (!s) {
         s = document.createElement('style');
-        s.id = 'hibiki-overlay-style';
+        s.id = 'fushi-overlay-style';
         s.textContent =
           '.audio-button,.glossary-group>summary::before{font-family:"Segoe UI Symbol","Segoe UI",sans-serif !important;}';
         document.head.appendChild(s);

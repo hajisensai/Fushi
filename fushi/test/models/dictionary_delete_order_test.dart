@@ -52,7 +52,7 @@ void main() {
         );
 
     setUp(() async {
-      resourceDir = Directory.systemTemp.createTempSync('hibiki_dictdel_');
+      resourceDir = Directory.systemTemp.createTempSync('fushi_dictdel_');
       db =
           FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
       dirAliveAtRebuild = <bool>[];
@@ -203,7 +203,7 @@ void main() {
     late int reloads;
 
     setUp(() {
-      root = Directory.systemTemp.createTempSync('hibiki_dictfs_');
+      root = Directory.systemTemp.createTempSync('fushi_dictfs_');
       reloads = 0;
     });
     tearDown(() {

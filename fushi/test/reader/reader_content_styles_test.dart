@@ -205,7 +205,7 @@ void main() {
         debugDefaultTargetPlatformOverride = null;
       });
       final Directory tempDir =
-          await Directory.systemTemp.createTemp('hibiki_reader_css_font_');
+          await Directory.systemTemp.createTemp('fushi_reader_css_font_');
       addTearDown(() async {
         await tempDir.delete(recursive: true);
       });

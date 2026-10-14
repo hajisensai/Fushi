@@ -88,7 +88,7 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   ///
   /// 输入只有两类真相：①media_kit 控制条自己推来的真实可见性
   /// （[_mediaKitControlsVisible]，由 vendored fork 的 `visibilityNotifier` 在每次
-  /// `visible` 变化时推送）②Hibiki 侧三个遮挡门控（沉浸锁 [_immersiveLocked] / 侧栏
+  /// `visible` 变化时推送）②Fushi 侧三个遮挡门控（沉浸锁 [_immersiveLocked] / 侧栏
   /// [_videoSidePanel] / 字幕跳转列表 [_subtitleListVisible]）。门控成立时控制条本被
   /// [IgnorePointer] 挡掉 / 被 overlay 盖住，字幕不该避让 → 强制 false；否则字幕避让恒
   /// 等于真实可见态。任何这五个输入变化都重跑本函数（在 [initState] 订阅），故
@@ -135,7 +135,7 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
   }
 
   /// 桌面鼠标移出视频区：光标交还系统 / 外部（TODO-318）。控制条的隐藏由 media_kit
-  /// 自己的 `onExit` 决定并推送 [_mediaKitControlsVisible]，不在 Hibiki 侧另判（TODO-364）。
+  /// 自己的 `onExit` 决定并推送 [_mediaKitControlsVisible]，不在 Fushi 侧另判（TODO-364）。
   void _onVideoControlsHoverExit() {
     if (!mounted) return;
     _setCursorHidden(false);
@@ -158,7 +158,7 @@ extension _VideoControlsVisibility on _VideoFushiPageState {
 
   /// 鼠标进 / 出**字幕盒**（BUG-283）。字幕盒覆盖在 media_kit 控制条之上：鼠标停字幕上
   /// 读字 / 查词时，控制条 2s 自动隐藏会让 media_kit 的 `hideMouseOnControlsRemoval` 把
-  /// 画面光标隐藏（再叠上 hibiki 顶层 [_cursorHidden] 的 cursor:none）——用户报「鼠标放
+  /// 画面光标隐藏（再叠上 fushi 顶层 [_cursorHidden] 的 cursor:none）——用户报「鼠标放
   /// 字幕上消失」。hover 字幕时唤回光标（[_setCursorHidden]false 让顶层胜出层让位）并
   /// [_pokeControlsVisible] 续命控制条（避免 media_kit `mount=false` 让它自己的 cursor 置
   /// none）；移出由 media_kit / 自动隐藏定时按既有路径接管，不强制改光标。仅桌面有 OS 光标

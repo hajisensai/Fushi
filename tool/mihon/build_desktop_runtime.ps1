@@ -30,12 +30,12 @@ if ([IO.Path]::GetPathRoot($resolvedOutput) -eq $resolvedOutput) {
 }
 
 if ([string]::IsNullOrWhiteSpace($DownloadCache)) {
-    $DownloadCache = Join-Path ([IO.Path]::GetTempPath()) "hibiki-mihon-downloads"
+    $DownloadCache = Join-Path ([IO.Path]::GetTempPath()) "fushi-mihon-downloads"
 }
 $resolvedCache = [IO.Path]::GetFullPath($DownloadCache)
 [IO.Directory]::CreateDirectory($resolvedCache) | Out-Null
 
-$workingRoot = Join-Path ([IO.Path]::GetTempPath()) ("hibiki-mihon-build-" + [Guid]::NewGuid().ToString("N"))
+$workingRoot = Join-Path ([IO.Path]::GetTempPath()) ("fushi-mihon-build-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($workingRoot) | Out-Null
 $sourceRoot = Join-Path $workingRoot "M-Extension-Server"
 $stagingRoot = Join-Path $workingRoot "output"
@@ -78,7 +78,7 @@ try {
     Copy-Tree $vendoredSourceRoot $sourceRoot
 
     # `git apply` 在非 git 目录下同样可用（实测 exit 0），补丁与 overlay 的应用
-    # 顺序和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Hibiki 的
+    # 顺序和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Fushi 的
     # 安全 overlay 覆盖同名文件。
     #
     # 补丁必须带上下文，这里也**绝不能**加回 `--unidiff-zero`（BUG-1428）：零上下文

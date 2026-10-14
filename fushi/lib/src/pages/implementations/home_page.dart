@@ -649,7 +649,7 @@ class _HomePageState extends BasePageState<HomePage>
         _maybeSyncLeaderboard();
       });
 
-      // Lapis 模板启动自动迁移：Hibiki 基线/客制化变了且 Anki 端仍是 Hibiki
+      // Lapis 模板启动自动迁移：Fushi 基线/客制化变了且 Anki 端仍是 Fushi
       // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
       // 运行静默跳过）。服务内部有每进程一次的闸门，HomePage 重建不会重跑。
       if (mounted) {

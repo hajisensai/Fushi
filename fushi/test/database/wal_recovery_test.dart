@@ -24,7 +24,7 @@ void main() {
   late String dbPath;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_wal_recovery_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_wal_recovery_test');
     dbPath = '${tempDir.path}/fushi.db';
   });
 

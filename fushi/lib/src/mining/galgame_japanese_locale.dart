@@ -371,7 +371,7 @@ GalJapaneseLocaleSkipReason? resolveJapaneseLocaleSkipReason({
 
 /// 本次启动到底转不转区。纯函数，三端可单测。
 ///
-/// [launchMode] 只有 launch（由 Hibiki 拉起游戏）才可能转区；attach 到已运行进程时
+/// [launchMode] 只有 launch（由 Fushi 拉起游戏）才可能转区；attach 到已运行进程时
 /// 进程早就建好了，转区必然短路。
 /// [systemAnsiCodePage] 宿主机的 ACP（`GetACP()`）；拿不到传 null。
 /// [is32Bit] 目标 exe 是否 32 位（Locale Emulator 目前只有 x86 版，这是**工程限制**）。

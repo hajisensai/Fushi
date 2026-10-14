@@ -33,7 +33,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_collections_kind_pp');
+        Directory.systemTemp.createTempSync('fushi_collections_kind_pp');
     // AppModel 构造会惰性触碰 DefaultCacheManager → getApplicationSupportDirectory；
     // 不 mock 该 channel 会抛 MissingPluginException 异步泄漏到下一条测试。
     binding.defaultBinaryMessenger.setMockMethodCallHandler(

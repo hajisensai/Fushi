@@ -343,7 +343,7 @@ mixin _LocalLibraryHostVideos
     final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
     if (file == null) return null;
     final Directory tmp =
-        Directory.systemTemp.createTempSync('hibiki_clip_audio');
+        Directory.systemTemp.createTempSync('fushi_clip_audio');
     final String out = p.join(tmp.path, 'clip.aac');
     final String? result = await extractAudioSegmentViaFfmpeg(
       inputPath: file.path,

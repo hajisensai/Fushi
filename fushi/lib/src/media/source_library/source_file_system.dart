@@ -1,6 +1,6 @@
 // TODO-817 M1a / TODO-1274 来源库文件系统抽象。
 //
-// 网络/本地来源库（local / sftp / ftp / webdav / alist transport，见 hibiki_core
+// 网络/本地来源库（local / sftp / ftp / webdav / alist transport，见 fushi_core
 // MediaSources.transport）共用一套扫描契约：列目录、找同名 sidecar、读文本、
 // 把网络文件落到本地临时盘。M1b 扫描器据此实现 local，TODO-1274 接入 SFTP/FTP/WebDAV。
 //

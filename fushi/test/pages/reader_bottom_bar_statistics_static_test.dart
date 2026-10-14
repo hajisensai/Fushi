@@ -48,7 +48,7 @@ void main() {
         at,
         action.indexOf('case ReaderControlItem.', at + 1),
       );
-      expect(stats, contains("semanticsId: 'hibiki.reader.header.statistics'"),
+      expect(stats, contains("semanticsId: 'fushi.reader.header.statistics'"),
           reason: '集成测试按这个 identifier 找控件');
       expect(stats, contains('onPressed: _openReadingStatistics'),
           reason: '统计键点击必须开阅读统计侧栏');
@@ -68,7 +68,7 @@ void main() {
       expect(timer, contains('onPressed: _toggleStudyClockManualPause'),
           reason: '与状态行计时键、快捷键同一入口，不另起一套停表逻辑');
       expect(
-          timer, contains("semanticsId: 'hibiki.reader.control.study_timer'"));
+          timer, contains("semanticsId: 'fushi.reader.control.study_timer'"));
       expect(timer, contains('_studyClockManualPause'),
           reason: '图标 / 文案必须跟手动暂停旗走，否则按了不变样');
       expect(timer, contains('t.reader_stats_clock_pause'));

@@ -4,7 +4,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 /// BUG-1477 守卫：转区必须**有开关**，且 `auto` 的判据不能再把「32 位」当成
 /// 「日文原版」的代理。
 ///
-/// 现场：用户下的汉化版 galgame，Hibiki 转区启动后报错闪退，直接双击才能玩。
+/// 现场：用户下的汉化版 galgame，Fushi 转区启动后报错闪退，直接双击才能玩。
 /// 老判据是 `launchMode && automaticJapaneseLocale && exeIs32Bit(exe)`，而
 /// `automaticJapaneseLocale` 默认 true 且**整条 UI→source 通路上根本没有这个形参**——
 /// 不是「忘了传」，是没有这个自由度。汉化版恰好落在最坏格：32 位（老引擎）+

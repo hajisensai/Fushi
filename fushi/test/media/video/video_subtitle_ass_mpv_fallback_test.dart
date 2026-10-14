@@ -7,7 +7,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 /// BUG-929 guard: the reported ASS requests a font that is not installed on
 /// Windows. mpv/libass (DirectWrite) resolves its Japanese glyphs through
-/// Microsoft YaHei UI, so Hibiki must use the same first fallback for both
+/// Microsoft YaHei UI, so Fushi must use the same first fallback for both
 /// Flutter glyph rendering and ASS cell/em size conversion.
 const String _reportedAss = r'''
 [Script Info]

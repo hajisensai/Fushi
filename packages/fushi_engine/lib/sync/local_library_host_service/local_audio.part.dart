@@ -36,7 +36,7 @@ mixin _LocalLibraryHostLocalAudio
     }
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_local_audio_export');
+        Directory.systemTemp.createTempSync('fushi_local_audio_export');
     final File out = File(p.join(tmpDir.path, '$displayName.fushiaudiolib'));
     await _packages.exportLocalAudioPackage(
       displayName: entry.displayName,

@@ -603,21 +603,21 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       );
       if (cover == null) {
         // 一次重试：区分瞬时网络失败（重试常成功）与持续失败（记日志留证）。
-        debugPrint('[hibiki][youtube] 缩略图下载失败，重试一次：${meta.thumbnailUrl}');
+        debugPrint('[fushi][youtube] 缩略图下载失败，重试一次：${meta.thumbnailUrl}');
         cover = await downloadVideoCoverToPath(
           coverUrl: meta.thumbnailUrl,
           outputPath: outputPath,
         );
         if (cover == null) {
           debugPrint(
-            '[hibiki][youtube] 缩略图重试仍失败（网络/URL 问题），书架用占位：'
+            '[fushi][youtube] 缩略图重试仍失败（网络/URL 问题），书架用占位：'
             '${meta.thumbnailUrl}',
           );
         }
       }
       return cover;
     } catch (e) {
-      debugPrint('[hibiki][youtube] import metadata resolve failed: $e');
+      debugPrint('[fushi][youtube] import metadata resolve failed: $e');
       return null;
     }
   }

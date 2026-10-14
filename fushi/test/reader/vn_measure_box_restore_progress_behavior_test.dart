@@ -25,7 +25,7 @@ void main() {
   test('VN 行为级：量尺盒宽高 important / restore 0.99 落末屏 / fragment 失效回退进度', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     final Directory temp =
-        Directory.systemTemp.createTempSync('hibiki-vn-measure-restore-js-');
+        Directory.systemTemp.createTempSync('fushi-vn-measure-restore-js-');
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'shell': shell}));
     final File runner =

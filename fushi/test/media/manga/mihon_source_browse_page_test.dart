@@ -61,7 +61,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-browse-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-browse-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _BrowseRuntime();
 

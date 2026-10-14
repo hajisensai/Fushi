@@ -205,7 +205,7 @@ void main() {
     expect(await covers.list().toList(), isEmpty);
   });
 
-  test('未改动的 Hibiki 生成海报不会伪装成用户 sidecar', () async {
+  test('未改动的 Fushi 生成海报不会伪装成用户 sidecar', () async {
     final VideoBookRow book = await seed(
       bookUid: 'video/generated',
       fileName: 'generated.mkv',

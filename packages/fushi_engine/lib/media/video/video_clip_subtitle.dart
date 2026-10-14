@@ -4,7 +4,7 @@ import 'package:meta/meta.dart';
 
 /// 片段导出的字幕封装：把**播放器内存里的 cue 列表**裁成片段区间的 SRT 文本。
 ///
-/// 为什么真相源是 cue 而不是源文件的 `0:s:N`：Hibiki 的视频字幕不走 libmpv 渲染
+/// 为什么真相源是 cue 而不是源文件的 `0:s:N`：Fushi 的视频字幕不走 libmpv 渲染
 /// （[VideoPlayerController.load] 里 `setSubtitleTrack(SubtitleTrack.no())` +
 /// `buildSubtitleSuppressionProperties()` 把 libmpv 字幕彻底关掉），内嵌轨、外挂
 /// 文件、自动对轴结果全部被解析成统一的 `List<AudioCue>` 交给 Flutter overlay 渲染

@@ -277,7 +277,7 @@ class SyncManager {
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
     // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
     // scatters this book's progress_/statistics_/audioBook_ JSON (plus cover /
-    // epub) straight into `hibiki-data/` next to real book folders. Mirror the
+    // epub) straight into `fushi-data/` next to real book folders. Mirror the
     // LAN audiobook sweep, which already filters empty keys via
     // audiobookKeyFromPositionPrefKey — such a book is not syncable, skip it.
     if (sanitizeTtuFilename(book.title).isEmpty) {
@@ -759,7 +759,7 @@ class SyncManager {
       final existing = await _backend.findContentFile(folderId, fileName);
       if (existing == null) {
         final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_epub_export');
+            Directory.systemTemp.createTempSync('fushi_epub_export');
         final File epubTmp = File(p.join(tmpDir.path, fileName));
         try {
           // 漫画 → 书目录整树 zip（manga.json 标记 + 页图）；EPUB → 既有重打包。

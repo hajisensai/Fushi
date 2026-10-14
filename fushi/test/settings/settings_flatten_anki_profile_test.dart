@@ -33,7 +33,7 @@ import '../helpers/test_platform_services.dart';
 /// 2. 渲染后正文确实内联（AnkiSettingsBody / ProfileManagementBody 现身）、且
 ///    详情页里不再有任何子页跳转行；
 /// 3. 平铺进来的「自动添加书名到标签」开关仍真生效（写穿 prefs）。
-/// 4. TODO-135（方案A）：默认标签区三个开关——「hibiki」「来源分类」「自动添加
+/// 4. TODO-135（方案A）：默认标签区三个开关——「fushi」「来源分类」「自动添加
 ///    书名」——并入同一个**无条件显示**的区块。未配置 Anki 时它们也都露出（方案A
 ///    取舍），且「自动添加书名」仍可翻转写穿（绝不退化）。这是方案A的行为守卫：
 ///    撤掉「把两 tag 开关移出 isConfigured 门控」的修复，未配置态就只剩一个开关，
@@ -58,7 +58,7 @@ void main() {
     // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。
     // mock 空初值让 Anki body 的初始 load 确定性成功，不依赖异步异常逃逸时序。
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    ppDir = Directory.systemTemp.createTempSync('hibiki_flatten_pp');
+    ppDir = Directory.systemTemp.createTempSync('fushi_flatten_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => ppDir.path,
@@ -85,7 +85,7 @@ void main() {
         'brightness_mode': PrefCodec.encode('system'),
         'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
       });
-    tmpDir = Directory.systemTemp.createTempSync('hibiki_flatten_test_');
+    tmpDir = Directory.systemTemp.createTempSync('fushi_flatten_test_');
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     platformServices = testPlatformServices();
@@ -228,7 +228,7 @@ void main() {
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add "fushi" tag'),
       findsOneWidget,
-      reason: 'hibiki 标签开关应无条件显示',
+      reason: 'fushi 标签开关应无条件显示',
     );
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Add source category tag'),
@@ -254,7 +254,7 @@ void main() {
       findsOneWidget,
       reason: '「自动添加书名」开关必须仍无条件可用（方案B会破坏，绝不退化）',
     );
-    // 「制卡到已配对设备」已移出本页，改挂 Hibiki 互联 →「交给已配对设备」（它的前置
+    // 「制卡到已配对设备」已移出本页，改挂 Fushi 互联 →「交给已配对设备」（它的前置
     // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
     // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
     expect(

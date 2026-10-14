@@ -66,7 +66,7 @@ void main() {
       expect(requestedSources, isEmpty);
     });
 
-    test('uses remote Hibiki audio after local miss and before network sources',
+    test('uses remote Fushi audio after local miss and before network sources',
         () async {
       final List<String> requestedSources = <String>[];
       final resolver = WordAudioResolver(
@@ -140,7 +140,7 @@ void main() {
           return '/tmp/local_$dbIndex.mp3';
         },
         queryRemoteAudio: (_, __) async {
-          calls.add('hibiki');
+          calls.add('fushi');
           return null;
         },
         fetchAudioSourceList: (url) async {
@@ -172,7 +172,7 @@ void main() {
 
       expect(result, '/tmp/local_1.mp3');
       expect(calls, <String>[
-        'hibiki',
+        'fushi',
         'local:0',
         'local:1',
         'extract:1',
@@ -438,7 +438,7 @@ void main() {
     // 全部候选传输层不可达（RemoteLookupUnreachableError）才计冷却；「可达但
     // 无音频」（null）绝不冷却。
     group('fushiRemote transport-failure cooldown', () {
-      List<AudioSourceConfig> hibikiOnly() => <AudioSourceConfig>[
+      List<AudioSourceConfig> fushiOnly() => <AudioSourceConfig>[
             AudioSourceConfig.fushiRemote(enabled: true),
           ];
 
@@ -462,7 +462,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 1);
         expect(
@@ -477,7 +477,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 1, reason: '冷却窗内不应再调用 queryRemoteAudio');
 
@@ -486,7 +486,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 2, reason: '冷却过期后应再次尝试');
       });
@@ -536,7 +536,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'なし',
           reading: 'なし',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(
           WordAudioResolver.isRemoteSourceInCooldown(
@@ -550,7 +550,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'なし',
           reading: 'なし',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 2);
       });
@@ -577,7 +577,7 @@ void main() {
         await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 1);
 
@@ -587,7 +587,7 @@ void main() {
         final String? ok = await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 2);
         expect(ok, 'https://peer.test/audio?id=1');
@@ -596,7 +596,7 @@ void main() {
         final String? again = await resolver.resolveConfigured(
           expression: 'a',
           reading: 'a',
-          sources: hibikiOnly(),
+          sources: fushiOnly(),
         );
         expect(remoteCalls, 3, reason: '成功后冷却应被清除，不再短路');
         expect(again, 'https://peer.test/audio?id=1');

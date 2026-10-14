@@ -156,7 +156,7 @@ List<AudioCue> _manyCues(int count) => List<AudioCue>.generate(count, (int i) {
 String _repoEvidencePath(String relativePath) {
   final Directory current = Directory.current;
   final Directory root =
-      current.path.endsWith('${Platform.pathSeparator}hibiki')
+      current.path.endsWith('${Platform.pathSeparator}fushi')
           ? current.parent
           : current;
   return '${root.path}${Platform.pathSeparator}$relativePath';

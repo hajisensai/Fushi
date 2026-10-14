@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// unplugging it raises `CONFIG_NAVIGATION`. If `navigation` is NOT declared
 /// in `configChanges`, Android tears down and recreates the Activity instead
 /// of calling `onConfigurationChanged`. During that recreate the Samsung
-/// system focus rectangle re-appears over Hibiki's own focus ring and the
+/// system focus rectangle re-appears over Fushi's own focus ring and the
 /// WebView/Flutter UI shows a load spinner (the "book stuck loading after
 /// connecting a gamepad" symptom). `keyboard`/`keyboardHidden` alone do not
 /// cover gamepad (navigation) plug/unplug.

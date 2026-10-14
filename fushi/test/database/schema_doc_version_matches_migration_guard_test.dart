@@ -59,8 +59,8 @@ import '../helpers/source_guard.dart';
 /// ## 为什么守在 `fushi/test/` 而不是 `packages/fushi_core/test/`
 ///
 /// 两个原因，都不是随手放的：
-///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `hibiki` 包的 test 根，
-///      `hibiki_core` 跨包 import 不到（也不能反向依赖 `hibiki`）。本仓明文禁止
+///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `fushi` 包的 test 根，
+///      `fushi_core` 跨包 import 不到（也不能反向依赖 `fushi`）。本仓明文禁止
 ///      手写注释剥离（`test/tools/source_guard_adoption_test.dart`），在 core 包
 ///      内复制一份掩码实现正是它要防的事。
 ///   2. `packages/*/test` 只由 CI 的 `Run package tests` 覆盖，本地全量门
@@ -72,7 +72,7 @@ import '../helpers/source_guard.dart';
 /// codegen 从 `tables.dart` 逐字复制的**派生副本**，源头改对了它必然跟着对，
 /// 单独再断言一遍只会在同一个缺陷上报两次，还把守卫绑死在 codegen 输出格式上。
 ///
-/// flutter test 的 cwd 是 `hibiki` 包根。
+/// flutter test 的 cwd 是 `fushi` 包根。
 void main() {
   const String tablesPath =
       '../packages/fushi_core/lib/src/database/tables.dart';
