@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置 → 外观 → 功能模块 里「有底栏 tab 的模块」那一块：每行一个开关，整块可
-/// 拖动排序（鼠标按下即拖、触屏长按拖）。顺序写进 [ModuleId.orderPrefKey]，
+/// 拖动排序（鼠标按下即拖、触屏长按拖）。拖拽只吃指针，所以每行另有「上移 /
+/// 下移」两颗可聚焦按钮（键盘 Enter / 手柄 A）和同名的无障碍自定义动作，与词典
+/// 管理的音频源列表同一套。顺序写进 [ModuleId.orderPrefKey]，
 /// 底栏 / 宽屏 rail / macOS 侧栏经 `homeActiveTabs` 同一真值跟着变。
 ///
 /// 只列**本平台存在**的导航模块（[modules] 由调用方按 [ModuleId.availableOn]
@@ -80,10 +84,40 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
       to: to,
     );
     setState(() => _pendingOrder = full);
-    await widget.settingsContext.appModel.setModuleOrder(full);
-    if (!mounted) return;
-    setState(() => _pendingOrder = null);
-    widget.settingsContext.refresh();
+    try {
+      await widget.settingsContext.appModel.setModuleOrder(full);
+    } finally {
+      // 落库失败也要清掉乐观顺序：否则列表永远显示一个没存上的顺序，与底栏
+      // （读的是偏好真值）对不上，之后的拖拽还会基于这份假顺序继续算。
+      if (mounted) {
+        setState(() => _pendingOrder = null);
+        widget.settingsContext.refresh();
+      }
+    }
+  }
+
+  /// 拖拽与按钮共用的提交入口。回调签名是同步的，落库失败交给
+  /// [FlutterError.reportError]（进全局错误日志），而不是变成无人接的 Future 错误。
+  void _commitReorder(int from, int to) {
+    unawaited(
+      _reorder(from, to).catchError((Object error, StackTrace stack) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stack,
+            library: 'settings',
+            context: ErrorDescription('while saving the navigation tab order'),
+          ),
+        );
+      }),
+    );
+  }
+
+  /// 键盘 / 手柄 / 读屏的重排入口：把第 [index] 行与相邻行对调。
+  void _move(int index, int delta) {
+    final int target = index + delta;
+    if (target < 0 || target >= _modules.length) return;
+    _commitReorder(index, target);
   }
 
   @override
@@ -98,7 +132,7 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
       itemCount: modules.length,
       keyForIndex: (int index) =>
           ValueKey<String>('nav-module-${modules[index].name}'),
-      onReorder: (int from, int to) => unawaited(_reorder(from, to)),
+      onReorder: _commitReorder,
       itemBuilder: (BuildContext context, int index) {
         final ModuleId module = modules[index];
         final ({String label, IconData icon}) identity = widget.identityOf(
@@ -107,36 +141,68 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
         final bool enabled = widget.settingsContext.appModel.moduleEnabled(
           module,
         );
-        return FushiListItem(
-          key: ValueKey<String>('nav-module-row-${module.name}'),
-          leading: FushiListLeadingIcon(
-            identity.icon,
-            tone: enabled ? FushiCardTone.secondary : FushiCardTone.neutral,
-          ),
-          title: Text(
-            identity.label,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
+        final bool canMoveUp = index > 0;
+        final bool canMoveDown = index < modules.length - 1;
+        final EdgeInsets buttonPadding = EdgeInsets.all(
+          FushiDesignTokens.of(context).spacing.gap / 2,
+        );
+        return Semantics(
+          key: ValueKey<String>('nav-module-semantics-${module.name}'),
+          customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
+            if (canMoveUp)
+              CustomSemanticsAction(label: t.move_up): () => _move(index, -1),
+            if (canMoveDown)
+              CustomSemanticsAction(label: t.move_down): () => _move(index, 1),
+          },
+          child: FushiListItem(
+            key: ValueKey<String>('nav-module-row-${module.name}'),
+            leading: FushiListLeadingIcon(
+              identity.icon,
+              tone: enabled ? FushiCardTone.secondary : FushiCardTone.neutral,
             ),
-          ),
-          onTap: () => unawaited(widget.onEnabledChanged(module, !enabled)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiSwitch(
-                key: ValueKey<String>('nav-module-switch-${module.name}'),
-                value: enabled,
-                onChanged: (bool value) =>
-                    unawaited(widget.onEnabledChanged(module, value)),
+            title: Text(
+              identity.label,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
               ),
-              const SizedBox(width: 8),
-              ExcludeSemantics(
-                child: FushiIcon(
-                  Icons.drag_indicator,
-                  color: scheme.onSurfaceVariant,
+            ),
+            onTap: () => unawaited(widget.onEnabledChanged(module, !enabled)),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiSwitch(
+                  key: ValueKey<String>('nav-module-switch-${module.name}'),
+                  value: enabled,
+                  onChanged: (bool value) =>
+                      unawaited(widget.onEnabledChanged(module, value)),
                 ),
-              ),
-            ],
+                // 拖拽把手的键盘 / 手柄等价物（手柄抓不住把手）。
+                FushiIconButton(
+                  key: ValueKey<String>('nav-module-up-${module.name}'),
+                  icon: FushiIcons.expandLess,
+                  size: 18,
+                  tooltip: t.move_up,
+                  enabled: canMoveUp,
+                  padding: buttonPadding,
+                  onTap: () => _move(index, -1),
+                ),
+                FushiIconButton(
+                  key: ValueKey<String>('nav-module-down-${module.name}'),
+                  icon: FushiIcons.expandMore,
+                  size: 18,
+                  tooltip: t.move_down,
+                  enabled: canMoveDown,
+                  padding: buttonPadding,
+                  onTap: () => _move(index, 1),
+                ),
+                ExcludeSemantics(
+                  child: FushiIcon(
+                    FushiIcons.dragIndicator,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

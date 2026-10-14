@@ -37,6 +37,12 @@ import '../helpers/test_platform_services.dart';
 /// 不进 settings DB），但各自有专项测试或登记为设备集成 backlog。映射到证据，
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
+/// 悬浮球三个场景（阅读器 / 漫画 / 视频）专属按钮勾选行的共同证据，见
+/// [kCoveredElsewhere] 里对应那组的注释。
+const String _kFloatingBallSceneButtons =
+    'test/floating_ball/app_floating_ball_host_test.dart: 只显示为当前场景勾选的按钮 / '
+    '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
+
 const Map<String, String> kCoveredElsewhere = <String, String>{
   // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
   // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
@@ -79,17 +85,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Idle timeout':
       'test/media/audiobook/study_clock_test.dart（空闲门）+ '
       'test/tools/statistics_write_convergence_guard_test.dart',
-  // 「功能模块」里**有底栏 tab 的七个**（五库页 + 下载/查词两个工具 tab）。写
-  // prefsRepo（changed=true），生效点是 HomePage/macOS 侧栏的可见 tab 列表——harness
-  // 里没有挂 HomePage 外壳，探不到底栏。行为由 homeActiveTabs 纯函数用例咬住：各开关
-  // =false 各自隐藏对应 tab、首页/设置恒在。（这七个同时也会藏掉自己的设置分类，那一
-  // 半由 settings_module_gating_test 一并咬住。）
-  //
-  // 键的两半都随「功能模块」搬家改过：destId `system` → `appearance`（本区管底栏
-  // 出现哪些 tab，与「反转导航栏」同域），行标题不再是手抄的 module_*_label，而是
-  // 底栏真值 homeNavItemFor 的 label（Novels→Books、Galgame→Game、
-  // Browser extension→Extension）。键是 `$destId/${row.title}`，两处任一变了本表
-  // 就得跟着变。
+  // 「功能模块」里**有底栏 tab 的那些**（首页 / 库页 / 浏览 / 查词 / 浏览器扩展）
+  // 自 #2198 起不再是 schema 开关行，而是自绘的 NavModuleOrderList（开关 + 拖拽 /
+  // 上下移排序），本 harness 的焦点遍历不把它当 switchRow 驱动，故不在本表登记。
+  // 开关生效（tab 隐藏）由 home_page_tabs_test / home_module_home_optional_test 咬住，
+  // 排序与列表交互由 test/models/module_nav_order_test.dart 与
+  // test/settings/nav_module_order_list_test.dart 咬住。
   // 互联「允许已配对设备读写本机配置」（host 侧许可，默认关）。写 prefsRepo
   // （changed=true），生效点在 **HTTP 端点**里：host 收到 GET/PUT
   // /api/interconnect/profile 时先查这个开关，关着回 403。harness 里没有起 server、
@@ -117,15 +118,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 403 `disabled`、不起进程。harness 里没有起 server，探不到。由专项测试咬住。
   'interconnect/Allow remote launch':
       'packages/fushi_engine/test/game_stream_launch_settings_test.dart',
-  // #2052 起首页模块也可关闭：底栏少一格 + 落地页回落，由专项测试咬住。
-  'appearance/Home': 'test/pages/home_module_home_optional_test.dart',
-  'appearance/Books': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Video': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Game': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Browse': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
   // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
   // 生效点是**设置一级分类整条消失**（列表 + 搜索索引），而 harness 观测的是本行自己
@@ -446,8 +438,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 专项测试走设置行写偏好 → 生产装配函数（假 HTTP 客户端）断言装 / 不装。
   'services/Default subtitle language':
       'test/pages/jimaku_default_language_test.dart',
-  'services/AJATT':
-      'test/media/video/subtitle/ajatt_setting_effect_test.dart',
+  'services/AJATT': 'test/media/video/subtitle/ajatt_setting_effect_test.dart',
   // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
   // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
   // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
@@ -513,6 +504,40 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 立即同步走与设置页同一个手动同步入口 / 唤起主窗再走手动同步入口 / Android openSync',
   'floatingBall/Feedback':
       'test/floating_ball/app_floating_ball_host_test.dart: 反馈按钮打开反馈中心 / 场景勾选里去掉反馈：球上没有反馈按钮',
+  // 阅读器 / 漫画 / 视频三个场景的专属按钮勾选。三组与上面几行是同一个
+  // `_buttonsSection` 生成器（写 floatingBallButtons(scope)），生效点同样在宿主按
+  // 当前场景挑按钮。这组分区只在对应模块（书 / 漫画 / 视频）开着时出现：#2198 之前
+  // 本 harness 会在「外观」里先把这些模块开关逐个翻成关、到末尾才全局还原，遍历到
+  // 悬浮球页时三组都被藏掉，于是从没进过账；导航模块改成自绘的拖拽排序列表后不再被
+  // 翻关，三组如实露出。勾选 → 场景里出现 / 不出现、各场景互不影响、页面没提供的
+  // 专属按钮跳过，由宿主测试按场景咬住。
+  'floatingBall/Back': _kFloatingBallSceneButtons,
+  'floatingBall/Lyrics mode': _kFloatingBallSceneButtons,
+  'floatingBall/Navigation': _kFloatingBallSceneButtons,
+  'floatingBall/Browse illustrations': _kFloatingBallSceneButtons,
+  'floatingBall/Reading statistics': _kFloatingBallSceneButtons,
+  'floatingBall/Pause / resume reading timer': _kFloatingBallSceneButtons,
+  'floatingBall/Audiobook': _kFloatingBallSceneButtons,
+  'floatingBall/Toggle fullscreen': _kFloatingBallSceneButtons,
+  'floatingBall/Hide top and bottom bars': _kFloatingBallSceneButtons,
+  'floatingBall/Reader settings': _kFloatingBallSceneButtons,
+  'floatingBall/Previous sentence': _kFloatingBallSceneButtons,
+  'floatingBall/Play / Pause': _kFloatingBallSceneButtons,
+  'floatingBall/Next sentence': _kFloatingBallSceneButtons,
+  'floatingBall/Rewind 10 seconds': _kFloatingBallSceneButtons,
+  'floatingBall/Forward 10 seconds': _kFloatingBallSceneButtons,
+  'floatingBall/Follow audio': _kFloatingBallSceneButtons,
+  'floatingBall/Previous page': _kFloatingBallSceneButtons,
+  'floatingBall/Next page': _kFloatingBallSceneButtons,
+  'floatingBall/Show recognized text regions': _kFloatingBallSceneButtons,
+  'floatingBall/Recognize this volume': _kFloatingBallSceneButtons,
+  'floatingBall/Re-run OCR on this volume…': _kFloatingBallSceneButtons,
+  'floatingBall/Chapters': _kFloatingBallSceneButtons,
+  'floatingBall/Play/Pause': _kFloatingBallSceneButtons,
+  'floatingBall/Previous subtitle': _kFloatingBallSceneButtons,
+  'floatingBall/Next subtitle': _kFloatingBallSceneButtons,
+  'floatingBall/Favorite current sentence': _kFloatingBallSceneButtons,
+  'floatingBall/Screenshot': _kFloatingBallSceneButtons,
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
@@ -984,7 +1009,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/reader/reader_toolbar_style_setting_effect_test.dart',
   // · 纯黑深色（4c32e76）：只在深色下把 surface 压成纯黑，harness 的 t2 渲染
   //   输入观测不到；由 ThemeNotifier 配色真值测试覆盖。
-  'appearance/Pure black dark': 'test/models/theme_notifier_test.dart: '
+  'appearance/Pure black dark':
+      'test/models/theme_notifier_test.dart: '
       'pure black: legacy black-theme users keep it; toggle is independent',
   // · 底栏标签（690c490）：只影响首页 M3E 悬浮底栏的标签显隐，设置页 harness
   //   不挂首页 shell；专项测试走设置行写偏好 → 生产 adaptiveBottomBar 标签画 /
@@ -1163,11 +1189,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/mining/mining_still_format_test.dart',
   // 音画同步片段格式：ffmpeg 参数按格式分派（视频页 / gal 窗口）+ 偏好推导（老 MP4 片段
   // 用户保持 MP4）+ 编码器缺失 AV1→VP9→MP4 降级且扩展名跟随实际产物 + WebM 卡片内嵌渲染。
-  'cardCreation/Video clip format': 'test/mining/mining_clip_format_test.dart + '
+  'cardCreation/Video clip format':
+      'test/mining/mining_clip_format_test.dart + '
       'test/mining/synchronized_video_mining_test.dart + '
       'test/mining/immersion_capture_video_test.dart + '
       '../packages/fushi_anki/test/inline_video_cover_test.dart',
-  'cardCreation/Game clip format': 'test/mining/mining_clip_format_test.dart + '
+  'cardCreation/Game clip format':
+      'test/mining/mining_clip_format_test.dart + '
       'test/mining/synchronized_video_mining_test.dart',
   // 同步后端选择：syncChannelScopeOf 是 resolveSyncBackend 的逆（选哪个就解析出哪个），
   // 外加 applyBackupBackendChange 真改变通道归属。
@@ -1248,7 +1276,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「P2P tunnel」）与真隧道端到端；跨 NAT 真打洞仍是设备 backlog。
   'interconnect/Allow remote connections over a P2P tunnel':
       'test/sync/interconnect_p2p_tunnel_test.dart + '
-          'INTEGRATION: 跨 NAT 真机打洞',
+      'INTEGRATION: 跨 NAT 真机打洞',
   // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
   // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
   // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。
