@@ -80,7 +80,10 @@ bool ttsEndpointIsLoopback(String endpoint) {
 /// `こんにちは、今日もいい天気.wav`）。文件名里有假名或汉字时拿它预填参考文本；
 /// `ref.wav` 这类无意义的名字返回 null。
 String? ttsPromptTextFromFileName(String path) {
-  String stem = p.basenameWithoutExtension(path).trim();
+  // 路径可能来自别的平台（Windows 盘符路径同步到 Android / Linux 等），两种分隔符都切，
+  // 不能只靠 p.basename 按当前平台切分。
+  final String fileName = path.split(RegExp(r'[\\/]')).last;
+  String stem = p.basenameWithoutExtension(fileName).trim();
   // 常见的情感 / 序号前缀：`【開心】…`、`[happy]…`、`001_…`。
   stem = stem.replaceFirst(RegExp(r'^(【[^】]*】|\[[^\]]*\]|\d+[_\-\s])+'), '');
   stem = stem.trim();
