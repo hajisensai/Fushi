@@ -7416,5 +7416,9 @@
   "video_setting_pause_ocr_scope_hint": "暫停時對畫面做文字辨識，辨識出的字可直接點按查詞。畫面上已有 Fushi 顯示的文字字幕時以字幕為準。",
   "video_setting_pause_ocr_scope_all": "所有影片",
   "video_setting_pause_ocr_scope_graphic": "僅圖片字幕",
-  "video_setting_pause_ocr_scope_off": "關閉"
+  "video_setting_pause_ocr_scope_off": "關閉",
+  "feedback_filter_all": "All",
+  "feedback_filter_active": "Ongoing",
+  "feedback_filter_closed": "Finished",
+  "feedback_filter_unread": "New replies"
 }

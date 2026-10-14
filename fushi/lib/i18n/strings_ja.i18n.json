@@ -7416,5 +7416,9 @@
   "video_setting_pause_ocr_scope_hint": "一時停止した画面の文字を OCR で認識し、タップで辞書を引けるようにします。Fushi が表示しているテキスト字幕がある場合はそちらを優先します。",
   "video_setting_pause_ocr_scope_all": "すべての動画",
   "video_setting_pause_ocr_scope_graphic": "画像字幕のみ",
-  "video_setting_pause_ocr_scope_off": "オフ"
+  "video_setting_pause_ocr_scope_off": "オフ",
+  "feedback_filter_all": "All",
+  "feedback_filter_active": "Ongoing",
+  "feedback_filter_closed": "Finished",
+  "feedback_filter_unread": "New replies"
 }

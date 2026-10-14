@@ -56,10 +56,6 @@ String _oneLine(String s) =>
 LeaderboardClient? _devClient(WidgetRef ref) =>
     ref.read(leaderboardServiceProvider).client;
 
-/// 开发者处理台分栏的最小宽度，以及分栏时左列表的宽度。
-const double _kSplitMinWidth = 840;
-const double _kSplitListWidth = 440;
-
 class FeedbackDevPage extends ConsumerStatefulWidget {
   const FeedbackDevPage({super.key});
 
@@ -160,10 +156,6 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
     unawaited(_load(reset: true));
   }
 
-  /// 横屏宽屏（桌面窗口 / 平板横置）时用左列表右详情分栏：宽够放下两栏，且是横向的。
-  static bool _useSplit(BoxConstraints c) =>
-      c.maxWidth >= _kSplitMinWidth && c.maxWidth > c.maxHeight;
-
   Future<void> _open(FeedbackSummary item, {required bool split}) async {
     if (split) {
       setState(() => _selectedId = item.id);
@@ -182,7 +174,6 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return FushiPageScaffold(
       title: t.feedback_dev_title,
       actions: <Widget>[
@@ -193,11 +184,20 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
           onTap: () => unawaited(_load(reset: true)),
         ),
       ],
-      body: LayoutBuilder(
-        builder: (BuildContext _, BoxConstraints constraints) {
-          final bool split = _useSplit(constraints);
-          final Widget list = Builder(
-            builder: (BuildContext context) => FushiRefreshIndicator(
+      // 左列表右详情。右栏按选中的 id 换 key，切换反馈就重建详情页（各自的输入框 /
+      // 请求状态互不串）；详情里改了状态 / 回复 / 批改后列表跟着重拉。
+      body: FeedbackSplitLayout(
+        keyPrefix: 'feedback-dev',
+        selectedId: _selectedId,
+        emptyMessage: t.feedback_dev_select_hint,
+        detailBuilder: (String id) => FeedbackDevDetailPage(
+          key: ValueKey<String>('feedback-dev-pane-$id'),
+          feedbackId: id,
+          embedded: true,
+          onChanged: () => unawaited(_load(reset: true)),
+        ),
+        listBuilder: (BuildContext context, bool split, double hPadding) =>
+            FushiRefreshIndicator(
               edgeOffset: MediaQuery.paddingOf(context).top,
               onRefresh: () => _load(reset: true),
               child: FushiEntranceScope(
@@ -208,9 +208,9 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                   padding: withBottomSafeInset(
                     context,
                     EdgeInsets.fromLTRB(
-                      tokens.spacing.card,
+                      hPadding,
                       tokens.spacing.card + MediaQuery.paddingOf(context).top,
-                      tokens.spacing.card,
+                      hPadding,
                       tokens.spacing.card,
                     ),
                   ),
@@ -240,7 +240,7 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                           ),
                       ],
                     ),
-                    SizedBox(height: tokens.spacing.card),
+                    SizedBox(height: tokens.spacing.gap),
                     if (_error != null && _items.isEmpty)
                       FushiPlaceholderMessage(
                         icon: FushiIcons.cloudOff,
@@ -263,92 +263,11 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                       for (int i = 0; i < _items.length; i++)
                         FushiStaggeredEntrance(
                           index: i,
-                          child: Padding(
-                            padding: EdgeInsets.only(
-                              bottom: tokens.spacing.gap,
-                            ),
-                            child: FushiCard(
-                              key: ValueKey<String>(
-                                'feedback-dev-${_items[i].id}',
-                              ),
-                              onTap: () =>
-                                  unawaited(_open(_items[i], split: split)),
-                              selected: split && _selectedId == _items[i].id,
-                              child: FushiListItem(
-                                leading: FushiIcon(
-                                  feedbackCategoryIcon(_items[i].category),
-                                ),
-                                title: Text(feedbackSafeText(_items[i].title)),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    Text(
-                                      '${feedbackTime(_items[i].updatedAt)}'
-                                      '${_items[i].attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: _items[i].attachmentCount)}' : ''}',
-                                    ),
-                                    FeedbackIdLabel(_items[i].id),
-                                    if (_items[i].parentId != null)
-                                      Text(
-                                        t.feedback_reopen_of(
-                                          id: _items[i].parentId!,
-                                        ),
-                                        key: ValueKey<String>(
-                                          'feedback-dev-parent-${_items[i].id}',
-                                        ),
-                                        style: tokens.type.metadata.copyWith(
-                                          color: colors.primary,
-                                        ),
-                                      ),
-                                    if (_items[i].flags.isNotEmpty)
-                                      FeedbackFlagChips(_items[i].flags),
-                                    if (_items[i].aiSummary != null)
-                                      Text(
-                                        _oneLine(_items[i].aiSummary!),
-                                        key: ValueKey<String>(
-                                          'feedback-dev-ai-${_items[i].id}',
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: tokens.type.metadata,
-                                      ),
-                                  ],
-                                ),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    if (_items[i].hasDevNote)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: Text(
-                                          t.feedback_dev_note_badge,
-                                          key: ValueKey<String>(
-                                            'feedback-dev-noted-${_items[i].id}',
-                                          ),
-                                          style: tokens.type.metadata.copyWith(
-                                            color: colors.primary,
-                                          ),
-                                        ),
-                                      ),
-                                    if (_items[i].awaitingDev)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          right: 8,
-                                        ),
-                                        child: Text(
-                                          t.feedback_dev_awaiting,
-                                          style: tokens.type.metadata.copyWith(
-                                            color: colors.error,
-                                          ),
-                                        ),
-                                      ),
-                                    FeedbackStatusBadge(_items[i].status),
-                                  ],
-                                ),
-                              ),
-                            ),
+                          child: _DevItemTile(
+                            item: _items[i],
+                            selected: split && _selectedId == _items[i].id,
+                            onTap: () =>
+                                unawaited(_open(_items[i], split: split)),
                           ),
                         ),
                       if (_next != null)
@@ -365,36 +284,67 @@ class _FeedbackDevPageState extends ConsumerState<FeedbackDevPage> {
                 ),
               ),
             ),
-          );
-          return split ? _splitBody(list, tokens) : list;
-        },
       ),
     );
   }
+}
 
-  /// 左列表右详情。右栏按选中的 id 换 key，切换反馈就重建详情页（各自的输入框 / 请求
-  /// 状态互不串）；详情里改了状态 / 回复 / 批改后列表跟着重拉。
-  Widget _splitBody(Widget list, FushiDesignTokens tokens) {
-    final String? id = _selectedId;
-    return Row(
-      key: const ValueKey<String>('feedback-dev-split'),
-      children: <Widget>[
-        SizedBox(width: _kSplitListWidth, child: list),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: id == null
-              ? FushiPlaceholderMessage(
-                  key: const ValueKey<String>('feedback-dev-split-empty'),
-                  icon: FushiIcons.forum,
-                  message: t.feedback_dev_select_hint,
-                )
-              : FeedbackDevDetailPage(
-                  key: ValueKey<String>('feedback-dev-pane-$id'),
-                  feedbackId: id,
-                  embedded: true,
-                  onChanged: () => unawaited(_load(reset: true)),
-                ),
-        ),
+/// 处理台列表的一行：附件数、重新提交关系、可疑标记、AI 总结摘要、批改 / 待回复标。
+class _DevItemTile extends StatelessWidget {
+  const _DevItemTile({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final FeedbackSummary item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return FeedbackListTile(
+      key: ValueKey<String>('feedback-dev-${item.id}'),
+      id: item.id,
+      category: item.category,
+      title: feedbackSafeText(item.title),
+      meta:
+          '${feedbackTime(item.updatedAt)}'
+          '${item.attachmentCount > 0 ? ' · ${t.feedback_detail_attachments(n: item.attachmentCount)}' : ''}',
+      status: item.status,
+      selected: selected,
+      onTap: onTap,
+      details: <Widget>[
+        if (item.parentId != null)
+          Text(
+            t.feedback_reopen_of(id: item.parentId!),
+            key: ValueKey<String>('feedback-dev-parent-${item.id}'),
+            style: tokens.type.metadata.copyWith(color: colors.primary),
+          ),
+        if (item.flags.isNotEmpty) FeedbackFlagChips(item.flags),
+        if (item.aiSummary != null)
+          Text(
+            _oneLine(item.aiSummary!),
+            key: ValueKey<String>('feedback-dev-ai-${item.id}'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.metadata,
+          ),
+      ],
+      badges: <Widget>[
+        if (item.hasDevNote)
+          Text(
+            t.feedback_dev_note_badge,
+            key: ValueKey<String>('feedback-dev-noted-${item.id}'),
+            style: tokens.type.metadata.copyWith(color: colors.primary),
+          ),
+        if (item.awaitingDev)
+          Text(
+            t.feedback_dev_awaiting,
+            style: tokens.type.metadata.copyWith(color: colors.error),
+          ),
       ],
     );
   }

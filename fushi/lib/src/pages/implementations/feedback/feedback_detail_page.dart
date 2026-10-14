@@ -25,9 +25,20 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 class FeedbackDetailPage extends ConsumerStatefulWidget {
-  const FeedbackDetailPage({required this.feedbackId, super.key});
+  const FeedbackDetailPage({
+    required this.feedbackId,
+    this.embedded = false,
+    this.onRemoved,
+    super.key,
+  });
 
   final String feedbackId;
+
+  /// 嵌在反馈中心宽屏分栏的右栏里：没有「返回」（右栏不是一条路由）。
+  final bool embedded;
+
+  /// 嵌入时「从本机移除」后通知宿主收起右栏（独立页面是 pop）。
+  final VoidCallback? onRemoved;
 
   @override
   ConsumerState<FeedbackDetailPage> createState() => _FeedbackDetailPageState();
@@ -515,7 +526,12 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
 
   Future<void> _forget() async {
     await ref.read(feedbackServiceProvider).forget(widget.feedbackId);
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    if (widget.embedded) {
+      widget.onRemoved?.call();
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -530,6 +546,7 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
     // 账户列表里的条目删不掉（下次刷新又会列出来），不给「从本机移除」。
     final bool viaAccount = local?.viaAccount ?? false;
     return FushiPageScaffold(
+      automaticallyImplyLeading: !widget.embedded,
       title: d?.summary.title ?? local?.title ?? t.feedback_title,
       actions: <Widget>[
         if (!viaAccount)
