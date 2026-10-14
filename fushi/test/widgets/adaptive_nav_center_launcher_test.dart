@@ -246,6 +246,47 @@ void main() {
     expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
   });
 
+  // 真 app 实测：分页滑动翻到第 2 页后切到「中央展开 + 翻页」，页号被带过去，
+  // 新分组（4 个一页）停在第 2 页。分组变了必须落回当前项所在页。
+  testWidgets('切底栏样式后回到当前项所在页，不沿用旧页号', (WidgetTester tester) async {
+    final ValueNotifier<AdaptiveNavBarStyle> style =
+        ValueNotifier<AdaptiveNavBarStyle>(AdaptiveNavBarStyle.pager);
+    addTearDown(style.dispose);
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: ValueListenableBuilder<AdaptiveNavBarStyle>(
+              valueListenable: style,
+              builder:
+                  (
+                    BuildContext context,
+                    AdaptiveNavBarStyle value,
+                    Widget? _,
+                  ) => adaptiveBottomBar(
+                    context: context,
+                    currentIndex: 0,
+                    onTap: (_) {},
+                    items: itemsOf(9),
+                    barStyle: value,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await swipeBar(tester, -220);
+    expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);
+    style.value = AdaptiveNavBarStyle.launcherPager;
+    await tester.pumpAndSettle();
+    expect(barLabels(), <String>['Tab0', 'Tab1', 'Tab2', 'Tab3']);
+  });
+
   testWidgets('分页滑动：当前项在第二页时直接停在第二页', (WidgetTester tester) async {
     await pumpStyled(tester, AdaptiveNavBarStyle.pager, currentIndex: 7);
     expect(barLabels(), <String>['Tab5', 'Tab6', 'Tab7', 'Tab8']);

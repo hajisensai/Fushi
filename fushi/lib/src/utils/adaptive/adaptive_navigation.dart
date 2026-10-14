@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart'
     show DragStartBehavior, kPrimaryMouseButton, kTouchSlop;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
@@ -2405,6 +2406,15 @@ class _NavPagedRowState extends State<_NavPagedRow>
   @override
   void didUpdateWidget(_NavPagedRow oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 分组变了（切底栏样式 5↔4 个一页、开关模块）：旧页号已无意义，直接落到
+    // 当前项所在页。真 app 实测：从分页滑动第 2 页切到「中央展开 + 翻页」，
+    // 曾停在新分组的第 2 页、再滑一下跑到只剩一项的第 3 页。
+    if (oldWidget.centerGap != widget.centerGap ||
+        !_samePages(oldWidget.pages, widget.pages)) {
+      _page = _pageOf(widget.currentIndex) ?? 0;
+      _position.value = _page.toDouble();
+      return;
+    }
     final int last = widget.pages.length - 1;
     if (_page > last) _settleTo(last);
     if (oldWidget.currentIndex != widget.currentIndex) {
@@ -2417,6 +2427,14 @@ class _NavPagedRowState extends State<_NavPagedRow>
   void dispose() {
     _position.dispose();
     super.dispose();
+  }
+
+  static bool _samePages(List<List<int>> a, List<List<int>> b) {
+    if (a.length != b.length) return false;
+    for (int p = 0; p < a.length; p++) {
+      if (!listEquals(a[p], b[p])) return false;
+    }
+    return true;
   }
 
   int? _pageOf(int index) {
