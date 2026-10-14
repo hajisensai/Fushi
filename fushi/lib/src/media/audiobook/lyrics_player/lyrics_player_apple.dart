@@ -1028,9 +1028,8 @@ class _NarrowIllustrationEntry extends StatelessWidget {
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
                       gaplessPlayback: true,
-                      errorBuilder: (_, Object e, StackTrace? s) => ColoredBox(
-                        color: Colors.white.withValues(alpha: 0.12),
-                      ),
+                      errorBuilder: (_, Object e, StackTrace? s) =>
+                          ColoredBox(color: Colors.white.withValues(alpha: 0.12)),
                     ),
                   ),
                 ),
