@@ -250,8 +250,8 @@ void main() {
       expect(containsCodeLine(body, 'readerWheelTickIsForward('), isTrue,
           reason: '滚轮翻页方向必须只经纯谓词决定，不得在 handler 里散写符号映射');
       expect(
-          containsCodeLine(body,
-              'invertSwipe: ReaderFushiSource.instance.invertSwipeDirection'),
+          RegExp(r'invertSwipe:\s*ReaderFushiSource\.instance\.invertSwipeDirection')
+              .hasMatch(body),
           isTrue,
           reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证纵向/鼠标不受它影响）');
       expect('invertSwipeDirection'.allMatches(body).length, 1,

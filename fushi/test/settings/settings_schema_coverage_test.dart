@@ -678,6 +678,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
+  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
+  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
+  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
+  'lookup/Close lookup popup after creating a card':
+      'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
   // window.scanNonJapaneseText + reader_selection_scripts 的 `scanNonJapaneseText
