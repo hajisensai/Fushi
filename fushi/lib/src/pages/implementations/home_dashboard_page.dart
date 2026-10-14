@@ -38,6 +38,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
+import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
@@ -1394,7 +1395,7 @@ class _HomeDashboardPageState
   // ── 浮动工具栏 + 「继续」FAB（2026-10 首页统一浮动工具栏） ───────────────────
 
   /// 顶部浮动工具栏：标题胶囊（页面名）+ 动作按钮组（更新中心 · 统计中心 ·
-  /// 排行榜 · 反馈）。首页此前没有页头，这三个入口分散在更新横幅（只在有未读时出现）
+  /// 收藏夹 · 排行榜 · 反馈）。首页此前没有页头，这三个入口分散在更新横幅（只在有未读时出现）
   /// 与学习卡标题行尾；收进一条与阅读器 / 视频同款的 M3E 浮动工具栏后，常驻
   /// 可达、滚动时让位。
   Widget _buildFloatingToolbar() {
@@ -1428,6 +1429,15 @@ class _HomeDashboardPageState
               icon: FushiIcons.barChart,
               label: t.stat_center_title,
               onPressed: _openStatisticsCenter,
+            ),
+            // 收藏夹：唯一入口（用户定案 2026-10-14，同统计中心 2026-09-01 的收敛）。
+            // 收藏夹不按模块隔离，书架 / 视频库页头各挂一个打开的都是同一页，反而
+            // 误导成「本模块的收藏夹」，所以撤掉库页入口、统一从首页进。
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-collections'),
+              icon: FushiIcons.collection,
+              label: t.collections,
+              onPressed: _openCollections,
             ),
             // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
             FushiToolbarItem(
@@ -2462,6 +2472,17 @@ class _HomeDashboardPageState
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => const StatisticsCenterPage(),
+      ),
+    );
+  }
+
+  /// 收藏夹入口（唯一入口：书架 / 漫画 / 视频库页头的收藏夹按钮已撤）。
+  void _openCollections() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(),
       ),
     );
   }
