@@ -6000,7 +6000,7 @@
   "anki_sync_client_ankiweb_confirm": "Toch AnkiWeb gebruiken",
   "anki_sync_client_has_unsynced": "$count kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.",
   "anki_sync_client_sign_in_failed": "Aanmelden mislukt: $error",
-  "anki_pending_mine_landing_hint": "Kaarten die op apparaten zonder Anki zijn gemaakt, komen via synchronisatie op dit apparaat aan en worden hier aan Anki toegevoegd. Er ontvangt steeds maar één apparaat.",
+  "anki_pending_mine_landing_hint": "Kaarten die op apparaten zonder Anki zijn gemaakt, komen via synchronisatie (zoals Google Drive of WebDAV) op dit apparaat aan en worden hier aan Anki toegevoegd. Er ontvangt steeds maar één apparaat.",
   "anki_sync_client_relogin": "Opnieuw aanmelden",
   "anki_sync_client_discard_confirm": "$count kaart(en) zijn nog niet met Anki gesynchroniseerd. Verwerpen en afmelden? Ze kunnen niet worden hersteld.",
   "anki_sync_client_discard_action": "Verwerpen en afmelden",
@@ -7478,7 +7478,7 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde telefoons kunnen op deze manier geen kaarten afleveren. Zet op die telefoons in plaats daarvan 'Kaarten naar gekoppeld apparaat sturen' aan.",
+  "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde apparaten hebben deze optie niet nodig. Zet op die apparaten 'Kaarten naar gekoppeld apparaat sturen' aan, dan gaan hun kaarten rechtstreeks naar Anki op dit apparaat.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"

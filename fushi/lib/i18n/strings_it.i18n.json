@@ -6000,7 +6000,7 @@
   "anki_sync_client_ankiweb_confirm": "Usa comunque AnkiWeb",
   "anki_sync_client_has_unsynced": "$count carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.",
   "anki_sync_client_sign_in_failed": "Accesso non riuscito: $error",
-  "anki_pending_mine_landing_hint": "Le carte create su dispositivi senza Anki arrivano su questo dispositivo tramite la sincronizzazione e vengono aggiunte ad Anki qui. Le riceve un solo dispositivo alla volta.",
+  "anki_pending_mine_landing_hint": "Le carte create su dispositivi senza Anki arrivano su questo dispositivo tramite la sincronizzazione (ad es. Google Drive o WebDAV) e vengono aggiunte ad Anki qui. Le riceve un solo dispositivo alla volta.",
   "anki_sync_client_relogin": "Accedi di nuovo",
   "anki_sync_client_discard_confirm": "$count carta/e non ancora sincronizzata/e con Anki. Scartarle e uscire? Non si possono recuperare.",
   "anki_sync_client_discard_action": "Scarta ed esci",
@@ -7478,7 +7478,7 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Questo dispositivo è un host di interconnessione, quindi i telefoni associati non possono consegnargli carte in questo modo. Su quei telefoni attiva invece «Invia al dispositivo accoppiato».",
+  "anki_pending_mine_landing_host_note": "Questo dispositivo è un host di interconnessione, quindi ai dispositivi associati questa opzione non serve. Attiva «Invia al dispositivo accoppiato» su quei dispositivi e le loro carte andranno direttamente nell'Anki di questo.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
