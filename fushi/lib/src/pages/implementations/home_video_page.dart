@@ -84,7 +84,6 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
-import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
@@ -2604,8 +2603,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     FushiToast.show(msg: t.collection_merged, severity: ToastSeverity.success);
   }
 
-  /// 打开收藏夹页（书签 + 收藏句子，含视频来源的收藏句子，TODO-047 ③a）。与书架页头
-  /// 的收藏夹入口同一 [CollectionsPage]——视频与书架共用一个收藏夹，按来源区分展示。
   /// 此刻可遥控的电脑（页头遥控按钮只在非空时出现）。
   List<VideoRemoteTarget> _videoRemoteTargets = const <VideoRemoteTarget>[];
 
@@ -2671,16 +2668,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         context: context,
         builder: (_) =>
             VideoRemotePage(repository: syncRepo, peer: target.peer),
-      ),
-    );
-  }
-
-  void _openCollections() {
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const CollectionsPage(),
       ),
     );
   }
@@ -6909,7 +6896,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             tooltip: t.video_source_scrape_tasks_open,
             label: t.video_source_scrape_tasks_open,
             icon: widget.scrapeTaskController?.pendingConfirmation == null
-                // 与书架 / 漫画库页头的「刮削」入口同一个图标（manage_search）；
+                // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
                 // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
                 ? Icons.manage_search_outlined
                 : Icons.rule_folder_outlined,
@@ -6927,12 +6914,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           icon: Icons.folder_copy_outlined,
           onTap: _openManageSources,
         ),
-      FushiIconButton(
-        tooltip: t.collections,
-        label: t.collections,
-        icon: Icons.collections_bookmark_outlined,
-        onTap: _openCollections,
-      ),
+      // 收藏夹入口已收敛到首页 dashboard（用户定案 2026-10-14）：收藏夹不按模块
+      // 隔离，各库页都挂一个只会误导。
       // 手机遥控电脑播放：只在探到可遥控的已配对电脑时出现（本机做 host 时没有）。
       if (_videoRemoteTargets.isNotEmpty)
         FushiIconButton(
