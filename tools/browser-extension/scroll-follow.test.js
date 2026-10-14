@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// BUG-3328 行为守卫：查词后滚动页面（或页面里的内部可滚动容器），被查词高亮与查词弹窗都是
+// BUG-3336 行为守卫：查词后滚动页面（或页面里的内部可滚动容器），被查词高亮与查词弹窗都是
 // position:fixed 的视口坐标，旧实现没有任何滚动处理 → 两者停在原位、与词错开。修复后：
 //   1) document 上以 capture + passive 监听 scroll（内部容器的 scroll 不冒泡，只有 capture 收得到）；
 //   2) 词仍在视口内：高亮重画到词的新位置，弹窗按词的位移整体平移；

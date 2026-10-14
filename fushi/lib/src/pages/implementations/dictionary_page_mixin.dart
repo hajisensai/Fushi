@@ -28,7 +28,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
         MinePopupResult,
         DictionaryPopupWebViewState,
         closePopupAfterAcceptedMine;
-import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';

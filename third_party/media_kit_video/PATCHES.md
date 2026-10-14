@@ -800,7 +800,7 @@ desktop).
 Test: `fushi/test/pages/video_desktop_touch_swipe_test.dart` (real touch /
 stylus / mouse drags).
 
-## BUG-3329: swipe seek indicator keeps the committed delta while it fades out
+## BUG-3354: swipe seek indicator keeps the committed delta while it fades out
 
 `lib/media_kit_video_controls/src/controls/material.dart` — new State field
 `_swipeIndicatorDuration`, written next to `swipeDuration` in
@@ -819,4 +819,4 @@ The desktop touch layer (`touch_swipe_gesture_layer.dart`) removes its indicator
 from the tree on release instead of fading it, so it never showed the reset value.
 
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
-(group `BUG-3329: swipe seek indicator keeps the committed delta while fading`).
+(group `BUG-3354: swipe seek indicator keeps the committed delta while fading`).

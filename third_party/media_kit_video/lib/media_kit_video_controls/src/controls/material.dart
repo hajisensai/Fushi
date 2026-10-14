@@ -700,7 +700,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   Duration swipeDuration = Duration.zero; // Duration to seek in video
   bool showSwipeDuration = false; // Whether to show the seek duration overlay
 
-  /// Hibiki patch (BUG-3329): what the seek indicator displays. The indicator
+  /// Hibiki patch (BUG-3354): what the seek indicator displays. The indicator
   /// fades out (AnimatedOpacity) after release, and it keeps rebuilding during
   /// that fade. [swipeDuration] is the *pending commit* and must be zeroed on
   /// release (BUG-1485), so an indicator reading it showed "base + 0:00" — the
@@ -1674,7 +1674,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                   child: AnimatedOpacity(
                     duration: _theme(context).controlsTransitionDuration,
                     opacity: showSwipeDuration ? 1 : 0,
-                    // Hibiki patch (BUG-3329): the displayed delta, not the
+                    // Hibiki patch (BUG-3354): the displayed delta, not the
                     // pending commit (which release zeroes mid-fade).
                     child: _theme(context)
                             .seekIndicatorBuilder

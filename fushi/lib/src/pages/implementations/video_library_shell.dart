@@ -323,7 +323,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
           // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
           child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            chrome: FushiFloatingChromeBar(
+              tabs: navigation,
+              slot: _actionsSlot,
+            ),
             child: NotificationListener<ScrollNotification>(
               onNotification: _onScroll,
               child: SectionSwipeNavigator<VideoLibrarySection>(

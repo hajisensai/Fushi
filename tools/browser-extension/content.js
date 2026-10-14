@@ -2130,7 +2130,7 @@ function fushiDrawHighlightOverlay(rects) {
   fushiHighlightLayer = layer;
 }
 
-// BUG-3328：查词后滚动页面（或任何内部可滚动容器），高亮与弹窗都是 position:fixed 的视口
+// BUG-3336：查词后滚动页面（或任何内部可滚动容器），高亮与弹窗都是 position:fixed 的视口
 // 坐标，原地不动——词滚走了，它们还停在旧位置。统一处理：document 上 capture 监听 scroll
 // （scroll 不冒泡，只有 capture 才收得到内部容器的滚动；弹窗自己 shadow 里的滚动不 composed，
 // 天然收不到），每帧最多复算一次：从同一份取词 ranges 重量 rects——
@@ -3202,7 +3202,7 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // 探测。不跳的话，下面 highlightSelection 的无选区兜底会把**上一轮**查词的 bbox 当锚点，
   // 弹窗落到上一个词旁边，还可能把那处重新点亮。
   let wordRect = anchorRect && anchorRect.authoritative === true ? anchorRect : null;
-  // BUG-3328：只有从宿主页选区量到 rects 的这一窗才能随滚动重量、跟随（见 fushiOnPageScroll）。
+  // BUG-3336：只有从宿主页选区量到 rects 的这一窗才能随滚动重量、跟随（见 fushiOnPageScroll）。
   fushiHighlightTermLen = 0;
   if (!wordRect) try {
     const hl = fushiSelectionRects(termLen);
@@ -3389,7 +3389,7 @@ function fushiApplyPlacement() {
     top: pos.top,
     maxRight: window.innerWidth - 8,
     maxBottom: maxBottom,
-    // BUG-3328：弹窗在词上方时 maxBottom 跟着词走（滚动平移时同步挪），否则是视口底、不动。
+    // BUG-3336：弹窗在词上方时 maxBottom 跟着词走（滚动平移时同步挪），否则是视口底、不动。
     aboveWord: !!(wordRect && pos.top < ay),
     zoom: zoom,
   };
