@@ -117,19 +117,18 @@ class SrsCardOps {
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
     int durationMs = 0,
-    SrsAnswerPreview? preview,
   }) {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
     }
-    final SrsAnswerPreview p =
-        preview ??
-        this.preview(
-          cardId: cardId,
-          history: history,
-          config: config,
-          ctx: ctx,
-        );
+    // 永远在评分这一刻重算：显示卡面时算的预览已经过时（学习步按分钟算，用出题时刻会偏一档；
+    // 日志时刻也必须是评分时刻）。界面上的间隔预览只用于显示。
+    final SrsAnswerPreview p = preview(
+      cardId: cardId,
+      history: history,
+      config: config,
+      ctx: ctx,
+    );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);
     return SrsReviewLog(

@@ -1067,7 +1067,6 @@ class SrsDbStore implements SrsSyncReplica {
     String cardId,
     int rating, {
     int durationMs = 0,
-    SrsAnswerPreview? preview,
   }) async {
     final SrsCardCacheRow c = (await cardRow(cardId))!;
     final SrsDayContext day = await dayContext();
@@ -1078,7 +1077,6 @@ class SrsDbStore implements SrsSyncReplica {
       config: await schedulingConfigFor(c.deckId),
       ctx: _logContext(day),
       durationMs: durationMs,
-      preview: preview,
     );
     await _emit(<SrsEvent>[SrsLogEvent(log)]);
     return log;
@@ -1179,77 +1177,104 @@ class SrsDbStore implements SrsSyncReplica {
       c.scheduler == SrsScheduler.fushi &&
       (c.buriedUntilDay == null || c.buriedUntilDay! <= today);
 
-  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。
-  Future<List<SrsDeckSummary>> deckSummaries() async {
+  /// 计数用的一次性上下文：牌组树、「今天」、最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡。
+  Future<_CountContext> _countContext() async {
     final SrsDeckTree tree = await deckTree();
     final SrsDayContext day = await dayContext();
     final (int nowMs, _) = now();
     final int today = day.dayIndexOf(nowMs);
+    final Map<int, int> perDay = await _reviewsPerDay(day, today, 30);
+    final (Set<String> introduced, Set<String> reviewed) = await _todayActivity(
+      day,
+      today,
+    );
+    return _CountContext(
+      tree: tree,
+      nowMs: nowMs,
+      today: today,
+      last30: <int>[for (int d = today - 29; d <= today; d++) perDay[d] ?? 0],
+      introducedToday: introduced,
+      reviewedToday: reviewed,
+    );
+  }
+
+  int _depthOf(SrsDeckTree tree, String id) {
+    int d = 0;
+    String? p = tree.parentOf(id);
+    while (p != null && d < 64) {
+      d++;
+      p = tree.parentOf(p);
+    }
+    return d;
+  }
+
+  /// 一个牌组（含子树）的计数。[cards] 至少包含该子树的全部卡片。
+  SrsDeckSummary _summarize(
+    SrsDeckView d,
+    _CountContext ctx,
+    Iterable<SrsCardCacheRow> cards,
+  ) {
+    final Set<String> sub = ctx.tree.subtree(d.id).toSet();
+    int newAvail = 0,
+        learn = 0,
+        due = 0,
+        total = 0,
+        newDone = 0,
+        reviewDone = 0;
+    for (final SrsCardCacheRow c in cards) {
+      if (!sub.contains(c.deckId) || c.hidden) continue;
+      total++;
+      if (ctx.introducedToday.contains(c.id)) newDone++;
+      if (ctx.reviewedToday.contains(c.id)) reviewDone++;
+      if (!_isLive(c, ctx.today)) continue;
+      switch (SrsQueue.parse(c.queue)) {
+        case SrsQueue.newCard:
+          newAvail++;
+        case SrsQueue.learning:
+        case SrsQueue.relearning:
+          if ((c.dueAt ?? 0) <= ctx.nowMs + 20 * 60000) learn++;
+        case SrsQueue.review:
+          if ((c.dueDay ?? 0) <= ctx.today) due++;
+      }
+    }
+    final SrsNewCardBudget budget = srsComputeNewCardBudget(
+      newPerDayLimit: d.newPerDay,
+      dueReviews: due,
+      reviewsPerDayLast30: ctx.last30,
+    );
+    return SrsDeckSummary(
+      deck: d,
+      fullName: ctx.tree.fullName(d.id),
+      depth: _depthOf(ctx.tree, d.id),
+      newCount: min(newAvail, max(0, budget.allowed - newDone)),
+      learnCount: learn,
+      reviewCount: min(due, max(0, d.reviewsPerDay - reviewDone)),
+      newBudget: budget,
+      totalCards: total,
+    );
+  }
+
+  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。卡片缓存只读一次。
+  Future<List<SrsDeckSummary>> deckSummaries() async {
+    final _CountContext ctx = await _countContext();
     final List<SrsCardCacheRow> cards = await (db.select(
       db.srsCardsCache,
     )..where((c) => c.profileUid.equals(profileUid))).get();
-    final Map<int, int> perDay = await _reviewsPerDay(day, today, 30);
-    final List<int> last30 = <int>[
-      for (int d = today - 29; d <= today; d++) perDay[d] ?? 0,
-    ];
-    final Set<String> introducedToday = await _cardsIntroducedOn(day, today);
-    final List<SrsDeckSummary> out = <SrsDeckSummary>[];
-
-    int depthOf(String id) {
-      int d = 0;
-      String? p = tree.parentOf(id);
-      while (p != null && d < 64) {
-        d++;
-        p = tree.parentOf(p);
-      }
-      return d;
-    }
-
-    for (final SrsDeckView d in tree.decks) {
-      final Set<String> sub = tree.subtree(d.id).toSet();
-      int newAvail = 0, learn = 0, due = 0, total = 0, newDone = 0;
-      for (final SrsCardCacheRow c in cards) {
-        if (!sub.contains(c.deckId) || c.hidden) continue;
-        total++;
-        if (introducedToday.contains(c.id)) newDone++;
-        if (!_isLive(c, today)) continue;
-        final SrsQueue q = SrsQueue.parse(c.queue);
-        switch (q) {
-          case SrsQueue.newCard:
-            newAvail++;
-          case SrsQueue.learning:
-          case SrsQueue.relearning:
-            if ((c.dueAt ?? 0) <= nowMs + 20 * 60000) learn++;
-          case SrsQueue.review:
-            if ((c.dueDay ?? 0) <= today) due++;
-        }
-      }
-      final SrsNewCardBudget budget = srsComputeNewCardBudget(
-        newPerDayLimit: d.newPerDay,
-        dueReviews: due,
-        reviewsPerDayLast30: last30,
-      );
-      out.add(
-        SrsDeckSummary(
-          deck: d,
-          fullName: tree.fullName(d.id),
-          depth: depthOf(d.id),
-          newCount: min(newAvail, max(0, budget.allowed - newDone)),
-          learnCount: learn,
-          reviewCount: min(due, max(0, d.reviewsPerDay)),
-          newBudget: budget,
-          totalCards: total,
-        ),
-      );
-    }
-    out.sort(
-      (SrsDeckSummary a, SrsDeckSummary b) => a.fullName.compareTo(b.fullName),
-    );
+    final List<SrsDeckSummary> out =
+        <SrsDeckSummary>[
+          for (final SrsDeckView d in ctx.tree.decks) _summarize(d, ctx, cards),
+        ]..sort(
+          (SrsDeckSummary a, SrsDeckSummary b) =>
+              a.fullName.compareTo(b.fullName),
+        );
     return out;
   }
 
-  /// 今天第一次评分（从新卡学起）的卡片。
-  Future<Set<String>> _cardsIntroducedOn(SrsDayContext day, int today) async {
+  /// 今天的活动：从新卡学起的卡（新卡配额）与复习了的复习卡（复习上限）。
+  Future<(Set<String>, Set<String>)> _todayActivity(
+    SrsDayContext day,
+    int today,
+  ) async {
     final int from = day.dayStartMs(today);
     final List<SrsReviewLogRow> rows =
         await (db.select(db.srsReviewLogs)..where(
@@ -1259,45 +1284,41 @@ class SrsDbStore implements SrsSyncReplica {
                   t.occurredAt.isBiggerOrEqualValue(from),
             ))
             .get();
-    final Set<String> out = <String>{};
+    final Set<String> introduced = <String>{};
+    final Set<String> reviewed = <String>{};
     for (final SrsReviewLogRow r in rows) {
-      final Map<Object?, Object?> j = jsonDecode(r.json) as Map;
-      final Object? res = j['res'];
-      if (r.reviewType == SrsReviewType.learn &&
-          res is Map &&
-          res['reps'] == 1) {
-        out.add(r.cardId);
-      }
+      if (r.reviewType == SrsReviewType.review) reviewed.add(r.cardId);
+      if (r.reviewType != SrsReviewType.learn) continue;
+      final Object? res = (jsonDecode(r.json) as Map)['res'];
+      if (res is Map && res['reps'] == 1) introduced.add(r.cardId);
     }
-    return out;
+    return (introduced, reviewed);
   }
 
   /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（笔记创建时刻, cardId）。
+  /// 只查目标子树里可见的卡（一次过滤查询），不扫全表。
   Future<String?> nextCard(
     String deckId, {
     Set<String> exclude = const <String>{},
   }) async {
-    final List<SrsDeckSummary> sums = await deckSummaries();
-    final SrsDeckSummary? sum = sums
-        .where((SrsDeckSummary s) => s.deck.id == deckId)
-        .firstOrNull;
-    if (sum == null) return null;
-    final SrsDeckTree tree = await deckTree();
-    final Set<String> sub = tree.subtree(deckId).toSet();
-    final SrsDayContext day = await dayContext();
-    final (int nowMs, _) = now();
-    final int today = day.dayIndexOf(nowMs);
-    final List<SrsCardCacheRow> cards =
-        (await (db.select(
-              db.srsCardsCache,
-            )..where((c) => c.profileUid.equals(profileUid))).get())
-            .where(
-              (SrsCardCacheRow c) =>
-                  sub.contains(c.deckId) &&
-                  _isLive(c, today) &&
-                  !exclude.contains(c.id),
-            )
-            .toList();
+    final _CountContext ctx = await _countContext();
+    final SrsDeckView? deck = ctx.tree[deckId];
+    if (deck == null) return null;
+    final Set<String> sub = ctx.tree.subtree(deckId).toSet();
+    final List<SrsCardCacheRow> inSubtree =
+        await (db.select(db.srsCardsCache)..where(
+              (c) =>
+                  c.profileUid.equals(profileUid) &
+                  c.deckId.isIn(sub) &
+                  c.hidden.equals(false),
+            ))
+            .get();
+    final SrsDeckSummary sum = _summarize(deck, ctx, inSubtree);
+    final int nowMs = ctx.nowMs;
+    final List<SrsCardCacheRow> cards = <SrsCardCacheRow>[
+      for (final SrsCardCacheRow c in inSubtree)
+        if (_isLive(c, ctx.today) && !exclude.contains(c.id)) c,
+    ];
     final List<SrsCardCacheRow> learning =
         cards
             .where(
@@ -1318,7 +1339,7 @@ class SrsDbStore implements SrsSyncReplica {
       final List<SrsCardCacheRow> due = cards
           .where(
             (SrsCardCacheRow c) =>
-                c.queue == SrsQueue.review.wire && (c.dueDay ?? 0) <= today,
+                c.queue == SrsQueue.review.wire && (c.dueDay ?? 0) <= ctx.today,
           )
           .toList();
       double r(SrsCardCacheRow c) {
@@ -1334,15 +1355,17 @@ class SrsDbStore implements SrsSyncReplica {
       if (due.isNotEmpty) return due.first.id;
     }
     if (sum.newCount > 0) {
-      final List<SrsCardCacheRow> fresh =
-          cards
-              .where((SrsCardCacheRow c) => c.queue == SrsQueue.newCard.wire)
-              .toList()
-            ..sort((SrsCardCacheRow a, SrsCardCacheRow b) {
-              final int c = a.noteCreatedAt.compareTo(b.noteCreatedAt);
-              return c != 0 ? c : a.id.compareTo(b.id);
-            });
-      if (fresh.isNotEmpty) return fresh.first.id;
+      SrsCardCacheRow? first;
+      for (final SrsCardCacheRow c in cards) {
+        if (c.queue != SrsQueue.newCard.wire) continue;
+        if (first == null ||
+            c.noteCreatedAt < first.noteCreatedAt ||
+            (c.noteCreatedAt == first.noteCreatedAt &&
+                c.id.compareTo(first.id) < 0)) {
+          first = c;
+        }
+      }
+      if (first != null) return first.id;
     }
     if (learning.isNotEmpty) return learning.first.id;
     return null;
@@ -1488,9 +1511,8 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 这些牌组里全部可见卡片的 ID（优化器训练范围）。
   Future<List<String>> cardIdsInDecks(Set<String> deckIds) async =>
-      (await (db.select(db.srsCardsCache)..where(
-                (c) => c.deckId.isIn(deckIds) & c.hidden.equals(false),
-              ))
+      (await (db.select(db.srsCardsCache)
+                ..where((c) => c.deckId.isIn(deckIds) & c.hidden.equals(false)))
               .get())
           .map((SrsCardCacheRow c) => c.id)
           .toList();
@@ -1890,4 +1912,23 @@ class SrsDbStore implements SrsSyncReplica {
     hit = _ankiCardIndex![ankiId];
     return hit;
   }
+}
+
+/// [SrsDbStore] 计数用的一次性上下文。
+class _CountContext {
+  const _CountContext({
+    required this.tree,
+    required this.nowMs,
+    required this.today,
+    required this.last30,
+    required this.introducedToday,
+    required this.reviewedToday,
+  });
+
+  final SrsDeckTree tree;
+  final int nowMs;
+  final int today;
+  final List<int> last30;
+  final Set<String> introducedToday;
+  final Set<String> reviewedToday;
 }
