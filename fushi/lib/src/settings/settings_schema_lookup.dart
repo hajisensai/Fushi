@@ -22,7 +22,6 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
@@ -1201,9 +1200,10 @@ SettingsDestination buildLookupDestination() {
           // 复习里加卡（API key 与上面同一个）。模块关着时这一行不出现、端点也不存在。
           SettingsStatusItem(
             id: 'lookup.srs_ankiconnect',
-            visible: (SettingsContext c) => c.ref.watch(srsModuleEnabledProvider),
+            visible: (SettingsContext c) =>
+                c.appModel.moduleVisibility.isEnabled(ModuleId.srs),
             title: t.srs_ankiconnect_title,
-            icon: Icons.hub_outlined,
+            icon: FushiIcons.hub,
             subtitleBuilder: (SettingsContext c) =>
                 t.srs_ankiconnect_hint(port: c.appModel.yomitanApiPort),
           ),

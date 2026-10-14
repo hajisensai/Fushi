@@ -343,8 +343,6 @@ Future<bool> _saveOrShareBytes({
       final String? savePath = await FilePicker.platform.saveFile(
         dialogTitle: t.srs_export_apkg,
         fileName: fileName,
-        type: FileType.custom,
-        allowedExtensions: const <String>['apkg'],
       );
       if (savePath == null) return false;
       await tmp.copy(savePath);
