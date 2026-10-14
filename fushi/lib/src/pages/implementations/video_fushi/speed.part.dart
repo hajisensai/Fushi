@@ -149,8 +149,9 @@ extension _VideoSpeed on _VideoFushiPageState {
     _showOsd('${previous}x', icon: Icons.speed);
   }
 
-  /// 手柄通道的翻转语义（手柄没有可靠的松开事件管线）：按一下进入临时倍速、
-  /// 再按恢复。与键盘按住共用同一状态，二者混用也不会叠加。
+  /// 没有松开沿的入口（鼠标侧键绑定、屏幕自定义按钮）的翻转语义：按一下进入
+  /// 临时倍速、再按恢复。键盘与手柄有松开沿，走按住语义（BUG-3330）。三者共用
+  /// 同一状态，混用也不会叠加。
   void _toggleHoldSpeed() {
     if (_holdSpeedActive) {
       _releaseHoldSpeed();

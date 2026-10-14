@@ -438,7 +438,7 @@
   "audiobook_transcribe_title": "设备端语音转录",
   "audiobook_transcribe_unavailable": "此平台不支持设备端转录",
   "audiobook_transcribe_use_result": "使用字幕",
-  "auto_add_book_name_to_tags": "自动添加书名到标签",
+  "auto_add_book_name_to_tags": "自动添加作品名到标签",
   "auto_chapter": "第 $n 章",
   "auto_read_on_lookup": "查词时自动朗读",
   "auto_search": "自动搜索",

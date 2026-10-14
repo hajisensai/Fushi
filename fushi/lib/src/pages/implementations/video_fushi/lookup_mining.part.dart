@@ -938,6 +938,15 @@ bool videoMiningInputUsesPlaybackRelay({
 /// - 单视频 / 远端 / 系列名为空（[isPlaylist] 假或 [playlistTitle] 空）→ 原 [episodeTitle]，
 ///   向后兼容零变化。
 /// 分隔符固定 " - "（与卡片标题习惯一致）；不做系列名==剧集名去重（避免过度设计）。
+/// 远端 / 在线视频的作品名（BUG-3332）：取 [RemoteVideoInfo.collection] 的合集名——
+/// 在线视频源（Aniyomi 扩展）每集都带作品名作合集归属，互联 / 媒体服务器下发的合集
+/// 成员同理。没有归属（散卡）或名字为空时 null。供制卡的作品名标签与 documentTitle
+/// 使用，与本地播放列表的合集名（[_VideoFushiPageState._playlistTitle]）同一个槽位。
+String? remoteVideoWorkTitle(RemoteVideoInfo info) {
+  final String name = info.collection?.collectionName.trim() ?? '';
+  return name.isEmpty ? null : name;
+}
+
 String? composeVideoMiningDocumentTitle({
   required bool isPlaylist,
   required String? playlistTitle,
