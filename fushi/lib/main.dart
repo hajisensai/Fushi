@@ -12,6 +12,7 @@ import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
@@ -2307,7 +2308,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     if (downgrade == null) ...[
                       const SizedBox(height: 20),
                       FushiFilledButton.icon(
-                        icon: const FushiIcon(Icons.open_in_new, size: 18),
+                        icon: const FushiIcon(FushiIcons.openInNew, size: 18),
                         label: Text(
                           t.db_legacy_schema_release_open(
                             version: kLegacySchemaBridgeAppVersion,
