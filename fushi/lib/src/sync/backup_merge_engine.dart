@@ -11,6 +11,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart'
+    show SrsBackupSource, mergeSrsFromBackup;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -187,6 +189,10 @@ class BackupMergeEngine {
       // v105：Profile 先于统计并入——段 / 游玩会话按 Profile **名字**落到本机
       // 同名 Profile，src 独有的 Profile 得先按名建出来，统计才有归属可落。
       await _mergeProfilesAndChildren();
+      // v117 SRS（铁律 E）：必须在 Profile 并入之后——备份独有的 Profile 刚按名建出、
+      // 还没有 SRS 数据也没发布过，正好走「同名 → 采用备份 uid」而不是再建一个「（备份）」。
+      // 没有对话框开关：与 profiles 同规，总是合并。
+      await _mergeSrs();
       if (_wants('statistics')) {
         await _mergeReadingStatistics();
         await _mergeVideoWatchStatistics();
@@ -1448,6 +1454,31 @@ class BackupMergeEngine {
     );
   }
 
+  /// SRS 专用合并（srs_* 表在通用路径登记为跳过，见 [mergeSkippedDeviceLocalTableNames]）：
+  /// 按 `profiles.uid` 归位后经本机 SRS 副本合并，规则与幂等性见 [mergeSrsFromBackup]。
+  /// 新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
+  Future<void> _mergeSrs() async {
+    if (!await _srcTableExists('srs_entities')) return;
+    final String deviceId = await SyncRepository(_db).getOrCreateDeviceId();
+    await mergeSrsFromBackup(
+      source: SrsBackupSource.attached(_db, _srcAlias),
+      local: _db,
+      deviceId: deviceId,
+      createProfile: (String name) async {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        await _db.customStatement(
+          'INSERT INTO main.profiles (name, created_at, updated_at) '
+          'VALUES (?, ?, ?)',
+          <Object>[name, now, now],
+        );
+        final QueryRow row = await _db
+            .customSelect('SELECT last_insert_rowid() AS id')
+            .getSingle();
+        return row.read<int>('id');
+      },
+    );
+  }
+
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
   /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
   /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
@@ -1711,7 +1742,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'srs_cards_cache',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
-      // 不可变），由 fushi_engine 的 SRS 专用合并步骤处理，之后再重建缓存。通用
+      // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →
+      // fushi_engine 的 mergeSrsFromBackup）处理，缓存随之刷新。通用
       // 路径绝不能按行 upsert / 重映射它们，所以在这里登记为「通用合并跳过」。
       'srs_entities',
       'srs_field_edits',
