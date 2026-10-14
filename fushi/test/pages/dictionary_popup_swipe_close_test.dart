@@ -293,7 +293,7 @@ void main() {
 
   testWidgets(
       'TODO-501: top-bar action buttons are 36 boxes with the shared icon '
-      'size (BUG-3367)',
+      'size (BUG-3412)',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildTestApp(
@@ -321,7 +321,7 @@ void main() {
     final FushiIconButton button = tester.widget<FushiIconButton>(
       find.widgetWithIcon(FushiIconButton, Icons.close),
     );
-    // BUG-3367：图标尺寸统一由 kDictionaryPopupTopActionIconSize（18）给出。
+    // BUG-3412：图标尺寸统一由 kDictionaryPopupTopActionIconSize（18）给出。
     expect(button.size, kDictionaryPopupTopActionIconSize);
     expect(
       button.constraints,

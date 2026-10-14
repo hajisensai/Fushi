@@ -856,14 +856,14 @@ class DictionaryPopupHistoryNav {
 /// 顶栏动作按钮的边长：桌面 36（鼠标精确，压缩顶栏）；移动端 40。
 ///
 /// 这一个值同时是**三组**控件的可见尺寸——左簇按钮组胶囊高、中段宿主 header（收藏 /
-/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3367）。移动端此前是 44：44×（左簇
+/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3412）。移动端此前是 44：44×（左簇
 /// 3 颗）的胶囊在手机宽度上把中段挤到放不下 4 颗，header 只能整体 scaleDown 到半大，
 /// 于是同一条顶栏出现三种尺寸；用户要求「做到一样大、可以变小」，收到 40。
 double dictionaryPopupTopActionExtent({required bool mobile}) =>
     mobile ? 40 : 36;
 
 /// 顶栏所有动作按钮（左簇 / 中段 header / 右簇关闭 / 溢出菜单 / 制卡目标）共用的图标
-/// 尺寸（BUG-3367）。宿主 header 也必须用它，不得各写各的 `size:`。
+/// 尺寸（BUG-3412）。宿主 header 也必须用它，不得各写各的 `size:`。
 const double kDictionaryPopupTopActionIconSize = 18;
 
 /// 顶栏所有动作按钮（左簇字号 / 导航、中段宿主 header 的收藏 / 有声书 / 视频句子动作、
@@ -999,7 +999,7 @@ class DictionaryPopupToolGroup extends StatelessWidget {
 /// [_PopupTopBarLayout] 的三个槽。
 enum _PopupTopBarSlot { left, header, right }
 
-/// 查词弹窗顶栏布局（BUG-3367）：左簇钉行首、右簇钉行尾，[DictionaryPopupLayer.headerWidget]
+/// 查词弹窗顶栏布局（BUG-3412）：左簇钉行首、右簇钉行尾，[DictionaryPopupLayer.headerWidget]
 /// 拿两簇之间（各留 [gap]）的全部剩余宽，优先相对整条顶栏居中，放不下居中位置时夹在
 /// 剩余区内——永不压到两簇（BUG-822 / BUG-826），也不因对称预留被无谓地缩小。
 class _PopupTopBarLayout extends MultiChildLayoutDelegate {
@@ -1586,7 +1586,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
   /// 关闭」一致。
   ///
-  /// BUG-3367：三段排布现由 [_PopupTopBarLayout] 完成（语义同上：两簇钉两端、header 拿
+  /// BUG-3412：三段排布现由 [_PopupTopBarLayout] 完成（语义同上：两簇钉两端、header 拿
   /// 两簇之间的有界宽，能相对整条顶栏居中就居中），三组控件共用同一边长与图标尺寸。
   Widget? _buildTopBar(BuildContext context) {
     if (headerWidget == null &&
@@ -1715,7 +1715,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         : const SizedBox.shrink();
 
     // 中段：header 相对**整条顶栏**居中（用户 10-09「中间的收藏句子按钮没居中」），
-    // 放不下时向两簇之间的剩余区滑动，而不是缩小（BUG-3367）。
+    // 放不下时向两簇之间的剩余区滑动，而不是缩小（BUG-3412）。
     //
     // 10-09 的实现按「较宽一簇」两侧对称预留，header 只拿到 `宽 − 2×左簇宽`：手机上左簇
     // 是 A− / A+ / 制卡目标三颗，对称预留把中段压到放不下 4 颗，header 的 FittedBox 只好
@@ -1741,7 +1741,7 @@ class DictionaryPopupLayer extends StatelessWidget {
 
     // 顶栏高度 = 按钮边长 + 上下各 [_kTopBarInset]/2 的留白，有无 header 一致：中段
     // header 的按钮与两簇共用 [dictionaryPopupTopActionConstraints]（同一个边长），
-    // 三组胶囊 / 圆钮同高（BUG-3367）。
+    // 三组胶囊 / 圆钮同高（BUG-3412）。
     return SizedBox(height: _topActionExtent + _kTopBarInset, child: bar);
   }
 

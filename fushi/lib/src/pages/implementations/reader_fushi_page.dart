@@ -5159,7 +5159,7 @@ $liveConfigJs
       final bool hasCue = cue != null;
       // 用户 10-09：顶栏按钮统一尺寸——每颗都用 [dictionaryPopupTopActionConstraints]
       // （与左簇 A−/A+、右簇关闭同一个命中盒、同一个 [kDictionaryPopupTopActionIconSize]
-      // 图标，BUG-3367），不再各自 padding 凑大小。
+      // 图标，BUG-3412），不再各自 padding 凑大小。
       // 整条顶栏（含本 header）的界面大小 / 词典字号缩放由 [DictionaryPopupLayer] 统一
       // 处理（topBarScale），这里不再套 ReaderChromeScaler：只缩 header 不缩两侧，
       // 中间的收藏按钮就和两侧大小不一。高度贴住按钮（不再额外 48 高 + 上下留白，

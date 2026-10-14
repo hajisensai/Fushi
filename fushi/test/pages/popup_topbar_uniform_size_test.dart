@@ -9,7 +9,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 import '../widgets/widget_test_helpers.dart';
 
-/// BUG-3367：查词弹窗顶栏三组控件（左簇 A−/A+ 按钮组、中段宿主 header 按钮组、右簇
+/// BUG-3412：查词弹窗顶栏三组控件（左簇 A−/A+ 按钮组、中段宿主 header 按钮组、右簇
 /// 关闭圆钮）在手机宽度上大小不一。
 ///
 /// 根因：中段 header 按「较宽一簇」两侧对称预留，手机上左簇一宽，中段就放不下 4 颗，
@@ -90,7 +90,7 @@ void main() {
   }
 
   testWidgets('top bar groups and close button share one height on a phone '
-      'width (BUG-3367)', (WidgetTester tester) async {
+      'width (BUG-3412)', (WidgetTester tester) async {
     // 手机竖屏宽（iPhone 390）——旧实现在此宽下中段被压到 ~50px、header 缩到 1/3。
     await pumpLayer(tester, 390);
     expect(tester.takeException(), isNull);
@@ -130,7 +130,7 @@ void main() {
   });
 
   testWidgets('header stays centred on the whole bar when there is room '
-      '(BUG-3367 keeps user 10-09)', (WidgetTester tester) async {
+      '(BUG-3412 keeps user 10-09)', (WidgetTester tester) async {
     const double width = 640;
     await pumpLayer(tester, width);
     final Rect header = tester.getRect(
@@ -139,7 +139,7 @@ void main() {
     expect(header.center.dx, moreOrLessEquals(width / 2, epsilon: 0.5));
   });
 
-  test('host headers use the shared top-bar icon size (BUG-3367)', () {
+  test('host headers use the shared top-bar icon size (BUG-3412)', () {
     String section(String path, String start, String end) {
       final String src = File(path).readAsStringSync();
       final int s = src.indexOf(start);
