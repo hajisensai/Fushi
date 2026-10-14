@@ -1776,6 +1776,78 @@ class VideoPlaybackSyncState {
       remoteUpdatedAtMs: remoteUpdatedAtMs,
     );
 
+/// host 接收对端时间戳时允许的「未来」余量：超过 host 当前时刻 + 本值的时间戳视为
+/// 设备时钟错误。不截断的话，一台时钟走快的设备写下的戳会在所有 LWW 比较里永远
+/// 胜出，之后任何端的正常写入都盖不过它（BUG-3367）。
+const int kSyncFutureStampToleranceMs = 5 * 60 * 1000;
+
+/// 把对端上报的时间戳 [atMs] 截到 `nowMs + kSyncFutureStampToleranceMs`。纯函数。
+int capFutureSyncStamp(int atMs, {required int nowMs}) {
+  final int cap = nowMs + kSyncFutureStampToleranceMs;
+  return atMs > cap ? cap : atMs;
+}
+
+/// host 已存时间戳 [storedAtMs] 在比较时的有效值：超出未来余量的旧毒戳（截断规则
+/// 上线前写入的）不可信，按 0（「无时间戳」）参与比较，让下一次正常上报直接覆盖、
+/// 自愈；正常戳原样返回。纯函数。
+int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
+    storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
+
+/// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
+///
+/// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
+/// 毫秒：此前这里是纯「取较新时间戳」（[resolvePositionLww]），两台设备在两次同步
+/// 之间各自看 / 听过同一条目时，后同步的一端会被静默盖掉，用户毫无察觉。判定看的
+/// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
+/// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
+/// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
+/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
+///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
+///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
+
+/// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
+///   谁都不覆盖。
+///
+/// 结论枚举复用 [BookProgressSyncAction]：四个结论的含义与书籍完全相同。
+BookProgressSyncAction resolvePlaybackPositionThreeWay({
+  required ({int positionMs, int updatedAtMs}) local,
+  required ({int positionMs, int updatedAtMs}) remote,
+  required int? basePositionMs,
+}) {
+  final bool localEmpty = local.updatedAtMs <= 0;
+  final bool remoteEmpty = remote.updatedAtMs <= 0;
+  if (localEmpty && remoteEmpty) {
+    // 两端都没有时间戳（旧数据）：沿用 LWW 的平局规则「取较远位置」。
+    if (local.positionMs == remote.positionMs) {
+      return BookProgressSyncAction.synced;
+    }
+    return local.positionMs > remote.positionMs
+        ? BookProgressSyncAction.pushLocal
+        : BookProgressSyncAction.applyRemote;
+  }
+  if (remoteEmpty) return BookProgressSyncAction.pushLocal;
+  if (localEmpty) return BookProgressSyncAction.applyRemote;
+  if (local.positionMs == remote.positionMs) {
+    return BookProgressSyncAction.synced;
+  }
+  if (basePositionMs == null) {
+    if (local.updatedAtMs > remote.updatedAtMs) {
+      return BookProgressSyncAction.pushLocal;
+    }
+    if (remote.updatedAtMs > local.updatedAtMs) {
+      return BookProgressSyncAction.applyRemote;
+    }
+    return local.positionMs > remote.positionMs
+        ? BookProgressSyncAction.pushLocal
+        : BookProgressSyncAction.applyRemote;
+  }
+  final bool localMoved = local.positionMs != basePositionMs;
+  final bool remoteMoved = remote.positionMs != basePositionMs;
+  if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;
+  if (localMoved) return BookProgressSyncAction.pushLocal;
+  return BookProgressSyncAction.applyRemote;
+}
+
 // ── 有声书进度（BUG-471）──────────────────────────────────────────────────────
 
 /// 有声书播放位置 pref key（毫秒）——单一真相源，host service 与

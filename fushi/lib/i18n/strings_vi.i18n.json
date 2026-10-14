@@ -7482,6 +7482,8 @@
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "db_legacy_schema_title": "Old data needs an upgrade first",
   "db_legacy_schema_message": "This database comes from the old Hibiki app or an early version (data schema older than v75), which this version can no longer upgrade directly. Your data has not been changed. To migrate: install Fushi v$version over this version (the bridge release that still contains the full upgrade path; your data folder is kept), open it once to upgrade the data, then update to the current version. On Android an older version cannot be installed over a newer one, and uninstalling Fushi also deletes this data, so back it up before uninstalling. Download: $url",
   "backup_legacy_schema": "This backup comes from the old Hibiki app or an early version (data schema older than v75), which this version can no longer import. Your current data has not been changed. To migrate: install Fushi v$version (the bridge release that still contains the full upgrade path), import the backup there, then update to the current version. On Android an older version cannot be installed over a newer one: uninstall this Fushi first (this deletes its current data, so back up anything you want to keep), then install v$version. Download: $url",

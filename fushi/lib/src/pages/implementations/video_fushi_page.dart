@@ -262,6 +262,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show VideoRemoteException;
@@ -4492,12 +4493,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
-      await client.putRemoteVideoPosition(
-        keyUid,
-        clamped,
-        nowMs,
-        episodeIndex: episodeIndex,
-      );
+      // BUG-3367：互联 host 的当前集 / 单视频（episodeIndex<=0，正是 sweep 用的
+      // `video_remote_position_<uid>` 键）走与 sweep 同一入口，上报成功即推进位置
+      // 基线——否则顺序接力（本机看完、另一台接着看）会被下轮 sweep 误判成冲突。
+      // host-playlist 的非首集（`#ep<n>` 键）sweep 不同步，也就不记基线。
+      if (client is InterconnectSyncBackend && episodeIndex <= 0) {
+        await InterconnectPlaybackPositionSync(
+          db: appModel.database,
+          backend: client,
+          kind: PlaybackPositionKind.video,
+        ).reportLive(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
+      } else {
+        await client.putRemoteVideoPosition(
+          keyUid,
+          clamped,
+          nowMs,
+          episodeIndex: episodeIndex,
+        );
+      }
     } catch (e) {
       debugPrint('[VideoFushiPage] remote position upload failed: $e');
     }

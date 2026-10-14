@@ -7482,6 +7482,8 @@
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "db_legacy_schema_title": "舊資料需要先升級",
   "db_legacy_schema_message": "此資料庫來自舊版 Hibiki 或早期版本（資料結構低於 v75），目前版本已無法直接升級它。你的資料沒有被改動。遷移步驟：在目前版本上覆蓋安裝 Fushi v$version（仍帶完整升級路徑的橋接版本，資料目錄會保留），開啟一次完成資料升級，再更新到目前版本。Android 系統不允許在新版本上直接安裝舊版本，而解除安裝 Fushi 會同時刪除這份資料，解除安裝前請先備份。下載：$url",
   "backup_legacy_schema": "此備份來自舊版 Hibiki 或早期版本（資料結構低於 v75），目前版本已無法直接匯入。你目前的資料沒有任何改動。遷移步驟：安裝 Fushi v$version（仍帶完整升級路徑的橋接版本），在其中匯入此備份，再更新到目前版本。Android 系統不允許在新版本上直接安裝舊版本：需先解除安裝目前的 Fushi（會刪除它現有的資料，需要保留的請先備份），再安裝 v$version。下載：$url",
