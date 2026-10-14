@@ -248,6 +248,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  // bool（默认 false）：一键制卡的卡图默认裁到查词那句话所在的分镜（需分镜模型，
+  // 非条漫；否则整页）。与「分镜导航」开关无关。
+  'manga_mining_crop_to_panel',
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',

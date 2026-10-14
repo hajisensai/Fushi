@@ -417,6 +417,16 @@ SettingsSection _mangaSpreadPanelsSection() {
             c.appModel.setMangaPanelNavigationEnabled(value),
         defaultValue: kMangaPanelNavigationDefault,
       ),
+      SettingsSwitchItem(
+        id: 'manga.mining_crop_to_panel',
+        title: t.manga_mining_crop_to_panel,
+        subtitle: t.manga_mining_crop_to_panel_hint,
+        icon: Icons.crop_outlined,
+        value: (SettingsContext c) => c.appModel.mangaMiningCropToPanel,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaMiningCropToPanel(value),
+        defaultValue: kMangaMiningCropToPanelDefault,
+      ),
     ],
   );
 }

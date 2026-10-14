@@ -24,6 +24,11 @@ class MangaPanelModelStatus {
 
 const String kMangaPanelModelDirectory = 'manga_panel_detector';
 
+/// 模型文件修订号：每次下载并校验通过后 +1。阅读页缓存「模型不可用」时记下当时的
+/// 修订号，号变了就重试建检测器——这样无论从设置页还是制卡对话框下载，开着的书都能
+/// 立刻用上，又不必每次检测都对整份模型重算 sha256。
+int mangaPanelModelRevision = 0;
+
 Future<Directory> mangaPanelModelDirectory() async {
   final Directory root = await enginePaths.supportRootDirectory();
   return Directory(
@@ -117,6 +122,7 @@ Stream<int> downloadMangaPanelModel({
     // before the atomic move.
     if (await target.exists()) await target.delete();
     await part.rename(target.path);
+    mangaPanelModelRevision++;
   } finally {
     client.close(force: true);
   }

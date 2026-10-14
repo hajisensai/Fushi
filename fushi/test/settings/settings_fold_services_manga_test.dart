@@ -68,6 +68,7 @@ void main() {
         'manga.wide_page_solo',
         'manga.panel_model',
         'manga.panel_navigation',
+        'manga.mining_crop_to_panel',
         'manga.background',
         'manga.tap_zone_paging',
         'manga.tap_zone_layout',
