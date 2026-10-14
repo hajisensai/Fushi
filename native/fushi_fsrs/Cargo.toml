@@ -1,0 +1,27 @@
+[package]
+name = "fushi_fsrs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# fsrs-rs 是 BSD-3-Clause，ruzstd 是 MIT，可以直接链进 app 本体（GPL-3.0）。
+license = "GPL-3.0-only"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# FSRS-7 还没发版：钉 fsrs-rs 主干的 git rev（Cargo.lock 锁死）。
+# 这个 rev 的 Cargo.toml 版本号仍写 6.6.2；FSRS-6 的数值要与 6.6.2 / Anki 26.09.3 一致（第 0 步对拍）。
+# FSRS-7 进 crates.io 正式版后换成正式版。
+fsrs = { git = "https://github.com/open-spaced-repetition/fsrs-rs", rev = "0a5737406a0c5c7a5259b144738cbe4a0b649d76" }
+# .apkg 新格式（collection.anki21b、媒体清单、媒体文件）的 zstd 解码。纯 Rust，五个平台交叉编译不需要 C 工具链。
+ruzstd = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
