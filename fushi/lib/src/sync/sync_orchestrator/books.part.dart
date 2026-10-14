@@ -189,55 +189,53 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
 
   /// 互联播放断点 live 双向 sweep 的共享模板（视频 / 有声书）。
   ///
-  /// 两条 sweep 历史上 ~90% 逐字同构，仅四个探针不同，命名统一轮收口于此。
-  /// 对 [localKeys] ∩ [hostKeys] 里的每个键：
-  /// 1. [readLocal] 取本地 (位置, 时间戳)，[readHost] 取 host (位置, 时间戳)；
-  /// 2. [resolvePositionLww]「取较新时间戳」选胜者；
-  /// 3. 本地→host：胜者新于 host（或同戳不同位）→ [pushToHost] 上报
-  ///    （host 端再取较新，幂等安全）；
-  /// 4. host→本地：胜者不同于本地 → [writeBackLocal] 写回。
+  /// 两条 sweep 只差「哪种条目」与「host 位置从哪读」，读写与基线都在
+  /// [InterconnectPlaybackPositionSync]。对 [localKeys] ∩ [hostKeys] 里的每个键：
+  /// 读本地位置、[readHost] 取 host 位置、读位置基线，用
+  /// [resolvePlaybackPositionThreeWay] 判定（BUG-3364，此前是纯「取较新时间戳」
+  /// LWW，两端各自看过时后同步的一端被静默盖掉）：
+  /// - 只一端偏离基线 → 那端胜出并落到另一端；
+  /// - 两端位置一致 → 只对齐时间戳、记基线；
+  /// - **两端都偏离且互不相同 → 冲突**，谁都不覆盖，记进 [report.conflicts] 交
+  ///   冲突弹窗让用户选（标题取 [titleOf]）。
   ///
   /// 只对 host 也有的键同步（本地独有条目无 host 真相，跳过）；逐条错误以
   /// `[errorLabel] "<key>": <e>` 进 [report.errors] 不中断整体。host 清单的获取
   /// 与两侧空集合的早退仍在各调用方（保持既有网络行为不变）。
   Future<void> _syncPositionsLive(
     SyncRunReport report, {
+    required InterconnectPlaybackPositionSync sync,
     required String errorLabel,
     required Set<String> localKeys,
     required Set<String> hostKeys,
-    required Future<({int positionMs, int updatedAtMs})> Function(String key)
-        readLocal,
-    required Future<({int positionMs, int updatedAtMs})> Function(String key)
-        readHost,
-    required Future<void> Function(String key, int positionMs, int updatedAtMs)
-        pushToHost,
-    required Future<void> Function(String key, int positionMs, int updatedAtMs)
-        writeBackLocal,
+    required Future<PlaybackPosition> Function(String key) readHost,
+    required String Function(String key) titleOf,
   }) async {
     for (final String key in localKeys) {
       if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
       try {
-        final ({int positionMs, int updatedAtMs}) local = await readLocal(key);
-        final ({int positionMs, int updatedAtMs}) host = await readHost(key);
-
-        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-          localPositionMs: local.positionMs,
-          localUpdatedAtMs: local.updatedAtMs,
-          remotePositionMs: host.positionMs,
-          remoteUpdatedAtMs: host.updatedAtMs,
+        final PlaybackPosition local = await sync.localPosition(key);
+        final PlaybackPosition host = await readHost(key);
+        final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
+          local: local,
+          remote: host,
+          basePositionMs: await sync.baseline(key),
         );
-
-        // 本地→host：胜者新于 host 时上报（host 端再取较新，幂等安全）。
-        if (winner.updatedAtMs > host.updatedAtMs ||
-            (winner.updatedAtMs == host.updatedAtMs &&
-                winner.positionMs != host.positionMs)) {
-          await pushToHost(key, winner.positionMs, winner.updatedAtMs);
-        }
-
-        // host→本地：胜者不同于本地时写回。
-        if (winner.positionMs != local.positionMs ||
-            winner.updatedAtMs != local.updatedAtMs) {
-          await writeBackLocal(key, winner.positionMs, winner.updatedAtMs);
+        switch (action) {
+          case BookProgressSyncAction.synced:
+            await sync.alignSynced(key, local: local, remote: host);
+          case BookProgressSyncAction.pushLocal:
+            await sync.pushLocal(key, local: local, remote: host);
+          case BookProgressSyncAction.applyRemote:
+            await sync.applyRemote(key, host);
+          case BookProgressSyncAction.conflict:
+            report.conflicts.add(SyncConflict(
+              assetKey: key,
+              dimension: sync.dimension,
+              title: titleOf(key),
+              localVersion: local.updatedAtMs,
+              remoteVersion: host.updatedAtMs,
+            ));
         }
       } catch (e) {
         report.noteError('$errorLabel "$key"', e);

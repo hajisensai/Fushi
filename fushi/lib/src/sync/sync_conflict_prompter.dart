@@ -1,4 +1,6 @@
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -113,6 +115,77 @@ class SyncConflictPrompter with PromptQueue {
     }
     final BuildContext? ctx = navigatorKey.currentContext;
     if (ctx == null) return; // HBK-AUDIT-012：navigatorKey 未 attach 时 null 安全
+    // BUG-3364：播放位置（视频 / 有声书）冲突走自己的弹窗——书籍对比弹窗只认
+    // 书，把它们交过去只会弹出一个空窗。两类各弹各的，书在前。
+    final List<SyncConflict> positionConflicts = <SyncConflict>[
+      for (final SyncConflict c in conflicts)
+        if (playbackPositionKindOfDimension(c.dimension) != null) c,
+    ];
+    final List<SyncConflict> bookConflicts = <SyncConflict>[
+      for (final SyncConflict c in conflicts)
+        if (playbackPositionKindOfDimension(c.dimension) == null) c,
+    ];
+    if (bookConflicts.isNotEmpty) {
+      await _presentBookConflicts(
+        ctx: ctx,
+        db: db,
+        backend: backend,
+        conflicts: bookConflicts,
+        decisions: decisions,
+      );
+    }
+    if (positionConflicts.isNotEmpty) {
+      await _presentPositionConflicts(
+        navigatorKey: navigatorKey,
+        db: db,
+        backend: backend,
+        conflicts: positionConflicts,
+      );
+    }
+  }
+
+  /// 播放位置冲突：先复核两端此刻仍分叉（[loadPlaybackPositionConflicts]），再弹
+  /// [PlaybackPositionConflictDialog] 并落地裁决。一条都没解决则本会话静默这组。
+  Future<void> _presentPositionConflicts({
+    required GlobalKey<NavigatorState> navigatorKey,
+    required FushiDatabase db,
+    required SyncBackend backend,
+    required List<SyncConflict> conflicts,
+  }) async {
+    final List<PlaybackPositionConflictView> views =
+        await loadPlaybackPositionConflicts(
+      db: db,
+      backend: backend,
+      conflicts: conflicts,
+    );
+    if (views.isEmpty) return;
+    final BuildContext? ctx = navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    dialogOpen = true;
+    int applied = 0;
+    try {
+      final Map<int, SyncChoice>? decisions =
+          await showAppDialog<Map<int, SyncChoice>>(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (_) => PlaybackPositionConflictDialog(views: views),
+      );
+      if (decisions != null && decisions.isNotEmpty) {
+        applied = await applyPlaybackPositionDecisions(views, decisions);
+      }
+    } finally {
+      dialogOpen = false;
+    }
+    if (applied <= 0) markDismissed(conflicts);
+  }
+
+  Future<void> _presentBookConflicts({
+    required BuildContext ctx,
+    required FushiDatabase db,
+    required SyncBackend backend,
+    required List<SyncConflict> conflicts,
+    Map<String, SyncChoice>? decisions,
+  }) async {
     dialogOpen = true;
     try {
       final int? applied = await showAppDialog<int>(

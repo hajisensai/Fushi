@@ -1,0 +1,18 @@
+## BUG-3364 · 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖
+- **报告**：2026-10-14（用户转述外部审查意见：「两台设备改同一个字段，晚写的会覆盖早写的，用户看不到提示」，要求同类问题一并修）
+- **真实性**：✅ 真 bug（结构性，与 BUG-2506 同类、修书籍进度时没覆盖到播放位置）。逐维度盘点后，只有书籍 / 已下载漫画的阅读进度有三方冲突门（云通道 `sync_progress_resolver.dart` + 互联 `resolveBookProgressThreeWay`）；互联通道的**视频与有声书播放位置**仍是纯「取较新时间戳」：
+  - client sweep：`fushi/lib/src/sync/sync_orchestrator/books.part.dart` `_syncPositionsLive`（改前）用 `resolvePositionLww` 选胜者后直接 PUT / 写回，从不产生 `report.conflicts`；视频 `videos.part.dart` 与有声书 `audiobooks.part.dart` 共用它。
+  - 判定本身 `packages/fushi_engine/lib/sync/fushi_library_host_service.dart` `resolvePositionLww`：只比时间戳。两端在两次同步之间各自看 / 听过同一条目时，时间戳较新的一端整条盖掉另一端，用户毫无提示。
+  - 叠加的时钟问题：host 收位置 PUT（`local_library_host_service/videos.part.dart` `putVideoPosition`、`audiobooks.part.dart` `putAudiobookPosition`）不截断未来戳——调轴 / 播放偏好那两处有 now+5min 上限，位置没有。一台时钟走快的设备写下的戳会在之后所有 LWW 里永远胜出。
+- **[x] ① 已修复** — 本分支 `worktree-sync-silent-lww-conflicts`（提交见下方「提交」行）：
+  - 引擎纯函数 `resolvePlaybackPositionThreeWay(local, remote, basePositionMs)`（`fushi_library_host_service.dart`），与书籍三方判定同口径、结论复用 `BookProgressSyncAction`：一端无时间戳 → 另一端胜；两端位置相同 → 只对齐时间戳；无基线且不同 → 冲突（只问一次）；有基线 → 只一端偏离那端胜，两端都偏离 → 冲突、谁都不写。基线是「上次两端达成一致的位置（毫秒）」，落 `sync_baselines`，维度 `video_position_live` / `audiobook_position_live`（与书籍 `progress_live` 同表不同维）。
+  - IO 层 `fushi/lib/src/sync/interconnect_playback_position_sync.dart`（`InterconnectPlaybackPositionSync`）：sweep 与冲突弹窗共用同一份读 / 写 / 记基线。`pushLocal` 在本端戳不新于 host 时抬到 host+1（host PUT 仍是严格较新者胜），只改本端时间戳 pref、**不写** `VideoBooks.lastPlayedAt`（抬戳不是一次观看，BUG-1542）；`applyRemote` 写回时 `playedAt` 用对端时刻、流式视频不建行（沿用旧 writeBack 纪律）。
+  - sweep `_syncPositionsLive` 改为三方判定，冲突进 `report.conflicts`（标题取 host 清单的条目名）。
+  - 弹窗：`SyncConflictPrompter` 按维度分流——书籍维度照旧进 `SyncCompareDialog`，播放位置维度进新的 `PlaybackPositionConflictDialog`（`fushi/lib/src/sync/playback_position_conflict_dialog.dart`；逐条「本机 · m:ss / 跳过 / 对端 · m:ss」，与书籍对比弹窗同一分段组件与焦点站，错峰进场）。弹窗前 `loadPlaybackPositionConflicts` 重新读两端并复核仍分叉，已收敛的条目不再问。取消 = 本会话 snooze，与书籍同语义。
+  - host 时间戳：新增 `kSyncFutureStampToleranceMs` / `capFutureSyncStamp` / `trustedStoredSyncStamp`；位置 PUT 截断上报的未来戳，已存的超限毒戳按 0 参与比较（下一次正常上报即自愈）；调轴 / 播放偏好两处原有的 `5 * 60 * 1000` 改用同一 helper。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/playback_position_conflict_test.dart`（三方判定全表；未来戳截断与毒戳；真 `LocalLibraryHostService` 视频 / 有声书 PUT 截断并自愈；IO 层 pushLocal 抬戳且不碰 lastPlayedAt、applyRemote 的 playedAt 与流式不建行、alignSynced；弹窗前复核丢掉已收敛条目、非互联后端为空；widget：prompter 对播放位置冲突弹的是新弹窗而不是书籍对比弹窗，选对端 → 落回本机、记基线、不推 host；取消 → 两端都不写、本会话不再自动弹）；`fushi/test/sync/sync_orchestrator_live_progress_test.dart`（真 server + host + client：既有 4 条「较新者覆盖」用例改成种基线的单边场景；新增视频两端都偏离 → 冲突且两端都不写、无基线且不同 → 冲突、同位置不同戳 → 对齐 + 记基线、有声书两端都偏离 → 冲突、推送后基线 = 达成一致的位置）。
+- **提交**：（见下一次提交补记）
+- **备注**：
+  - 升级后第一轮 sweep：两端位置一致的条目直接记基线、无感；此前已分叉的条目会**弹一次**冲突（无基线无法知道谁动了），之后基线就有了——与 BUG-2506 同口径。
+  - 未改成冲突弹窗、刻意保留 LWW 的同类字段（判断依据：这些字段的时间戳只在用户**显式修改**时才刷新，「最后一次修改胜出」就是用户意图；书籍 / 视频进度不同，打开、播放本身就会刷新时间戳）：视频调轴 / 音轨 / 副字幕源与调轴、有声书调轴、书名覆盖、书籍自定义 CSS、漫画阅读覆盖设置、合集手动排序。它们的冲突窗口是「两台设备在两次同步之间都手动改了同一个设置」，弹窗打扰大于收益。其中 host 侧调轴 / 播放偏好已有未来戳截断；书名覆盖 / CSS / 漫画覆盖 / 合集排序的跨设备比较仍直接比两端墙钟，未加截断，是已知残留风险。
+  - 云通道（WebDAV / Drive 等）的有声书位置跟随书籍进度方向（书籍那一侧已有三方冲突门），云通道不同步视频位置，均不在本次范围。

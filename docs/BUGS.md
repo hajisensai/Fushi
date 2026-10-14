@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3050 条。点号进各自文件。
+> 共 3051 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3364](bugs/BUG-3364-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
 | [BUG-3362](bugs/BUG-3362-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |
 | [BUG-3361](bugs/BUG-3361-collection-picker-count.md) | ✅ | ✅ | 「加入合集」弹窗的合集成员数与合集里实际显示的数量不一致 |
