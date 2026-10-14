@@ -11,7 +11,7 @@
   - 弹窗：`SyncConflictPrompter` 按维度分流——书籍维度照旧进 `SyncCompareDialog`，播放位置维度进新的 `PlaybackPositionConflictDialog`（`fushi/lib/src/sync/playback_position_conflict_dialog.dart`；逐条「本机 · m:ss / 跳过 / 对端 · m:ss」，与书籍对比弹窗同一分段组件与焦点站，错峰进场）。弹窗前 `loadPlaybackPositionConflicts` 重新读两端并复核仍分叉，已收敛的条目不再问。取消 = 本会话 snooze，与书籍同语义。
   - host 时间戳：新增 `kSyncFutureStampToleranceMs` / `capFutureSyncStamp` / `trustedStoredSyncStamp`；位置 PUT 截断上报的未来戳，已存的超限毒戳按 0 参与比较（下一次正常上报即自愈）；调轴 / 播放偏好两处原有的 `5 * 60 * 1000` 改用同一 helper。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/playback_position_conflict_test.dart`（三方判定全表；未来戳截断与毒戳；真 `LocalLibraryHostService` 视频 / 有声书 PUT 截断并自愈；IO 层 pushLocal 抬戳且不碰 lastPlayedAt、applyRemote 的 playedAt 与流式不建行、alignSynced；弹窗前复核丢掉已收敛条目、非互联后端为空；widget：prompter 对播放位置冲突弹的是新弹窗而不是书籍对比弹窗，选对端 → 落回本机、记基线、不推 host；取消 → 两端都不写、本会话不再自动弹）；`fushi/test/sync/sync_orchestrator_live_progress_test.dart`（真 server + host + client：既有 4 条「较新者覆盖」用例改成种基线的单边场景；新增视频两端都偏离 → 冲突且两端都不写、无基线且不同 → 冲突、同位置不同戳 → 对齐 + 记基线、有声书两端都偏离 → 冲突、推送后基线 = 达成一致的位置）。
-- **提交**：（见下一次提交补记）
+- **提交**：`2034936450`（修复 + 测试）
 - **备注**：
   - 升级后第一轮 sweep：两端位置一致的条目直接记基线、无感；此前已分叉的条目会**弹一次**冲突（无基线无法知道谁动了），之后基线就有了——与 BUG-2506 同口径。
   - 未改成冲突弹窗、刻意保留 LWW 的同类字段（判断依据：这些字段的时间戳只在用户**显式修改**时才刷新，「最后一次修改胜出」就是用户意图；书籍 / 视频进度不同，打开、播放本身就会刷新时间戳）：视频调轴 / 音轨 / 副字幕源与调轴、有声书调轴、书名覆盖、书籍自定义 CSS、漫画阅读覆盖设置、合集手动排序。它们的冲突窗口是「两台设备在两次同步之间都手动改了同一个设置」，弹窗打扰大于收益。其中 host 侧调轴 / 播放偏好已有未来戳截断；书名覆盖 / CSS / 漫画覆盖 / 合集排序的跨设备比较仍直接比两端墙钟，未加截断，是已知残留风险。
