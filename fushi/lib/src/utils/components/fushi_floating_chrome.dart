@@ -777,6 +777,22 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             // effects 弹簧临界阻尼不过冲；clamp 只吸收收敛容差。
             final double opacity = fade.value.clamp(0.0, 1.0);
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
+            // BUG-3328：本层遮罩的起点 / 终点（本层坐标）。嵌套层从外层此刻的
+            // 可见下沿起画（BUG-3283），外层画到本层可见下沿；两者在接缝处必须
+            // **恰好拼接**——接缝 y 对齐到物理像素格（两层用同一个取整），不然
+            // 非整数 DPR / 小数高度下两块矩形的抗锯齿边各盖半个像素，叠出一条
+            // 比薄纱浅的亮缝。
+            final double dpr = MediaQuery.devicePixelRatioOf(context);
+            double snap(double y) => (y * dpr).roundToDouble() / dpr;
+            final double scrimTop = nested ? snap(outer * shown) : 0;
+            final double scrimSeam = snap(
+              (nested ? outer * shown : outer) + shown * _chromeHeight,
+            );
+            // 下面还接着嵌套工具行：本层在接缝处硬停在薄纱不透明度，由下一层
+            // 接着画。曾经在这里多画 1 px 渐隐（0.72 → 0），叠在下一层顶端的
+            // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3328）。
+            final bool continuesBelow =
+                _nestedReach.value > outer + shown * _chromeHeight + 0.5;
             return Stack(
               children: <Widget>[
                 // 遮罩在内容之上、本层工具区之下，沿用 2026-10-06 定的「短渐隐、
@@ -799,7 +815,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 // 不透明的硬边亮带。完全收起时嵌套层没有可见工具行，不画；顶边那一条
                 // 渐隐由最外层负责。
                 Positioned(
-                  top: nested ? outer * shown : 0,
+                  top: scrimTop,
                   left: 0,
                   right: 0,
                   child: nested && shown <= 0.001
@@ -811,13 +827,9 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                             FushiMotion.short,
                           ),
                           child: FushiTopFadeScrim(
-                            solidHeight:
-                                (nested ? 0 : outer) + shown * _chromeHeight,
-                            // 下面还接着嵌套工具行：不在本层渐隐，由下一层接着画。
-                            fadeExtent:
-                                _nestedReach.value >
-                                    outer + shown * _chromeHeight + 0.5
-                                ? 1
+                            solidHeight: scrimSeam - scrimTop,
+                            fadeExtent: continuesBelow
+                                ? 0
                                 : kFushiTopFadeExtent,
                             topOpacity: nested
                                 ? kFushiTopScrimOverlayOpacity
@@ -864,7 +876,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 /// 不透明度曲线自顶向下**单调、连续、无平台**：
 /// - [solidHeight] 内是一段「肩」：从 [topOpacity] 二次缓降到 0.82 倍（顶端
 ///   斜率为 0，没有一刀切的实色矩形）；
-/// - 其后 [fadeExtent] 内按 smoothstep 降到 0（两端斜率都为 0）。
+/// - 其后 [fadeExtent] 内按 smoothstep 降到 0（两端斜率都为 0）。[fadeExtent]
+///   为 0 时在肩段末端硬停——只用于下面紧接着另一段遮罩的拼接处。
 ///
 /// 曾经的形态是「0.92 → 0.8 的实色段 + 20 px 线性降到 0」：线性渐变的起止点
 /// 斜率突变，在模糊 fanart 上看得见一道 Mach 带；而顶栏把它从栏下沿开始画（栏内
@@ -911,8 +924,12 @@ class FushiTopFadeScrim extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double solid = math.max(0.0, solidHeight);
-    final double fade = math.max(1.0, fadeExtent);
+    // 0 = 不渐隐，在肩段末端硬停（下面紧接着另一段遮罩，见
+    // [FushiFloatingChromeOverlay]）。不能偷偷钳成 1 px：多出的那一条会叠在
+    // 下一段的顶端上，合成出一条横线（BUG-3328）。
+    final double fade = math.max(0.0, fadeExtent);
     final double height = solid + fade;
+    if (height <= 0) return const SizedBox.shrink();
     final Color base = color ?? fushiTopFadeScrimColor(context);
     final double top = base.a * topOpacity.clamp(0.0, 1.0);
     final double floor = shoulderOpacity == null
@@ -941,7 +958,7 @@ class FushiTopFadeScrim extends StatelessWidget {
     } else {
       fadeStart = top;
     }
-    for (int i = solid > 0 ? 1 : 0; i <= _kFadeSamples; i++) {
+    for (int i = solid > 0 ? 1 : 0; fade > 0 && i <= _kFadeSamples; i++) {
       final double v = i / _kFadeSamples;
       final double eased = v * v * (3 - 2 * v);
       sample(solid + fade * v, fadeStart * (1 - eased));
