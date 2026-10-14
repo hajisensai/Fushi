@@ -17,6 +17,7 @@ import 'package:fushi/src/media/video/graphic_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_ocr_progress.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 识别触发的防抖：逐帧步进 / 连续 seek 时只识别停下来的那一帧。
 const Duration kGraphicSubtitleOcrSettleDelay = Duration(milliseconds: 250);
@@ -48,6 +49,7 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     required this.prepare,
     required this.onCharTap,
     this.scope = VideoPauseOcrScope.graphicSubtitles,
+    this.onEnableRequested,
     this.onUnavailable,
     this.onError,
     this.captureFrame,
@@ -65,6 +67,10 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
 
   /// 哪些视频暂停时识别（用户设置）。
   final VideoPauseOcrScope scope;
+
+  /// 用户点了「开启」提示（BUG-3328）。识别关着、暂停在图片字幕帧上时才出现提示；
+  /// null 时不提示。页面负责把范围写成开启并以新 [scope] 重建本层。
+  final VoidCallback? onEnableRequested;
 
   /// 点中一个字：整句、句内字素下标、字在**全局**坐标系下的矩形。
   final void Function(String sentence, int graphemeIndex, Rect globalRect)
@@ -113,10 +119,21 @@ class _VideoGraphicSubtitleOcrOverlayState
   /// 用户不知道暂停后已经可以点字）。
   GraphicSubtitlePauseOcrStatus _status = GraphicSubtitlePauseOcrStatus.idle;
 
+  /// 当前状态标记对应的帧是不是图片字幕帧（决定标记说「字幕」还是「画面文字」）。
+  bool _statusGraphic = true;
+
+  /// 暂停在图片字幕帧上、识别又关着：显示「可开启 OCR」提示（BUG-3328）。
+  bool _offerEnable = false;
+
+  /// 用户关掉了本次播放的开启提示。
+  bool _enableHintDismissed = false;
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerChanged);
+    // 首帧 build 之前：直接赋值，不走 setState。
+    _offerEnable = _enableHintWanted();
     _onControllerChanged();
   }
 
@@ -131,6 +148,8 @@ class _VideoGraphicSubtitleOcrOverlayState
       _onControllerChanged();
     } else if (oldWidget.scope != widget.scope) {
       _onControllerChanged();
+    } else {
+      _syncEnableHint();
     }
   }
 
@@ -163,7 +182,32 @@ class _VideoGraphicSubtitleOcrOverlayState
     return (positionMs: position, trackId: c.activeSubtitleTrackId);
   }
 
+  bool _enableHintWanted() {
+    final VideoPlayerController c = widget.controller;
+    if (widget.onEnableRequested == null || _enableHintDismissed) return false;
+    if (c.isPlaying || !c.hasFirstFrame) return false;
+    return widget.scope.offersEnableHint(
+      graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
+    );
+  }
+
+  void _syncEnableHint() {
+    final bool wanted = _enableHintWanted();
+    if (wanted == _offerEnable) return;
+    if (mounted) {
+      setState(() => _offerEnable = wanted);
+    } else {
+      _offerEnable = wanted;
+    }
+  }
+
+  void _dismissEnableHint() {
+    _enableHintDismissed = true;
+    _syncEnableHint();
+  }
+
   void _onControllerChanged() {
+    _syncEnableHint();
     final _FrameKey? key = _currentKey();
     if (key == _key) return;
     _reset();
@@ -210,6 +254,7 @@ class _VideoGraphicSubtitleOcrOverlayState
           await (widget.captureFrame ??
               widget.controller.captureFrameWithSubtitles)();
       if (bytes == null || stale()) return;
+      _statusGraphic = graphic;
       _setStatus(GraphicSubtitlePauseOcrStatus.recognizing);
       final GraphicSubtitleOcrFrame? frame = await _recognizeBytes(
         bytes,
@@ -258,9 +303,26 @@ class _VideoGraphicSubtitleOcrOverlayState
   Widget build(BuildContext context) {
     final Widget pill = Positioned(
       top: widget.statusTopInset,
-      left: 0,
-      right: 0,
-      child: Center(child: VideoGraphicSubtitleOcrStatusPill(status: _status)),
+      left: 16,
+      right: 16,
+      child: Center(
+        child: AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          switchInCurve: FushiMotion.enter,
+          switchOutCurve: FushiMotion.exit,
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              FadeTransition(opacity: animation, child: child),
+          child: _offerEnable
+              ? VideoPauseOcrEnableHint(
+                  onEnable: () => widget.onEnableRequested?.call(),
+                  onDismiss: _dismissEnableHint,
+                )
+              : VideoGraphicSubtitleOcrStatusPill(
+                  status: _status,
+                  graphicSubtitle: _statusGraphic,
+                ),
+        ),
+      ),
     );
     final GraphicSubtitleOcrFrame? frame = _frame;
     if (frame == null || frame.isEmpty) {

@@ -23,6 +23,9 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl, FushiTextButton;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 
 /// 整轨转文字的阶段。
@@ -430,9 +433,17 @@ enum GraphicSubtitlePauseOcrStatus {
 /// 暂停自动 OCR 的轻量状态标记：识别中显示小转圈，识别完给一个「已识别 · 点字查词」
 /// 的小药丸，几秒后淡出，不挡字幕、不抢焦点、不响应点击。
 class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
-  const VideoGraphicSubtitleOcrStatusPill({required this.status, super.key});
+  const VideoGraphicSubtitleOcrStatusPill({
+    required this.status,
+    this.graphicSubtitle = true,
+    super.key,
+  });
 
   final GraphicSubtitlePauseOcrStatus status;
+
+  /// 这一帧是不是图片字幕帧。「所有视频」档下普通画面也会识别，那时说「识别画面
+  /// 文字」，不说「识别字幕」（BUG-3328：画面上根本没有字幕时文案对不上）。
+  final bool graphicSubtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +460,9 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
             color: scheme.onInverseSurface,
           ),
         ),
-        text: t.video_subtitle_graphic_ocr_status_recognizing,
+        text: graphicSubtitle
+            ? t.video_subtitle_graphic_ocr_status_recognizing
+            : t.video_subtitle_frame_ocr_status_recognizing,
       ),
       GraphicSubtitlePauseOcrStatus.ready => _pill(
         context,
@@ -458,7 +471,9 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
           size: 14,
           color: scheme.inversePrimary,
         ),
-        text: t.video_subtitle_graphic_ocr_status_ready,
+        text: graphicSubtitle
+            ? t.video_subtitle_graphic_ocr_status_ready
+            : t.video_subtitle_frame_ocr_status_ready,
       ),
       GraphicSubtitlePauseOcrStatus.empty => _pill(
         context,
@@ -524,6 +539,85 @@ class VideoGraphicSubtitleOcrStatusPill extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 暂停到图片字幕帧、而暂停 OCR 关着时的提示（BUG-3328）：图片字幕要 OCR 才能点字
+/// 查词，给一个「开启」和一个关掉本次提示的按钮。识别默认关闭、由用户手动开启；文本
+/// 字幕与没有字幕的视频不出现这条提示（判据见 `VideoPauseOcrScope.offersEnableHint`）。
+class VideoPauseOcrEnableHint extends StatelessWidget {
+  const VideoPauseOcrEnableHint({
+    required this.onEnable,
+    required this.onDismiss,
+    super.key,
+  });
+
+  /// 开启暂停 OCR（页面写偏好）。
+  final VoidCallback onEnable;
+
+  /// 本次播放不再提示。
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final String text = t.video_subtitle_graphic_ocr_enable_hint;
+    return DecoratedBox(
+      key: const ValueKey<String>('graphic_subtitle_ocr_enable_hint'),
+      decoration: ShapeDecoration(
+        color: scheme.inverseSurface.withValues(alpha: 0.82),
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 12, end: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(FushiIcons.ocr, size: 14, color: scheme.onInverseSurface),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: scheme.onInverseSurface,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            FushiPressScale(
+              child: FushiTextButton(
+                key: const ValueKey<String>(
+                  'graphic_subtitle_ocr_enable_button',
+                ),
+                onPressed: onEnable,
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.inversePrimary,
+                ),
+                child: Text(t.video_subtitle_graphic_ocr_enable_action),
+              ),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>(
+                'graphic_subtitle_ocr_enable_dismiss',
+              ),
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              icon: Icon(
+                FushiIcons.close,
+                size: 16,
+                color: scheme.onInverseSurface,
+              ),
+              onPressed: onDismiss,
+            ),
+          ],
         ),
       ),
     );

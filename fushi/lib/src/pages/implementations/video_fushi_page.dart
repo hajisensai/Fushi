@@ -64,6 +64,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart'
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/manga/ocr/ocr_llm_default_consent.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
@@ -6496,6 +6497,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       controller: controller,
       fit: videoFitModeToBoxFit(_videoFitMode),
       scope: appModel.videoPauseOcrScope,
+      onEnableRequested: () => unawaited(_enablePauseOcrForGraphicSubtitles()),
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
           unawaited(
@@ -6518,6 +6520,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _videoButtonBarHeight +
           8 * _videoUiScale,
     );
+  }
+
+  /// BUG-3328：暂停 OCR 默认关闭，用户在图片字幕帧的提示上点「开启」——只开到
+  /// 「仅图片字幕」（提示只在图片字幕上出现，用户要的就是这一档）；要扩到所有视频去
+  /// 设置里选。写完偏好重建本页，覆盖层拿到新 scope 后立即识别当前帧。
+  Future<void> _enablePauseOcrForGraphicSubtitles() async {
+    await appModel.setVideoPauseOcrScope(VideoPauseOcrScope.graphicSubtitles);
+    if (mounted) setState(() {});
   }
 
   /// 图形字幕整轨转文字的进度卡（左上角、顶栏下方；没在跑时零尺寸）。进度经
@@ -6603,7 +6613,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       confirmLensUpload: () async =>
           mounted &&
           await _focusOwnership.guardOverlay(
-            () => ensureGoogleLensDisclosure(context),
+            () => ensureGoogleLensDisclosure(
+              context,
+              scene: GoogleLensDisclosureScene.videoFrames,
+            ),
           ),
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,

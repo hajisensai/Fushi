@@ -7416,5 +7416,11 @@
   "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。画面上已有 Fushi 显示的文字字幕时以字幕为准。",
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
-  "video_setting_pause_ocr_scope_off": "关闭"
+  "video_setting_pause_ocr_scope_off": "关闭",
+  "video_google_lens_disclosure_title": "将视频画面发送到 Google Lens？",
+  "video_google_lens_disclosure_body": "识别视频文字会把暂停的画面（含图片字幕）缩小为 JPEG 后发送给 Google。该接口并非官方公开 API，可能随时失效。只有同意后才会上传。",
+  "video_subtitle_graphic_ocr_enable_hint": "图片字幕需开启 OCR 识别才能点字查词",
+  "video_subtitle_graphic_ocr_enable_action": "开启",
+  "video_subtitle_frame_ocr_status_recognizing": "正在识别画面文字…",
+  "video_subtitle_frame_ocr_status_ready": "已识别画面文字 · 点字查词"
 }

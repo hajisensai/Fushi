@@ -7416,5 +7416,11 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "video_google_lens_disclosure_title": "Send video frames to Google Lens?",
+  "video_google_lens_disclosure_body": "Recognizing text in this video sends a reduced JPEG copy of the paused frame (including image subtitles) to Google. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
+  "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
+  "video_subtitle_graphic_ocr_enable_action": "Turn on",
+  "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
+  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word"
 }
