@@ -13,8 +13,8 @@ import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
-import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-712 P1 守卫：每次查词只把结果推进弹窗 WebView 一次。
 ///

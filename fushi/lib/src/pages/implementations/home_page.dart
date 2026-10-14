@@ -1833,44 +1833,51 @@ class _HomePageState extends BasePageState<HomePage>
         // Two traversal groups so Tab / Shift+Tab walk each region as one block
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.
-        child: Row(
-          children: [
-            // Each rail destination is its own gamepad/keyboard focus target, so
-            // the app focus ring hugs the single selected item; D-pad Up/Down
-            // steps between them and Left/Right leaves to the content.
-            FocusTraversalGroup(
-              child: ValueListenableBuilder<bool?>(
-                valueListenable: appModel.navRailExpandedNotifier,
-                builder: (BuildContext context, bool? userExpanded, _) {
-                  // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
-                  // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
-                  // 抽屉）。玻璃设计系统恒按尺寸档。
-                  final bool extended = adaptiveNavRailExtended(
-                    context,
-                    sizeClass: sizeClass,
-                    userExpanded: userExpanded,
-                  );
-                  return adaptiveNavRail(
-                    context: context,
-                    currentIndex: visualIndex,
-                    onTap: selectVisual,
-                    items: displayItems,
-                    leading: const NavRailBrandButton(),
-                    extended: extended,
-                    onToggleExtended: () =>
-                        unawaited(appModel.setNavRailExpanded(!extended)),
-                  );
-                },
-              ),
-            ),
-            Expanded(
-              child: _GlassContentSurface(
-                child: _withAppleScrollChrome(
-                  FocusTraversalGroup(child: _bodyWithMiniBar()),
+        //
+        // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见
+        // NavRailContentSync，BUG-3351），免得整棵内容树与保活 tab 每帧重排。
+        child: NavRailContentSync(
+          child: Row(
+            children: [
+              // Each rail destination is its own gamepad/keyboard focus target,
+              // so the app focus ring hugs the single selected item; D-pad
+              // Up/Down steps between them and Left/Right leaves to the content.
+              FocusTraversalGroup(
+                child: ValueListenableBuilder<bool?>(
+                  valueListenable: appModel.navRailExpandedNotifier,
+                  builder: (BuildContext context, bool? userExpanded, _) {
+                    // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                    // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                    // 抽屉）。玻璃设计系统恒按尺寸档。
+                    final bool extended = adaptiveNavRailExtended(
+                      context,
+                      sizeClass: sizeClass,
+                      userExpanded: userExpanded,
+                    );
+                    return adaptiveNavRail(
+                      context: context,
+                      currentIndex: visualIndex,
+                      onTap: selectVisual,
+                      items: displayItems,
+                      leading: const NavRailBrandButton(),
+                      extended: extended,
+                      onToggleExtended: () =>
+                          unawaited(appModel.setNavRailExpanded(!extended)),
+                    );
+                  },
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: NavRailSyncedContent(
+                  child: _GlassContentSurface(
+                    child: _withAppleScrollChrome(
+                      FocusTraversalGroup(child: _bodyWithMiniBar()),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1933,13 +1940,11 @@ class _HomePageState extends BasePageState<HomePage>
   bool _inMobileLayout = false;
 
   /// 横滑切模块此刻是否启用：手机底栏布局、Material 设计系统（Apple 的玻璃底栏
-  /// 单独保持 iOS 的点按切换语义），且当前 tab 是参与横滑的模块页。
+  /// 单独保持 iOS 的点按切换语义），且当前 tab 在横滑序列里（[homeModuleSwipeArmed]，
+  /// 含设置，BUG-3351）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeSwipeTabs(
-      tabs: _activeTabs(),
-      reversed: false,
-    ).contains(_visibleTab);
+    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
@@ -2026,8 +2031,8 @@ class _HomePageState extends BasePageState<HomePage>
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
-            // 长按拎起选中指示器拖到目标模块（MD3 悬浮底栏）：落地走同一个切
-            // tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
+            // 按下横拖（或长按后拖）选中指示器到目标模块（MD3 悬浮底栏）：落地
+            // 走同一个切 tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
             onDragSelect: (int index) {
               final HomeTab tab = homeTabForVisualIndex(
                 tabs: tabs,

@@ -331,6 +331,15 @@ enum ShortcutAction {
   homeTabPrev(ShortcutScope.home, 'home_tab_prev'),
   homeTabNext(ShortcutScope.home, 'home_tab_next'),
   homeFocusSearch(ShortcutScope.home, 'home_focus_search'),
+  // 库页（书架 / 漫画库 / 视频库 / 游戏库）页头搜索：展开单行页头的搜索栏
+  // （2026-10-14 用户拍板归入快捷键体系，此前在 fushi_header_search.dart 里写死
+  // Ctrl+F 与 `/`）。默认 Ctrl+F（macOS ⌘F）+ `/`；homeFocusSearch 同时让出
+  // Ctrl+F 改为 Ctrl+K（v14 迁移）。执行体不经 home 页的 _executeShortcutAction：
+  // 库页外壳的 FushiHeaderSearchKeys 挂在 home 键事件节点之下，先读本动作的绑定
+  // 命中即展开；库页之外 home 解析到它时返回 ignored 照常冒泡。必须声明在
+  // homeFocusSearch **之后**：老用户若把两者绑成同一个键，库页之外 resolve 按
+  // 声明序先命中 homeFocusSearch，跳查词照旧。
+  librarySearch(ShortcutScope.home, 'library_search'),
 
   // Universal —— 全 app 唯一的「返回上一级 / 退出当前界面」。
   //

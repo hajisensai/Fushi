@@ -24,8 +24,9 @@ void main() {
       TargetPlatform.macOS,
       TargetPlatform.android,
     ]) {
-      final Map<ShortcutAction, dynamic> map =
-          ShortcutDefaults.forPlatform(platform);
+      final Map<ShortcutAction, dynamic> map = ShortcutDefaults.forPlatform(
+        platform,
+      );
       for (final ShortcutAction action in ShortcutAction.values) {
         expect(
           map.containsKey(action),
@@ -78,6 +79,11 @@ void main() {
       // showMenu，本文件回答的是「这次按下的鼠标键该不该弹菜单」，是那二十余处
       // 入口共用的唯一消费者。与 globalExternalLookup / popupNextEntry 同类。
       'lib/src/shortcuts/context_menu_trigger.dart',
+      // librarySearch（库页页头搜索，2026-10-14）的执行体：库页外壳的
+      // FushiHeaderSearchKeys 读注册表里本动作的绑定、命中即展开页头搜索栏。
+      // 它挂在首页键事件节点之下、先于 home 页的 _executeShortcutAction，库页
+      // 之外 home 解析到它时返回 ignored 冒泡——与 globalExternalLookup 同类。
+      'lib/src/utils/components/fushi_header_search.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();
@@ -96,7 +102,8 @@ void main() {
     expect(
       dead,
       isEmpty,
-      reason: '以下 action 在所有执行体文件里都没有派发引用（死项，配了不执行）：'
+      reason:
+          '以下 action 在所有执行体文件里都没有派发引用（死项，配了不执行）：'
           '${dead.map((ShortcutAction a) => a.key).join(', ')}',
     );
   });

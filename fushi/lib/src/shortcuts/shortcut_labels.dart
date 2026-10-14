@@ -76,6 +76,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_home_tab_next;
       case ShortcutAction.homeFocusSearch:
         return t.shortcut_action_home_focus_search;
+      case ShortcutAction.librarySearch:
+        return t.shortcut_action_library_search;
       case ShortcutAction.globalBack:
         return t.shortcut_action_global_back;
       case ShortcutAction.globalScrollPageDown:

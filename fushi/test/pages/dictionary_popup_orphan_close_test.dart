@@ -17,8 +17,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
-import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 class _OrphanCloseAppModel extends AppModel {
   _OrphanCloseAppModel(this.directory) : super(testPlatformServices());

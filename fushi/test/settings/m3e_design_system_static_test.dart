@@ -293,7 +293,9 @@ void main() {
     'lib/src/pages/implementations/games_library_page.dart': <String>[
       'showAppDialog<GalgamePlayStatus>(',
       'showAppDialog<String>(',
-      'adaptiveModalSheet<void>(',
+      // 筛选面板 2026-10-14 收进库页共用的 showLibraryFilterPanel（其窄窗形态
+      // 仍是 adaptiveModalSheet + FushiModalSheetFrame，见下一条）。
+      'showLibraryFilterPanel(',
       'FushiDialogFrame',
       'FushiModalSheetFrame',
       'FushiTextField',
@@ -304,6 +306,11 @@ void main() {
       'showGalgameScrapeDialog(',
       'FushiDestructiveConfirmDialog(',
       'showCollectionContextDialog(',
+    ],
+    // 库页筛选面板（游戏库 / 视频库共用）：窄窗 / Apple 走共享弹层骨架。
+    'lib/src/pages/implementations/library_filter_panel.dart': <String>[
+      'adaptiveModalSheet<void>(',
+      'FushiModalSheetFrame',
     ],
     'lib/src/pages/implementations/texthooker_page.dart': <String>[
       'showAppDialog<int>(',
@@ -1091,16 +1098,6 @@ class AnotherPopupPart {
       // 计数胶囊改用共享 FushiFilledButton.tonal（xs），文件里不再有裸圆角 / 裸字号。
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
       // 触发整库任务，故此处不再需要它的豁免条目。
-      // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
-      // 调整按钮，在横屏矮窗里刻意收紧到 compact 视觉密度（VisualDensity.compact +
-      // 收敛 padding/minSize），给句子预览让出竖向空间——挖矿子系统的内容对话框，
-      // 非普通页面 chrome，同 anki_mined_card_action_sheet 的内容对话框豁免类。
-      'lib/src/pages/implementations/sentence_context_dialog.dart':
-          'Sentence-context mining dialog deliberately uses compact visual '
-          'density on its context-adjust buttons to free vertical space for '
-          'the sentence preview in short landscape windows (BUG-922); '
-          'mining-subsystem content dialog, not ordinary page chrome — same '
-          'reviewed exception class as anki_mined_card_action_sheet.',
       // PR#474 的 Google Lens 引擎是 manga.json 的**新生产者**：它写的
       // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
       // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
@@ -1449,9 +1446,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
         'VisualDensity.compact',
         'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/sentence_context_dialog.dart': <String>{
-        'VisualDensity.compact',
       },
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},

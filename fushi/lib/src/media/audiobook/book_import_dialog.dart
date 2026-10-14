@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:isolate';
@@ -31,6 +32,7 @@ import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
     show CoverImageInvalidException;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -60,6 +62,7 @@ import 'package:fushi/utils.dart';
 /// 载体，但只做一件事：弹一次明确确认后把路径转交漫画流程（[_handoffIfManga]）。
 class BookImportDialog extends StatefulWidget {
   const BookImportDialog({
+    this.prefs,
     required this.repo,
     required this.audiobookRepo,
     required this.db,
@@ -88,6 +91,10 @@ class BookImportDialog extends StatefulWidget {
   @visibleForTesting
   final bool Function(String path)? imageArchiveProbe;
 
+
+  /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
+  /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
+  final PreferencesRepository? prefs;
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
 }
@@ -122,7 +129,17 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   /// TODO-935 ①A：「引用原文件（不复制）」开关。仅桌面可见/可选；移动端
   /// file_picker 返回缓存临时副本，引用即指向会被清掉的文件，故恒 false。
+  /// 桌面端初值取上次的选择（[PreferencesRepository.audiobookImportReferenceOriginal]）。
   bool _referenceOriginal = false;
+
+  /// 切换「引用原文件」并记住这次选择（下次打开任一导入对话框沿用）。
+  void _setReferenceOriginal(bool value) {
+    setState(() => _referenceOriginal = value);
+    final PreferencesRepository? prefs = widget.prefs;
+    if (prefs != null) {
+      unawaited(prefs.setAudiobookImportReferenceOriginal(value: value));
+    }
+  }
 
   bool _autoWindow = true;
   int _searchWindow = EpubSrtMatcher.defaultSearchWindow;
@@ -156,6 +173,8 @@ class _BookImportDialogState extends State<BookImportDialog>
   @override
   void initState() {
     super.initState();
+    _referenceOriginal = isDesktopPlatform &&
+        (widget.prefs?.audiobookImportReferenceOriginal ?? false);
     _carrierResolver = ImportCarrierResolver(
       isDirectory: (String pth) => Directory(pth).existsSync(),
       isImageArchive: widget.imageArchiveProbe ?? MangaModule.isImageArchive,
@@ -375,7 +394,7 @@ class _BookImportDialogState extends State<BookImportDialog>
                     value: _referenceOriginal,
                     onChanged: importing
                         ? null
-                        : (bool v) => setState(() => _referenceOriginal = v),
+                        : _setReferenceOriginal,
                   ),
                 ],
               ),

@@ -71,8 +71,22 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.ref,
     required this.host,
     this.initialCategory,
+    this.groups = VideoQuickSettingsSheet.settingsGroups,
     super.key,
   });
+
+  /// 「设置」面板的分类：字幕 / 音频已拆成独立面板（面板切换条上与章节、画质
+  /// 并列），不在这里重复。
+  static const List<VideoGroup> settingsGroups = <VideoGroup>[
+    VideoGroup.playback,
+    VideoGroup.shaders,
+    VideoGroup.mpv,
+    VideoGroup.danmaku,
+    VideoGroup.controls,
+  ];
+
+  /// 本面板展示的分组；只有一个时不画顶部页签（字幕 / 音频面板）。
+  final List<VideoGroup> groups;
 
   final AppModel appModel;
 
@@ -156,7 +170,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String selectedId = _subPage ?? VideoGroup.playback.name;
+    final List<VideoGroup> groups = widget.groups;
+    final String selectedId = groups.any((VideoGroup g) => g.name == _subPage)
+        ? _subPage!
+        : groups.first.name;
+    final bool showTabs = groups.length > 1;
     final bool compact = videoQuickSettingsCompact(MediaQuery.sizeOf(context));
     // 手机（最短边 < 600）：左右收到 page - gap/2（16，与阅读器导航页同档），
     // 桌面保留 page + gap（28）。
@@ -171,34 +189,37 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
         // 顶部分类页签：与阅读器「阅读设置」面板、库页同一个分区导航组件
         // （[LibrarySectionTabs]）——整排是单个焦点停靠点（方向键 / 手柄左右切页），
         // 按文案取宽、放不下横向滚动（选中段自动滚入可见区），切换时指示条滑过去。
-        Padding(
-          padding: EdgeInsetsDirectional.only(
-            start: tabsInset,
-            end: tabsInset,
-            top: compact ? 0 : tokens.spacing.gap,
-          ),
-          child: Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: LibrarySectionTabs<String>(
-              key: const ValueKey<String>('video-settings-tabs'),
-              tabs: <LibrarySectionTab<String>>[
-                for (final ({String id, String label}) cat in _categories())
-                  LibrarySectionTab<String>(
-                    value: cat.id,
-                    label: cat.label,
-                    // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
-                    labelKey: ValueKey<String>('video-settings-cat-${cat.id}'),
-                  ),
-              ],
-              selected: selectedId,
-              onChanged: _selectSubPage,
-              focusIdPrefix: 'video-settings-tab',
-              // 放不下时横向滚动（选中段自动滚入可见区），不收进「更多」菜单：七个
-              // 分类都是一级入口，横滑一下就能看到。
-              fill: false,
+        if (showTabs)
+          Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: tabsInset,
+              end: tabsInset,
+              top: compact ? 0 : tokens.spacing.gap,
+            ),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: LibrarySectionTabs<String>(
+                key: const ValueKey<String>('video-settings-tabs'),
+                tabs: <LibrarySectionTab<String>>[
+                  for (final ({String id, String label}) cat in _categories())
+                    LibrarySectionTab<String>(
+                      value: cat.id,
+                      label: cat.label,
+                      // 稳定 key：测试 / 焦点驱动靠 id 命中分类（不依赖标签文案）。
+                      labelKey: ValueKey<String>(
+                        'video-settings-cat-${cat.id}',
+                      ),
+                    ),
+                ],
+                selected: selectedId,
+                onChanged: _selectSubPage,
+                focusIdPrefix: 'video-settings-tab',
+                // 放不下时横向滚动（选中段自动滚入可见区），不收进「更多」菜单：七个
+                // 分类都是一级入口，横滑一下就能看到。
+                fill: false,
+              ),
             ),
           ),
-        ),
         if (isEinkTheme(context))
           FushiDividerControl(
             height: 1,
@@ -229,28 +250,32 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
                 ),
                 // 内容自成重绘边界：滚动只平移已录好的层（与阅读器设置面板同理）。
                 child: RepaintBoundary(
-                  child: FushiEntranceScope(
-                    // 首次打开由面板外壳的滑入承担动效；切分类后才错峰进场，避免
-                    // 打开瞬间内容还在位移时就被滚动 / 聚焦定位。
-                    enabled: _categorySwitched,
-                    replayKey: selectedId,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        // 一行小字说明这一页管什么（尤其「画质增强」与「画面」两页
-                        // 名字相近）；不再是带徽标的大标题 + 整段说明。
-                        // 手机紧凑档不放：首屏留给设置项本身。
-                        if (!compact)
+                  // 行首图标着色（M3E 色调色块，随分组错开），与面板着色方案一起
+                  // 让设置页不再是一片灰。
+                  child: SettingsTonalIconsScope(
+                    child: FushiEntranceScope(
+                      // 首次打开由面板外壳的滑入承担动效；切分类后才错峰进场，避免
+                      // 打开瞬间内容还在位移时就被滚动 / 聚焦定位。
+                      enabled: _categorySwitched,
+                      replayKey: selectedId,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          // 一行小字说明这一页管什么（尤其「画质增强」与「画面」两页
+                          // 名字相近）；不再是带徽标的大标题 + 整段说明。
+                          // 手机紧凑档不放：首屏留给设置项本身。
+                          if (!compact)
+                            FushiStaggeredEntrance(
+                              index: 0,
+                              child: _buildPageHint(selectedId),
+                            ),
                           FushiStaggeredEntrance(
-                            index: 0,
-                            child: _buildPageHint(selectedId),
+                            index: 1,
+                            child: _subPageContent(selectedId),
                           ),
-                        FushiStaggeredEntrance(
-                          index: 1,
-                          child: _subPageContent(selectedId),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -299,7 +324,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// 收进对应分类（音频轨在「音频」、字幕轨在「字幕」顶部）。
   List<({String id, String label})> _categories() {
     return <({String id, String label})>[
-      for (final VideoGroup group in VideoGroup.values)
+      for (final VideoGroup group in widget.groups)
         (id: group.name, label: _groupTitle(group)),
     ];
   }
@@ -403,11 +428,8 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     final String mpvAudio = t.video_setting_mpv_group_audio;
     final String mpvPlayback = t.video_setting_mpv_group_playback;
     List<SettingsSection> mpvSections(String sectionTitle) {
-      return buildVideoGroupDestination(
-        settingsContext,
-        VideoGroup.mpv,
-        '',
-      ).sections
+      return buildVideoGroupDestination(settingsContext, VideoGroup.mpv, '')
+          .sections
           .where((SettingsSection s) => s.title == sectionTitle)
           .toList(growable: false);
     }

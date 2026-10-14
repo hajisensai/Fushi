@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
+    show kMangaOcrMaxSelectableTasks;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -38,17 +40,29 @@ void main() {
     }
   });
 
-  test('越界并行值不会写入或读出超过 4 的任务数', () async {
+  test('越界并行值不会写入或读出超过硬顶的任务数', () async {
     await preferences.setMangaOcrParallelTasks(99);
     final PreferencesRepository reopened = PreferencesRepository(database);
     await reopened.loadFromDb();
-    expect(reopened.mangaOcrParallelTasks, 4);
+    expect(reopened.mangaOcrParallelTasks, kMangaOcrMaxSelectableTasks);
     reopened.dispose();
 
     await preferences.setMangaOcrParallelTasks(-1);
     expect(preferences.mangaOcrParallelTasks, 0);
     await preferences.setPref('manga_ocr_parallel_tasks', 99);
-    expect(preferences.mangaOcrParallelTasks, 4, reason: '来自旧配置的越界整数也必须受上限约束');
+    expect(
+      preferences.mangaOcrParallelTasks,
+      kMangaOcrMaxSelectableTasks,
+      reason: '来自旧配置的越界整数也必须受上限约束',
+    );
+  });
+
+  test('超过 4 的选择原样保存（本机上限在排队时才收，偏好会同步到别的机器）', () async {
+    await preferences.setMangaOcrParallelTasks(8);
+    final PreferencesRepository reopened = PreferencesRepository(database);
+    await reopened.loadFromDb();
+    expect(reopened.mangaOcrParallelTasks, 8);
+    reopened.dispose();
   });
 
   test('本地模型默认逐列 CTC，Baberu 与切回选择都持久化', () async {

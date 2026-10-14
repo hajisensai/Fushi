@@ -506,6 +506,10 @@ class _PlayerPanel extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             _MaskButton(data: data, callbacks: callbacks),
+            if (callbacks.onReplayCue != null) ...<Widget>[
+              const SizedBox(width: 10),
+              _ReplayCueButton(onPressed: callbacks.onReplayCue!),
+            ],
             if (callbacks.onTypography != null) ...<Widget>[
               const SizedBox(width: 10),
               _TypographyButton(onTypography: callbacks.onTypography!),
@@ -932,6 +936,10 @@ class _NarrowChrome extends StatelessWidget {
                           child: _SideGroup(
                             alignment: Alignment.centerRight,
                             children: <Widget>[
+                              if (callbacks.onReplayCue != null)
+                                _ReplayCueButton(
+                                  onPressed: callbacks.onReplayCue!,
+                                ),
                               _LyricsIconButton(
                                 icon: CupertinoIcons.chart_bar,
                                 diameter: 34,
@@ -1290,6 +1298,25 @@ class _MaskButton extends StatelessWidget {
       iconSize: 19,
       tooltip: t.lyrics_blur,
       onPressed: callbacks.onToggleMask,
+    );
+  }
+}
+
+/// 重播当前句（回到高亮那句的起点接着播）。
+class _ReplayCueButton extends StatelessWidget {
+  const _ReplayCueButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LyricsIconButton(
+      key: const ValueKey<String>('lyrics_replay_cue_button'),
+      icon: CupertinoIcons.arrow_counterclockwise,
+      diameter: 34,
+      iconSize: 19,
+      tooltip: t.lyrics_sentence_replay,
+      onPressed: onPressed,
     );
   }
 }

@@ -8,8 +8,8 @@ import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
-import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-094: the video player seeds one persistent hidden warm popup slot and
 /// reuses it for every lookup (via [DictionaryPageMixin.pushNestedPopup] with

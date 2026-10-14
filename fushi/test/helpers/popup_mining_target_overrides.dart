@@ -8,12 +8,17 @@ import 'fake_anki_repository.dart';
 
 /// 查词浮层宿主测试的制卡目标依赖：空 Anki 设置 + 只有一份默认配置。
 ///
-/// 制卡宿主（`showMiningTargetSwitch`）的弹窗顶栏有 `DictionaryPopupMiningTargetButton`，
-/// 它在 build 里 watch `ankiViewModelProvider` / `profileViewModelProvider`。生产里这两条
-/// 仓库链经 `platformServicesProvider`（三个 entry point 都 override）与
-/// `AppModel.database`（`initialise()` 后才有）落地；只测浮层层级 / 手势、不初始化
-/// AppModel 的宿主测试，就在仓库这一层换成惰性假货，切断那两条依赖。
-/// 要测制卡目标菜单本身的行为，用 `dictionary_popup_mining_target_test.dart` 的完整接线。
+/// 查词弹窗顶栏的「制卡目标」按钮（`DictionaryPopupMiningTargetButton`，用户建议
+/// #fiwDIpFep7）在制卡宿主（`showMiningTargetSwitch`）里随弹窗常驻，build 时
+/// `watch` 了 [ankiViewModelProvider] 与 [profileViewModelProvider]。生产里这两条
+/// 仓库链经 `platformServicesProvider`（三个 entry point 都在根 ProviderScope 覆盖）
+/// 与 `AppModel.database`（`initialise()` 后才有）落地；宿主页面测试（阅读器 / 首页 /
+/// 弹窗栈行为）只覆盖了 `appProvider`、不初始化 AppModel，按钮一挂载就抛
+/// 「platformServicesProvider must be overridden」。
+///
+/// 这里在仓库这一层换成惰性假货，切断那两条依赖：按钮照常挂载，不发任何 I/O。
+/// 断言制卡目标菜单本身行为的用例用
+/// `test/pages/dictionary_popup_mining_target_test.dart` 的完整接线，不用这份。
 List<Override> popupMiningTargetTestOverrides() => <Override>[
   ankiRepositoryProvider.overrideWith((Ref ref) => FakeAnkiRepository()),
   profileRepositoryProvider.overrideWith((Ref ref) {

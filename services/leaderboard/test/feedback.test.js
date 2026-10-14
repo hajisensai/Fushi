@@ -62,6 +62,12 @@ describe('反馈人', () => {
     expect((await submit(env, { category: 'x' })).data.error).toBe('bad_category');
     expect((await submit(env, { title: '  ' })).data.error).toBe('missing_title');
     expect((await submit(env, { body: 'a'.repeat(FEEDBACK_LIMITS.bodyMax + 1) })).data.error).toBe('body_too_long');
+    // 正文可空：只有标题也能提交，存成空串。
+    for (const body of [undefined, '', '   \n ']) {
+      const r = await submit(env, { title: `只有标题 ${JSON.stringify(body)}`, body });
+      expect(r.status).toBe(201);
+      expect(env.DB.raw.prepare('SELECT body FROM feedback WHERE id = ?').get(r.data.id).body).toBe('');
+    }
     expect((await submit(env, { meta: [1] })).data.error).toBe('bad_meta');
     // meta 只留一层标量，嵌套 / 非法键丢掉。
     const ok = await submit(env, { meta: { a: 1, nested: { x: 1 }, 'bad key': 'x', ok: true } });

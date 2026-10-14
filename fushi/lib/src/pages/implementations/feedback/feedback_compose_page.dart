@@ -558,8 +558,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   Future<void> _submit() async {
     final String title = _title.text.trim();
     final String body = _body.text.trim();
-    if (title.isEmpty || body.isEmpty) {
-      setState(() => _error = t.feedback_compose_missing);
+    // 只有标题是必填：一句话说得清的反馈不必再逼人写详情（反馈 JHR0a8mT5M）。
+    if (title.isEmpty) {
+      setState(() => _error = t.feedback_compose_title_missing);
       return;
     }
     setState(() {

@@ -1,10 +1,12 @@
 /// 随包 libmpv 有没有编入 Lua 解释器（BUG-2032）。
 ///
-/// 这是**二进制事实**，按平台随包固定：Windows 用 zhongfly 全量构建
-/// （`-Dlua=enabled`，luajit）；Android 用 media-kit 派生的 `full-*.jar`，实测
-/// `libmpv.so` 的 configuration 字串是 `-Dlua=disabled`——`load-script` 命令表项
-/// 仍在、命令"成功"返回，但没有后端能执行 `.lua`，脚本永远不会跑。iOS / macOS
-/// 随包未验证。
+/// 这是**二进制事实**，按平台随包固定：Windows 随包自编 libmpv
+/// （`fushi-discnav1-hwcrop1-lua1` 起 `-Dlua=luajit`，BUG-3325；之前的 `discnav1`
+/// 系曾是 `-Dlua=disabled`）；Android 随包 `native/bluray-menu-v1` 的 jar 自
+/// BUG-3325 起编入 Lua 5.2（`-Dlua=lua`，守卫
+/// `test/build/android_libmpv_lua_guard_test.dart`）。`-Dlua=disabled` 的构建里
+/// `load-script` 命令表项仍在、命令"成功"返回，但没有后端能执行 `.lua`，脚本
+/// 永远不会跑。iOS / macOS 随包未验证。
 ///
 /// 判定只认 mpv 自己的 `mpv-configuration` 属性（meson 构建参数原文），不按
 /// `Platform.isXxx` 硬编码：jar 一旦重编带 Lua，这里自动翻绿，不需要改代码。

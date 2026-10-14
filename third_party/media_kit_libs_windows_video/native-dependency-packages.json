@@ -518,6 +518,14 @@
     ]
   },
   {
+    "name": "mingw-w64-x86_64-luajit",
+    "version": "2.1.1785606157-1",
+    "upstream": "https://luajit.org/",
+    "dlls": [
+      "lua51.dll"
+    ]
+  },
+  {
     "name": "mingw-w64-x86_64-nettle",
     "version": "4.0-1",
     "upstream": "https://www.lysator.liu.se/~nisse/nettle",

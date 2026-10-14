@@ -1,4 +1,6 @@
 
+import 'dart:ui' show Rect;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
@@ -285,6 +287,100 @@ void main() {
         reason: '双页模式制卡必须携带 OCR 命中的精确页，不能只知道当前 spread',
       );
       expect(scripts.contains('mangaPageIndex: mangaPageIndex'), isTrue);
+      expect(
+        scripts.contains('mangaSentenceGroup: mangaGroupNumber'),
+        isTrue,
+        reason: '制卡裁切要靠句子组号回到原页 OCR 块，不能用视口矩形',
+      );
+    });
+  });
+
+  group('mangaSentenceGroupNormalizedRect', () {
+    // 从 overlay HTML 里按块顺序读出组号：Dart 侧的映射必须与 JS 回传的
+    // data-manga-sentence-group 是同一次分组。
+    List<int> groupsOf(MokuroImage page) =>
+        RegExp(r'data-manga-sentence-group="(\d+)"')
+            .allMatches(mangaOcrBoxesHtml(page))
+            .map((RegExpMatch m) => int.parse(m[1]!))
+            .toList();
+
+    test('同组块求并集后按页尺寸归一化', () {
+      const MokuroImage page = MokuroImage(
+        url: 'page-000003.jpg',
+        size: MokuroSize(1170, 1600),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(288, 565, 309, 675),
+            isVertical: true,
+            fontSize: 21,
+            zIndex: 0,
+            lines: <String>['だいじょうぶ'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(250, 561, 288, 687),
+            isVertical: true,
+            fontSize: 37,
+            zIndex: 1,
+            lines: <String>['大丈夫'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(205, 565, 240, 687),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 2,
+            lines: <String>['だよな'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(164, 644, 177, 683),
+            isVertical: true,
+            fontSize: 22,
+            zIndex: 3,
+            lines: <String>['?'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(322, 560, 360, 686),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 4,
+            lines: <String>['なに?'],
+          ),
+        ],
+      );
+      final List<int> groups = groupsOf(page);
+      expect(groups.sublist(0, 4).toSet().length, 1);
+      expect(groups[4], isNot(groups[0]));
+      expect(
+        mangaSentenceGroupBlockIndices(page, groups[2]),
+        <int>[0, 1, 2, 3],
+      );
+
+      final Rect rect = mangaSentenceGroupNormalizedRect(page, groups[2])!;
+      expect(rect.left, closeTo(164 / 1170, 1e-9));
+      expect(rect.top, closeTo(561 / 1600, 1e-9));
+      expect(rect.right, closeTo(309 / 1170, 1e-9));
+      expect(rect.bottom, closeTo(687 / 1600, 1e-9));
+
+      final Rect other = mangaSentenceGroupNormalizedRect(page, groups[4])!;
+      expect(other.left, closeTo(322 / 1170, 1e-9));
+    });
+
+    test('不存在的组号 / 非法页尺寸返回 null', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      expect(mangaSentenceGroupNormalizedRect(page, 99), isNull);
+      const MokuroImage zero = MokuroImage(
+        url: 'z.jpg',
+        size: MokuroSize(0, 0),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTWH(1, 1, 2, 2),
+            isVertical: false,
+            fontSize: 10,
+            zIndex: 0,
+            lines: <String>['a'],
+          ),
+        ],
+      );
+      expect(mangaSentenceGroupNormalizedRect(zero, 0), isNull);
     });
   });
 
@@ -361,6 +457,132 @@ void main() {
           coordinateRegions[0].rectangle, const MokuroRect.fromLTWH(20, 30, 30, 20));
       expect(
           coordinateRegions[1].rectangle, const MokuroRect.fromLTWH(50, 30, 30, 20));
+    });
+  });
+
+  // BUG-3333：引擎给的字级区域与文字对不上时，整块改走行几何，不逐个丢字。
+  group('mangaEffectiveTextRegions 字级区域对不上文字时整块回退 (BUG-3333)', () {
+    MangaOcrTextRegion region(double left, int start, int end) =>
+        MangaOcrTextRegion(
+          rectangle: MokuroRect.fromLTWH(left, 0, 10, 10),
+          utf16Start: start,
+          utf16End: end,
+        );
+
+    MokuroBlock blockWith(List<String> lines, List<MangaOcrTextRegion> r) =>
+        MokuroBlock(
+          rectangle: const MokuroRect.fromLTWH(100, 200, 300, 30),
+          isVertical: false,
+          fontSize: 10,
+          zIndex: 0,
+          lines: lines,
+          regions: r,
+        );
+
+    List<MangaOcrTextRegion> geometryOf(MokuroBlock block) =>
+        mangaEffectiveTextRegions(
+          MokuroBlock(
+            rectangle: block.rectangle,
+            isVertical: block.isVertical,
+            fontSize: block.fontSize,
+            zIndex: block.zIndex,
+            lines: block.lines,
+          ),
+        );
+
+    List<(MokuroRect, int, int)> shape(List<MangaOcrTextRegion> regions) =>
+        <(MokuroRect, int, int)>[
+          for (final MangaOcrTextRegion r in regions)
+            (r.rectangle, r.utf16Start, r.utf16End),
+        ];
+
+    test('全部对得上：照用引擎给的区域', () {
+      final List<MangaOcrTextRegion> supplied = <MangaOcrTextRegion>[
+        region(0, 0, 1),
+        region(10, 1, 2),
+        region(20, 2, 3),
+      ];
+      final MokuroBlock block = blockWith(<String>['日本語'], supplied);
+      expect(identical(mangaEffectiveTextRegions(block), supplied), isTrue);
+    });
+
+    test('空白不要求有区域：拉丁文空格不覆盖仍算对得上', () {
+      final List<MangaOcrTextRegion> supplied = <MangaOcrTextRegion>[
+        region(0, 0, 1),
+        region(20, 2, 3),
+      ];
+      final MokuroBlock block = blockWith(<String>['A B'], supplied);
+      expect(identical(mangaEffectiveTextRegions(block), supplied), isTrue);
+    });
+
+    test('部分对不上（一个越界）：整块换行几何，每个字都有区域', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本語'],
+        <MangaOcrTextRegion>[
+          region(0, 0, 1),
+          region(10, 1, 2),
+          region(20, 999, 1000),
+        ],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(3));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('全部对不上：整块换行几何，覆盖层不会变成点不到的空框', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本語'],
+        <MangaOcrTextRegion>[region(0, 10, 11), region(10, 11, 12)],
+      );
+      expect(shape(mangaEffectiveTextRegions(block)), shape(geometryOf(block)));
+      final String html = mangaOcrBoxesHtml(
+        MokuroImage(
+          url: 'p.jpg',
+          size: const MokuroSize(1000, 1000),
+          blocks: <MokuroBlock>[block],
+        ),
+      );
+      expect(
+        RegExp(
+          r'<span class="ocr-char"[^>]*>([^<]*)</span>',
+        ).allMatches(html).map((RegExpMatch m) => m.group(1)).toList(),
+        <String>['日', '本', '語'],
+      );
+    });
+
+    test('AI 重读后文字变长：旧区域只盖住前半句，整块换行几何', () {
+      // 原文「日本」两个区域，重读成「日本語です」：旧区域都在句内但盖不全。
+      final MokuroBlock block = blockWith(
+        <String>['日本語です'],
+        <MangaOcrTextRegion>[region(0, 0, 1), region(10, 1, 2)],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(5));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('AI 重读后文字变短：旧区域越界，整块换行几何', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本'],
+        <MangaOcrTextRegion>[
+          region(0, 0, 1),
+          region(10, 1, 2),
+          region(20, 2, 3),
+          region(30, 3, 4),
+        ],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(2));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('偏移落在代理对中间：不算对得上', () {
+      // 「𠮷」占两个 UTF-16 单元，偏移 1 切在它中间。
+      final MokuroBlock block = blockWith(
+        <String>['𠮷野'],
+        <MangaOcrTextRegion>[region(0, 0, 1), region(10, 1, 3)],
+      );
+      expect(shape(mangaEffectiveTextRegions(block)), shape(geometryOf(block)));
     });
   });
 

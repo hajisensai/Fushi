@@ -188,6 +188,32 @@ AudioPlaybackRange padSentenceRange(
   );
 }
 
+/// 「高级制卡」里用户对句子音频起止的手动微调（`MiningRequestOverrides`
+/// 的 `audioStartDeltaMs` / `audioEndDeltaMs`）。
+///
+/// 加在宿主算好的**最终区间**上（已含首尾留白与 A/V 偏移）——两条车道补白的先后
+/// 不同（视频合并后才补白、阅读器合并前已补完），所以不能塞进
+/// `MiningSentenceDraft.composeAudioRange`。**不夹相邻句**：用户点「提前 / 推后」就是
+/// 要越过句界。只保证起点不早于文件开头、终点至少比起点晚 [minDurationMs]。
+/// 写卡与试听必须用同一个结果（BUG-2196 ②）。
+AudioPlaybackRange applyMiningAudioEdgeAdjust(
+  AudioPlaybackRange range, {
+  required int startDeltaMs,
+  required int endDeltaMs,
+  int minDurationMs = 100,
+}) {
+  if (startDeltaMs == 0 && endDeltaMs == 0) return range;
+  int start = range.startMs + startDeltaMs;
+  if (start < 0) start = 0;
+  int end = range.endMs + endDeltaMs;
+  if (end < start + minDurationMs) end = start + minDurationMs;
+  return AudioPlaybackRange(
+    audioFileIndex: range.audioFileIndex,
+    startMs: start,
+    endMs: end,
+  );
+}
+
 /// Guarantees [range].endMs > [range].startMs. A zero/negative-duration range
 /// comes from cues whose own `startMs == endMs` (coarse alignment). Extend the
 /// end to the start of the next cue in the SAME file (the implied duration); if

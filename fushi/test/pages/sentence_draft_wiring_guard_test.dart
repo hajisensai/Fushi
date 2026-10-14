@@ -105,9 +105,14 @@ void main() {
     );
     expect(src, contains('surroundingSentencesInvocation('));
     expect(src, contains('_miningDraft.setContext('));
-    // Mine composes draft + current for both text and audio range.
+    // Mine composes draft + current for both text and audio range（音频区间经
+    // `_miningSentenceAudioClip` 合并草稿并叠加「高级制卡」的起止偏移）。
     expect(src, contains('_miningDraft.composeText(currentSentence)'));
-    expect(src, contains('_miningDraft.composeAudioRange(currentRange)'));
+    expect(
+      src,
+      contains('_miningDraft.composeAudioRange(_currentSentenceAudioRange())'),
+    );
+    expect(src, contains('sourceAudioRange = _miningSentenceAudioClip('));
   });
 
   test('reader snapshots merged cue text before awaiting media export', () {
@@ -115,7 +120,10 @@ void main() {
       'lib/src/pages/implementations/reader_fushi/mining.part.dart',
     );
     final String body = maskComments(
-      methodBody(mining, '_prepareMiningContext() async {'),
+      methodBody(
+        mining,
+        '_prepareMiningContext({MiningRequestOverrides? overrides}) async {',
+      ),
     );
     final RegExpMatch? firstAwait = RegExp(
       r'\bawait\b',
@@ -250,23 +258,37 @@ void main() {
       contains('bool get supportsSentenceAudioPreview => true;'),
       reason: '基类默认 false = 对话框拿不到 previewAudio 回调，试听按钮直接没了',
     );
-    expect(reader, contains('Future<bool> onPreviewSentenceAudio() async {'));
+    expect(
+      reader,
+      contains(
+        'Future<bool> onPreviewSentenceAudio() => _previewMiningSentenceAudio();',
+      ),
+    );
     expect(reader, contains('Future<void> onStopSentenceAudioPreview() async {'));
-    // 真不变式：试听的区间与 `_prepareMiningContext` 喂给 ffmpeg 的是**同一个表达式**
-    // ——听到什么就会压出什么。播「当前句的 cue」只能证明这句有音频，证明不了裁出来
+    // 真不变式：试听的区间与 `_prepareMiningContext` 喂给 ffmpeg 的是**同一个函数**
+    // （`_miningSentenceAudioClip`：草稿合并 + 「高级制卡」起止偏移）求出来的——
+    // 听到什么就会压出什么。播「当前句的 cue」只能证明这句有音频，证明不了裁出来
     // 的那段念全了，而用户报的正是后者。
     expect(
       reader,
       contains('_miningDraft.composeAudioRange(_currentSentenceAudioRange())'),
       reason: '试听区间必须现求，且与制卡实际裁片同源',
     );
+    expect(
+      RegExp(
+        r'Future<bool> _previewMiningSentenceAudio\(\{[\s\S]{0,400}?'
+        r'_miningSentenceAudioClip\(',
+      ).hasMatch(reader),
+      isTrue,
+      reason: '试听必须经 _miningSentenceAudioClip 求区间',
+    );
     final String mining = readSource(
       'lib/src/pages/implementations/reader_fushi/mining.part.dart',
     );
     expect(
       mining,
-      contains('_miningDraft.composeAudioRange(currentRange)'),
-      reason: 'ffmpeg 侧仍走同一个 composeAudioRange，两侧同源才成立',
+      contains('final AudioPlaybackRange? clip = sourceAudioRange;'),
+      reason: 'ffmpeg 侧用的是 _miningSentenceAudioClip 求出的同一个区间，两侧同源才成立',
     );
     // 停止试听不得顺手续播正文：用户是在制卡对话框里点的。
     expect(reader, contains('stopClip(resumeMain: false)'));

@@ -183,7 +183,8 @@ void main() {
       );
       // 各域是可横滑的 TabBarView 页，经 _BrowseTabKeepAlive 保活（离屏不丢状态）。
       expect(browse, contains('_BrowseSwipeSections<OnlineSourcesDomain>('));
-      expect(browse, contains(r"'browse-${tab.name}-${domain.name}'"));
+      // 来源 / 扩展同在「在线源」页签里，按分区各自保活。
+      expect(browse, contains(r"'browse-${section.name}-${domain.name}'"));
       expect(browse, contains('bool get wantKeepAlive => true;'));
     });
 
@@ -225,8 +226,10 @@ void main() {
       );
       expect(
         'secondary: true'.allMatches(browse),
-        hasLength(1),
-        reason: '三处二级标签条共用 _BrowseSwipeSections 里同一份 secondary tabs',
+        hasLength(2),
+        reason:
+            '三处二级标签条共用 _BrowseSwipeSections 里同一份 secondary tabs；'
+            '另一处是在线源二级行右侧的来源 / 扩展页签',
       );
       for (final String key in <String>[
         r"'browse-${tab.name}-domain-picker'",

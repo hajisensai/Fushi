@@ -9,9 +9,9 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
-import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 import 'reader_fushi_page_source_corpus.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 class _BarrierTapAppModel extends AppModel {
   _BarrierTapAppModel() : super(testPlatformServices());

@@ -1,0 +1,8 @@
+## BUG-3342 · 视频暂停 OCR 默认自动运行并弹漫画文案的 Lens 同意框
+- **报告**：2026-10-14（用户：「视频ocr改成需要用户手动开启。图片字幕才提醒用户开启。而且这里名字不对」；截图为 Windows 视频页暂停后顶部「正在识别字幕…」+「将漫画页面发送到 Google Lens？」同意框，画面上并无字幕）
+- **真实性**：✅ 真 bug。
+  - 默认自动识别：`fushi/lib/src/media/video/video_pause_ocr_scope.dart` 的 `fromWireName` 没存过偏好时回退 `VideoPauseOcrScope.all`（PR #2123 / b6aef6c388 起），`VideoGraphicSubtitleOcrOverlay._currentKey`（`video_graphic_subtitle_ocr_overlay.dart`）于是对**任何**视频的暂停帧截帧识别；首次识别经 `_prepareGraphicSubtitleOcr`（`video_fushi_page.dart`）的 `confirmLensUpload` 弹同意框。
+  - 文案不对：`video_fushi_page.dart` 的 `confirmLensUpload` 直接调 `ensureGoogleLensDisclosure(context)`，而 `fushi/lib/src/media/manga/ocr/google_lens_disclosure.dart` 只有漫画一套文案（`manga_google_lens_disclosure_*`）与同意记录键；状态标记在没有字幕的普通画面上也说「正在识别字幕…」。
+- **[x] ① 已修复** — 暂停 OCR 默认 `off`（`VideoPauseOcrScope.defaultScope`，未知值同样回退 off；存过 all / graphic_subtitles 的用户照旧）；新增 `VideoPauseOcrScope.offersEnableHint`（关闭档 + 图片字幕帧才为真，图片字幕判据复用 controller 的 `isPlayerRenderedSubtitleActive`），覆盖层在暂停到图片字幕帧时显示「图片字幕需开启 OCR 识别才能点字查词 · 开启 · ×」，点开启写成「仅图片字幕」并立即识别当前帧，× 关掉本次播放的提示；文本字幕 / 无字幕不提示、不截帧、不弹同意框。`ensureGoogleLensDisclosure` 加 `GoogleLensDisclosureScene`（漫画原样 / 视频画面新文案 + 独立同意记录键 `video_google_lens_disclosure_version`）；普通画面的状态标记改说「画面文字」。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_graphic_subtitle_ocr_overlay_test.dart`（BUG-3342 组：默认不识别只提示、点开启后识别、文本字幕 / 无字幕不提示、播放中不提示与关掉提示、普通画面文案）、`fushi/test/media/video/graphic_subtitle_pause_ocr_test.dart`（默认 off、`offersEnableHint` 真值表）、`fushi/test/media/manga/ocr/google_lens_disclosure_test.dart`（按场景文案、同意记录分开）。
+- **备注**：行为变化——没动过该设置的用户，图片字幕暂停 OCR 从「自动」变成「提示后一键开启」（2026-10-13 之前图片字幕一直是自动识别）；这是用户本次明确要求的。同意过漫画 Lens 上传的用户在视频里会再被问一次（文案不同、同意范围不同）。

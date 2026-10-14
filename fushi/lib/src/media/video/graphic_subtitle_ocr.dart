@@ -562,11 +562,12 @@ GraphicSubtitleOcrFrame graphicSubtitleOcrFrameOf(MokuroImage image) {
 /// 均分后每个可点框都偏离真实的字（BUG-3314）。
 ///
 /// 引擎给的字级区域只要有一个对不上文字（例如大模型改写过文字、区域还是旧文字的
-/// 偏移），整块改走行几何——逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
+/// 偏移），整块改走行几何——判据在 [mangaEffectiveTextRegions] 里与漫画覆盖层共用
+/// 同一份；逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
 List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
   final String sentence = block.lines.join();
   if (sentence.trim().isEmpty) return const <GraphicSubtitleOcrChar>[];
-  // UTF-16 起点 → 字素下标。
+  // UTF-16 起点 → 字素下标。区域已保证落在字素边界上。
   final Map<int, int> graphemeAtUtf16 = <int, int>{};
   int offset = 0;
   int index = 0;
@@ -574,51 +575,20 @@ List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
     graphemeAtUtf16[offset] = index++;
     offset += g.length;
   }
-  return _charsFromRegions(
-        mangaEffectiveTextRegions(block),
-        sentence,
-        graphemeAtUtf16,
-      ) ??
-      _charsFromRegions(
-        mangaEffectiveTextRegions(_withoutSuppliedRegions(block)),
-        sentence,
-        graphemeAtUtf16,
-      ) ??
-      const <GraphicSubtitleOcrChar>[];
+  return <GraphicSubtitleOcrChar>[
+    for (final MangaOcrTextRegion region in mangaEffectiveTextRegions(block))
+      (
+        sentence: sentence,
+        graphemeIndex: graphemeAtUtf16[region.utf16Start]!,
+        rect: Rect.fromLTRB(
+          region.rectangle.left,
+          region.rectangle.top,
+          region.rectangle.right,
+          region.rectangle.bottom,
+        ),
+      ),
+  ];
 }
-
-/// 区域全部对得上文字时摊成字；任何一个对不上返回 null（整块换几何来源）。
-List<GraphicSubtitleOcrChar>? _charsFromRegions(
-  List<MangaOcrTextRegion> regions,
-  String sentence,
-  Map<int, int> graphemeAtUtf16,
-) {
-  final List<GraphicSubtitleOcrChar> out = <GraphicSubtitleOcrChar>[];
-  for (final MangaOcrTextRegion region in regions) {
-    final int? grapheme = graphemeAtUtf16[region.utf16Start];
-    if (grapheme == null || region.utf16End > sentence.length) return null;
-    final MokuroRect r = region.rectangle;
-    out.add((
-      sentence: sentence,
-      graphemeIndex: grapheme,
-      rect: Rect.fromLTRB(r.left, r.top, r.right, r.bottom),
-    ));
-  }
-  return out;
-}
-
-/// 同一个块去掉引擎给的字级区域：[mangaEffectiveTextRegions] 随即按 `linesCoords`
-/// （没有时按块框）重新切字。
-MokuroBlock _withoutSuppliedRegions(MokuroBlock block) => MokuroBlock(
-  rectangle: block.rectangle,
-  isVertical: block.isVertical,
-  fontSize: block.fontSize,
-  zIndex: block.zIndex,
-  lines: block.lines,
-  linesCoords: block.linesCoords,
-  confidence: block.confidence,
-  aiRecognized: block.aiRecognized,
-);
 
 /// 帧图像素矩形 → 视频控件内的本地矩形。
 ///

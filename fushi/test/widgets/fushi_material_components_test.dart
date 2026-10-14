@@ -615,9 +615,9 @@ void main() {
 
   // TODO-1126 / BUG-541: 窄窗下动作区按内容自然宽（不再与标题等 flex 五五均分右半
   // 幅）。旧实现动作视口恒占页头右半幅，窄窗时 4 个图标自然宽超右半幅 →
-  // reverse:true 把最左侧 Icons.add 裁到视口外（用户看到像个「-」）。守卫：4 个
-  // 动作图标（含最左 add）在 300 / 208 窄宽下全部可见、水平落在页头视口内、不抛
-  // RenderFlex overflow。
+  // reverse:true 把最左侧 Icons.add 裁到视口外（用户看到像个「-」）。守卫：最左
+  // add 在 300 / 208 窄宽下可见、水平落在页头视口内、不抛 RenderFlex overflow；
+  // 其余动作要么外露、要么在 ⋯ 菜单里，一个不丢。
   Future<void> pumpNarrowHeader(
     WidgetTester tester, {
     required double width,
@@ -672,15 +672,17 @@ void main() {
 
         final Rect headerRect = tester.getRect(find.byType(FushiPageHeader));
 
-        // 4 个动作图标都存在（未被折叠成菜单或丢失）。
-        for (final IconData icon in <IconData>[
-          Icons.add,
-          Icons.folder_copy_outlined,
-          Icons.collections_bookmark_outlined,
-          Icons.bar_chart_outlined,
-        ]) {
-          expect(find.byIcon(icon), findsOneWidget, reason: '$icon 应存在');
-        }
+        // 4 个动作一个都不丢：放不下的按优先级（默认 = 列表顺序，越靠后越先收）
+        // 收进 ⋯（统一自适应收纳），最左 add 优先级最高、最后才收。
+        expect(find.byIcon(Icons.add), findsOneWidget, reason: '最左 add 应外露');
+        final List<String> collapsed = <String>[
+          for (final (IconData icon, String tooltip) in <(IconData, String)>[
+            (Icons.folder_copy_outlined, 'Import'),
+            (Icons.collections_bookmark_outlined, 'Collections'),
+            (Icons.bar_chart_outlined, 'Statistics'),
+          ])
+            if (find.byIcon(icon).evaluate().isEmpty) tooltip,
+        ];
 
         // 回归目标：最左侧 Icons.add 必须完整落在页头视口内（旧实现
         // 把它裁到右半幅视口的左缘之外，用户看到像个「-」）。
@@ -697,6 +699,15 @@ void main() {
           lessThanOrEqualTo(headerRect.right + 0.5),
           reason: '最左 Icons.add 必须完整落在页头视口内',
         );
+
+        if (collapsed.isNotEmpty) {
+          await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey));
+          await tester.pumpAndSettle();
+          for (final String tooltip in collapsed) {
+            expect(find.text(tooltip), findsOneWidget,
+                reason: '被收的 $tooltip 必须在 ⋯ 菜单里');
+          }
+        }
       },
     );
   }

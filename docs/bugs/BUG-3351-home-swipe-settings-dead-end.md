@@ -1,0 +1,5 @@
+## BUG-3351 · 移动端横滑切模块滑到设置页后滑不回去
+- **报告**：2026-10-14（用户：移动端左右滑动切页，滑到「设置」页后无法滑回去）
+- **真实性**：✅ 真 bug（平板 43f8ed58 模拟手机形态 1080x2400@420 真机复现：经「⋯」/ 底栏拖选落到设置后，正文上任何横滑都不切模块）。根因 `fushi/lib/src/pages/implementations/home_module_swipe.dart:40`（修前）：`homeSwipeTabs` 把 `HomeTab.settings` 排除在横滑序列外，而 `fushi/lib/src/pages/implementations/home_page.dart:1937` `_moduleSwipeEnabled()` 以「当前 tab 在该序列里」为启用条件——设置却是底栏胶囊里的真实目的地（可直接点、经「⋯」进、底栏拖选落上去），于是一落到设置，外壳横滑识别器整个不挂，成了只进不出的死胡同。upstream/develop 基线同样存在（这两个文件与基线一致，排除设置是 5e86e4886e 引入横滑时的设计）。
+- **[x] ① 已修复** — 横滑序列与底栏胶囊同一份：只去掉不在胶囊里的查词（FAB），设置作为最后一站参与；落到设置后右滑回到前一个模块，从最后一个模块左滑也会进设置（与底栏顺序一致，用户 2026-10-14 确认「都要能滑进去又能滑出来」）。外壳的启用判据收成纯函数 `homeModuleSwipeArmed`（`home_module_swipe.dart`），`HomePage._moduleSwipeEnabled` 与测试共用同一份。设置的二级页是 push 的路由，不受影响。真机热重启后验证：设置 → 右滑 → 浏览。提交 ddec3d4d9f。
+- **[x] ② 已加自动化测试**（ddec3d4d9f）— `fushi/test/pages/home_module_swipe_test.dart`：纯函数层钉序列含设置（最后一站）、`homeModuleSwipeArmed` 在设置上为真 / 查词上为假、浏览 ⇄ 设置互为目标；组件层用真 `HomeModuleSwipeDetector` + 外壳同一判据（`gateByOrder`）钉「落在设置上右滑回到浏览」「浏览左滑进设置、到头不循环、再右滑原路回来」。

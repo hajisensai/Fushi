@@ -97,7 +97,7 @@ void main() {
     final String shelfDrop = functionBody(
       shelf,
       'Future<void> _handleShelfDrop(',
-      'Future<void> _openBookImportPrefilled(',
+      'Future<bool?> _openBookImportPrefilled(',
     );
     expect(shelfDrop.contains('Offset globalPosition'), isTrue);
     expect(shelfDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),

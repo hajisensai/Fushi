@@ -10,8 +10,8 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
-import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// TODO-058: the SECOND (nested) dictionary popup must not flash white. The
 /// first lookup reuses the pre-warmed WebView (warm slot) so it shows instantly

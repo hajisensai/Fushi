@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'comprehensive_test_matrix.dart';
 import 'comprehensive_test_reporter.dart';
+import 'flutter_sdk_executables.dart';
 
 typedef ComprehensiveCommandRunner = Future<CommandResult> Function(
   CommandRequest request,
@@ -65,7 +66,8 @@ CommandInvocation buildCommandInvocation(
     throw const FormatException('Command must not be empty');
   }
 
-  final String executable = _resolveExecutable(tokens.first);
+  final String executable =
+      FlutterSdkExecutables.current().resolveCommand(tokens.first);
   final List<String> args = <String>[...tokens.skip(1)];
   if (_isFlutterDrive(tokens)) {
     if (!_hasDriverArg(args)) {
@@ -305,21 +307,6 @@ String _desktopDeviceId(TestPlatformId platform) => switch (platform) {
       TestPlatformId.macos => 'macos',
       TestPlatformId.android => 'android',
     };
-
-String _resolveExecutable(String executable) {
-  if (!Platform.isWindows) return executable;
-  if (executable == 'flutter') {
-    const String flutter =
-        r'D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat';
-    if (File(flutter).existsSync()) return flutter;
-  }
-  if (executable == 'dart') {
-    const String dart =
-        r'D:\flutter_sdk\flutter_extracted\flutter\bin\dart.bat';
-    if (File(dart).existsSync()) return dart;
-  }
-  return executable;
-}
 
 List<String> _splitCommandLine(String command) {
   final List<String> tokens = <String>[];

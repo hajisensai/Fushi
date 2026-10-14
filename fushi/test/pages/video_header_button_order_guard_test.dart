@@ -7,7 +7,8 @@ import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
 
 /// 守卫：书架保留自己的导入顺序；视频常规入库与整库刮削统一迁到「来源」后，
-/// HomeVideoPage 页头不得重新长出这两个入口，收藏夹仍须排在统计之前。
+/// HomeVideoPage 页头不得重新长出这两个入口；收藏夹与统计入口都已收敛到首页
+/// dashboard，两个库页页头都不再挂。
 void main() {
   final File videoSrc =
       File('lib/src/pages/implementations/home_video_page.dart');
@@ -70,19 +71,22 @@ void main() {
   /// 在区间内按 tooltip 标识取相对位置；找不到返回 -1。
   int orderOf(String block, String token) => block.indexOf(token);
 
-  test('书架顶栏基准顺序：导入 → 收藏夹（统计入口已收敛到首页）', () {
+  test('书架顶栏：保留兜底导入；收藏夹 / 统计 / 全部刮削都不在页头', () {
     final String block = headerActionsBlock(shelfSrc);
     final int importIdx = orderOf(block, 'buildBookImportButton');
     final int collectionsIdx = orderOf(block, 't.collections');
     final int statsIdx = orderOf(block, 't.reading_statistics');
+    final int scrapeIdx = orderOf(block, 't.scrape_all');
     expect(importIdx, greaterThanOrEqualTo(0), reason: '书架应有导入按钮');
-    expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '书架应有收藏夹按钮');
+    expect(collectionsIdx, -1,
+        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），书架顶栏不再挂');
     expect(statsIdx, -1,
         reason: '统计入口已收敛到首页 dashboard（2026-09-01），书架顶栏不再挂');
-    expect(importIdx, lessThan(collectionsIdx), reason: '书架基准：导入应在收藏夹之前');
+    expect(scrapeIdx, -1,
+        reason: '书 / 漫画不需要批量刮削（2026-10-14），全部刮削只留视频与游戏');
   });
 
-  test('视频顶栏移除导入/全部刮削/统计，只剩收藏夹', () {
+  test('视频顶栏移除导入/全部刮削/统计/收藏夹', () {
     final String block = headerActionsBlock(videoSrc);
     final int importIdx = orderOf(block, 't.video_import_action');
     final int scrapeIdx = orderOf(block, 't.scrape_all');
@@ -90,7 +94,8 @@ void main() {
     final int statsIdx = orderOf(block, 't.video_statistics');
     expect(importIdx, -1, reason: '视频常规入库应统一从来源添加文件夹');
     expect(scrapeIdx, -1, reason: '视频全部刮削入口应位于来源页');
-    expect(collectionsIdx, greaterThanOrEqualTo(0), reason: '视频应有收藏夹按钮');
+    expect(collectionsIdx, -1,
+        reason: '收藏夹入口已收敛到首页 dashboard（2026-10-14），视频顶栏不再挂');
     expect(statsIdx, -1,
         reason: '统计入口已收敛到首页 dashboard（2026-09-01），视频顶栏不再挂');
   });

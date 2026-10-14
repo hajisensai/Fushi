@@ -13,6 +13,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -420,6 +421,77 @@ TextStyle homeCoverTitleStyle(BuildContext context) {
 /// 封面与下方标题之间的间距。
 const double kHomeCoverTitleGap = 6;
 
+/// 「继续」横卡的宽度是同排竖卡的几倍（用户 2026-10-14：横卡约 1.5 倍竖卡宽）。
+const double kHomeLandscapeCoverWidthFactor = 1.5;
+
+/// 「继续」横卡的封面宽高比：完整显示每集截图 / 横版画面。
+const double kHomeLandscapeCoverAspect = 16 / 9;
+
+/// 「继续」封面朝向判据（用户 2026-10-14「卡片比例跟着实际用到的图走」）：图片
+/// 真实宽高比 > 1 是横图，其余（含正方形、尺寸未知）按竖卡。
+bool homeCoverIsLandscape(double? aspect) => aspect != null && aspect > 1;
+
+/// 「继续」卡封面槽尺寸：竖卡 2:3（宽 = [portraitWidth]）；横卡宽是竖卡的
+/// [kHomeLandscapeCoverWidthFactor] 倍、16:9。
+Size homeContinueCoverSize({
+  required double portraitWidth,
+  required bool landscape,
+}) {
+  if (!landscape) return Size(portraitWidth, portraitWidth * 3 / 2);
+  final double width = portraitWidth * kHomeLandscapeCoverWidthFactor;
+  return Size(width, width / kHomeLandscapeCoverAspect);
+}
+
+/// 按封面图**真实宽高比**决定「继续」卡横竖（[homeCoverIsLandscape]）。
+///
+/// 与卡内封面渲染共用同一个 [image]（同一 ImageStream，零额外解码）；[image] 为
+/// null、首帧解码前或解码失败时按竖卡，解码出横图后重建为横卡（尺寸变化由卡片
+/// 自己的 [FushiMotion] 尺寸过渡接住，不硬跳）。
+class HomeCoverOrientationProbe extends StatelessWidget {
+  const HomeCoverOrientationProbe({
+    super.key,
+    required this.image,
+    required this.builder,
+  });
+
+  /// 封面源；null = 没有可用封面（恒竖卡）。
+  final ImageProvider? image;
+  final Widget Function(BuildContext context, bool landscape) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? provider = image;
+    if (provider == null) return builder(context, false);
+    return _HomeCoverAspectProbe(image: provider, builder: builder);
+  }
+}
+
+class _HomeCoverAspectProbe extends StatefulWidget {
+  const _HomeCoverAspectProbe({required this.image, required this.builder});
+
+  final ImageProvider image;
+  final Widget Function(BuildContext context, bool landscape) builder;
+
+  @override
+  State<_HomeCoverAspectProbe> createState() => _HomeCoverAspectProbeState();
+}
+
+class _HomeCoverAspectProbeState extends State<_HomeCoverAspectProbe>
+    with CoverAspectProbe<_HomeCoverAspectProbe> {
+  @override
+  ImageProvider probedImageOf(_HomeCoverAspectProbe widget) => widget.image;
+
+  /// 只回答横竖，一个像素都不画：不需要主色底采样。
+  @override
+  bool needsBackdropSeed(double aspect) => false;
+
+  @override
+  Widget build(BuildContext context) => widget.builder(
+    context,
+    !coverFailed && homeCoverIsLandscape(coverAspect),
+  );
+}
+
 /// 封面卡下方标题块的固定高度：恰好两行（按当前字号与缩放实测，不估算），一排
 /// 卡的封面因此恒在同一高度、横滑行可以定高。
 double homeCoverTitleBlockHeight(BuildContext context) {
@@ -493,7 +565,10 @@ class HomeContinueCoverCard extends StatelessWidget {
             FushiTooltip(
               message: title,
               excludeFromSemantics: true,
-              child: SizedBox(
+              // 横竖切换（封面解码出真实宽高比后）走尺寸过渡，不硬跳。
+              child: AnimatedContainer(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                curve: FushiMotion.standard,
                 width: width,
                 height: height,
                 child: ClipRRect(
@@ -554,8 +629,10 @@ class HomeContinueCoverCard extends StatelessWidget {
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
-          child: SizedBox(
+          child: AnimatedContainer(
             key: const ValueKey<String>('home-cover-title'),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
             width: width,
             height: homeCoverTitleBlockHeight(context),
             child: Padding(
@@ -597,13 +674,18 @@ class HomeContinueHero extends StatelessWidget {
     this.subtitle,
     this.progress,
     this.progressLabel,
+    this.landscapeCover = false,
   });
 
-  /// 封面本体（调用方按 2:3 竖槽渲染好的 PortraitCoverImage / 占位）。
+  /// 封面本体（调用方按槽向渲染好的 PortraitCoverImage / 占位）。
   final Widget cover;
 
-  /// 封面期望高度（2:3）；卡宽不够时等比缩小。
+  /// 竖卡封面期望高度（2:3）；卡宽不够时等比缩小。
   final double coverHeight;
+
+  /// 封面是横图（每集截图 / 横版画面）：封面槽改成 16:9、宽为竖槽的
+  /// [kHomeLandscapeCoverWidthFactor] 倍（不超过卡宽一半），完整显示截图。
+  final bool landscapeCover;
 
   /// 标题上方的小字（最近一次的相对时间）；null = 不画。
   final String? eyebrow;
@@ -651,17 +733,31 @@ class HomeContinueHero extends StatelessWidget {
               padding: EdgeInsets.all(tokens.spacing.card),
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints c) {
-                  final double coverWidth = math.min(
+                  final double portraitWidth = math.min(
                     coverHeight * 2 / 3,
                     c.maxWidth * 0.36,
                   );
+                  Size slot = homeContinueCoverSize(
+                    portraitWidth: portraitWidth,
+                    landscape: landscapeCover,
+                  );
+                  if (slot.width > c.maxWidth * 0.5) {
+                    final double w = c.maxWidth * 0.5;
+                    slot = Size(w, w * slot.height / slot.width);
+                  }
                   return Row(
                     children: <Widget>[
                       ClipRRect(
                         borderRadius: FushiBorderRadius.card,
-                        child: SizedBox(
-                          width: coverWidth,
-                          height: coverWidth * 1.5,
+                        child: AnimatedContainer(
+                          key: const ValueKey<String>('home-continue-hero-cover'),
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          curve: FushiMotion.standard,
+                          width: slot.width,
+                          height: slot.height,
                           child: cover,
                         ),
                       ),

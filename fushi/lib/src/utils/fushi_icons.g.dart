@@ -112,6 +112,12 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 裁切 / 按分格裁图：Symbols `crop`（取代 Icons.crop_outlined / Icons.crop）
+  static const IconData crop = IconData(
+    0xe3be,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 歌词模式：Symbols `lyrics`（取代 Icons.lyrics_outlined / Icons.lyrics）
   static const IconData lyrics = IconData(
     0xec0b,
@@ -1665,6 +1671,7 @@ abstract final class FushiIcons {
     'statistics': statistics,
     'ankiCard': ankiCard,
     'ocr': ocr,
+    'crop': crop,
     'lyrics': lyrics,
     'game': game,
     'tv': tv,
@@ -2046,6 +2053,7 @@ abstract final class FushiIcons {
     0xe3ab: IconData(0xe3ab, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3ad: IconData(0xe3ad, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3b9: IconData(0xe3b9, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe3be: IconData(0xe3be, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3d3: IconData(0xe3d3, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe3f4: IconData(0xe3f4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe404: IconData(0xe404, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2423,6 +2431,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.square_split_2x1,
     CupertinoIcons.square_split_2x1_fill,
   ),
+  0xe3be: (CupertinoIcons.crop, CupertinoIcons.crop),
   0xe3d3: (
     CupertinoIcons.photo_on_rectangle,
     CupertinoIcons.photo_on_rectangle,

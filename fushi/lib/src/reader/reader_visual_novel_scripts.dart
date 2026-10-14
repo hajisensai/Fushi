@@ -3147,20 +3147,16 @@ $sharedInitViewport
     this.setSentenceAudioCueData([]);
     this.activeCueId = null;
   },
+  // BUG-3328：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
+  // 「节点 + 偏移」与 live Range 换算到合并后的节点，不随被并掉的节点一起失效。
   unwrap: function(wrappers) {
+    var guard = window.__fushiLiveRanges;
     var parents = [];
     wrappers.forEach(function(wrapper) {
-      var parent = wrapper.parentNode;
-      if (!parent) return;
-      while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-      }
-      parent.removeChild(wrapper);
-      if (parents.indexOf(parent) < 0) parents.push(parent);
+      var parent = guard.unwrap(wrapper);
+      if (parent && parents.indexOf(parent) < 0) parents.push(parent);
     });
-    parents.forEach(function(parent) {
-      if (parent.normalize) parent.normalize();
-    });
+    parents.forEach(function(parent) { guard.normalize(parent); });
     this.buildNodeOffsets();
   }
 };

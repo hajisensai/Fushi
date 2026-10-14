@@ -275,6 +275,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.dismiss_swipe_sensitivity',
           'reading_controls.popup_dismiss_animation',
           'reading_controls.dismiss_popup_on_scroll',
+          'reading_controls.close_popup_after_mining',
         ],
       ),
       ReaderSettingsSectionSpec(

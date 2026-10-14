@@ -1099,12 +1099,20 @@ SettingsDestination buildVideoDestination() {
           ),
           // 暂停 OCR 点字查词的范围：以前只在图形字幕时识别，2026-10-13 用户要求扩大到
           // 所有视频（硬字幕 / 画面文字）。每次暂停都跑整帧识别，所以可以收窄或关掉。
+          // BUG-3342（2026-10-14 用户）：默认关闭、由用户手动开启；暂停到图片字幕帧时
+          // 播放页会提示一键开启（只开到「仅图片字幕」）。
           SettingsSegmentedItem<VideoPauseOcrScope>(
             id: 'video.subtitle.pause_ocr_scope',
             title: t.video_setting_pause_ocr_scope,
             subtitle: t.video_setting_pause_ocr_scope_hint,
             icon: FushiIcons.ocr,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 58),
+            // 接替被它取代的「无字幕轨也暂停 OCR」开关的位置（字幕行为小节、显形开关
+            // 之后的 58）；60 已是外观小节的「遵循 ASS 样式」。
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 58,
+              section: t.section_video_subtitle_behavior,
+            ),
             options: <SettingsSegmentOption<VideoPauseOcrScope>>[
               SettingsSegmentOption<VideoPauseOcrScope>(
                 value: VideoPauseOcrScope.all,
@@ -1129,7 +1137,7 @@ SettingsDestination buildVideoDestination() {
                   await settingsContext.appModel.setVideoPauseOcrScope(scope);
                   settingsContext.refresh();
                 },
-            defaultValue: VideoPauseOcrScope.all,
+            defaultValue: VideoPauseOcrScope.defaultScope,
           ),
           // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
           // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
@@ -1866,36 +1874,21 @@ SettingsDestination buildVideoDestination() {
         presentation: SettingsSectionPresentation.collapsed,
         title: t.video_setting_mpv_group_advanced,
         items: <SettingsItem>[
-          // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
-          // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
-          // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
-          // BUG-2032：随包 libmpv 没编 Lua 的平台（Android 实测 `-Dlua=disabled`）
-          // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
-          // （settings_schema_widgets.dart `_switch` 的既定约定）。
-          SettingsSwitchItem(
-            id: 'video.player.mpv_lua_scripts',
-            title: t.video_setting_mpv_lua_scripts,
-            subtitle: t.video_setting_mpv_lua_scripts_hint,
+          // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载，对齐 mpv `scripts/`
+          // 目录语义——目录里有就装、删文件即禁用，没有单独的启用开关。mpv 无
+          // unload-script，删除一律下次进入视频页生效（见 video_lua_script_manager.dart）。
+          // BUG-2032：随包 libmpv 没编 Lua 的平台（Windows / Android 随包自 BUG-3325
+          // 起均已编入；iOS / macOS 未验证）在副标题如实说明，导入照样可做。
+          SettingsActionItem(
+            id: 'video.player.mpv_lua_scripts_import',
+            title: t.video_setting_mpv_lua_scripts_import,
+            subtitle: t.video_setting_mpv_lua_scripts_import_hint,
             subtitleBuilder: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoMpvLuaCapability ==
                     MpvLuaCapability.unavailable
                 ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
-                      '${t.video_setting_mpv_lua_scripts_hint}'
-                : t.video_setting_mpv_lua_scripts_hint,
-            icon: Icons.data_object_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 212,
-              section: t.video_setting_mpv_group_advanced,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoMpvLuaScriptsEnabled,
-            onChanged: _setVideoLuaScriptsEnabled,
-            defaultValue: false,
-          ),
-          SettingsActionItem(
-            id: 'video.player.mpv_lua_scripts_import',
-            title: t.video_setting_mpv_lua_scripts_import,
+                      '${t.video_setting_mpv_lua_scripts_import_hint}'
+                : t.video_setting_mpv_lua_scripts_import_hint,
             icon: Icons.note_add_outlined,
             video: VideoPlacement(
               group: VideoGroup.mpv,
@@ -1917,10 +1910,11 @@ SettingsDestination buildVideoDestination() {
                 imported = true;
               }
               if (!imported) return;
-              // BUG-2032：导入即启用。导入动作本身就是「我要跑这些脚本」，此前
-              // 导入完开关还是关的、提示只说"已导入"，用户播视频什么都不发生。
-              // 与开关走同一条写穿：host 在场把目录（含刚导入的）即时装进活播放器。
-              await _setVideoLuaScriptsEnabled(settingsContext, true);
+              // BUG-2032：导入即生效。host 在场把目录（含刚导入的）即时装进活播放器
+              // （幂等）；不在场时下次进入视频页按目录装载。
+              await videoQuickSettingsHostOf(
+                settingsContext,
+              )?.onLuaScriptsChanged?.call();
               _showVideoSettingsSnackBar(
                 settingsContext,
                 t.video_setting_mpv_lua_scripts_imported,
@@ -2288,23 +2282,6 @@ void _showVideoSettingsSnackBar(
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
   ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
-}
-
-/// BUG-2032：Lua 脚本开关的**唯一**写穿点（开关行 / 导入按钮共用）。host 在场走
-/// 页面回调（落 pref + 开启时把脚本目录即时装载进活播放器，幂等），否则直接落 pref
-/// 下次进入视频页生效。两条入口各写一份就会再次分叉成"导入了但没启用"。
-Future<void> _setVideoLuaScriptsEnabled(
-  SettingsContext settingsContext,
-  bool value,
-) async {
-  final Future<void> Function(bool)? live = videoQuickSettingsHostOf(
-    settingsContext,
-  )?.onLuaScriptsEnabledChanged;
-  if (live != null) {
-    await live(value);
-  } else {
-    await settingsContext.appModel.setVideoMpvLuaScriptsEnabled(value);
-  }
 }
 
 /// mpv 布尔开关的声明模板：读写同一 [AppModel.videoMpvConfig]，无 host 落 pref

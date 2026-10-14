@@ -1,0 +1,6 @@
+## BUG-3335 · 启动后持续卡顿：静止的确定态波浪进度条常驻 ticker 每帧重绘
+- **报告**：2026-10-13（用户：「更新，启动以后会卡顿几秒，看看能不能优化」；Windows，2.10.0-debug.18749 → 18990）
+- **真实性**：✅ 真 bug（部分）。`fushi/lib/src/utils/components/fushi_expressive_progress.dart` 的 `_RepeatingTicker` 让确定态 `FushiWavyLinearProgress` / `FushiWavyCircularProgress` 无条件 `repeat()`；MD3 下通用 `FushiLinearProgressIndicator`（`glass/fushi_glass_feedback.dart:142`）把所有确定态线性进度都映射到它。首页继续观看卡片的观看进度条因此从启动起每个 vsync 整帧重绘。证据：profile 包 + 用户库副本（去凭据、断网）实测主 isolate 从启动起恒定 ~17% 占用，VM service `getInstances` 定位到唯一常驻 `_RepeatingSimulation` 控制器 → `RenderCustomPaint(_WavyLinearPainter)`，所在卡片文字「K-ON! 播放列表 · 观看 · お茶会！ 第 28 集」；用户正在跑的已安装实例闲置时 ~32% 单核。
+- **[x] ① 已修复** — 9ecc25f16f：确定态只在值变化后 `kWavyProgressFlowSettle`（3 s）内流动，值停住即停 ticker（波形保留、相位定住）；不定态 / `waving:false` / 减少动态效果不变，调用点零改动。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/fushi_wavy_progress_flow_test.dart`（线性 + 圆形：静止不常驻帧、变值流动、停住后停、不定态常转）；变异回退到旧判据后 4 例变红。
+- **备注**：同一份 profile 复现（用户库副本、断网）里**没有**复现出数秒级的单次主线程阻塞——启动 0.75–1.5 s 峰值约 50%，无 ≥40 ms 的事件循环任务。断网/去凭据挡掉了启动即跑的 Google Drive 自动同步，那条路径未被测到；静态审计的候选：`packages/fushi_engine/lib/sync/epub_repackage.dart:27-33`（云端缺该书时在 UI isolate 上纯 Dart 重新打包 EPUB）。另：更新后首启 Mihon sidecar 会对全部扩展串行 dex2jar（独立 JVM，约 1.5 分钟，吃 CPU 不阻塞 UI），只在更新后发生。

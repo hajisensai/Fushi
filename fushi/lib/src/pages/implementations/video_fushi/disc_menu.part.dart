@@ -164,7 +164,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     });
     if (tracksChanged &&
         !_discLearningBlocked &&
-        _videoSidePanel.value?.kind == _VideoSidePanelKind.settings) {
+        _videoSidePanel.value?.kind == _VideoSidePanelKind.subtitle) {
       unawaited(_ensureSubtitleMenuSourcesLoaded());
     }
   }
