@@ -164,6 +164,9 @@ Root: HKCU; Subkey: "Software\Classes\Fushi.Video\shell\open\command"; ValueType
 
 ; 让 fushi.exe 出现在「打开方式」应用列表，并声明它支持的视频 / 书扩展名。
 ; 这个键两个关联任务共用：只勾其中一个也必须注册它。
+; 根键单独挂 uninsdeletekey：下面那条只删 shell\open\command 子键，SupportedTypes
+; 里的扩展名值卸载后会留下（视频关联原本就有这个残留）。
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe"; ValueType: none; Flags: uninsdeletekey; Tasks: videoassoc or bookassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: videoassoc or bookassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mkv"; ValueData: ""; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mp4"; ValueData: ""; Tasks: videoassoc

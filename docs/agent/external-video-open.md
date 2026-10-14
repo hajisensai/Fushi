@@ -107,10 +107,12 @@ Fushi 打开另一个视频 → 复用已开窗口打开播放页，不起第二
   冷启动 `main()` 先认视频、再认书（`_pendingExternalBookPath`）；单实例转交在
   `_handleExternalVideoChannel` 里视频优先、其次书。
 - **落地 `_openExternalBook`**：入库复用 `fushi_cli library import` 的
-  `LibraryCtlImporter`（载体判定、图片型 EPUB 归漫画、模块门全同一份），重复按 skip；
-  导入器抛 `DuplicateImportCancelledException` 时结果带回已在库那本的 key
-  （`existingBookKeyForTitle`，与 `resolveDuplicateTitle` 同口径），于是重复打开
-  同一本书复用同一条记录、保留进度。随后查 `EpubBooks.format` →
+  `LibraryCtlImporter`（载体判定、图片型 EPUB 归漫画、模块门全同一份）。同名书已在库
+  时传 `askOnDuplicate` 弹框问用户（同名 ≠ 同一本，如两部作品的 `01.cbz`）：选
+  「打开已有」→ 导入器抛 `DuplicateImportCancelledException`，结果带回已在库那本的 key
+  （`existingBookKeyForTitle`，与 `resolveDuplicateTitle` 同口径），打开它、保留进度；
+  选「作为新书导入」→ 加序号后缀落新的一本。同一路径导入进行中再次打开直接忽略。
+  随后查 `EpubBooks.format` →
   `buildCollectionReaderMediaItem` → `appModel.openMedia` 打开对应阅读器。
   与外部视频的区别：书会被**复制**进书库（阅读器读解压目录），不引用原路径。
 - **安装包**：`fushi.iss` 的 `[Tasks] bookassoc`（默认勾选）登记 ProgId `Fushi.Book`、

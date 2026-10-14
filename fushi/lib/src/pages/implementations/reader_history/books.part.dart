@@ -1683,8 +1683,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
   /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
   ///
-  /// 返回是否导入成功（[_openBookImportsInSequence] 据此决定是否继续下一本）。
-  Future<bool> _openBookImportPrefilled({
+  /// 返回对话框结果：true 已导入、false 这一本没导（同名取消 / 转交漫画未导）、
+  /// null 用户关掉了对话框（[_openBookImportsInSequence] 据此停止后续）。
+  Future<bool?> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,
     List<String> audioPaths = const <String>[],
@@ -1704,19 +1705,22 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
-    return imported == true;
+    return imported;
   }
 
   /// 多本书同时拖入：逐本打开 [BookImportDialog]（每本都要定标题 / 处理同名）。
-  /// 用户在某一本上取消 = 不要剩下的了，停止后续，不逐个追问。
+  ///
+  /// 只有用户**关掉对话框**（取消 / 返回键 / 点遮罩，结果 null）才停止后续：那是
+  /// 「剩下的都不要了」。同名询问里选「否」只是这一本不导（对话框回 false），继续下一本
+  /// ——否则一本重名就把后面所有书静默丢掉，正是这里要消灭的行为。
   Future<void> _openBookImportsInSequence(List<String> bookPaths) async {
     for (final String bookPath in bookPaths) {
       if (!mounted) return;
-      final bool imported = await _openBookImportPrefilled(
+      final bool? imported = await _openBookImportPrefilled(
         epubPath: bookPath,
         subtitlePath: null,
       );
-      if (!imported) return;
+      if (imported == null) return;
     }
   }
 

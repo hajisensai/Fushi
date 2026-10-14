@@ -7418,5 +7418,8 @@
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
   "video_setting_pause_ocr_scope_off": "关闭",
   "manga_import_selection_batch_hint": "已选中 $n 卷，将逐卷各导入为一本，书名取各自的文件名或文件夹名。",
-  "external_book_open_failed": "无法打开 $name，请改从书架导入。"
+  "external_book_open_failed": "无法打开 $name，请改从书架导入。",
+  "external_book_open_existing": "打开已有",
+  "external_book_open_import_new": "作为新书导入",
+  "external_book_open_duplicate_message": "书架中已有《$name》。打开已有的那本，还是把这个文件作为新书导入（加序号后缀）？"
 }

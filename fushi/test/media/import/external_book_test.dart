@@ -15,6 +15,7 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:path/path.dart' as p;
@@ -136,6 +137,63 @@ void main() {
       expect(again.status, LibraryCtlImportStatus.skipped);
       expect(again.keys, first.keys, reason: '外部打开据这个 key 直接打开已在库那本、保留阅读进度');
       expect((await db.getEpubBookMetas()).length, 1);
+    });
+
+    // 审查发现：同名 ≠ 同一本（两部作品的 `01.cbz`）。外部打开有人在屏幕前，同名时
+    // 必须交给用户裁决，而不是凭标题替用户打开另一本书。
+    group('外部打开传 askOnDuplicate：同名交给用户', () {
+      late File book;
+      late List<String> asked;
+
+      setUp(() {
+        book = File(p.join(tmp.path, '01.txt'))..writeAsStringSync('本文。\n');
+        asked = <String>[];
+      });
+
+      LibraryCtlImporter asking(DuplicateChoice choice) => LibraryCtlImporter(
+        db: db,
+        galgameRepo: GalgameRepository(db),
+        isKindEnabled: (LibraryCtlKind _) => true,
+        keepDuplicates: false,
+        askOnDuplicate: (String title) async {
+          asked.add(title);
+          return choice;
+        },
+      );
+
+      test('选「打开已有」→ skipped 并带回已在库那本的 key', () async {
+        final LibraryCtlImportResult first = (await importer().importAll(
+          <String>[book.path],
+        )).single;
+        final LibraryCtlImportResult again = (await asking(
+          DuplicateChoice.cancel,
+        ).importAll(<String>[book.path])).single;
+        expect(asked, <String>['01']);
+        expect(again.status, LibraryCtlImportStatus.skipped);
+        expect(again.keys, first.keys);
+        expect((await db.getEpubBookMetas()).length, 1);
+      });
+
+      test('选「作为新书导入」→ 落一本带序号后缀的新书，key 与旧的不同', () async {
+        final LibraryCtlImportResult first = (await importer().importAll(
+          <String>[book.path],
+        )).single;
+        final LibraryCtlImportResult again = (await asking(
+          DuplicateChoice.suffix,
+        ).importAll(<String>[book.path])).single;
+        expect(
+          again.status,
+          LibraryCtlImportStatus.imported,
+          reason: again.message,
+        );
+        expect(again.keys, isNot(first.keys));
+        expect((await db.getEpubBookMetas()).length, 2);
+      });
+
+      test('库里没有同名书时不打扰用户', () async {
+        await asking(DuplicateChoice.cancel).importAll(<String>[book.path]);
+        expect(asked, isEmpty);
+      });
     });
 
     test('existingBookKeyForTitle：库里没有同名书 → null', () async {

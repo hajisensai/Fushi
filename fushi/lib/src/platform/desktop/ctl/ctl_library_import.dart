@@ -52,11 +52,16 @@ class LibraryCtlImporter {
     required bool Function(LibraryCtlKind kind) isKindEnabled,
     required bool keepDuplicates,
     Future<String?> Function(String path)? ingestVideoFile,
+    AskOnDuplicate? askOnDuplicate,
   }) : _ingestVideoFile = ingestVideoFile,
        _db = db,
        _galgameRepo = galgameRepo,
        _isKindEnabled = isKindEnabled,
-       _policy = keepDuplicates
+       // 有人在屏幕前（外部打开书）时交给用户裁决：同名不等于同一本书（两部作品
+       // 的 `01.cbz`），不能只凭标题就当成「已在库」。CLI 不传，仍是 skip / suffix。
+       _policy = askOnDuplicate != null
+           ? DuplicatePolicy.ask(askOnDuplicate)
+           : keepDuplicates
            ? const DuplicatePolicy.suffix()
            : const DuplicatePolicy.skip();
 
