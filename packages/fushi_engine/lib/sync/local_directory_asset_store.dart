@@ -44,6 +44,7 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
             name: p.basename(e.path),
             isFolder: e is Directory,
             sizeBytes: e is File ? e.lengthSync() : null,
+            modifiedAt: e.statSync().modified.millisecondsSinceEpoch,
           ),
     ];
   }

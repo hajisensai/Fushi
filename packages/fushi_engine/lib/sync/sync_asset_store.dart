@@ -7,6 +7,7 @@ class AssetEntry {
     required this.name,
     this.isFolder = false,
     this.sizeBytes,
+    this.modifiedAt,
   });
 
   /// 后端原生定位符：Drive/OneDrive 的不透明 id、WebDAV 的绝对 href、
@@ -21,6 +22,11 @@ class AssetEntry {
 
   /// 字节数；后端不提供时为 null（如 WebDAV PROPFIND 不返回大小）。
   final int? sizeBytes;
+
+  /// 服务端修改时间（毫秒，UTC），由各后端从列目录元数据映射；拿不到为 null。
+  /// SRS 同步用它做服务器时间 S（写探针文件再读回），见 docs/specs/2026-10-14-fushi-srs-design.md 铁律 F。
+  /// 注意：Nextcloud 等 WebDAV 允许客户端经 X-OC-MTime 自报修改时间，本仓写入不带这个头，所以仍是服务器时间。
+  final int? modifiedAt;
 }
 
 /// 单个文件传输的进度回调。
