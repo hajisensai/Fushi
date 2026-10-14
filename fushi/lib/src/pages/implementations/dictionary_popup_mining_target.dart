@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
+    show kDictionaryPopupTopActionIconSize;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -96,7 +98,12 @@ class DictionaryPopupMiningTargetButton extends ConsumerWidget {
           ),
       child: ConstrainedBox(
         constraints: constraints,
-        child: const Center(child: FushiIcon(FushiIcons.ankiCard, size: 20)),
+        child: const Center(
+          child: FushiIcon(
+            FushiIcons.ankiCard,
+            size: kDictionaryPopupTopActionIconSize,
+          ),
+        ),
       ),
     );
   }

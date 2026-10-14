@@ -30,7 +30,10 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
-    show DictionaryPopupToolGroup, dictionaryPopupTopActionConstraints;
+    show
+        DictionaryPopupToolGroup,
+        dictionaryPopupTopActionConstraints,
+        kDictionaryPopupTopActionIconSize;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -5155,7 +5158,8 @@ $liveConfigJs
       final AudioCue? cue = _lookupCue;
       final bool hasCue = cue != null;
       // 用户 10-09：顶栏按钮统一尺寸——每颗都用 [dictionaryPopupTopActionConstraints]
-      // （与左簇 A−/A+、右簇关闭同一个命中盒、同 20 的图标），不再各自 padding 凑大小。
+      // （与左簇 A−/A+、右簇关闭同一个命中盒、同一个 [kDictionaryPopupTopActionIconSize]
+      // 图标，BUG-3367），不再各自 padding 凑大小。
       // 整条顶栏（含本 header）的界面大小 / 词典字号缩放由 [DictionaryPopupLayer] 统一
       // 处理（topBarScale），这里不再套 ReaderChromeScaler：只缩 header 不缩两侧，
       // 中间的收藏按钮就和两侧大小不一。高度贴住按钮（不再额外 48 高 + 上下留白，
@@ -5169,7 +5173,7 @@ $liveConfigJs
           children: [
             FushiIconButton(
               icon: _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               enabledColor: _currentSentenceIsFavorited
                   ? theme.colorScheme.primary
                   : null,
@@ -5181,7 +5185,7 @@ $liveConfigJs
             if (hasAudio) ...[
               FushiIconButton(
                 icon: Icons.replay_outlined,
-                size: 20,
+                size: kDictionaryPopupTopActionIconSize,
                 onTap: hasCue
                     ? () {
                         final AudioCue? cue = _lookupCue;
@@ -5197,7 +5201,7 @@ $liveConfigJs
                 icon: ctrl.isPlaying
                     ? Icons.pause_outlined
                     : Icons.play_arrow_outlined,
-                size: 20,
+                size: kDictionaryPopupTopActionIconSize,
                 onTap: ctrl.togglePlayPause,
                 tooltip: ctrl.isPlaying ? t.pause : t.play,
                 constraints: actionBox,
@@ -5205,7 +5209,7 @@ $liveConfigJs
               ),
               FushiIconButton(
                 icon: Icons.play_circle_outline,
-                size: 20,
+                size: kDictionaryPopupTopActionIconSize,
                 onTap: hasCue
                     ? () {
                         final AudioCue? cue = _lookupCue;

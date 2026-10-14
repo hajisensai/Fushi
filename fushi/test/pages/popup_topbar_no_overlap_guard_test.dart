@@ -147,9 +147,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('mobile top action hit area is at least 44 (2026-10)', () {
-    expect(dictionaryPopupTopActionExtent(mobile: true),
-        greaterThanOrEqualTo(44));
+  test('top action extent: mobile 40, desktop 36 (BUG-3367)', () {
+    // BUG-3367：用户要求三组按钮「一样大、可以变小」，移动端由 44 收到 40。
+    expect(dictionaryPopupTopActionExtent(mobile: true), 40);
     // 桌面保持压缩顶栏的 36（design-2026-08）。
     expect(dictionaryPopupTopActionExtent(mobile: false), 36);
   });

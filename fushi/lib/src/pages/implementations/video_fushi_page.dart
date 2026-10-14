@@ -6096,7 +6096,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               key: const Key('video_popup_replay_cue_button'),
               tooltip: t.video_subtitle_replay,
               icon: Icons.replay,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabled: hasCue,
@@ -6107,7 +6107,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
               tooltip: t.video_subtitle_list_jump,
               icon: Icons.play_arrow,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabled: hasCue,
@@ -6120,7 +6120,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   key: const Key('video_popup_copy_sentence_button'),
                   tooltip: copied ? t.copied : t.copy,
                   icon: copied ? Icons.check : Icons.content_copy_outlined,
-                  size: 20,
+                  size: kDictionaryPopupTopActionIconSize,
                   constraints: actionBox,
                   padding: EdgeInsets.zero,
                   onTap: () {
@@ -6137,7 +6137,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               icon: _currentVideoSentenceIsFavorited
                   ? Icons.star
                   : Icons.star_border,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabledColor: _currentVideoSentenceIsFavorited

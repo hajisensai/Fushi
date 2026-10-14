@@ -853,10 +853,18 @@ class DictionaryPopupHistoryNav {
   final VoidCallback onForward;
 }
 
-/// 顶栏动作按钮的命中边长（2026-10 体验优化）：桌面 36（鼠标精确，压缩顶栏）；
-/// 移动端 44——触控目标下限，图标仍是 20，视觉不变、只是可点区域变大。
+/// 顶栏动作按钮的边长：桌面 36（鼠标精确，压缩顶栏）；移动端 40。
+///
+/// 这一个值同时是**三组**控件的可见尺寸——左簇按钮组胶囊高、中段宿主 header（收藏 /
+/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3367）。移动端此前是 44：44×（左簇
+/// 3 颗）的胶囊在手机宽度上把中段挤到放不下 4 颗，header 只能整体 scaleDown 到半大，
+/// 于是同一条顶栏出现三种尺寸；用户要求「做到一样大、可以变小」，收到 40。
 double dictionaryPopupTopActionExtent({required bool mobile}) =>
-    mobile ? 44 : 36;
+    mobile ? 40 : 36;
+
+/// 顶栏所有动作按钮（左簇 / 中段 header / 右簇关闭 / 溢出菜单 / 制卡目标）共用的图标
+/// 尺寸（BUG-3367）。宿主 header 也必须用它，不得各写各的 `size:`。
+const double kDictionaryPopupTopActionIconSize = 18;
 
 /// 顶栏所有动作按钮（左簇字号 / 导航、中段宿主 header 的收藏 / 有声书 / 视频句子动作、
 /// 右簇关闭）共用的命中盒（用户 10-09「中间的收藏句子按钮比其他按钮小一圈」）。宿主的
@@ -946,7 +954,7 @@ class _PopupScrolledUnderBar extends StatelessWidget {
 const double _kTopBarGroupGap = 6;
 const double _kTopBarInset = 6;
 
-/// [DictionaryPopupToolGroup] 胶囊的左右内边距（顶栏对称居中按它算簇宽）。
+/// [DictionaryPopupToolGroup] 胶囊的左右内边距。
 const double _kToolGroupHorizontalPadding = 2;
 
 /// 查词弹窗顶栏按钮组 / 关闭圆钮的 tonal 底色；玻璃设计系统与墨水屏不铺色（null）。
@@ -986,6 +994,52 @@ class DictionaryPopupToolGroup extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [_PopupTopBarLayout] 的三个槽。
+enum _PopupTopBarSlot { left, header, right }
+
+/// 查词弹窗顶栏布局（BUG-3367）：左簇钉行首、右簇钉行尾，[DictionaryPopupLayer.headerWidget]
+/// 拿两簇之间（各留 [gap]）的全部剩余宽，优先相对整条顶栏居中，放不下居中位置时夹在
+/// 剩余区内——永不压到两簇（BUG-822 / BUG-826），也不因对称预留被无谓地缩小。
+class _PopupTopBarLayout extends MultiChildLayoutDelegate {
+  _PopupTopBarLayout({required this.gap});
+
+  final double gap;
+
+  @override
+  void performLayout(Size size) {
+    final BoxConstraints loose = BoxConstraints.loose(size);
+    final Size left = layoutChild(_PopupTopBarSlot.left, loose);
+    final Size right = layoutChild(_PopupTopBarSlot.right, loose);
+    positionChild(
+      _PopupTopBarSlot.left,
+      Offset(0, (size.height - left.height) / 2),
+    );
+    positionChild(
+      _PopupTopBarSlot.right,
+      Offset(size.width - right.width, (size.height - right.height) / 2),
+    );
+    if (!hasChild(_PopupTopBarSlot.header)) return;
+    final double start = left.width > 0 ? left.width + gap : 0;
+    final double end = size.width - (right.width > 0 ? right.width + gap : 0);
+    final double available = math.max(0, end - start);
+    final Size header = layoutChild(
+      _PopupTopBarSlot.header,
+      BoxConstraints(maxWidth: available, maxHeight: size.height),
+    );
+    final double centred = (size.width - header.width) / 2;
+    final double x = centred
+        .clamp(start, math.max(start, end - header.width))
+        .toDouble();
+    positionChild(
+      _PopupTopBarSlot.header,
+      Offset(x, (size.height - header.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_PopupTopBarLayout oldDelegate) => oldDelegate.gap != gap;
 }
 
 /// 顶栏溢出菜单里的动作。
@@ -1531,6 +1585,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 被夹到剩余宽，绝不抛无界宽异常；同时保住 [ReaderChromeScaler] 需要的有界宽（UI 缩放
   /// 不失效）。header 缺省（app 外覆盖窗）时中段退化成 [Spacer]，行为与旧的「只有 A−/A+ +
   /// 关闭」一致。
+  ///
+  /// BUG-3367：三段排布现由 [_PopupTopBarLayout] 完成（语义同上：两簇钉两端、header 拿
+  /// 两簇之间的有界宽，能相对整条顶栏居中就居中），三组控件共用同一边长与图标尺寸。
   Widget? _buildTopBar(BuildContext context) {
     if (headerWidget == null &&
         onClose == null &&
@@ -1588,7 +1645,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       if (onBack != null)
         FushiIconButton(
           icon: Icons.arrow_back,
-          size: 20,
+          size: kDictionaryPopupTopActionIconSize,
           tooltip: backTooltip,
           constraints: _topActionConstraints,
           padding: EdgeInsets.zero,
@@ -1598,7 +1655,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         FushiIconButton(
           key: const ValueKey<String>('popup_history_back'),
           icon: Icons.arrow_back,
-          size: 20,
+          size: kDictionaryPopupTopActionIconSize,
           tooltip: t.popup_history_back,
           constraints: _topActionConstraints,
           padding: EdgeInsets.zero,
@@ -1608,7 +1665,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         FushiIconButton(
           key: const ValueKey<String>('popup_history_forward'),
           icon: Icons.arrow_forward,
-          size: 20,
+          size: kDictionaryPopupTopActionIconSize,
           tooltip: t.popup_history_forward,
           constraints: _topActionConstraints,
           padding: EdgeInsets.zero,
@@ -1627,9 +1684,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       // 用户建议 #fiwDIpFep7：制卡目标（配置 / 牌组）就地切换，紧凑档也保留——
       // 它是一颗菜单键，本身就是「收起」形态。
       if (showMiningTargetSwitch)
-        DictionaryPopupMiningTargetButton(
-          constraints: _topActionConstraints,
-        ),
+        DictionaryPopupMiningTargetButton(constraints: _topActionConstraints),
     ];
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
@@ -1647,62 +1702,47 @@ class DictionaryPopupLayer extends StatelessWidget {
     final Widget rightCluster = onClose != null
         ? FushiIconButton(
             icon: Icons.close,
-            size: 20,
+            size: kDictionaryPopupTopActionIconSize,
             backgroundColor: dictionaryPopupToolGroupColor(context),
             tooltip: t.dialog_close,
             constraints: _topActionConstraints,
             // 底色画在 padding 盒上：内边距补到整个命中区，tonal 圆与命中区同大。
-            padding: EdgeInsets.all((_topActionExtent - 20) / 2),
+            padding: EdgeInsets.all(
+              (_topActionExtent - kDictionaryPopupTopActionIconSize) / 2,
+            ),
             onTap: onClose,
           )
         : const SizedBox.shrink();
 
-    // 中段：header 相对**整条顶栏**居中（用户 10-09「中间的收藏句子按钮没居中」）。
-    // 旧实现把 header 放进「左簇与右簇之间的剩余宽度」里居中：左簇（A−/A+ 两颗）比右簇
-    // （关闭一颗）宽，剩余区的中心就整体偏右半个按钮。现在两侧按较宽的一簇对称预留，
-    // header 落在对称区间里居中，仍永不压到两侧按钮（BUG-822 的不重叠不变式不变）；
-    // 收缩照旧交给内容侧（FittedBox scaleDown）。簇宽由按钮个数 × 命中盒确定，是确定值。
-    final double extent = _topActionExtent;
-    double groupWidth(int buttons) =>
-        buttons == 0 ? 0 : buttons * extent + 2 * _kToolGroupHorizontalPadding;
-    final double leftWidth =
-        (navButtons.isEmpty
-            ? 0
-            : groupWidth(navButtons.length) + _kTopBarGroupGap) +
-        groupWidth(textButtons.length);
-    final double rightWidth = onClose != null ? extent : 0;
-    final double sideReserve =
-        math.max(leftWidth, rightWidth) + _kTopBarGroupGap;
-
-    final Widget buttonsRow = Row(
-      children: <Widget>[leftCluster, const Spacer(), rightCluster],
-    );
+    // 中段：header 相对**整条顶栏**居中（用户 10-09「中间的收藏句子按钮没居中」），
+    // 放不下时向两簇之间的剩余区滑动，而不是缩小（BUG-3367）。
+    //
+    // 10-09 的实现按「较宽一簇」两侧对称预留，header 只拿到 `宽 − 2×左簇宽`：手机上左簇
+    // 是 A− / A+ / 制卡目标三颗，对称预留把中段压到放不下 4 颗，header 的 FittedBox 只好
+    // 整体 scaleDown 到一半大——同一条顶栏出现三种尺寸（用户 iOS 截图）。现在由
+    // [_PopupTopBarLayout] 给 header 「左簇与右簇之间」的全部剩余宽，能居中就居中，
+    // 不能就夹在剩余区内；只有连剩余区都放不下时才轮到内容侧 FittedBox 收缩。
+    // BUG-822 / BUG-826 的不重叠不变式不变（header 永远落在两簇之间）。
     final Widget bar = Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: _kTopBarInset,
         vertical: _kTopBarInset / 2,
       ),
-      child: headerWidget == null
-          ? buttonsRow
-          : Stack(
-              alignment: Alignment.center,
-              children: <Widget>[
-                buttonsRow,
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: sideReserve),
-                  child: Center(child: headerWidget),
-                ),
-              ],
-            ),
+      child: CustomMultiChildLayout(
+        delegate: _PopupTopBarLayout(gap: _kTopBarGroupGap),
+        children: <Widget>[
+          LayoutId(id: _PopupTopBarSlot.left, child: leftCluster),
+          LayoutId(id: _PopupTopBarSlot.right, child: rightCluster),
+          if (headerWidget != null)
+            LayoutId(id: _PopupTopBarSlot.header, child: headerWidget!),
+        ],
+      ),
     );
 
-    // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的
-    // [_topActionConstraints] 按钮 + 上下各 [_kTopBarInset]/2 的留白（M3E 按钮组胶囊
-    // 不贴弹窗边）；有 header 时高度由 header 自身（[ReaderChromeScaler] 跟随 UI 缩放）
-    // 决定。
-    return headerWidget == null
-        ? SizedBox(height: _topActionExtent + _kTopBarInset, child: bar)
-        : bar;
+    // 顶栏高度 = 按钮边长 + 上下各 [_kTopBarInset]/2 的留白，有无 header 一致：中段
+    // header 的按钮与两簇共用 [dictionaryPopupTopActionConstraints]（同一个边长），
+    // 三组胶囊 / 圆钮同高（BUG-3367）。
+    return SizedBox(height: _topActionExtent + _kTopBarInset, child: bar);
   }
 
   /// 溢出菜单项内容：图标 + 文字（菜单项本身已是 MD3 PopupMenuItem）。
@@ -1748,7 +1788,12 @@ class DictionaryPopupLayer extends StatelessWidget {
           ],
       child: ConstrainedBox(
         constraints: _topActionConstraints,
-        child: Center(child: const Icon(Icons.more_horiz, size: 20)),
+        child: const Center(
+          child: Icon(
+            Icons.more_horiz,
+            size: kDictionaryPopupTopActionIconSize,
+          ),
+        ),
       ),
     );
   }
@@ -1774,7 +1819,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         : label;
     return FushiIconButton(
       icon: zoomIn ? Icons.text_increase : Icons.text_decrease,
-      size: 20,
+      size: kDictionaryPopupTopActionIconSize,
       tooltip: message,
       constraints: _topActionConstraints,
       padding: EdgeInsets.zero,
