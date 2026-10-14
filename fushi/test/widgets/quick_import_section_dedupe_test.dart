@@ -5,15 +5,17 @@ import 'package:fushi/src/media/import/quick_import_section.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 库页「导入」视图：拖放区已画成按钮的入口（`actions` 的第一个与最后一个）
-/// 不再在下方「导入方式」网格里重复出现（用户 2026-10-14 截图：视频页
-/// 「导入视频」「导入文件夹」各出现两次）。
+/// 库页「导入」视图：所有导入入口都并进拖放区的一排按钮，页面上每个入口只
+/// 出现一次（用户 2026-10-14：原先下方另有「导入方式」卡片网格，视频页的
+/// 「导入视频」「导入文件夹」各出现两次；随后拍板把 IPTV / 网络也并进按钮行）。
 void main() {
-  QuickImportAction action(String label) => QuickImportAction(
-    icon: FushiIcons.folder,
-    label: label,
-    onTap: () async {},
-  );
+  QuickImportAction action(String label, {String? description}) =>
+      QuickImportAction(
+        icon: FushiIcons.folder,
+        label: label,
+        description: description,
+        onTap: () async {},
+      );
 
   Future<void> pump(
     WidgetTester tester, {
@@ -38,7 +40,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('视频：拖放区两个按钮不进网格，网格只剩 IPTV 与网络', (WidgetTester tester) async {
+  /// 按钮行里各按钮标签的从左到右顺序。
+  List<String> buttonOrder(WidgetTester tester, List<String> labels) {
+    final List<String> sorted = List<String>.of(labels)
+      ..sort(
+        (String a, String b) => tester
+            .getTopLeft(find.text(a))
+            .dx
+            .compareTo(tester.getTopLeft(find.text(b)).dx),
+      );
+    return sorted;
+  }
+
+  testWidgets('视频：四个入口都在按钮行里，各出现一次，文件夹紧跟主按钮', (WidgetTester tester) async {
     await pump(
       tester,
       actions: <QuickImportAction>[
@@ -46,17 +60,26 @@ void main() {
         action('import-iptv'),
         action('import-folder'),
       ],
-      extraActions: <QuickImportAction>[action('network')],
+      extraActions: <QuickImportAction>[
+        action('network', description: 'webdav-remote'),
+      ],
     );
 
-    for (final String label in <String>[
+    const List<String> labels = <String>[
       'import-video',
       'import-iptv',
       'import-folder',
       'network',
-    ]) {
+    ];
+    for (final String label in labels) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
+    expect(buttonOrder(tester, labels), <String>[
+      'import-video',
+      'import-folder',
+      'import-iptv',
+      'network',
+    ]);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey<String>('quick-import-primary')),
@@ -71,29 +94,39 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 「导入方式」卡片网格已整体移除：每个入口都只是按钮行里的按钮。
+    for (final String label in labels) {
+      expect(
+        find.descendant(
+          of: find.byType(FushiFilledButton),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+        reason: label,
+      );
+    }
+    // 原卡片上的说明挂成按钮提示，不再画成正文。
+    expect(find.text('webdav-remote'), findsNothing);
+    expect(find.byTooltip('webdav-remote'), findsOneWidget);
   });
 
-  testWidgets('书 / 漫画：只有两个入口时网格只放网络来源', (WidgetTester tester) async {
+  testWidgets('书 / 漫画：导入 → 导入文件夹 → 网络', (WidgetTester tester) async {
     await pump(
       tester,
       actions: <QuickImportAction>[action('import-file'), action('folder')],
       extraActions: <QuickImportAction>[action('network')],
     );
 
-    expect(find.text('import-file'), findsOneWidget);
-    expect(find.text('folder'), findsOneWidget);
-    expect(find.text('network'), findsOneWidget);
-    expect(find.text(t.import_methods_title), findsOneWidget);
+    const List<String> labels = <String>['import-file', 'folder', 'network'];
+    for (final String label in labels) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    expect(buttonOrder(tester, labels), labels);
   });
 
-  testWidgets('没有剩余入口时整个「导入方式」区不出现', (WidgetTester tester) async {
-    await pump(
-      tester,
-      actions: <QuickImportAction>[action('import-file'), action('folder')],
-    );
+  testWidgets('没有入口时整块不画', (WidgetTester tester) async {
+    await pump(tester, actions: const <QuickImportAction>[]);
 
-    expect(find.text('import-file'), findsOneWidget);
-    expect(find.text('folder'), findsOneWidget);
-    expect(find.text(t.import_methods_title), findsNothing);
+    expect(find.text(t.import_drop_zone_title), findsNothing);
   });
 }

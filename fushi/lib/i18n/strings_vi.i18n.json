@@ -6652,7 +6652,6 @@
   "import_drop_zone_title": "Add to your library",
   "import_drop_zone_hint": "Choose files or a folder. You can also drag files straight onto the library page.",
   "import_supported_formats": "Supported formats",
-  "import_methods_title": "Ways to import",
   "media_source_list_empty": "No library sources yet. Add a folder or a network share and it will be scanned automatically.",
   "online_sources_pinned_header": "Pinned",
   "online_sources_all_header": "All sources",
