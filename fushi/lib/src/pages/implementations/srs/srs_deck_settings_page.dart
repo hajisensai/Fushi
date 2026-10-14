@@ -1,5 +1,6 @@
 /// 牌组设置：名称、每日上限、目标记忆率、学习 / 重学步长；「高级」默认收起：排程算法、
-/// 自动优化、最大间隔、参数继承与「立即重排整组」。
+/// 自动优化（上次优化时间与 log loss、「立即优化」「恢复默认参数」）、最大间隔、参数继承与
+/// 「立即重排整组」。
 ///
 /// 只写真正改动过的键（与物化视图逐项比较），没碰过的设置不产生修改记录——否则
 /// 每打开保存一次就在同步里多一批与默认值相同的记录，还会无谓地和别的设备冲突。
@@ -11,8 +12,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/srs/srs_app_runtime.dart';
+import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -40,6 +44,15 @@ String _formatSteps(List<double> steps) => steps
     .map((double s) => s == s.roundToDouble() ? '${s.round()}' : '$s')
     .join(' ');
 
+String _two(int v) => v.toString().padLeft(2, '0');
+
+/// 「上次优化」的时刻（本地时区，`yyyy-MM-dd HH:mm`）。
+String srsFormatOptimizedAt(int ms) {
+  final DateTime d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+  return '${d.year}-${_two(d.month)}-${_two(d.day)} '
+      '${_two(d.hour)}:${_two(d.minute)}';
+}
+
 String _algorithmLabel(SrsAlgorithm a) => switch (a) {
   SrsAlgorithm.fsrs7 => 'FSRS-7',
   SrsAlgorithm.fsrs6 => 'FSRS-6',
@@ -62,6 +75,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _hasParent = false;
   bool _loading = true;
   bool _saving = false;
+  bool _optimizing = false;
   Object? _error;
 
   /// 本牌组上「被另一台设备覆盖」的设置键。
@@ -250,6 +264,136 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     if (!mounted) return;
     bumpSrsRevision(ref);
     FushiToast.show(msg: t.srs_settings_rescheduled(n: n));
+  }
+
+  /// 「立即优化」：只跑本牌组所属的参数组；跳过样本门槛与触发基线（用户显式要求），
+  /// 新参数在同一份数据上不比当前好就不采用（与自动优化同一条采用判据）。
+  Future<void> _optimizeNow() async {
+    final SrsAppRuntime? runtime = ref.read(srsAppRuntimeProvider);
+    if (runtime == null || _optimizing) return;
+    setState(() => _optimizing = true);
+    try {
+      final SrsOptimizationRound? round = await runtime.optimizer.runNow(
+        onlyDeckId: widget.deckId,
+        force: true,
+      );
+      if (!mounted) return;
+      if (round == null) {
+        FushiToast.show(msg: t.srs_engine_unavailable);
+      } else if (round.applied.isEmpty) {
+        FushiToast.show(msg: t.srs_settings_optimize_not_enough);
+      } else if (round.applied.any((SrsOptimizationResult r) => r.adopted)) {
+        FushiToast.show(
+          msg: t.srs_settings_optimize_done,
+          severity: ToastSeverity.success,
+        );
+      } else {
+        FushiToast.show(msg: t.srs_settings_optimize_kept);
+      }
+      bumpSrsRevision(ref);
+      await _load();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsDeckSettingsPage.optimize', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    } finally {
+      if (mounted) setState(() => _optimizing = false);
+    }
+  }
+
+  /// 「恢复默认参数」：清掉当前算法的参数组，触发基线重置为「此刻 + 当前有效复习条数」。
+  Future<void> _resetParams() async {
+    final SrsDbStore? store = _store;
+    final SrsDeckView? owner = _owner;
+    if (store == null || owner == null) return;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_settings_reset_params,
+      message: t.srs_settings_reset_params_confirm,
+      confirmLabel: t.srs_settings_reset_params,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.restart,
+    );
+    if (!ok || !mounted) return;
+    try {
+      final SrsOptimizationInput? input = await srsPrepareOptimization(
+        store,
+        owner.id,
+      );
+      await srsResetParams(
+        store,
+        owner.id,
+        owner.localAlgorithm,
+        reviewCount: input?.reviewCount ?? 0,
+      );
+      if (!mounted) return;
+      bumpSrsRevision(ref);
+      FushiToast.show(
+        msg: t.srs_settings_reset_params_done,
+        severity: ToastSeverity.success,
+      );
+      await _load();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsDeckSettingsPage.resetParams', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    }
+  }
+
+  /// 参数组状态（上次优化时间与 log loss）+ 两个按钮。
+  List<Widget> _optimizationSection(BuildContext context) {
+    final SrsDeckView? owner = _owner;
+    if (owner == null) return const <Widget>[];
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final SrsParamSet? set = owner.paramSetFor(owner.localAlgorithm);
+    final int? at = set?.optimizedAt;
+    final double? loss = set?.logLoss;
+    final bool canOptimize =
+        !_optimizing &&
+        (_store?.canSchedule ?? false) &&
+        ref.watch(srsAppRuntimeProvider) != null;
+    return <Widget>[
+      Text(
+        at == null
+            ? t.srs_settings_optimize_never
+            : t.srs_settings_optimize_last(
+                time: srsFormatOptimizedAt(at),
+                loss: loss == null ? '—' : loss.toStringAsFixed(4),
+              ),
+        key: const ValueKey<String>('srs-settings-optimize-status'),
+        style: context.fushiType.bodySmall,
+      ),
+      SizedBox(height: tokens.spacing.gap),
+      Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiOutlinedButton.icon(
+            key: const ValueKey<String>('srs-settings-optimize-now'),
+            onPressed: canOptimize
+                ? () => srsRunLogged('SrsDeckSettings.optimize', _optimizeNow)
+                : null,
+            icon: _optimizing
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const FushiIcon(FushiIcons.modelTraining),
+            label: Text(
+              _optimizing
+                  ? t.srs_settings_optimize_running
+                  : t.srs_settings_optimize_now,
+            ),
+          ),
+          FushiOutlinedButton.icon(
+            key: const ValueKey<String>('srs-settings-reset-params'),
+            onPressed: _optimizing || set == null
+                ? null
+                : () => srsRunLogged('SrsDeckSettings.reset', _resetParams),
+            icon: const FushiIcon(FushiIcons.restart),
+            label: Text(t.srs_settings_reset_params),
+          ),
+        ],
+      ),
+    ];
   }
 
   FushiToolbarItem get _saveItem => FushiToolbarItem(
@@ -559,6 +703,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ),
       );
       add(_conflictNote(context, SrsFieldKeys.deckAutoOptimize));
+      final List<Widget> optimization = _optimizationSection(context);
+      if (optimization.isNotEmpty) {
+        add(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: optimization,
+          ),
+        );
+      }
     }
     add(
       _numberField(

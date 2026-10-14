@@ -32,6 +32,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -623,6 +624,10 @@ void main([List<String> args = const <String>[]]) {
         );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
+    // 复习模块（SRS，默认关）的常驻装配：模块开着时装上 AnkiConnect 兼容端点、同步
+    // 后置步骤与自动优化调度；关着时 provider 为 null，什么也不装（零开销）。开关切换
+    // 时 provider 随 srsModuleEnabledProvider 重建 / 销毁。
+    installSrsAppRuntime(container);
     // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
     // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
     unawaited(

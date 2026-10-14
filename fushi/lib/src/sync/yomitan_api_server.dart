@@ -62,6 +62,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/duplicate',
   '/api/anki/open',
   '/api/extension/favorite',
+  '/api/srs/term-status',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -116,6 +117,16 @@ class ExtensionFavoriteRequest {
 typedef ExtensionFavoriteHandler =
     Future<bool> Function(ExtensionFavoriteRequest request);
 
+/// 复习（Fushi SRS）给浏览器扩展弹窗的两个端点（`/api/srs/term-status`、
+/// `/api/srs/open`）。复习模块关着时供给器回 null → 两个端点 404。
+abstract interface class SrsExtensionApi {
+  /// 词状态回包（null = 复习库里没有这个词）。形状见 srs_term_status_bridge.dart。
+  Future<Map<String, Object?>?> termStatus(String expression, String reading);
+
+  /// 在 app 里打开这张卡。
+  Future<bool> openCard({required String cardId, String? noteId});
+}
+
 class YomitanApiServer {
   static final RegExp _lookupTraceIdPattern = RegExp(
     r'^[A-Za-z0-9._:-]{1,64}$',
@@ -144,6 +155,7 @@ class YomitanApiServer {
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
+    SrsExtensionApi? Function()? srsApiProvider,
     String? apiKey,
     bool allowLan = false,
     SrsAnkiConnectEndpoint? ankiConnectEndpoint,
@@ -172,6 +184,7 @@ class YomitanApiServer {
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
+       _srsApiProvider = srsApiProvider,
        _apiKey = apiKey,
        _allowLan = allowLan;
 
@@ -238,6 +251,9 @@ class YomitanApiServer {
   /// 扩展字幕外观「字体」下拉框的真源：app 字体目录 + 推荐字体下载
   /// （`/api/extension/fonts` / `fonts/file` / `fonts/download`）。未注入时三路 404。
   final ExtensionFontApi? _fontApi;
+
+  /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
+  final SrsExtensionApi? Function()? _srsApiProvider;
   final String? _apiKey;
   final bool _allowLan;
 
@@ -534,6 +550,10 @@ class YomitanApiServer {
         return _handleExtensionStudy(request);
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
+      case '/api/srs/term-status':
+        return _handleSrsTermStatus(request);
+      case '/api/srs/open':
+        return _handleSrsOpen(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
@@ -922,6 +942,43 @@ class YomitanApiServer {
     }
     final bool state = await handler(favorite);
     return jsonResponse(<String, dynamic>{'favorite': state});
+  }
+
+  /// 复习词状态（扩展弹窗的复习标记）：body `{expression, reading}` → `{status: null | {...}}`。
+  /// 复习模块关着时 404（扩展 shim 据此退避，不再每次查词都问）。
+  Future<shelf.Response> _handleSrsTermStatus(shelf.Request request) async {
+    final SrsExtensionApi? api = _srsApiProvider?.call();
+    if (api == null) return shelf.Response.notFound('SRS module off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? expression = body['expression'];
+    final Object? reading = body['reading'];
+    if (expression is! String || expression.trim().isEmpty) {
+      return shelf.Response(400, body: 'Missing expression');
+    }
+    final Map<String, Object?>? status = await api.termStatus(
+      expression,
+      reading is String ? reading : '',
+    );
+    return jsonResponse(<String, dynamic>{'status': status});
+  }
+
+  /// 扩展里点复习标记：body `{cardId, noteId?}` → `{opened: bool}`。模块关着时 404。
+  Future<shelf.Response> _handleSrsOpen(shelf.Request request) async {
+    final SrsExtensionApi? api = _srsApiProvider?.call();
+    if (api == null) return shelf.Response.notFound('SRS module off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? cardId = body['cardId'];
+    final Object? noteId = body['noteId'];
+    if (cardId is! String || cardId.isEmpty) {
+      return shelf.Response(400, body: 'Missing cardId');
+    }
+    final bool opened = await api.openCard(
+      cardId: cardId,
+      noteId: noteId is String && noteId.isNotEmpty ? noteId : null,
+    );
+    return jsonResponse(<String, dynamic>{'opened': opened});
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {

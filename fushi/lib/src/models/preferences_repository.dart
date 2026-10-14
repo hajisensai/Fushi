@@ -2827,6 +2827,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs' / 'both'（见 SrsMiningTarget）。
+  // 只有复习模块开着时才被读取；模块关着时制卡链路不看它。
+  String get srsMiningTarget =>
+      getPref('srs_mining_target', defaultValue: 'anki') as String;
+
+  Future<void> setSrsMiningTarget(String wire) async {
+    await setPref('srs_mining_target', wire);
+    notifyListeners();
+  }
+
   // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。没显式
   // 设过时取 videoClip（存量安装由 [settleMiningImageModeInstallDefault] 迁过来）。
   // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析 null / 未知值回退 videoClip

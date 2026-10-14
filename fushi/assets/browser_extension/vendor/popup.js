@@ -260,6 +260,86 @@ async function refreshRenderedMineStates(target) {
 }
 window.fushiRefreshMineStates = refreshRenderedMineStates;
 
+// Fushi 复习（SRS）词状态小标记（「复习中 · 3天后」/「新卡」/「已暂停」）。
+//
+// 与「已制卡 ✓ / 可制卡 +」是两件独立的事：✓ 问的是 Anki（duplicateCheck，bool
+// 契约不变），这里问的是 Fushi 自己的复习库（srsTermStatus，回 null 或
+// {queue, dueLabel, suspended, cardId, noteId, cardCount, tooltip}）。两边都有这个
+// 词时两个标记同时出现。
+//
+// 开关：app 内宿主注入 window.__fushiSrsEnabled（复习模块开 = true / 关 = false）。
+// **false 时既不渲染也不发任何桥调用**（模块关着 = 零开销）。浏览器扩展没有注入
+// 通道 → undefined → 照常问桥；扩展 shim 在服务端回 404（模块关）后会记住一段时间
+// 不再转发。文案（dueLabel / tooltip）由宿主本地化好再下发，本文件不带任何语言串。
+function applySrsStatusBadge(badge, status) {
+    const ok = status && typeof status === 'object' &&
+        typeof status.cardId === 'string' && status.cardId !== '';
+    badge.__fushiSrsStatus = ok ? status : null;
+    badge.classList.toggle('srs-status-hidden', !ok);
+    for (const kind of ['new', 'learning', 'review', 'suspended']) {
+        badge.classList.remove(`srs-status-${kind}`);
+    }
+    if (!ok) {
+        badge.textContent = '';
+        setInlineButtonTip(badge, '');
+        return;
+    }
+    const kind = status.suspended === true
+        ? 'suspended'
+        : status.queue === 'new'
+            ? 'new'
+            : status.queue === 'review' ? 'review' : 'learning';
+    badge.classList.add(`srs-status-${kind}`);
+    badge.textContent = String(status.dueLabel || '');
+    // 不用原生 title（离屏 WebView2 上会飞，BUG-842），走 DOM 自绘提示。
+    setInlineButtonTip(badge, String(status.tooltip || status.dueLabel || ''));
+}
+
+function createSrsStatusBadge(expression, reading) {
+    if (window.__fushiSrsEnabled === false) return null;
+    const bridge = window.flutter_inappwebview;
+    if (!bridge || typeof bridge.callHandler !== 'function') return null;
+    const badge = el('button', {
+        className: 'inline-action-button srs-status-badge srs-status-hidden',
+        type: 'button',
+        onclick: async (event) => {
+            event.stopPropagation();
+            const status = badge.__fushiSrsStatus;
+            if (!status || !status.cardId) return;
+            if (badge.dataset.busy === '1') return;
+            badge.dataset.busy = '1';
+            try {
+                await bridge.callHandler('srsOpenCard', {
+                    cardId: status.cardId,
+                    noteId: typeof status.noteId === 'string' ? status.noteId : '',
+                });
+            } catch (e) {
+                console.error('srsOpenCard failed', e);
+            } finally {
+                badge.dataset.busy = '';
+            }
+        },
+    });
+    const fetchStatus = () => bridge.callHandler(
+        'srsTermStatus', { expression: expression || '', reading: reading || '' });
+    badge.__fushiRefreshSrsStatus = async () => {
+        try {
+            invalidateEntryStateCheck(badge);
+            applySrsStatusBadge(badge, await fetchStatus());
+        } catch (e) {
+            // 纯装饰：失败保持现状。
+            console.error('refreshSrsStatus failed', e);
+        }
+    };
+    scheduleEntryStateCheck(
+        badge,
+        `srs\u0000${mineEntryKey(expression, reading)}`,
+        fetchStatus,
+        (status) => applySrsStatusBadge(badge, status),
+    );
+    return badge;
+}
+
 // BUG-1833 follow-up: favorite/Anki state is decoration for each result header,
 // not a prerequisite for revealing the dictionary card. A large lookup can
 // contain dozens of entry headers; firing both bridges while synchronously
@@ -4431,6 +4511,12 @@ function createEntryHeader(entry, idx) {
 
     buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
 
+    // Fushi 复习词状态（复习模块关着时为 null，既不渲染也不发桥调用）。
+    const srsBadge = createSrsStatusBadge(expression, reading);
+    if (srsBadge) {
+        buttonsContainer.appendChild(srsBadge);
+    }
+
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
     // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
     //
@@ -4706,6 +4792,10 @@ function createEntryHeader(entry, idx) {
                 // stuck disabled.
                 mineButton.dataset.mining = '';
                 mineButton.disabled = false;
+                // 制卡目标含 Fushi 复习时，这一下可能刚把卡写进复习库：重问一次词状态。
+                if (srsBadge) {
+                    srsBadge.__fushiRefreshSrsStatus();
+                }
             }
         }
     });

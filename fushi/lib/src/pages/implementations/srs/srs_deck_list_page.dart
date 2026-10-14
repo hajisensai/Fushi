@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -149,6 +150,42 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     );
   }
 
+  /// 低优先级动作（MD3 顶栏的 [FushiFloatingTopBar.overflow]：宽度够平铺、不够收进「⋯」；
+  /// Apple 导航栏由 [FushiPageHeader] 自己收）。
+  List<FushiToolbarItem> _secondaryItems() => <FushiToolbarItem>[
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_sync_now'),
+      icon: FushiIcons.sync,
+      label: t.srs_sync_now,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.syncNow',
+        () => openSrsSyncNow(ref.read(srsAppRuntimeProvider)?.syncNow),
+      ),
+    ),
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_history_import'),
+      icon: FushiIcons.history,
+      label: t.srs_history_import,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.historyImport',
+        () => openSrsMinedHistoryImport(context, ref),
+      ),
+    ),
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_export_apkg'),
+      icon: FushiIcons.upload,
+      label: t.srs_export_apkg,
+      onPressed: () =>
+          srsRunLogged('SrsDeckList.export', () => openSrsExport(context, ref)),
+    ),
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_day_boundary'),
+      icon: FushiIcons.schedule,
+      label: t.srs_day_boundary_title,
+      onPressed: () => srsRunLogged('SrsDeckList.day', _showDayBoundary),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
@@ -238,14 +275,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[_primaryItems(conflicts)],
-        overflow: <FushiToolbarItem>[
-          FushiToolbarItem(
-            key: const ValueKey<String>('srs_day_boundary'),
-            icon: FushiIcons.schedule,
-            label: t.srs_day_boundary_title,
-            onPressed: () => srsRunLogged('SrsDeckList.day', _showDayBoundary),
-          ),
-        ],
+        overflow: _secondaryItems(),
       ),
     );
   }
@@ -261,12 +291,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
             conflicts > 0,
         onTap: item.onPressed,
       ),
-    FushiIconButton(
-      key: const ValueKey<String>('srs_day_boundary'),
-      icon: FushiIcons.schedule,
-      tooltip: t.srs_day_boundary_title,
-      onTap: () => srsRunLogged('SrsDeckList.day', _showDayBoundary),
-    ),
+    for (final FushiToolbarItem item in _secondaryItems())
+      FushiIconButton(
+        key: item.key,
+        icon: item.icon,
+        tooltip: item.label,
+        onTap: item.onPressed,
+      ),
   ];
 
   Widget _buildBody(BuildContext context, AsyncValue<SrsDeckListData?> data) {

@@ -11,7 +11,9 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -19,6 +21,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -72,6 +76,27 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         fallbackRolloverHour: () => app.statDayResetHour,
       );
     });
+
+/// SRS 媒体根所在的支持目录（测试覆写成临时目录）。
+final Provider<Future<Directory> Function()> srsSupportRootProvider =
+    Provider<Future<Directory> Function()>(
+      (Ref ref) => AppPaths.supportRootDirectory,
+    );
+
+/// 当前 profile 的 SRS 媒体目录（`<support>/srs_media/<profileUid>/`）；模块关着时为 null。
+final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
+    FutureProvider<SrsMediaStore?>((Ref ref) async {
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      return SrsMediaStore(
+        SrsMediaStore.directoryFor(support, store.profileUid),
+      );
+    });
+
+/// 正在显示的复习页数量（复习页 initState +1 / dispose −1）。自动优化据此判断「在复习」，
+/// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
+final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
 
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(

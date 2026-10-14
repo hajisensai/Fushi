@@ -35,6 +35,7 @@ class YomitanApiServerManager {
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
+    SrsExtensionApi? Function()? srsApiProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -55,7 +56,8 @@ class YomitanApiServerManager {
         _onExtensionReport = onExtensionReport,
         _subtitleRegistryProvider = subtitleRegistryProvider,
         _extensionTestPageProvider = extensionTestPageProvider,
-        _fontApi = fontApi;
+        _fontApi = fontApi,
+        _srsApiProvider = srsApiProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -96,6 +98,8 @@ class YomitanApiServerManager {
   // 扩展字幕外观「字体」下拉框的真源（app 字体目录 + 推荐字体下载），透传给
   // [YomitanApiServer] 的 /api/extension/fonts* 三路。
   final ExtensionFontApi? _fontApi;
+  // 复习（SRS）扩展端点供给器，透传给 [YomitanApiServer]（模块关着时回 null → 404）。
+  final SrsExtensionApi? Function()? _srsApiProvider;
 
   YomitanApiServer? _server;
 
@@ -138,6 +142,7 @@ class YomitanApiServerManager {
       subtitleRegistryProvider: _subtitleRegistryProvider,
       extensionTestPageProvider: _extensionTestPageProvider,
       fontApi: _fontApi,
+      srsApiProvider: _srsApiProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
       ankiConnectEndpoint: _ankiConnectEndpoint,

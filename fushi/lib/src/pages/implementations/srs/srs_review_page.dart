@@ -95,11 +95,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void initState() {
     super.initState();
+    // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
+    srsActiveReviewSessions.value++;
     unawaited(_start());
   }
 
   @override
   void dispose() {
+    srsActiveReviewSessions.value--;
     _focusNode.dispose();
     super.dispose();
   }

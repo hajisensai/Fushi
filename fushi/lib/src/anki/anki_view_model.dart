@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
@@ -17,6 +18,10 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
@@ -631,7 +636,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final bool mineToServer =
       ref.watch(appProvider.select((AppModel m) => m.mineToServerEnabled));
   if (!mineToServer) {
-    return _withPendingQueue(ref, _withAutoReposition(ref, local));
+    return _withSrsMining(
+      ref,
+      _withPendingQueue(ref, _withAutoReposition(ref, local)),
+    );
   }
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
@@ -646,8 +654,43 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
   // 远端制卡的仓库 `supportsDeckReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
-  return _withPendingQueue(ref, _withAutoReposition(ref, remote));
+  return _withSrsMining(
+    ref,
+    _withPendingQueue(ref, _withAutoReposition(ref, remote)),
+  );
 });
+
+/// 最外层套上「挖词目标 = Fushi 复习 / 两者」（[SrsMiningAnkiRepository]）。
+///
+/// **只有复习模块开着、且目标不是「仅 Anki」时才包**：模块关着时链上根本没有这一层，
+/// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
+/// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列；
+/// 目标 = 两者时 Anki 那一半照旧走队列 / 自动重排。
+BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
+  if (!ref.watch(srsModuleEnabledProvider)) return repo;
+  final SrsMiningTarget target = ref.watch(
+    appProvider.select((AppModel m) => m.srsMiningTarget),
+  );
+  if (!target.includesSrs) return repo;
+  return SrsMiningAnkiRepository(
+    inner: repo,
+    target: () => target,
+    miner: () => _readSrsMiner(ref),
+  );
+}
+
+/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
+Future<SrsMiner?> _readSrsMiner(Ref ref) async {
+  try {
+    final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+    final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
+    if (store == null || media == null) return null;
+    return SrsMiner(store: store, media: media);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
+    return null;
+  }
+}
 
 /// 最外层套上「待发制卡队列」：后端不可达 / 批量模式时把卡冻结进队列而不是丢掉，
 /// 之后补发（见 [PendingMiningAnkiRepository]）。包在自动重排**外面**，补发进去的卡

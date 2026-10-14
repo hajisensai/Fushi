@@ -4,6 +4,31 @@
 function fushiShimT(key, params) {
   return (typeof window.fushiT === 'function') ? window.fushiT(key, params) : key;
 }
+
+// Fushi 复习（SRS）词状态：经 background.js 转发到 server /api/srs/term-status。
+// app 的复习模块关着时服务端回 404 → 记住一段时间不再转发（每次查词不白跑一趟 HTTP）；
+// 任何失败都 fail-soft 成 null（弹窗不显示复习标记），绝不阻断查词。
+var FUSHI_SRS_DISABLED_BACKOFF_MS = 60000;
+var fushiSrsDisabledUntil = 0;
+async function fushiSrsTermStatus(arg) {
+  if (Date.now() < fushiSrsDisabledUntil) return null;
+  try {
+    var a = arg || {};
+    var resp = await chrome.runtime.sendMessage({
+      type: 'srsTermStatus',
+      expression: a.expression || '',
+      reading: a.reading || '',
+    });
+    if (resp && resp.status === 404) {
+      fushiSrsDisabledUntil = Date.now() + FUSHI_SRS_DISABLED_BACKOFF_MS;
+      return null;
+    }
+    var status = resp && resp.ok && resp.data ? resp.data.status : null;
+    return status && typeof status === 'object' ? status : null;
+  } catch (_) {
+    return null;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -124,6 +149,23 @@ window.flutter_inappwebview = {
               reading: a.reading || '',
             });
             return !!(resp && resp.ok && resp.data && resp.data.duplicate === true);
+          } catch (_) {
+            return false;
+          }
+        })();
+      case 'srsTermStatus':
+        return fushiSrsTermStatus(args[0]);
+      case 'srsOpenCard':
+        // 点复习标记：让 app 打开那张卡（POST /api/srs/open）。失败只回 false，不打扰查词。
+        return (async function () {
+          try {
+            var o = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'srsOpenCard',
+              cardId: o.cardId || '',
+              noteId: o.noteId || '',
+            });
+            return !!(resp && resp.ok && resp.data && resp.data.opened === true);
           } catch (_) {
             return false;
           }

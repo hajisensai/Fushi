@@ -46,6 +46,8 @@ import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -71,6 +73,7 @@ import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -8196,6 +8199,13 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
+  // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
+  // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
+  SrsMiningTarget get srsMiningTarget =>
+      SrsMiningTarget.fromWire(_prefsRepo?.srsMiningTarget);
+  Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
+      prefsRepo.setSrsMiningTarget(target.wire);
+
   // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
       prefsRepo.videoMiningImageMode;
@@ -8814,8 +8824,22 @@ class AppModel with ChangeNotifier {
       _browserVideoStudyBridge ??=
           BrowserVideoStudyBridge(database: () => database);
 
+  /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
+  /// 注入，关着时为 null（Fushi API 根路径 404，不暴露）。运行中切换立即作用到在跑的
+  /// server，下次启动也带上。
+  SrsAnkiConnectEndpoint? _srsAnkiConnectEndpoint;
+
+  SrsAnkiConnectEndpoint? get srsAnkiConnectEndpoint => _srsAnkiConnectEndpoint;
+
+  set srsAnkiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _srsAnkiConnectEndpoint = endpoint;
+    _yomitanServerManager?.ankiConnectEndpoint = endpoint;
+  }
+
   YomitanApiServerManager _ensureYomitanManager() {
-    return _yomitanServerManager ??= YomitanApiServerManager(
+    final YomitanApiServerManager? existing = _yomitanServerManager;
+    if (existing != null) return existing;
+    return _yomitanServerManager = YomitanApiServerManager(
       lookupService: createRemoteLookupService(),
       // BUG-530：注入挖词/历史，让浏览器扩展在 yomitan-api server 上查词+制卡真正可用
       // （扩展被安装助手自动配置指向本 server 的 port/token）。
@@ -8878,6 +8902,8 @@ class AppModel with ChangeNotifier {
       // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
       // FontDownloadService，扩展装的字体在 app 里立刻可用。
       fontApi: BrowserExtensionFontCatalog(this),
+      // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
+      srsApiProvider: () => SrsAppHost.current,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
@@ -8885,7 +8911,7 @@ class AppModel with ChangeNotifier {
             FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
-    );
+    )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 
   /// BUG-3141：浏览器扩展查词弹窗收藏的 app 侧实现（`/api/extension/favorite`）。

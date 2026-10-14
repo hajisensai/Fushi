@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/utils.dart';
 
 SettingsDestination buildCardCreationDestination() {
@@ -95,6 +96,14 @@ SettingsDestination buildCardCreationDestination() {
       ),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
+      // 挖词目标（Anki / Fushi 复习 / 两者）：只在复习模块开着时存在。
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.srs_mining_target',
+        visible: (SettingsContext c) => c.ref.watch(srsModuleEnabledProvider),
+        title: t.srs_mining_target_title,
+        subtitle: t.srs_mining_target_hint,
+        hasRevealTarget: true,
+      ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.batch_mining',
         title: t.anki_batch_mining_title,

@@ -190,6 +190,47 @@ typedef SyncReportCallback = void Function(
 /// UI-agnostic; AppModel uses this hook to refresh caches and visible shelves.
 typedef SyncPostRunCallback = Future<void> Function(SyncRunReport report);
 
+/// 一条同步通道**完整同步成功**之后，在同一把同步互斥锁里、用同一个已认证后端
+/// 追加跑的步骤（复习模块的 SRS 同步，见 `srs_sync_scheduler.dart`）。
+typedef SyncChannelPostRunHook = Future<void> Function(SyncBackend backend);
+
+/// 当前装着的通道后置步骤。**null = 不跑任何东西**：复习模块关着时 SRS 不装它，
+/// 常规同步与没有复习模块时逐字节一致。步骤自己抛的异常只记日志，不影响这条
+/// 通道的同步结局（SRS 失败不能让书 / 视频同步被判失败）。
+SyncChannelPostRunHook? syncChannelPostRunHook;
+
+/// 在同步互斥锁里，对每条**已认证**的同步通道（云备份 + 互联，见
+/// [enabledSyncChannelBackends]）跑一次 [body]。一条通道都没配置 / 认证时什么也不做，
+/// 返回 0。一条通道抛错只记账，其余通道照跑（与 BUG-1552 同一条纪律）。
+///
+/// 给不经完整同步编排、只想用现有后端做一件事的调用方用（复习 tab 进入时的 SRS
+/// 同步、牌组列表「立即同步」）。返回实际跑过 [body] 的通道数。
+Future<int> runOnAuthenticatedSyncChannels({
+  required FushiDatabase db,
+  required Future<void> Function(SyncBackend backend) body,
+}) =>
+    _autoSyncMutex.withLock(() async {
+      final SyncRepository repo = SyncRepository(db);
+      int ran = 0;
+      for (final SyncChannel channel
+          in await enabledSyncChannelBackends(repo)) {
+        try {
+          final SyncBackend backend = channel.backend;
+          await backend.restoreAuth(repo);
+          if (!await backend.isAuthenticated) continue;
+          await body(backend);
+          ran++;
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+            'runOnAuthenticatedSyncChannels(interconnect=${channel.isInterconnect})',
+            e,
+            stack,
+          );
+        }
+      }
+      return ran;
+    });
+
 @visibleForTesting
 void logSyncReportErrors(SyncRunReport report) {
   if (report.errors.isEmpty) return;
@@ -442,7 +483,16 @@ Future<SyncRunReport?> _runSyncChannelInner({
     onLocalAudioImported: onLocalAudioImported,
     onProgress: onProgress,
   );
-  return orchestrator.run();
+  final SyncRunReport report = await orchestrator.run();
+  final SyncChannelPostRunHook? postRun = syncChannelPostRunHook;
+  if (postRun != null) {
+    try {
+      await postRun(backend);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('syncChannelPostRunHook', e, stack);
+    }
+  }
+  return report;
 }
 
 void triggerAutoSyncAfterClose({
