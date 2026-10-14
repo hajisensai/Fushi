@@ -32,6 +32,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
         kMangaCoverCacheMaxDays,
         kMangaCoverCacheMinDays;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
+    show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
@@ -3933,12 +3935,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 0 自动；桌面可手动选择 1～4 个跨书 OCR 任务。
+  /// 0 自动；桌面可手动选择跨书 OCR 任务数。存储只按硬顶截断，本机实际上限
+  /// （按核数推导）由 `resolveMangaOcrJobConcurrency` 在排队时再收——偏好会随
+  /// 备份 / 同步到核数更少的机器上，不能在这里按本机核数截掉。
   int get mangaOcrParallelTasks =>
-      (getPref('manga_ocr_parallel_tasks', defaultValue: 0) as int).clamp(0, 4);
+      (getPref('manga_ocr_parallel_tasks', defaultValue: 0) as int)
+          .clamp(0, kMangaOcrMaxSelectableTasks);
 
   Future<void> setMangaOcrParallelTasks(int value) async {
-    await setPref('manga_ocr_parallel_tasks', value.clamp(0, 4));
+    await setPref(
+      'manga_ocr_parallel_tasks',
+      value.clamp(0, kMangaOcrMaxSelectableTasks),
+    );
     notifyListeners();
   }
 

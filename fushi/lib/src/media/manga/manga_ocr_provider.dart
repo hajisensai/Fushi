@@ -77,6 +77,7 @@ final Provider<MangaOcrJobRegistry> mangaOcrJobRegistryProvider =
             requestedTasks: appModel.isInitialised
                 ? appModel.mangaOcrParallelTasks
                 : 0,
+            maxTasks: hostMangaOcrMaxParallelTasks(),
           );
         },
       );

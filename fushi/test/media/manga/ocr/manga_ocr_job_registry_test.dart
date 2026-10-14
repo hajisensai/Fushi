@@ -11,6 +11,9 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
+import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart'
+    show ocrIntraOpNumThreads;
+import 'package:fushi_engine/ocr/ocr_inference.dart' show OcrPlatform;
 
 /// 可观察取消的底层事件流：`cancelled` 为 true 才代表执行器真的收到了中止。
 class _FakeSource {
@@ -602,6 +605,53 @@ void main() {
       expect(desktop(4), 1);
       expect(desktop(8), 2);
       expect(desktop(32), 2);
+    });
+
+    test('手动档超过 4 时按本机上限收，不再写死 4', () {
+      int manual(int requested, int maxTasks) => resolveMangaOcrJobConcurrency(
+        isMobile: false,
+        lowMemoryMode: false,
+        processors: 16,
+        requestedTasks: requested,
+        maxTasks: maxTasks,
+      );
+      expect(manual(8, 8), 8);
+      expect(manual(12, 8), 8, reason: '从核数更多的机器同步来的选择按本机上限收');
+    });
+  });
+
+  group('mangaOcrMaxParallelTasks（按每任务线程数推导）', () {
+    test('Windows 每任务 2 线程：上限 = 逻辑核 / 2，至少 4、至多硬顶', () {
+      int windows(int processors) => mangaOcrMaxParallelTasks(
+        processors: processors,
+        threadsPerJob: ocrIntraOpNumThreads(
+          platform: OcrPlatform.windows,
+          processorCount: processors,
+        ),
+      );
+      expect(windows(4), kMangaOcrMinSelectableTasks);
+      expect(windows(8), 4);
+      expect(windows(16), 8);
+      expect(windows(24), 12);
+      expect(windows(64), kMangaOcrMaxSelectableTasks);
+    });
+
+    test('ORT 默认吃满核的平台多开只会互抢，保持 4', () {
+      for (final OcrPlatform platform in <OcrPlatform>[
+        OcrPlatform.macos,
+        OcrPlatform.linux,
+      ]) {
+        expect(
+          mangaOcrMaxParallelTasks(
+            processors: 32,
+            threadsPerJob: ocrIntraOpNumThreads(
+              platform: platform,
+              processorCount: 32,
+            ),
+          ),
+          kMangaOcrMinSelectableTasks,
+        );
+      }
     });
   });
 }

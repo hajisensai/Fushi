@@ -11,6 +11,8 @@ import 'package:fushi/src/media/manga/external_mokuro_runner.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
+    show hostMangaOcrMaxParallelTasks;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
@@ -146,6 +148,9 @@ class _MangaOcrSettingsSectionState
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
   late int _parallelTasks;
+
+  /// 本机手动档上限（逻辑核 / 每任务线程数，见 `mangaOcrMaxParallelTasks`）。
+  late int _maxParallelTasks;
   late MangaOcrLocalModel _localModel;
   late String _lensLanguage;
   late MangaAiOcrMode _aiMode;
@@ -212,7 +217,9 @@ class _MangaOcrSettingsSectionState
     _aiMode = _aiModeChosen
         ? MangaAiOcrMode.fromStorageKey(storedAiMode)
         : MangaAiOcrMode.lowConfidence;
-    _parallelTasks = (widget.parallelTasksGetter?.call() ?? 0).clamp(0, 4);
+    _maxParallelTasks = hostMangaOcrMaxParallelTasks();
+    _parallelTasks =
+        (widget.parallelTasksGetter?.call() ?? 0).clamp(0, _maxParallelTasks);
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
@@ -1215,7 +1222,7 @@ class _MangaOcrSettingsSectionState
       info: t.manga_ocr_parallel_tasks_desc,
       options: <MangaPanelOption<int>>[
         MangaPanelOption<int>(value: 0, label: t.manga_ocr_parallel_auto),
-        for (int count = 1; count <= 4; count++)
+        for (int count = 1; count <= _maxParallelTasks; count++)
           MangaPanelOption<int>(value: count, label: '$count'),
       ],
       selected: _parallelTasks,
