@@ -621,6 +621,9 @@ class _MediaCollectionGridDetailPageState
 
   // ── 构建 ──────────────────────────────────────────────────────────────
 
+  /// AppBar 动作收纳的回差状态（见 [FushiHeaderOverflowFit]）。
+  final FushiHeaderOverflowFit _appBarActionsFit = FushiHeaderOverflowFit();
+
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
   PreferredSizeWidget _buildAppBar(
     double availableWidth,
@@ -633,33 +636,36 @@ class _MediaCollectionGridDetailPageState
         duration: fushiMotionDuration(context, FushiMotion.short),
         child: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
-      // BUG-1184：窄屏把次要动作收进溢出菜单，给合集名让出宽度。
-      actions: narrowAwareAppBarActions(
-        availableWidth: availableWidth,
-        collapsible: <FushiAppBarAction>[
-          FushiAppBarAction(
+      // BUG-1184：放不下时按优先级逐颗把动作收进 ⋯，给合集名让出宽度；判据与
+      // 页头同一套（[fushiResolveHeaderActions]），宽度取这条 AppBar 的局部约束。
+      actions: fushiResolveHeaderActions(
+        context,
+        actions: <Widget>[
+          FushiIconButton(
             icon: FushiIcons.rename,
-            label: t.rename_collection,
-            onPressed: renameDetailCollection,
+            tooltip: t.rename_collection,
+            onTap: renameDetailCollection,
           ),
-          FushiAppBarAction(
+          FushiIconButton(
             icon: FushiIcons.tag,
-            label: t.collection_detail_edit_tags,
-            onPressed: _editCollectionTags,
+            tooltip: t.collection_detail_edit_tags,
+            onTap: _editCollectionTags,
           ),
           if (_sort != CollectionMemberSort.manual)
-            FushiAppBarAction(
+            FushiIconButton(
               icon: FushiIcons.download,
-              label: t.collection_detail_save_order,
-              onPressed: () => _saveViewOrder(arranged),
+              tooltip: t.collection_detail_save_order,
+              onTap: () => _saveViewOrder(arranged),
             ),
-          FushiAppBarAction(
+          FushiIconButton(
             icon: FushiIcons.delete,
-            label: t.delete_collection,
-            onPressed: _delete,
+            tooltip: t.delete_collection,
+            onTap: _delete,
           ),
         ],
-      ),
+        budget: fushiAppBarActionsBudget(context, availableWidth),
+        fit: _appBarActionsFit,
+      ).items,
     );
   }
 

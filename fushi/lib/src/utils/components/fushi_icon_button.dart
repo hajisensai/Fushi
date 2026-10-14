@@ -97,8 +97,22 @@ class FushiIconButton extends StatefulWidget {
     this.focusId,
     this.label,
     this.selected = false,
+    this.overflowPriority = 0,
+    this.alwaysVisible = false,
     super.key,
   });
+
+  /// 在页头 / 顶栏动作行里的重要程度（越大越晚被收进「⋯」溢出菜单）。
+  ///
+  /// 页面只声明动作与重要程度，摆放由动作行决定（见
+  /// `fushiResolveHeaderActions`）：放不下时先把带 [label] 的药丸降成纯图标，
+  /// 仍放不下再从**最低优先级起逐个**收进「⋯」。同优先级按列表位置，越靠后越
+  /// 先收——不声明（全是默认 0）时就是「列表顺序 = 优先级」。
+  final int overflowPriority;
+
+  /// 永不收进「⋯」（如搜索入口）。[selected] 为 true 的切换按钮（激活中的
+  /// 多选等）同样恒外露：收进菜单就看不出它开着。
+  final bool alwaysVisible;
 
   /// 切换型按钮的选中态（例如工具栏里「多选模式」开着）。MD3 = secondaryContainer
   /// 方圆角底 + onSecondaryContainer 图标（M3 Expressive toggle icon button）；
