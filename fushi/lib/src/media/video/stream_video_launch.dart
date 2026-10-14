@@ -26,8 +26,11 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 ///   真正的流地址起播时经 [resolveStrmStreamTarget] 现读。
 /// - 在线视频源（Aniyomi）入库集（[isAnimeSourceVideoPath]）：没有本地文件，
 ///   起播时向扩展重新取流（见 `anime_source_library.dart`）。
+/// - 来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，`sftp://`）：起播时经来源
+///   的播放期解析器登记进回环中继（`sftp_stream_source.dart`）。
 bool isStreamVideoBook(VideoBookRow book) =>
     isNetworkStreamUrl(book.videoPath) ||
+    isSourceLibrarySftpVideoPath(book.videoPath) ||
     isStrmPath(book.videoPath) ||
     isAnimeSourceVideoPath(book.videoPath);
 

@@ -3,7 +3,10 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkOnlyVideoPath, kNetworkStreamSchemes;
+    show
+        isNetworkOnlyVideoPath,
+        kNetworkStreamSchemes,
+        kSourceLibrarySftpScheme;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey;
@@ -122,10 +125,12 @@ class BackupMergeEngine {
   /// 不需要随包文件；本地 `.strm` 是磁盘上的真实文件，照常走「随包文件」分支。
   /// SQLite 的 LIKE 对 ASCII 大小写不敏感，与 Dart 侧的小写化比较一致。协议集是
   /// 编译期常量、只含小写字母，直接拼进 SQL 不涉及转义（`_` / `%` 都不出现）。
-  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）同属网络行。
+  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）与来源库 SFTP 条目
+  /// （`sftp://`，起播时经回环中继取字节）同属网络行。
   static final String _networkOnlyVideoPathSql = <String>[
     ...kNetworkStreamSchemes,
     kAnimeSourceVideoPathScheme,
+    kSourceLibrarySftpScheme,
   ].map((String scheme) => "s.video_path LIKE '$scheme://%'").join(' OR ');
 
   /// Positional args matching the `?` placeholders in [_reachableVideoPredicate]
