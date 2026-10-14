@@ -5,9 +5,10 @@
 ///   `detector-v4-s_int8.onnx`（11,120,765 B，Apache-2.0）——与
 ///   `text_detector.dart` 的 RT-DETR-v2 IO 规格（640 输入 / 300 query / 3 类）
 ///   同仓同规格；fp32 全量档 `detector.onnx`（168MB）刻意不下。
-/// - 块识别器的清单住在 `manga_ocr_local_model.dart`（逐列 CTC / Baberu）；
-///   2026-10 删除了 kha-white manga-ocr（mayocream/manga-ocr-onnx encoder/decoder
-///   + KV 提速组件），本文件只剩共享的文件类型、PP-OCRv6 行模型与下载源规则。
+/// - 块识别器的清单住在 `manga_ocr_local_model.dart`（逐列 CTC）；2026-10 删除了
+///   kha-white manga-ocr（mayocream/manga-ocr-onnx encoder/decoder + KV 提速组件）
+///   与 Baberu（连同只有它引用的 PP-OCRv6 small 行模型清单），本文件只剩共享的
+///   文件类型、PP-OCRv6 落盘名 / revision 与下载源规则。
 /// - 横排行路径（2026-09-13，`routing_ocr_recognizer.dart`）取 PaddlePaddle 官方
 ///   PP-OCRv6 small ONNX（Apache-2.0）：`PP-OCRv6_small_det_onnx/inference.onnx`
 ///   （9,880,512 B）/ `PP-OCRv6_small_rec_onnx/inference.onnx`（21,159,378 B）+
@@ -54,34 +55,6 @@ class MangaOcrModelFile implements DownloadableModelFile {
   /// 钉住的 sha256（release asset 可被覆盖上传，下载后按它校验）；null = 不校验。
   final String? sha256;
 }
-
-/// Shared original-resolution horizontal-line path for every crop recognizer.
-const List<MangaOcrModelFile> kPpOcrLineModelManifest = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: kPpOcrDetFileName,
-    url:
-        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
-        'resolve/$kPpOcrDetRevision/inference.onnx',
-    expectedBytes: 9880512,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kPpOcrRecFileName,
-    url:
-        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
-        'resolve/$kPpOcrRecRevision/inference.onnx',
-    expectedBytes: 21159378,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kPpOcrRecDictFileName,
-    url:
-        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
-        'resolve/$kPpOcrRecRevision/inference.yml',
-    expectedBytes: 150579,
-    role: MangaOcrModelRole.recognizer,
-  ),
-];
 
 /// PP-OCRv6 small 三文件的落盘名（清单与 `MangaOcrModelPaths` 解析共用）。
 const String kPpOcrDetFileName = 'ppocrv6_small_det.onnx';

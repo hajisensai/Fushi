@@ -54,7 +54,7 @@ import 'package:path/path.dart' as p;
 const String kOcrUsage = '''
 ocr manga <bookKey> [--pages 1-20,25] [--model k] [--redo] [--ai-refine [--ai-mode low_confidence|all]]
                                                      对已入库漫画跑本地 OCR，结果写回书的 manga.json
-ocr models [ls|pull|rm] [--model k]                   本地 OCR 模型（manga_ocr / manga_ctc / baberu）
+ocr models [ls|pull|rm] [--model k]                   本地 OCR 模型（manga_ctc）
 manga panels <image…> [--ltr]                         分镜检测（默认日漫右→左阅读序）
 manga panel-model [status|pull]                       分镜模型
 （以上都支持 --json；--ai-refine 用配置文件 ai: 段的那一家提供商）''';
@@ -100,7 +100,6 @@ String? serverOrtProblem() {
 
 String _modelName(String key) => switch (key) {
   'manga_ctc' => '漫画 CTC（快速）',
-  'baberu' => 'Baberu',
   _ => key,
 };
 
@@ -144,7 +143,7 @@ class OcrCommands extends CliModule {
     final ArgParser ocr = parser.addCommand('ocr');
     addJsonFlag(ocr.addCommand('manga'))
       ..addOption('pages', help: '只识别这些页（1 起：1-20,25）；缺省整卷')
-      ..addOption('model', help: '本地模型 key（manga_ctc / baberu）', defaultsTo: kDefaultMangaOcrLocalModel.key)
+      ..addOption('model', help: '本地模型 key（manga_ctc）', defaultsTo: kDefaultMangaOcrLocalModel.key)
       ..addFlag('redo', negatable: false, help: '丢掉已有逐页缓存重新识别')
       ..addFlag('ai-refine', negatable: false, help: '用配置文件 ai: 段的大模型重读块内文字')
       ..addOption('ai-mode', allowed: <String>['low_confidence', 'all'], defaultsTo: 'low_confidence');

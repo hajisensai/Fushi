@@ -231,7 +231,6 @@ class MangaOcrAcceleration {
   const MangaOcrAcceleration({
     required this.detection,
     required this.recognition,
-    this.recognitionDecoder,
     this.degradeReasons = const <String>[],
   });
 
@@ -241,10 +240,6 @@ class MangaOcrAcceleration {
   /// 识别模型（encoder/decoder）实际生效的执行后端。
   final OcrExecutionProvider recognition;
 
-  /// Separate decoder backend for hybrid recognizers; null means the same
-  /// backend as [recognition].
-  final OcrExecutionProvider? recognitionDecoder;
-
   /// 非空表示发生过非预期降级，逐条给出原因（EP 拒绝码 / 探测异常）。
   final List<String> degradeReasons;
 
@@ -252,12 +247,9 @@ class MangaOcrAcceleration {
 
   /// 展示用短标签：两个模型同后端时只显示一个。
   String get label {
-    final String base = detection == recognition
+    return detection == recognition
         ? detection.name.toUpperCase()
         : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
-    return recognitionDecoder == null || recognitionDecoder == recognition
-        ? base
-        : '$base+${recognitionDecoder!.name.toUpperCase()}';
   }
 
   @override

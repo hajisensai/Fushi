@@ -23,7 +23,7 @@ void main() {
       });
     }
 
-    test('已删除的 manga-ocr 文件不在任何本地模型清单里', () {
+    test('已删除的 manga-ocr / Baberu 文件不在任何本地模型清单里', () {
       for (final MangaOcrLocalModel model in MangaOcrLocalModel.values) {
         final Set<String> names = <String>{
           for (final MangaOcrModelFile m in model.manifest) m.fileName,
@@ -34,6 +34,11 @@ void main() {
           'vocab.txt',
           'cross_kv.onnx',
           'decoder_kv.onnx',
+          // 2026-10 删除的 Baberu。
+          'vision_fp16.onnx',
+          'decoder_prefill_int8.onnx',
+          'decoder_step_int8.onnx',
+          'vocab.json',
         ]) {
           expect(names, isNot(contains(removed)), reason: model.key);
         }
@@ -41,10 +46,18 @@ void main() {
     });
   });
 
-  group('kPpOcrLineModelManifest', () {
-    test('PP-OCRv6 三文件钉 HF revision sha，不用可变的 main', () {
-      const List<MangaOcrModelFile> pp = kPpOcrLineModelManifest;
-      expect(pp, hasLength(3));
+  group('CTC 清单里的 PP-OCRv6 文件', () {
+    // 2026-10 删除 Baberu 时一并删了只有它引用的 kPpOcrLineModelManifest；
+    // PP-OCRv6 det / 字典仍由逐列 CTC 清单下载，revision 钉死的约束照旧。
+    final List<MangaOcrModelFile> pp = <MangaOcrModelFile>[
+      for (final MangaOcrModelFile m in kMangaCtcOcrModelManifest)
+        if (m.fileName == kPpOcrDetFileName ||
+            m.fileName == kPpOcrRecDictFileName)
+          m,
+    ];
+
+    test('PP-OCRv6 文件钉 HF revision sha，不用可变的 main', () {
+      expect(pp, hasLength(2));
       for (final MangaOcrModelFile m in pp) {
         expect(m.url, isNot(contains('/resolve/main/')), reason: m.url);
         expect(
@@ -54,18 +67,10 @@ void main() {
         );
         expect(m.role, MangaOcrModelRole.recognizer);
       }
-      expect(
-        pp.map((MangaOcrModelFile m) => m.fileName),
-        containsAll(<String>[
-          kPpOcrDetFileName,
-          kPpOcrRecFileName,
-          kPpOcrRecDictFileName,
-        ]),
-      );
     });
 
     test('镜像候选只换 host，revision 路径原样保留', () {
-      final MangaOcrModelFile det = kPpOcrLineModelManifest.firstWhere(
+      final MangaOcrModelFile det = pp.firstWhere(
         (MangaOcrModelFile m) => m.fileName == kPpOcrDetFileName,
       );
       final List<String> urls = mangaOcrModelUrlCandidates(det);

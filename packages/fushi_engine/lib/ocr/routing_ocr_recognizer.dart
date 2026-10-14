@@ -1,8 +1,8 @@
 /// 按块方向路由的识别器：竖排块整块喂块识别器，横排块切行后横行走 PP-OCRv6。
 ///
 /// 命名说明：参数 / 字段名 `mangaOcr` 是历史名，指「整块识别器」——kha-white
-/// manga-ocr 本地模型已于 2026-10 删除，现在传进来的是逐列 CTC 或 Baberu。下文
-/// 的路由实测是当年在 manga-ocr 上做的，判据（块比它高还宽 → 横排路径）不变。
+/// manga-ocr 本地模型已于 2026-10 删除，现在传进来的是逐列 CTC。下文的路由实测
+/// 是当年在 manga-ocr 上做的，判据（块比它高还宽 → 横排路径）不变。
 ///
 /// 为什么不是「一律切行」：2026-09-13 用用户真实页复测（「週に一度クラスメイトを
 /// 買う話」mihon 下载 844×1200 + 「幼なじみが絶対に結ばれる百合アンソロジー」
@@ -72,7 +72,7 @@ class RoutingOcrRecognizer
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
   }) {
-    // 只向 pipeline 暴露真实可用的批处理能力。原版 ONNX / Baberu 不因此
+    // 只向 pipeline 暴露真实可用的批处理能力。不支持批处理的块识别器不因此
     // 被合成一个假 batch，仍保留逐框调用和取消检查。
     if (mangaOcr is BatchOcrRecognizer) {
       return _BatchRoutingOcrRecognizer(
@@ -143,7 +143,7 @@ class RoutingOcrRecognizer
     )).withConfidence(read.confidence);
   }
 
-  /// 主识别器出分就取分，不出分的（Baberu 等）置信度为 null。
+  /// 主识别器出分就取分，不出分的置信度为 null。
   static Future<ScoredOcrText> _readScored(
     OcrRecognizer recognizer,
     img.Image page,

@@ -751,7 +751,7 @@ class _MangaOcrSettingsSectionState
           enabled: widget.service.isSupportedPlatform,
         )
       else
-        // 逐列 CTC 五端都能跑，Baberu 只在 Windows 列出
+        // 只给 Windows 的模型在别的平台不列
         // （[MangaOcrLocalModel.availableOnAllPlatforms]）。
         for (final MangaOcrLocalModel model in platformMangaOcrLocalModels())
           _EngineOption(
