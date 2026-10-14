@@ -1303,18 +1303,22 @@ class BackupRestoreService {
     try {
       final InputFileStream input = InputFileStream(zipPath);
       final Archive archive;
+      final BackupMeta? meta;
       try {
         archive = ZipDecoder().decodeBuffer(input);
+        // archive 3.x 的条目内容是惰性读取的：关流之后再读 meta 条目，超出 InputFileStream
+        // 首个 1MB 缓冲的部分会读出负长度 / 乱码（v117 起空库就超过 1MB，这里随时会踩到），
+        // 所以 meta 必须在关流之前读。
+        // TODO-1261: the merge only materialises REACHABLE video rows (streaming
+        // or a local file the backup carried), so the preview must count with the
+        // same predicate. The carried set is the packed video files (meta.videoFiles).
+        meta = _readBackupMeta(archive);
       } finally {
         await input.close();
       }
       final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) return null;
 
-      // TODO-1261: the merge only materialises REACHABLE video rows (streaming
-      // or a local file the backup carried), so the preview must count with the
-      // same predicate. The carried set is the packed video files (meta.videoFiles).
-      final BackupMeta? meta = _readBackupMeta(archive);
       final Set<String> carriedVideoSourcePaths =
           meta?.videoFiles.keys.toSet() ?? const <String>{};
 
