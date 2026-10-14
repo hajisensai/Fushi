@@ -244,8 +244,6 @@ class VideoSeriesPlaybackState {
   final int lastWatchedAtMs;
   final int positionMs;
   final bool completed;
-
-  bool get hasTrace => lastWatchedAtMs > 0 || positionMs > 0 || completed;
 }
 
 /// 成员的有效「最近观看时刻」（epoch 毫秒，0 = 没看过）。纯函数。
@@ -274,12 +272,18 @@ int effectiveWatchedAtMs({
 /// to episode 3 after reaching episode 12; Continue Watching must resume 3.
 /// Legacy rows without a watch timestamp fall back to the last traced member in
 /// stable episode order.
+///
+/// 只有时刻、没有进度也没看完的成员（连播进下一集几秒就退出、或进度被拖回 0）
+/// 不算锚点：此前它会被选成「最近播放」，于是「继续观看」按「进度为 0」把整部
+/// 合集丢掉，「下一集」却跳到它**后面**那集——这一集本身从此在首页无入口
+/// （用户实报：K-ON! 看完第 7 集自动连播第 8 集几秒后退出，首页只剩「下一集 ·
+/// 第 9 集」）。跳过它后锚点落回上一集，两行都指向这一集。
 int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) {
   int? bestIndex;
   int bestWatchedAt = 0;
   for (int index = 0; index < members.length; index++) {
     final VideoSeriesPlaybackState member = members[index];
-    if (!member.hasTrace) continue;
+    if (!member.completed && member.positionMs <= 0) continue;
     if (member.lastWatchedAtMs >= bestWatchedAt) {
       bestWatchedAt = member.lastWatchedAtMs;
       bestIndex = index;

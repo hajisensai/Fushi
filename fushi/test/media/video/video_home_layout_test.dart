@@ -550,6 +550,31 @@ void main() {
       expect(continueWatchingSeriesIndex(rewound), isNull);
     });
 
+    // 用户实报：看完第 7 集自动连播第 8 集，几秒后退出（第 8 集只有时刻、进度 0）。
+    // 此前「继续观看」整部消失、「下一集」跳到第 9 集，第 8 集在首页无入口。
+    test('最近播放那集只有时刻、进度 0 未完成 → 两行都落在它自己', () {
+      const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 200,
+          positionMs: 0,
+          completed: true,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 300,
+          positionMs: 0,
+          completed: false,
+        ),
+        VideoSeriesPlaybackState(
+          lastWatchedAtMs: 0,
+          positionMs: 0,
+          completed: false,
+        ),
+      ];
+      expect(latestPlayedSeriesIndex(members), 0);
+      expect(continueWatchingSeriesIndex(members), 1);
+      expect(nextEpisodeAfterLatestPlayed(members), 1);
+    });
+
     test('最后一集之后没有下一集', () {
       const List<VideoSeriesPlaybackState> members = <VideoSeriesPlaybackState>[
         VideoSeriesPlaybackState(
