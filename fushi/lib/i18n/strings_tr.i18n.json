@@ -7462,5 +7462,9 @@
   "popup_advanced_mining_reset": "Reset to one-click defaults",
   "popup_advanced_mining_confirm_to_deck": "Add to ${deck}",
   "manga_mining_crop_to_panel": "Crop one-click cards to the panel",
-  "manga_mining_crop_to_panel_hint": "Needs the panel model; without it the whole page is used."
+  "manga_mining_crop_to_panel_hint": "Needs the panel model; without it the whole page is used.",
+  "popup_advanced_mining_crop_page_title": "Select image area",
+  "popup_advanced_mining_crop_done": "Done",
+  "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
 }
