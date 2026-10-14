@@ -1104,7 +1104,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_pause_ocr_scope,
             subtitle: t.video_setting_pause_ocr_scope_hint,
             icon: FushiIcons.ocr,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 60),
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 58),
             options: <SettingsSegmentOption<VideoPauseOcrScope>>[
               SettingsSegmentOption<VideoPauseOcrScope>(
                 value: VideoPauseOcrScope.all,

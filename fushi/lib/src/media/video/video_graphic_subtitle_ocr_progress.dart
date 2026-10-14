@@ -8,7 +8,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiAppleLinearProgress, FushiCircularProgressIndicator;
+    show FushiAppleLinearProgress, FushiCircularProgressIndicator, FushiTooltip;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -230,7 +230,7 @@ class _VideoGraphicSubtitleOcrProgressCardState
         builder: (BuildContext context) {
           final ThemeData theme = Theme.of(context);
           final ColorScheme scheme = theme.colorScheme;
-          return Tooltip(
+          return FushiTooltip(
             message: status,
             child: InkWell(
               onTap: () => _setCollapsed(false),

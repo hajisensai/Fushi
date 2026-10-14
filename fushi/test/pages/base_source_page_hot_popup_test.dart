@@ -7,6 +7,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
+import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 
 class HotPopupTestAppModel extends AppModel {
@@ -99,6 +100,7 @@ Widget buildHotPopupTestApp({
   return ProviderScope(
     overrides: [
       appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
     ],
     child: TranslationProvider(
       child: MaterialApp(

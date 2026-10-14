@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 
 /// BUG-094: the video player seeds one persistent hidden warm popup slot and
@@ -139,7 +140,10 @@ class MixinHostPageState extends ConsumerState<MixinHostPage>
 
 Widget wrap(AppModel appModel, GlobalKey<MixinHostPageState> key) {
   return ProviderScope(
-    overrides: [appProvider.overrideWith((ref) => appModel)],
+    overrides: [
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),

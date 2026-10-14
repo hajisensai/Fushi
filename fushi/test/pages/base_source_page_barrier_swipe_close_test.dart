@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 
 /// TODO-716: desktop aligns with mobile swipe-to-close. On mobile only the popup
@@ -136,6 +137,7 @@ Widget buildBarrierSwipeApp({
   return ProviderScope(
     overrides: <Override>[
       appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
     ],
     child: TranslationProvider(
       child: MaterialApp(
