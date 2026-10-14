@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_detail_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_grid_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -264,5 +265,63 @@ void main() {
     );
     expect(grid.parentId, 'lib-movies');
     expect(grid.title, '动画电影');
+  });
+
+  testWidgets('BUG-3329：最新行的电影短按进详情；继续观看里的电影短按直接续播', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<MediaServerPlayRequest> played = <MediaServerPlayRequest>[];
+    browser.libraries.add(movies);
+    browser.latestByLibrary['lib-movies'] = fakeMovies(2);
+    browser.resume.add(
+      const MediaServerItem(
+        id: 'resume-movie',
+        name: 'Resume Movie',
+        type: MediaServerItemType.movie,
+        positionMs: 60000,
+        durationMs: 600000,
+      ),
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerHomeView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest request) =>
+                    played.add(request),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('${browser.serverId}-home-continue-card-resume-movie'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1), reason: '继续观看这一行就是为了接着看');
+    expect(played.single.info.id, 'resume-movie');
+    expect(find.byType(MediaServerDetailView), findsNothing);
+
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>(
+          '${browser.serverId}-home-row-lib-movies-card-movie-0',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(played, hasLength(1), reason: '海报墙里的电影先进详情，不直接播');
+    expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
 }

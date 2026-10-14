@@ -9,7 +9,7 @@ import 'package:fushi/utils.dart';
 import 'fake_media_server_browser.dart';
 
 /// 库网格：首页 60 条、滚到底追加第二页且**只认 nextStartIndex**、排序切换重置
-/// 分页、搜索改走 `search`、电影点卡直接播放（无同伴）。
+/// 分页、搜索改走 `search`、电影点卡进详情（BUG-3329）。
 void main() {
   late FakeMediaServerBrowser browser;
   late List<MediaServerPlayRequest> played;
@@ -227,7 +227,7 @@ void main() {
     expect(find.byType(FushiPlaceholderMessage), findsOneWidget);
   });
 
-  testWidgets('电影点卡直接播放：info 是它自己、不带同伴', (WidgetTester tester) async {
+  testWidgets('BUG-3329：电影点卡进详情（与剧一致），不直接播放', (WidgetTester tester) async {
     browser.children['lib-movies'] = fakeMovies(3);
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
@@ -237,10 +237,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(played, hasLength(1));
-    expect(played.single.info.id, 'movie-1');
-    expect(played.single.hasCollection, isFalse, reason: '电影不建剧集面板');
-    expect(identical(played.single.browser, browser), isTrue);
+    expect(played, isEmpty, reason: '电影短按先进详情，播放 / 选版本在详情里');
+    expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
 
   testWidgets('首页失败显示错误 + 重试；重试后正常渲染', (WidgetTester tester) async {
@@ -289,26 +287,5 @@ void main() {
     final FakePageRequest last = childrenRequests().last;
     expect(last.startIndex, 0);
     expect(last.sort, MediaServerSort.dateAdded);
-  });
-
-  testWidgets('2026-10：电影卡左上「详情」角标进详情而不是播放', (WidgetTester tester) async {
-    browser.children['lib-movies'] = fakeMovies(2);
-    await tester.pumpWidget(harness());
-    await tester.pumpAndSettle();
-
-    final Finder info = find.descendant(
-      of: find.byKey(const ValueKey<String>('media-server-grid-card-movie-0')),
-      matching: find.byKey(const ValueKey<String>('media-server-card-info')),
-    );
-    expect(info, findsOneWidget);
-    final Size hit = tester.getSize(info);
-    expect(hit.width, greaterThanOrEqualTo(40));
-    expect(hit.height, greaterThanOrEqualTo(40));
-
-    await tester.tap(info);
-    await tester.pumpAndSettle();
-
-    expect(played, isEmpty, reason: '角标是详情入口，不触发播放');
-    expect(find.byType(MediaServerDetailView), findsOneWidget);
   });
 }

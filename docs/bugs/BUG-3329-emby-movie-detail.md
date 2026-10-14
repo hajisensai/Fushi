@@ -1,0 +1,6 @@
+## BUG-3329 · 媒体服务器电影点卡直接播放，没有详情页与版本选择
+- **报告**：2026-10-13 / 2026-10-14（应用内反馈 AV_8MjqxVC「emby 剧场版没海报墙，一点就是播放」；FACsBxzj3g「emby 不支持视频版本选择」，截图是 Emby 网页端播放前的「版本」下拉）
+- **真实性**：✅ 真 bug，两条反馈同一根因。版本选择其实已在 2026-10-05（`7ba193b9ea`）落地，但入口只有两处：作品详情页的「版本」区，和播放页「画质」菜单。而 `fushi/lib/src/pages/implementations/media_server/media_server_routes.dart` 的 `openMediaServerItem` 让电影短按 `session.playItem` 直接播（旧 :66），详情只能长按 / 右键 / 封面角上一个小「i」角标进——用户点电影永远看不到详情页，也就看不到版本区。剧这边：剧详情的版本区读的是**剧自身**的 `versions`（剧没有 MediaSources，恒空，旧 `media_server_detail_view.dart` `_loadDetail`），集清单又刻意不带 MediaSources（BUG-1891），所以剧集在播放前没有任何地方能选版本。
+- **[x] ① 已修复** — `openMediaServerItem`：电影与剧一样短按进详情；「继续观看」行改走新的 `resumeMediaServerItem`（这一行就是为了接着看，电影 / 集照旧直接续播）。封面角「详情」角标（`MediaServerInfoCorner` / `onInfo`）随之删除——短按已经是详情。`MediaServerDetailView`：版本区改由 `_versionItem` 驱动，电影 = 自身详情，剧 = 当前季续播那一集的 `itemDetail`（一次请求，换季丢弃旧响应）；选中按「本集 + 同剧」记住，同剧其它集取流时由既有 `resolveMediaServerVersionIndex` 挑同名 / 同规格版本；版本区挪到选集之上，长集清单不再把它压到底。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/media_server/media_server_grid_view_test.dart`（电影短按进详情不播放）、`media_server_home_view_test.dart`（最新行电影进详情、继续观看电影直接续播）、`media_server_detail_view_test.dart`（剧详情按续播集给版本区、在选集之上、选中后同剧其它集解析到同名版本）。
+- **备注**：Plex 的 `itemDetail` 不产版本表，剧详情多一次请求但不出版本区。真机（Emby）未验。

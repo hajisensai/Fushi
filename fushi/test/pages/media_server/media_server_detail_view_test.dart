@@ -187,7 +187,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(seasonTabs, findsNothing);
-    expect(browser.itemDetailCalls, 1);
+    expect(
+      browser.itemDetailCalls,
+      2,
+      reason: '剧自身 1 次 + 续播那一集取版本表 1 次（BUG-3329）；两次都抛也不影响页面',
+    );
     expect(
       find.text('Series s1'),
       findsWidgets,
@@ -346,6 +350,73 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('media-server-versions')),
         findsNothing,
+      );
+    });
+
+    testWidgets('BUG-3329：剧详情按续播那一集给版本区，选中后同剧其它集跟着用同名版本', (
+      WidgetTester tester,
+    ) async {
+      useTallView(tester);
+      MediaServerItem episode(int n, {bool played = false}) => MediaServerItem(
+        id: 'sea1-ep$n',
+        name: 'Episode $n',
+        type: MediaServerItemType.episode,
+        seriesId: 's1',
+        seasonId: 'sea1',
+        seasonNumber: 1,
+        episodeNumber: n,
+        played: played,
+      );
+      browser.episodes['s1|'] = <MediaServerItem>[
+        episode(1, played: true),
+        episode(2),
+        episode(3),
+      ];
+      browser.details['sea1-ep2'] = const MediaServerItem(
+        id: 'sea1-ep2',
+        name: 'Episode 2',
+        type: MediaServerItemType.episode,
+        seriesId: 's1',
+        versions: <MediaServerVersion>[hd, uhd],
+      );
+      await tester.pumpWidget(harness(series));
+      await tester.pumpAndSettle();
+
+      final Finder versions = find.byKey(
+        const ValueKey<String>('media-server-versions'),
+      );
+      expect(versions, findsOneWidget, reason: '剧也要能在播放前选版本');
+      expect(
+        tester.getTopLeft(versions).dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(
+                  const ValueKey<String>('media-server-episode-sea1-ep1'),
+                ),
+              )
+              .dy,
+        ),
+        reason: '版本区在选集之上，长集清单不会把它压到底',
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('media-server-version-ms-2160')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('2160p HEVC HDR'), findsOneWidget);
+      expect(
+        resolveMediaServerVersionIndex(
+          serverId: browser.serverId,
+          itemId: 'sea1-ep3',
+          seriesId: 's1',
+          versions: const <MediaServerVersion>[
+            MediaServerVersion(id: 'ep3-1080', name: '1080p'),
+            MediaServerVersion(id: 'ep3-2160', name: '2160p HDR'),
+          ],
+        ),
+        1,
+        reason: '选择按同剧记住：其它集取流时挑同名版本',
       );
     });
 
