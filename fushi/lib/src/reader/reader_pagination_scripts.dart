@@ -1988,7 +1988,6 @@ window.__fushiInstallShell = function(C) {
     rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
     wrappers.forEach(function(wrapper) { wrapper.classList.remove('fushi-sentence-audio-active'); });
-    this.clearSentenceAudioRubyGaps();
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
@@ -1997,7 +1996,6 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.forEach(function(rubyElements) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
-    this.clearSentenceAudioRubyGaps();
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
     var self = this;

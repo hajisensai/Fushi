@@ -91,25 +91,39 @@ void main() {
       }
     });
 
-    test('竖排 ruby 高亮整句填充 + ruby-position:over 让振假名留在背景盒外', () async {
-      // BUG-716：原 narrow-lane(_highlightLaneCss 竖排 background-position:left center)
-      // 靠「振假名在右(over)、基字在左」把 1em 窄条钉到基字列，但 left 落点在书籍行距≠
-      // 字号或 <ruby> 盒宽不同(有无振假名)时错位 → 用户报有声书/查词注音高亮偏移。现回到
-      // 整句 background-color 填充：背景只刷 ruby 元素盒(不含 rt 注音轨)，over 仍保证振假名
-      // 在其自己的注音道(竖排右/横排上)、留在高亮基字盒外 → 有无振假名一致、无窄条 left 偏移。
+    test('竖排 ruby 高亮由窄条层按基字画 + ruby-position:over 让振假名留在条外', () async {
+      // BUG-716：旧 narrow-lane(_highlightLaneCss 竖排 background-position:left center)
+      // 把 1em 窄条钉在盒的 left 边，书籍行距≠字号或 <ruby> 盒宽不同(有无振假名)时错位。
+      // 2026-10-15 起所有高亮的底色由窄条层 __fushiLanes 画：按基字文本(跳过 rt)量出的
+      // 文字盒、沿块方向居中，不再按盒边落点；ruby 元素自己不铺底。over 仍保证振假名在
+      // 自己的注音道(竖排右/横排上)、留在高亮条外。
       final String css = await _readerCss(
-          writingMode: 'vertical-rl',
-          viewMode: 'continuous',
-          furiganaMode: 'off');
-      expect(css.contains('ruby-position: over !important'), isTrue,
-          reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮盒外)');
+        writingMode: 'vertical-rl',
+        viewMode: 'continuous',
+        furiganaMode: 'off',
+      );
       expect(
-          css.contains(
-              'background-color: var(--fushi-sentence-audio-background-color) !important'),
-          isTrue,
-          reason: 'BUG-716：ruby 有声书高亮整句 background-color 填充');
-      expect(css.contains('--fushi-highlight-lane-color'), isFalse,
-          reason: 'BUG-716：不再有 narrow-lane 窄条(避免 left 落点在宽盒/含注音轨时偏移)');
+        css.contains('ruby-position: over !important'),
+        isTrue,
+        reason: '竖排必须 ruby-position:over(振假名在右、留在基字高亮条外)',
+      );
+      final int ruby = css.indexOf('ruby.fushi-sentence-audio-ruby-active {');
+      expect(ruby, isNonNegative);
+      expect(
+        css.substring(ruby, css.indexOf('}', ruby)),
+        contains('background-color: transparent !important'),
+        reason: 'ruby 元素盒不铺底，底色由窄条层画',
+      );
+      expect(
+        css.contains('fushi-hl-lane[data-hl="fushi-sentence-audio"]'),
+        isTrue,
+        reason: '当前句窄条颜色规则',
+      );
+      expect(
+        css.contains('--fushi-highlight-lane-color'),
+        isFalse,
+        reason: 'BUG-716：不回到按盒边落点的旧 narrow-lane',
+      );
     });
 
     test('振假名显示态(off/toggle/dimmed) rt 强制 display:ruby-text(!important)',

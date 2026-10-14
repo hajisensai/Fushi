@@ -675,6 +675,30 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       }
       return host;
     };
+    // 横排时文字盒中线不是汉字的中线：盒 = 字体 ascent + descent，多数日文字体 ascent 偏大，盒中线
+    // 比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体实测，Noto Serif TC 墨迹下沿出条 0.05em）。
+    // 含 CJK 的片段按这款字体里「国」的墨迹中线居中（canvas measureText，按字体缓存，字体加载完清空）；
+    // 纯西文与竖排（中心基线，盒本来就对称）按盒中线。返回盒中线 → 墨迹中线的偏移，向下为正。
+    var CJK = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
+    var measureCtx = null;
+    var shiftCache = {};
+    var cjkShift = function(cs, text) {
+      if (!CJK.test(text)) return 0;
+      var font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      if (Object.prototype.hasOwnProperty.call(shiftCache, font)) return shiftCache[font];
+      var shift = 0;
+      try {
+        if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+        measureCtx.font = font;
+        var m = measureCtx.measureText('国');
+        if (m.fontBoundingBoxAscent > 0 && m.actualBoundingBoxAscent > 0) {
+          shift = ((m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) -
+              (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent)) / 2;
+        }
+      } catch (e) {}
+      shiftCache[font] = shift;
+      return shift;
+    };
     // 一个文本节点 [start, end) 的行片段。
     var nodeRects = function(node, start, end, seen, out) {
       var parent = node.parentElement;
@@ -691,9 +715,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var cs = getComputedStyle(parent);
       var em = parseFloat(cs.fontSize) || 16;
       var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      var shift = vertical ? 0 : cjkShift(cs, node.data.slice(start, end));
       var rects = r.getClientRects();
       for (var i = 0; i < rects.length; i++) {
-        if (rects[i].width > 0.5 && rects[i].height > 0.5) out.push({ r: rects[i], em: em, v: vertical });
+        if (rects[i].width > 0.5 && rects[i].height > 0.5) out.push({ r: rects[i], em: em, v: vertical, shift: shift });
       }
     };
     // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
@@ -725,7 +750,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         return {
           v: p.v, em: p.em,
           lane: Math.min(thick, p.em * LANE_EM),
-          mid: p.v ? r.left + r.width / 2 : r.top + r.height / 2,
+          mid: p.v ? r.left + r.width / 2 : r.top + r.height / 2 + p.shift,
           a: p.v ? r.top : r.left,
           b: p.v ? r.bottom : r.right
         };
@@ -821,7 +846,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     var repaintAll = function() { schedule(); };
     if (typeof window.addEventListener === 'function') window.addEventListener('resize', repaintAll);
     if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
-      document.fonts.addEventListener('loadingdone', repaintAll);
+      document.fonts.addEventListener('loadingdone', function() { shiftCache = {}; repaintAll(); });
     }
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('load', function(e) {

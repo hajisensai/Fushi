@@ -3054,7 +3054,6 @@ $sharedInitViewport
         wrapper.classList.remove('fushi-sentence-audio-active');
       });
     };
-    this.clearSentenceAudioRubyGaps();
     if (cueId) {
       clearWrappers(this.cueWrappers.get(cueId) || []);
       return;
@@ -3074,7 +3073,6 @@ $sharedInitViewport
     this.clearInlineSentenceAudioCue();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
-    this.clearSentenceAudioRubyGaps();
     this.cueSourceRanges.clear();
     this.cueWrappers.clear();
   },
