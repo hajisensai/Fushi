@@ -155,7 +155,14 @@ const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 /// 平板上调大的值随备份到手机 / 电脑只会不合身。
 const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
 
-/// 悬浮字幕可自选的四种颜色。偏好值 0 = 跟随主题（见 `floating_lyric_style.dart`）。
+/// Windows 悬浮字幕窗口矩形（本机**物理像素**坐标 JSON）。设备本地（见
+/// `SyncRepository.deviceLocalPrefKeys`）：坐标只对这台机器的显示器布局 / DPI
+/// 有意义，随备份 / 同步 / Profile 带到别的设备会把窗口放到屏幕外或尺寸错位。
+const String kFloatingLyricWindowRectPrefKey = 'floating_lyric_window_rect';
+
+/// 悬浮字幕可自选的四种颜色。键缺省 / 偏好值
+/// [PreferencesRepository.floatingLyricColorFollowTheme]（-1）= 跟随主题（见
+/// `floating_lyric_style.dart`）；0 是合法的完全透明黑。
 enum FloatingLyricColorRole {
   /// 底板。
   background('floating_lyric_color_background'),
@@ -3814,8 +3821,10 @@ class PreferencesRepository extends ChangeNotifier
   // 悬浮字幕「同时显示句数」（取代上面的对称上下文 N）。1..15 = 固定显示这么多句，
   // 当前句居中（偶数时下文多一句，与歌词模式「往下看」的阅读方向一致）；0 = 自动：
   // 前后各送 12 句（`floatingLyricVisibleSpan`），原生窗把当前句滚到视口中央、超出
-  // 窗高的裁掉——拖高窗口就看到更多句（Windows）。新键没写过时从旧 N 换算 2N+1，
-  // 老用户观感不变；两者都没写过默认 3 句。
+  // 窗高的裁掉——拖高窗口就看到更多句（Windows）。新键没写过、旧 N 键写过（含旧
+  // 默认 / 显式 0）时一律按 2N+1 换算（0 → 1 句），老用户观感不变；只有两个键都
+  // 没写过的新用户才用默认 3 句。注意旧 0 必须换成 1 而不是落到新默认 3：旧版
+  // 默认就是 0，绝大多数老用户的旧键都是 0。
   static const int floatingLyricVisibleLinesAuto = 0;
   static const int floatingLyricVisibleLinesDefault = 3;
   static const int floatingLyricVisibleLinesMax = 15;
@@ -3827,7 +3836,7 @@ class PreferencesRepository extends ChangeNotifier
     final Object? stored = getPref('floating_lyric_visible_lines');
     if (stored is num) return normalizeFloatingLyricVisibleLines(stored);
     final Object? legacy = getPref('floating_lyric_context_lines');
-    if (legacy is num && legacy > 0) {
+    if (legacy is num) {
       return normalizeFloatingLyricVisibleLines(
           normalizeFloatingLyricContextLines(legacy) * 2 + 1);
     }
@@ -3863,8 +3872,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  bool get floatingLyricBold =>
-      getPref('floating_lyric_bold', defaultValue: true) as bool;
+  bool get floatingLyricBold {
+    final Object? stored = getPref('floating_lyric_bold');
+    return stored is bool ? stored : true;
+  }
 
   Future<void> setFloatingLyricBold(bool value) async {
     await setPref('floating_lyric_bold', value);
@@ -3950,9 +3961,13 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 悬浮字幕四色（ARGB）。存 0 = 跟随主题（M3E 配对色，见
-  /// `floating_lyric_style.dart`）；非 0 = 用户自选色。
-  static const int floatingLyricColorFollowTheme = 0;
+  /// 悬浮字幕四色（ARGB）。键缺省或存 [floatingLyricColorFollowTheme] = 跟随主题
+  /// （M3E 配对色，见 `floating_lyric_style.dart`）；其余值 = 用户自选色。
+  ///
+  /// 哨兵取 -1 而不是 0：ARGB 经 `Color.toARGB32()` 恒落在 0..0xFFFFFFFF，-1 永远
+  /// 不会与合法颜色撞值；0 是合法的「完全透明黑」（描边色开了 alpha 通道，用户
+  /// 真能选到它），若拿 0 当哨兵，选完全透明会被误判成跟随主题。
+  static const int floatingLyricColorFollowTheme = -1;
 
   int floatingLyricColor(FloatingLyricColorRole role) {
     final Object? stored = getPref(role.prefKey);
@@ -3968,12 +3983,12 @@ class PreferencesRepository extends ChangeNotifier
   /// Windows 悬浮字幕窗口矩形（物理 px JSON，`{left,top,width,height}`）；空 =
   /// 平台默认位置。用户拖动 / 拖角缩放后由原生 `windowRectChanged` 回写。
   String get floatingLyricWindowRect {
-    final Object? stored = getPref('floating_lyric_window_rect');
+    final Object? stored = getPref(kFloatingLyricWindowRectPrefKey);
     return stored is String ? stored : '';
   }
 
   Future<void> setFloatingLyricWindowRect(String json) async {
-    await setPref('floating_lyric_window_rect', json);
+    await setPref(kFloatingLyricWindowRectPrefKey, json);
   }
 
   // ── update preferences ───────────────────────────────────────────────

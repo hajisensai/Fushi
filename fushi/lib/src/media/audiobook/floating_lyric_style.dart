@@ -80,9 +80,11 @@ class FloatingLyricStyleSettings {
   final String fontFamily;
   final String? fontPath;
 
-  /// [role] 的用户自选色；null = 跟随主题。
+  /// [role] 的用户自选色；null = 跟随主题（含 map 里缺这一项）。0 是合法的
+  /// 完全透明黑，不是跟随主题。
   int? customColor(FloatingLyricColorRole role) {
-    final int stored = colors[role] ?? 0;
+    final int stored =
+        colors[role] ?? PreferencesRepository.floatingLyricColorFollowTheme;
     return stored == PreferencesRepository.floatingLyricColorFollowTheme
         ? null
         : stored;

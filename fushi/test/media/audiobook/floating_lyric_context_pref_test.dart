@@ -3,12 +3,17 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart'
+    show FloatingLyricStyle;
 import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 // 悬浮字幕「同时显示句数」偏好 + 端到端接线守卫（取代 TODO-708 P4 的对称上下文 N）。
-//   1) 默认 3 句；新键没写过时从旧 N 换算 2N+1（老用户观感不变）；
+//   1) 两键都没写过默认 3 句；新键没写过、旧 N 写过（含 0）时按 2N+1 换算
+//      （0 → 1 句，老用户观感不变）；
 //   2) 读写往返 + 跨 reload 持久化 + 归一夹到 [0, 15]（0 = 按窗口高度自动）；
 //   3) 句数 → 前后句分布（当前句居中、偶数下文多一句；自动档按平台）；
 //   4) session/app_model/settings 各层把句数接对（源级守卫，原生渲染另需真机）。
@@ -43,9 +48,20 @@ void main() {
       expect(repo.floatingLyricVisibleLines, 5);
     });
 
-    test('旧 N=0（显式单行）不算迁移来源，仍落默认', () async {
+    test('旧 N=0（旧默认 / 显式单行）按 2N+1 换成 1 句，不落新默认 3', () async {
       await repo.setFloatingLyricContextLines(0);
+      expect(repo.floatingLyricVisibleLines, 1);
+
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.floatingLyricVisibleLines, 1);
+    });
+
+    test('旧 N=1 / 3 分别换算成 3 / 7 句', () async {
+      await repo.setFloatingLyricContextLines(1);
       expect(repo.floatingLyricVisibleLines, 3);
+      await repo.setFloatingLyricContextLines(3);
+      expect(repo.floatingLyricVisibleLines, 7);
     });
 
     test('新键优先于旧 N，并跨 reload 持久化', () async {
@@ -67,6 +83,68 @@ void main() {
         PreferencesRepository.floatingLyricVisibleLinesAuto,
       );
       expect(repo.floatingLyricVisibleLines, 0);
+    });
+  });
+
+  group('PreferencesRepository 悬浮字幕颜色 / 粗体', () {
+    late FushiDatabase db;
+    late PreferencesRepository repo;
+
+    setUp(() async {
+      db = _testDb();
+      repo = PreferencesRepository(db);
+      await repo.loadFromDb();
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('没写过颜色 = 跟随主题哨兵，且哨兵不在合法 ARGB 区间内', () {
+      for (final FloatingLyricColorRole role in FloatingLyricColorRole.values) {
+        expect(
+          repo.floatingLyricColor(role),
+          PreferencesRepository.floatingLyricColorFollowTheme,
+        );
+      }
+      expect(PreferencesRepository.floatingLyricColorFollowTheme, isNegative);
+    });
+
+    test('完全透明黑（ARGB 0）是自选色，不被当成跟随主题', () async {
+      await repo.setFloatingLyricColor(FloatingLyricColorRole.outline, 0);
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.floatingLyricColor(FloatingLyricColorRole.outline), 0);
+
+      final FloatingLyricStyleSettings settings =
+          FloatingLyricStyleSettings.fromPreferences(reloaded);
+      expect(settings.customColor(FloatingLyricColorRole.outline), 0);
+      expect(settings.customColor(FloatingLyricColorRole.text), isNull);
+
+      final FloatingLyricStyle style = buildFloatingLyricStyle(
+        scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
+        settings: settings,
+      );
+      expect(style.outlineColor, 0);
+    });
+
+    test('写回跟随主题哨兵 = 回到主题配对色', () async {
+      await repo.setFloatingLyricColor(FloatingLyricColorRole.text, 0xFF123456);
+      await repo.setFloatingLyricColor(
+        FloatingLyricColorRole.text,
+        PreferencesRepository.floatingLyricColorFollowTheme,
+      );
+      final FloatingLyricStyleSettings settings =
+          FloatingLyricStyleSettings.fromPreferences(repo);
+      expect(settings.customColor(FloatingLyricColorRole.text), isNull);
+    });
+
+    test('粗体：没写过默认 true，类型不符回退 true，写 false 生效', () async {
+      expect(repo.floatingLyricBold, isTrue);
+      await repo.setPref('floating_lyric_bold', 'garbage');
+      expect(repo.floatingLyricBold, isTrue);
+      await repo.setFloatingLyricBold(false);
+      expect(repo.floatingLyricBold, isFalse);
     });
   });
 
