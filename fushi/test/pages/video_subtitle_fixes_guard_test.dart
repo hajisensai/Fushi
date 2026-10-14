@@ -202,7 +202,9 @@ void main() {
 
     final String shelfDrop = region(
       'Future<void> _handleShelfDrop(',
-      'Future<void> _openBookImportPrefilled(',
+      // 终点只认方法名：返回类型已从 Future<void> 改成 Future<bool?>（多文件拖放要
+      // 知道每次导入是否成功）。`({` 只命中声明，不命中区间内的调用处。
+      '_openBookImportPrefilled({',
       source: shelfSrc,
     );
     expect(shelfDrop.contains('ModalRoute.of(context)'), isTrue);

@@ -1023,10 +1023,14 @@ class PreferencesRepository extends ChangeNotifier
         final Set<String> kept = legacy == '-'
             ? <String>{}
             : legacy.split(',').map((String s) => s.trim()).toSet();
+        // 专属按钮按出厂，全局按钮完全按旧勾选：它是用户明确选过的，不能被
+        // 按场景收窄的出厂值（[FloatingBallGlobalAction.onByDefaultIn]）筛掉。
+        final Set<String> sceneDefaults = scope.defaultButtons.toSet();
         return <String>[
-          for (final String id in scope.defaultButtons)
-            if (FloatingBallGlobalAction.fromStorage(id) == null ||
-                kept.contains(id))
+          for (final String id in scope.catalog)
+            if (FloatingBallGlobalAction.fromStorage(id) == null
+                ? sceneDefaults.contains(id)
+                : kept.contains(id))
               id,
         ];
       }

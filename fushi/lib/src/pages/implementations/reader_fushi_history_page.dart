@@ -32,7 +32,7 @@ import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/collections/collection_member_view.dart'
-    show CollectionMemberInfo;
+    show CollectionMemberInfo, pickContinueIndex;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -2161,7 +2161,37 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     if (own != null && own.isNotEmpty && File(own).existsSync()) {
       return _buildFileCover(own, Icons.collections_bookmark_outlined);
     }
-    return _slotCover(group.coverItem.payload, epubCoverUrisByBookKey);
+    // 没设合集封面时显示「继续」会打开的那本（与合集详情页同一判据
+    // [pickContinueIndex]），不再恒为首本：看到第五本，系列卡就是第五本。
+    final List<CollectionOrderingItem<_ShelfBookSlot>> items = group.items;
+    final int index = pickContinueIndex<CollectionOrderingItem<_ShelfBookSlot>>(
+          items,
+          (CollectionOrderingItem<_ShelfBookSlot> it) =>
+              _slotContinueInfo(it.payload),
+        ) ??
+        0;
+    return _slotCover(items[index].payload, epubCoverUrisByBookKey);
+  }
+
+  /// 书架合集卡挑封面用的成员进度（不建封面 / 标题，口径同
+  /// [_collectionMemberInfo]）。远端占位没有本地进度，返回 null。
+  CollectionMemberInfo? _slotContinueInfo(_ShelfBookSlot slot) {
+    final MediaItem? epub = slot.epub;
+    final SrtBook? srt = slot.srt;
+    final String? bookKey = srt?.bookKey ??
+        (epub == null ? null : _parseBookKey(epub.mediaIdentifier));
+    if (bookKey == null || bookKey.isEmpty) return null;
+    final ({int position, int duration})? progress = epub != null
+        ? (position: epub.position, duration: epub.duration)
+        : _epubProgressByBookKey[bookKey];
+    return CollectionMemberInfo(
+      progress: progress == null || progress.duration <= 0
+          ? null
+          : (progress.position / progress.duration).clamp(0.0, 1.0),
+      lastReadAt:
+          lastReadAtForBookKey(_lastReadAtByBookKey, _epubUidByKey, bookKey),
+      completed: _completedBookKeys.contains(bookKey),
+    );
   }
 
   /// 合集阅读进度（格子封面底边进度条）：成员进度的平均值，标了读完的成员按满格

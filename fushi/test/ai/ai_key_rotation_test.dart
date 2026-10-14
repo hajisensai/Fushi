@@ -509,6 +509,34 @@ void main() {
       expect(server.calls, <String>['sk-b', 'sk-b', 'sk-b', 'sk-b']);
     });
 
+    test('放弃后整家先停一会儿：下一个请求不紧接着再撞 429（仍然真发）', () async {
+      // 用户本机漫画 AI OCR 一页接一页吃 429：单 key 冷却拦不住请求、放弃时又没
+      // 写退避，下一页立刻拿到空位。
+      final List<DateTime> sentAt = <DateTime>[];
+      final AiChatClient client = AiChatClient(
+        client: MockClient((http.Request request) async {
+          sentAt.add(now);
+          return http.Response('{}', 429);
+        }),
+        healthStore: store,
+        clock: () => now,
+        rateLimiter: fakeLimiter(),
+      );
+      final AiProviderConfig provider = _provider(const <AiApiKey>[
+        AiApiKey('sk-a'),
+      ]);
+      await expectLater(ask(client, provider), throwsA(isA<AiChatFailure>()));
+      final DateTime gaveUp = sentAt.last;
+      await expectLater(ask(client, provider), throwsA(isA<AiChatFailure>()));
+      expect(sentAt.length, greaterThan(2), reason: '下一个请求仍然真的发出去');
+      final DateTime next = sentAt[sentAt.indexOf(gaveUp) + 1];
+      expect(
+        next.difference(gaveUp),
+        greaterThanOrEqualTo(kAiChatMaxRetryWait),
+        reason: '放弃时留下的整家退避让下一个请求排到之后',
+      );
+    });
+
     test('listModels / ping 同样轮换', () async {
       final _FakeServer server = _FakeServer(<String, http.Response Function()>{
         'sk-a': () => http.Response('{}', 401),

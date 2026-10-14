@@ -659,7 +659,20 @@ class AiChatClient {
         );
       } on _KeyRoundFailure catch (failed) {
         final Duration? wait = _retryDelay(provider, failed, round);
-        if (wait == null) throw failed.reported;
+        if (wait == null) {
+          // 放弃这次请求也要让整家先停一会儿：否则下一个请求立刻拿到空位、再撞同
+          // 一堵墙（单 key 时冷却拦不住它，见 [orderAiKeysForRequest]）——漫画 AI
+          // OCR 曾因此一页接一页地吃 429。暂停封顶 [kAiChatMaxRetryWait]：之后的
+          // 请求仍然真的发出去（不凭本地冷却编失败），只是不再挤成一串。
+          final Duration? cooling = _untilSoonestReady(provider, failed);
+          if (cooling != null) {
+            _rateLimiter.backOff(
+              provider,
+              cooling > kAiChatMaxRetryWait ? kAiChatMaxRetryWait : cooling,
+            );
+          }
+          throw failed.reported;
+        }
         _rateLimiter.backOff(provider, wait);
         among = failed.transientKeys;
       }
@@ -684,17 +697,25 @@ class AiChatClient {
     int round,
   ) {
     if (_closed || round >= kAiChatMaxAttempts) return null;
-    final DateTime now = _clock();
+    final Duration? untilReady = _untilSoonestReady(provider, failed);
+    if (untilReady == null) return null;
+    final Duration backoff = kAiChatRetryBaseDelay * (1 << (round - 1));
+    final Duration wait = untilReady > backoff ? untilReady : backoff;
+    return wait > kAiChatMaxRetryWait ? null : wait;
+  }
+
+  /// 上一轮因临时性原因失败的 key 里，最早那把还要多久能再试；没有临时性失败
+  /// （全是鉴权被拒 / 额度用尽）为 null。
+  Duration? _untilSoonestReady(
+    AiProviderConfig provider,
+    _KeyRoundFailure failed,
+  ) {
     DateTime? soonest;
     for (final String key in failed.transientKeys) {
       final DateTime ready = _keyReadyAt(provider, key, failed.failures[key]!);
       if (soonest == null || ready.isBefore(soonest)) soonest = ready;
     }
-    if (soonest == null) return null;
-    final Duration backoff = kAiChatRetryBaseDelay * (1 << (round - 1));
-    final Duration untilReady = soonest.difference(now);
-    final Duration wait = untilReady > backoff ? untilReady : backoff;
-    return wait > kAiChatMaxRetryWait ? null : wait;
+    return soonest?.difference(_clock());
   }
 
   /// 这把 key 刚以 [failure] 失败，何时能再试：冷却记录与应答里 `Retry-After`

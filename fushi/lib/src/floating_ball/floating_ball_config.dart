@@ -115,8 +115,8 @@ enum FloatingBallScope {
   ];
 
   /// 出厂按钮：阅读器是阅读计时开关 + 有声书的上一句 / 播放暂停 / 下一句（后三颗
-  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带出厂
-  /// 勾上的全局按钮（[FloatingBallGlobalAction.onByDefault]）。
+  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；再加本场景出厂
+  /// 勾上的全局按钮（[FloatingBallGlobalAction.onByDefaultIn]）。
   List<String> get defaultButtons => <String>[
     ...switch (this) {
       reader => <String>[
@@ -129,8 +129,11 @@ enum FloatingBallScope {
     },
     for (final FloatingBallGlobalAction action
         in FloatingBallGlobalAction.values)
-      if (action.onByDefault) action.storageValue,
+      if (action.onByDefaultIn(this)) action.storageValue,
   ];
+
+  /// 阅读器 / 漫画 / 视频：球上已经有一整排本页专属按钮。
+  bool get isMediaScene => this == reader || this == manga || this == video;
 
   /// 逗号分隔的持久化值 → 按钮 id（保持目录顺序、去掉未知值与重复）。
   /// 空串 = 从没设过 → [defaultButtons]；用户全部关掉存的是 `-`。
@@ -206,9 +209,22 @@ enum FloatingBallGlobalAction {
 
   final String storageValue;
 
-  /// 出厂勾不勾上。同步不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步
-  /// 不可用」的按钮是噪音；配了同步的人在 设置 → 悬浮球 里自己勾。
-  bool get onByDefault => this != sync;
+  /// 在 [scope] 的球上出厂勾不勾上（都能在 设置 → 悬浮球 里自己勾 / 取消）：
+  ///
+  /// - 同步各场景都不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步不可用」
+  ///   的按钮是噪音。
+  /// - 应用外球：其余全勾——它本来就是给别的程序用的这些入口。
+  /// - 阅读器 / 漫画 / 视频只勾「查词」与「反馈」：球上已有一整排本页专属按钮，
+  ///   再叠上应用外查词 / 剪贴板 / 截屏识字 / 拍照这些与当前媒体无关的入口，漫画页
+  ///   出厂就是十一颗按钮的长列（用户 2026-10-14 截图反馈；反馈保留）。
+  /// - 其它应用内页面：除「应用外查词」外都勾——在 Fushi 里面它只是另开一个独立
+  ///   查词窗，与「查词」重复。
+  bool onByDefaultIn(FloatingBallScope scope) {
+    if (this == sync) return false;
+    if (scope == FloatingBallScope.system) return true;
+    if (scope.isMediaScene) return this == lookup || this == feedback;
+    return this != popupLookup;
+  }
 
   static FloatingBallGlobalAction? fromStorage(String raw) {
     for (final FloatingBallGlobalAction action in values) {

@@ -180,6 +180,13 @@ void main() {
     test('出站同步网络往返期间对端折进更大值 → 落库不被陈旧 merged 覆盖', () async {
       await AggregateSyncService(db)
           .applySnapshotToLocal(_readingSnapshot(100));
+      // 本机另有一条 host 没有的挖矿计数：保证合并结果与 host 不同、上行照常
+      // 发生（内容相同会跳过 PUT），下面才能确认出站同步走完了上行这一步。
+      await db.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-02',
+        count: 4,
+      );
 
       final Completer<Object?> network = Completer<Object?>();
       final Completer<void> fetchStarted = Completer<void>();
@@ -206,6 +213,12 @@ void main() {
 
       expect(await _localChars(db), 500, reason: '统计只增不减：对端折进的值不得丢失');
       expect(pushed, isNotNull);
+      expect(
+        AggregateSnapshot.fromJson(pushed)
+            .miningStats
+            .map((MiningRecord r) => r.dateKey),
+        contains('2026-06-02'),
+      );
     });
   });
 
