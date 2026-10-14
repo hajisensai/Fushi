@@ -209,6 +209,11 @@ void main() {
           host.mangaPage(modelAvailable: false),
           size: const Size(360, 780),
         );
+        // 图片摘要行在句子区下面，矮屏要先滚到可见再点。
+        await tester.ensureVisible(
+          find.text(t.popup_advanced_mining_image_section),
+        );
+        await tester.pumpAndSettle();
         await tester.tap(find.text(t.popup_advanced_mining_image_section));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: '不许有 RenderFlex 溢出');
