@@ -88,25 +88,24 @@ void main() {
     }
   });
 
-  Widget buildApp(VideoLibrarySection section, {Key? pageKey}) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                key: pageKey,
-                repo: VideoBookRepository(db),
-                section: section,
-              ),
-            ),
+  Widget buildApp(VideoLibrarySection section, {Key? pageKey}) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            key: pageKey,
+            repo: VideoBookRepository(db),
+            section: section,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> pumpSection(
     WidgetTester tester,
@@ -121,13 +120,13 @@ void main() {
   }
 
   Future<void> seedVideo(String uid, String title) => db.upsertVideoBook(
-        VideoBooksCompanion(
-          bookUid: Value<String>(uid),
-          title: Value<String>(title),
-          videoPath: Value<String>('/abs/$uid.mp4'),
-          importedAt: Value<int>(DateTime(2026, 1, 4).millisecondsSinceEpoch),
-        ),
-      );
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(title),
+      videoPath: Value<String>('/abs/$uid.mp4'),
+      importedAt: Value<int>(DateTime(2026, 1, 4).millisecondsSinceEpoch),
+    ),
+  );
 
   /// 一部两集的番（合集）+ 一部没归系列的散片。
   Future<int> seedSeriesAndLoose() async {
@@ -143,40 +142,67 @@ void main() {
     return cid;
   }
 
-  /// 打开系列归属下拉并选中 [label] 那一档。
-  Future<void> pickSeriesFilter(WidgetTester tester, String label) async {
+  /// 打开页头「筛选」面板（2026-10-14 起筛选维度收进面板，不再铺下拉胶囊）。
+  Future<void> openFilterPanel(WidgetTester tester) async {
     await tester.tap(
-      find.byKey(const ValueKey<String>('home_video_filter_series')),
+      find.byKey(const ValueKey<String>('video-library-filter-button')),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(label).last);
     await tester.pumpAndSettle();
   }
 
+  /// Esc 关掉筛选面板（宽窗是锚定下拉面板）。
+  Future<void> closeFilterPanel(WidgetTester tester) async {
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+  }
+
+  /// 在筛选面板的 [sectionKey] 分组里选中 [label] 那一档，再关掉面板。
+  Future<void> pickInPanel(
+    WidgetTester tester,
+    String sectionKey,
+    String label,
+  ) async {
+    await openFilterPanel(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(ValueKey<String>(sectionKey)),
+        matching: find.text(label),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await closeFilterPanel(tester);
+  }
+
+  /// 在筛选面板里把系列归属选成 [label] 那一档。
+  Future<void> pickSeriesFilter(WidgetTester tester, String label) =>
+      pickInPanel(tester, 'video_filter_panel_series', label);
+
   Finder cardOf(String uid) => find.byKey(ValueKey<String>('home_video_$uid'));
 
-  testWidgets('BUG-2835 默认档位「非系列」：合集的集收进系列页，只平铺散片',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2835 默认档位「非系列」：合集的集收进系列页，只平铺散片', (
+    WidgetTester tester,
+  ) async {
     await seedSeriesAndLoose();
 
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
-    expect(cardOf('video/ep1'), findsNothing,
-        reason: '合集成员已在系列页折成卡，「全部视频」默认不再铺一遍');
+    expect(
+      cardOf('video/ep1'),
+      findsNothing,
+      reason: '合集成员已在系列页折成卡，「全部视频」默认不再铺一遍',
+    );
     expect(cardOf('video/ep2'), findsNothing);
     expect(cardOf('video/loose'), findsOneWidget);
     expect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
-        matching: find.text(t.video_filter_series_standalone),
-      ),
-      findsOneWidget,
-      reason: '默认档位必须在 chip 上看得见，否则用户不知道为什么少了条目',
+      find.byKey(const ValueKey<String>('video_active_filter_series')),
+      findsNothing,
+      reason:
+          '2026-10-14 用户拍板：分区默认值不算生效中的筛选，不出 chip；'
+          '少了的条目由筛空态 / 系列页提示交代',
     );
   });
 
-  testWidgets('BUG-2835 档位持久化：换一个页面实例仍是上次的选择',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2835 档位持久化：换一个页面实例仍是上次的选择', (WidgetTester tester) async {
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
@@ -194,24 +220,26 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(cardOf('video/ep1'), findsOneWidget);
-    expect(cardOf('video/loose'), findsNothing,
-        reason: '读回的是「系列内」，不是默认「非系列」');
+    expect(cardOf('video/loose'), findsNothing, reason: '读回的是「系列内」，不是默认「非系列」');
   });
 
-  testWidgets('BUG-2835 有搜索词时不套「非系列」：合集里的集也搜得到',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2835 有搜索词时不套「非系列」：合集里的集也搜得到', (WidgetTester tester) async {
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
     expect(cardOf('video/ep1'), findsNothing, reason: '前提：默认档位已生效');
 
+    // 单行页头：搜索平时是 🔍，点开整行换成搜索栏。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fushi-header-search-button')),
+    );
+    await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey<String>('video_search_field')),
       '第1集',
     );
     await tester.pumpAndSettle();
 
-    expect(cardOf('video/ep1'), findsOneWidget,
-        reason: '搜索是在找东西，默认档位不该让它静默落空');
+    expect(cardOf('video/ep1'), findsOneWidget, reason: '搜索是在找东西，默认档位不该让它静默落空');
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('video_search_field')),
@@ -221,8 +249,7 @@ void main() {
     expect(cardOf('video/ep1'), findsNothing, reason: '清掉搜索词后档位恢复');
   });
 
-  testWidgets('BUG-2835 媒体类型 / 正片特典筛选作用在条目上',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2835 媒体类型 / 正片特典筛选作用在条目上', (WidgetTester tester) async {
     await prefs.setVideoAllSeriesFilterName('all');
     await seedVideo('video/ep1', '第1集');
     await db.upsertVideoBook(
@@ -237,34 +264,37 @@ void main() {
       VideoBooksCompanion(
         bookUid: const Value<String>('video/ncop'),
         title: const Value<String>('NCOP'),
-        videoPath:
-            const Value<String>('/abs/Show/[VCB-Studio] Show [NCOP].mkv'),
+        videoPath: const Value<String>(
+          '/abs/Show/[VCB-Studio] Show [NCOP].mkv',
+        ),
         importedAt: Value<int>(DateTime(2026, 1, 4).millisecondsSinceEpoch),
       ),
     );
     await pumpSection(tester, VideoLibrarySection.allVideos);
     expect(cardOf('audio/track'), findsOneWidget, reason: '前提：「全部」态都在');
 
-    Future<void> pick(String key, String label) async {
-      await tester.tap(find.byKey(ValueKey<String>(key)));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(label).last);
-      await tester.pumpAndSettle();
-    }
+    Future<void> pick(String key, String label) =>
+        pickInPanel(tester, key, label);
 
-    await pick('home_video_filter_media_type', t.video_filter_media_type_audio);
+    await pick(
+      'video_filter_panel_media_type',
+      t.video_filter_media_type_audio,
+    );
     expect(cardOf('audio/track'), findsOneWidget);
     expect(cardOf('video/ep1'), findsNothing);
 
-    await pick('home_video_filter_media_type', t.video_filter_media_type_video);
+    await pick(
+      'video_filter_panel_media_type',
+      t.video_filter_media_type_video,
+    );
     expect(cardOf('audio/track'), findsNothing);
     expect(cardOf('video/ep1'), findsOneWidget);
 
-    await pick('home_video_filter_extras', t.video_filter_extras_only);
+    await pick('video_filter_panel_extras', t.video_filter_extras_only);
     expect(cardOf('video/ncop'), findsOneWidget);
     expect(cardOf('video/ep1'), findsNothing);
 
-    await pick('home_video_filter_extras', t.video_filter_extras_main);
+    await pick('video_filter_panel_extras', t.video_filter_extras_main);
     expect(cardOf('video/ncop'), findsNothing);
     expect(cardOf('video/ep1'), findsOneWidget);
   });
@@ -272,16 +302,18 @@ void main() {
   testWidgets('BUG-2835 只有一个来源时不出来源筛选', (WidgetTester tester) async {
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
+    await openFilterPanel(tester);
     expect(
-      find.byKey(const ValueKey<String>('home_video_filter_media_type')),
+      find.byKey(const ValueKey<String>('video_filter_panel_media_type')),
       findsOneWidget,
-      reason: '前提：筛选行已渲染',
+      reason: '前提：筛选面板已渲染',
     );
     expect(
-      find.byKey(const ValueKey<String>('home_video_filter_source')),
+      find.byKey(const ValueKey<String>('video_filter_panel_source')),
       findsNothing,
       reason: '只有一个选项的筛选没有意义',
     );
+    await closeFilterPanel(tester);
   });
 
   testWidgets('选「非系列」后系列的集被收掉，只剩散片', (WidgetTester tester) async {
@@ -296,11 +328,7 @@ void main() {
       reason: '已归进系列的集必须从「全部视频」平铺里消失——这正是本档位的目的',
     );
     expect(cardOf('video/ep2'), findsNothing);
-    expect(
-      cardOf('video/loose'),
-      findsOneWidget,
-      reason: '没归系列的散片必须留下',
-    );
+    expect(cardOf('video/loose'), findsOneWidget, reason: '没归系列的散片必须留下');
   });
 
   testWidgets('选「系列内」后只剩系列的集', (WidgetTester tester) async {
@@ -318,8 +346,7 @@ void main() {
     );
   });
 
-  testWidgets('归属指向已删合集的孤儿条目按「非系列」算（与库网格折叠同口径）',
-      (WidgetTester tester) async {
+  testWidgets('归属指向已删合集的孤儿条目按「非系列」算（与库网格折叠同口径）', (WidgetTester tester) async {
     await seedVideo('video/orphan', '孤儿归属');
     final int cid = await db.createMediaCollection(
       '待删合集',
@@ -348,8 +375,7 @@ void main() {
     );
   });
 
-  testWidgets('档位不泄漏到别的分区（三分区共用同一个 State 实例）',
-      (WidgetTester tester) async {
+  testWidgets('档位不泄漏到别的分区（三分区共用同一个 State 实例）', (WidgetTester tester) async {
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
     await pickSeriesFilter(tester, t.video_filter_series_in);
@@ -377,8 +403,9 @@ void main() {
     );
   });
 
-  testWidgets('「系列内」档位下全选真的勾得上（候选取可见散卡序，不再二次推导资格）',
-      (WidgetTester tester) async {
+  testWidgets('「系列内」档位下全选真的勾得上（候选取可见散卡序，不再二次推导资格）', (
+    WidgetTester tester,
+  ) async {
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
     await pickSeriesFilter(tester, t.video_filter_series_in);
@@ -391,7 +418,8 @@ void main() {
     expect(
       find.text(t.batch_selected_count(n: 2)),
       findsOneWidget,
-      reason: '「全部视频」墙上没有合集卡，每一集都是独立散卡——全选必须把它们'
+      reason:
+          '「全部视频」墙上没有合集卡，每一集都是独立散卡——全选必须把它们'
           '都勾上。按「跳过合集成员」的旧资格判据这里会是 0（no-op）',
     );
   });
@@ -414,7 +442,8 @@ void main() {
     expect(
       find.text(t.batch_selected_count(n: 1)),
       findsOneWidget,
-      reason: 'ep1 已被筛走、屏幕上没有它，底栏就不能还把它算进「已选」——'
+      reason:
+          'ep1 已被筛走、屏幕上没有它，底栏就不能还把它算进「已选」——'
           '用户是照着这个数字点删除的',
     );
 
@@ -427,8 +456,7 @@ void main() {
     );
   });
 
-  testWidgets('切到首页分区后计数归零（首页没有可勾选的格）',
-      (WidgetTester tester) async {
+  testWidgets('切到首页分区后计数归零（首页没有可勾选的格）', (WidgetTester tester) async {
     await seedSeriesAndLoose();
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
@@ -448,7 +476,8 @@ void main() {
     expect(
       find.text(t.batch_selected_count(n: 2)),
       findsNothing,
-      reason: '首页从不登记可见序，计数会停在「全部视频」那一档——批量删除于是'
+      reason:
+          '首页从不登记可见序，计数会停在「全部视频」那一档——批量删除于是'
           '作用在一批首页上根本没画出来的条目上',
     );
 
@@ -462,8 +491,7 @@ void main() {
     );
   });
 
-  testWidgets('筛到一条不剩时计数归零（空态帧也要如实登记「屏幕上没有卡」）',
-      (WidgetTester tester) async {
+  testWidgets('筛到一条不剩时计数归零（空态帧也要如实登记「屏幕上没有卡」）', (WidgetTester tester) async {
     // 库里只有系列成员，没有任何散片：选「非系列」会筛到 0 条，走筛选空态。
     await seedVideo('video/ep1', '第1集');
     await seedVideo('video/ep2', '第2集');
@@ -489,19 +517,20 @@ void main() {
     expect(
       find.text(t.video_filter_series_standalone_empty_hint),
       findsOneWidget,
-      reason: '前提：这一档确实筛到 0 条，走的是筛选空态那条分支（BUG-2835：'
+      reason:
+          '前提：这一档确实筛到 0 条，走的是筛选空态那条分支（BUG-2835：'
           '「非系列」筛空时提示合集里的视频在系列页，而不是让人以为库空了）',
     );
     expect(
       find.text(t.batch_selected_count(n: 2)),
       findsNothing,
-      reason: '空态帧此前在登记可见序之前就提前 return，可见序停在上一档——'
+      reason:
+          '空态帧此前在登记可见序之前就提前 return，可见序停在上一档——'
           '墙上一张卡都没有，底栏却还写着「已选 2」，点删除会真的删掉它们',
     );
   });
 
-  testWidgets('筛到一条不剩时全选勾不中任何条目（空态帧照样登记可见序）',
-      (WidgetTester tester) async {
+  testWidgets('筛到一条不剩时全选勾不中任何条目（空态帧照样登记可见序）', (WidgetTester tester) async {
     // 上一条量的是「已选计数」，这一条量的是「全选候选集」：同一份可见序
     // 喂给两条不同的消费路径，只修其中一条都会把另一条留成真删错条目。
     await seedVideo('video/ep1', '第1集');
@@ -530,7 +559,8 @@ void main() {
     expect(
       find.text(t.batch_selected_count(n: 0)),
       findsOneWidget,
-      reason: '空态是提前 return 的，可见序若不在早退处登记就留着上一帧那两张卡'
+      reason:
+          '空态是提前 return 的，可见序若不在早退处登记就留着上一帧那两张卡'
           '——「筛到一条不剩 → 全选 → 批量删除」会删掉屏幕上根本不存在的条目',
     );
     expect(
@@ -540,47 +570,55 @@ void main() {
     );
   });
 
-  testWidgets('chip 在「全部」态显示维度名，选中档位后显示档位名',
-      (WidgetTester tester) async {
+  testWidgets('生效中的系列 chip：「全部」态带维度名，其它档显示档位名，默认档不出', (
+    WidgetTester tester,
+  ) async {
     await seedSeriesAndLoose();
     await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
+    const ValueKey<String> chip = ValueKey<String>(
+      'video_active_filter_series',
+    );
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
-        matching: find.text(t.video_filter_series),
+        of: find.byKey(chip),
+        matching: find.text('${t.video_filter_series} · ${t.home_filter_all}'),
       ),
       findsOneWidget,
-      reason: '「全部」态的 chip 要回答「这个下拉管什么」',
+      reason: '「全部」态的 chip 要回答「这是哪个条件」',
     );
 
-    await pickSeriesFilter(tester, t.video_filter_series_standalone);
-
+    await pickSeriesFilter(tester, t.video_filter_series_in);
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey<String>('home_video_filter_series')),
-        matching: find.text(t.video_filter_series_standalone),
+        of: find.byKey(chip),
+        matching: find.text(t.video_filter_series_in),
       ),
       findsOneWidget,
       reason: '选了档位后 chip 显示当前档位',
     );
+
+    await pickSeriesFilter(tester, t.video_filter_series_standalone);
+    expect(find.byKey(chip), findsNothing, reason: '回到分区默认档「非系列」后 chip 消失');
   });
 
   testWidgets('筛选控件只在「全部视频」露出', (WidgetTester tester) async {
     await seedSeriesAndLoose();
 
     await pumpSection(tester, VideoLibrarySection.series);
+    await openFilterPanel(tester);
 
     expect(
-      find.byKey(const ValueKey<String>('home_video_filter_series')),
+      find.byKey(const ValueKey<String>('video_filter_panel_series')),
       findsNothing,
       reason: '系列页本身就按合集折叠，再给它这个档位没有意义',
     );
     expect(
-      find.byKey(const ValueKey<String>('home_video_filter_year')),
+      find.byKey(const ValueKey<String>('video_filter_panel_year')),
       findsOneWidget,
-      reason: '另外两个筛选照常在（确认这条断言不是因为整栏没渲染而假绿）',
+      reason: '另外两个筛选照常在（确认这条断言不是因为整个面板没渲染而假绿）',
     );
+    await closeFilterPanel(tester);
   });
 }

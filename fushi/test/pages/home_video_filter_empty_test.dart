@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,12 +139,24 @@ void main() {
   Finder searchField() =>
       find.byKey(const ValueKey<String>('video_search_field'));
 
+  const ValueKey<String> searchButton = ValueKey<String>(
+    'fushi-header-search-button',
+  );
+
+  /// 单行页头（2026-10-14）：搜索平时是页头里的 🔍，点开整行换成搜索栏。
+  Future<void> expandSearch(WidgetTester tester) async {
+    await tester.tap(find.byKey(searchButton));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('2026-10 筛选空态：视频自己的文案 + 一键清除搜索词与全部筛选', (
     WidgetTester tester,
   ) async {
     await seedSeriesAndLoose();
+    await prefs.setVideoAllSeriesFilterName('all');
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
+    await expandSearch(tester);
     await tester.enterText(searchField(), 'zzz-no-hit');
     await tester.pumpAndSettle();
 
@@ -171,18 +182,21 @@ void main() {
       isEmpty,
     );
     expect(find.text(t.video_library_filter_empty), findsNothing);
-    // 系列归属也被复位成「全部」：合集里的集与散片都回来。
-    expect(cardOf('video/ep1'), findsOneWidget);
-    expect(cardOf('video/ep2'), findsOneWidget);
+    // 2026-10-14：清除 = 每个维度回到**分区默认值**（与 chip ✕、面板「清除
+    // 全部」同口径），系列归属回「非系列」：散片回来，合集的集仍收在系列页。
     expect(cardOf('video/loose'), findsOneWidget);
+    expect(cardOf('video/ep1'), findsNothing);
+    expect(cardOf('video/ep2'), findsNothing);
     expect(
       prefs.videoAllSeriesFilterName,
-      'all',
+      'standalone',
       reason: '系列归属是唯一持久化的档位，清除后要写回偏好',
     );
   });
 
-  testWidgets('2026-10 「非系列」档位筛空时仍给系列页提示，清除后条目回来', (WidgetTester tester) async {
+  testWidgets('2026-10 「非系列」默认档筛空：给系列页提示，没有可清的条件就不出清除按钮', (
+    WidgetTester tester,
+  ) async {
     await seedVideo('video/ep1', '第1集');
     final int cid = await db.createMediaCollection(
       '我的番',
@@ -195,14 +209,14 @@ void main() {
       find.text(t.video_filter_series_standalone_empty_hint),
       findsOneWidget,
     );
-    await tester.tap(
+    expect(
       find.byKey(const ValueKey<String>('home_video_filters_clear')),
+      findsNothing,
+      reason: '清除只回到分区默认值，已经全在默认值时按下去什么都不变',
     );
-    await tester.pumpAndSettle();
-    expect(cardOf('video/ep1'), findsOneWidget);
   });
 
-  testWidgets('2026-10 360dp 窄屏：搜索框独占一行、chip 落第二行，无溢出', (
+  testWidgets('2026-10-14 360dp 窄屏：单行页头无溢出，🔍 展开后搜索栏占满整行', (
     WidgetTester tester,
   ) async {
     await seedSeriesAndLoose();
@@ -213,57 +227,38 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(
-      find.byKey(const ValueKey<String>('video_search_bar_stacked')),
-      findsOneWidget,
-    );
-    final Rect field = tester.getRect(searchField());
-    final Rect year = tester.getRect(
-      find.byKey(const ValueKey<String>('home_video_filter_year')),
-    );
-    expect(
-      year.top,
-      greaterThanOrEqualTo(field.bottom),
-      reason: '年份 chip 在搜索框下面一行',
-    );
-    expect(field.width, greaterThan(300), reason: '搜索框独占整行');
+    expect(find.byKey(searchButton), findsOneWidget);
+    expect(searchField(), findsNothing, reason: '搜索平时收成 🔍');
 
-    final Finder searchChips = find.descendant(
-      of: find.byKey(const ValueKey<String>('video_search_bar_stacked')),
-      matching: find.byWidgetPredicate(
-        (Widget widget) =>
-            widget is SingleChildScrollView &&
-            widget.scrollDirection == Axis.horizontal,
-      ),
+    await expandSearch(tester);
+    expect(tester.takeException(), isNull);
+    expect(searchField(), findsOneWidget);
+    expect(
+      tester
+          .getRect(
+            find.byKey(const ValueKey<String>('fushi-header-search-bar')),
+          )
+          .width,
+      greaterThan(300),
+      reason: '展开后整行页头换成搜索栏',
     );
-    for (final Finder filterRow in <Finder>[
-      searchChips,
-      find.byKey(const ValueKey<String>('home_video_all_videos_filter_row')),
-    ]) {
-      expect(filterRow, findsOneWidget);
-      final ScrollableState scrollable = tester.state<ScrollableState>(
-        find.descendant(of: filterRow, matching: find.byType(Scrollable)),
-      );
-      expect(
-        ScrollConfiguration.of(scrollable.context).dragDevices,
-        contains(PointerDeviceKind.mouse),
-        reason: '两个筛选横滚区域都须继承鼠标拖动接线',
-      );
-    }
   });
 
-  testWidgets('2026-10 宽屏：搜索框与 chip 仍同一行', (WidgetTester tester) async {
+  testWidgets('2026-10-14 宽屏：🔍 与筛选按钮同在页头一行，生效中的筛选 chip 在下一行', (
+    WidgetTester tester,
+  ) async {
+    await prefs.setVideoAllSeriesFilterName('all');
     await seedSeriesAndLoose();
     await pumpSection(tester, VideoLibrarySection.allVideos);
 
-    expect(
-      find.byKey(const ValueKey<String>('video_search_bar_stacked')),
-      findsNothing,
+    final Rect search = tester.getRect(find.byKey(searchButton));
+    final Rect filter = tester.getRect(
+      find.byKey(const ValueKey<String>('video-library-filter-button')),
     );
-    final Rect field = tester.getRect(searchField());
-    final Rect year = tester.getRect(
-      find.byKey(const ValueKey<String>('home_video_filter_year')),
+    expect((search.center.dy - filter.center.dy).abs(), lessThan(12));
+    final Rect chip = tester.getRect(
+      find.byKey(const ValueKey<String>('video_active_filter_series')),
     );
-    expect((year.center.dy - field.center.dy).abs(), lessThan(12));
+    expect(chip.top, greaterThanOrEqualTo(filter.bottom - 1));
   });
 }
