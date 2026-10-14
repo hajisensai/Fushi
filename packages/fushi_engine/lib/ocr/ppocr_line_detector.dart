@@ -17,8 +17,9 @@
 ///   `unclip_ratio=1.4` 外扩。原版对每个轮廓取最小外接旋转矩形再用 Clipper
 ///   偏移多边形；本实现只产**轴对齐**框：连通域的外接矩形 + 按
 ///   `d = 像素数 * ratio / 外接矩形周长` 四边外扩（轴对齐矩形上与 Clipper 偏移
-///   精确相等；倾斜行按真实像素数算面积，外扩量与原版同量级）。横排段落的行
-///   天然轴对齐，丢掉旋转信息对本用途没有损失。
+///   精确相等；倾斜行按真实像素数算面积，外扩量与原版同量级）。框本身不旋转，
+///   但每个连通域的主轴角另记在 [PpTextLine.axisAngle]（像素二阶矩），整块的
+///   倾角由 [ppBlockTilt] 汇总，供覆盖层把逐字命中格沿斜行摆正。
 library;
 
 import 'dart:math' as math;
@@ -26,6 +27,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/media/manga/mokuro_geometry.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -94,12 +96,50 @@ Float32List ppDetPreprocess(img.Image source, int width, int height) {
 
 /// 一条检测到的文本行（坐标在**输入给检测器的那张图**的像素系）。
 class PpTextLine {
-  const PpTextLine({required this.rect, required this.score});
+  const PpTextLine({
+    required this.rect,
+    required this.score,
+    this.axisAngle = 0,
+    this.elongation = 1,
+    this.pixelCount = 0,
+  });
 
   final OcrRect rect;
 
   /// 连通域内概率均值。
   final double score;
+
+  /// 连通域主轴与 +x 轴的夹角（弧度，(-π/2, π/2]，图像坐标 y 向下，正值即
+  /// 屏幕上顺时针）。由像素二阶矩求得；[elongation] 太小时没有意义。
+  final double axisAngle;
+
+  /// 连通域主轴 / 次轴标准差之比（≥1）：越大越像一条细长的行，主轴角越可信。
+  final double elongation;
+
+  /// 连通域像素数（[ppBlockTilt] 的加权用）。
+  final int pixelCount;
+
+  /// 行相对正立方向的倾角（弧度，(-π/2, π/2]，正值顺时针）：横行是主轴偏离
+  /// 水平的角度，竖列是主轴偏离竖直的角度。
+  double get tilt =>
+      _wrapHalfTurn(vertical ? axisAngle - math.pi / 2 : axisAngle);
+
+  /// 把行从概率图像素系换到另一像素系：框按 [sx]/[sy] 缩放，主轴方向向量同样
+  /// 按轴缩放后重求角度（两轴缩放比不同会改变斜线的角度）。
+  PpTextLine scaled(double sx, double sy) => PpTextLine(
+    rect: OcrRect(
+      left: rect.left * sx,
+      top: rect.top * sy,
+      right: rect.right * sx,
+      bottom: rect.bottom * sy,
+    ),
+    score: score,
+    axisAngle: _wrapHalfTurn(
+      math.atan2(math.sin(axisAngle) * sy, math.cos(axisAngle) * sx),
+    ),
+    elongation: elongation,
+    pixelCount: pixelCount,
+  );
 
   /// 竖排：高 ≥ 1.5 × 宽。
   bool get vertical => rect.height >= rect.width * kPpLineVerticalRatio;
@@ -143,12 +183,23 @@ List<PpTextLine> ppDetPostprocess(
     int minX = width, minY = height, maxX = -1, maxY = -1;
     double sum = 0;
     int count = 0;
+    // 像素坐标的一、二阶矩（求主轴角）；以种子点为原点，避免大坐标平方的精度损失。
+    final int ox = start % width;
+    final int oy = start ~/ width;
+    double mx = 0, my = 0, mxx = 0, myy = 0, mxy = 0;
     while (sp > 0) {
       final int p = stack[--sp];
       final int px = p % width;
       final int py = p ~/ width;
       sum += prob[p];
       count++;
+      final double rx = (px - ox).toDouble();
+      final double ry = (py - oy).toDouble();
+      mx += rx;
+      my += ry;
+      mxx += rx * rx;
+      myy += ry * ry;
+      mxy += rx * ry;
       if (px < minX) minX = px;
       if (px > maxX) maxX = px;
       if (py < minY) minY = py;
@@ -172,6 +223,14 @@ List<PpTextLine> ppDetPostprocess(
     // 面积用连通域真实像素数而不是 w*h：轴对齐时两者恒等，倾斜行的外接矩形面积
     // 虚大（12° 倾斜实测 d 从 58 涨到 101），会把邻行吞进来让识别串行。
     final double d = count * unclipRatio / (2 * (w + h));
+    final ({double angle, double elongation}) axis = _principalAxis(
+      count,
+      mx,
+      my,
+      mxx,
+      myy,
+      mxy,
+    );
     lines.add(
       PpTextLine(
         rect: OcrRect(
@@ -181,10 +240,101 @@ List<PpTextLine> ppDetPostprocess(
           bottom: maxY + 1 + d,
         ).clamp(width.toDouble(), height.toDouble()),
         score: score,
+        axisAngle: axis.angle,
+        elongation: axis.elongation,
+        pixelCount: count,
       ),
     );
   }
   return lines;
+}
+
+/// 角度折进 (-π/2, π/2]（主轴是无向直线，差半圈是同一条）。
+double _wrapHalfTurn(double angle) {
+  double t = angle;
+  while (t <= -math.pi / 2) {
+    t += math.pi;
+  }
+  while (t > math.pi / 2) {
+    t -= math.pi;
+  }
+  return t;
+}
+
+/// 由 [count] 个像素的一阶矩（[mx]/[my]）与二阶矩求主轴角与长短轴比。
+({double angle, double elongation}) _principalAxis(
+  int count,
+  double mx,
+  double my,
+  double mxx,
+  double myy,
+  double mxy,
+) {
+  final double n = count.toDouble();
+  final double cx = mx / n;
+  final double cy = my / n;
+  final double cxx = mxx / n - cx * cx;
+  final double cyy = myy / n - cy * cy;
+  final double cxy = mxy / n - cx * cy;
+  final double half = (cxx - cyy) / 2;
+  final double root = math.sqrt(half * half + cxy * cxy);
+  final double major = (cxx + cyy) / 2 + root;
+  // 单像素宽的离散方差下限是 1/12，避免细线的次轴方差为 0 除零。
+  final double minor = math.max(1 / 12, (cxx + cyy) / 2 - root);
+  return (
+    angle: _wrapHalfTurn(0.5 * math.atan2(2 * cxy, cxx - cyy)),
+    elongation: math.sqrt(math.max(1.0, major / minor)),
+  );
+}
+
+/// 参与估块倾角的行至少要有的长短轴比：单字、标点这类近方块的连通域主轴角
+/// 没有意义。
+const double kPpTiltMinElongation = 2.5;
+
+/// 倾角绝对值超过它就不信（接近 45° 时横竖判断本身就不可靠，按外接框反推
+/// 旋转矩形也会病态）。
+const double kPpTiltMaxRadians = 40 * math.pi / 180;
+
+/// 一个文字块的整体倾角（弧度，正值顺时针；0 = 正立）。
+///
+/// 同一个气泡里的行/列共享同一个倾斜（斜放的标题、手写旁白），所以按块估一个
+/// 角度：取细长连通域倾角的像素数加权中位数（抗振假名、碎片干扰）。没有可信
+/// 的行、角度大到不可信、或倾斜对块里最长那行都无关紧要
+/// （[mokuroTiltIsNegligible]：按偏移量判，不按固定角度）时返回 0。
+double ppBlockTilt(List<PpTextLine> lines) {
+  final List<PpTextLine> usable = <PpTextLine>[
+    for (final PpTextLine line in lines)
+      if (line.elongation >= kPpTiltMinElongation &&
+          line.pixelCount > 0 &&
+          line.tilt.abs() <= kPpTiltMaxRadians)
+        line,
+  ]..sort((PpTextLine a, PpTextLine b) => a.tilt.compareTo(b.tilt));
+  if (usable.isEmpty) return 0;
+  final int total = usable.fold<int>(
+    0,
+    (int acc, PpTextLine line) => acc + line.pixelCount,
+  );
+  int running = 0;
+  double median = usable.last.tilt;
+  for (final PpTextLine line in usable) {
+    running += line.pixelCount;
+    if (running * 2 >= total) {
+      median = line.tilt;
+      break;
+    }
+  }
+  // 行的真实长 / 厚从像素数与长短轴比还原（矩形：L·T = 面积、L/T = 长短轴比），
+  // 与旋转无关；外接框在倾斜时会把厚度撑大。
+  double longest = 0;
+  double thickness = 0;
+  for (final PpTextLine line in usable) {
+    final double length = math.sqrt(line.pixelCount * line.elongation);
+    if (length > longest) {
+      longest = length;
+      thickness = math.sqrt(line.pixelCount / line.elongation);
+    }
+  }
+  return mokuroTiltIsNegligible(longest, thickness, median) ? 0 : median;
 }
 
 /// 振假名过滤：比块内行厚度 p75 的 [ratio] 还细的行丢掉（对拍脚本同规则，
@@ -276,13 +426,23 @@ class PpOcrLineDetector {
 
   /// 在页面 [page] 的文字块 [box] 内检测文本行，行框换回页面坐标（未滤振假名）；
   /// 块夹进页面后没有面积时返回空列表。
-  Future<List<OcrRect>> detectInBlock(img.Image page, OcrRect box) async {
+  Future<List<OcrRect>> detectInBlock(img.Image page, OcrRect box) async =>
+      (await detectLayoutInBlock(page, box)).lines;
+
+  /// 同 [detectInBlock]，另带整块倾角（[ppBlockTilt]）。
+  Future<({List<OcrRect> lines, double tilt})> detectLayoutInBlock(
+    img.Image page,
+    OcrRect box,
+  ) async {
     final OcrBlockCrop? crop = cropOcrBlock(page, box);
-    if (crop == null) return const <OcrRect>[];
-    return <OcrRect>[
-      for (final PpTextLine line in await detect(crop.image))
-        crop.toPage(line.rect),
-    ];
+    if (crop == null) return (lines: const <OcrRect>[], tilt: 0.0);
+    final List<PpTextLine> detected = await detect(crop.image);
+    return (
+      lines: <OcrRect>[
+        for (final PpTextLine line in detected) crop.toPage(line.rect),
+      ],
+      tilt: ppBlockTilt(detected),
+    );
   }
 
   /// 在 [crop]（一个文字块的裁图）内检测文本行，坐标为 [crop] 像素系。
@@ -314,18 +474,7 @@ class PpOcrLineDetector {
     // 概率图与输入同尺寸；反变换回裁图像素系。
     final double sx = crop.width / outW;
     final double sy = crop.height / outH;
-    return <PpTextLine>[
-      for (final PpTextLine l in raw)
-        PpTextLine(
-          rect: OcrRect(
-            left: l.rect.left * sx,
-            top: l.rect.top * sy,
-            right: l.rect.right * sx,
-            bottom: l.rect.bottom * sy,
-          ),
-          score: l.score,
-        ),
-    ];
+    return <PpTextLine>[for (final PpTextLine l in raw) l.scaled(sx, sy)];
   }
 
   Future<void> close() => _session.close();
