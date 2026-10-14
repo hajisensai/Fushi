@@ -24,18 +24,18 @@ class QuickImportAction {
   final Future<void> Function() onTap;
   final bool enabled;
 
-  /// 导入方式卡片上的一行说明（可选）。
+  /// 按钮悬停 / 长按时的一行说明（可选，如「WebDAV 远程库（原地串流）」）。
   final String? description;
 }
 
 /// 库页「导入」视图顶部的快速导入区（M3E）。
 ///
-/// 自上而下两块：
-/// - **拖放区卡片**：28 圆角饱和色块 + 花瓣形大图标 + 主按钮（[actions] 第一个，
-///   「选择文件」）与 tonal 次按钮（[actions] 最后一个，「导入文件夹」）+ 支持格式
-///   chip 行；任一入口在跑时底部亮波浪进度。
-/// - **导入方式网格**：[actions] 与 [extraActions]（如「添加网络来源」）逐个画成
-///   图标选择卡，按宽度自适应 1–4 列。
+/// 只有一块**拖放区卡片**：28 圆角饱和色块 + 花瓣形大图标 + 一排按钮 + 支持格式
+/// chip 行；任一入口在跑时底部亮波浪进度。按钮行里主按钮是 [actions] 第一个
+/// （「选择文件」），其后依次是 tonal 次按钮：[actions] 最后一个（「导入文件夹」）、
+/// [actions] 中间的项（如视频的「导入 IPTV 频道列表」）、[extraActions]（如「添加
+/// 网络来源」）。所有入口都在这一排里，页面上每个入口只出现一次（用户 2026-10-14：
+/// 原先下方另有一块「导入方式」卡片网格，与按钮重复）。
 ///
 /// 三个媒体域（书 / 漫画 / 视频）同构复用——各域只声明自己真正有的入口（与
 /// `MediaLibraryShell`「不放空壳 tab」同一哲学）。单件导入入口从各库页页头 / FAB
@@ -54,7 +54,7 @@ class QuickImportSection extends StatefulWidget {
 
   final List<QuickImportAction> actions;
 
-  /// 只出现在导入方式网格里的入口（不进拖放区的按钮）。
+  /// 排在按钮行末尾的附加入口（如「添加网络来源」）。
   final List<QuickImportAction> extraActions;
 
   /// 支持格式（扩展名 / 协议的显示名，如 `EPUB`），画成 chip 行。
@@ -86,43 +86,24 @@ class _QuickImportSectionState extends State<QuickImportSection> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<QuickImportAction> actions = widget.actions;
-    final List<QuickImportAction> all = <QuickImportAction>[
-      ...actions,
+    if (actions.isEmpty) return const SizedBox.shrink();
+    // 主按钮之后的 tonal 按钮：文件夹紧跟主按钮，其余入口排在后面。
+    final List<QuickImportAction> secondaries = <QuickImportAction>[
+      if (actions.length > 1) actions.last,
+      if (actions.length > 2) ...actions.sublist(1, actions.length - 1),
       ...widget.extraActions,
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        if (actions.isNotEmpty)
-          FushiStaggeredEntrance(
-            index: 0,
-            child: _ImportDropZone(
-              icon: widget.heroIcon,
-              primary: actions.first,
-              secondary: actions.length > 1 ? actions.last : null,
-              formats: widget.formats,
-              busy: _running > 0,
-              onRun: _tapOf,
-            ),
-          ),
-        if (all.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 28),
-          FushiStaggeredEntrance(
-            index: 1,
-            child: Text(
-              t.import_methods_title,
-              style: context.fushiType.titleLargeEmphasized,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap + 4),
-          FushiStaggeredEntrance(
-            index: 2,
-            child: _ImportMethodGrid(actions: all, onRun: _tapOf),
-          ),
-        ],
-      ],
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: _ImportDropZone(
+        icon: widget.heroIcon,
+        primary: actions.first,
+        secondaries: secondaries,
+        formats: widget.formats,
+        busy: _running > 0,
+        onRun: _tapOf,
+      ),
     );
   }
 }
@@ -136,7 +117,7 @@ class _ImportDropZone extends StatelessWidget {
   const _ImportDropZone({
     required this.icon,
     required this.primary,
-    required this.secondary,
+    required this.secondaries,
     required this.formats,
     required this.busy,
     required this.onRun,
@@ -144,7 +125,9 @@ class _ImportDropZone extends StatelessWidget {
 
   final IconData icon;
   final QuickImportAction primary;
-  final QuickImportAction? secondary;
+
+  /// 主按钮之后的 tonal 按钮，按显示顺序。
+  final List<QuickImportAction> secondaries;
   final List<String> formats;
   final bool busy;
   final VoidCallback? Function(QuickImportAction action) onRun;
@@ -155,9 +138,9 @@ class _ImportDropZone extends StatelessWidget {
     final FushiMotionScheme motion = context.fushiMotion;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
-    final double radius =
-        apple ? FushiM3eShape.small : FushiM3eShape.containerLarge;
-    final QuickImportAction? secondary = this.secondary;
+    final double radius = apple
+        ? FushiM3eShape.small
+        : FushiM3eShape.containerLarge;
     return FushiHoverLift(
       scale: 1.01,
       forceLifted: FushiFileDropTarget.dragHoveringOf(context),
@@ -165,19 +148,19 @@ class _ImportDropZone extends StatelessWidget {
         final Color fill = eink
             ? colors.surface
             : hovering
-                ? colors.primaryContainer
-                : colors.secondaryContainer;
+            ? colors.primaryContainer
+            : colors.secondaryContainer;
         final Color border = eink
             ? colors.outline
             : hovering
-                ? colors.primary
-                : colors.outlineVariant;
+            ? colors.primary
+            : colors.outlineVariant;
         // 色块上的文字跟随该色块的 on 色（墨水屏退回页面前景）。
         final Color onFill = eink
             ? colors.onSurface
             : hovering
-                ? colors.onPrimaryContainer
-                : colors.onSecondaryContainer;
+            ? colors.onPrimaryContainer
+            : colors.onSecondaryContainer;
         final Color hintColor = eink ? colors.onSurfaceVariant : onFill;
         return AnimatedContainer(
           duration: motion.effectsDefault.duration,
@@ -214,8 +197,9 @@ class _ImportDropZone extends StatelessWidget {
                   Text(
                     t.import_drop_zone_title,
                     textAlign: TextAlign.center,
-                    style: context.fushiType.titleLargeEmphasized
-                        .copyWith(color: onFill),
+                    style: context.fushiType.titleLargeEmphasized.copyWith(
+                      color: onFill,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
@@ -230,13 +214,20 @@ class _ImportDropZone extends StatelessWidget {
                         icon: FushiIcon(primary.icon),
                         label: Text(primary.label),
                       ),
-                      if (secondary != null)
-                        FushiFilledButton.tonalIcon(
-                          key: const ValueKey<String>('quick-import-secondary'),
-                          onPressed: busy ? null : onRun(secondary),
-                          size: FushiButtonSize.m,
-                          icon: FushiIcon(secondary.icon),
-                          label: Text(secondary.label),
+                      for (int i = 0; i < secondaries.length; i++)
+                        _withDescription(
+                          secondaries[i],
+                          FushiFilledButton.tonalIcon(
+                            key: ValueKey<String>(
+                              i == 0
+                                  ? 'quick-import-secondary'
+                                  : 'quick-import-secondary-$i',
+                            ),
+                            onPressed: busy ? null : onRun(secondaries[i]),
+                            size: FushiButtonSize.m,
+                            icon: FushiIcon(secondaries[i].icon),
+                            label: Text(secondaries[i].label),
+                          ),
                         ),
                     ],
                   ),
@@ -282,8 +273,9 @@ class _ImportDropZone extends StatelessWidget {
                                 const SizedBox(height: 8),
                                 Text(
                                   t.import_in_progress,
-                                  style: context.fushiType.labelMedium
-                                      .copyWith(color: hintColor),
+                                  style: context.fushiType.labelMedium.copyWith(
+                                    color: hintColor,
+                                  ),
                                 ),
                               ],
                             ),
@@ -300,111 +292,11 @@ class _ImportDropZone extends StatelessWidget {
   }
 }
 
-/// 导入方式网格：每个入口一张图标选择卡（形状图标 + 名称 + 说明），按可用宽度
-/// 排 1–4 列；卡片本身可聚焦（Tab / 方向键遍历，Enter 打开）。
-class _ImportMethodGrid extends StatelessWidget {
-  const _ImportMethodGrid({required this.actions, required this.onRun});
-
-  final List<QuickImportAction> actions;
-  final VoidCallback? Function(QuickImportAction action) onRun;
-
-  /// 卡片目标最小宽度：再窄就换行减列。
-  static const double _minCardWidth = 200;
-
-  /// 形状轮换：同一排图标不同形，M3E 的形状语言。
-  static const List<FushiLeadingShape> _shapes = <FushiLeadingShape>[
-    FushiLeadingShape.cookie,
-    FushiLeadingShape.square,
-    FushiLeadingShape.flower,
-    FushiLeadingShape.circle,
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final double gap = FushiDesignTokens.of(context).spacing.gap;
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double width = constraints.maxWidth;
-        final int columns = ((width + gap) ~/ (_minCardWidth + gap))
-            .clamp(1, 4)
-            .clamp(1, actions.length);
-        final double itemWidth = (width - gap * (columns - 1)) / columns;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: <Widget>[
-            for (int i = 0; i < actions.length; i++)
-              SizedBox(
-                width: itemWidth,
-                child: FushiStaggeredEntrance(
-                  index: i + 3,
-                  child: _ImportMethodCard(
-                    action: actions[i],
-                    shape: _shapes[i % _shapes.length],
-                    onTap: onRun(actions[i]),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _ImportMethodCard extends StatelessWidget {
-  const _ImportMethodCard({
-    required this.action,
-    required this.shape,
-    required this.onTap,
-  });
-
-  final QuickImportAction action;
-  final FushiLeadingShape shape;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String? description = action.description;
-    return Semantics(
-      button: true,
-      enabled: onTap != null,
-      child: FushiCard(
-        variant: FushiCardVariant.filled,
-        onTap: onTap,
-        padding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 96),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiListLeadingIcon(action.icon, shape: shape),
-              const SizedBox(height: 12),
-              Text(
-                action.label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.titleSmallEmphasized,
-              ),
-              if (description != null && description.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: context.fushiType.bodySmall.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+/// 有说明的入口把说明挂成悬停 / 长按提示（原「导入方式」卡片上的那行字）。
+Widget _withDescription(QuickImportAction action, Widget button) {
+  final String? description = action.description;
+  if (description == null || description.isEmpty) return button;
+  return FushiTooltip(message: description, child: button);
 }
 
 /// 拖放区的圆角矩形描边：[dashed] 时画虚线（拖放区的通用视觉语言），否则实线。
