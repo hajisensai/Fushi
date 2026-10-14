@@ -7416,5 +7416,7 @@
   "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。画面上已有 Fushi 显示的文字字幕时以字幕为准。",
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
-  "video_setting_pause_ocr_scope_off": "关闭"
+  "video_setting_pause_ocr_scope_off": "关闭",
+  "manga_library_ocr_action": "识别文字（OCR）",
+  "manga_library_ocr_none": "没有需要识别的内容：所选漫画已识别过或尚未下载"
 }

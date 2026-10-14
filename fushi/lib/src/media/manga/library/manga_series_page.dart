@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
+import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
@@ -22,15 +23,10 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
-import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
-import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
-import 'package:fushi_engine/ocr/manga_ocr_service.dart'
-    show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
-import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
@@ -41,7 +37,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
-import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
@@ -748,15 +743,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (row == null || entry == null || _busy) return;
     final String bookDir = await MangaStorage.bookPath(row.bookKey);
     if (!await isChapterDownloaded(bookDir, chapter.key)) return;
-    final int queued = await _enqueueChapterOcr(
-      entry,
-      row,
-      <OnlineMangaChapter>[chapter],
-      // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
-      // ——读不出的坏文件不该被整章重跑悄悄覆盖。
-      onlyMissing: await _chapterOcrState(bookDir, chapter.key) !=
-          _ChapterOcrState.hasResult,
-    );
+    // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
+    // ——读不出的坏文件不该被整章重跑悄悄覆盖。
+    final bool onlyMissing =
+        await readMangaOcrResultState(
+          mangaChapterJsonFile(mangaChapterDirectory(bookDir, chapter.key)),
+        ) !=
+        MangaOcrResultState.hasResult;
+    final int queued = await _enqueueChapterOcr(<MangaOcrTarget>[
+      mangaChapterOcrTarget(
+        bookKey: row.bookKey,
+        bookDir: bookDir,
+        entry: entry,
+        chapter: chapter,
+        onlyMissing: onlyMissing,
+      ),
+    ]);
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
     }
@@ -768,115 +770,43 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final OnlineMangaLibraryEntry? entry = _entry;
     if (row == null || entry == null || _busy) return;
     final String bookDir = await MangaStorage.bookPath(row.bookKey);
-    final List<OnlineMangaChapter> targets = <OnlineMangaChapter>[];
+    final List<MangaOcrTarget> targets = <MangaOcrTarget>[];
     for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
       if (!_downloaded.contains(chapter.key)) continue;
-      if (await _chapterOcrState(bookDir, chapter.key) ==
-          _ChapterOcrState.empty) {
-        targets.add(chapter);
+      final MangaOcrTarget target = mangaChapterOcrTarget(
+        bookKey: row.bookKey,
+        bookDir: bookDir,
+        entry: entry,
+        chapter: chapter,
+      );
+      if (await readMangaOcrResultState(File(target.mangaJsonPath)) ==
+          MangaOcrResultState.empty) {
+        targets.add(target);
       }
     }
     if (targets.isEmpty) {
       FushiToast.show(msg: t.manga_series_ocr_all_none);
       return;
     }
-    final int queued = await _enqueueChapterOcr(entry, row, targets);
+    final int queued = await _enqueueChapterOcr(targets);
     if (queued > 0 && mounted) {
       FushiToast.show(msg: t.manga_series_ocr_queued);
     }
   }
 
-  /// 章 `manga.json` 的识别状态：一个 block 都没有 = 还没识别过（[empty]）；
-  /// 读不出来单独一态（[unreadable]）——坏文件既不排进「识别全部」，也不当作
-  /// 「已有结果」去丢缓存重跑。
-  static Future<_ChapterOcrState> _chapterOcrState(
-    String bookDir,
-    String chapterKey,
-  ) async {
-    try {
-      final File json = mangaChapterJsonFile(
-        mangaChapterDirectory(bookDir, chapterKey),
-      );
-      final MokuroPayload payload = parseMangaJson(await json.readAsString());
-      final bool empty = payload.images.isNotEmpty &&
-          payload.images.every((MokuroImage image) => image.blocks.isEmpty);
-      return empty ? _ChapterOcrState.empty : _ChapterOcrState.hasResult;
-    } on Object {
-      return _ChapterOcrState.unreadable;
-    }
-  }
-
-  /// 解析引擎（一次），逐章排任务。返回排上的章数；解析不到引擎 / 用户拒绝 Lens
-  /// 上传 → 0 并提示。
-  Future<int> _enqueueChapterOcr(
-    OnlineMangaLibraryEntry entry,
-    EpubBookRow row,
-    List<OnlineMangaChapter> chapters, {
-    bool onlyMissing = true,
-  }) async {
+  /// 解析引擎（一次），逐章排任务（共享路径 [enqueueMangaOcrTargets]，库页卡菜单 /
+  /// 多选「识别文字」走同一条）。返回排上的章数。
+  Future<int> _enqueueChapterOcr(List<MangaOcrTarget> targets) async {
     final AppModel? appModel = _appModelOrNull;
     if (appModel == null) return 0;
-    final MangaOcrWizardEngines engines =
-        widget.ocrEnginesOverride ??
-        MangaOcrWizardEngines.resolve(context: context, db: appModel.database);
-    final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
-      engines,
+    return enqueueMangaOcrTargets(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      targets: targets,
+      enginesOverride: widget.ocrEnginesOverride,
+      lensGate: widget.lensDisclosureOverride,
     );
-    final MangaOcrEnginePreference preference =
-        MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
-    final MangaOcrEngineId? engine = resolveMangaOcrEngine(
-      preference: preference,
-      hasExistingMetadata: false,
-      capabilities: availability.capabilities,
-    );
-    if (!mounted) return 0;
-    if (engine == null || !availability.isUsable(engine)) {
-      FushiToast.show(
-        msg: t.manga_series_ocr_no_engine,
-        severity: ToastSeverity.error,
-      );
-      return 0;
-    }
-    if (engine == MangaOcrEngineId.googleLens) {
-      final GoogleLensDisclosureGate gate =
-          widget.lensDisclosureOverride ?? ensureGoogleLensDisclosure;
-      if (!await gate(context)) return 0;
-      if (!mounted) return 0;
-    }
-    final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
-    final String bookDir = await MangaStorage.bookPath(row.bookKey);
-    int queued = 0;
-    for (final OnlineMangaChapter chapter in chapters) {
-      final Directory chapterDir = mangaChapterDirectory(bookDir, chapter.key);
-      final MangaOcrPageFocus focus = MangaOcrPageFocus();
-      final MangaOcrJobSpec spec = MangaOcrJobSpec(
-        engine: engine,
-        engines: engines,
-        imageDirPath: chapterDir.path,
-        lensLanguage: appModel.mangaOcrLensLanguage,
-        onlyMissing: onlyMissing,
-        volumeTitle:
-            '${entry.series.title} ${mangaChapterDisplayName(chapter)}',
-        remoteTarget: availability.remoteTarget,
-        focus: focus,
-      );
-      // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
-      unawaited(
-        registry.enqueue(
-          job: MangaOcrBackgroundJob(
-            bookKey: row.bookKey,
-            managedDirectory: chapterDir.path,
-            engine: engine,
-            events: mangaOcrBackgroundEvents(spec),
-            focus: focus,
-            follower: mangaOcrJobFollower(spec),
-          ),
-          mangaJsonPath: mangaChapterJsonFile(chapterDir).path,
-        ),
-      );
-      queued += 1;
-    }
-    return queued;
   }
 
   /// 书签 = 订阅开关：开订阅时默认同时开「新章自动下载」；关订阅把两位一起关
@@ -2105,6 +2035,3 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
 /// 锁定章弹窗的三条路；取消 = null。
 enum _LockedChapterChoice { login, download }
-
-/// 章 `manga.json` 的识别状态（见 `_chapterOcrState`）。
-enum _ChapterOcrState { empty, hasResult, unreadable }

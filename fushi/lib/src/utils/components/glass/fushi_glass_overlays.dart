@@ -4,6 +4,7 @@ import 'dart:ui' show SemanticsRole, lerpDouble;
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/menu_overlay_scroll_boundary.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -2907,7 +2908,10 @@ class FushiMenuAnchor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
-    return MenuAnchor(
+    final MenuAnchorChildBuilder? anchorBuilder = builder;
+    // BUG-3330：菜单面板的滚动通知截在锚点这一层，不冒泡进页面（见
+    // [MenuOverlayScrollBoundary]）；锚点自身（child / builder 的产物）照常冒泡。
+    final Widget menu = MenuAnchor(
       controller: controller,
       childFocusNode: childFocusNode,
       // Apple 下调用方的 MenuStyle（MD3 底色 / 圆角 / 内边距 / 描边 / 尺寸）
@@ -2942,9 +2946,17 @@ class FushiMenuAnchor extends StatelessWidget {
       menuChildren: glass && menuChildren.isNotEmpty
           ? <Widget>[_FushiGlassMenuPanel(children: menuChildren)]
           : menuChildren,
-      builder: builder,
-      child: child,
+      builder: anchorBuilder == null
+          ? null
+          : (BuildContext context, MenuController controller, Widget? child) =>
+                MenuOverlayScrollBoundary.anchor(
+                  child: anchorBuilder(context, controller, child),
+                ),
+      child: anchorBuilder == null && child != null
+          ? MenuOverlayScrollBoundary.anchor(child: child!)
+          : child,
     );
+    return MenuOverlayScrollBoundary(child: menu);
   }
 }
 
@@ -3422,7 +3434,10 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return DropdownMenu<T>(
+      // BUG-3330：下拉面板是 OverlayPortal 浮层，滚动通知会冒泡进页面（顶栏跟着
+      // 收起、下拉被重建后滚回选中项，列表拨不下去）。截在下拉这一层；锚点是本
+      // 下拉自己的输入框，它的横向滚动对页面也没有意义，一并截下。
+      final Widget dropdown = DropdownMenu<T>(
         enabled: widget.enabled,
         width: widget.width,
         menuHeight: widget.menuHeight,
@@ -3463,6 +3478,7 @@ class _FushiDropdownMenuState<T> extends State<FushiDropdownMenu<T>> {
         menuController: widget.menuController,
         scrollPadding: widget.scrollPadding,
       );
+      return MenuOverlayScrollBoundary(child: dropdown);
     }
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);

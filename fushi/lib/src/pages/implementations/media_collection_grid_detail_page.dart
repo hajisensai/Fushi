@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
-    show pickTargetCollectionForMembers;
+    show CollectionMemberVisibility, pickTargetCollectionForMembers;
 import 'package:fushi/src/media/collections/collection_detail_hero.dart';
 import 'package:fushi/src/media/collections/collection_member_view.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
@@ -60,6 +60,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.memberInfoOf,
     this.memberInfoRefresh,
     this.onSetMembersCompleted,
+    this.isMemberVisible,
     super.key,
   });
 
@@ -85,6 +86,10 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 手势被 [IgnorePointer] 屏蔽（避免其内部 long-press 与网格触摸拖拽争用），故「打开」
   /// 统一经此回调，由调用方按 (mediaType, entryKey) 找到条目并打开。
   final void Function(String mediaType, String entryKey)? onOpenMember;
+
+  /// 与 [memberCardBuilder] 同一判据、但不建卡的可见性谓词：「移到其他合集」
+  /// 弹窗按它数各合集的成员（BUG-3331）。null = 按原始成员行数。
+  final CollectionMemberVisibility? isMemberVisible;
 
   /// 成员卡的上下文菜单（网格右键 / 触摸长按松手）。非 null 时整个菜单交给调用方：
   /// 书架传入与库页书卡**同一个**菜单构建（标签 / 标记读完 / 删除 / 重命名…再补
@@ -592,6 +597,7 @@ class _MediaCollectionGridDetailPageState
       domainKind: domainKind,
       domainEntryKey: rows.first.entryKey,
       currentCollectionId: widget.collection.id,
+      isMemberVisible: widget.isMemberVisible,
     );
     if (target == null || target == widget.collection.id || !mounted) return;
     // 先加进目标再移出本合集：移空自删发生在最后一步，目标里成员已就位。
@@ -1555,8 +1561,8 @@ class _MemberListRow extends StatelessWidget {
                               value: progress.clamp(0.0, 1.0),
                               minHeight: 4,
                               year2023: apple ? null : true,
-                              color: info?.readStatus ==
-                                      ShelfReadStatus.finished
+                              color:
+                                  info?.readStatus == ShelfReadStatus.finished
                                   ? (apple
                                         ? appleColorsOf(context).success
                                         : scheme.tertiary)

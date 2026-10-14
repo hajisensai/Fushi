@@ -38,7 +38,9 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
+import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
@@ -2197,6 +2199,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           database: appModel.database,
           collection: collection,
           memberCardBuilder: _buildCollectionMemberCard,
+          isMemberVisible: _isCollectionMemberVisible,
           onOpenMember: _openCollectionMember,
           // BUG-2969：成员右键 / 长按与书架卡同一个菜单（含标签）。
           onShowMemberMenu: _showCollectionMemberMenu,
@@ -2429,23 +2432,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// [onRemoveFromCollection]（详情页注入 `() => _removeMember(row)`）非空时把「移出合集」
   /// 接进该成员卡长按 / 右键对话框（键盘/手柄用户聚焦长按 A 走此对话框而非网格指针菜单，
   /// 不注入就没有移出项）。
-  Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
-      {VoidCallback? onRemoveFromCollection}) {
-    // BUG-1009：详情页与书架是两条同时存活的路由（详情页 push 在书架之上），成员卡
-    // 若复用书架同名 focusId，两个 FushiFocusTarget 撞号——焦点注册表按 id 覆盖，
-    // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
-    const String prefix = 'collection-detail-';
+  /// 合集成员行 → 本页能画出来的条目（详情页成员卡与「加入合集」弹窗计数同一
+  /// 判据，BUG-3331）。null = 本页画不出来（孤儿行 / 被过滤 / 别的库页的条目）。
+  _ShelfBookSlot? _resolveCollectionMember(String mediaType, String entryKey) {
     final MediaKind? kind = MediaKind.tryParse(mediaType);
     if (kind == MediaKind.srt) {
       for (final SrtBook book in _visibleSrtBooks) {
-        if (book.uid == entryKey) {
-          return _buildSrtCard(
-            book,
-            epubCoverUri: _epubCoverUrisByBookKey[book.bookKey],
-            removeFromCollection: onRemoveFromCollection,
-            focusIdPrefix: prefix,
-          );
-        }
+        if (book.uid == entryKey) return _ShelfBookSlot(srt: book);
       }
       // 远端占位成员：成员行**在库里**（host 归属由
       // `RemoteCollectionAdoptionService` 收养落行、云盘归属由合集同步落行），只是
@@ -2453,14 +2446,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 的占位卡了，详情页此前却直接 return null 把它们静默丢掉——于是行头写着
       // 「14 项」、点进去只剩本地那两本（用户实报）。
       final RemoteAudiobookInfo? remoteSrt = _remoteSrtForEntry(entryKey);
-      if (remoteSrt != null) {
-        return _buildRemoteSrtCard(
-          remoteSrt,
-          selectable: false,
-          focusIdPrefix: prefix,
-        );
-      }
-      return null;
+      return remoteSrt == null ? null : _ShelfBookSlot(remoteSrt: remoteSrt);
     }
     if (kind == MediaKind.epub) {
       // v83：本地成员行 entryKey = uid；透传行（远端-only）仍是对端 bookKey。
@@ -2471,27 +2457,59 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         final String? bookKey = _parseBookKey(item.mediaIdentifier);
         if (bookKey == null) continue;
         if (bookKey == entryKey || _epubUidByKey[bookKey] == entryKey) {
-          return _buildEpubBookCard(
-            item,
-            removeFromCollection: onRemoveFromCollection,
-            focusIdPrefix: prefix,
-          );
+          return _ShelfBookSlot(epub: item);
         }
       }
       // 远端占位成员（同上 srt 分支的理由）：本地无此书 → 渲染远端占位卡而不是丢卡。
       final RemoteBookInfo? remote = _remoteBookForEntry(entryKey);
-      if (remote != null) {
-        return _buildRemoteBookCard(
-          remote,
-          selectable: false,
-          focusIdPrefix: prefix,
-        );
-      }
-      return null;
+      return remote == null ? null : _ShelfBookSlot(remote: remote);
     }
-    // 其它 mediaType（'video' / 'game' / 未来新增）：本页不认识 → 返 null 由详情页
+    // 其它 mediaType（'video' / 'game' / 未来新增）：本页不认识 → null 由详情页
     // 跳过，不当成 epub 渲染。混合合集的 game 成员在游戏库页打开同一合集时渲染。
     return null;
+  }
+
+  bool _isCollectionMemberVisible(String mediaType, String entryKey) =>
+      _resolveCollectionMember(mediaType, entryKey) != null;
+
+  Widget? _buildCollectionMemberCard(String mediaType, String entryKey,
+      {VoidCallback? onRemoveFromCollection}) {
+    // BUG-1009：详情页与书架是两条同时存活的路由（详情页 push 在书架之上），成员卡
+    // 若复用书架同名 focusId，两个 FushiFocusTarget 撞号——焦点注册表按 id 覆盖，
+    // 后注册者赢、pop 后书架卡失焦。详情页渲染路径统一加 route 前缀隔离命名空间。
+    const String prefix = 'collection-detail-';
+    final _ShelfBookSlot? slot = _resolveCollectionMember(mediaType, entryKey);
+    if (slot == null) return null;
+    final SrtBook? srt = slot.srt;
+    if (srt != null) {
+      return _buildSrtCard(
+        srt,
+        epubCoverUri: _epubCoverUrisByBookKey[srt.bookKey],
+        removeFromCollection: onRemoveFromCollection,
+        focusIdPrefix: prefix,
+      );
+    }
+    final RemoteAudiobookInfo? remoteSrt = slot.remoteSrt;
+    if (remoteSrt != null) {
+      return _buildRemoteSrtCard(
+        remoteSrt,
+        selectable: false,
+        focusIdPrefix: prefix,
+      );
+    }
+    final MediaItem? epub = slot.epub;
+    if (epub != null) {
+      return _buildEpubBookCard(
+        epub,
+        removeFromCollection: onRemoveFromCollection,
+        focusIdPrefix: prefix,
+      );
+    }
+    return _buildRemoteBookCard(
+      slot.remote!,
+      selectable: false,
+      focusIdPrefix: prefix,
+    );
   }
 
   /// 合集详情页「打开成员」（点卡片 / 菜单「打开」）：卡片自身手势被 IgnorePointer
@@ -2856,13 +2874,21 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         onPressed: () => _openIllustrations(item, bookKey),
       ),
       // 有声书导入仍受听书模块门控（develop 侧）；「重命名」不受它管。
-      if (modules.isEnabled(ModuleId.listening))
+      // BUG-3328：漫画阅读器不播有声书，漫画卡这两格是 OCR 入口（「这里应该是
+      // OCR 吧，为什么是导入有声书」）——同受漫画模块门控。
+      if (isManga && modules.isEnabled(ModuleId.manga))
+        DialogQuickAction(
+          label: t.manga_library_ocr_action,
+          icon: Icons.document_scanner_outlined,
+          onPressed: () => _ocrMangaBooks(<String>[bookKey], dialog: true),
+        ),
+      if (!isManga && modules.isEnabled(ModuleId.listening))
         DialogQuickAction(
           label: t.audiobook_import,
           icon: Icons.headphones_outlined,
           onPressed: () => _openAudiobookImport(item, bookKey),
         ),
-      if (modules.isEnabled(ModuleId.listening))
+      if (!isManga && modules.isEnabled(ModuleId.listening))
         DialogQuickAction(
           label: t.audiobook_studio_title,
           icon: FushiIcons.voice,
@@ -3226,6 +3252,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       database: appModel.database,
       mediaType: MediaKind.epub,
       entryKey: entryKey,
+      isMemberVisible: _isCollectionMemberVisible,
       // P4：用户看到的默认合集名应是改名后的显示名（身份 entryKey 仍是 raw
       // 键，不受影响）。
       defaultNewName: deriveSeriesDefaultName(

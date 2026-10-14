@@ -7416,5 +7416,7 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "manga_library_ocr_action": "Recognize text (OCR)",
+  "manga_library_ocr_none": "Nothing to recognize: the selected manga are already recognized or not downloaded"
 }
