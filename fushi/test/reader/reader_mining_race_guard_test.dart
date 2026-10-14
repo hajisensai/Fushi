@@ -25,7 +25,8 @@ void main() {
   setUpAll(() {
     source = readReaderPageSource();
 
-    prepareStart = source.indexOf('_prepareMiningContext() async {');
+    // 签名带可选的「高级制卡」覆盖项参数（#2150），按声明前缀定位，不钉参数表。
+    prepareStart = source.indexOf('_prepareMiningContext({');
     expect(prepareStart, greaterThanOrEqualTo(0),
         reason: '必须能定位 _prepareMiningContext。');
 
