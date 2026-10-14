@@ -6488,13 +6488,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         actions: <String, ReaderHeaderAction>{},
       );
     }
-    final bool rtl = _spreadDirection == 'rtl';
+    // 图标跟文字走（上一页 ‹ / 下一页 ›），不按右→左翻页镜像：球是一列竖排的
+    // 「图标 + 文字」，与页面左右没有空间对应，镜像后成了「上一页 ›」，用户
+    // 当成画反了（BUG-3364 截图）。
     return FloatingBallScene(
       scope: FloatingBallScope.manga,
       actions: <String, ReaderHeaderAction>{
         'previous': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_previous'),
-          icon: rtl ? Icons.chevron_right : Icons.chevron_left,
+          icon: Icons.chevron_left,
           label: t.shortcut_action_manga_page_backward,
           onPressed: () => _executeReaderInputAction(
             MangaReaderInputAction.previous,
@@ -6503,7 +6505,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
         'next': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_next'),
-          icon: rtl ? Icons.chevron_left : Icons.chevron_right,
+          icon: Icons.chevron_right,
           label: t.shortcut_action_manga_page_forward,
           onPressed: () => _executeReaderInputAction(
             MangaReaderInputAction.next,
