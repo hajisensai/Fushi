@@ -42,6 +42,13 @@ import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_panel_detector.dart';
+import 'package:fushi/src/media/manga/manga_mining_crop.dart';
+import 'package:fushi/src/media/manga/manga_panel_model_service.dart'
+    show downloadMangaPanelModel, mangaPanelModelRevision;
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi_engine/media/manga/manga_page_crop.dart';
+import 'package:fushi_engine/media/manga/panel_model_manifest.dart'
+    show kMangaPanelModelManifest;
 import 'package:fushi/src/media/manga/manga_panel_navigation.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
@@ -980,6 +987,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _panelGeneration = 0;
   PanelDetectionStatus? _panelStatus;
 
+  /// 工厂回报「模型不可用」（未下载 / 校验失败 / 未装配）时的 [mangaPanelModelRevision]。
+  /// 缓存它是因为工厂每次都对 9.8 MB 模型整份算 sha256，不缓存的话每次翻页 / 每次
+  /// 制卡都白算一遍；任何入口（设置页 / 制卡对话框）下载完模型都会推进修订号，
+  /// 下一次检测自动重试，不必重开书。
+  int? _panelModelUnavailableRevision;
+
   /// BUG-1888：界面（顶栏 + 左上返回键）是否可见。隐藏态下右上角仍留一个半透明
   /// 「显示界面」按钮——漫画正文是原生 WebView，空白点击手势全在注入的 JS 里且
   /// 已被翻页占用，没有这个按钮的话触屏设备再没有第二条通道能把界面唤回来。
@@ -1119,6 +1132,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 最近一次非空 OCR 选区所在的精确页及其卡图。页码非 null 而路径为 null 表示
   /// 精确页不可用，此时宁可不附图，也不能静默回退到双页 spread 的另一页。
   int? _miningPageIndex;
+
+  /// 最近一次 OCR 选区那句话的文本矩形（相对原页图的 0..1，见
+  /// [mangaSentenceGroupNormalizedRect]）及其所在页。制卡裁切的预选 / 自动裁到分镜都
+  /// 从它出发；页码与 [_miningPageIndex] 对不上时视为没有。
+  ({int pageIndex, Rect rect})? _miningTextRect;
   String? _miningChapterId;
   String? _miningPageImagePath;
   int _miningPageGeneration = 0;
@@ -2860,12 +2878,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   // ── 翻页导航 ─────────────────────────────────────────────────────────
 
+  /// 分镜检测器（模型已下载才有）。**不看**「分镜导航」开关与阅读模式：制卡裁切只看
+  /// 模型是否可用，导航与条漫的门控在各自调用方（[_tryPanelTurn] / [_miningPanels]）。
   Future<PanelDetector?> _ensurePanelDetector() async {
-    if (!appModel.mangaPanelNavigation || _mode.isWebtoon) {
-      return null;
-    }
     final PanelDetector? existing = _panelDetector;
     if (existing != null) return existing;
+    if (_panelModelUnavailableRevision == mangaPanelModelRevision) return null;
     final MangaPanelDetectorFactory? factory = mangaPanelDetectorFactory;
     if (factory == null) {
       _panelStatus = PanelDetectionStatus.unavailable;
@@ -2880,6 +2898,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return null;
       }
       _panelDetector = detector;
+      _panelModelUnavailableRevision = detector == null
+          ? mangaPanelModelRevision
+          : null;
       _panelStatus = detector == null
           ? PanelDetectionStatus.unavailable
           : PanelDetectionStatus.ready;
@@ -4390,6 +4411,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 弹窗。词/句/矩形契约由纯函数 [dispatchMangaSelection] 承担（可单测）。
   Future<void> processMangaSelection(ReaderSelectionData data) async {
     if (!mounted) return;
+    _miningTextRect = _sentenceRectOf(data);
     final Size screen = MediaQuery.of(context).size;
     await dispatchMangaSelection(
       data,
@@ -4424,7 +4446,167 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 选区那句话在原页图上的归一化矩形：组号映射回该页 OCR 块求并集（同一次分组，
+  /// 见 [mangaSentenceGroupBlockIndices]）。旧 payload / 无 OCR 时为 null。
+  ({int pageIndex, Rect rect})? _sentenceRectOf(ReaderSelectionData data) {
+    final int? pageIndex = data.mangaPageIndex;
+    final int? group = data.mangaSentenceGroup;
+    final MokuroPayload? payload = _payload;
+    if (pageIndex == null ||
+        group == null ||
+        payload == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return null;
+    }
+    final Rect? rect = mangaSentenceGroupNormalizedRect(
+      payload.images[pageIndex],
+      group,
+    );
+    return rect == null ? null : (pageIndex: pageIndex, rect: rect);
+  }
+
   // ── 制卡（L7）────────────────────────────────────────────────────────
+
+  /// 「高级制卡」对话框的漫画图片分区：原页图 + 裁切预选。漫画没有句子音频 / 视频图。
+  /// 只在知道查词命中的是哪一页时提供（旧 payload 不知道页，裁了也对不上）。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async {
+    final int? pageIndex = _miningPageIndex;
+    final MangaReaderSession? session = _pageSession;
+    if (pageIndex == null ||
+        session == null ||
+        pageIndex < 0 ||
+        pageIndex >= session.pageCount) {
+      return AdvancedMiningSections.none;
+    }
+    final ({int pageIndex, Rect rect})? text = _miningTextRect;
+    final Rect? textRect = text != null && text.pageIndex == pageIndex
+        ? text.rect
+        : null;
+    final bool panelModelAvailable = await _ensurePanelDetector() != null;
+    if (!mounted) return AdvancedMiningSections.none;
+
+    // 预览与预选共用一次取页（在线章节可能要走网络 / 会话缓存）。
+    Future<Uint8List?>? pageBytes;
+    Future<Uint8List?> loadPage() =>
+        pageBytes ??= _loadMiningPageBytes(session, pageIndex);
+
+    Future<MangaCropSuggestions?> loadSuggestions() async {
+      final Uint8List? bytes = await loadPage();
+      if (bytes == null || !mounted) return null;
+      final ({int width, int height})? size =
+          await mangaPageOrientedSizeAsync(bytes);
+      if (size == null || !mounted) return null;
+      final List<Rect> panels = await _miningPanels(pageIndex);
+      return computeMangaCropSuggestions(
+        pageIndex: pageIndex,
+        pageSize: Size(size.width.toDouble(), size.height.toDouble()),
+        panels: panels,
+        textRect: textRect,
+      );
+    }
+
+    return AdvancedMiningSections(
+      mangaImage: AdvancedMiningMangaImageSection(
+        loadPage: loadPage,
+        loadSuggestions: loadSuggestions,
+        panelModelAvailable: panelModelAvailable,
+        // 下载完成由 downloadMangaPanelModel 推进模型修订号，本页的「不可用」缓存随之
+        // 失效（见 [_panelModelUnavailableRevision]），紧接着的预选就能用上分镜。
+        downloadPanelModel: kMangaPanelModelManifest.isVerified
+            ? () => downloadMangaPanelModel()
+            : null,
+        panelModelSizeBytes: kMangaPanelModelManifest.bytes,
+      ),
+    );
+  }
+
+  Future<Uint8List?> _loadMiningPageBytes(
+    MangaReaderSession session,
+    int pageIndex,
+  ) async {
+    try {
+      return (await session.page(pageIndex)).bytes;
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.advancedMiningPage',
+        error,
+        stack,
+      );
+      return null;
+    }
+  }
+
+  /// 制卡用的分镜（归一化 [Rect]，阅读顺序）。条漫没有分镜格；模型不可用 / 检测失败
+  /// 时为空——调用方据此退回文本外扩（对话框）或整页（一键制卡）。
+  Future<List<Rect>> _miningPanels(int pageIndex) async {
+    if (_mode.isWebtoon) return const <Rect>[];
+    if (await _ensurePanelDetector() == null) return const <Rect>[];
+    final PanelDetectionResult result = await _detectPanels(pageIndex);
+    if (!result.usable) return const <Rect>[];
+    return result.panels.map(mangaPanelToRect).toList(growable: false);
+  }
+
+  /// 一键制卡「默认裁到所在分镜」：这句话所在分镜；没有文本位置 / 模型不可用 /
+  /// 检测无命中一律 null（整页）。不按文本外扩去裁——自动裁错比不裁更糟。
+  Future<Rect?> _autoPanelCropRect(int pageIndex, Rect? textRect) async {
+    if (textRect == null) return null;
+    final List<Rect> panels = await _miningPanels(pageIndex);
+    return mangaContainingPanel(panels, textRect);
+  }
+
+  /// 从原页图（[pageImage] 文件，不是屏幕渲染）裁出 [crop]，按制卡图片质量档缩放编码，
+  /// 写进一个新临时目录。解码失败（如 AVIF）/ 读写失败返回 null，调用方用整页原图。
+  Future<({String path, Directory dir})?> _writeCroppedCover(
+    String pageImage,
+    Rect crop,
+  ) async {
+    Directory? dir;
+    try {
+      final Uint8List bytes = await File(pageImage).readAsBytes();
+      final MiningMediaCompression compression = MiningMediaCompression.resolve(
+        imageTier: appModel.miningImageQuality,
+        audioTier: appModel.miningAudioQuality,
+      );
+      final MangaPageCropResult? cropped = await cropMangaPageAsync(
+        bytes,
+        left: crop.left,
+        top: crop.top,
+        right: crop.right,
+        bottom: crop.bottom,
+        maxLongEdge: compression.screenshotMaxLongEdge,
+        quality: compression.screenshotQuality,
+      );
+      if (cropped == null) {
+        ErrorLogService.instance.logDiagnostic(
+          'MangaFushiPage.cropCover',
+          'page image not decodable (${p.extension(pageImage)}), '
+              'using whole page',
+        );
+        return null;
+      }
+      dir = await Directory.systemTemp.createTemp('fushi_manga_crop_');
+      // 扩展名跟着真实编码走：两个 Anki 后端都按扩展名推导媒体类型。
+      final File out = File(p.join(dir.path, 'card.${cropped.extension}'));
+      await out.writeAsBytes(cropped.bytes, flush: true);
+      return (path: out.path, dir: dir);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.cropCover', error, stack);
+      if (dir != null) unawaited(_deleteTempDir(dir));
+      return null;
+    }
+  }
+
+  Future<void> _deleteTempDir(Directory dir) async {
+    try {
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.cropCleanup', error, stack);
+    }
+  }
 
   /// 查词弹窗里点「+」制卡。句子 = 最近一次查词的框内句（气泡即句子）；卡图 =
   /// **本次 OCR 命中页的文件路径**（旧 payload 才回退当前 spread 首页），直接传路径
@@ -4432,6 +4614,31 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 音轨，sasayaki 音频字段恒 null。
   @override
   Future<MinePopupResult> onMineFromPopup(Map<String, String> fields) async {
+    // 本次请求的「高级制卡」覆盖项、制卡页与句子矩形都在第一个 await 之前同步读齐：
+    // 制卡排队期间用户可能已经点了别的字，页面状态会被新选区改写。
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
+    final int? miningPageIndex = _miningPageIndex;
+    final ({int pageIndex, Rect rect})? miningText = _miningTextRect;
+    final Rect? miningTextRect =
+        miningText != null && miningText.pageIndex == miningPageIndex
+        ? miningText.rect
+        : null;
+    final MangaCardImagePlan imagePlan = resolveMangaCardImagePlan(
+      overrides: overrides,
+      miningPageIndex: miningPageIndex,
+      cropToPanelByDefault: appModel.mangaMiningCropToPanel,
+      webtoon: _mode.isWebtoon,
+    );
+    final String? planDiagnostic = imagePlan.diagnostic;
+    if (planDiagnostic != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'MangaFushiPage.miningCrop',
+        planDiagnostic,
+      );
+    }
+    Directory? cropTempDir;
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final String? bookUid = _bookUid;
@@ -4464,9 +4671,28 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (pageImage == null && _miningPageIndex == null && _streamingChapter) {
         pageImage = (await _currentMangaPageFile())?.path;
       }
-      if (pageImage != null && File(pageImage).existsSync()) {
+      if (imagePlan.kind != MangaCardImageKind.omit &&
+          pageImage != null &&
+          File(pageImage).existsSync()) {
         // mokuro 页图自带合法图片扩展名；仅无扩展名的裁剪输出需要补 .png（M2）。
         coverPath = await ensureMangaCoverPng(pageImage);
+        final Rect? cropRect = switch (imagePlan.kind) {
+          MangaCardImageKind.crop => imagePlan.crop,
+          MangaCardImageKind.autoPanel => await _autoPanelCropRect(
+            miningPageIndex!,
+            miningTextRect,
+          ),
+          MangaCardImageKind.wholePage || MangaCardImageKind.omit => null,
+        };
+        if (cropRect != null) {
+          // 从原图裁；任何一步失败都保留上面的整页原图，不让裁切弄丢卡图。
+          final ({String path, Directory dir})? cropped =
+              await _writeCroppedCover(pageImage, cropRect);
+          if (cropped != null) {
+            coverPath = cropped.path;
+            cropTempDir = cropped.dir;
+          }
+        }
       }
 
       final AnkiMiningContext miningContext = AnkiMiningContext(
@@ -4513,6 +4739,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.onMineFromPopup', e, stack);
       return const MinePopupResult();
+    } finally {
+      // 后端在 mineEntry / 审阅草稿落地时已把卡图读走（草稿库自己拷一份），临时裁图
+      // 到这里就没人要了；与阅读器句子音频临时目录同一处理。
+      final Directory? dir = cropTempDir;
+      if (dir != null) unawaited(_deleteTempDir(dir));
     }
   }
 

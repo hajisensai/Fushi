@@ -1,4 +1,6 @@
 
+import 'dart:ui' show Rect;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
@@ -285,6 +287,100 @@ void main() {
         reason: '双页模式制卡必须携带 OCR 命中的精确页，不能只知道当前 spread',
       );
       expect(scripts.contains('mangaPageIndex: mangaPageIndex'), isTrue);
+      expect(
+        scripts.contains('mangaSentenceGroup: mangaGroupNumber'),
+        isTrue,
+        reason: '制卡裁切要靠句子组号回到原页 OCR 块，不能用视口矩形',
+      );
+    });
+  });
+
+  group('mangaSentenceGroupNormalizedRect', () {
+    // 从 overlay HTML 里按块顺序读出组号：Dart 侧的映射必须与 JS 回传的
+    // data-manga-sentence-group 是同一次分组。
+    List<int> groupsOf(MokuroImage page) =>
+        RegExp(r'data-manga-sentence-group="(\d+)"')
+            .allMatches(mangaOcrBoxesHtml(page))
+            .map((RegExpMatch m) => int.parse(m[1]!))
+            .toList();
+
+    test('同组块求并集后按页尺寸归一化', () {
+      const MokuroImage page = MokuroImage(
+        url: 'page-000003.jpg',
+        size: MokuroSize(1170, 1600),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(288, 565, 309, 675),
+            isVertical: true,
+            fontSize: 21,
+            zIndex: 0,
+            lines: <String>['だいじょうぶ'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(250, 561, 288, 687),
+            isVertical: true,
+            fontSize: 37,
+            zIndex: 1,
+            lines: <String>['大丈夫'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(205, 565, 240, 687),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 2,
+            lines: <String>['だよな'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(164, 644, 177, 683),
+            isVertical: true,
+            fontSize: 22,
+            zIndex: 3,
+            lines: <String>['?'],
+          ),
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTRB(322, 560, 360, 686),
+            isVertical: true,
+            fontSize: 34,
+            zIndex: 4,
+            lines: <String>['なに?'],
+          ),
+        ],
+      );
+      final List<int> groups = groupsOf(page);
+      expect(groups.sublist(0, 4).toSet().length, 1);
+      expect(groups[4], isNot(groups[0]));
+      expect(
+        mangaSentenceGroupBlockIndices(page, groups[2]),
+        <int>[0, 1, 2, 3],
+      );
+
+      final Rect rect = mangaSentenceGroupNormalizedRect(page, groups[2])!;
+      expect(rect.left, closeTo(164 / 1170, 1e-9));
+      expect(rect.top, closeTo(561 / 1600, 1e-9));
+      expect(rect.right, closeTo(309 / 1170, 1e-9));
+      expect(rect.bottom, closeTo(687 / 1600, 1e-9));
+
+      final Rect other = mangaSentenceGroupNormalizedRect(page, groups[4])!;
+      expect(other.left, closeTo(322 / 1170, 1e-9));
+    });
+
+    test('不存在的组号 / 非法页尺寸返回 null', () {
+      final MokuroImage page = _pageWithTwoBlocks();
+      expect(mangaSentenceGroupNormalizedRect(page, 99), isNull);
+      const MokuroImage zero = MokuroImage(
+        url: 'z.jpg',
+        size: MokuroSize(0, 0),
+        blocks: <MokuroBlock>[
+          MokuroBlock(
+            rectangle: MokuroRect.fromLTWH(1, 1, 2, 2),
+            isVertical: false,
+            fontSize: 10,
+            zIndex: 0,
+            lines: <String>['a'],
+          ),
+        ],
+      );
+      expect(mangaSentenceGroupNormalizedRect(zero, 0), isNull);
     });
   });
 
