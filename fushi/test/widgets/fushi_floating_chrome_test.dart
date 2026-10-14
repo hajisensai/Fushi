@@ -5,6 +5,8 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 
 /// 库页 M3E 浮动工具栏的共享件：滚动驱动显隐、弹簧收起、悬浮动作组的上下文切换。
 void main() {
@@ -363,5 +365,98 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('refresh')), findsNothing);
     expect(find.byKey(const ValueKey<String>('exit')), findsOneWidget);
+  });
+
+  group('FushiFloatingToolbarSurface 高度是定值', () {
+    // 库页工具行的真实形态：40 高的搜索框 + 行尾按钮组胶囊，胶囊里是命中盒
+    // 44 的图标按钮（tag_filter_bar 的 pinActions 形态）。
+    Widget toolbarRow({required double height}) {
+      Widget action(IconData icon) => FushiIconButtonControl(
+        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        icon: Icon(icon, size: 20),
+        onPressed: () {},
+      );
+      return MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  key: const ValueKey<String>('search'),
+                  width: 200,
+                  height: height,
+                ),
+                FushiFloatingToolbarSurface(
+                  key: const ValueKey<String>('pill'),
+                  height: height,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      action(Icons.settings_outlined),
+                      action(Icons.checklist),
+                      action(Icons.tune),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('内容命中盒比胶囊高时不撑高胶囊：与并排的搜索框等高', (WidgetTester tester) async {
+      await tester.pumpWidget(toolbarRow(height: 40));
+      final double search = tester
+          .getSize(find.byKey(const ValueKey<String>('search')))
+          .height;
+      final double pill = tester
+          .getSize(find.byKey(const ValueKey<String>('pill')))
+          .height;
+      expect(search, 40);
+      expect(pill, search, reason: '按钮组胶囊必须与同一行的搜索框等高');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('缺省高度恒为紧凑档 56，与内容多高无关', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: Row(
+                children: <Widget>[
+                  const FushiFloatingToolbarSurface(
+                    key: ValueKey<String>('short'),
+                    child: SizedBox(width: 20, height: 10),
+                  ),
+                  FushiFloatingToolbarSurface(
+                    key: const ValueKey<String>('tall'),
+                    child: IconButton(
+                      constraints: const BoxConstraints(
+                        minWidth: 64,
+                        minHeight: 64,
+                      ),
+                      icon: const Icon(Icons.search),
+                      onPressed: () {},
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      for (final String key in <String>['short', 'tall']) {
+        expect(
+          tester.getSize(find.byKey(ValueKey<String>(key))).height,
+          kFushiFloatingToolbarCompactExtent,
+          reason: key,
+        );
+      }
+      expect(tester.takeException(), isNull);
+    });
   });
 }
