@@ -823,7 +823,10 @@ void main() {
       final List<EpubBookRow> books = await db.getAllEpubBooks()
         ..sort((EpubBookRow a, EpubBookRow b) => a.title.compareTo(b.title));
       expect(books.map((EpubBookRow b) => b.title), <String>['Vol1', 'Vol2']);
-      expect(books.every((EpubBookRow b) => b.format == 'manga'), isTrue);
+      expect(
+          books.every((EpubBookRow b) =>
+              BookFormat.parseOrEpub(b.format) == BookFormat.manga),
+          isTrue);
       expect(books.every((EpubBookRow b) => b.sourceId == sid), isTrue);
       expect(fs.copyToLocalCalls, 3, reason: '只下三张页图：OCR 产物目录与非图片文件不下载');
       // 子目录布局原样保留（与本地散图卷同构）：Vol1 两页都在。
