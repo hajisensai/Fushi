@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart'
     show
         FushiPairedPeerRow,
         kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
         kMinSupportedSchemaVersion,
         VideoDownloadJobRow;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
@@ -253,8 +254,9 @@ List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
       if (meta.schemaVersion > 0 &&
           meta.schemaVersion < kMinSupportedSchemaVersion) {
         throw CtlFailure.rejected(
-          '备份来自较早版本的 Fushi（schema ${meta.schemaVersion}），本版本已无法'
-          '直接导入；先装 Fushi v$kLegacySchemaBridgeAppVersion 导入一次再更新',
+          '备份来自旧版 Hibiki 或早期版本（schema ${meta.schemaVersion}），本版本'
+          '已无法直接导入；先装 Fushi v$kLegacySchemaBridgeAppVersion 导入一次再'
+          '更新（$kLegacySchemaBridgeReleaseUrl）',
         );
       }
     }

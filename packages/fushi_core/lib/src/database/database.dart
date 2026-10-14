@@ -75,6 +75,12 @@ const int kMinSupportedSchemaVersion = 75;
 /// 仍带完整迁移阶梯、可把门槛以下老库升上来的最新正式版（UI 提示用户先装它）。
 const String kLegacySchemaBridgeAppVersion = '2.9.1';
 
+/// [kLegacySchemaBridgeAppVersion] 的 GitHub Release 页（门槛提示里的下载链接）。
+/// 2026-10-14 经 `gh release view v2.9.1` 核实：正式版、非预发布。
+const String kLegacySchemaBridgeReleaseUrl =
+    'https://github.com/hajisensai/fushi/releases/tag/'
+    'v$kLegacySchemaBridgeAppVersion';
+
 /// 库的 schema 低于 [kMinSupportedSchemaVersion]（或目录里只有改名前的
 /// `hibiki.db`），本版本已不含能把它升上来的迁移代码。
 ///
@@ -107,7 +113,8 @@ class UnsupportedLegacySchemaException implements Exception {
       'is older than the minimum this version can upgrade '
       '(schema v$minSupportedVersion). Install Fushi '
       'v$kLegacySchemaBridgeAppVersion, open it once to upgrade the data, then '
-      'install this version. The database was left untouched.';
+      'install this version ($kLegacySchemaBridgeReleaseUrl). The database '
+      'was left untouched.';
 }
 
 /// 判定一个外来库的 schema 能否被本版本接手（备份恢复 / 合并导入 / 迁移导入在

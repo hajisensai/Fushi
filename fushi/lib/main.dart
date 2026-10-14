@@ -142,11 +142,13 @@ import 'package:fushi_core/fushi_core.dart'
         EpubBookRow,
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
         ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
@@ -2294,12 +2296,29 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                             )
                           : t.db_legacy_schema_message(
                               version: kLegacySchemaBridgeAppVersion,
+                              url: kLegacySchemaBridgeReleaseUrl,
                             ),
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    // 门槛提示给出可执行出口：直接打开桥接版本的 Release 页。
+                    if (downgrade == null) ...[
+                      const SizedBox(height: 20),
+                      FushiFilledButton.icon(
+                        icon: const FushiIcon(Icons.open_in_new, size: 18),
+                        label: Text(
+                          t.db_legacy_schema_release_open(
+                            version: kLegacySchemaBridgeAppVersion,
+                          ),
+                        ),
+                        onPressed: () => launchUrl(
+                          Uri.parse(kLegacySchemaBridgeReleaseUrl),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

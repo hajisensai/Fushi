@@ -1039,7 +1039,10 @@ Future<void> runBackupImportFlowForFile({
       await _endValidatingThenSnack(
         appModel,
         overlay,
-        t.backup_legacy_schema(version: kLegacySchemaBridgeAppVersion),
+        t.backup_legacy_schema(
+          version: kLegacySchemaBridgeAppVersion,
+          url: kLegacySchemaBridgeReleaseUrl,
+        ),
       );
       return;
     }

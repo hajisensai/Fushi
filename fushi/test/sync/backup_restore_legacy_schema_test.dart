@@ -176,8 +176,14 @@ void main() {
     );
     expect(
       message,
-      t.backup_legacy_schema(version: kLegacySchemaBridgeAppVersion),
+      t.backup_legacy_schema(
+        version: kLegacySchemaBridgeAppVersion,
+        url: kLegacySchemaBridgeReleaseUrl,
+      ),
     );
     expect(message, contains(kLegacySchemaBridgeAppVersion));
+    // 迁移指引必须带桥接版本的真实下载地址，并点名旧 Hibiki 数据。
+    expect(message, contains(kLegacySchemaBridgeReleaseUrl));
+    expect(message, contains('Hibiki'));
   });
 }

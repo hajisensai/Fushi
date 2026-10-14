@@ -7483,6 +7483,9 @@
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
   "db_legacy_schema_title": "Old data needs an upgrade first",
-  "db_legacy_schema_message": "This database was created by an earlier version of Fushi that this version can no longer upgrade directly. Your data has not been changed. Install Fushi v$version, open it once to upgrade the data, then install this version again.",
-  "backup_legacy_schema": "This backup comes from an earlier version of Fushi that this version can no longer import. Your current data has not been changed. Install Fushi v$version, import the backup there once, then update to this version."
+  "db_legacy_schema_message": "このデータベースは旧 Hibiki アプリまたは初期バージョン（データ構造 v75 未満）のもので、このバージョンでは直接アップグレードできません。データは変更されていません。移行手順：Fushi v$version（完全なアップグレード経路を含むブリッジ版。データフォルダーは保持されます）をこのバージョンの上から上書きインストールし、一度起動してデータをアップグレードしてから、最新バージョンに更新してください。Android では新しいバージョンの上に古いバージョンをインストールできず、Fushi をアンインストールするとこのデータも削除されるため、アンインストール前にバックアップしてください。ダウンロード：$url",
+  "backup_legacy_schema": "このバックアップは旧 Hibiki アプリまたは初期バージョン（データ構造 v75 未満）のもので、このバージョンではインポートできません。現在のデータは変更されていません。移行手順：Fushi v$version（完全なアップグレード経路を含むブリッジ版）をインストールしてこのバックアップをインポートし、その後最新バージョンに更新してください。Android では新しいバージョンの上に古いバージョンをインストールできないため、先に現在の Fushi をアンインストールしてから（現在のデータは削除されるので、残したいものは先にバックアップしてください）v$version をインストールしてください。ダウンロード：$url",
+  "db_legacy_schema_release_open": "Fushi v$version のダウンロードページを開く",
+  "migration_import_legacy_title": "Hibiki のデータは Fushi v$version でインポートしてください",
+  "migration_import_legacy_message": "旧 Hibiki アプリが書き出したデータは古すぎるため、このバージョンでは直接インポートできません。何も変更されておらず、書き出したファイルも残っています。移行手順：1. この Fushi をアンインストールします（Android では新しいバージョンの上に古いバージョンをインストールできません。新しく入れた Fushi にはまだデータがありませんが、すでにデータを追加している場合は先にバックアップしてください）。2. 完全なアップグレード経路を含むブリッジ版 Fushi v$version をインストールします。3. その中で「Hibiki からインポート」を実行します。4. 最新バージョンに更新します。"
 }

@@ -7483,6 +7483,9 @@
   "video_setting_mpv_lua_scripts_import_hint": "播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。",
   "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
   "db_legacy_schema_title": "旧数据需要先升级",
-  "db_legacy_schema_message": "此数据库来自较早版本的 Fushi，当前版本已无法直接升级它。你的数据没有被改动。请先安装 Fushi v$version，打开一次完成数据升级，再安装当前版本。",
-  "backup_legacy_schema": "此备份来自较早版本的 Fushi，当前版本已无法直接导入。你当前的数据没有任何改动。请先安装 Fushi v$version 导入此备份，再更新到当前版本。"
+  "db_legacy_schema_message": "此数据库来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接升级它。你的数据没有被改动。迁移步骤：在当前版本上覆盖安装 Fushi v$version（仍带完整升级路径的桥接版本，数据目录会保留），打开一次完成数据升级，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本，而卸载 Fushi 会同时删除这份数据，卸载前请先备份。下载：$url",
+  "backup_legacy_schema": "此备份来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接导入。你当前的数据没有任何改动。迁移步骤：安装 Fushi v$version（仍带完整升级路径的桥接版本），在其中导入此备份，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本：需先卸载当前 Fushi（会删除它现有的数据，需要保留的请先备份），再安装 v$version。下载：$url",
+  "db_legacy_schema_release_open": "打开 Fushi v$version 下载页",
+  "migration_import_legacy_title": "请用 Fushi v$version 导入 Hibiki 数据",
+  "migration_import_legacy_message": "旧版 Hibiki 导出的数据太旧，当前版本无法直接导入。没有任何数据被改动，导出文件也已保留。迁移步骤：1. 卸载当前 Fushi——Android 不允许在新版本上直接安装旧版本，而新装的 Fushi 本来就是空库（如果已经添加过数据，请先备份）。2. 安装 Fushi v$version（仍带完整升级路径的桥接版本）。3. 在其中执行「从 Hibiki 导入」。4. 再更新到当前版本。"
 }
