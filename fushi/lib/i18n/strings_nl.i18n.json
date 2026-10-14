@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde telefoons kunnen op deze manier geen kaarten afleveren. Zet op die telefoons in plaats daarvan 'Kaarten naar gekoppeld apparaat sturen' aan."
+  "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde telefoons kunnen op deze manier geen kaarten afleveren. Zet op die telefoons in plaats daarvan 'Kaarten naar gekoppeld apparaat sturen' aan.",
+  "manga_series_manage_volume": "Manage volume"
 }

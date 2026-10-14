@@ -2830,7 +2830,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             adaptivePageRoute<void>(
               context: context,
               builder: (BuildContext context) => MangaSeriesPage(
-                target: ShelfMangaSeriesTarget(bookKey, item: item),
+                target: _mangaSeriesTarget(bookKey, item),
               ),
             ),
           );
@@ -2855,9 +2855,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// EPUB / 漫画 / PDF 书卡的长按 / 右键菜单（书架卡与合集详情页成员卡**同一个**
   /// 入口，BUG-2969）。[removeFromCollection] 非空 = 合集详情页语境：隐藏「加入
   /// 合集」（同一条目在详情页语境下再加合集没有意义），只补「移出合集」。
+  ///
+  /// [fromSeriesPage] = 从漫画作品页的「管理本卷」打开（作品页已在栈上）：隐藏
+  /// 「打开作品页」，否则会在作品页上再叠一层同一个作品页。
   Future<void> _showEpubItemMenu(
     MediaItem item, {
     VoidCallback? removeFromCollection,
+    bool fromSeriesPage = false,
   }) async {
     await showAppDialog(
       context: context,
@@ -2866,7 +2870,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         isHistory: isHistory,
         showLaunchAction: false,
         extraActions: removeFromCollection == null
-            ? extraActions
+            ? (MediaItem it) =>
+                _epubExtraActions(it, fromSeriesPage: fromSeriesPage)
             : (MediaItem it) => <DialogAction>[
                   ..._epubExtraActions(it, inCollectionDetail: true),
                   ..._removeFromCollectionActions(
@@ -2880,6 +2885,19 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       setState(() {});
     }
   }
+
+  /// 漫画作品页的目标。作品页「管理本卷」开的就是本页的 [_showEpubItemMenu]——
+  /// 同一份动作、同一套刷新纪律。本页已销毁（作品页还开着时切走了书架）就什么都
+  /// 不做，作品页照常收尾。
+  ShelfMangaSeriesTarget _mangaSeriesTarget(String bookKey, MediaItem item) =>
+      ShelfMangaSeriesTarget(
+        bookKey,
+        item: item,
+        showShelfMenu: () async {
+          if (!mounted) return;
+          await _showEpubItemMenu(item, fromSeriesPage: true);
+        },
+      );
 
   /// 合集详情页成员的右键 / 长按菜单（BUG-2969）：按 (mediaType, entryKey) 找到与
   /// 书架同一张卡，打开**同一个**菜单（[_showEpubItemMenu] / [_showSrtBookDialog] /
@@ -2957,7 +2975,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// （菜单已注入「移出合集」）——该语境下隐藏「加入合集」，同一条目在详情页
   /// 语境下再加合集没有意义。
   List<DialogAction> _epubExtraActions(MediaItem item,
-      {bool inCollectionDetail = false}) {
+      {bool inCollectionDetail = false, bool fromSeriesPage = false}) {
     final String? bookKey = _parseBookKey(item.mediaIdentifier);
     if (bookKey == null) return const [];
     // 本菜单是书卡通往**别的模块**的集散地（听书 / 漫画 / 在线服务），一次快照后
@@ -3132,7 +3150,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ),
       // 漫画作品页：卡片点击已经先进这里，但键盘/手柄用户长按 A 弹的是本对话框，
       // 没有这一条就只能从对话框退出去再确认一次卡片。菜单里给出同一个入口。
-      if (isManga && modules.isEnabled(ModuleId.manga))
+      if (isManga && modules.isEnabled(ModuleId.manga) && !fromSeriesPage)
         DialogListAction(
           label: t.manga_series_open_series,
           icon: Icons.auto_stories_outlined,
@@ -3143,7 +3161,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 adaptivePageRoute<void>(
                   context: context,
                   builder: (BuildContext context) => MangaSeriesPage(
-                    target: ShelfMangaSeriesTarget(bookKey, item: item),
+                    target: _mangaSeriesTarget(bookKey, item),
                   ),
                 ),
               ),

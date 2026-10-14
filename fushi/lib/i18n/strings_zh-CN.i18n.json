@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "进行中",
   "feedback_filter_closed": "已结案",
   "feedback_filter_unread": "有新回复",
-  "anki_pending_mine_landing_host_note": "本机是互联主机，配对的手机没法经这条路把卡交过来：请在那些手机上改开「制卡到 Fushi 互联服务端」。"
+  "anki_pending_mine_landing_host_note": "本机是互联主机，配对的手机没法经这条路把卡交过来：请在那些手机上改开「制卡到 Fushi 互联服务端」。",
+  "manga_series_manage_volume": "管理本卷"
 }

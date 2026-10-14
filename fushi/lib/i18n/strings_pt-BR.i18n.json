@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Este dispositivo é um host de interconexão, então celulares pareados não conseguem entregar cartões por esse caminho. Nesses celulares, ative \"Minerar para dispositivo pareado\"."
+  "anki_pending_mine_landing_host_note": "Este dispositivo é um host de interconexão, então celulares pareados não conseguem entregar cartões por esse caminho. Nesses celulares, ative \"Minerar para dispositivo pareado\".",
+  "manga_series_manage_volume": "Manage volume"
 }

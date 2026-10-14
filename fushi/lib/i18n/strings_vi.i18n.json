@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Thiết bị này là máy chủ kết nối, nên điện thoại đã ghép nối không thể chuyển thẻ theo cách này. Trên các điện thoại đó, hãy bật \"Gửi thẻ đến thiết bị đã ghép nối\" thay thế."
+  "anki_pending_mine_landing_host_note": "Thiết bị này là máy chủ kết nối, nên điện thoại đã ghép nối không thể chuyển thẻ theo cách này. Trên các điện thoại đó, hãy bật \"Gửi thẻ đến thiết bị đã ghép nối\" thay thế.",
+  "manga_series_manage_volume": "Manage volume"
 }

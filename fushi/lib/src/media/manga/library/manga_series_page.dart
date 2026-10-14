@@ -4,6 +4,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'dart:io';
 
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +17,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
+import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
@@ -29,6 +32,9 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_auto_ocr.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show ReaderPosition, ReaderPositionRepository;
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -53,7 +59,7 @@ sealed class MangaSeriesTarget {
 /// 已在书架的条目。**只带 bookKey**：作品页因此不需要任何来源上下文就能开，
 /// 源挂了、扩展被禁用、甚至离线，用户依然能看到自己书架里这部作品有哪些章。
 class ShelfMangaSeriesTarget extends MangaSeriesTarget {
-  const ShelfMangaSeriesTarget(this.bookKey, {this.item});
+  const ShelfMangaSeriesTarget(this.bookKey, {this.item, this.showShelfMenu});
 
   final String bookKey;
 
@@ -61,6 +67,14 @@ class ShelfMangaSeriesTarget extends MangaSeriesTarget {
   /// 模式、wakelock、audio handler、历史记账与 v88 前逐字相同。书架以外的入口
   /// （源浏览）没有它，开阅读器时现造一条。
   final MediaItem? item;
+
+  /// 书架卡的长按菜单（删除 / 重命名 / 统计 / 合集 / 标签 / Profile / 转格式…）。
+  ///
+  /// 作品页打开的是**同一个**对话框，不另抄一份动作：那些动作绑着书架的状态
+  /// （读完集合、远端清单、模块快照、刷新纪律），且一律先 pop 掉菜单对话框——
+  /// 拆成作品页按钮的话第一下就会把作品页自己弹掉。书架以外的入口为 null，
+  /// 作品页就不露这一项。
+  final Future<void> Function()? showShelfMenu;
 }
 
 /// 还没入库的在线作品，来自一次源浏览。
@@ -187,6 +201,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   List<String> _ocrQueued = const <String>[];
   String? _bookDir;
 
+  /// 本地卷的阅读位置（`sectionIndex` = 页号，阅读器 `_persistPosition` 写）。
+  ReaderPosition? _localPosition;
+
+  /// 本地卷的库写入通知（[_watchLocalVolume]）；读取按代次只认最后一次。
+  StreamSubscription<Set<TableUpdate>>? _localVolumeChanges;
+  int _localVolumeGeneration = 0;
+
   AppModel get _appModel => ref.read(appProvider);
 
   Widget _challengeAction(Object? error) => MihonCloudflareAction(
@@ -240,6 +261,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 本地卷（无在线描述符）。
   bool get _isLocal => _entry == null && _row != null;
 
+  /// 页头 / 识别横幅上的标题。本地卷走书架同一个显示名门面（改名是覆盖层，
+  /// 不写 `epub_books.title`），否则从这里「管理本卷 › 重命名」之后页头不变。
+  String get _displayTitle {
+    final OnlineMangaLibraryEntry? entry = _entry;
+    if (entry != null) return entry.series.title;
+    final EpubBookRow? row = _row;
+    if (row == null) return t.manga_library;
+    return displayTitleForBook(bookKey: row.bookKey, rawTitle: row.title);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -253,6 +284,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     _jobsWatch = null;
     unawaited(_ocrChangesWatch?.cancel());
     unawaited(_ocrEventsWatch?.cancel());
+    unawaited(_localVolumeChanges?.cancel());
     _scroll.dispose();
     super.dispose();
   }
@@ -336,10 +368,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             (OnlineMangaChapter? chapter) => chapter?.key == runningKey,
             orElse: () => null,
           );
+    // 本地卷整卷就是一个任务、没有章名，正在识别的就是这一卷。
+    final String runningLabel = running != null
+        ? mangaChapterDisplayName(running)
+        : _isLocal
+        ? _displayTitle
+        : '';
     final List<String> lines = <String>[
       if (job != null)
         t.manga_series_ocr_running(
-          chapter: running == null ? '' : mangaChapterDisplayName(running),
+          chapter: runningLabel,
           done: '$done',
           total: '$total',
         ),
@@ -889,6 +927,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final Map<String, MangaChapterStateRow> states = await _readChapterStates(
       row,
     );
+    final ReaderPosition? position = await _readLocalPosition(row, entry);
     if (!mounted) return;
     setState(() {
       _row = row;
@@ -896,12 +935,28 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _service = service;
       _adapter = service?.adapter;
       _states = states;
+      _localPosition = position;
     });
     if (entry != null && service != null) {
       unawaited(_resolveSourceLabel(service.adapter, entry));
       unawaited(_refreshFromSource(silent: true));
     }
+    // 本地卷没有下载任务表，[_refreshDownloadState] 在它身上第一行就返回——注册表
+    // 只能在这里挂，否则「识别本卷」排上了作品页也看不见进度。
+    if (entry == null) {
+      _watchOcr(row.bookKey);
+      _watchLocalVolume(row.bookKey);
+    }
     unawaited(_refreshDownloadState());
+  }
+
+  /// 本地卷才读：在线作品的进度按章记在 `manga_chapter_states`。
+  Future<ReaderPosition?> _readLocalPosition(
+    EpubBookRow row,
+    OnlineMangaLibraryEntry? entry,
+  ) async {
+    if (entry != null || row.uid.isEmpty) return null;
+    return ReaderPositionRepository(_appModel.database).findByBookUid(row.uid);
   }
 
   Future<void> _loadFromSource(
@@ -1300,14 +1355,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (bookKey == null || !mounted) return;
     final EpubBookRow? row = await _appModel.database.getEpubBook(bookKey);
     if (row == null || !mounted) return;
+    final OnlineMangaLibraryEntry? entry =
+        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? _entry;
     final Map<String, MangaChapterStateRow> states = await _readChapterStates(
       row,
     );
+    final ReaderPosition? position = await _readLocalPosition(row, entry);
     if (!mounted) return;
     setState(() {
       _row = row;
-      _entry = OnlineMangaLibraryEntry.tryParse(row.sourceMetadata) ?? _entry;
+      _entry = entry;
       _states = states;
+      _localPosition = position;
     });
     unawaited(_refreshDownloadState());
   }
@@ -1367,8 +1426,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 带到新组件上。
   @override
   Widget build(BuildContext context) {
-    final OnlineMangaLibraryEntry? entry = _entry;
-    final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
+    final String title = _displayTitle;
     // 正文铺到悬浮页头底下（脚手架默认 extendBodyBehindHeader）：封面模糊背景
     // 一直画到窗口顶端，页头只是胶囊。
     return FushiPageScaffold(
@@ -1411,7 +1469,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
     }
     final double page = FushiDesignTokens.of(context).spacing.page;
-    final Widget? ocrBanner = _isLocal ? null : _buildOcrBanner(context);
+    final Widget? ocrBanner = _buildOcrBanner(context);
     // 宽屏两栏：左 hero（封面 / 标题 / 操作 / 简介）独立滚动，右章节列表；窄屏
     // 单列。BUG-2440 的底部安全区由 MediaDetailLayout 的尾部 SliverSafeArea 补。
     return FushiEntranceScope(
@@ -1718,7 +1776,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       cover: _buildCover(context),
       backdrop: _coverImageProvider(),
       overline: _subtitle(),
-      title: series?.title ?? _row?.title ?? t.manga_library,
+      title: _displayTitle,
       chips: <MediaDetailChip>[
         for (final String? line in <String?>[
           series?.byline,
@@ -1869,8 +1927,21 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 订阅（书签）与登录是图标钮。本地卷只有「OCR 设置」。
   List<Widget> _buildSecondaryActions() {
     if (_isLocal) {
-      // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
-      return <Widget>[_ocrSettingsButton()];
+      // 进阅读器也会自动整卷识别，但那要求先打开书；这里给不打开就能识别的入口，
+      // 与在线作品的「识别全部已下载」同一层级。任务在跑 / 排队时由横幅接管（有
+      // 取消），按钮置灰不重复排。
+      final bool ocrScheduled = _ocrJob != null || _ocrQueued.isNotEmpty;
+      return <Widget>[
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('manga_series_ocr_volume'),
+          icon: FushiIcons.ocr,
+          label: t.manga_reader_ocr_volume,
+          onPressed: _busy || ocrScheduled
+              ? null
+              : () => unawaited(_ocrLocalVolume()),
+        ),
+        _ocrSettingsButton(),
+      ];
     }
     final OnlineMangaLibraryEntry? entry = _entry;
     final bool inLibrary = _row != null;
@@ -1932,7 +2003,22 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 「⋯」：在网站打开、刷新章节、新章自动下载（订阅中）、下载后自动识别、
   /// 识别全部已下载、OCR 设置（在库）。
   List<MediaDetailMenuItem> _buildMoreItems() {
-    if (_isLocal) return const <MediaDetailMenuItem>[];
+    if (_isLocal) {
+      final Future<void> Function()? showShelfMenu = switch (widget.target) {
+        ShelfMangaSeriesTarget(:final showShelfMenu) => showShelfMenu,
+        SourceMangaSeriesTarget() => null,
+      };
+      return <MediaDetailMenuItem>[
+        if (showShelfMenu != null)
+          MediaDetailMenuItem(
+            key: const ValueKey<String>('manga_series_manage_volume'),
+            icon: FushiIcons.settings,
+            label: t.manga_series_manage_volume,
+            enabled: !_busy,
+            onSelected: () => unawaited(_openShelfMenu(showShelfMenu)),
+          ),
+      ];
+    }
     final OnlineMangaLibraryEntry? entry = _entry;
     final Object? adapter = _adapter;
     final bool inLibrary = _row != null;
@@ -2006,6 +2092,98 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (mounted) setState(() {});
   }
 
+  /// 「管理本卷」：开书架同一个菜单。页面不按「菜单关了」去重读——书架的动作
+  /// 一律先关菜单、之后才弹二次确认 / 落库，那时重读拿到的还是旧行。页面跟随
+  /// 的是库的写入通知（[_watchLocalVolume]）。
+  Future<void> _openShelfMenu(Future<void> Function() showShelfMenu) =>
+      showShelfMenu();
+
+  /// 本地卷跟随库里的真实状态：行没了 / 转成普通书 = 这一页不成立，退出；改名
+  /// （`preferences` 里的覆盖层）、重置进度、标记读完则重读刷新。
+  void _watchLocalVolume(String bookKey) {
+    if (_localVolumeChanges != null) return;
+    final FushiDatabase db = _appModel.database;
+    _localVolumeChanges = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.epubBooks,
+              db.readerPositions,
+              db.preferences,
+            ],
+          ),
+        )
+        .listen((Set<TableUpdate> _) => unawaited(_syncLocalVolume(bookKey)));
+  }
+
+  Future<void> _syncLocalVolume(String bookKey) async {
+    final int generation = ++_localVolumeGeneration;
+    final EpubBookRow? row = await _appModel.database.getEpubBook(bookKey);
+    final ReaderPosition? position = row == null
+        ? null
+        : await _readLocalPosition(row, null);
+    if (!mounted || generation != _localVolumeGeneration) return;
+    if (row == null || BookFormat.parseOrEpub(row.format) != BookFormat.manga) {
+      // 阅读器还压在上面时不动栈（删书 / 转格式只能从菜单发起，走到这里时
+      // 作品页就是顶层）。
+      if (ModalRoute.of(context)?.isCurrent ?? false) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    setState(() {
+      _row = row;
+      _localPosition = position;
+    });
+  }
+
+  /// 「识别本卷」：与阅读器进书自动识别同一条路径（只补尚无结果的页），排进
+  /// app 级注册表；进度与取消由页上的识别横幅接管。
+  Future<void> _ocrLocalVolume() async {
+    final EpubBookRow? row = _row;
+    final AppModel? appModel = _appModelOrNull;
+    if (row == null || appModel == null || _busy) return;
+    final String directory = row.extractDir;
+    final MangaReaderVolumeOcrOutcome outcome = await startMangaReaderVolumeOcr(
+      bookKey: row.bookKey,
+      imageDirPath: directory,
+      mangaJsonPath: p.join(directory, row.epubPath),
+      volumeTitle: _displayTitle,
+      startPage: _localPosition?.sectionIndex ?? 0,
+      engines:
+          widget.ocrEnginesOverride ??
+          MangaOcrWizardEngines.resolve(
+            context: context,
+            db: appModel.database,
+          ),
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      preference: MangaOcrEnginePreferenceKey.fromKey(
+        appModel.mangaOcrEnginePreference,
+      ),
+      lensLanguage: appModel.mangaOcrLensLanguage,
+      confirmLensUpload: () async {
+        if (!mounted) return false;
+        return (widget.lensDisclosureOverride ?? ensureGoogleLensDisclosure)(
+          context,
+        );
+      },
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case MangaReaderVolumeOcrQueued():
+      case MangaReaderVolumeOcrAlreadyScheduled():
+        FushiToast.show(msg: t.manga_series_ocr_queued);
+      case MangaReaderVolumeOcrNoEngine():
+        FushiToast.show(
+          msg: t.manga_series_ocr_no_engine,
+          severity: ToastSeverity.error,
+        );
+      case MangaReaderVolumeOcrLensDeclined():
+      case MangaReaderVolumeOcrNotApplicable():
+        break;
+    }
+  }
+
   /// 本地卷没有章节，章节区换成「这一卷有多少页、读到哪」。
   ///
   /// 刻意不去猜「同系列的其它卷」：本地导入是一卷一条目、标题由 mokuro 的
@@ -2014,13 +2192,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildLocalDetails(BuildContext context) {
     final EpubBookRow? row = _row;
     if (row == null) return const SizedBox.shrink();
+    final ReaderPosition? position = _localPosition;
+    final int count = position == null ? 1 : 2;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         MediaDetailSectionHeader(t.manga_series_volume_info),
         MediaDetailItemRow(
           index: 0,
-          count: 1,
+          count: count,
           leading: const FushiIcon(FushiIcons.books),
           title: t.manga_series_page_count,
           trailing: Text(
@@ -2028,6 +2208,29 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             style: context.fushiType.titleMediumEmphasized.tabular,
           ),
         ),
+        // 没打开过就没有位置行，不画「读到第 1 页」冒充进度。
+        if (position != null)
+          MediaDetailItemRow(
+            key: const ValueKey<String>('manga_series_local_progress'),
+            index: 1,
+            count: count,
+            leading: const FushiIcon(FushiIcons.bookmark),
+            title: row.chapterCount > 0
+                ? t.manga_series_read_progress(
+                    page: '${position.sectionIndex + 1}',
+                    total: '${row.chapterCount}',
+                  )
+                : t.manga_series_read_progress_partial(
+                    page: '${position.sectionIndex + 1}',
+                  ),
+            progress: row.chapterCount > 0
+                ? ((position.sectionIndex + 1) / row.chapterCount).clamp(
+                    0.0,
+                    1.0,
+                  )
+                : null,
+            completed: row.completedAt != null,
+          ),
       ],
     );
   }

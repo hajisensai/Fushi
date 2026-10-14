@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "Bu cihaz bir ara bağlantı sunucusu, bu yüzden eşleştirilmiş telefonlar kartları bu yolla teslim edemez. Bunun yerine o telefonlarda \"Eşleştirilmiş cihaza çıkar\" seçeneğini açın."
+  "anki_pending_mine_landing_host_note": "Bu cihaz bir ara bağlantı sunucusu, bu yüzden eşleştirilmiş telefonlar kartları bu yolla teslim edemez. Bunun yerine o telefonlarda \"Eşleştirilmiş cihaza çıkar\" seçeneğini açın.",
+  "manga_series_manage_volume": "Manage volume"
 }

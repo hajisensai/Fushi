@@ -7481,5 +7481,6 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "This device is an interconnect host, so paired phones can't hand cards to it this way. On those phones, turn on Mine to Fushi Interconnect server instead."
+  "anki_pending_mine_landing_host_note": "This device is an interconnect host, so paired phones can't hand cards to it this way. On those phones, turn on Mine to Fushi Interconnect server instead.",
+  "manga_series_manage_volume": "Manage volume"
 }
