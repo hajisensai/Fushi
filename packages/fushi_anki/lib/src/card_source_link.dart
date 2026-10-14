@@ -94,8 +94,9 @@ class CardSourceLink {
     final List<int> bytes = List<int>.generate(16, (_) => random.nextInt(256));
     bytes[6] = (bytes[6] & 15) | 64;
     bytes[8] = (bytes[8] & 63) | 128;
-    final String hex =
-        bytes.map((int b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final String hex = bytes
+        .map((int b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
     return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
@@ -119,21 +120,21 @@ class CardSourceLink {
       'sourceId=${validateSourceId(sourceId)}';
 
   CardSourceLink withSourceId(String value) => CardSourceLink(
-        kind: kind,
-        uid: uid,
-        sourceId: value,
-        chapterIndex: chapterIndex,
-        charOffset: charOffset,
-        charLength: charLength,
-        pageIndex: pageIndex,
-        episodeIndex: episodeIndex,
-        startMs: startMs,
-        endMs: endMs,
-        audioFileIndex: audioFileIndex,
-        chapterId: chapterId,
-        fingerprint: fingerprint,
-        bookKey: bookKey,
-      );
+    kind: kind,
+    uid: uid,
+    sourceId: value,
+    chapterIndex: chapterIndex,
+    charOffset: charOffset,
+    charLength: charLength,
+    pageIndex: pageIndex,
+    episodeIndex: episodeIndex,
+    startMs: startMs,
+    endMs: endMs,
+    audioFileIndex: audioFileIndex,
+    chapterId: chapterId,
+    fingerprint: fingerprint,
+    bookKey: bookKey,
+  );
 
   /// Reads only quoted source hrefs generated for note fields. The locator
   /// parser still validates every parameter after HTML attribute unescaping.
@@ -167,10 +168,14 @@ class CardSourceLink {
     // UIDs made every card mined from a downloaded extension episode abort with
     // "Invalid library UID". Rejecting a shape the library itself mints is a
     // wrong model of the identity space, not a safety boundary: the UID is
-    // never resolved as a URI.
+    // never resolved as a URI. What IS rejected is any UID naming a location on
+    // this machine's filesystem (absolute path, drive letter, `file:` URI): card
+    // links travel with shared decks, so those would leak private local paths.
     if (uid.trim().isEmpty ||
         uid.length > 1024 ||
         uid.startsWith('/') ||
+        RegExp(r'^[A-Za-z]:').hasMatch(uid) ||
+        uid.toLowerCase().startsWith('file:') ||
         RegExp(r'[\x00-\x1f\x7f\\]').hasMatch(uid) ||
         uid
             .split('/')
@@ -246,26 +251,26 @@ class CardSourceLink {
   }
 
   Uri toUri() => Uri(
-        scheme: 'fushi',
-        host: 'source',
-        queryParameters: <String, String>{
-          'v': '1',
-          'kind': kind.name,
-          'uid': uid,
-          'sourceId': sourceId,
-          if (chapterIndex != null) 'chapterIndex': '$chapterIndex',
-          if (charOffset != null) 'charOffset': '$charOffset',
-          if (charLength != null) 'charLength': '$charLength',
-          if (pageIndex != null) 'pageIndex': '$pageIndex',
-          if (episodeIndex != null) 'episodeIndex': '$episodeIndex',
-          if (startMs != null) 'startMs': '$startMs',
-          if (endMs != null) 'endMs': '$endMs',
-          if (audioFileIndex != null) 'audioFileIndex': '$audioFileIndex',
-          if (chapterId != null) 'chapterId': chapterId!,
-          if (fingerprint != null) 'fingerprint': fingerprint!,
-          if (bookKey != null) 'bookKey': bookKey!,
-        },
-      );
+    scheme: 'fushi',
+    host: 'source',
+    queryParameters: <String, String>{
+      'v': '1',
+      'kind': kind.name,
+      'uid': uid,
+      'sourceId': sourceId,
+      if (chapterIndex != null) 'chapterIndex': '$chapterIndex',
+      if (charOffset != null) 'charOffset': '$charOffset',
+      if (charLength != null) 'charLength': '$charLength',
+      if (pageIndex != null) 'pageIndex': '$pageIndex',
+      if (episodeIndex != null) 'episodeIndex': '$episodeIndex',
+      if (startMs != null) 'startMs': '$startMs',
+      if (endMs != null) 'endMs': '$endMs',
+      if (audioFileIndex != null) 'audioFileIndex': '$audioFileIndex',
+      if (chapterId != null) 'chapterId': chapterId!,
+      if (fingerprint != null) 'fingerprint': fingerprint!,
+      if (bookKey != null) 'bookKey': bookKey!,
+    },
+  );
 
   String toHtml({String label = '↗ Fushi'}) =>
       '<a href="${const HtmlEscape(HtmlEscapeMode.attribute).convert(toUri().toString())}">${const HtmlEscape(HtmlEscapeMode.element).convert(label)}</a>';
