@@ -7251,8 +7251,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 面板「清除全部」：只复位面板里的维度（搜索词与标签各有自己的入口，不动），
   /// 一律回到**分区默认值**——系列归属回「非系列」并写回偏好，清完筛选按钮的
-  /// 圆点与 chip 一起消失。筛空态的 [_clearAllFilters] 不同：那里是「把东西找
-  /// 回来」，系列归属放到「全部」。
+  /// 圆点与 chip 一起消失。筛空态的 [_clearAllFilters] 同一口径，另外还清搜索词
+  /// 与标签。
   void _clearPanelFilters() {
     setState(() {
       _yearFilter = const VideoYearFilter.all();
@@ -7813,26 +7813,38 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       key: const ValueKey<String>('home_video_filtered_empty'),
       icon: Icons.filter_list_off,
       message: hint ?? t.video_library_filter_empty,
-      action: FushiOutlinedButton.icon(
-        key: const ValueKey<String>('home_video_filters_clear'),
-        onPressed: _clearAllFilters,
-        icon: const FushiIcon(Icons.filter_alt_off_outlined),
-        label: Text(t.library_filters_clear),
-      ),
+      // 清除 = 复位到分区默认值；已经全在默认值（如「全部视频」默认「非系列」
+      // 档筛空，hint 已指向系列页）时按钮按下去什么都不变，干脆不出。
+      action: _hasAnyClearableFilter
+          ? FushiOutlinedButton.icon(
+              key: const ValueKey<String>('home_video_filters_clear'),
+              onPressed: _clearAllFilters,
+              icon: const FushiIcon(Icons.filter_alt_off_outlined),
+              label: Text(t.library_filters_clear),
+            )
+          : null,
     );
   }
 
+  /// 筛空态「清除筛选」有没有可清的东西：搜索词、偏离分区默认值的面板维度、
+  /// 标签筛选三者任一。
+  bool get _hasAnyClearableFilter =>
+      _searchQuery.trim().isNotEmpty ||
+      _hasActivePanelFilter ||
+      ref.read(selectedTagIdsProvider).isNotEmpty;
+
   /// 一次性清空搜索词与全部筛选（年份 / 看完状态 / 系列归属 / 媒体类型 /
-  /// 特典 / 来源 / 标签）。系列归属是唯一持久化的档位（BUG-2835），清空时
-  /// 同步写回偏好，否则下次进库又被旧档位筛空。标签筛选与书架共享
-  /// [selectedTagIdsProvider]，库页语义上同属「当前筛选」，一并清空。
+  /// 特典 / 来源 / 标签）。与 chip ✕、面板「清除全部」同一口径：每个维度回到
+  /// **分区默认值**——系列归属回 [kDefaultVideoSeriesFilter]（「非系列」）而不是
+  /// 「全部」（2026-10-14 用户拍板）。系列归属是唯一持久化的档位（BUG-2835），
+  /// 经 [_setSeriesFilter] 同步写回偏好，否则下次进库又被旧档位筛空。标签筛选与
+  /// 书架共享 [selectedTagIdsProvider]，库页语义上同属「当前筛选」，一并清空。
   void _clearAllFilters() {
     _searchController.clear();
     setState(() {
       _searchQuery = '';
       _yearFilter = const VideoYearFilter.all();
       _watchStatusFilter = VideoWatchStatusFilter.all;
-      _seriesFilter = VideoSeriesFilter.all;
       _mediaTypeFilter = VideoMediaTypeFilter.all;
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
@@ -7840,12 +7852,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (ref.read(selectedTagIdsProvider).isNotEmpty) {
       ref.read(selectedTagIdsProvider.notifier).state = <int>{};
     }
-    unawaited(
-      ref
-          .read(appProvider)
-          .prefsRepo
-          .setVideoAllSeriesFilterName(VideoSeriesFilter.all.name),
-    );
+    _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
   /// 封面下方文字块的实际高度：两行标题 + 一行观看进度 + 上下内边距，随文字缩放走。
