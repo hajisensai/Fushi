@@ -415,6 +415,7 @@ void main() {
         audiobookCount: 0,
         gameCount: 0,
         progressCount: 0,
+        srsNoteCount: 0,
       ),
       peekFailed: true,
     );

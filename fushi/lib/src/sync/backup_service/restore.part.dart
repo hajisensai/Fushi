@@ -8,6 +8,7 @@ typedef _ContentRowCounts = ({
   int games,
   int progress,
   int statistics,
+  int srsNotes,
 });
 
 /// 备份的恢复 / 合并 / 预览 / 崩溃恢复 / 读包摘要（B1 从 [BackupService] 分家）。
@@ -86,6 +87,7 @@ class BackupRestoreService {
     int? dbGameCount,
     int? dbProgressCount,
     int? dbStatisticsCount,
+    int? dbSrsNoteCount,
     bool peekFailed = false,
   }) {
     final Set<String> dictDirs = <String>{};
@@ -95,6 +97,7 @@ class BackupRestoreService {
     int videoFiles = 0;
     int localAudioDbs = 0;
     int gameCoverFiles = 0;
+    int srsMediaFiles = 0;
     for (final String raw in archiveFileNames) {
       final String name = raw.replaceAll(r'\', '/');
       final String? dictSeg =
@@ -129,6 +132,10 @@ class BackupRestoreService {
       }
       if (name.startsWith('$_gameCoversPrefix/')) {
         if (name.length > _gameCoversPrefix.length + 1) gameCoverFiles++;
+        continue;
+      }
+      if (name.startsWith('$_srsMediaPrefix/')) {
+        if (name.length > _srsMediaPrefix.length + 1) srsMediaFiles++;
       }
     }
     // Video presence is decided by DB rows, NOT packed files: videos live in the
@@ -159,6 +166,10 @@ class BackupRestoreService {
     // meta's `statsCount` summed only the legacy day aggregates, so prefer the
     // peek when it ran and fall back to meta (new backups, no peek needed).
     final int statisticsCount = dbStatisticsCount ?? meta?.statsCount ?? 0;
+    // 复习 = 用户笔记数（meta 优先，老备份窥探 DB）+ 随包媒体文件数——与导出预览
+    // 同一口径。
+    final int srsCount =
+        (meta?.srsNoteCount ?? dbSrsNoteCount ?? 0) + srsMediaFiles;
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       if (dictDirs.isNotEmpty) BackupCategory.dictionary: dictDirs.length,
       if (bookDirs.isNotEmpty) BackupCategory.books: bookDirs.length,
@@ -169,6 +180,7 @@ class BackupRestoreService {
       if (gameCount > 0) BackupCategory.games: gameCount,
       if (progressCount > 0) BackupCategory.progress: progressCount,
       if (statisticsCount > 0) BackupCategory.statistics: statisticsCount,
+      if (srsCount > 0) BackupCategory.srs: srsCount,
     };
     // Peek needed but absent → the row counts meta lacks are UNKNOWN, and
     // unknown must read as present (see doc). `statsCount` is always set on
@@ -183,6 +195,8 @@ class BackupRestoreService {
       if (peekFailed && meta?.progressCount == null) BackupCategory.progress,
       if (peekFailed && meta?.progressCount == null)
         BackupCategory.statistics,
+      // SRS 表同样随 DB 整体覆盖：未知若当成「没有」，覆盖导入会把包里的复习数据剥掉。
+      if (peekFailed && meta?.srsNoteCount == null) BackupCategory.srs,
     };
     return BackupContentSummary(
       counts: counts,
@@ -227,7 +241,8 @@ class BackupRestoreService {
               meta.videoBookCount == null ||
               meta.audiobookCount == null ||
               meta.gameCount == null ||
-              meta.progressCount == null) &&
+              meta.progressCount == null ||
+              meta.srsNoteCount == null) &&
           dbEntry != null;
       if (needPeek) {
         peek = await _peekContentRowCounts(zipPath, dbEntry.name);
@@ -238,6 +253,7 @@ class BackupRestoreService {
           dbGameCount: peek?.games,
           dbProgressCount: peek?.progress,
           dbStatisticsCount: peek?.statistics,
+          dbSrsNoteCount: peek?.srsNotes,
           // A failed peek must never read as "the backup has none" — that
           // would hide the toggles and the overwrite import would strip the
           // device's own rows (see summarizeBackupEntries doc).
@@ -286,6 +302,8 @@ class BackupRestoreService {
               _countTableIfPresent(db, 'video_watch_statistics') +
               _countTableIfPresent(db, 'mining_statistics') +
               _countTableIfPresent(db, 'study_segments'),
+          srsNotes:
+              _countTableIfPresent(db, 'srs_entities', where: _srsUserNoteSql),
         );
       } finally {
         db.dispose();
@@ -303,14 +321,20 @@ class BackupRestoreService {
   }
 
   /// `SELECT COUNT(*)` of [table] on an open read-only sqlite [db], or 0 when the
-  /// table is absent (older-schema backup blob).
-  static int _countTableIfPresent(sqlite.Database db, String table) {
+  /// table is absent (older-schema backup blob). [where] 可选的行过滤条件。
+  static int _countTableIfPresent(
+    sqlite.Database db,
+    String table, {
+    String? where,
+  }) {
     final sqlite.ResultSet has = db.select(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       <Object?>[table],
     );
     if (has.isEmpty) return 0;
-    return db.select('SELECT COUNT(*) AS c FROM $table').first['c'] as int;
+    final String filter = where == null ? '' : ' WHERE $where';
+    return db.select('SELECT COUNT(*) AS c FROM $table$filter').first['c']
+        as int;
   }
 
   /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
@@ -581,6 +605,69 @@ class BackupRestoreService {
   static String _quoteIdentifier(String value) =>
       '"${value.replaceAll('"', '""')}"';
 
+  /// 覆盖恢复里「复习勾了、配置档案没有来自备份」时的 SRS 归位（[BackupCategory.srs]
+  /// 对 `profiles` 的依赖）。
+  ///
+  /// 覆盖后的活库此时是：配置档案 = 本机的（bak 回灌），SRS 四张数据表 = 备份的，挂在
+  /// 备份那边的 profile uid 上——对不上本机档案就是孤儿。做法是把备份 DB 再解一份到
+  /// 临时文件（迁到当前 schema）、ATTACH 成源，清掉活库里那批原样覆盖进来的 SRS 行，
+  /// 再走与合并导入**同一个** SRS 专用步骤（[mergeSrsFromAttachedBackup]：同 uid
+  /// 并入 / 同名且无用户笔记未发布则采用 uid / 否则新建「（备份）」档案）。整段在一个
+  /// 事务里。媒体目录按 uid 分子目录，三条规则都保留备份的 uid，所以已恢复的
+  /// `srs_media/<uid>/` 直接对得上。
+  static Future<void> _reapplySrsViaProfileMerge({
+    required String dbDirectory,
+    required String zipPath,
+    required String dbEntryName,
+  }) async {
+    final Directory tmp =
+        await Directory.systemTemp.createTemp('fushi_srs_restore_');
+    final String srcPath = p.join(tmp.path, _dbName);
+    try {
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbEntryName, srcPath),
+        ],
+      );
+      // 迁到当前 schema，列与活库对齐（与合并导入同一约定）。
+      final FushiDatabase srcMigrate = FushiDatabase.atFile(srcPath);
+      try {
+        await srcMigrate.customStatement('PRAGMA user_version');
+      } finally {
+        await srcMigrate.close();
+      }
+      final FushiDatabase db = FushiDatabase(dbDirectory);
+      try {
+        final String safeSrc =
+            srcPath.replaceAll(r'\', '/').replaceAll("'", "''");
+        await db.customStatement("ATTACH DATABASE '$safeSrc' AS srssrc");
+        try {
+          await db.transaction(() async {
+            for (final String t in <String>[
+              ..._srsDataTables,
+              ..._srsDeviceLocalDiscardTables,
+            ]) {
+              await db.customStatement('DELETE FROM main.$t');
+            }
+            await mergeSrsFromAttachedBackup(db, 'srssrc');
+          });
+        } finally {
+          await db.customStatement('DETACH DATABASE srssrc');
+        }
+        await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+      } finally {
+        await db.close();
+      }
+    } finally {
+      try {
+        await tmp.delete(recursive: true);
+      } catch (_) {
+        // Best-effort temp cleanup; a leftover temp dir is harmless.
+      }
+    }
+  }
+
   /// BUG-816: restores the content-registry preference rows from [bakPath] when
   /// the backup EXCLUDED their owning category, so an overwrite import of a
   /// books / fonts / localAudio-excluded backup never wipes this device's
@@ -806,11 +893,24 @@ class BackupRestoreService {
           wants(BackupCategory.localAudio) ? dbDirectory : null;
       final String? effGameCoversRoot =
           wants(BackupCategory.games) ? gameCoversRootDirectory : null;
+      // 复习（srs）：四张数据表 + `srs_media/` 文件树。媒体根在支持目录（= 活库所在的
+      // [dbDirectory]）下，与 [SrsMediaStore.directoryFor] 同一规则，恢复后复习页直接
+      // 读得到。
+      final bool wantsSrs = wants(BackupCategory.srs);
+      final String? effSrsMediaRoot = wantsSrs
+          ? SrsMediaStore.mediaRootFor(Directory(dbDirectory)).path
+          : null;
 
       final sidecar = File(p.join(dbDirectory, _preserveSidecar));
       final String bakPath = '$dbPath.pre-restore.bak';
       final currentDb = File(dbPath);
       final bool haveCurrent = currentDb.existsSync();
+      // SRS 行按 `profiles.uid` 归属。配置档案来自备份（全新安装，或勾了导入设置且
+      // 备份带着档案）时，SRS 表照原样随 DB 覆盖即可；否则本机档案被保留（bak 回灌），
+      // 备份里的 SRS 行 uid 对不上任何本机档案 = 孤儿，必须改走 SRS 专用合并（见
+      // [_reapplySrsViaProfileMerge]）。
+      final bool srsProfilesFromBackup =
+          !haveCurrent || (importSettings && !backupProfilesExcluded);
       bool deviceLocalTablesReapplied = !haveCurrent;
 
       // 1) Snapshot the current DB (crash safety) + record what to preserve.
@@ -930,6 +1030,12 @@ class BackupRestoreService {
                 onBytes: reportBytes)) {
           toCommit.add(effGameCoversRoot);
         }
+        if (effSrsMediaRoot != null &&
+            await _prepareTreeReapply(
+                zipPath, archive, _srsMediaPrefix, effSrsMediaRoot,
+                onBytes: reportBytes)) {
+          toCommit.add(effSrsMediaRoot);
+        }
       } catch (_) {
         // A write failed: drop every staged temp dir; no tree was swapped.
         if (booksRootDirectory != null) {
@@ -946,6 +1052,9 @@ class BackupRestoreService {
         }
         if (effGameCoversRoot != null) {
           await _abortPreparedTree(effGameCoversRoot);
+        }
+        if (effSrsMediaRoot != null) {
+          await _abortPreparedTree(effSrsMediaRoot);
         }
         rethrow;
       }
@@ -1064,7 +1173,8 @@ class BackupRestoreService {
         await _retainGames(dbDirectory, const <String>{});
       }
       if (!wants(BackupCategory.statistics) ||
-          !wants(BackupCategory.progress)) {
+          !wants(BackupCategory.progress) ||
+          !wantsSrs) {
         await _stripExcludedDataCategories(
           dbDirectory,
           stripProgress: !wants(BackupCategory.progress),
@@ -1073,6 +1183,19 @@ class BackupRestoreService {
           // the excluded-layer preserve above — never touched by this strip.
           stripSettings: false,
           stripProfiles: false,
+          // 复习未勾：备份里的 SRS 数据不落地（覆盖语义，同 games / videos）。
+          stripSrs: !wantsSrs,
+        );
+      }
+
+      // 3d) 复习勾了、但配置档案没有来自备份 → 备份的 SRS 行挂在本机不存在的 uid 上。
+      //     放在 3a 之后：设备本地表回灌会清空 SRS 本机状态，而合并要往发件箱里重新
+      //     排队；也放在 3 之后：合并要读本机设备 id（sync 配置此时已回到本机）。
+      if (wantsSrs && !srsProfilesFromBackup) {
+        await _reapplySrsViaProfileMerge(
+          dbDirectory: dbDirectory,
+          zipPath: zipPath,
+          dbEntryName: dbFile.name,
         );
       }
 
@@ -1246,6 +1369,13 @@ class BackupRestoreService {
       if (gameCoversRootDirectory != null && wants(BackupCategory.games)) {
         await _copyTreeIfAbsent(
             zipPath, archive, _gameCoversPrefix, gameCoversRootDirectory,
+            onBytes: reportBytes);
+      }
+      // 复习媒体按文件名取并集：文件名 = 内容 sha1，同名必同内容，本机已有的跳过。
+      // 落在支持目录（= [dbDirectory]）下，与 [SrsMediaStore.directoryFor] 同一规则。
+      if (wants(BackupCategory.srs)) {
+        await _copyTreeIfAbsent(zipPath, archive, _srsMediaPrefix,
+            SrsMediaStore.mediaRootFor(Directory(dbDirectory)).path,
             onBytes: reportBytes);
       }
       // Local-audio DBs are copy-if-absent into the support directory (never

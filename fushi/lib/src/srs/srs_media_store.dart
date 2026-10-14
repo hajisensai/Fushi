@@ -28,9 +28,14 @@ class SrsMediaStore {
   /// 本 profile 的媒体目录（`.../srs_media/<profileUid>`）。
   final Directory root;
 
+  /// [supportRoot] 下全部 profile 的媒体根（`<support>/srs_media`，不创建）。
+  /// 备份的「复习」类别按这个根原样打包 / 恢复各 profile 子目录。
+  static Directory mediaRootFor(Directory supportRoot) =>
+      Directory(p.join(supportRoot.path, kSrsMediaDirName));
+
   /// [supportRoot] 下某 profile 的媒体目录（不创建）。
   static Directory directoryFor(Directory supportRoot, String profileUid) =>
-      Directory(p.join(supportRoot.path, kSrsMediaDirName, profileUid));
+      Directory(p.join(mediaRootFor(supportRoot).path, profileUid));
 
   /// 按内容给出存储文件名：sha1(bytes) + [originalName] 的扩展名（小写；不合法时省略）。
   static String contentName(String originalName, List<int> bytes) {

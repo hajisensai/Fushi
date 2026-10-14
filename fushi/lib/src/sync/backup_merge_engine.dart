@@ -191,8 +191,8 @@ class BackupMergeEngine {
       await _mergeProfilesAndChildren();
       // v117 SRS（铁律 E）：必须在 Profile 并入之后——备份独有的 Profile 刚按名建出、
       // 还没有 SRS 数据也没发布过，正好走「同名 → 采用备份 uid」而不是再建一个「（备份）」。
-      // 没有对话框开关：与 profiles 同规，总是合并。
-      await _mergeSrs();
+      // 对话框开关是「复习」类别（备份里有 SRS 数据时才出现）；null = 全部合并。
+      if (_wants('srs')) await _mergeSrs();
       if (_wants('statistics')) {
         await _mergeReadingStatistics();
         await _mergeVideoWatchStatistics();
@@ -1456,27 +1456,9 @@ class BackupMergeEngine {
 
   /// SRS 专用合并（srs_* 表在通用路径登记为跳过，见 [mergeSkippedDeviceLocalTableNames]）：
   /// 按 `profiles.uid` 归位后经本机 SRS 副本合并，规则与幂等性见 [mergeSrsFromBackup]。
-  /// 新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
   Future<void> _mergeSrs() async {
     if (!await _srcTableExists('srs_entities')) return;
-    final String deviceId = await SyncRepository(_db).getOrCreateDeviceId();
-    await mergeSrsFromBackup(
-      source: SrsBackupSource.attached(_db, _srcAlias),
-      local: _db,
-      deviceId: deviceId,
-      createProfile: (String name) async {
-        final int now = DateTime.now().millisecondsSinceEpoch;
-        await _db.customStatement(
-          'INSERT INTO main.profiles (name, created_at, updated_at) '
-          'VALUES (?, ?, ?)',
-          <Object>[name, now, now],
-        );
-        final QueryRow row = await _db
-            .customSelect('SELECT last_insert_rowid() AS id')
-            .getSingle();
-        return row.read<int>('id');
-      },
-    );
+    await mergeSrsFromAttachedBackup(_db, _srcAlias);
   }
 
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
@@ -1750,6 +1732,34 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'srs_review_logs',
       'srs_unknown_events',
     ]);
+
+/// 把 ATTACH 在 [db] 连接上、别名 [srcAlias] 的备份库里的 SRS 数据按 `profiles.uid`
+/// 归位并入本机（铁律 E，规则见 [mergeSrsFromBackup]）。合并导入
+/// （[BackupMergeEngine]）与覆盖恢复里「复习勾了、配置档案没来自备份」的那条路径共用
+/// 这一个入口。新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
+/// 源库须已迁到当前 schema；在事务里调用时写入随之提交 / 回滚。
+Future<void> mergeSrsFromAttachedBackup(
+  FushiDatabase db,
+  String srcAlias,
+) async {
+  final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
+  await mergeSrsFromBackup(
+    source: SrsBackupSource.attached(db, srcAlias),
+    local: db,
+    deviceId: deviceId,
+    createProfile: (String name) async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      await db.customStatement(
+        'INSERT INTO main.profiles (name, created_at, updated_at) '
+        'VALUES (?, ?, ?)',
+        <Object>[name, now, now],
+      );
+      final QueryRow row =
+          await db.customSelect('SELECT last_insert_rowid() AS id').getSingle();
+      return row.read<int>('id');
+    },
+  );
+}
 
 /// Read-only summary of what a backup MERGE import would change on this device
 /// (TODO-1195 part B), shown in the import confirm dialog. Produced by

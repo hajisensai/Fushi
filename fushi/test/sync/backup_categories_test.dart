@@ -366,8 +366,8 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates the seven content categories plus the four '
-      'DB-only data categories (db is never itself a category)', () {
+      'BackupCategory enumerates the seven content categories, the four '
+      'DB-only data categories and srs (db is never itself a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
       BackupCategory.books,
@@ -380,6 +380,7 @@ void main() {
       BackupCategory.statistics,
       BackupCategory.settings,
       BackupCategory.profiles,
+      BackupCategory.srs,
     });
   });
 
