@@ -478,6 +478,23 @@ class SrsDbStore implements SrsSyncReplica {
     });
   }
 
+  /// 导入（Anki 包 / fushi-ext）批量落一组事件：视同本机产生（进发件箱）、刷新缓存。幂等。
+  ///
+  /// 事件内容由调用方按铁律 C 只从来源算出（身份记录 / 复习日志）；本机 HLC 按收到对端事件的规则推进（先钳位）。
+  Future<void> importEvents(List<SrsEvent> events) async {
+    if (events.isEmpty) return;
+    final (int nowMs, _) = now();
+    for (final SrsEvent e in events) {
+      final Hlc? h = switch (e) {
+        SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
+        SrsLogEvent(:final SrsReviewLog log) => log.hlc,
+        _ => null,
+      };
+      if (h != null) _clock.receive(h, trustedNowMs: nowMs);
+    }
+    await _emit(events);
+  }
+
   SrsEntityRecord _entityFromRow(SrsEntityRow r) => SrsEntityRecord(
     id: r.id,
     profileUid: r.profileUid,
