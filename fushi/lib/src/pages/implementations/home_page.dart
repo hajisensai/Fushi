@@ -2024,8 +2024,8 @@ class _HomePageState extends BasePageState<HomePage>
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
-            // 长按拎起选中指示器拖到目标模块（MD3 悬浮底栏）：落地走同一个切
-            // tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
+            // 按下横拖（或长按后拖）选中指示器到目标模块（MD3 悬浮底栏）：落地
+            // 走同一个切 tab 入口，再播一次与横滑同款的进场转场，方向按底栏视觉序。
             onDragSelect: (int index) {
               final HomeTab tab = homeTabForVisualIndex(
                 tabs: tabs,
