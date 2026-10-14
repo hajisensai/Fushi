@@ -25,12 +25,15 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 /// 一条透明液态玻璃胶囊控制条。歌词本身由下面的透明 WebView 渲染，这里只画背景、
 /// 控件，并给出歌词矩形与 HTML 主题。
 class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
-  const AppleLyricsPlayerDesign();
+  const AppleLyricsPlayerDesign({this.mirrored = false});
+
+  /// 宽屏左右互换（见 [LyricsPlayerData.sidesMirrored]）。
+  final bool mirrored;
 
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _WideLayout(size, padding).lyricsRect;
+      return _WideLayout(size, padding, mirrored: mirrored).lyricsRect;
     }
     return _NarrowLayout(size, padding).lyricsRect;
   }
@@ -64,7 +67,7 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
           ? _WideChrome(
               data: data,
               callbacks: callbacks,
-              layout: _WideLayout(size, padding),
+              layout: _WideLayout(size, padding, mirrored: mirrored),
               padding: padding,
             )
           : _NarrowChrome(
@@ -107,7 +110,8 @@ double _clampD(double value, double lo, double hi) =>
 
 /// 宽屏双栏几何（Niratan `ReaderLyricsLayoutMetrics` + `playerPanel*` 系列）。
 class _WideLayout {
-  factory _WideLayout(Size size, EdgeInsets padding) {
+  /// [mirrored] = 左右互换：歌词在左、面板在右，各自宽度不变。
+  factory _WideLayout(Size size, EdgeInsets padding, {bool mirrored = false}) {
     final double w = math.max(size.width, 1);
     final double h = math.max(size.height, 1);
     final double chromePad = _clampD(w * 0.038, 22, 34);
@@ -142,12 +146,12 @@ class _WideLayout {
     return _WideLayout._(
       chromePad: chromePad,
       headerTop: headerTop,
-      panelLeft: startX,
+      panelLeft: mirrored ? startX + lyricsWidth + spacing : startX,
       panelWidth: panelWidth,
       top: top0,
       height: availH,
       lyricsRect: Rect.fromLTWH(
-        startX + panelWidth + spacing,
+        mirrored ? startX : startX + panelWidth + spacing,
         top0,
         lyricsWidth,
         availH,
@@ -419,13 +423,30 @@ class _WideChrome extends StatelessWidget {
         Positioned(
           top: padding.top + layout.headerTop,
           right: padding.right + layout.chromePad,
-          child: _LyricsIconButton(
-            icon: CupertinoIcons.xmark,
-            diameter: 38,
-            iconSize: 18,
-            color: Colors.white.withValues(alpha: 0.74),
-            tooltip: t.floating_lyric_close,
-            onPressed: callbacks.onClose,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (callbacks.onSwapSides != null) ...<Widget>[
+                _LyricsIconButton(
+                  key: const ValueKey<String>('lyrics_swap_sides_button'),
+                  icon: CupertinoIcons.arrow_right_arrow_left,
+                  diameter: 38,
+                  iconSize: 18,
+                  color: Colors.white.withValues(alpha: 0.74),
+                  tooltip: t.lyrics_layout_swap_sides,
+                  onPressed: callbacks.onSwapSides!,
+                ),
+                const SizedBox(width: 8),
+              ],
+              _LyricsIconButton(
+                icon: CupertinoIcons.xmark,
+                diameter: 38,
+                iconSize: 18,
+                color: Colors.white.withValues(alpha: 0.74),
+                tooltip: t.floating_lyric_close,
+                onPressed: callbacks.onClose,
+              ),
+            ],
           ),
         ),
       ],
@@ -1007,8 +1028,9 @@ class _NarrowIllustrationEntry extends StatelessWidget {
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
                       gaplessPlayback: true,
-                      errorBuilder: (_, Object e, StackTrace? s) =>
-                          ColoredBox(color: Colors.white.withValues(alpha: 0.12)),
+                      errorBuilder: (_, Object e, StackTrace? s) => ColoredBox(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
                   ),
                 ),

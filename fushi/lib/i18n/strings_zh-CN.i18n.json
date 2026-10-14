@@ -7481,5 +7481,6 @@
   "anki_pending_mine_landing_host_note": "本机是互联主机，配对的手机没法经这条路把卡交过来：请在那些手机上改开「制卡到 Fushi 互联服务端」。",
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。",
-  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）"
+  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
+  "lyrics_layout_swap_sides": "左右互换"
 }

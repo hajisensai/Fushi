@@ -291,36 +291,45 @@ void main() {
       );
     });
 
-    test('竖排滚轮投影成横滚后平滑逼近，不再一格一跳', () {
+    test('滚轮横竖排都接管成无极缓动，不再一格一跳', () {
+      for (final bool vertical in <bool>[true, false]) {
+        final String html = _html(vertical: vertical);
+        final int at = html.indexOf(
+          "window.addEventListener('wheel', function(e)",
+        );
+        expect(at, isNonNegative, reason: 'vertical=$vertical');
+        final String handler = html.substring(
+          at,
+          html.indexOf('}, {passive: false});', at),
+        );
+        expect(handler, contains('e.preventDefault();'));
+        expect(handler, contains('_lyWheelTarget += px;'));
+        expect(handler, contains('requestAnimationFrame(_lyWheelFrame)'));
+        // 一步落位只留给「减弱动态效果」与触控板这类小增量（本就连续）。
+        final int direct = handler.indexOf(
+          '_lySetAxisPos(s, _lyAxisPos(s) + px)',
+        );
+        expect(direct, isNonNegative);
+        expect(
+          handler.substring(0, direct),
+          contains('if (window.__lyricsReduceMotion ||'),
+        );
+        // 不再只给竖排注册（横排原生滚轮同样逐格停顿）。
+        expect(
+          html,
+          isNot(contains('if (__lyricsVertical) {\n  window.addEventListener')),
+        );
+      }
       final String html = _html();
-      final int at = html.indexOf(
-        "window.addEventListener('wheel', function(e)",
-      );
-      expect(at, isNonNegative);
-      final String handler = html.substring(
-        at,
-        html.indexOf('}, {passive: false});', at),
-      );
-      expect(handler, contains('_lyWheelTarget -= px;'));
-      expect(handler, contains('requestAnimationFrame(_lyWheelFrame)'));
-      // 一步落位只留给「减弱动态效果」。
-      final int direct = handler.indexOf('s.scrollLeft -= px;');
-      expect(direct, isNonNegative);
       expect(
-        handler.substring(0, direct),
-        contains('if (window.__lyricsReduceMotion) {'),
+        html,
+        contains('function __lyricsWheelStep(cur, target, dtMs, tauMs)'),
       );
-      expect(html, contains('function __lyricsWheelStep(cur, target)'));
       // 程序化回中接管时停掉在途滚轮动画。
       final int center = html.indexOf('function scrollToCenter(');
       expect(
         html.substring(center, html.indexOf('_animId++;', center)),
         contains('_lyWheelStop();'),
-      );
-      // 横排不注册投影（横排走原生滚轮）。
-      expect(
-        _html(vertical: false),
-        contains('if (__lyricsVertical) {\n  window.addEventListener'),
       );
     });
   });

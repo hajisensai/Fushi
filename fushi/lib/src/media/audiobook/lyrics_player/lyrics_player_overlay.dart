@@ -171,9 +171,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   Widget build(BuildContext context) {
     _host?.attach(this, _coverScheme);
     final bool apple = isGlassDesign(context);
+    final bool mirrored = widget.data.sidesMirrored;
     final LyricsPlayerDesign design = apple
-        ? const AppleLyricsPlayerDesign()
-        : const Md3LyricsPlayerDesign();
+        ? AppleLyricsPlayerDesign(mirrored: mirrored)
+        : Md3LyricsPlayerDesign(mirrored: mirrored);
     final ThemeData base = Theme.of(context);
     final ColorScheme? coverScheme = apple ? null : _coverScheme;
     // 顶边底色：桌面自绘标题栏在 Navigator 外，只认页面上报的颜色。它只是兜底

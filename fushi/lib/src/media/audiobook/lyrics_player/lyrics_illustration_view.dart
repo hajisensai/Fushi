@@ -57,14 +57,18 @@ class LyricsIllustrationArtworkSlot extends StatelessWidget {
     required this.side,
     required this.cover,
     required this.borderRadius,
+    this.height,
     this.onOpen,
   });
 
   /// null = 这本书没有插图（或还没算完），只显示封面。
   final LyricsIllustrationController? controller;
 
-  /// 封面位的边长（插图按原比例放进 [side]×[side]）。
+  /// 封面位的宽（插图按原比例放进 [side]×[height]）。
   final double side;
+
+  /// 封面位的高；null = 与 [side] 相同（正方形槽位）。
+  final double? height;
 
   /// 设计系统自己的封面卡。
   final Widget cover;
@@ -94,13 +98,15 @@ class LyricsIllustrationArtworkSlot extends StatelessWidget {
                 child: _IllustrationCard(
                   controller: c,
                   index: shown,
-                  side: side,
+                  width: side,
+                  height: height ?? side,
                   borderRadius: borderRadius,
                   onOpen: onOpen,
                 ),
               );
-        return SizedBox.square(
-          dimension: side,
+        return SizedBox(
+          width: side,
+          height: height ?? side,
           child: AnimatedSwitcher(
             duration: motion.spatialDefault.duration,
             reverseDuration: motion.effectsDefault.duration,
@@ -210,19 +216,21 @@ class _CoverWithIllustrationBadge extends StatelessWidget {
   }
 }
 
-/// 插图卡：按插图原比例放进 [side]×[side]，叠一层操作（✕ / 左右箭头 / 计数）。
+/// 插图卡：按插图原比例放进 [width]×[height]，叠一层操作（✕ / 左右箭头 / 计数）。
 class _IllustrationCard extends StatefulWidget {
   const _IllustrationCard({
     required this.controller,
     required this.index,
-    required this.side,
+    required this.width,
+    required this.height,
     required this.borderRadius,
     required this.onOpen,
   });
 
   final LyricsIllustrationController controller;
   final int index;
-  final double side;
+  final double width;
+  final double height;
   final BorderRadius borderRadius;
   final ValueChanged<int>? onOpen;
 
@@ -237,8 +245,10 @@ class _IllustrationCardState extends State<_IllustrationCard> {
   ImageStreamListener? _listener;
 
   ImageProvider get _image {
-    final int cache = (widget.side * MediaQuery.devicePixelRatioOf(context))
-        .round();
+    final int cache =
+        (math.max(widget.width, widget.height) *
+                MediaQuery.devicePixelRatioOf(context))
+            .round();
     return ResizeImage.resizeIfNeeded(
       null,
       cache,
@@ -256,7 +266,8 @@ class _IllustrationCardState extends State<_IllustrationCard> {
   void didUpdateWidget(covariant _IllustrationCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index ||
-        oldWidget.side != widget.side ||
+        oldWidget.width != widget.width ||
+        oldWidget.height != widget.height ||
         !identical(oldWidget.controller, widget.controller)) {
       _resolveAspect();
     }
@@ -315,9 +326,12 @@ class _IllustrationCardState extends State<_IllustrationCard> {
     final LyricsIllustrationController c = widget.controller;
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
-    final double side = widget.side;
-    final double w = _aspect >= 1 ? side : side * _aspect;
-    final double h = _aspect >= 1 ? side / _aspect : side;
+    final double boxW = widget.width;
+    final double boxH = widget.height;
+    // contain：宽高比比框更宽就贴宽，否则贴高。
+    final bool fitWidth = _aspect >= boxW / math.max(1, boxH);
+    final double w = fitWidth ? boxW : boxH * _aspect;
+    final double h = fitWidth ? boxW / _aspect : boxH;
     final Color controlBg = glass
         ? Colors.black.withValues(alpha: 0.42)
         : cs.secondaryContainer.withValues(alpha: 0.92);
