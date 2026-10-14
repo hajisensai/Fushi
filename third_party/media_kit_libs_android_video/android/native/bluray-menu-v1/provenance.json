@@ -1,5 +1,5 @@
 {
-  "build_commit": "dff448cc3f0c32f1ff4d31a3ee47a017e271aeab",
+  "build_commit": "8a496a2dba0843a18d740e6f266a0c07eb76de91",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
   "patches": {
     "patches/mpv/mpv_gl_dovi_p5.patch": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",

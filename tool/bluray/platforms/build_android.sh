@@ -66,6 +66,9 @@ for prefix in prefix/*; do
     "$llvm_bin/llvm-strings" "$lib" > "$work/artifacts/$abi.strings.txt"
     grep -q '^disc-navigation-state-json$' "$work/artifacts/$abi.strings.txt"
     grep -q '^discnav$' "$work/artifacts/$abi.strings.txt"
+    # User mpv scripts need the Lua backend linked in, not just load-script.
+    grep -Fq -- '-Dlua=lua' "$work/artifacts/$abi.strings.txt"
+    grep -Fxq 'Lua 5.2' "$work/artifacts/$abi.strings.txt"
     mkdir -p "$work/package-$abi/lib/$abi"
     python3 - "$root/third_party/media_kit_libs_android_video/android/native/bluray-menu-v1" "$abi" "$work/package-$abi" <<'PY'
 import hashlib, json, pathlib, sys, zipfile
