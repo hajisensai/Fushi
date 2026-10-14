@@ -6490,7 +6490,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     // 图标跟文字走（上一页 ‹ / 下一页 ›），不按右→左翻页镜像：球是一列竖排的
     // 「图标 + 文字」，与页面左右没有空间对应，镜像后成了「上一页 ›」，用户
-    // 当成画反了（BUG-3364 截图）。
+    // 当成画反了（BUG-3365 截图）。
     return FloatingBallScene(
       scope: FloatingBallScope.manga,
       actions: <String, ReaderHeaderAction>{

@@ -338,7 +338,7 @@ void main() {
       }
     });
 
-    test('漫画球的上一页 / 下一页图标跟文字走，不按右→左翻页镜像（BUG-3364）', () {
+    test('漫画球的上一页 / 下一页图标跟文字走，不按右→左翻页镜像（BUG-3365）', () {
       final String page = File(
         'lib/src/media/manga/reader/manga_fushi_page.dart',
       ).readAsStringSync();
