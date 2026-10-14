@@ -3460,6 +3460,10 @@ class AppModel with ChangeNotifier {
         unawaited(startYomitanApiServer().catchError((Object e, StackTrace s) {
           ErrorLogService.instance
               .log('AppModel.startYomitanApiServer.autostart', e, s);
+          // 端口被占：开关已被复位，用户却毫不知情——交给启动提醒弹出说明。
+          if (e is SyncServerPortInUseException) {
+            fushiApiStartupPortConflict.value = e.port;
+          }
         }));
       }
       // BUG-726：桌面端启动时把 <appSupport> 下已解压的浏览器扩展副本刷新到当前内置版本
@@ -8786,6 +8790,12 @@ class AppModel with ChangeNotifier {
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
   YomitanApiServerManager? _yomitanServerManager;
 
+  /// 启动时自启 Fushi API 服务器（yomitan-api server）撞上的端口；没冲突为 null。
+  /// 自启在 `runApp` 之前、且 fire-and-forget，失败时还没有 UI——冲突留在这里，
+  /// 由 `installFushiApiPortConflictNotice` 等 Navigator 就绪后弹窗并清回 null。
+  final ValueNotifier<int?> fushiApiStartupPortConflict =
+      ValueNotifier<int?>(null);
+
   /// 浏览器扩展网页视频沉浸时间 → 学习统计的桥（POST `/api/extension/study` 的
   /// sink）。与 server manager 同寿命：懒建于 [_ensureYomitanManager]，
   /// [stopYomitanApiServer] / [quiesceBackgroundDatabaseWriters] 时封段等落库。
@@ -8962,6 +8972,8 @@ class AppModel with ChangeNotifier {
     try {
       await _ensureYomitanManager()
           .start(port: yomitanApiPort, apiKey: yomitanApiKey);
+      // 用户在提醒弹出前已从别处把服务器开起来：过时的冲突不再弹。
+      fushiApiStartupPortConflict.value = null;
     } on SyncServerPortInUseException {
       await setYomitanApiServerEnabled(false);
       rethrow;

@@ -1013,7 +1013,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
-  'lookup/Yomitan API server':
+  'lookup/Fushi API server':
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
@@ -1571,7 +1571,7 @@ void main() {
       final List<String> restoreDiff = _mapDiff(initial, restored);
       final bool globallyRestored = restoreDiff.isEmpty;
 
-      // 「Yomitan API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
+      // 「Fushi API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
       // 真实 HttpServer，它带一个 2 分钟 idleTimeout 周期 Timer。全局还原只写回 DB
       // pref，不会停服 → 该 Timer 残留，触发测试结束的「A Timer is still pending」
       // 断言（原 develop 基线红）。必须在**测试 body 内**（FakeAsync 区、pending-

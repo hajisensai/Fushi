@@ -56,8 +56,8 @@ void main() {
         final String en = File('$root/locales/en.js').readAsStringSync();
         expect(en.contains('Authentication failed (401)'), isTrue,
             reason: '$root 字典缺 401 鉴权失败原因文案');
-        expect(en.contains('Yomitan API server'), isTrue,
-            reason: '$root 未提示连不上/端点错时去开 Yomitan API server');
+        expect(en.contains('Fushi API server'), isTrue,
+            reason: '$root 未提示连不上/端点错时去开 Fushi API server');
       });
     });
 

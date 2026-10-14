@@ -37,6 +37,8 @@ import 'package:fushi/src/sync/interconnect_p2p_app.dart'
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
+    show installFushiApiPortConflictNotice;
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -964,6 +966,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     installAnkiVideoTemplateFallbackNotice(
       navigatorKey: ref.read(appProvider).navigatorKey,
       prefs: () => ref.read(appProvider).prefsRepo,
+    );
+    installFushiApiPortConflictNotice(
+      navigatorKey: ref.read(appProvider).navigatorKey,
+      conflictPort: ref.read(appProvider).fushiApiStartupPortConflict,
     );
     // 桌面 Mihon sidecar 是无头 JVM，被 Cloudflare 拦下时由宿主弹 WebView 解题；
     // Android 有自己的 CloudflareChallengeActivity，不走这条。
