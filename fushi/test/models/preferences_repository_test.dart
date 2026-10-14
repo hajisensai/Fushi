@@ -59,16 +59,18 @@ void main() {
       expect(repo.onboardingCompleted, true);
     });
 
-    test('module toggles default to true and round-trip', () async {
-      // 「功能模块」显隐默认全开——升级用户底栏不变（Never break userspace）。
+    test('module toggles default per module and round-trip', () async {
+      // 「功能模块」显隐默认开——升级用户底栏不变（Never break userspace）；唯一
+      // 例外是复习（ModuleId.srs，用户 2026-10-14 拍板默认关，自己打开才出现）。
       // 按 [ModuleId.values] 遍历而非手抄七个模块：加模块时本用例自动覆盖到它，
       // 也钉住「一个模块一个键」（同键复用会在写全 false 后被读回暴露）。
       for (final ModuleId module in ModuleId.values) {
         expect(
           repo.moduleEnabled(module),
-          true,
-          reason: '${module.name} 默认应为开',
+          module != ModuleId.srs,
+          reason: '${module.name} 的出厂默认不对',
         );
+        expect(module.defaultEnabled, module != ModuleId.srs);
       }
       for (final ModuleId module in ModuleId.values) {
         await repo.setModuleEnabled(module, false);

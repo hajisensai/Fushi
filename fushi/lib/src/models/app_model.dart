@@ -7860,13 +7860,16 @@ class AppModel with ChangeNotifier {
 
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
-  /// 偏好仓库还没装配好时**一律判开**（fail-open）。模块门控读得比 `initialise()`
+  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]：除复习外都开，
+  /// fail-open；复习默认关，未就绪时同样不该露出）。模块门控读得比 `initialise()`
   /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
   /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
   /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
   /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
   bool moduleEnabled(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.moduleEnabled(module) : true;
+      isPreferencesReady
+      ? prefsRepo.moduleEnabled(module)
+      : module.defaultEnabled;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await prefsRepo.setModuleEnabled(module, value);

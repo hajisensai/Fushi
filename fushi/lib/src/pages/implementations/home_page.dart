@@ -171,6 +171,9 @@ List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
   // 视频/游戏之后。
   if (visibility.isEnabled(ModuleId.browse)) HomeTab.browse,
   if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
+  // 复习（Fushi 内置 SRS）紧跟查词：查词 → 制卡 → 复习是同一条学习链。模块默认
+  // 关闭（[ModuleId.defaultEnabled]），用户在功能模块里打开才出现。
+  if (visibility.isEnabled(ModuleId.srs)) HomeTab.srs,
   // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
   // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
   // [ModuleId.availableOn]），位置紧邻设置之前。
@@ -273,6 +276,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: FushiIcons.lookup,
         selectedIcon: FushiIcons.filled(FushiIcons.lookup),
         label: t.nav_lookup,
+      );
+    case HomeTab.srs:
+      return AdaptiveNavItem(
+        icon: FushiIcons.repeat,
+        selectedIcon: FushiIcons.filled(FushiIcons.repeat),
+        label: t.nav_srs,
       );
     case HomeTab.games:
       return AdaptiveNavItem(
@@ -1706,7 +1715,11 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.games ||
     HomeTab.browse ||
     HomeTab.dictionaries => homeNavItemFor(tab).label,
-    HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
+    // 复习页自己画页头（标题 + 牌组动作），同浏览器扩展。
+    HomeTab.home ||
+    HomeTab.browserExtension ||
+    HomeTab.srs ||
+    HomeTab.settings => null,
   };
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -3524,6 +3537,7 @@ class _HomePageState extends BasePageState<HomePage>
             ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
             : const HomeGamePage(),
       HomeTab.browserExtension => const BrowserExtensionPage(),
+      HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

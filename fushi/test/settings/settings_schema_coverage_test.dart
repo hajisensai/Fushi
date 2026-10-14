@@ -125,6 +125,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Game': 'test/pages/home_page_tabs_test.dart',
   'appearance/Browse': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
+  // 复习（2026-10-14，默认关）：生效点是底栏出现「复习」tab，由
+  // home_page_tabs_test 与 srs 模块测试咬住。
+  'appearance/Review': 'test/srs/srs_module_gating_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
   // tab**，homeActiveTabs 那套用例咬不到；写 prefsRepo（changed=true）之后能观测到的
