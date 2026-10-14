@@ -203,10 +203,12 @@ void main() {
     // TODO-1303：中止判据扩到「区间抽取 或 provided-bytes 路径」——
     // `req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)`
     // （Netflix 录制片段无 range 但有 providedCoverBytes 也要中止）。谓词随之改写。
+    // 高级制卡：用户为这张卡明确选了「不要音频」（`omitAudio`）时没有「缺」可言，
+    // 判据多一个 `!req.omitAudio`；其余来源（omitAudio 恒 false）照旧中止。
     expect(
         engineNorm,
-        contains(
-            'req.requireAudio && audioPath == null && (req.hasRange || viaProvidedBytes)'),
+        contains('req.requireAudio && !req.omitAudio && audioPath == null && '
+            '(req.hasRange || viaProvidedBytes)'),
         reason: '抽段失败（有区间应带音频却 audioPath==null）须显式中止，而非静默落空。');
     // BUG-1664：中止仍走 aborted 信号 + 同一症状短语，但 abortReason 现在必须经
     // `_withRootCause` 把抽取层的真实根因（如 `ffmpeg launch failed: ... No such file

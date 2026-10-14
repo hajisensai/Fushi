@@ -120,46 +120,53 @@ extension _VideoLookupMining on _VideoFushiPageState {
   }
 
   /// 「选择句子上下文」对话框的试听（[DictionaryPageMixin.onPreviewSentenceAudioToDraft]
-  /// 的私有目标）：放**这张卡会合并进去的那段**——草稿全部句 + 当前查词句的首句起
-  /// →末句止，而不只是当前句（BUG-2196 ② 同一口径）。
-  Future<bool> _previewSentenceContextAudio() async {
-    final VideoPlayerController? controller = _controller;
-    final AudioCue? anchor = _lastLookupCue;
-    if (controller == null || anchor == null) return false;
-    final AudioPlaybackRange? span = _miningDraft.composeAudioRange(
-      _cueRange(anchor),
+  /// 的私有目标）：放**这张卡会写进去的那段**——与写卡同一个函数算出的最终区间
+  /// （[_videoMiningAudioWindow]，含首尾留白、A/V 偏移），不再按 cue 边界放
+  /// （BUG-3328：旧实现按 cue 边界 replayCue，试听比卡上的句子音频少了
+  /// 首尾留白）。
+  Future<bool> _previewSentenceContextAudio() =>
+      _previewVideoMiningAudio(startDeltaMs: 0, endDeltaMs: 0);
+
+  /// 这张卡会写进去的句子音频区间（播放器轴），[startDeltaMs] / [endDeltaMs] 是高级制卡
+  /// 的起止偏移。与 [_onMineEntryImpl] 走**同一对函数**（[_resolveVideoMiningRange] +
+  /// [applyVideoMiningOverrides]）：试听、区间描述、写卡三处同源（BUG-2196 ②）。
+  /// 没有区间（无 cue、无草稿）返回 null。
+  AdvancedMiningAudioWindow? _videoMiningAudioWindow(
+    VideoPlayerController controller, {
+    required int startDeltaMs,
+    required int endDeltaMs,
+  }) {
+    final VideoMiningRange range = applyVideoMiningOverrides(
+      _resolveVideoMiningRange(controller),
+      MiningRequestOverrides(
+        audioStartDeltaMs: startDeltaMs,
+        audioEndDeltaMs: endDeltaMs,
+      ),
     );
-    if (span == null) return false;
-    return _replaySubtitleSpan(
-      controller.cueStreamOwning(anchor),
-      span.startMs,
-      span.endMs,
+    if (range.clipEndMs <= range.clipStartMs) return null;
+    return AdvancedMiningAudioWindow(
+      startMs: range.clipStartMs,
+      endMs: range.clipEndMs,
     );
   }
 
-  /// 在 [stream]（一条按 startMs 升序的字幕流）上把字幕时基区间 `[startMs, endMs]`
-  /// 落到首尾两句，经 [VideoPlayerController.replayCue] 从首句句首播到末句句尾自动停
-  /// ——与查词顶栏「重播本句」同一套句尾判定（倍速 / 延迟 / seek 吸附都已处理）。
-  /// 本机试听与手机遥控试听（声音都在电脑上放）共用。区间里没有任何一句时返回 false。
-  Future<bool> _replaySubtitleSpan(
-    List<AudioCue> stream,
-    int startMs,
-    int endMs,
-  ) async {
+  /// 本机播放器试听 [_videoMiningAudioWindow]：毫秒级起止，播到终点自动停
+  /// （[VideoPlayerController.playRangeMs]）。没有区间返回 false。
+  Future<bool> _previewVideoMiningAudio({
+    required int startDeltaMs,
+    required int endDeltaMs,
+  }) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null || endMs <= startMs) return false;
-    AudioCue? first;
-    AudioCue? last;
-    for (final AudioCue cue in stream) {
-      if (cue.endMs <= startMs || cue.startMs >= endMs) continue;
-      first ??= cue;
-      last = cue;
-    }
-    if (first == null) return false;
-    await controller.replayCue(
-      first,
-      until: identical(first, last) ? null : last,
+    if (controller == null) return false;
+    final AdvancedMiningAudioWindow? window = _videoMiningAudioWindow(
+      controller,
+      startDeltaMs: startDeltaMs,
+      endDeltaMs: endDeltaMs,
     );
+    if (window == null) return false;
+    // 试听挪了播放头：对话框关闭时要把它放回查词位置（见 [_closeAdvancedMiningSession]）。
+    _advancedMiningSession?.previewed = true;
+    await controller.playRangeMs(window.startMs, window.endMs);
     return true;
   }
 
@@ -282,6 +289,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return const MinePopupResult();
     }
 
+    // 「高级制卡」为这张卡做的调整：必须在首个 await 之前同步读完——视频车道的对话框
+    // 以 `releaseWhenPayloadConsumed: true` 回点「+」，宿主读走制卡上下文后对话框就
+    // 关了（onClosed 会把播放头放回查词位置、释放锁帧），之后再读就读到别的状态。
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
     final ({
       int clipStartMs,
       int clipEndMs,
@@ -289,7 +302,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       String sentence,
       String? cueSentence,
     })
-    range = _resolveVideoMiningRange(controller);
+    range = applyVideoMiningOverrides(
+      _resolveVideoMiningRange(controller),
+      overrides,
+    );
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
     final VideoMiningHistorySnapshot historySnapshot =
@@ -315,6 +331,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
+      overrides: overrides,
       historySnapshot: recordHistory ? historySnapshot : null,
       // 在线视频后台制卡：卡在弹窗返回之后才落地，历史行跟着落地时再写。
       onBackgroundLanded: (MinePopupResult landed) {
@@ -363,6 +380,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return const MinePopupResult();
     }
 
+    // 同 [_onMineEntryImpl]：覆盖项在首个 await 之前同步读完。
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
     final ({
       int clipStartMs,
       int clipEndMs,
@@ -370,7 +391,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       String sentence,
       String? cueSentence,
     })
-    range = _resolveVideoMiningRange(controller);
+    range = applyVideoMiningOverrides(
+      _resolveVideoMiningRange(controller),
+      overrides,
+    );
     final int queuedEpisode = _currentEpisode;
 
     final MinePopupResult result = await _mineVideoCard(
@@ -380,6 +404,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       stillFrameAtMs: range.stillFrameAtMs,
       sentence: range.sentence,
       cueSentence: range.cueSentence,
+      overrides: overrides,
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
@@ -417,6 +442,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required int stillFrameAtMs,
     required String sentence,
     String? cueSentence,
+    MiningRequestOverrides? overrides,
     int? updateNoteId,
     VideoMiningHistorySnapshot? historySnapshot,
     void Function(MinePopupResult result)? onBackgroundLanded,
@@ -510,11 +536,19 @@ extension _VideoLookupMining on _VideoFushiPageState {
     }
 
     final String? documentTitle = _videoMiningDocumentTitle();
-    final VideoMiningImageMode imageMode =
-        forceSubtitleStart &&
-            appModel.videoMiningImageMode == VideoMiningImageMode.currentFrame
-        ? VideoMiningImageMode.subtitleStart
-        : appModel.videoMiningImageMode;
+    // 高级制卡的图片方式覆盖替换设置值，之后仍过 forceSubtitleStart（遥控制卡）与引擎
+    // 里的模板降级判断；逐帧挪过的封面帧改按时刻抽（见 [resolveVideoMiningImageMode]）。
+    final VideoMiningImageMode imageMode = resolveVideoMiningImageMode(
+      preferred: appModel.videoMiningImageMode,
+      overrides: overrides,
+      forceSubtitleStart: forceSubtitleStart,
+    );
+    final bool omitCover = overrides?.omitImage ?? false;
+    final bool omitAudio = overrides?.omitAudio ?? false;
+    // 本页的高级制卡对话框会话（若有）：对话框打开那一刻就锁住了查词时的画面，此刻
+    // 播放头可能已被试听挪走——「查词时画面」与各模式的当前帧兜底都用锁住的那一帧。
+    final _VideoAdvancedMiningSession? advancedSession =
+        _advancedMiningSessionFor(controller);
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
     final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
@@ -525,20 +559,27 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final String? collectionTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
         : null;
-    final Future<Uint8List?> currentFrameSnapshot = forceSubtitleStart
+    // 不要图片时不截（截图只为封面服务）；有对话框锁帧时用锁帧，不再现场截。
+    final Future<Uint8List?> currentFrameSnapshot =
+        forceSubtitleStart || omitCover
         ? Future<Uint8List?>.value(null)
-        : controller.screenshot().catchError((Object error, StackTrace stack) {
-            // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会成为
-            // unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应模式/兜底。
-            try {
-              ErrorLogService.instance.log(
-                'mineVideoCard.snapshotCurrentFrame',
-                error,
-                stack,
-              );
-            } catch (_) {}
-            return null;
-          });
+        : advancedSession?.lookupFrame ??
+              controller.screenshot().catchError((
+                Object error,
+                StackTrace stack,
+              ) {
+                // 截图在入队时就启动，必须立刻接住异常；否则任务排队期间 Future 已失败会
+                // 成为 unhandled async error。GIF/字幕起点帧路径仍可继续，截图只作为对应
+                // 模式/兜底。
+                try {
+                  ErrorLogService.instance.log(
+                    'mineVideoCard.snapshotCurrentFrame',
+                    error,
+                    stack,
+                  );
+                } catch (_) {}
+                return null;
+              });
     // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
     // 连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir = getTemporaryDirectory().then(
@@ -549,22 +590,36 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 发起而不是等轮到本任务：那时缓冲可能已被挤掉、甚至已换集。分离音轨（YouTube）
     // 不在播放的这条流里，不落副本。拿不到副本引擎照旧远端抽取。
     final String? playbackSource = controller.miningSource;
-    final Future<CachedMediaSnapshot?>? cachedSnapshot =
-        playbackSource != null &&
-            isNetworkStreamUri(playbackSource) &&
-            audioSource == null &&
-            clipEndMs > clipStartMs
-        ? tempDir.then(
-            (String dir) => controller.snapshotCachedRange(
-              startMs: math.min(clipStartMs, stillFrameAtMs),
-              endMs: clipEndMs,
-              outputPath: p.join(
-                dir,
-                'mine_snapshot_${DateTime.now().microsecondsSinceEpoch}.mkv',
-              ),
-            ),
+    // 图片和音频都不要：没有任何东西要从媒体里抽，不落副本。
+    final bool needsMedia = !(omitCover && omitAudio);
+    // 高级制卡对话框打开时已经落过一份覆盖这段的副本（缩略图从它抽）：够用就直接交给
+    // 引擎，不再落第二份；交出去之后归引擎删（用完即删），会话关闭时不再碰它。
+    final Future<CachedMediaSnapshot?>? dialogSnapshot =
+        needsMedia && audioSource == null
+        ? advancedSession?.takeSnapshotCovering(
+            clipStartMs: clipStartMs,
+            clipEndMs: clipEndMs,
+            stillFrameAtMs: stillFrameAtMs,
           )
         : null;
+    final Future<CachedMediaSnapshot?>? cachedSnapshot =
+        dialogSnapshot ??
+        (needsMedia &&
+                playbackSource != null &&
+                isNetworkStreamUri(playbackSource) &&
+                audioSource == null &&
+                clipEndMs > clipStartMs
+            ? tempDir.then(
+                (String dir) => controller.snapshotCachedRange(
+                  startMs: math.min(clipStartMs, stillFrameAtMs),
+                  endMs: clipEndMs,
+                  outputPath: p.join(
+                    dir,
+                    'mine_snapshot_${DateTime.now().microsecondsSinceEpoch}.mkv',
+                  ),
+                ),
+              )
+            : null);
     // 统计 / 历史归属在点击当下冻结：后台落卡时页面可能已经关了。
     final FushiDatabase mineDb = appModel.database;
     final ({String bookKey, String title}) statIdentity = (
@@ -731,6 +786,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: collectionTag,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
+        // 高级制卡「不要音频 / 不要图片」（只对这一张卡）：引擎跳过对应抽取，两者都
+        // 省略时出纯文本卡。
+        omitAudio: omitAudio,
+        omitCover: omitCover,
         // 用户在 Anki 设置里选的封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧）；
         // 默认 videoClip。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
