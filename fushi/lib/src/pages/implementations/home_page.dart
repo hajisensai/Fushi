@@ -735,11 +735,8 @@ class _HomePageState extends BasePageState<HomePage>
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed = await showAnkiMediaDedupPlanDialog(
-      context,
-      plan,
-      offerDelete: true,
-    );
+    final bool confirmed =
+        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -1836,14 +1833,15 @@ class _HomePageState extends BasePageState<HomePage>
         // Two traversal groups so Tab / Shift+Tab walk each region as one block
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.
-        // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见 NavRailContentSync），
-        // 免得整棵内容树与保活 tab 每帧重排。
+        //
+        // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见
+        // NavRailContentSync，BUG-3328），免得整棵内容树与保活 tab 每帧重排。
         child: NavRailContentSync(
           child: Row(
             children: [
-              // Each rail destination is its own gamepad/keyboard focus target, so
-              // the app focus ring hugs the single selected item; D-pad Up/Down
-              // steps between them and Left/Right leaves to the content.
+              // Each rail destination is its own gamepad/keyboard focus target,
+              // so the app focus ring hugs the single selected item; D-pad
+              // Up/Down steps between them and Left/Right leaves to the content.
               FocusTraversalGroup(
                 child: ValueListenableBuilder<bool?>(
                   valueListenable: appModel.navRailExpandedNotifier,
@@ -2047,7 +2045,8 @@ class _HomePageState extends BasePageState<HomePage>
               final bool towardEnd = index > visualIndex;
               _selectTabFromNav(tab);
               _moduleSwipe.playEnter(
-                fromScreenRight: Directionality.of(context) == TextDirection.ltr
+                fromScreenRight:
+                    Directionality.of(context) == TextDirection.ltr
                     ? towardEnd
                     : !towardEnd,
               );
