@@ -144,7 +144,7 @@ vn.reader.mergeSentenceAudioCrossScreenScreens = screens => {
 vn.reader.fitScreensToViewport = screens => screens;
 vn.reader.assignScreenProgressAnchors = () => {};
 vn.reader.buildScreens();
-// BUG-3366：零宽纯图片屏独占一屏（并进相邻文字屏会让整屏插图把同屏句子挤出屏外）。
+// BUG-3395：零宽纯图片屏独占一屏（并进相邻文字屏会让整屏插图把同屏句子挤出屏外）。
 assert(mergeInput.length === 6, 'zero-width media must stay on screens of their own');
 assert([lead, first, mixed, middle, second, tail].every((s, i) => mergeInput[i] === s),
   'screens must keep source order without rearranging media');

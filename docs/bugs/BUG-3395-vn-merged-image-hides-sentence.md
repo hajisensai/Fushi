@@ -1,4 +1,4 @@
-## BUG-3366 · VN 图文合并屏插图铺满整屏，同屏句子被挤出屏外
+## BUG-3395 · VN 图文合并屏插图铺满整屏，同屏句子被挤出屏外
 - **报告**：2026-10-14（用户：「ios的vn模式在这个位置直接看不到よく人を見ている并且图片位置有点歪但是这是右边距位9的情况下，如果正常边距……反正都是看不到よく人を見ている这句话，青春恋爱物语6的书」；修法定案时用户要求插图「要铺满」）
 - **真实性**：✅ 真 bug，两个独立根因：
   1. `fushi/lib/src/reader/reader_visual_novel_scripts.dart`（修前 :1129）`buildScreens` 调 `attachMediaScreensToAdjacentText`（BUG-1244）把零宽纯图片屏并进下一段，合并屏 `splittable: false`（修前 :1216），`fitScreensToViewport` 对它不量不拆；插图又按整屏上限（`applyImageMaxVars`）排版，同屏竖排文字只能溢出到屏左外侧。やはり俺の青春ラブコメはまちがっている。6 的单图片章 `p-0021`（i-0115_01.jpg）经「合并图片页」（默认开，`_injectMergedChapterImages`）注入 `p-0022` 章首，紧跟的首段正是「……さすがだ、由比ヶ浜。よく人を見ている。」——有声书读这句时屏上只有图。

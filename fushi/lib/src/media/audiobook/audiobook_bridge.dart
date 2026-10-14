@@ -342,7 +342,7 @@ window.__fushiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled
         anchor, reveal, pauseEnabled, fromChapterStart);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
-  // BUG-3366：后两个参数只有 VN 读——VN 的插图是独立一屏、不在当前 DOM 里，上面
+  // BUG-3395：后两个参数只有 VN 读——VN 的插图是独立一屏、不在当前 DOM 里，上面
   // __fushiImagePauseAdvance 看不见它，由 VN 自己判「跟随跨过了图片屏」并停在图上。
   r.highlightSentenceAudioCue(key, revealedImage ? false : reveal,
       pauseEnabled, fromChapterStart);

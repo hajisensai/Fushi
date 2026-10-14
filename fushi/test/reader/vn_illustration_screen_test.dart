@@ -15,7 +15,7 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3366：VN 插图屏 / 句子屏的真 Chrome 几何与有声书跟随。
+/// BUG-3395：VN 插图屏 / 句子屏的真 Chrome 几何与有声书跟随。
 ///
 /// 用户原始失败（iOS，やはり俺の青春ラブコメはまちがっている。6，竖排 VN）：
 /// 插图章被并进下一章章首，BUG-1244 又把插图和首段「……さすがだ、由比ヶ浜。よく人を

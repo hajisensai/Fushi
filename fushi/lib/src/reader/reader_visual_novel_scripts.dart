@@ -1093,7 +1093,7 @@ $sharedInitViewport
     // BUG-1688：「实际 VN 视口」就是 `.fushi-vn-screen` 这个盒——它已扣掉 chrome
     // 预留带与用户边距。原来读 window.innerWidth/Height（整个视口）会把插图算到
     // 能盖住顶栏/底栏的尺寸。取不到盒时才回退整视口（首屏极早期调用）。
-    // BUG-3366：用户左右边距是屏盒的 padding，rect 宽高是 border-box、含 padding。按它
+    // BUG-3395：用户左右边距是屏盒的 padding，rect 宽高是 border-box、含 padding。按它
     // 算上限时，边距一加大（右边距 9%）插图就比内容盒宽，只能往一侧溢出被裁（iOS 实机
     // 插图左缘切掉一截、整体偏右）。上限取扣掉 padding 的内容盒。
     var screenBox = this.screen && this.screen.getBoundingClientRect
@@ -1132,7 +1132,7 @@ $sharedInitViewport
     } else {
       baseScreens = this.buildBlockScreens();
     }
-    // BUG-3366：纯图片 screen 保持独立一屏、按整屏上限铺满。BUG-1244 曾把它附到下一
+    // BUG-3395：纯图片 screen 保持独立一屏、按整屏上限铺满。BUG-1244 曾把它附到下一
     // 句/下一块同屏渲染，但插图按整屏上限排版，同屏文字被挤出可视区（竖排整段落到屏
     // 左外侧，有声书正读的那句看不见）。「逐句跟随不略过零宽图片屏」改由跟随路径自己
     // 处理：跨过图片屏且开了图片暂停时先停在图上（pauseAtCrossedMediaScreen）。
@@ -1180,7 +1180,7 @@ $sharedInitViewport
     return !!(screen && screen.mediaStop) &&
       this.screenStartCharCount(screen) === this.screenEndCharCount(screen);
   },
-  // BUG-3366（取代 BUG-1244「把图附到相邻文字同屏」）：纯图片屏没有字符范围，逐句
+  // BUG-3395（取代 BUG-1244「把图附到相邻文字同屏」）：纯图片屏没有字符范围，逐句
   // 跟随按 cue 偏移直接跳到下一条文字屏会略过它。跟随向前跨过图片屏（或音频刚从上
   // 一章读进本章、目标屏之前有章首图）且宿主开了图片暂停（pauseEnabled =
   // imagePauseSec > 0，与分页 / 连续模式 TODO-724 同一个门）时，先整屏停在图上并发

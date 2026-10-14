@@ -327,15 +327,15 @@ void main() {
     },
   );
 
-  // BUG-1244 → BUG-3366：纯图片屏不再并进相邻文字屏（插图按整屏铺满，同屏文字会被
+  // BUG-1244 → BUG-3395：纯图片屏不再并进相邻文字屏（插图按整屏铺满，同屏文字会被
   // 挤出可视区）；「逐句跟随不略过图片屏」改由两条跟随路径经 pauseAtCrossedMediaScreen
   // 停在图上。几何与跟随行为由真 Chrome 跑手 vn_illustration_screen_test 覆盖。
-  test('BUG-3366 VN image screens stay standalone; follow pauses on them', () {
+  test('BUG-3395 VN image screens stay standalone; follow pauses on them', () {
     final String shell = ReaderVisualNovelScripts.vnShellScript();
     expect(
       shell,
       isNot(contains('attachMediaScreensToAdjacentText')),
-      reason: '图片屏与文字屏合并会让插图把同屏文字挤出屏外（BUG-3366）',
+      reason: '图片屏与文字屏合并会让插图把同屏文字挤出屏外（BUG-3395）',
     );
     expect(
       shell,

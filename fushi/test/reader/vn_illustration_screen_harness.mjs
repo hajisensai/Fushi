@@ -1,4 +1,4 @@
-// BUG-3366：VN 插图屏与其后句子屏在真 Chrome 里的几何与有声书跟随行为跑手。
+// BUG-3395：VN 插图屏与其后句子屏在真 Chrome 里的几何与有声书跟随行为跑手。
 // 由 vn_illustration_screen_test.dart 执行，argv[2] = payload.json（生产 VN shell +
 // 选区脚本 + 生产 VN CSS）。章首插图的注入形状照抄 webview.part.dart 的
 // _injectMergedChapterImages（单图片章并进下一章章首）。

@@ -97,7 +97,7 @@ function makeVn(options) {
     screenIndexForProgress(p) { log.progressFallback.push(p); return 0; },
     renderScreen(i) { log.render.push(i); vn.currentScreenIndex = i; },
     calculateProgress() { return 0.5; },
-    // BUG-3366：主对象的「跟随跨过插图屏先停在图上」；本替身没有插图屏。
+    // BUG-3395：主对象的「跟随跨过插图屏先停在图上」；本替身没有插图屏。
     pauseAtCrossedMediaScreen() { return false; },
     completeCurrentReveal() { vn.revealComplete = true; },
     notifyRestoreComplete() { log.restored++; }
