@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
@@ -13,7 +14,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 // 设计系统用（Apple 设计系统走 iOS / macOS 形态，见 glass/fushi_glass_feedback）：
 //
 // - [FushiWavyLinearProgress]：线性进度。确定态已填段是正弦波（振幅 3、波长
-//   40、线宽 4、圆头），波形缓慢向前流动，进度接近 0 / 1 时振幅收平；轨道是
+//   40、线宽 4、圆头），值在变化时波形缓慢向前流动（静止的值只保留波形、
+//   不跑动画，见 [_RepeatingTicker]），进度接近 0 / 1 时振幅收平；轨道是
 //   直线，与已填段之间留缝，尾端一个停止点。不定态是两段波浪沿轨道滑动。
 // - [FushiWavyCircularProgress]：圆形进度。波浪绕环一周（振幅 1.6、波长约
 //   15），确定态带缝 + 直线底环；不定态是一段长度呼吸、整体旋转的波浪弧。
@@ -22,7 +24,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 //   可选 primaryContainer 圆底（contained）。变形 = 两个形状按同一组 N 个角度
 //   采样极径后逐点插值，节拍用带回弹的弹簧感曲线。
 //
-// 每个控件只有一个 AnimationController，画在 RepaintBoundary 里；系统「减少
+// 每个控件只有一个 AnimationController，画在 RepaintBoundary 里；确定态只在
+// 值变化后的 [kWavyProgressFlowSettle] 内跑（静止进度条零帧开销）；系统「减少
 // 动态效果」（MediaQuery.disableAnimations）时退回直线 / 静止、不跑动画。
 // 墨水屏不用这里（调用方退回 Material 原控件的墨水屏处理）。
 //
@@ -47,19 +50,36 @@ double _appleLinearMaxHeight(BuildContext context) {
 bool _motionAllowed(BuildContext context) =>
     !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
 
+/// 确定态的值停止变化多久后波形停止流动（形状保留，只是相位定住）。
+const Duration kWavyProgressFlowSettle = Duration(seconds: 3);
+
 /// 按需启停的单个 repeat 控制器：只在需要动画时跑，避免常驻 ticker。
+///
+/// 不定态一直跑；确定态只在**值还在变**时让波形流动——流动表达的是「任务正在
+/// 推进」，而确定态进度条大多是静止的数值展示（继续观看卡片的观看进度、合集
+/// 详情、选集栏）。原先确定态无条件常驻 ticker，静止进度条也每个 vsync 整帧
+/// 重绘，首页一张继续观看卡片就让主线程常年 ~17% 占用（启动后持续卡顿的来源）。
 mixin _RepeatingTicker<T extends StatefulWidget>
     on State<T>, SingleTickerProviderStateMixin<T> {
   AnimationController? _ticker;
+  Timer? _settleTimer;
+  double? _lastValue;
+  bool _valueMoving = false;
 
   Duration get tickerPeriod;
 
+  /// 当前进度值；null = 不定态。
+  double? get progressValue;
+
+  /// 这个控件此刻允许动画（减少动态效果 / Apple 设计系统 / 振幅为零时为 false）。
   bool wantsAnimation(BuildContext context);
 
   AnimationController? get ticker => _ticker;
 
   void syncTicker() {
-    if (wantsAnimation(context)) {
+    final bool run =
+        wantsAnimation(context) && (progressValue == null || _valueMoving);
+    if (run) {
       final AnimationController c = _ticker ??= AnimationController(
         vsync: this,
         duration: tickerPeriod,
@@ -68,6 +88,26 @@ mixin _RepeatingTicker<T extends StatefulWidget>
     } else {
       _ticker?.stop();
     }
+  }
+
+  /// 确定态的值变了 → 流动，[kWavyProgressFlowSettle] 内没再变 → 停。
+  void _trackValueChange() {
+    final double? value = progressValue;
+    if (value != null && _lastValue != null && value != _lastValue) {
+      _valueMoving = true;
+      _settleTimer?.cancel();
+      _settleTimer = Timer(kWavyProgressFlowSettle, () {
+        _valueMoving = false;
+        if (mounted) syncTicker();
+      });
+    }
+    _lastValue = value;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _lastValue = progressValue;
   }
 
   @override
@@ -79,11 +119,13 @@ mixin _RepeatingTicker<T extends StatefulWidget>
   @override
   void didUpdateWidget(T oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _trackValueChange();
     syncTicker();
   }
 
   @override
   void dispose() {
+    _settleTimer?.cancel();
     _ticker?.dispose();
     super.dispose();
   }
@@ -151,6 +193,9 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
   // 推波形相位（一轮流过一个波长）。
   @override
   Duration get tickerPeriod => const Duration(milliseconds: 1800);
+
+  @override
+  double? get progressValue => widget.value;
 
   // 确定态在两端振幅收平成直线（[_amplitudeEase] 为 0），相位流动看不见，
   // 不跑控制器——否则「已看完」贴底满条这类静止装饰会永远每帧重绘。
@@ -442,6 +487,9 @@ class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
   Duration get tickerPeriod => const Duration(milliseconds: 8000);
 
   @override
+  double? get progressValue => widget.value;
+
+  @override
   bool wantsAnimation(BuildContext context) =>
       _motionAllowed(context) && !isGlassDesign(context);
 
@@ -727,6 +775,10 @@ class _FushiExpressiveLoadingIndicatorState
   @override
   Duration get tickerPeriod =>
       Duration(milliseconds: _morphMs * _kSampledShapes.length);
+
+  // 「加载」恒为不定态，一直变形。
+  @override
+  double? get progressValue => null;
 
   @override
   bool wantsAnimation(BuildContext context) =>

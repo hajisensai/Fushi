@@ -40,6 +40,7 @@
 | [BUG-3328](bugs/BUG-3328-favorite-removal-drops-lookup-selection.md) | ✅ | ✅ | 阅读器删除收藏 / 标注高亮后查词选区丢失 |
 | [BUG-3328](bugs/BUG-3328-manga-ocr-stale-regions-dropped.md) | ✅ | ✅ | 漫画 OCR 覆盖层字级区域对不上文字时逐个丢弃，部分字无可点区域 |
 | [BUG-3328](bugs/BUG-3328-log-upload-no-retry.md) | ✅ | ✅ | 日志上传遇瞬时网络故障直接失败 |
+| [BUG-3328](bugs/BUG-3328-startup-idle-wavy-ticker.md) | ✅ | ✅ | 启动后持续卡顿：静止的确定态波浪进度条常驻 ticker 每帧重绘 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
