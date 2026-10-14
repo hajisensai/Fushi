@@ -27,7 +27,8 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
-import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
+import 'package:fushi_engine/ocr/manga_ocr_service.dart'
+    show MangaOcrPageFocus;
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -683,7 +684,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on OnlineMangaUnavailable catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
       if (mounted) {
-        FushiToast.show(msg: error.userMessage, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     } finally {
@@ -788,8 +792,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       <OnlineMangaChapter>[chapter],
       // 只有「确实已有识别结果」才丢缓存重跑；没结果或 manga.json 读不出都续跑
       // ——读不出的坏文件不该被整章重跑悄悄覆盖。
-      onlyMissing:
-          await _chapterOcrState(bookDir, chapter.key) !=
+      onlyMissing: await _chapterOcrState(bookDir, chapter.key) !=
           _ChapterOcrState.hasResult,
     );
     if (queued > 0 && mounted) {
@@ -833,8 +836,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         mangaChapterDirectory(bookDir, chapterKey),
       );
       final MokuroPayload payload = parseMangaJson(await json.readAsString());
-      final bool empty =
-          payload.images.isNotEmpty &&
+      final bool empty = payload.images.isNotEmpty &&
           payload.images.every((MokuroImage image) => image.blocks.isEmpty);
       return empty ? _ChapterOcrState.empty : _ChapterOcrState.hasResult;
     } on Object {
@@ -1348,7 +1350,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (mounted) {
         _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
-        FushiToast.show(msg: error.userMessage, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.openChapter', error, stack);
@@ -1410,10 +1415,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       ref: ref,
       mediaSource: MangaFushiSource.instance,
       item: launchItem,
-      launchPageBuilder: () => MangaFushiSource.instance.buildChapterLaunchPage(
-        item: launchItem,
-        chapterIndex: chapterIndex,
-      ),
+      launchPageBuilder: () => MangaFushiSource.instance
+          .buildChapterLaunchPage(item: launchItem, chapterIndex: chapterIndex),
     );
   }
 
@@ -1601,7 +1604,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                   _currentChapterAnchor,
                   duration: fushiMotionDuration(context, FushiMotion.medium),
                 ),
-          onUnreadOnlyToggled: () => setState(() => _unreadOnly = !_unreadOnly),
+          onUnreadOnlyToggled: () =>
+              setState(() => _unreadOnly = !_unreadOnly),
           onChapterTap: (OnlineMangaChapter chapter) {
             final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
             if (index >= 0) unawaited(_openChapterAt(index));
@@ -1641,7 +1645,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                     unawaited(_deleteChapterDownload(chapter)),
           onOcr: _bookKey == null
               ? null
-              : (OnlineMangaChapter chapter) => unawaited(_ocrChapter(chapter)),
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_ocrChapter(chapter)),
         ),
       ],
     );
@@ -2118,9 +2123,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (inLibrary) ...<MediaDetailMenuItem>[
         MediaDetailMenuItem(
           key: const ValueKey<String>('manga_series_auto_ocr_chip'),
-          icon: autoOcr
-              ? FushiIcons.filled(FushiIcons.success)
-              : FushiIcons.ocr,
+          icon: autoOcr ? FushiIcons.filled(FushiIcons.success) : FushiIcons.ocr,
           label: t.manga_series_auto_ocr,
           onSelected: () => unawaited(_setAutoOcr(!autoOcr)),
         ),

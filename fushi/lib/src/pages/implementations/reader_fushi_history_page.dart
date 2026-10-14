@@ -2750,15 +2750,16 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         item: item,
         isHistory: isHistory,
         showLaunchAction: false,
-        extraActions: (MediaItem it) => <DialogAction>[
-          ..._epubExtraActions(
-            it,
-            inCollectionDetail: removeFromCollection != null,
-            fromSeriesPage: fromSeriesPage,
-          ),
-          if (removeFromCollection != null)
-            ..._removeFromCollectionActions(dialogCtx, removeFromCollection),
-        ],
+        extraActions: removeFromCollection == null
+            ? (MediaItem it) =>
+                _epubExtraActions(it, fromSeriesPage: fromSeriesPage)
+            : (MediaItem it) => <DialogAction>[
+                  ..._epubExtraActions(it, inCollectionDetail: true),
+                  ..._removeFromCollectionActions(
+                    dialogCtx,
+                    removeFromCollection,
+                  ),
+                ],
       ),
     );
     if (isHistory && mounted) {
