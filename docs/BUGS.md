@@ -58,6 +58,7 @@
 | [BUG-3330](bugs/BUG-3330-gamepad-hold-speed-toggles.md) | ✅ | ✅ | 手柄「按住临时倍速」变成点按切换，长按也只算一次点按 |
 | [BUG-3329](bugs/BUG-3329-swipe-seek-hud-resets-on-release.md) | ✅ | ✅ | 横滑跳转松手瞬间 HUD 显示回滑动起始进度 |
 | [BUG-3328](bugs/BUG-3328-gamepad-prev-subtitle-degrades.md) | ✅ | ✅ | 手柄「上一句字幕」退化成固定秒数回退 |
+| [BUG-3328](bugs/BUG-3328-pill-equal-height.md) | ✅ | ✅ | 库页工具行按钮组胶囊比搜索框高 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

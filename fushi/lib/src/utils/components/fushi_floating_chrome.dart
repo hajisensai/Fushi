@@ -1165,9 +1165,16 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
 ///
 /// - MD3：surfaceContainer 全胶囊 + Elevation 3 两层投影；[vibrant] 时
 ///   primaryContainer（上下文工具栏用）；
-/// - Apple：[FushiFloatingPill] 的无色液态玻璃胶囊 + 柔和投影，缺省最小高
+/// - Apple：[FushiFloatingPill] 的无色液态玻璃胶囊 + 柔和投影，缺省高
 ///   [fushiAppleFloatingExtent]（iOS 26 悬浮栏 44 / macOS 26 工具栏 36）；
 /// - 墨水屏：无阴影，一圈 outline。
+///
+/// 高度是**定值**而不是「至少」（与 `FushiPageChromeCapsule` 同一契约）：胶囊
+/// 总和别的控件并排（库页工具行里与搜索框、页头里与页签胶囊），只有定高才能
+/// 保证同一行等高。此前是 `minHeight`，里面的图标按钮命中盒（44 / 48）一比
+/// 胶囊内高大就把胶囊撑高——库页工具行的按钮组胶囊因此比 40 高的搜索框高一截
+/// （2026-10-14 用户截图「这里不等高」）。内容按 `高 − 竖向内边距` 的上限排，
+/// 按钮的命中盒随之收进胶囊，不再反过来撑它。
 class FushiFloatingToolbarSurface extends StatelessWidget {
   const FushiFloatingToolbarSurface({
     required this.child,
@@ -1179,8 +1186,8 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   final Widget child;
 
-  /// 胶囊最小高度；缺省 MD3 = M3E floating toolbar 紧凑档 56，Apple =
-  /// [fushiAppleFloatingExtent]。
+  /// 胶囊高度（定值，见类注释）；缺省 MD3 = M3E floating toolbar 紧凑档 56，
+  /// Apple = [fushiAppleFloatingExtent]。
   final double? height;
   final EdgeInsetsGeometry padding;
 
@@ -1198,19 +1205,17 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double minHeight =
+    final double extent =
         height ??
         (isGlassDesign(context)
             ? fushiAppleFloatingExtent(context)
             : kFushiFloatingToolbarCompactExtent);
-    return FushiFloatingPill(
-      color: colorOf(context, vibrant: vibrant),
-      padding: padding,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minHeight: math.max(0, minHeight - padding.vertical),
-        ),
-        child: Center(widthFactor: 1, heightFactor: 1, child: child),
+    return SizedBox(
+      height: extent,
+      child: FushiFloatingPill(
+        color: colorOf(context, vibrant: vibrant),
+        padding: padding,
+        child: Center(widthFactor: 1, child: child),
       ),
     );
   }
