@@ -18,6 +18,15 @@ import 'package:meta/meta.dart';
 class EpubImporter {
   EpubImporter._();
 
+  static int _tempSeq = 0;
+
+  /// 解包临时目录名（BUG-3328）。只用毫秒戳时，同一毫秒起跑的两次导入（同时
+  /// 下载多本对端书、几本几乎同时落地）会解进**同一个** `.tmp-<ms>`，互相覆盖
+  /// 解包内容再各自搬走。进程内单调序号保证并发导入各占一个目录。
+  @visibleForTesting
+  static String nextTempDirName() =>
+      '.tmp-${DateTime.now().millisecondsSinceEpoch}-${_tempSeq++}';
+
   /// Import an EPUB file into the database.
   ///
   /// Extracts the EPUB to disk, parses metadata, and inserts into EpubBooks.
@@ -29,8 +38,7 @@ class EpubImporter {
     required String fileName,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
   }) async {
-    final int tempId = DateTime.now().millisecondsSinceEpoch;
-    final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
+    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
 
     final _ParseResult result = await Isolate.run(() => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)));
     return _persistParsed(
@@ -68,8 +76,7 @@ class EpubImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     int? sourceId,
   }) async {
-    final int tempId = DateTime.now().millisecondsSinceEpoch;
-    final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
+    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
 
     final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: filePath, extractDir: tempDir)));
     return _persistParsed(
@@ -273,8 +280,7 @@ class EpubImporter {
     required String epubFilePath,
     required String extractDir,
   }) async {
-    final int tempId = DateTime.now().millisecondsSinceEpoch;
-    final String tempDir = await EpubStorage.bookDirectory('.tmp-$tempId');
+    final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
     try {
       final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir)));
       // chaptersJson / coverHref 都是**相对**解压根的路径，先算再搬位置等价。

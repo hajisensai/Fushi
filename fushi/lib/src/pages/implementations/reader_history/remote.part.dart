@@ -248,14 +248,6 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   Widget _buildRemoteBookCard(RemoteBookInfo book,
       {bool selectable = true, String focusIdPrefix = ''}) {
     final String safeKey = _safeRemoteBookKey(book.title);
-    final Widget? taskBadge = _remoteBookTaskBadge(
-      taskId: InterconnectDownloadManager.bookTaskId(book.downloadId),
-      safeKey: safeKey,
-      keyPrefix: 'remote_book',
-    );
-    // 进行中 → 铺满封面的压暗 + 进度环（loadingOverlay 槽），右上角让空（不再
-    // 画下载按钮）；失败 → 右上失败角标；其余 → 右上下载按钮。
-    final bool downloading = taskBadge is RemoteDownloadProgressBadge;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_book_card_$safeKey'),
@@ -267,7 +259,18 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // （_bookCardShell.onSecondaryTap 同绑 onLongPress）改弹选项面板，与本地
       // 书卡长按一致（TODO-768 / BUG-416）。
       onLongPress: () => _showRemoteBookDialog(book),
-      child: _bookCardLayout(
+      // 下载态订阅挂在卡自己这层（BUG-3328，见 [_remoteBookTaskBadge]）。
+      child: Consumer(builder: (BuildContext _, WidgetRef taskRef, Widget? __) {
+        final Widget? taskBadge = _remoteBookTaskBadge(
+          taskRef: taskRef,
+          taskId: InterconnectDownloadManager.bookTaskId(book.downloadId),
+          safeKey: safeKey,
+          keyPrefix: 'remote_book',
+        );
+        // 进行中 → 铺满封面的压暗 + 进度环（loadingOverlay 槽），右上角让空（不再
+        // 画下载按钮）；失败 → 右上失败角标；其余 → 右上下载按钮。
+        final bool downloading = taskBadge is RemoteDownloadProgressBadge;
+        return _bookCardLayout(
         // BUG-1488：上屏名走 host 下发的显示名（host 改过名即用改后的），身份键
         // （safeKey / _downloadingBooks / downloadId）仍恒用 raw title。
         title: book.displayName,
@@ -294,7 +297,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   ? null
                   : () => _downloadRemoteBook(book),
             ),
-      ),
+        );
+      }),
     );
   }
 
@@ -310,31 +314,60 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 并行 HTTP + N 个并行导入落库，对手机端互联 host 是真实压力；逐本 await
   /// 让批量与用户逐张点的节奏等价。服务不可达在进循环前判一次，只提示一次
   /// （单本路径每次各弹一条）。
+  ///
+  /// BUG-3328：勾中的**合集**也参与——下它格子里画着的云端成员
+  /// （[_remoteMembersByCollection]），即「合集一键全部下载」。散卡与合集成员按
+  /// 下载身份去重，同一本不会排两次。
   Future<void> _batchDownloadSelectedRemote() async {
     final Set<String> keys = _selectedRemoteKeys;
-    if (keys.isEmpty) return;
+    final List<_ShelfBookSlot> collectionMembers =
+        _selectedCollectionRemoteMembers;
+    if (keys.isEmpty && collectionMembers.isEmpty) return;
     final _RemoteBookState? state = _lastRemoteState;
     _exitSelectionMode();
-    if (state == null) return;
+    if (state == null && collectionMembers.isEmpty) return;
     if (_remoteBookClient == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         FushiSnackBar(content: Text(t.remote_book_unavailable)),
       );
       return;
     }
+    final List<_ShelfBookSlot> targets = <_ShelfBookSlot>[
+      if (state != null)
+        for (final RemoteBookInfo book in state.books)
+          if (keys.contains(_remoteBookSelectionKey(book)))
+            _ShelfBookSlot(remote: book),
+      if (state != null)
+        for (final RemoteAudiobookInfo book in state.srtAudiobooks)
+          if (keys.contains(_remoteSrtSelectionKey(book)))
+            _ShelfBookSlot(remoteSrt: book),
+      ...collectionMembers,
+    ];
+    final Set<String> queued = <String>{};
     // 页面卸载后停止派发：已起的任务归管理器继续跑到底，未起的不再用已 dispose
     // 的 ref 去起。
-    for (final RemoteBookInfo book in state.books) {
-      if (!keys.contains(_remoteBookSelectionKey(book))) continue;
+    for (final _ShelfBookSlot slot in targets) {
+      final RemoteBookInfo? book = slot.remote;
+      final RemoteAudiobookInfo? srt = slot.remoteSrt;
+      final String taskId = book != null
+          ? InterconnectDownloadManager.bookTaskId(book.downloadId)
+          : InterconnectDownloadManager.srtAudiobookTaskId(srt!.identity);
+      if (!queued.add(taskId)) continue;
       if (!mounted) return;
-      await _downloadRemoteBook(book);
-    }
-    for (final RemoteAudiobookInfo book in state.srtAudiobooks) {
-      if (!keys.contains(_remoteSrtSelectionKey(book))) continue;
-      if (!mounted) return;
-      await _downloadRemoteSrtAudiobook(book);
+      if (book != null) {
+        await _downloadRemoteBook(book);
+      } else {
+        await _downloadRemoteSrtAudiobook(srt!);
+      }
     }
   }
+
+  /// 多选里勾中的合集折进格子的云端成员（[_remoteMembersByCollection]），按合集
+  /// 选中序展开。批量栏「下载」的可用态与派发共用这一份。
+  List<_ShelfBookSlot> get _selectedCollectionRemoteMembers => <_ShelfBookSlot>[
+        for (final int id in _selectedCollectionIds)
+          ...?_remoteMembersByCollection[id],
+      ];
 
   /// 远端占位卡右上角的下载态角标（BUG-1561 书侧补齐）：进行中 → 进度环，失败 →
   /// 失败角标（tooltip 带 [InterconnectDownloadManager] 存的本地化失败原因），
@@ -345,13 +378,20 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// → 用户永远不知道下载挂了。角标让失败态落在卡片上，重进页面照样看得到；
   /// 再点一次下载即重试（新任务顶掉旧失败态）。与视频侧
   /// `_remoteDownloadBadge`（home_video_page.dart）同范式。
+  ///
+  /// [taskRef] 必须是卡片**自己**那层 [Consumer] 的 ref（BUG-3328）：合集详情页是
+  /// push 在书架之上的独立路由，成员卡由书架经 `memberCardBuilder` 造出来，但详情页
+  /// 不会因书架重建而重建——此前这里用书架页自己的 `ref.watch`，订阅挂在书架上，
+  /// 详情页里的卡永远停在点击那一刻的状态（进度不走、和合集外不一致）。订阅跟着卡
+  /// 走，合集内外就是同一个组件、同一个进度来源；顺带书架页也不再因进度整页重建。
   Widget? _remoteBookTaskBadge({
+    required WidgetRef taskRef,
     required String taskId,
     required String safeKey,
     required String keyPrefix,
   }) {
     // 只订阅角标可见的状态（整数百分比），字节级进度回报不整页重建（BUG-2944）。
-    final InterconnectDownloadBadgeState? task = ref.watch(
+    final InterconnectDownloadBadgeState? task = taskRef.watch(
         interconnectDownloadManagerProvider
             .select((m) => m.badgeStateFor(taskId)));
     if (task == null) return null;
@@ -1428,13 +1468,6 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final String title = book.title ?? book.identity;
     final String safeKey = _safeRemoteBookKey(title);
     final ColorScheme cs = theme.colorScheme;
-    final Widget? taskBadge = _remoteBookTaskBadge(
-      taskId: InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
-      safeKey: safeKey,
-      keyPrefix: 'remote_srt',
-    );
-    // 同远端 EPUB 卡：进行中铺满封面，右上角让空。
-    final bool downloading = taskBadge is RemoteDownloadProgressBadge;
     return _bookCardShell(
       slotAspectRatio: kShelfBookCardAspectRatio,
       cardKey: ValueKey<String>('remote_srt_card_$safeKey'),
@@ -1445,7 +1478,17 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       // 长按 / 右键：弹动作面板，与远端 EPUB 卡（[_showRemoteBookDialog]）一致
       // （巡检 PR-3——旧行为长按直接开始下载，重手势与轻点击等价且不可预览动作）。
       onLongPress: () => _showRemoteSrtDialog(book),
-      child: _bookCardLayout(
+      // 下载态订阅挂在卡自己这层（BUG-3328，见 [_remoteBookTaskBadge]）。
+      child: Consumer(builder: (BuildContext _, WidgetRef taskRef, Widget? __) {
+        final Widget? taskBadge = _remoteBookTaskBadge(
+          taskRef: taskRef,
+          taskId: InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
+          safeKey: safeKey,
+          keyPrefix: 'remote_srt',
+        );
+        // 同远端 EPUB 卡：进行中铺满封面，右上角让空。
+        final bool downloading = taskBadge is RemoteDownloadProgressBadge;
+        return _bookCardLayout(
         title: title,
         cover: Stack(
           fit: StackFit.expand,
@@ -1485,7 +1528,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                   ? null
                   : () => _downloadRemoteSrtAudiobook(book),
             ),
-      ),
+        );
+      }),
     );
   }
 
@@ -1809,22 +1853,21 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
 
   /// 纯 SRT 有声书包下载临时目标文件（`.fushiaudio`）。
   Future<File> _remoteSrtDestination(RemoteAudiobookInfo book) async {
-    final Directory temp = await getTemporaryDirectory();
-    final Directory dir =
-        Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
-    await dir.create(recursive: true);
     final String safeKey = _safeRemoteBookKey(book.title ?? book.identity);
-    return File(p.join(dir.path, 'srt_$safeKey.fushiaudio'));
+    return _remoteTempFile(
+      dirName: 'hibiki_remote_audiobooks',
+      identity: InterconnectDownloadManager.srtAudiobookTaskId(book.identity),
+      fileName: 'srt_$safeKey.fushiaudio',
+    );
   }
 
   /// 有声书包下载临时目标文件（`.fushiaudio`）。
   Future<File> _remoteAudiobookDestination(RemoteBookInfo book) async {
-    final Directory temp = await getTemporaryDirectory();
-    final Directory dir =
-        Directory(p.join(temp.path, 'hibiki_remote_audiobooks'));
-    await dir.create(recursive: true);
-    return File(
-        p.join(dir.path, '${_safeRemoteBookKey(book.title)}.fushiaudio'));
+    return _remoteTempFile(
+      dirName: 'hibiki_remote_audiobooks',
+      identity: InterconnectDownloadManager.bookTaskId(book.downloadId),
+      fileName: '${_safeRemoteBookKey(book.title)}.fushiaudio',
+    );
   }
 
   /// 本地有声书解包落盘根目录（与 [LocalLibraryHostService] 同源
@@ -1836,10 +1879,28 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     final Future<File> Function(RemoteBookInfo book)? injected =
         _pageWidget.remoteBookDownloadDestination;
     if (injected != null) return injected(book);
+    return _remoteTempFile(
+      dirName: 'hibiki_remote_books',
+      identity: InterconnectDownloadManager.bookTaskId(book.downloadId),
+      fileName: '${_safeRemoteBookKey(book.title)}.epub',
+    );
+  }
+
+  /// 三种远端下载临时落点的共用骨架（BUG-3328）：按**任务身份**分目录
+  /// （[remoteDownloadTempFile]），书名派生的 [fileName] 只作 basename。
+  Future<File> _remoteTempFile({
+    required String dirName,
+    required String identity,
+    required String fileName,
+  }) async {
     final Directory temp = await getTemporaryDirectory();
-    final Directory dir = Directory(p.join(temp.path, 'hibiki_remote_books'));
-    await dir.create(recursive: true);
-    return File(p.join(dir.path, '${_safeRemoteBookKey(book.title)}.epub'));
+    final File file = remoteDownloadTempFile(
+      root: Directory(p.join(temp.path, dirName)),
+      identity: identity,
+      fileName: fileName,
+    );
+    await file.parent.create(recursive: true);
+    return file;
   }
 
   /// 导入下载到本地的 EPUB，返回本地入库的 bookKey（= `sanitizeTtuFilename`
