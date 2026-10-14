@@ -452,12 +452,22 @@ body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
    时整列消失或只剩一截；暂停时扫过规则不生效，所以又完整了。iOS 模拟器实测：
    box-decoration-break 取 slice 或 clone 都一样消失（BUG-3280 的 clone 回退
    无效），单列短句正常；.tx 改成 inline-block（一个原子盒，渐变铺在整块上）后整句
-   可见、扫过照常。代价是各列同步自上而下扫过、不按阅读顺序跨列接续。
-   按能力判：只有不认识无前缀 slice 的引擎（WebKit）走这里，Blink 保持跨列接续。
+   可见、扫过照常。
+   BUG-3366：整块铺一条 to bottom 渐变会让各列同步自上而下扫（屏上是一条横带，
+   每列上半亮、下半暗），不按阅读顺序。JS（_lyLayoutSweepColumns）量出每列的
+   位置与长度，给每列铺一层自己的渐变：--ly-cols-* 三个变量一一对应，全局进度
+   --ly-p 按累计列长映射到该列内，与 Blink slice 的跨列接续逐像素等价，仍由同一个
+   --ly-p transition 驱动。量到之前（变量未设）退回整块渐变，文字始终可见。
+   按能力判：只有不认识无前缀 slice 的引擎（WebKit）走这里，Blink 保持行内盒 + slice。
    只限竖排，与 BUG-3105 竖排规则同门同特异性。 */
 @supports not (box-decoration-break: slice) {
   body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
     display: inline-block;
+    background-image: var(--ly-cols-bg, linear-gradient(to bottom,
+        var(--ly-current) calc(var(--ly-p) - 4%), var(--ly-upcoming) calc(var(--ly-p) + 4%)));
+    background-position: var(--ly-cols-pos, 0 0);
+    background-size: var(--ly-cols-size, 100% 100%);
+    background-repeat: no-repeat;
   }
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
@@ -524,6 +534,16 @@ body.lyrics-blur .cue.revealed {
   border-radius: 2px;
 }
 .cue.current .fushi-dict-highlight {
+  color: var(--ly-hl-text, $backgroundColor);
+}
+/* BUG-3368：选区脚本对 <ruby> 里的字不走 ::highlight / 包裹，只给 ruby 元素挂
+   fushi-selection-ruby-active（BUG-110，竖排防双绘），背景要页面自己画。歌词页此前
+   没有这条规则 → 带注音的词（烏滸がましい）查词时基字永远不高亮，只亮后半截。 */
+ruby.fushi-selection-ruby-active {
+  background-color: var(--ly-hl, $accentColor) !important;
+  border-radius: 2px;
+}
+.cue.current ruby.fushi-selection-ruby-active {
   color: var(--ly-hl-text, $backgroundColor);
 }
 .cue.favorited::before {
@@ -838,6 +858,8 @@ function __lyricsFitCues() {
   var base = _lyricsBaseFontPx();
   var avail = _lyricsAvailExtent(container);
   for (var i = 0; i < _cues.length; i++) _lyricsFitCue(_cues[i], avail, base);
+  // 字号变了列就变了（BUG-3366）。
+  if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
 }
 window.__lyricsFitCues = __lyricsFitCues;
 // Re-fit on viewport changes (rotation / window resize) so a cue that fit at the
@@ -867,6 +889,8 @@ function setCue(index, scroll) {
     if (d === 0) _cues[i].classList.add('current');
     else _cues[i].classList.add('near-' + d);
   }
+  // 加粗换了字宽，按新句的列重新铺扫过层（BUG-3366）。
+  _lyLayoutSweepColumns(_cues[index]);
   // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走；跟随关闭(scroll===false)时也不滚。
   if (scroll !== false && !window.__lyricsCaretActive) scrollToCenter(_cues[index]);
 }
@@ -943,11 +967,90 @@ function _lySweepReset(el) {
   tx.style.transition = 'none';
   tx.style.removeProperty('--ly-p');
 }
+// BUG-3366：WebKit 竖排回退里 .tx 是 inline-block（BUG-3346），整块一条渐变会让
+// 各列同步扫。这里把当前句按列量出来，给每列铺一层渐变：第 i 列占全句累计长度
+// [s, s+len)，列内位置 = (p - s) / len，软边与整块渐变一样是全长的 ±4%。几何
+// 只在换句 / 起播 / 重新适配字号时量一次，进度推进仍只靠 --ly-p 的 transition。
+function _lyColumnSweepActive() {
+  return __lyricsVertical && !!(window.CSS && CSS.supports) &&
+      !CSS.supports('box-decoration-break', 'slice');
+}
+function _lyLayoutSweepColumns(el) {
+  if (!_lyColumnSweepActive()) return;
+  var tx = _lyTx(el);
+  if (!tx) return;
+  // 只在回退规则生效（inline-block）时量：暂停 / 查词时 .tx 是行内盒，坐标系不同。
+  if (getComputedStyle(tx).display !== 'inline-block') return;
+  var box = tx.getBoundingClientRect();
+  if (!(box.width > 0) || !(tx.offsetWidth > 0)) return;
+  // 当前句带 transform: scale，客户区坐标要换回 .tx 自己的布局像素。
+  var k = tx.offsetWidth / box.width;
+  var cols = [];
+  var walker = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT, null);
+  var range = document.createRange();
+  var node;
+  while ((node = walker.nextNode())) {
+    // 注音（rt / rp）贴在基字侧边，自己另算颜色，不参与列划分。
+    if (node.parentElement && node.parentElement.closest('rt, rp')) continue;
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      if (!(r.width > 0 && r.height > 0)) continue;
+      var c = {
+        l: (r.left - box.left) * k, r: (r.right - box.left) * k,
+        t: (r.top - box.top) * k, b: (r.bottom - box.top) * k
+      };
+      var hit = null;
+      for (var j = 0; j < cols.length; j++) {
+        var ov = Math.min(cols[j].r, c.r) - Math.max(cols[j].l, c.l);
+        if (ov > 0.5 * Math.min(cols[j].r - cols[j].l, c.r - c.l)) { hit = cols[j]; break; }
+      }
+      if (hit) {
+        hit.l = Math.min(hit.l, c.l); hit.r = Math.max(hit.r, c.r);
+        hit.t = Math.min(hit.t, c.t); hit.b = Math.max(hit.b, c.b);
+      } else {
+        cols.push(c);
+      }
+    }
+  }
+  if (!cols.length) return;
+  // vertical-rl：右边的列先读。
+  cols.sort(function(a, b) { return b.r - a.r; });
+  var total = 0;
+  for (var m = 0; m < cols.length; m++) total += cols[m].b - cols[m].t;
+  if (!(total > 0)) return;
+  var bg = [], pos = [], size = [], acc = 0;
+  for (var n = 0; n < cols.length; n++) {
+    var col = cols[n];
+    var len = col.b - col.t;
+    var s = acc / total * 100;
+    var scale = (total / len).toFixed(4);
+    acc += len;
+    bg.push('linear-gradient(to bottom, var(--ly-current) calc((var(--ly-p) - ' +
+        (s + 4).toFixed(3) + '%) * ' + scale + '), var(--ly-upcoming) calc((var(--ly-p) - ' +
+        (s - 4).toFixed(3) + '%) * ' + scale + '))');
+    // 列宽只量到字形框，两侧各放 2px 盖住字形墨迹。
+    pos.push((col.l - 2).toFixed(1) + 'px ' + col.t.toFixed(1) + 'px');
+    size.push((col.r - col.l + 4).toFixed(1) + 'px ' + len.toFixed(1) + 'px');
+  }
+  // 兜底层：没量到的字（不该有）按未读色画出来，绝不变透明。
+  bg.push('linear-gradient(var(--ly-upcoming), var(--ly-upcoming))');
+  pos.push('0 0');
+  size.push('100% 100%');
+  tx.style.setProperty('--ly-cols-bg', bg.join(', '));
+  tx.style.setProperty('--ly-cols-pos', pos.join(', '));
+  tx.style.setProperty('--ly-cols-size', size.join(', '));
+}
+window.__lyricsLayoutSweepColumns = function() {
+  if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
+};
 window.__lyricsSetProgress = function(index, fraction, ratePerSec) {
   if (index !== _currentIdx || !_lyPlaying) return;
   var tx = _lyTx(_cues[index]);
   if (!tx) return;
   var f = Math.max(0, Math.min(1, fraction || 0));
+  _lyLayoutSweepColumns(_cues[index]);
   tx.style.transition = 'none';
   tx.style.setProperty('--ly-p', (f * 100).toFixed(2) + '%');
   void tx.offsetWidth;
@@ -962,6 +1065,7 @@ window.__lyricsSetProgress = function(index, fraction, ratePerSec) {
 window.__lyricsSetPlaying = function(playing) {
   _lyPlaying = !!playing;
   document.body.classList.toggle('ly-paused', !_lyPlaying);
+  if (_lyPlaying) window.__lyricsLayoutSweepColumns();
   if (_lyPlaying) _lyScheduleResume();
   else clearTimeout(_lyResumeTimer);
 };
@@ -1189,7 +1293,10 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       r.style.color = accentColor;
     } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .fushi-dict-highlight') {
       r.style.color = bgColor;
-    } else if (r.selectorText === '.fushi-dict-highlight') {
+    } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current ruby.fushi-selection-ruby-active') {
+      r.style.color = bgColor;
+    } else if (r.selectorText === '.fushi-dict-highlight' ||
+        r.selectorText === 'ruby.fushi-selection-ruby-active') {
       r.style.setProperty('background-color', accentColor, 'important');
     } else if (r.selectorText === '::highlight(fushi-selection)') {
       r.style.setProperty('background-color', accentColor);
