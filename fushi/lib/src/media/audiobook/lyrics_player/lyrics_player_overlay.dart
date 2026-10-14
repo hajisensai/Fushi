@@ -7,6 +7,8 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiMotion, fushiMotionDuration;
 
 /// 歌词播放覆盖层外壳：盖在阅读器之上，阅读器在下面照常存活、跟随音频、记统计
 /// （见 [LyricsPlayerData] 文件头）。本组件只负责：
@@ -171,10 +173,26 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   Widget build(BuildContext context) {
     _host?.attach(this, _coverScheme);
     final bool apple = isGlassDesign(context);
-    final bool mirrored = widget.data.sidesMirrored;
+    // 左右互换带换位动画：进度 0↔1 按 M3E 时长补间，外观按进度插值两端几何，
+    // 歌词 WebView / 底板 / 面板一起滑到对侧（WebView 仍是同一个孩子，只换矩形）。
+    // 墨水屏与系统「减弱动态效果」下 fushiMotionDuration 归零 = 直接跳到终值。
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: widget.data.sidesMirrored ? 1 : 0),
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      builder: (BuildContext context, double mirror, Widget? _) =>
+          _buildWithMirror(context, apple: apple, mirror: mirror),
+    );
+  }
+
+  Widget _buildWithMirror(
+    BuildContext context, {
+    required bool apple,
+    required double mirror,
+  }) {
     final LyricsPlayerDesign design = apple
-        ? AppleLyricsPlayerDesign(mirrored: mirrored)
-        : Md3LyricsPlayerDesign(mirrored: mirrored);
+        ? AppleLyricsPlayerDesign(mirrorProgress: mirror)
+        : Md3LyricsPlayerDesign(mirrorProgress: mirror);
     final ThemeData base = Theme.of(context);
     final ColorScheme? coverScheme = apple ? null : _coverScheme;
     // 顶边底色：桌面自绘标题栏在 Navigator 外，只认页面上报的颜色。它只是兜底

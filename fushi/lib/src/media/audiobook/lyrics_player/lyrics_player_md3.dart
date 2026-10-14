@@ -67,9 +67,22 @@ class _WideGeometry {
     required this.lyrics,
   });
 
-  /// [mirrored] = 左右互换：封面栏到右、歌词底板到左。两栏宽度与间距不变——
-  /// 换位置不会让歌词区变小。
-  factory _WideGeometry.of(
+  /// [mirror] = 左右互换进度：0 = 封面栏在左、歌词底板在右；1 = 封面栏到右、
+  /// 歌词底板到左；中间值把两端几何逐矩形线性插值（换位动画途中）。两栏宽度与
+  /// 间距不变——换位置不会让歌词区变小。
+  factory _WideGeometry.of(Size size, EdgeInsets padding, {double mirror = 0}) {
+    if (mirror <= 0) return _WideGeometry._side(size, padding, mirrored: false);
+    if (mirror >= 1) return _WideGeometry._side(size, padding, mirrored: true);
+    final _WideGeometry a = _WideGeometry._side(size, padding, mirrored: false);
+    final _WideGeometry b = _WideGeometry._side(size, padding, mirrored: true);
+    return _WideGeometry._(
+      panel: Rect.lerp(a.panel, b.panel, mirror)!,
+      plate: Rect.lerp(a.plate, b.plate, mirror)!,
+      lyrics: Rect.lerp(a.lyrics, b.lyrics, mirror)!,
+    );
+  }
+
+  factory _WideGeometry._side(
     Size size,
     EdgeInsets padding, {
     bool mirrored = false,
@@ -219,8 +232,18 @@ Rect? _widePlateRect(Size page, EdgeInsets padding) =>
 
 Rect? _widePlateRectMirrored(Size page, EdgeInsets padding) =>
     lyricsPlayerIsWide(page)
-    ? _WideGeometry.of(page, padding, mirrored: true).plate
+    ? _WideGeometry.of(page, padding, mirror: 1).plate
     : null;
+
+/// 底板解析器：停在两端时返回上面两个顶层函数（身份稳定，背景不重画）；换位
+/// 动画途中才返回按进度插值的闭包（每帧新身份 = 每帧重画，正是动画要的）。
+FushiMeshPlateResolver _widePlateResolver(double mirror) {
+  if (mirror <= 0) return _widePlateRect;
+  if (mirror >= 1) return _widePlateRectMirrored;
+  return (Size page, EdgeInsets padding) => lyricsPlayerIsWide(page)
+      ? _WideGeometry.of(page, padding, mirror: mirror).plate
+      : null;
+}
 
 /// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒：公共 [FushiTransportGroup] 接上歌词
 /// 页的回调。
@@ -270,15 +293,17 @@ Widget _relativeSeekButton(int seconds, ValueChanged<int> seekBy) =>
 // ---------------------------------------------------------------------------
 
 class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
-  const Md3LyricsPlayerDesign({this.mirrored = false});
+  const Md3LyricsPlayerDesign({this.mirrorProgress = 0});
 
-  /// 宽屏左右互换（见 [LyricsPlayerData.sidesMirrored]）。
-  final bool mirrored;
+  /// 宽屏左右互换进度（见 [LyricsPlayerData.sidesMirrored]）：0 = 封面栏在左、
+  /// 1 = 封面栏在右，中间值 = 换位动画途中（由 `ReaderLyricsPlayerOverlay` 按
+  /// `fushiMotionDuration` 驱动，墨水屏 / 减弱动态下直接跳到终值）。
+  final double mirrorProgress;
 
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _WideGeometry.of(size, padding, mirrored: mirrored).lyrics;
+      return _WideGeometry.of(size, padding, mirror: mirrorProgress).lyrics;
     }
     final _NarrowGeometry geometry = _NarrowGeometry.of(context, size, padding);
     final double top = padding.top + 8 + geometry.topBarHeight + 8;
@@ -298,7 +323,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
     double bleedTop = 0,
   }) => FushiMeshBackdrop(
     bleedTop: bleedTop,
-    plateRect: mirrored ? _widePlateRectMirrored : _widePlateRect,
+    plateRect: _widePlateResolver(mirrorProgress),
   );
 
   @override
@@ -314,7 +339,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
       final _WideGeometry geometry = _WideGeometry.of(
         size,
         padding,
-        mirrored: mirrored,
+        mirror: mirrorProgress,
       );
       final VoidCallback? onSwap = callbacks.onSwapSides;
       return Stack(
