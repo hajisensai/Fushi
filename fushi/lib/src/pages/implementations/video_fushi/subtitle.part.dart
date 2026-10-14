@@ -3342,13 +3342,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final double panelWidth =
         (_subtitleListWidthDrag ?? (storedWidth > 0 ? storedWidth : autoWidth))
             .clamp(minPanelWidth, maxPanelWidth);
+    // 侧栏是贴边布局列，底色铺进系统安全区（iOS 横屏刘海那侧、底部 home 指示条），
+    // 安全区交给面板只给内容让位（[VideoSubtitleJumpPanel.safeAreaInsets]）。以前整列
+    // 套 `SafeArea`，刘海在右时面板右边空出一大条黑（2026-10-14 用户反馈）。列宽
+    // 因此 = 内容宽 + 右侧安全区；拖拽改的仍是内容宽。
+    final EdgeInsets systemPadding = MediaQuery.paddingOf(context);
+    final EdgeInsets panelSafeInsets = EdgeInsets.only(
+      top: systemPadding.top,
+      right: systemPadding.right,
+      bottom: systemPadding.bottom,
+    );
+    final double columnWidth = panelWidth + panelSafeInsets.right;
     return AnimatedSize(
       // eink 下归零（墨水屏残影，UI 巡检 PR-4），与剧集侧栏同款。
       duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
       curve: Curves.easeOut,
       alignment: Alignment.centerLeft,
       child: SizedBox(
-        width: visible ? panelWidth : 0,
+        width: visible ? columnWidth : 0,
         // BUG-391 r5 根因修：整列最外层包一层声明式 opaque MouseRegion（cursor:basic），
         // 让 MouseTracker 把侧栏列视为独立 annotation、鼠标进列即进干净 basic 会话，绕开
         // 「视频列 none 会话残留 + lastSession 去重」竞态（见 _withSidePanelOpaqueCursor）。
@@ -3358,8 +3369,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 ClipRect(
                   child: OverflowBox(
                     alignment: Alignment.centerLeft,
-                    minWidth: panelWidth,
-                    maxWidth: panelWidth,
+                    minWidth: columnWidth,
+                    maxWidth: columnWidth,
                     // BUG-391：字幕列表是 push-aside 侧栏（[_videoWithSubtitlePanel] 的
                     // Row 兄弟列），不在视频区 controls 的 cursor:none 胜出层几何内。但鼠标
                     // 从画面区（控制条 2s 淡出后 media_kit `hideMouseOnControlsRemoval` +
@@ -3380,95 +3391,86 @@ extension _VideoSubtitle on _VideoFushiPageState {
                       // 遍历、页面还拒绝把焦点收回画面——用户看到的就是「一开字幕列表
                       // 快捷键全没了」。搜索框点开时自己拿焦点（整条视频通道按 BUG-962
                       // 让位），关掉时 Flutter 把焦点还给上一个持焦者（画面）。
-                      SafeArea(
-                        left: false,
-                        // 底部安全区不整块垫在面板下面（那会留一条空带），由面板
-                        // 自己铺到底、列表末尾补上被遮的一截（反馈 Lgp-nUrh6V）。
-                        bottom: false,
-                        // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
-                        // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
-                        child: Stack(
-                          children: <Widget>[
-                            VideoSubtitleJumpPanel(
-                              key: const ValueKey<String>(
-                                'video-subtitle-jump-panel',
+                      // BUG-877：面板叠一层左边缘拖拽把手（[_subtitleListResizeHandle]）
+                      // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
+                      Stack(
+                        children: <Widget>[
+                          VideoSubtitleJumpPanel(
+                            key: const ValueKey<String>(
+                              'video-subtitle-jump-panel',
+                            ),
+                            safeAreaInsets: panelSafeInsets,
+                            controller: controller,
+                            onTapCue: _handleSubtitleJumpTap,
+                            onLookupCue: _handleSubtitleListLookup,
+                            // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+                            // 「点列表下一个词」切换查词而非吞成关闭浮层。
+                            hitTester: _subtitleListHitTester,
+                            onCopyCue: _copyCueText,
+                            onFavoriteCue: _toggleFavoriteCueForVideo,
+                            isCueFavorited: _isCueFavorited,
+                            // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
+                            // 与画面上的字幕同一套，不再各用各的。
+                            fontFamily: appModel.subtitleFontFamily,
+                            // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+                            initialAutoScroll:
+                                appModel.videoSubtitleListAutoScroll,
+                            onAutoScrollChanged: (bool value) => unawaited(
+                              appModel.setVideoSubtitleListAutoScroll(value),
+                            ),
+                            // 「点字幕查词」开关：关掉后列表只做跳转，不再误触查词。
+                            initialTapLookup:
+                                appModel.videoSubtitleListTapLookup,
+                            onTapLookupChanged: (bool value) => unawaited(
+                              appModel.setVideoSubtitleListTapLookup(value),
+                            ),
+                            // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
+                            // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
+                            initialFontScaleIndex:
+                                appModel.videoSubtitleListFontScaleIndex,
+                            onFontScaleIndexChanged: (int value) => unawaited(
+                              appModel.setVideoSubtitleListFontScaleIndex(
+                                value,
                               ),
-                              bottomSafeInset: MediaQuery.paddingOf(
-                                context,
-                              ).bottom,
-                              controller: controller,
-                              onTapCue: _handleSubtitleJumpTap,
-                              onLookupCue: _handleSubtitleListLookup,
-                              // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
-                              // 「点列表下一个词」切换查词而非吞成关闭浮层。
-                              hitTester: _subtitleListHitTester,
-                              onCopyCue: _copyCueText,
-                              onFavoriteCue: _toggleFavoriteCueForVideo,
-                              isCueFavorited: _isCueFavorited,
-                              // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
-                              // 与画面上的字幕同一套，不再各用各的。
-                              fontFamily: appModel.subtitleFontFamily,
-                              // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                              initialAutoScroll:
-                                  appModel.videoSubtitleListAutoScroll,
-                              onAutoScrollChanged: (bool value) => unawaited(
-                                appModel.setVideoSubtitleListAutoScroll(value),
-                              ),
-                              // 「点字幕查词」开关：关掉后列表只做跳转，不再误触查词。
-                              initialTapLookup:
-                                  appModel.videoSubtitleListTapLookup,
-                              onTapLookupChanged: (bool value) => unawaited(
-                                appModel.setVideoSubtitleListTapLookup(value),
-                              ),
-                              // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
-                              // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
-                              initialFontScaleIndex:
-                                  appModel.videoSubtitleListFontScaleIndex,
-                              onFontScaleIndexChanged: (int value) => unawaited(
-                                appModel.setVideoSubtitleListFontScaleIndex(
-                                  value,
-                                ),
-                              ),
-                              // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
-                              hoverAutoLookupEnabled:
-                                  ReaderFushiSource.instance.hoverAutoLookup,
-                              onClose: _closeSubtitleJumpList,
+                            ),
+                            // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
+                            hoverAutoLookupEnabled:
+                                ReaderFushiSource.instance.hoverAutoLookup,
+                            onClose: _closeSubtitleJumpList,
+                            colorScheme: cs,
+                            title: t.video_subtitle_list,
+                            emptyHint: t.video_subtitle_list_empty,
+                            loadingHint: t.video_subtitle_list_loading,
+                            fontSize: 14 * _videoUiScale,
+                            width: panelWidth,
+                            // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
+                            // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
+                            // 一份：整表快捷键只包 media_kit controls 子树，焦点
+                            // 一进面板就收不到按键了。
+                            searchActivators: <ShortcutActivator>[
+                              for (final InputBinding b
+                                  in appModel.shortcutRegistry
+                                      .bindingsFor(
+                                        ShortcutAction.videoSearchSubtitleList,
+                                      )
+                                      .keyboardBindings)
+                                b.toActivator(includeRepeats: false),
+                            ],
+                            searchRequests: _subtitleSearchRequests,
+                            onExportFavorites: _exportFavoriteCues,
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            bottom: 0,
+                            child: _subtitleListResizeHandle(
+                              currentWidth: panelWidth,
+                              minWidth: minPanelWidth,
+                              maxWidth: maxPanelWidth,
                               colorScheme: cs,
-                              title: t.video_subtitle_list,
-                              emptyHint: t.video_subtitle_list_empty,
-                              loadingHint: t.video_subtitle_list_loading,
-                              fontSize: 14 * _videoUiScale,
-                              width: panelWidth,
-                              // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
-                              // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
-                              // 一份：整表快捷键只包 media_kit controls 子树，焦点
-                              // 一进面板就收不到按键了。
-                              searchActivators: <ShortcutActivator>[
-                                for (final InputBinding b
-                                    in appModel.shortcutRegistry
-                                        .bindingsFor(
-                                          ShortcutAction
-                                              .videoSearchSubtitleList,
-                                        )
-                                        .keyboardBindings)
-                                  b.toActivator(includeRepeats: false),
-                              ],
-                              searchRequests: _subtitleSearchRequests,
-                              onExportFavorites: _exportFavoriteCues,
                             ),
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              bottom: 0,
-                              child: _subtitleListResizeHandle(
-                                currentWidth: panelWidth,
-                                minWidth: minPanelWidth,
-                                maxWidth: maxPanelWidth,
-                                colorScheme: cs,
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

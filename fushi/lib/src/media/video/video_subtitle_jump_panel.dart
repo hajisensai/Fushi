@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 
@@ -9,8 +8,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
-import 'package:fushi/src/media/video/video_m3e_chrome.dart'
-    show videoM3eFloatingColor;
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -148,7 +145,8 @@ const int _kChainFoldGapMs = 40;
   Map<int, int> representativeByRaw,
   Map<int, AudioCue> mergedByRep,
   Map<int, int> chainEndMsByRep,
-}) subtitleTranscriptRows(List<AudioCue> cues) {
+})
+subtitleTranscriptRows(List<AudioCue> cues) {
   final List<int> reps = <int>[];
   final Map<String, int> firstByKey = <String, int>{};
   final Map<int, int> repByRaw = <int, int>{};
@@ -218,7 +216,7 @@ const int _kChainFoldGapMs = 40;
 /// 的 `endMs` 取整条链的结束（[subtitleTranscriptRows] 的 `chainEndMsByRep`），而不是
 /// 链首那一段。手机遥控的句子列表、句子回放与制卡时间窗都按这个跨度。
 List<({int rawIndex, String text, int startMs, int endMs})>
-    subtitleTranscriptRowSpans(List<AudioCue> cues) {
+subtitleTranscriptRowSpans(List<AudioCue> cues) {
   final rows = subtitleTranscriptRows(cues);
   final List<({int rawIndex, String text, int startMs, int endMs})> spans =
       <({int rawIndex, String text, int startMs, int endMs})>[];
@@ -351,18 +349,12 @@ const int _kDefaultFontScaleIndex = 1;
 // （BUG-1034：itemExtentBuilder 是硬约束）。
 // ---------------------------------------------------------------------------
 
-/// 浮动面板离侧栏列四边的距离。
-///
-/// 反馈 C9uvk6cMxF / Lgp-nUrh6V（2026-10）：面板外 12 + 列表内 8 + 行内 14 三层留白
-/// 叠起来，窄侧栏里正文只剩一半宽、圆角面板四周一圈空着。收成 6 / 4，行卡几乎贴满
-/// 面板圆角（行卡外圆角 = 面板圆角 − 列表内边距，同心）。
-const double _kM3ePanelMargin = 6;
+// 面板本身是贴边的布局列（2026-10-14 用户反馈：四周圆角卡片浪费空间、iOS 横屏
+// 右侧空一大块）：不留外边距、不画圆角与投影，底色铺满整列。此前的 6 外边距 +
+// 24 圆角浮动卡片（反馈 C9uvk6cMxF / Lgp-nUrh6V 已收过一轮）整个去掉。
 
-/// 浮动面板圆角。
-const double _kM3ePanelRadius = 24;
-
-/// 列表左右内边距（行卡不贴面板边；滚动条落在这条通道里）。
-const double _kM3eListPaddingH = 4;
+/// 列表左右内边距（行的高亮色块不贴面板边；滚动条落在这条通道里）。
+const double _kM3eListPaddingH = 6;
 
 /// 行卡左内边距（含 4px 当前句指示条与它右侧 4 的留白）。
 const double _kM3eRowPadLeft = 14;
@@ -370,7 +362,7 @@ const double _kM3eRowPadLeft = 14;
 /// 行卡右内边距。
 const double _kM3eRowPadRight = 10;
 
-/// 行卡上下内边距之和（上 6 + 下 6；紧凑档，见 [_kM3ePanelMargin]）。
+/// 行卡上下内边距之和（上 6 + 下 6；紧凑档）。
 const double _kM3eRowPadVertical = 12;
 
 /// 行卡之间的间距（分段列表）。
@@ -382,9 +374,9 @@ const double _kM3eChipPadVertical = 4;
 /// 收藏行右侧给常驻实心星让出的额外宽度（星 + 左右留白，不含星本身）。
 const double _kM3eStarGap = 6;
 
-/// 分段列表首尾卡的大圆角 / 中间卡的小圆角。
-const double _kM3eRowOuterRadius = _kM3ePanelRadius - _kM3eListPaddingH;
-const double _kM3eRowInnerRadius = 6;
+/// 行高亮色块（当前句 / 悬停）的圆角。行平铺在面板上、闲置不画底，不再是首尾
+/// 大圆角的分段卡。
+const double _kM3eRowRadius = 12;
 
 /// 字幕列表行高的排版环境签名：这几项任一变化，同一句的行高就可能变。
 ///
@@ -545,7 +537,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.fontSize = 14,
     this.fontFamily,
     this.width = 320,
-    this.bottomSafeInset = 0,
+    this.safeAreaInsets = EdgeInsets.zero,
     this.onExportFavorites,
     this.searchActivators = const <ShortcutActivator>[],
     this.searchRequests,
@@ -625,10 +617,14 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final String? fontFamily;
   final double width;
 
-  /// 面板底边压着的系统底部安全区高度（iOS home 指示条等）。页面不再给侧栏整块垫
-  /// 底部安全区（那会在面板下面留一条空带），而是把面板铺到底、由列表在最后一行
-  /// 后面补上被遮的这一截（反馈 Lgp-nUrh6V）。
-  final double bottomSafeInset;
+  /// 面板压着的系统安全区（只用 top / right / bottom：iOS 横屏刘海、home 指示条等）。
+  ///
+  /// 侧栏是贴边的布局列，底色必须一路铺进安全区——页面以前给整列垫 `SafeArea`，
+  /// iOS 横屏刘海那一侧就空出一大条黑（2026-10-14 用户反馈），底部同理留一条空带
+  /// （反馈 Lgp-nUrh6V）。现在页面把面板铺满、把安全区交给面板，面板只用它给内容
+  /// 让位：页头 / 列表右缩 [EdgeInsets.right]、页头下移 [EdgeInsets.top]、列表在最后
+  /// 一行后面补上 [EdgeInsets.bottom]。[width] 是内容宽，不含右侧安全区。
+  final EdgeInsets safeAreaInsets;
 
   /// BUG-1907：「导出收藏语句」。
   ///
@@ -835,12 +831,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
   }
 
-  /// 列表行实际拿到的宽度（与 `itemExtentBuilder` 的 crossAxisExtent 同源）：M3E 面板
-  /// 四周留 [_kM3ePanelMargin]、列表左右再内缩 [_kM3eListPaddingH]。自动滚动的估算
-  /// 必须用同一个宽度，否则行高缓存会在两种宽度之间来回作废。
-  double get _listRowWidth => _m3e
-      ? widget.width - 2 * _kM3ePanelMargin - 2 * _kM3eListPaddingH
-      : widget.width;
+  /// 列表行实际拿到的宽度（与 `itemExtentBuilder` 的 crossAxisExtent 同源）：M3E 列表
+  /// 左右内缩 [_kM3eListPaddingH]（右侧安全区不在 [VideoSubtitleJumpPanel.width] 里）。
+  /// 自动滚动的估算必须用同一个宽度，否则行高缓存会在两种宽度之间来回作废。
+  double get _listRowWidth =>
+      _m3e ? widget.width - 2 * _kM3eListPaddingH : widget.width;
 
   /// M3E 收藏星的尺寸（收藏行右上角常驻，正文右侧为它让位）。
   double get _m3eStarSize => _effectiveFontSize - 1;
@@ -1630,10 +1625,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // BUG-1034：行高测量必须用与渲染一致的排版环境（文字缩放 / 书写方向）。
     _syncLayoutEnvironment(context);
     if (_m3e) {
-      // M3E：中性深色浮动面板（与设置侧板同一外壳），内部控件读面板主题。
-      final Widget m3ePanel = VideoM3ePanelTheme(
-        child: Builder(builder: _buildM3ePanel),
-      );
+      // M3E：贴边布局列，读 app 自己的主题（2026-10-14 用户反馈「不要发黑」）。
+      // 它不是浮在画面上的 chrome（那些才用无色相中性深色 + 86% 透明——压在黑
+      // 画面上整块发黑），而是把画面挤窄后的一列页面布局，跟页面同一套表面色。
+      final Widget m3ePanel = Builder(builder: _buildM3ePanel);
       if (widget.searchActivators.isEmpty) return m3ePanel;
       return CallbackShortcuts(
         bindings: <ShortcutActivator, VoidCallback>{
@@ -1666,12 +1661,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final Widget panel = Material(
       type: MaterialType.transparency,
       child: Container(
-        width: widget.width,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: cs.surface.withValues(alpha: 0.92),
-          borderRadius: const BorderRadius.all(Radius.circular(12)),
+        // 贴边布局列：不透明、不圆角，安全区只给内容让位（见 [safeAreaInsets]）。
+        width: widget.width + widget.safeAreaInsets.right,
+        padding: EdgeInsets.only(
+          top: widget.safeAreaInsets.top,
+          right: widget.safeAreaInsets.right,
         ),
+        color: cs.surface,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -1697,8 +1693,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                         controller: _scrollController,
                         // 经典面板同样铺进底部安全区，只给最后一行留出被遮的一截。
                         // 不传（0）时保持 null：沿用 ListView 自取 MediaQuery 内边距的旧行为。
-                        padding: widget.bottomSafeInset > 0
-                            ? EdgeInsets.only(bottom: widget.bottomSafeInset)
+                        padding: widget.safeAreaInsets.bottom > 0
+                            ? EdgeInsets.only(
+                                bottom: widget.safeAreaInsets.bottom,
+                              )
                             : null,
                         // BUG-878：Ctrl / ⌘ 按住时禁列表滚动，让 Ctrl+滚轮只缩字号
                         // （[_handleZoomWheel]）；松开恢复默认滚动物理。
@@ -2211,7 +2209,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           _kM3eListPaddingH,
           4,
           _kM3eListPaddingH,
-          8 + math.max(0, widget.bottomSafeInset - _kM3ePanelMargin),
+          8 + widget.safeAreaInsets.bottom,
         ),
         physics: _zoomModifierHeld
             ? const NeverScrollableScrollPhysics()
@@ -2236,38 +2234,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               : ValueKey<int>(rawIndex);
           return KeyedSubtree(
             key: rowKey,
-            child: _buildM3eRow(
-              context,
-              cs,
-              cue,
-              i,
-              rawIndex,
-              selected,
-              first: i == 0,
-              last: i == count - 1,
-            ),
+            child: _buildM3eRow(context, cs, cue, i, rawIndex, selected),
           );
         },
       );
     }
-    return Padding(
-      padding: const EdgeInsets.all(_kM3ePanelMargin),
-      child: Material(
-        type: MaterialType.transparency,
-        child: Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: ShapeDecoration(
-            color: videoM3eFloatingColor(widget.colorScheme),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(_kM3ePanelRadius)),
-            ),
-            shadows: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 18,
-                offset: Offset(0, 6),
-              ),
-            ],
+    // 贴边布局列：底色（不透明 surfaceContainer）铺满整列、含安全区；不留外边距、
+    // 不画圆角与投影。安全区只给内容让位：页头下移 top、整列右缩 right、列表末尾
+    // 补 bottom（见 [VideoSubtitleJumpPanel.safeAreaInsets]）。
+    return Material(
+      type: MaterialType.transparency,
+      child: ColoredBox(
+        key: const ValueKey<String>('video-subtitle-jump-panel-surface'),
+        color: cs.surfaceContainer,
+        child: Padding(
+          padding: EdgeInsets.only(
+            top: widget.safeAreaInsets.top,
+            right: widget.safeAreaInsets.right,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2614,10 +2597,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     AudioCue cue,
     int index,
     int rawIndex,
-    bool selected, {
-    required bool first,
-    required bool last,
-  }) {
+    bool selected,
+  ) {
     final GlobalKey? textKey = _lookupCue == null
         ? null
         : _rowTextKeys.putIfAbsent(index, GlobalKey.new);
@@ -2631,11 +2612,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       context,
       FushiMotion.medium,
     );
+    // 行平铺在面板上：闲置不画底（面板本身就是表面），只有当前句 / 悬停才出色块。
     final Color background = selected
         ? cs.primaryContainer
         : hovered
-        ? cs.surfaceContainer
-        : FushiDesignTokens.of(context).surfaces.group;
+        ? cs.surfaceContainerHighest
+        : cs.surfaceContainerHighest.withValues(alpha: 0);
     final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
     final Color secondary = selected
         ? cs.onPrimaryContainer
@@ -2643,9 +2625,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final Color chipForeground = selected
         ? cs.onPrimaryContainer
         : cs.onSecondaryContainer;
-    final BorderRadius radius = BorderRadius.vertical(
-      top: Radius.circular(first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius),
-      bottom: Radius.circular(last ? _kM3eRowOuterRadius : _kM3eRowInnerRadius),
+    const BorderRadius radius = BorderRadius.all(
+      Radius.circular(_kM3eRowRadius),
     );
     final double iconSize = _effectiveFontSize + 2;
 
@@ -2983,8 +2964,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   Widget _buildM3eLoading(ColorScheme cs) {
     final bool motion = fushiMotionEnabled(context);
     Widget skeleton(int i) {
-      final bool first = i == 0;
-      final bool last = i == 5;
       return Padding(
         padding: const EdgeInsets.only(bottom: _kM3eRowGap),
         child: Container(
@@ -2992,13 +2971,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           padding: const EdgeInsets.fromLTRB(_kM3eRowPadLeft, 12, 16, 12),
           decoration: BoxDecoration(
             color: FushiDesignTokens.of(context).surfaces.group,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(
-                first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius,
-              ),
-              bottom: Radius.circular(
-                last ? _kM3eRowOuterRadius : _kM3eRowInnerRadius,
-              ),
+            borderRadius: const BorderRadius.all(
+              Radius.circular(_kM3eRowRadius),
             ),
           ),
           child: Row(

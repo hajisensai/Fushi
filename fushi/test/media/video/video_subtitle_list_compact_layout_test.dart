@@ -1,5 +1,5 @@
-// 字幕列表侧栏：重开不重量行高（反馈 C9uvk6cMxF「打开就很卡」）、紧凑几何与底部
-// 安全区（反馈 Lgp-nUrh6V）。
+// 字幕列表侧栏：重开不重量行高（反馈 C9uvk6cMxF「打开就很卡」）、贴边几何与系统
+// 安全区（反馈 Lgp-nUrh6V；2026-10-14 iOS 横屏右侧空一大块、四周圆角浪费空间）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
@@ -21,7 +21,7 @@ const double _panelWidth = 420;
 Widget _host(
   VideoPlayerController c, {
   required bool show,
-  double bottomSafeInset = 0,
+  EdgeInsets safeAreaInsets = EdgeInsets.zero,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -30,7 +30,7 @@ Widget _host(
           const Expanded(child: SizedBox()),
           if (show)
             SizedBox(
-              width: _panelWidth,
+              width: _panelWidth + safeAreaInsets.right,
               child: VideoSubtitleJumpPanel(
                 layout: VideoSubtitleListLayout.m3e,
                 controller: c,
@@ -43,7 +43,7 @@ Widget _host(
                 title: 'Subtitle list',
                 emptyHint: 'empty',
                 width: _panelWidth,
-                bottomSafeInset: bottomSafeInset,
+                safeAreaInsets: safeAreaInsets,
               ),
             ),
         ],
@@ -155,7 +155,7 @@ void main() {
     );
   });
 
-  testWidgets('紧凑几何：行卡几乎贴满面板（Lgp-nUrh6V）', (tester) async {
+  testWidgets('贴边几何：面板无外边距，行只留列表内边距（Lgp-nUrh6V）', (tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[for (int i = 0; i < 5; i++) _cue(i)]);
@@ -170,16 +170,56 @@ void main() {
           )
           .first,
     );
-    // 面板外边距 6 + 列表内边距 4：行卡两侧离面板边各 10。
-    expect(row.left - panel.left, lessThanOrEqualTo(10.5));
-    expect(panel.right - row.right, lessThanOrEqualTo(10.5));
+    // 面板贴边、不留外边距：行两侧只剩列表内边距 6。
+    expect(row.left - panel.left, lessThanOrEqualTo(6.5));
+    expect(panel.right - row.right, lessThanOrEqualTo(6.5));
+    // 表面铺满整列，不是缩在列里的圆角卡片。
+    final Rect surface = tester.getRect(
+      find.byKey(const ValueKey<String>('video-subtitle-jump-panel-surface')),
+    );
+    expect(surface, panel);
+  });
+
+  testWidgets('右侧 / 顶部安全区：底色铺进安全区，只有内容让位', (tester) async {
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues(<AudioCue>[for (int i = 0; i < 5; i++) _cue(i)]);
+    await tester.pumpWidget(
+      _host(
+        c,
+        show: true,
+        safeAreaInsets: const EdgeInsets.only(top: 20, right: 47),
+      ),
+    );
+    await tester.pump();
+    final Rect panel = tester.getRect(find.byType(VideoSubtitleJumpPanel));
+    final Rect surface = tester.getRect(
+      find.byKey(const ValueKey<String>('video-subtitle-jump-panel-surface')),
+    );
+    // iOS 横屏刘海在右：底色一路铺到屏幕右缘，不再空出一条黑。
+    expect(surface, panel);
+    expect(panel.width, _panelWidth + 47);
+    final Rect row = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('line 0 of the subtitle track', findRichText: true),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    // 行让开右侧安全区，宽度仍是内容宽减两侧列表内边距。
+    expect(panel.right - row.right, closeTo(47 + 6, 0.5));
+    expect(row.width, closeTo(_panelWidth - 12, 0.5));
+    expect(row.top - panel.top, greaterThanOrEqualTo(20));
   });
 
   testWidgets('底部安全区：列表铺到面板底，只在末尾补被遮的一截', (tester) async {
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(<AudioCue>[for (int i = 0; i < 5; i++) _cue(i)]);
-    await tester.pumpWidget(_host(c, show: true, bottomSafeInset: 34));
+    await tester.pumpWidget(
+      _host(c, show: true, safeAreaInsets: const EdgeInsets.only(bottom: 34)),
+    );
     await tester.pump();
     final ListView list = tester.widget<ListView>(
       find.descendant(
@@ -188,8 +228,8 @@ void main() {
       ),
     );
     final EdgeInsets padding = list.padding!.resolve(TextDirection.ltr);
-    // 34 的安全区减去面板自己离底边的 6，再加列表本来的 8。
-    expect(padding.bottom, 8 + 34 - 6);
+    // 面板贴底：整段 34 的安全区补在列表末尾，再加列表本来的 8。
+    expect(padding.bottom, 8 + 34);
 
     await tester.pumpWidget(_host(c, show: true));
     await tester.pump();
