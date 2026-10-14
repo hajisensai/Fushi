@@ -68,6 +68,12 @@
 | [BUG-3329](bugs/BUG-3329-detail-backdrop-contained.md) | ✅ | ✅ | 两栏详情页模糊背景只画成窗口中间一块竖条（像莫名的毛玻璃） |
 | [BUG-3328](bugs/BUG-3328-manga-card-menu-ocr.md) | ✅ | ✅ | 漫画卡菜单显示「导入有声书」而没有 OCR，多选也没有批量 OCR |
 | [BUG-3328](bugs/BUG-3328-video-pause-ocr-opt-in.md) | ✅ | ✅ | 视频暂停 OCR 默认自动运行并弹漫画文案的 Lens 同意框 |
+> 共 3016 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3329](bugs/BUG-3329-ios-reader-edge-swipe-webview-history.md) | ✅ | ✅ | iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走 |
+| [BUG-3328](bugs/BUG-3328-blink-vertical-highlight-misplaced.md) | ✅ | ✅ | Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |
