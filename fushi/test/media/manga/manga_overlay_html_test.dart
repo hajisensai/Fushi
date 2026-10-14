@@ -364,6 +364,132 @@ void main() {
     });
   });
 
+  // BUG-3328：引擎给的字级区域与文字对不上时，整块改走行几何，不逐个丢字。
+  group('mangaEffectiveTextRegions 字级区域对不上文字时整块回退 (BUG-3328)', () {
+    MangaOcrTextRegion region(double left, int start, int end) =>
+        MangaOcrTextRegion(
+          rectangle: MokuroRect.fromLTWH(left, 0, 10, 10),
+          utf16Start: start,
+          utf16End: end,
+        );
+
+    MokuroBlock blockWith(List<String> lines, List<MangaOcrTextRegion> r) =>
+        MokuroBlock(
+          rectangle: const MokuroRect.fromLTWH(100, 200, 300, 30),
+          isVertical: false,
+          fontSize: 10,
+          zIndex: 0,
+          lines: lines,
+          regions: r,
+        );
+
+    List<MangaOcrTextRegion> geometryOf(MokuroBlock block) =>
+        mangaEffectiveTextRegions(
+          MokuroBlock(
+            rectangle: block.rectangle,
+            isVertical: block.isVertical,
+            fontSize: block.fontSize,
+            zIndex: block.zIndex,
+            lines: block.lines,
+          ),
+        );
+
+    List<(MokuroRect, int, int)> shape(List<MangaOcrTextRegion> regions) =>
+        <(MokuroRect, int, int)>[
+          for (final MangaOcrTextRegion r in regions)
+            (r.rectangle, r.utf16Start, r.utf16End),
+        ];
+
+    test('全部对得上：照用引擎给的区域', () {
+      final List<MangaOcrTextRegion> supplied = <MangaOcrTextRegion>[
+        region(0, 0, 1),
+        region(10, 1, 2),
+        region(20, 2, 3),
+      ];
+      final MokuroBlock block = blockWith(<String>['日本語'], supplied);
+      expect(identical(mangaEffectiveTextRegions(block), supplied), isTrue);
+    });
+
+    test('空白不要求有区域：拉丁文空格不覆盖仍算对得上', () {
+      final List<MangaOcrTextRegion> supplied = <MangaOcrTextRegion>[
+        region(0, 0, 1),
+        region(20, 2, 3),
+      ];
+      final MokuroBlock block = blockWith(<String>['A B'], supplied);
+      expect(identical(mangaEffectiveTextRegions(block), supplied), isTrue);
+    });
+
+    test('部分对不上（一个越界）：整块换行几何，每个字都有区域', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本語'],
+        <MangaOcrTextRegion>[
+          region(0, 0, 1),
+          region(10, 1, 2),
+          region(20, 999, 1000),
+        ],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(3));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('全部对不上：整块换行几何，覆盖层不会变成点不到的空框', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本語'],
+        <MangaOcrTextRegion>[region(0, 10, 11), region(10, 11, 12)],
+      );
+      expect(shape(mangaEffectiveTextRegions(block)), shape(geometryOf(block)));
+      final String html = mangaOcrBoxesHtml(
+        MokuroImage(
+          url: 'p.jpg',
+          size: const MokuroSize(1000, 1000),
+          blocks: <MokuroBlock>[block],
+        ),
+      );
+      expect(
+        RegExp(
+          r'<span class="ocr-char"[^>]*>([^<]*)</span>',
+        ).allMatches(html).map((RegExpMatch m) => m.group(1)).toList(),
+        <String>['日', '本', '語'],
+      );
+    });
+
+    test('AI 重读后文字变长：旧区域只盖住前半句，整块换行几何', () {
+      // 原文「日本」两个区域，重读成「日本語です」：旧区域都在句内但盖不全。
+      final MokuroBlock block = blockWith(
+        <String>['日本語です'],
+        <MangaOcrTextRegion>[region(0, 0, 1), region(10, 1, 2)],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(5));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('AI 重读后文字变短：旧区域越界，整块换行几何', () {
+      final MokuroBlock block = blockWith(
+        <String>['日本'],
+        <MangaOcrTextRegion>[
+          region(0, 0, 1),
+          region(10, 1, 2),
+          region(20, 2, 3),
+          region(30, 3, 4),
+        ],
+      );
+      final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
+      expect(regions, hasLength(2));
+      expect(shape(regions), shape(geometryOf(block)));
+    });
+
+    test('偏移落在代理对中间：不算对得上', () {
+      // 「𠮷」占两个 UTF-16 单元，偏移 1 切在它中间。
+      final MokuroBlock block = blockWith(
+        <String>['𠮷野'],
+        <MangaOcrTextRegion>[region(0, 0, 1), region(10, 1, 3)],
+      );
+      expect(shape(mangaEffectiveTextRegions(block)), shape(geometryOf(block)));
+    });
+  });
+
   group('mangaPageDivHtml', () {
     test(
         '包 <div class="manga-page"> + container-type:inline-size + <img '
