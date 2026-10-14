@@ -22,8 +22,8 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
   },
   'nl': <String>{'updates_center_title'},
   'pt-BR': <String>{'leaderboard_title'},
-  // 法语「$n sessions」与英文同形。
-  'fr': <String>{'home_session_count'},
+  // 法语「$n sessions」与英文同形；「Collections」（收藏夹）法语本就同形。
+  'fr': <String>{'home_session_count', 'collections'},
 };
 
 const List<String> _sources = <String>[
