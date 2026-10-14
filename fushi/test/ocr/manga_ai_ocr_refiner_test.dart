@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -322,6 +323,153 @@ void main() {
       ];
       expect(firstXs.every((double x) => x >= 30 && x <= 40), isTrue);
       expect(secondXs.every((double x) => x >= 10 && x <= 20), isTrue);
+    });
+
+    test('Lens 斜块文字变了：从逐字热区拟合出倾角，重排后的列框仍沿斜列', () {
+      const double tilt = 5 * math.pi / 180;
+      final double c = math.cos(tilt), s = math.sin(tilt);
+      // 两列竖排各 10 个 30×30 的字，整块顺时针斜 5°；Lens 只给每个字旋转后的
+      // 轴对齐外接框（协议层丢掉了字的旋转）。列向下走 = 局部 (0, 1) → (-s, c)，
+      // 下一列在左边 = 局部 (-1, 0) → (-c, -s)。
+      final double half = 15 * (c + s);
+      final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[];
+      for (int column = 0; column < 2; column++) {
+        for (int k = 0; k < 10; k++) {
+          final double cx = 300 - k * 32 * s - column * 40 * c;
+          final double cy = 50 + k * 32 * c - column * 40 * s;
+          final int at = column * 10 + k;
+          regions.add(
+            MangaOcrTextRegion(
+              rectangle: MokuroRect.fromLTRB(
+                cx - half,
+                cy - half,
+                cx + half,
+                cy + half,
+              ),
+              utf16Start: at,
+              utf16End: at + 1,
+            ),
+          );
+        }
+      }
+      final MokuroBlock source = MokuroBlock(
+        rectangle: MokuroRect.fromLTRB(200, 20, 330, 380),
+        isVertical: true,
+        fontSize: 30,
+        zIndex: 0,
+        lines: <String>['あいうえおかきくけこさしすせそたちつてと'],
+        regions: regions,
+      );
+      // 21 字一行：文字变了、行数也与两列对不上，走重排。
+      const String text = '一二三四五六七八九十一二三四五六七八九十一';
+      final MokuroBlock out = applyMangaAiOcrText(source, text);
+      expect(out.lines.join(), text);
+      expect(out.regions, isNull);
+      expect(out.linesCoords, isNotNull);
+      expect(out.linesCoords, hasLength(out.lines.length));
+      expect(out.lines.length, greaterThanOrEqualTo(2));
+      for (final List<List<double>> quad in out.linesCoords!) {
+        final double edgeAngle = math.atan2(
+          quad[1][1] - quad[0][1],
+          quad[1][0] - quad[0][0],
+        );
+        expect(edgeAngle, closeTo(tilt, 1e-6), reason: '重排出的列框必须沿斜列');
+      }
+      // 阅读序：第一列仍在右边。
+      double centerX(List<List<double>> quad) =>
+          quad.fold<double>(0, (double sum, List<double> p) => sum + p[0]) / 4;
+      expect(
+        centerX(out.linesCoords!.first),
+        greaterThan(centerX(out.linesCoords!.last)),
+      );
+    });
+
+    test('行数对不上且原行框是斜的：重排后的行框保留原倾角', () {
+      const double tilt = -20 * math.pi / 180;
+      // 30×180 的列斜 20° 后外接框约 90×180（宽 = 30cos + 180sin）。
+      final MokuroBlock source = block(
+        '',
+        lines: <String>['ab', 'cd'],
+        linesCoords: <List<List<double>>>[
+          mangaTiltedLineQuad(
+            const OcrRect(left: 70, top: 10, right: 160, bottom: 190),
+            tilt,
+          ),
+          mangaTiltedLineQuad(
+            const OcrRect(left: 0, top: 10, right: 90, bottom: 190),
+            tilt,
+          ),
+        ],
+      );
+      expect(
+        mokuroOrientedRectFromQuad(source.linesCoords!.first)!.rotation,
+        closeTo(tilt, 1e-6),
+        reason: '夹具本身必须是合法的斜行',
+      );
+      final MokuroBlock out = applyMangaAiOcrText(source, '一二三四');
+      expect(out.lines.join(), '一二三四');
+      for (final List<List<double>> quad in out.linesCoords!) {
+        expect(mokuroOrientedRectFromQuad(quad)!.rotation, closeTo(tilt, 1e-6));
+      }
+    });
+
+    test('行数对不上、首列短到倾角被判可忽略：倾角取最长列，长列仍旋转', () {
+      const double tilt = 3 * math.pi / 180;
+      // 宽 [a]、高 [b] 的列绕 ([cx], [cy]) 斜 [tilt]（与 mangaTiltedLineQuad 同向）。
+      List<List<double>> column(double cx, double cy, double a, double b) {
+        final double ux = math.cos(tilt), uy = math.sin(tilt);
+        final double vx = -math.sin(tilt), vy = math.cos(tilt);
+        List<double> corner(double du, double dv) => <double>[
+          cx + du * ux + dv * vx,
+          cy + du * uy + dv * vy,
+        ];
+        return <List<double>>[
+          corner(-a / 2, -b / 2),
+          corner(a / 2, -b / 2),
+          corner(a / 2, b / 2),
+          corner(-a / 2, b / 2),
+        ];
+      }
+
+      // 竖排右起：首列 3 个字（30×90），次列 20 个字（30×600）。
+      final List<List<double>> shortColumn = column(200, 60, 30, 90);
+      final List<List<double>> longColumn = column(150, 315, 30, 600);
+      expect(
+        mokuroOrientedRectFromQuad(shortColumn)!.rotation,
+        0,
+        reason: '夹具前提：短列自身的 3° 被判可忽略、归 0',
+      );
+      expect(
+        mokuroOrientedRectFromQuad(longColumn)!.rotation,
+        closeTo(tilt, 1e-9),
+        reason: '夹具前提：长列的 3° 不可忽略',
+      );
+      final MokuroBlock source = block(
+        '',
+        lines: <String>['abc', 'd'],
+        linesCoords: <List<List<double>>>[shortColumn, longColumn],
+      );
+      // 一行 23 字，与原行数（2）对不上，走重排。
+      const String text = '一二三四五六七八九十一二三四五六七八九十一二三';
+      final MokuroBlock out = applyMangaAiOcrText(source, text);
+      expect(out.lines.join(), text);
+      expect(out.linesCoords, isNotNull);
+      for (final List<List<double>> quad in out.linesCoords!) {
+        // 直接看首边方向：短格即便会被拟合判可忽略，写回的四边形也该是转过的。
+        final double edgeAngle = math.atan2(
+          quad[1][1] - quad[0][1],
+          quad[1][0] - quad[0][0],
+        );
+        expect(edgeAngle, closeTo(tilt, 1e-6));
+      }
+      expect(
+        out.linesCoords!.any(
+          (List<List<double>> quad) =>
+              (mokuroOrientedRectFromQuad(quad)!.rotation - tilt).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: '长列重排出的行格必须仍是斜的（不能全退回轴对齐）',
+      );
     });
 
     test('没有行几何：整块单行', () {

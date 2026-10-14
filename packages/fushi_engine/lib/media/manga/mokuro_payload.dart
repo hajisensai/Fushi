@@ -108,9 +108,11 @@ class MokuroBlock {
 
   /// Optional per-line polygon coordinates (`lines_coords`), when the producer
   /// provides them. Each line is a list of `[x, y]` points. mokuro emits these
-  /// via ctd; the app's own detector does not, so this is `null` for internal
-  /// OCR. Preserved verbatim through parse → serialise round-trips but not
-  /// required for overlay rendering (which only needs the block `box`).
+  /// via ctd; local OCR writes one clockwise quad per line (rotated by the
+  /// block's tilt for slanted text). Preserved verbatim through parse →
+  /// serialise round-trips. The overlay lays character hit cells out along
+  /// each line: 4-point rectangles keep their rotation
+  /// ([mokuroOrientedRectFromQuad]), other polygons use their bounding box.
   final List<List<List<double>>>? linesCoords;
 
   /// Optional character-level hit regions.
@@ -148,11 +150,27 @@ class MangaOcrTextRegion {
     required this.rectangle,
     required this.utf16Start,
     required this.utf16End,
+    this.rotation = 0,
   });
 
+  /// 摆正时的字格；[rotation] ≠ 0 时绕它的中心旋转才是真实位置。
   final MokuroRect rectangle;
   final int utf16Start;
   final int utf16End;
+
+  /// 字格绕 [rectangle] 中心的旋转（弧度，正值顺时针）。只有沿倾斜的
+  /// `lines_coords` 切出来的字格才非 0；不序列化（由行几何现算）。
+  final double rotation;
+
+  /// 字格的轴对齐外接框（命中测试 / 与旧轴对齐几何比较时用）。
+  MokuroRect get bounds => rotation == 0
+      ? rectangle
+      : MokuroOrientedRect(
+          center: rectangle.center,
+          width: rectangle.width,
+          height: rectangle.height,
+          rotation: rotation,
+        ).bounds;
 }
 
 /// Normalise a relative path into a forward-slash `manga.json` URL.

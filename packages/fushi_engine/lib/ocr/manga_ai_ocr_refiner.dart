@@ -979,14 +979,11 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
       if (layout != null) {
         // 拉丁文按字格切开时，接缝上的空格会落在行首 / 行尾。
         lines = <String>[for (final String line in layout.lines) line.trim()];
+        // 切分按外接框做，写回时按原四边形的倾角还原（斜行不能退化成轴对齐框，
+        // 否则覆盖层的逐字格又落不到字上）。
+        final double tilt = _mangaLinesTilt(coords);
         linesCoords = <List<List<double>>>[
-          for (final OcrRect r in layout.boxes)
-            <List<double>>[
-              <double>[r.left, r.top],
-              <double>[r.right, r.top],
-              <double>[r.right, r.bottom],
-              <double>[r.left, r.bottom],
-            ],
+          for (final OcrRect r in layout.boxes) mangaTiltedLineQuad(r, tilt),
         ];
       }
     }
@@ -1003,8 +1000,18 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
   );
 }
 
-/// 把字符级命中区按阅读序聚成行框（竖排是列框）：相邻两个字在横轴（竖排看 x、
-/// 横排看 y）上的区间重叠不到较窄者的一半就算换行。没有命中区返回 null。
+/// 把字符级命中区按阅读序聚成行框（竖排是列框）：相邻两个字主轴（竖排看 y、
+/// 横排看 x）往回跳半个字以上，或横轴（竖排看 x、横排看 y）上与前一个字的区间
+/// 重叠不到较窄者的一半，就算换行。没有命中区返回 null。
+///
+/// Lens 的字格是轴对齐外接框（协议层把字的旋转丢了），但斜排气泡里同一行的字
+/// 中心仍沿斜线排开：按字数最多那一行的字中心做最小二乘拟合出整块倾角
+/// （[_regionLinesTilt]），每行按这个倾角把字格四角投影到旋转后的轴上取范围，
+/// 产出旋转四边形。这样改字后 [_mangaLinesTilt] 能从行框读回倾角，重排出来的
+/// 逐字格仍沿斜行；倾角可忽略（[mokuroTiltIsNegligible]）时就是原来的轴对齐框。
+///
+/// 横轴比较的是**前一个字**而不是已聚好的整行：斜行的整行外接框在横轴上会被
+/// 漂移撑宽，拿它比会把相邻一列的首字吞进来。
 List<List<List<double>>>? _lineBoxesFromRegions(MokuroBlock block) {
   final List<MangaOcrTextRegion>? regions = block.regions;
   if (regions == null || regions.isEmpty) return null;
@@ -1016,41 +1023,148 @@ List<List<List<double>>>? _lineBoxesFromRegions(MokuroBlock block) {
   final bool vertical = block.isVertical;
   double crossStart(MokuroRect r) => vertical ? r.left : r.top;
   double crossEnd(MokuroRect r) => vertical ? r.right : r.bottom;
-  final List<MokuroRect> lines = <MokuroRect>[];
+  double mainStart(MokuroRect r) => vertical ? r.top : r.left;
+  double mainExtent(MokuroRect r) => vertical ? r.height : r.width;
+  final List<List<MokuroRect>> lines = <List<MokuroRect>>[];
   for (final MangaOcrTextRegion region in ordered) {
     final MokuroRect rect = region.rectangle;
     if (rect.isEmpty) continue;
     if (lines.isNotEmpty) {
-      final MokuroRect current = lines.last;
+      final MokuroRect previous = lines.last.last;
       final double overlap =
-          math.min(crossEnd(current), crossEnd(rect)) -
-          math.max(crossStart(current), crossStart(rect));
+          math.min(crossEnd(previous), crossEnd(rect)) -
+          math.max(crossStart(previous), crossStart(rect));
       final double narrower = math.min(
-        crossEnd(current) - crossStart(current),
+        crossEnd(previous) - crossStart(previous),
         crossEnd(rect) - crossStart(rect),
       );
-      if (overlap >= narrower / 2) {
-        lines[lines.length - 1] = MokuroRect.fromLTRB(
-          math.min(current.left, rect.left),
-          math.min(current.top, rect.top),
-          math.max(current.right, rect.right),
-          math.max(current.bottom, rect.bottom),
-        );
+      final bool wrapsBack =
+          mainStart(rect) <
+          mainStart(previous) -
+              math.min(mainExtent(previous), mainExtent(rect)) / 2;
+      if (!wrapsBack && overlap >= narrower / 2) {
+        lines.last.add(rect);
         continue;
       }
     }
-    lines.add(rect);
+    lines.add(<MokuroRect>[rect]);
   }
   if (lines.isEmpty) return null;
+  final double tilt = _regionLinesTilt(lines, vertical: vertical);
   return <List<List<double>>>[
-    for (final MokuroRect r in lines)
-      <List<double>>[
-        <double>[r.left, r.top],
-        <double>[r.right, r.top],
-        <double>[r.right, r.bottom],
-        <double>[r.left, r.bottom],
-      ],
+    for (final List<MokuroRect> line in lines) _orientedLineQuad(line, tilt),
   ];
+}
+
+/// 按字数最多那一行的字中心拟合整块倾角（弧度，正值顺时针，与
+/// [MokuroOrientedRect.rotation] 同口径）：竖排拟合 `x = a + b·y`，列向下走时 x
+/// 往左偏即顺时针，倾角 = `-atan(b)`；横排拟合 `y = a + b·x`，倾角 = `atan(b)`。
+/// 不到两个字、拟合退化，或这一行按该倾角仍可忽略（[mokuroTiltIsNegligible]，
+/// 字宽抖动的噪声角度落在这里）时返回 0。
+double _regionLinesTilt(
+  List<List<MokuroRect>> lines, {
+  required bool vertical,
+}) {
+  List<MokuroRect>? longest;
+  for (final List<MokuroRect> line in lines) {
+    if (line.length < 2) continue;
+    if (longest == null || line.length > longest.length) longest = line;
+  }
+  if (longest == null) return 0;
+  final int n = longest.length;
+  double meanMain = 0, meanCross = 0;
+  for (final MokuroRect r in longest) {
+    meanMain += (vertical ? r.center.dy : r.center.dx) / n;
+    meanCross += (vertical ? r.center.dx : r.center.dy) / n;
+  }
+  double covariance = 0, variance = 0;
+  for (final MokuroRect r in longest) {
+    final double dm = (vertical ? r.center.dy : r.center.dx) - meanMain;
+    final double dc = (vertical ? r.center.dx : r.center.dy) - meanCross;
+    covariance += dm * dc;
+    variance += dm * dm;
+  }
+  if (variance <= 0) return 0;
+  final double slope = covariance / variance;
+  final double tilt = vertical ? -math.atan(slope) : math.atan(slope);
+  final MokuroOrientedRect oriented = _orientedLineRect(longest, tilt);
+  final double length = math.max(oriented.width, oriented.height);
+  final double thickness = math.min(oriented.width, oriented.height);
+  return mokuroTiltIsNegligible(length, thickness, tilt) ? 0 : tilt;
+}
+
+/// 一行字格在旋转 [tilt] 后的轴上的最小包围矩形：把每个字格的四角投影到
+/// 旋转后的 x / y 轴取范围。[tilt] 为 0 时就是所有字格的轴对齐并集。
+MokuroOrientedRect _orientedLineRect(List<MokuroRect> line, double tilt) {
+  final double c = math.cos(tilt);
+  final double s = math.sin(tilt);
+  double minU = double.infinity, maxU = double.negativeInfinity;
+  double minV = double.infinity, maxV = double.negativeInfinity;
+  for (final MokuroRect r in line) {
+    for (final MokuroPoint p in <MokuroPoint>[
+      MokuroPoint(r.left, r.top),
+      MokuroPoint(r.right, r.top),
+      MokuroPoint(r.right, r.bottom),
+      MokuroPoint(r.left, r.bottom),
+    ]) {
+      // 页面坐标 → 旋转后的局部轴（[MokuroOrientedRect.toPage] 的逆）。
+      final double u = p.dx * c + p.dy * s;
+      final double v = -p.dx * s + p.dy * c;
+      minU = math.min(minU, u);
+      maxU = math.max(maxU, u);
+      minV = math.min(minV, v);
+      maxV = math.max(maxV, v);
+    }
+  }
+  final double cu = (minU + maxU) / 2;
+  final double cv = (minV + maxV) / 2;
+  return MokuroOrientedRect(
+    center: MokuroPoint(cu * c - cv * s, cu * s + cv * c),
+    width: maxU - minU,
+    height: maxV - minV,
+    rotation: tilt,
+  );
+}
+
+/// [_orientedLineRect] 的四个角，顺时针、从旋转后的左上角起（[tilt] 为 0 时即
+/// 轴对齐框的左上、右上、右下、左下）。
+List<List<double>> _orientedLineQuad(List<MokuroRect> line, double tilt) {
+  final MokuroOrientedRect rect = _orientedLineRect(line, tilt);
+  final double halfW = rect.width / 2;
+  final double halfH = rect.height / 2;
+  List<double> corner(double x, double y) {
+    final MokuroPoint p = rect.toPage(x, y);
+    return <double>[p.dx, p.dy];
+  }
+
+  return <List<double>>[
+    corner(-halfW, -halfH),
+    corner(halfW, -halfH),
+    corner(halfW, halfH),
+    corner(-halfW, halfH),
+  ];
+}
+
+/// 行四边形的共同倾角（同一块里各行同一个倾角，见 `ppBlockTilt`）：取能拟合成
+/// 旋转矩形的四边形里**沿行方向最长**的那个的角度；都拟合不了视为正立。
+///
+/// 不能取第一个：[mokuroOrientedRectFromQuad] 按该四边形自己的长度判倾斜是否
+/// 可忽略（[mokuroTiltIsNegligible]），整块斜 3° 时 3 个字的短列会被归成 0，
+/// 而同块 20 个字的长列重排后就全退回轴对齐、首尾字点不中。最长的行角度估计
+/// 最稳、可忽略判据也最宽；它都被判可忽略时，块里所有行（更短）同样可忽略。
+double _mangaLinesTilt(List<List<List<double>>> coords) {
+  double tilt = 0;
+  double longest = -1;
+  for (final List<List<double>> polygon in coords) {
+    final MokuroOrientedRect? oriented = mokuroOrientedRectFromQuad(polygon);
+    if (oriented == null) continue;
+    final double length = math.max(oriented.width, oriented.height);
+    if (length > longest) {
+      longest = length;
+      tilt = oriented.rotation;
+    }
+  }
+  return tilt;
 }
 
 OcrRect _polygonBounds(List<List<double>> polygon) {

@@ -441,7 +441,7 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
   if (block.lines.isEmpty || block.rectangle.isEmpty) {
     return const <MangaOcrTextRegion>[];
   }
-  final List<MokuroRect> lineRects = _mangaLineRects(block);
+  final List<MokuroOrientedRect> lineRects = _mangaLineRects(block);
   final List<MangaOcrTextRegion> result = <MangaOcrTextRegion>[];
   int utf16Base = 0;
   for (int lineIndex = 0; lineIndex < block.lines.length; lineIndex++) {
@@ -457,9 +457,12 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
       offset = end;
     }
     if (characters.isNotEmpty) {
-      final MokuroRect lineRect = lineRects[lineIndex];
+      final MokuroOrientedRect line = lineRects[lineIndex];
+      final MokuroRect lineRect = line.unrotated;
       for (int index = 0; index < characters.length; index++) {
-        final MokuroRect characterRect = block.isVertical
+        // 先在摆正的行里均分字格，再把字格中心转回行的倾角：斜行上的字格
+        // 沿着斜线排，而不是在外接框里横平竖直地铺。
+        final MokuroRect upright = block.isVertical
             ? MokuroRect.fromLTWH(
                 lineRect.left,
                 lineRect.top + index * lineRect.height / characters.length,
@@ -472,11 +475,27 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
                 lineRect.width / characters.length,
                 lineRect.height,
               );
+        final MokuroRect characterRect;
+        if (line.rotation == 0) {
+          characterRect = upright;
+        } else {
+          final MokuroPoint center = line.toPage(
+            upright.center.dx - line.center.dx,
+            upright.center.dy - line.center.dy,
+          );
+          characterRect = MokuroRect.fromLTWH(
+            center.dx - upright.width / 2,
+            center.dy - upright.height / 2,
+            upright.width,
+            upright.height,
+          );
+        }
         result.add(
           MangaOcrTextRegion(
             rectangle: characterRect,
             utf16Start: characters[index].start,
             utf16End: characters[index].end,
+            rotation: line.rotation,
           ),
         );
       }
@@ -486,10 +505,12 @@ List<MangaOcrTextRegion> _mangaGeometryTextRegions(MokuroBlock block) {
   return result;
 }
 
-List<MokuroRect> _mangaLineRects(MokuroBlock block) {
+/// 每行的几何：`lines_coords` 齐全时逐行取，四点矩形保留旋转
+/// （[mokuroOrientedRectFromQuad]），其它多边形取外接框；否则按块均分。
+List<MokuroOrientedRect> _mangaLineRects(MokuroBlock block) {
   final List<List<List<double>>>? coordinates = block.linesCoords;
   if (coordinates != null && coordinates.length == block.lines.length) {
-    final List<MokuroRect> parsed = <MokuroRect>[];
+    final List<MokuroOrientedRect> parsed = <MokuroOrientedRect>[];
     for (final List<List<double>> polygon in coordinates) {
       if (polygon.isEmpty ||
           polygon.any((List<double> point) => point.length < 2)) {
@@ -510,7 +531,12 @@ List<MokuroRect> _mangaLineRects(MokuroBlock block) {
         parsed.clear();
         break;
       }
-      parsed.add(MokuroRect.fromLTRB(left, top, right, bottom));
+      final MokuroOrientedRect? oriented = mokuroOrientedRectFromQuad(polygon);
+      parsed.add(
+        oriented != null && oriented.rotation != 0
+            ? oriented
+            : _uprightLine(MokuroRect.fromLTRB(left, top, right, bottom)),
+      );
     }
     if (parsed.length == block.lines.length) {
       return parsed;
@@ -521,27 +547,37 @@ List<MokuroRect> _mangaLineRects(MokuroBlock block) {
   final int count = block.lines.length;
   if (block.isVertical) {
     final double width = rect.width / count;
-    return <MokuroRect>[
+    return <MokuroOrientedRect>[
       for (int index = 0; index < count; index++)
-        MokuroRect.fromLTWH(
-          rect.right - (index + 1) * width,
-          rect.top,
-          width,
-          rect.height,
+        _uprightLine(
+          MokuroRect.fromLTWH(
+            rect.right - (index + 1) * width,
+            rect.top,
+            width,
+            rect.height,
+          ),
         ),
     ];
   }
   final double height = rect.height / count;
-  return <MokuroRect>[
+  return <MokuroOrientedRect>[
     for (int index = 0; index < count; index++)
-      MokuroRect.fromLTWH(
-        rect.left,
-        rect.top + index * height,
-        rect.width,
-        height,
+      _uprightLine(
+        MokuroRect.fromLTWH(
+          rect.left,
+          rect.top + index * height,
+          rect.width,
+          height,
+        ),
       ),
   ];
 }
+
+MokuroOrientedRect _uprightLine(MokuroRect rect) => MokuroOrientedRect(
+  center: rect.center,
+  width: rect.width,
+  height: rect.height,
+);
 
 String _mangaCharacterRegionsHtml({
   required MokuroBlock block,
@@ -561,6 +597,11 @@ String _mangaCharacterRegionsHtml({
     final double widthPct = (r.width / parentWidth) * 100;
     final double heightPct = (r.height / parentHeight) * 100;
     final String text = sentence.substring(region.utf16Start, region.utf16End);
+    // 斜行字格绕自身中心旋转（transform-origin 默认即中心）；elementsFromPoint
+    // 按变换后的形状命中，所以点击判定跟着字格一起转。
+    final String rotate = region.rotation == 0
+        ? ''
+        : 'transform:rotate(${_num(region.rotation * 180 / math.pi)}deg);';
     buffer.write(
       '<span class="ocr-char" '
       'data-utf16-start="${region.utf16Start}" '
@@ -568,7 +609,8 @@ String _mangaCharacterRegionsHtml({
       'style="left:${_pct(leftPct)};'
       'top:${_pct(topPct)};'
       'width:${_pct(widthPct)};'
-      'height:${_pct(heightPct)};">'
+      'height:${_pct(heightPct)};'
+      '$rotate">'
       '${_escapeHtml(text)}</span>',
     );
   }

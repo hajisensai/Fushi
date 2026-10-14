@@ -103,8 +103,8 @@ mixin _LocalLibraryHostAudiobooks
     if (!await audiobookExists(identity)) return;
     final int clamped =
         delayMs.clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs);
-    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
-    final int cappedAt = updatedAtMs > nowCapMs ? nowCapMs : updatedAtMs;
+    final int cappedAt = capFutureSyncStamp(updatedAtMs,
+        nowMs: DateTime.now().millisecondsSinceEpoch);
     final ({int delayMs, int updatedAtMs}) current =
         await getAudiobookDelay(identity);
     final ({int delayMs, int updatedAtMs}) winner = resolveDelayLww(
@@ -334,11 +334,14 @@ mixin _LocalLibraryHostAudiobooks
     }
     final ({int positionMs, int updatedAtMs}) current =
         await getAudiobookPosition(bookKey);
+    // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,
-      localUpdatedAtMs: current.updatedAtMs,
+      localUpdatedAtMs:
+          trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
-      remoteUpdatedAtMs: updatedAtMs,
+      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
     );
     if (winner.updatedAtMs == current.updatedAtMs &&
         winner.positionMs == current.positionMs) {
