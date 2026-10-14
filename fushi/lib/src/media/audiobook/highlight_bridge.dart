@@ -13,7 +13,8 @@ class HighlightBridge {
 (function() {
   if (window.__fushiHighlightsInstalled) return;
   window.__fushiHighlightsInstalled = true;
-  window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+  // BUG-3328：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+  window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 
   var BASE_COLORS = {
     yellow: [255,220,0],

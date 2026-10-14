@@ -940,6 +940,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         disableContextMenu: isWindowsPlatform,
         // BUG-2607 同款：iOS 关原生文本交互，app 自绘选区不受影响。
         isTextInteractionEnabled: !isIOSPlatform,
+        // BUG-3329 同款：WKWebView 边缘横滑默认是 WebView 历史前进 / 后退，歌词文档
+        // 每次重载都 loadData，侧滑会退回旧文档。
+        allowsBackForwardNavigationGestures: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
         overScrollMode: OverScrollMode.NEVER,

@@ -378,7 +378,10 @@ const JAPANESE_RANGES = [
   [0x3000, 0x303f],
   ...FULLWIDTH_CHARACTER_RANGES,
 ];
-window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+// BUG-3328：判据唯一出处是 Dart 的 kReaderCssHighlightsSupportedJs（reader_css_highlight_capability.dart，
+// 旧 Blink 竖排 ::highlight 画错位置 → 退回包裹兜底）。本源码是原始字符串、被多份 node 行为测试按
+// 文本切出来直接跑，所以这里放逐字副本；与常量逐字相等由 reader_css_highlight_capability_bug3328_test 钉住。
+window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\/(\d+)\./.exec(ua);return !!m && +m[1] < 120;})());
 // BUG-3326 审查（#2115 / #2119 同类）：阅读器里所有「切开 / 搬移正文节点」的 DOM 手术共用这一处
 // 保护，各写入点不各写一份。会被弄坏的状态有两类：
 // 1. 查词选区（fushiSelection.selection / dragAnchor）存的是「文本节点 + 数字偏移」普通对象。文本
