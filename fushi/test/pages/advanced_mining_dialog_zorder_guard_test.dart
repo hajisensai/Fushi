@@ -142,8 +142,9 @@ void main() {
           reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿');
     }
     expect(
-        read('lib/src/mining/advanced_mining/advanced_mining_capabilities.dart')
-            .contains('typedef AdvancedMiningConfirm = Future<bool> Function('),
+        RegExp(r'typedef AdvancedMiningConfirm\s*=\s*Future<bool> Function\(')
+            .hasMatch(read(
+                'lib/src/mining/advanced_mining/advanced_mining_capabilities.dart')),
         isTrue,
         reason: 'onConfirm 的契约必须是「回传有没有点到」，不是 VoidCallback');
   });

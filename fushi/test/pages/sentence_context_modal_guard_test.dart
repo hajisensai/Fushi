@@ -158,8 +158,7 @@ void main() {
       'lib/src/mining/advanced_mining/advanced_mining_dialog.dart',
       'lib/src/mining/advanced_mining/advanced_mining_controller.dart',
       'lib/src/mining/advanced_mining/advanced_mining_sections.dart',
-    ].map((String p) => File(p).readAsStringSync()).join('
-');
+    ].map((String p) => File(p).readAsStringSync()).join();
 
     test('文件存在且由 showAppDialog / 自适应底部面板弹出', () {
       expect(src.contains('class AdvancedMiningDialog'), isTrue);
