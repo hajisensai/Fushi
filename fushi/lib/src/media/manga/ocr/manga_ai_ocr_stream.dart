@@ -71,6 +71,7 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
   bool _prepared = false;
   bool _cancelled = false;
   bool _loggedFailure = false;
+  bool _notedTransientFailure = false;
 
   @override
   Stream<MangaOcrPageUpdate> get updates => _updates.stream;
@@ -178,9 +179,7 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
     final ({MokuroImage page, MangaAiOcrPageStats stats}) result =
         await _refiner.refinePage(page, bytes, cache: _cache);
     final String? failure = result.stats.failure;
-    if (failure != null) {
-      _logOnce(AiChatFailure(failure), StackTrace.current);
-    }
+    if (failure != null) _noteRefineFailure(AiChatFailure(failure));
     final MokuroImage? better = result.stats.replaced == 0 || _cancelled
         ? null
         : result.page;
@@ -232,6 +231,19 @@ class MangaAiOcrJobFollower implements MangaOcrJobFollower {
       );
       return index;
     });
+  }
+
+  /// 重读没成：限流 / 网络 / 5xx 是预期降级（保留本地文字，客户端已按提供商退避），
+  /// 只记一条诊断，不当应用错误刷进报错日志——用户本机曾因此一个任务一条、两天
+  /// 78 条 `rate_limited`。鉴权、400 这类非临时性失败是配置问题，照旧记错误。
+  void _noteRefineFailure(AiChatFailure failure) {
+    if (!failure.isTransient) {
+      _logOnce(failure, StackTrace.current);
+      return;
+    }
+    if (_notedTransientFailure) return;
+    _notedTransientFailure = true;
+    ErrorLogService.instance.logDiagnostic('MangaAiOcr.refinePage', failure);
   }
 
   void _logOnce(Object error, StackTrace stack) {
