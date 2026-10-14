@@ -223,6 +223,82 @@ void main() {
     });
   });
 
+  // 用户实报：多选拖入漫画只导进来一本。拖 N 卷进来必须与「选一个装着 N 卷的文件夹」
+  // 得到同一种结果。
+  group('多选路径逐卷导入（importMangaBatchPaths）', () {
+    test('同时拖入的每一卷各成一本，标题取各自文件名', () async {
+      _writeCbz(root, '01.cbz');
+      _writeCbz(root, '02.cbz');
+      _writeCbz(root, '03.cbz');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[
+          p.join(root.path, '01.cbz'),
+          p.join(root.path, '02.cbz'),
+          p.join(root.path, '03.cbz'),
+        ],
+      );
+
+      expect(report.importedCount, 3);
+      expect(
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
+          ..sort(),
+        <String>['01', '02', '03'],
+      );
+    });
+
+    test('页图目录与整卷文件混拖：目录按一卷导入，目录名里的点不当扩展名', () async {
+      final Directory pages = Directory(p.join(root.path, '第01巻.v2'))
+        ..createSync();
+      File(p.join(pages.path, '001.png')).writeAsBytesSync(_pngBytes());
+      _writeCbz(root, '02.cbz');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[pages.path, p.join(root.path, '02.cbz')],
+      );
+
+      expect(report.importedCount, 2, reason: '${report.volumes}');
+      expect(
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
+          ..sort(),
+        <String>['02', '第01巻.v2'],
+      );
+    });
+
+    test('拖入装着整卷文件的目录 = 展开成其中每一卷；同一卷重复给只导一次', () async {
+      final Directory series = Directory(p.join(root.path, 'series'))
+        ..createSync();
+      _writeCbz(series, 'a.cbz');
+      _writeCbz(series, 'b.cbz');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[series.path, p.join(series.path, 'a.cbz')],
+      );
+
+      expect(report.volumes.length, 2, reason: '重复路径不得成为第三卷');
+      expect(report.importedCount, 2);
+    });
+
+    test('混进来的词典 zip 计为「不是漫画」，其余照样进库', () async {
+      _writeCbz(root, 'vol1.cbz');
+      _writeYomitanDictZip(root, 'dict.zip');
+
+      final MangaBatchImportReport report = await importMangaBatchPaths(
+        db: db,
+        paths: <String>[
+          p.join(root.path, 'vol1.cbz'),
+          p.join(root.path, 'dict.zip'),
+        ],
+      );
+
+      expect(report.importedCount, 1);
+      expect(report.notMangaCount, 1);
+    });
+  });
+
   group('逐卷失败必须落进错误日志', () {
     // 批量路径把每卷异常收进报告、只给调用方一句「成功 N / 失败 M」的汇总，于是
     // ImportFlowMixin.runImport 那道 ErrorLogService 永远拿不到真正的原因，用户

@@ -91,6 +91,7 @@
 | [BUG-3328](bugs/BUG-3328-popup-trackpad-slow-scroll-locked-as-pinch.md) | ✅ | ✅ | 查词弹窗触控板慢滑被锁成捏合滑不动 |
 | [BUG-3328](bugs/BUG-3328-ios-lyrics-vertical-long-cue-sweep-vanish.md) | ✅ | ✅ | iOS 竖排歌词播放时长句整列消失（BUG-3280 修复无效） |
 | [BUG-3328](bugs/BUG-3328-shelf-name-sort-display-title.md) | ✅ | ✅ | 书架/漫画库按名称排序与显示名不一致、全角数字不按数值排 |
+| [BUG-3328](bugs/BUG-3328-manga-drop-epub-multi.md) | ✅ | ✅ | 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

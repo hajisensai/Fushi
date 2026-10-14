@@ -93,3 +93,33 @@ Fushi 打开另一个视频 → 复用已开窗口打开播放页，不起第二
 - 纯函数测试：`test/media/video/external_video_test.dart`
   （`isSupportedVideoFile` / `externalVideoBookUid` / `firstExternalVideoArg`）。
 - 真机：`fushi.exe "<某视频绝对路径>"` 启动应自动打开播放页 + 书架出现条目。
+
+## 外部打开书 / 漫画（2026-10-14）
+
+同一条链路也接书：资源管理器右键 `.epub` / `.pdf` / `.txt` / `.cbz` / `.cbr` /
+`.cb7` / `.mokuro` →「打开方式 → Fushi」，或 `fushi.exe "<书>"`。
+
+- **原生层不变**：Windows `FirstFileArgFromCommandLine` / `WM_COPYDATA` 与 Linux
+  D-Bus 转交的本来就是任意候选路径，不看扩展名；通道名 `app.fushi/external_video`
+  与方法名 `openExternalVideo` 保持原名（守卫逐字钉着），语义是「外部候选参数」。
+- **Dart 白名单**：`lib/src/media/import/external_book.dart` 的
+  `kExternalBookOpenExtensions`（刻意比导入白名单窄：不收 `.zip` / `.json` 等）。
+  冷启动 `main()` 先认视频、再认书（`_pendingExternalBookPath`）；单实例转交在
+  `_handleExternalVideoChannel` 里视频优先、其次书。
+- **落地 `_openExternalBook`**：入库复用 `fushi_cli library import` 的
+  `LibraryCtlImporter`（载体判定、图片型 EPUB 归漫画、模块门全同一份）。同名书已在库
+  时传 `askOnDuplicate` 弹框问用户（同名 ≠ 同一本，如两部作品的 `01.cbz`）：选
+  「打开已有」→ 导入器抛 `DuplicateImportCancelledException`，结果带回已在库那本的 key
+  （`existingBookKeyForTitle`，与 `resolveDuplicateTitle` 同口径），打开它、保留进度；
+  选「作为新书导入」→ 加序号后缀落新的一本。同一路径导入进行中再次打开直接忽略。
+  随后查 `EpubBooks.format` →
+  `buildCollectionReaderMediaItem` → `appModel.openMedia` 打开对应阅读器。
+  与外部视频的区别：书会被**复制**进书库（阅读器读解压目录），不引用原路径。
+- **安装包**：`fushi.iss` 的 `[Tasks] bookassoc`（默认勾选）登记 ProgId `Fushi.Book`、
+  `SupportedTypes` 与各扩展名 `OpenWithProgids`（只追加候选，不改默认关联）。
+  `Applications\fushi.exe` 键两任务共用（`Tasks: videoassoc or bookassoc`）。
+  扩展名与 Dart 白名单的双向一致由 `test/media/import/external_book_test.dart` 守卫。
+- **尚未覆盖**：Android（无 VIEW + mime intent-filter，`content://` 需复制到临时文件）、
+  macOS（无 `CFBundleDocumentTypes` / `application(_:openFile:)`，视频也一样没有）、
+  iOS（无 `CFBundleDocumentTypes`）、Linux 无 `.desktop` 的 `MimeType=` 声明；
+  `fushi_cli open` 仍只认视频（书用 `library import`）。

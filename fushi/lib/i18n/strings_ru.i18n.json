@@ -7428,5 +7428,10 @@
   "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet.",
   "lyrics_sentence_replay": "Replay current sentence",
   "lookup_popup_close_after_mining": "Close lookup popup after creating a card",
-  "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text"
+  "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text",
+  "manga_import_selection_batch_hint": "Selected $n volumes; each is imported as its own book, named after its file or folder.",
+  "external_book_open_failed": "Couldn't open $name. Try importing it from the library instead.",
+  "external_book_open_existing": "Open existing",
+  "external_book_open_import_new": "Import as new",
+  "external_book_open_duplicate_message": "The library already has \"$name\". Open that one, or import this file as a new book (with a numbered suffix)?"
 }

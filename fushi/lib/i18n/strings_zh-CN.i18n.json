@@ -7428,5 +7428,10 @@
   "online_source_error_webview_unavailable": "这个来源需要内置浏览器（WebView），桌面版暂不支持。",
   "lyrics_sentence_replay": "重播当前句",
   "lookup_popup_close_after_mining": "制卡后关闭查词弹窗",
-  "lookup_popup_close_after_mining_hint": "制卡成功（或进入待发队列）后关掉整个查词弹窗，不再挡住正文"
+  "lookup_popup_close_after_mining_hint": "制卡成功（或进入待发队列）后关掉整个查词弹窗，不再挡住正文",
+  "manga_import_selection_batch_hint": "已选中 $n 卷，将逐卷各导入为一本，书名取各自的文件名或文件夹名。",
+  "external_book_open_failed": "无法打开 $name，请改从书架导入。",
+  "external_book_open_existing": "打开已有",
+  "external_book_open_import_new": "作为新书导入",
+  "external_book_open_duplicate_message": "书架中已有《$name》。打开已有的那本，还是把这个文件作为新书导入（加序号后缀）？"
 }
