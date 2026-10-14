@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
+import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
@@ -3535,6 +3536,7 @@ class FushiPageHeader extends StatelessWidget {
     this.padding,
     this.compact = false,
     this.titleRevealed,
+    this.search,
   }) : titleWidget = null;
 
   /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
@@ -3546,6 +3548,7 @@ class FushiPageHeader extends StatelessWidget {
     this.actions = const <Widget>[],
     this.padding,
     this.compact = false,
+    this.search,
   })  : title = null,
         titleWidget = title,
         subtitle = null,
@@ -3575,6 +3578,7 @@ class FushiPageHeader extends StatelessWidget {
   })  : titleWidget = null,
         compact = false,
         titleRevealed = null,
+        search = null,
         leading = FushiRouteBackButton(key: backButtonKey, onPressed: onBack);
 
   final String? title;
@@ -3586,9 +3590,19 @@ class FushiPageHeader extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
   final bool compact;
 
+  /// 可展开搜索（库页单行页头，2026-10-14）：非 null 时动作首位自动加一颗恒外露
+  /// 的 🔍（[fushiHeaderSearchButton]），点开后整行页头换成搜索栏
+  /// （[FushiHeaderSearchBar]）——在库页外壳里由外壳的浮动工具栏行换，独立
+  /// 使用时由本页头这一行换。
+  final FushiHeaderSearchController? search;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiHeaderSearchController? search = this.search;
+    final List<Widget> actions = search == null
+        ? this.actions
+        : <Widget>[fushiHeaderSearchButton(search), ...this.actions];
     // TODO-667 / BUG-2402: 顶部留白按「页头主位是什么」先分两类，标题类再分三档。
     // - 页头主位是嵌入的分段 tab 行（[titleWidget] 非空）：顶距恒 0，与窗口宽度
     //   无关，理由见下方 [resolvedTop] 处的注释。
@@ -3752,6 +3766,7 @@ class FushiPageHeader extends StatelessWidget {
                       : kFushiAppleNavBarSubtitleHeight)
                 : null,
             shellActions: shellActions,
+            search: search,
           ),
           if (bottom != null)
             Padding(
@@ -3818,9 +3833,14 @@ class _FushiPageHeaderRow extends StatefulWidget {
     this.appleActions = false,
     this.appleNavBarHeight,
     this.shellActions,
+    this.search,
   });
 
   final FushiDesignTokens tokens;
+
+  /// 可展开搜索（见 [FushiPageHeader.search]）：动作交给外壳时随动作一起登记，
+  /// 外壳的浮动工具栏行据此整行换成搜索栏；独立使用时本行自己换。
+  final FushiHeaderSearchController? search;
 
   /// Material（M3E）下把动作行装进一枚悬浮按钮组胶囊。
   final bool floatingActions;
@@ -3891,7 +3911,10 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
     slot.claim(
       this,
       visible: TickerMode.valuesOf(context).enabled && Visibility.of(context),
-      actions: FushiShellHeaderActions(actions: widget.actionItems),
+      actions: FushiShellHeaderActions(
+        actions: widget.actionItems,
+        search: widget.search,
+      ),
     );
   }
 
@@ -3903,15 +3926,32 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
 
   @override
   Widget build(BuildContext context) {
-    final double leadingGap = tokens.spacing.gap + 4;
-    final double actionsGap = tokens.spacing.gap;
     final Widget? leading = widget.leading;
     final FushiShellActionsSlot? shellActions = widget.shellActions;
     _syncShellClaim(shellActions);
     // 动作交给外壳时本行只剩标题位（分区页签独占整行）。
     final List<Widget> actionItems =
         shellActions == null ? widget.actionItems : const <Widget>[];
+    final FushiHeaderSearchController? search = widget.search;
+    if (search != null && shellActions == null) {
+      // 独立使用（不在库页外壳里）：展开搜索时整行换成搜索栏。
+      return ListenableBuilder(
+        listenable: search,
+        builder: (BuildContext context, Widget? _) => search.expanded
+            ? FushiHeaderSearchBar(controller: search)
+            : _buildRow(context, leading, actionItems),
+      );
+    }
+    return _buildRow(context, leading, actionItems);
+  }
 
+  Widget _buildRow(
+    BuildContext context,
+    Widget? leading,
+    List<Widget> actionItems,
+  ) {
+    final double leadingGap = tokens.spacing.gap + 4;
+    final double actionsGap = tokens.spacing.gap;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final Widget titleChild = Expanded(
@@ -4687,10 +4727,15 @@ class FushiShellHeaderActions extends StatefulWidget {
   const FushiShellHeaderActions({
     required this.actions,
     this.appleFloating = false,
+    this.search,
     super.key,
   });
 
   final List<Widget> actions;
+
+  /// 这份动作所属页头的可展开搜索（见 [FushiPageHeader.search]）：库页外壳的
+  /// 浮动工具栏行在它展开时整行换成搜索栏。
+  final FushiHeaderSearchController? search;
 
   /// Apple 设计系统下画成悬浮工具栏胶囊（库页外壳的浮动工具栏行：
   /// `FushiToolbar(floating: true)`，横滑视口不裁投影）。MD3 不受影响。

@@ -17,6 +17,8 @@ import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart'
+    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -265,22 +267,27 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     return FushiShellTitleScope(
       title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
       actionsSlot: _actionsSlot,
-      child: FushiFloatingChromeScope(
-        controller: _chrome,
-        // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-        // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
-        child: FushiFloatingChromeOverlay(
-          chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
-          child: NotificationListener<ScrollNotification>(
-            onNotification: _onScroll,
-            child: SectionSwipeNavigator<VideoLibrarySection>(
-              sections: <VideoLibrarySection>[
-                for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-                  tab.value,
-              ],
-              selected: _section,
-              onSelect: _select,
-              child: _buildSections(navigation),
+      child: FushiHeaderSearchKeys(
+        // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+        // （焦点在页签、动作或内容上都认）。
+        resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+        child: FushiFloatingChromeScope(
+          controller: _chrome,
+          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+          // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
+          child: FushiFloatingChromeOverlay(
+            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: SectionSwipeNavigator<VideoLibrarySection>(
+                sections: <VideoLibrarySection>[
+                  for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+                    tab.value,
+                ],
+                selected: _section,
+                onSelect: _select,
+                child: _buildSections(navigation),
+              ),
             ),
           ),
         ),

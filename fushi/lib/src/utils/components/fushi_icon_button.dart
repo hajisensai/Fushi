@@ -99,8 +99,13 @@ class FushiIconButton extends StatefulWidget {
     this.selected = false,
     this.overflowPriority = 0,
     this.alwaysVisible = false,
+    this.badge = false,
     super.key,
   });
+
+  /// 右上角亮一枚主色小圆点（筛选生效 / 后台任务进行中 / 收起的搜索仍有过滤词）。
+  /// 只是提示，不改按钮的命中区与尺寸；收进「⋯」后菜单项不带圆点。
+  final bool badge;
 
   /// 在页头 / 顶栏动作行里的重要程度（越大越晚被收进「⋯」溢出菜单）。
   ///
@@ -333,6 +338,35 @@ class _FushiIconButtonState extends State<FushiIconButton>
 
   @override
   Widget build(BuildContext context) {
+    final Widget button = _buildButton(context);
+    if (!widget.badge) return button;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 墨水屏：primary 塌成前景色，圆点照样可见（实心黑点）。
+    final Color dot = isEinkTheme(context) ? colors.onSurface : colors.primary;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        button,
+        PositionedDirectional(
+          top: 4,
+          end: 4,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              key: const ValueKey<String>('fushi_icon_button_badge'),
+              decoration: BoxDecoration(
+                color: dot,
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.surface, width: 1.5),
+              ),
+              child: const SizedBox.square(dimension: 9),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildButton(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
     final String? label = widget.label;

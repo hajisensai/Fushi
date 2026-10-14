@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart'
+    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
@@ -267,16 +269,21 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
       child: FushiShellTitleScope(
         title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
         actionsSlot: _actionsSlot,
-        child: FushiFloatingChromeScope(
-          controller: _chrome,
-          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-          // 滚不动」的根因是收起改了视口高度，BUG-2975，见
-          // [FushiFloatingChromeOverlay]）。
-          child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: sections,
+        child: FushiHeaderSearchKeys(
+          // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+          // （焦点在页签、动作或内容上都认）。
+          resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+            // 滚不动」的根因是收起改了视口高度，BUG-2975，见
+            // [FushiFloatingChromeOverlay]）。
+            child: FushiFloatingChromeOverlay(
+              chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: sections,
+              ),
             ),
           ),
         ),

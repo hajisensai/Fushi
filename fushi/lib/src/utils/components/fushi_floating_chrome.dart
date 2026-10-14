@@ -10,6 +10,11 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart'
+    show
+        FushiHeaderSearchBar,
+        FushiHeaderSearchController,
+        fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiHeaderCrampScope, FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
@@ -1500,7 +1505,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                             kFushiFloatingChromeGap,
                 )
               : double.infinity;
-          return FocusTraversalGroup(
+          final Widget row = FocusTraversalGroup(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
@@ -1528,8 +1533,70 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
               ],
             ),
           );
+          return _withExpandableSearch(context, row, minActions);
         },
       ),
+    );
+  }
+
+  /// 当前视图没有可展开搜索时 [_withExpandableSearch] 监听的占位。
+  static final ChangeNotifier _noSearch = ChangeNotifier();
+
+  /// 当前视图页头带可展开搜索（[FushiHeaderSearchController]）时：展开后**整行**
+  /// （标题胶囊 + 页签 + 动作组）换成搜索栏，收起换回（2026-10-14 库页单行
+  /// 页头）。两态之间淡入淡出 + 轻微缩放（M3E，墨水屏 / 减弱动效归零）。
+  Widget _withExpandableSearch(
+    BuildContext context,
+    Widget row,
+    double rowExtent,
+  ) {
+    return ListenableBuilder(
+      listenable: widget.slot,
+      builder: (BuildContext context, Widget? _) {
+        final FushiHeaderSearchController? search = fushiVisibleHeaderSearch(
+          widget.slot,
+        );
+        // 树形恒定（没有搜索时也套同一个切换器）：在有 / 无搜索的视图之间切换
+        // 不重挂页签与动作组。
+        return ListenableBuilder(
+          listenable: search ?? _noSearch,
+          builder: (BuildContext context, Widget? _) {
+            final bool expanded = search?.expanded ?? false;
+            return AnimatedSwitcher(
+              duration: fushiMotionDuration(context, FushiMotion.medium),
+              switchInCurve: FushiMotion.standard,
+              switchOutCurve: FushiMotion.standard,
+              transitionBuilder: (Widget child, Animation<double> animation) =>
+                  FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.96,
+                        end: 1,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+              layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                alignment: Alignment.center,
+                children: <Widget>[...previous, if (current != null) current],
+              ),
+              child: expanded
+                  ? SizedBox(
+                      key: const ValueKey<String>('floating-chrome-search'),
+                      height: rowExtent,
+                      child: Center(
+                        child: FushiHeaderSearchBar(controller: search!),
+                      ),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey<String>('floating-chrome-row'),
+                      child: row,
+                    ),
+            );
+          },
+        );
+      },
     );
   }
 }

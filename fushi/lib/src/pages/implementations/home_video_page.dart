@@ -108,6 +108,7 @@ import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.da
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
@@ -465,6 +466,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  /// 单行页头的可展开搜索（2026-10-14）：平时是页头里的 🔍，点开整行换成搜索
+  /// 栏；搜索词仍是上面的 [_searchQuery]（不落库）。视频首页分区不出搜索。
+  late final FushiHeaderSearchController _headerSearch =
+      FushiHeaderSearchController(
+        textController: _searchController,
+        buttonFocusId: const FushiFocusId('video-library-search'),
+        hintText: t.library_search,
+        fieldKey: const ValueKey<String>('video_search_field'),
+        onQueryChanged: (String value) => setState(() => _searchQuery = value),
+      );
+
+  /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
+  final MenuController _sortMenu = MenuController();
+
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
   Map<String, int> _memberSortIndex = const <String, int>{};
@@ -718,6 +733,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _headerSearch.dispose();
     _searchController.dispose();
     _continueRowController.dispose();
     _nextRowController.dispose();
@@ -4206,12 +4222,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                        // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
-                        // 标签 chip 只在有标签时另起一行。
-                        if (widget.section != VideoLibrarySection.home)
-                          _buildVideoSearchBar(allTags),
-                        if (widget.section != VideoLibrarySection.home)
+                        // 单行页头（2026-10-14）：搜索 / 多选 / 排序 / 管理标签
+                        // 并进页头动作，搜索点开整行换成搜索栏；下面只剩筛选
+                        // 胶囊一行与（有标签时的）标签 chip 一行。Cupertino 旧
+                        // 版面保留常驻搜索行。
+                        if (widget.section !=
+                            VideoLibrarySection.home) ...<Widget>[
+                          if (isCupertinoPlatform(context))
+                            _buildVideoSearchBar(allTags)
+                          else ...<Widget>[
+                            _buildSortMenuAnchor(allTags),
+                            _buildVideoFilterRow(),
+                          ],
                           _buildTagFilterBar(allTags),
+                        ],
                         // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                         const SyncProgressBanner(),
                         VideoOnlineServicesBanner(
@@ -6874,6 +6898,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (widget.section == VideoLibrarySection.allVideos)
         FushiIconButton(
           key: const ValueKey<String>('video-all-videos-layout-toggle'),
+          overflowPriority: 25,
           tooltip: _allVideosLayout == _AllVideosLayout.grid
               ? t.video_all_videos_list_view
               : t.video_all_videos_grid_view,
@@ -6889,19 +6914,33 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 : _AllVideosLayout.grid;
           }),
         ),
+      // 刮削是视频库页头里仅次于搜索的动作（单行页头 2026-10-14：🔍 > 刮削 >
+      // 其余），后台刮削进行中右上角亮圆点。直接就是 [FushiIconButton]（不再
+      // 外包 badge 组件），放不下时才能按优先级收进 ⋯。
       if (widget.onOpenScrapeTasks != null)
-        FushiBadgeControl(
-          isLabelVisible: widget.scrapeTaskController?.isBusy == true,
-          child: FushiIconButton(
-            tooltip: t.video_source_scrape_tasks_open,
-            label: t.video_source_scrape_tasks_open,
-            icon: widget.scrapeTaskController?.pendingConfirmation == null
-                // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
-                // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
-                ? Icons.manage_search_outlined
-                : Icons.rule_folder_outlined,
-            onTap: widget.onOpenScrapeTasks!,
-          ),
+        FushiIconButton(
+          tooltip: t.video_source_scrape_tasks_open,
+          label: t.video_source_scrape_tasks_open,
+          icon: widget.scrapeTaskController?.pendingConfirmation == null
+              // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
+              // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
+              ? Icons.manage_search_outlined
+              : Icons.rule_folder_outlined,
+          badge: widget.scrapeTaskController?.isBusy == true,
+          overflowPriority: 50,
+          onTap: widget.onOpenScrapeTasks!,
+        ),
+      // 原工具行行尾的「批量选择 / 排序 / 管理标签」（首页分区没有工具行，
+      // 同样不出）。
+      if (widget.section != VideoLibrarySection.home &&
+          !isCupertinoPlatform(context))
+        ...libraryHeaderTagActions(
+          context,
+          ref: ref,
+          sortMenu: _sortMenu,
+          selectionMode: _selectionMode,
+          onToggleSelectionMode: _toggleSelectionMode,
+          onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
         ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
       // （browse_page）里有完整入口，视频库页头只留库管理动作。
@@ -6920,6 +6959,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (_videoRemoteTargets.isNotEmpty)
         FushiIconButton(
           key: const ValueKey<String>('video-library-remote-control'),
+          overflowPriority: 15,
           tooltip: t.video_remote_title,
           label: t.video_remote_title,
           icon: FushiIcons.remoteControl,
@@ -6940,6 +6980,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform))
         FushiIconButton(
           key: const ValueKey<String>('video-library-refresh'),
+          overflowPriority: 5,
           tooltip: t.refresh,
           label: t.refresh,
           icon: Icons.refresh_outlined,
@@ -6955,9 +6996,81 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return FushiPageHeader.customTitle(
         title: navigation,
         actions: _selectionMode ? _selectionHeaderActions() : actions,
+        search: _headerSearchForSection,
       );
     }
-    return FushiPageHeader(title: t.nav_video, actions: actions);
+    return FushiPageHeader(
+      title: t.nav_video,
+      actions: actions,
+      search: _headerSearchForSection,
+    );
+  }
+
+  /// 页头搜索：首页分区没有可搜的网格、多选态页头是「已选 N · 退出」，都不出 🔍；
+  /// Cupertino 旧版面用常驻搜索行。
+  FushiHeaderSearchController? get _headerSearchForSection =>
+      widget.section == VideoLibrarySection.home ||
+          _selectionMode ||
+          isCupertinoPlatform(context)
+      ? null
+      : _headerSearch;
+
+  /// 「排序」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序按钮可能
+  /// 被收进「⋯」，菜单挂在这里才总能打开。
+  Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
+    return Align(
+      alignment: AlignmentDirectional.topEnd,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          end: FushiDesignTokens.of(context).spacing.page,
+        ),
+        child: FushiTagFilterBar(
+          tags: tags,
+          part: FushiTagFilterBarPart.sortMenuAnchor,
+          sortMenuController: _sortMenu,
+          onToggleFilter: _toggleFilter,
+          onReorder: _reorderTags,
+          sortMode: _sortMode,
+          sortModeLabel: _sortModeLabel,
+          onSortModeChanged: _setSortMode,
+        ),
+      ),
+    );
+  }
+
+  /// 单行页头下方的筛选胶囊行（年份 / 看完状态，「全部视频」另有系列 / 媒体
+  /// 类型 / 特典 / 来源）：原工具行里搜索框右边那段，放不下时横向滚动、不换行
+  /// （BUG-2835）。左右取页边，与页签胶囊 / 内容同一条左右缘。
+  Widget _buildVideoFilterRow() {
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    final List<Widget> filters = <Widget>[
+      _buildYearFilterButton(),
+      _buildWatchStatusFilterButton(),
+      if (_isAllVideosSection) ...<Widget>[
+        _buildSeriesFilterButton(),
+        _buildMediaTypeFilterButton(),
+        _buildExtrasFilterButton(),
+        if (_videoSourcesById.length >= 2) _buildSourceFilterButton(),
+      ],
+    ];
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: _isAllVideosSection
+            ? const ValueKey<String>('home_video_all_videos_filter_row')
+            : null,
+        scrollDirection: Axis.horizontal,
+        // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
+        padding: EdgeInsets.fromLTRB(page, 4, page, 4),
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < filters.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: 8),
+              filters[i],
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
