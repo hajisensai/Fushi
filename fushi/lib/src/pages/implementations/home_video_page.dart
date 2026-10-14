@@ -107,6 +107,7 @@ import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -4222,19 +4223,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                        // 单行页头（2026-10-14）：搜索 / 多选 / 排序 / 管理标签
-                        // 并进页头动作，搜索点开整行换成搜索栏；下面只剩筛选
-                        // 胶囊一行与（有标签时的）标签 chip 一行。Cupertino 旧
-                        // 版面保留常驻搜索行。
+                        // 单行页头（2026-10-14）：搜索 / 筛选 / 多选 / 排序 /
+                        // 管理标签并进页头动作，搜索点开整行换成搜索栏；筛选
+                        // 维度收进「筛选」面板。下面只剩一行 chip：生效中的
+                        // 筛选条件（带 ✕）在前、标签在后，两者都没有时零高度。
+                        // Cupertino 旧版面保留常驻搜索行（筛选胶囊仍在行内）。
                         if (widget.section !=
                             VideoLibrarySection.home) ...<Widget>[
-                          if (isCupertinoPlatform(context))
-                            _buildVideoSearchBar(allTags)
-                          else ...<Widget>[
+                          if (isCupertinoPlatform(context)) ...<Widget>[
+                            _buildVideoSearchBar(allTags),
+                            _buildTagFilterBar(allTags),
+                          ] else ...<Widget>[
                             _buildSortMenuAnchor(allTags),
-                            _buildVideoFilterRow(),
+                            _buildTagFilterBar(
+                              allTags,
+                              leadingChips: _activeFilterChips(),
+                            ),
                           ],
-                          _buildTagFilterBar(allTags),
                         ],
                         // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                         const SyncProgressBanner(),
@@ -6930,6 +6935,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           overflowPriority: 50,
           onTap: widget.onOpenScrapeTasks!,
         ),
+      // 筛选面板（2026-10-14）：年份 / 看完状态（「全部视频」另有系列 / 类型 /
+      // 特典 / 来源）不再在页头下方铺一行胶囊，收进这颗按钮打开的面板；有条件
+      // 生效时亮圆点。优先级介于刮削与多选之间。
+      if (widget.section != VideoLibrarySection.home &&
+          !isCupertinoPlatform(context))
+        FushiIconButton(
+          key: const ValueKey<String>('video-library-filter-button'),
+          tooltip: _hasActivePanelFilter
+              ? '${t.shelf_toolbar_filters} · ${t.library_filter_active}'
+              : t.shelf_toolbar_filters,
+          label: t.shelf_toolbar_filters,
+          icon: _hasActivePanelFilter
+              ? FushiIcons.filled(FushiIcons.filter)
+              : FushiIcons.filter,
+          badge: _hasActivePanelFilter,
+          overflowPriority: 40,
+          onTap: () => unawaited(_showFilterPanel()),
+        ),
       // 原工具行行尾的「批量选择 / 排序 / 管理标签」（首页分区没有工具行，
       // 同样不出）。
       if (widget.section != VideoLibrarySection.home &&
@@ -7038,39 +7061,194 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 单行页头下方的筛选胶囊行（年份 / 看完状态，「全部视频」另有系列 / 媒体
-  /// 类型 / 特典 / 来源）：原工具行里搜索框右边那段，放不下时横向滚动、不换行
-  /// （BUG-2835）。左右取页边，与页签胶囊 / 内容同一条左右缘。
-  Widget _buildVideoFilterRow() {
-    final double page = FushiDesignTokens.of(context).spacing.page;
-    final List<Widget> filters = <Widget>[
-      _buildYearFilterButton(),
-      _buildWatchStatusFilterButton(),
-      if (_isAllVideosSection) ...<Widget>[
-        _buildSeriesFilterButton(),
-        _buildMediaTypeFilterButton(),
-        _buildExtrasFilterButton(),
-        if (_videoSourcesById.length >= 2) _buildSourceFilterButton(),
-      ],
-    ];
-    return HorizontalDragScrollable(
-      child: SingleChildScrollView(
-        key: _isAllVideosSection
-            ? const ValueKey<String>('home_video_all_videos_filter_row')
-            : null,
-        scrollDirection: Axis.horizontal,
-        // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
-        padding: EdgeInsets.fromLTRB(page, 4, page, 4),
-        child: Row(
-          children: <Widget>[
-            for (int i = 0; i < filters.length; i++) ...<Widget>[
-              if (i > 0) const SizedBox(width: 8),
-              filters[i],
-            ],
-          ],
-        ),
-      ),
+  /// 筛选面板里的维度当前有没有任何一档不是「全部」（页头「筛选」按钮亮圆点）。
+  /// 口径与 [_activeFilterChips] 一致：只算当前分区真露出、真生效的维度。
+  bool get _hasActivePanelFilter =>
+      !_yearFilter.isAll ||
+      _watchStatusFilter != VideoWatchStatusFilter.all ||
+      (_isAllVideosSection && _seriesFilter != VideoSeriesFilter.all) ||
+      _effectiveMediaTypeFilter != VideoMediaTypeFilter.all ||
+      _effectiveExtrasFilter != VideoExtrasFilter.all ||
+      _effectiveSourceFilter != null;
+
+  void _setSeriesFilter(VideoSeriesFilter value) {
+    setState(() => _seriesFilter = value);
+    // BUG-2835：记住上次选择（用户拍板）。
+    unawaited(
+      ref.read(appProvider).prefsRepo.setVideoAllSeriesFilterName(value.name),
     );
+  }
+
+  /// 页头下方 chip 行行首：每个生效中的筛选条件一枚带 ✕ 的 chip，点 ✕ 把该
+  /// 维度复位成「全部」，点 chip 本身打开筛选面板。数字 / 名称类的值（年份、
+  /// 类型、来源）前缀维度名，免得一枚「2023」「视频」看不出是什么条件。
+  List<Widget> _activeFilterChips() {
+    void openPanel() => unawaited(_showFilterPanel());
+    final int? source = _effectiveSourceFilter;
+    return <Widget>[
+      if (!_yearFilter.isAll)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_year'),
+          label: _yearFilter.unknownOnly
+              ? t.video_filter_year_unknown
+              : '${t.video_filter_year} · ${_yearFilter.year}',
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _yearFilter = const VideoYearFilter.all()),
+        ),
+      if (_watchStatusFilter != VideoWatchStatusFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_watch_status'),
+          label: _watchStatusFilterLabel(_watchStatusFilter),
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _watchStatusFilter = VideoWatchStatusFilter.all),
+        ),
+      if (_isAllVideosSection && _seriesFilter != VideoSeriesFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_series'),
+          label: _seriesFilterLabel(_seriesFilter),
+          onTap: openPanel,
+          onRemove: () => _setSeriesFilter(VideoSeriesFilter.all),
+        ),
+      if (_effectiveMediaTypeFilter != VideoMediaTypeFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_media_type'),
+          label:
+              '${t.video_filter_media_type} · '
+              '${_mediaTypeFilterLabel(_effectiveMediaTypeFilter)}',
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _mediaTypeFilter = VideoMediaTypeFilter.all),
+        ),
+      if (_effectiveExtrasFilter != VideoExtrasFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_extras'),
+          label: _extrasFilterLabel(_effectiveExtrasFilter),
+          onTap: openPanel,
+          onRemove: () => setState(() => _extrasFilter = VideoExtrasFilter.all),
+        ),
+      if (source != null)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_source'),
+          label:
+              '${t.video_filter_source} · '
+              '${_videoSourcesById[source]?.label ?? ''}',
+          onTap: openPanel,
+          onRemove: () => setState(() => _sourceFilter = null),
+        ),
+    ];
+  }
+
+  /// 「筛选」面板（与游戏库同一个 [showLibraryFilterPanel]）：年份 / 看完状态，
+  /// 「全部视频」另有系列归属 / 媒体类型 / 正片特典 / 来源（≥2 个来源才出）。
+  /// 改动即时生效；过滤语义与持久化（只有系列归属落偏好）都与原下拉一致。
+  Future<void> _showFilterPanel() {
+    return showLibraryFilterPanel(
+      context: context,
+      title: t.shelf_toolbar_filters,
+      clearLabel: t.library_filters_clear,
+      clearKey: const ValueKey<String>('video_filter_panel_clear'),
+      onClearAll: _clearPanelFilters,
+      sections: (BuildContext context, LibraryFilterPanelUpdate update) {
+        final List<int> years = _airYearByUid.values.toSet().toList()
+          ..sort((int a, int b) => b.compareTo(a));
+        final List<MediaSourceRow> sources = _videoSourcesById.values.toList()
+          ..sort((MediaSourceRow a, MediaSourceRow b) => a.id.compareTo(b.id));
+        return <Widget>[
+          LibraryFilterChoiceSection<VideoYearFilter>(
+            key: const ValueKey<String>('video_filter_panel_year'),
+            title: t.video_filter_year,
+            values: <VideoYearFilter>[
+              const VideoYearFilter.all(),
+              for (final int year in years) VideoYearFilter.year(year),
+              const VideoYearFilter.unknown(),
+            ],
+            selected: _yearFilter,
+            allValue: const VideoYearFilter.all(),
+            allLabel: t.home_filter_all,
+            labelOf: (VideoYearFilter value) => value.unknownOnly
+                ? t.video_filter_year_unknown
+                : '${value.year}',
+            onSelected: (VideoYearFilter value) =>
+                update(() => setState(() => _yearFilter = value)),
+          ),
+          LibraryFilterChoiceSection<VideoWatchStatusFilter>(
+            key: const ValueKey<String>('video_filter_panel_watch_status'),
+            title: t.video_filter_watch_status,
+            values: VideoWatchStatusFilter.values,
+            selected: _watchStatusFilter,
+            allValue: VideoWatchStatusFilter.all,
+            allLabel: t.home_filter_all,
+            labelOf: _watchStatusFilterLabel,
+            onSelected: (VideoWatchStatusFilter value) =>
+                update(() => setState(() => _watchStatusFilter = value)),
+          ),
+          if (_isAllVideosSection) ...<Widget>[
+            LibraryFilterChoiceSection<VideoSeriesFilter>(
+              key: const ValueKey<String>('video_filter_panel_series'),
+              title: t.video_filter_series,
+              values: VideoSeriesFilter.values,
+              selected: _seriesFilter,
+              allValue: VideoSeriesFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _seriesFilterLabel,
+              onSelected: (VideoSeriesFilter value) =>
+                  update(() => _setSeriesFilter(value)),
+            ),
+            LibraryFilterChoiceSection<VideoMediaTypeFilter>(
+              key: const ValueKey<String>('video_filter_panel_media_type'),
+              title: t.video_filter_media_type,
+              values: VideoMediaTypeFilter.values,
+              selected: _mediaTypeFilter,
+              allValue: VideoMediaTypeFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _mediaTypeFilterLabel,
+              onSelected: (VideoMediaTypeFilter value) =>
+                  update(() => setState(() => _mediaTypeFilter = value)),
+            ),
+            LibraryFilterChoiceSection<VideoExtrasFilter>(
+              key: const ValueKey<String>('video_filter_panel_extras'),
+              title: t.video_filter_extras,
+              values: VideoExtrasFilter.values,
+              selected: _extrasFilter,
+              allValue: VideoExtrasFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _extrasFilterLabel,
+              onSelected: (VideoExtrasFilter value) =>
+                  update(() => setState(() => _extrasFilter = value)),
+            ),
+            if (sources.length >= 2)
+              LibraryFilterChoiceSection<int>(
+                key: const ValueKey<String>('video_filter_panel_source'),
+                title: t.video_filter_source,
+                values: <int>[-1, for (final MediaSourceRow s in sources) s.id],
+                selected: _effectiveSourceFilter ?? -1,
+                allValue: -1,
+                allLabel: t.home_filter_all,
+                labelOf: (int id) => _videoSourcesById[id]?.label ?? '',
+                onSelected: (int value) => update(
+                  () =>
+                      setState(() => _sourceFilter = value < 0 ? null : value),
+                ),
+              ),
+          ],
+        ];
+      },
+    );
+  }
+
+  /// 面板「清除全部」：只复位面板里的维度（搜索词与标签各有自己的入口，不动）。
+  /// 系列归属与 [_clearAllFilters] 同样复位到「全部」并写回偏好。
+  void _clearPanelFilters() {
+    setState(() {
+      _yearFilter = const VideoYearFilter.all();
+      _watchStatusFilter = VideoWatchStatusFilter.all;
+      _mediaTypeFilter = VideoMediaTypeFilter.all;
+      _extrasFilter = VideoExtrasFilter.all;
+      _sourceFilter = null;
+    });
+    _setSeriesFilter(VideoSeriesFilter.all);
   }
 
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
@@ -7429,16 +7607,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         values: VideoSeriesFilter.values,
         allValue: VideoSeriesFilter.all,
         labelOf: _seriesFilterLabel,
-        onSelected: (VideoSeriesFilter value) {
-          setState(() => _seriesFilter = value);
-          // BUG-2835：记住上次选择（用户拍板）。
-          unawaited(
-            ref
-                .read(appProvider)
-                .prefsRepo
-                .setVideoAllSeriesFilterName(value.name),
-          );
-        },
+        onSelected: _setSeriesFilter,
       );
 
   /// BUG-2835：媒体类型下拉（全部 / 视频 / 音频）。
@@ -7449,11 +7618,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         value: _mediaTypeFilter,
         values: VideoMediaTypeFilter.values,
         allValue: VideoMediaTypeFilter.all,
-        labelOf: (VideoMediaTypeFilter filter) => switch (filter) {
-          VideoMediaTypeFilter.all => t.video_filter_media_type,
-          VideoMediaTypeFilter.video => t.video_filter_media_type_video,
-          VideoMediaTypeFilter.audio => t.video_filter_media_type_audio,
-        },
+        labelOf: _mediaTypeFilterLabel,
         onSelected: (VideoMediaTypeFilter value) =>
             setState(() => _mediaTypeFilter = value),
       );
@@ -7466,11 +7631,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         value: _extrasFilter,
         values: VideoExtrasFilter.values,
         allValue: VideoExtrasFilter.all,
-        labelOf: (VideoExtrasFilter filter) => switch (filter) {
-          VideoExtrasFilter.all => t.video_filter_extras,
-          VideoExtrasFilter.main => t.video_filter_extras_main,
-          VideoExtrasFilter.extras => t.video_filter_extras_only,
-        },
+        labelOf: _extrasFilterLabel,
         onSelected: (VideoExtrasFilter value) =>
             setState(() => _extrasFilter = value),
       );
@@ -7535,6 +7696,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoSeriesFilter.standalone => t.video_filter_series_standalone,
   };
 
+  String _mediaTypeFilterLabel(VideoMediaTypeFilter filter) => switch (filter) {
+    VideoMediaTypeFilter.all => t.video_filter_media_type,
+    VideoMediaTypeFilter.video => t.video_filter_media_type_video,
+    VideoMediaTypeFilter.audio => t.video_filter_media_type_audio,
+  };
+
+  String _extrasFilterLabel(VideoExtrasFilter filter) => switch (filter) {
+    VideoExtrasFilter.all => t.video_filter_extras,
+    VideoExtrasFilter.main => t.video_filter_extras_main,
+    VideoExtrasFilter.extras => t.video_filter_extras_only,
+  };
+
   String _watchStatusFilterLabel(
     VideoWatchStatusFilter filter,
   ) => switch (filter) {
@@ -7550,10 +7723,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildTagFilterBar(
     List<BookTagRow> tags, {
     FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+    List<Widget> leadingChips = const <Widget>[],
   }) {
     return FushiTagFilterBar(
       tags: tags,
       part: part,
+      leadingChips: leadingChips,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,

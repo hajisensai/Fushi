@@ -57,6 +57,7 @@ import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatTime;
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -1207,133 +1208,82 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   /// 筛选面板：状态 / 本地·在线 / 标签多选 / NSFW 隐藏。改动即时生效并持久化。
-  /// 走 [adaptiveModalSheet] + [FushiModalSheetFrame]（与标签筛选面板同一 MD3
-  /// sheet 骨架），间距/文字全走 [FushiDesignTokens]。
+  /// 走库页共用的 [showLibraryFilterPanel]（与视频库同一个面板：窄窗底部弹层、
+  /// 宽窗居中浮动面板），间距/文字全走 [FushiDesignTokens]。
   Future<void> _showFilterSheet() async {
     final List<String> allTags = collectGalgameTags(_games);
-    await adaptiveModalSheet<void>(
+    await showLibraryFilterPanel(
       context: context,
-      builder: (BuildContext ctx) {
+      title: t.game_filter,
+      clearLabel: t.game_filter_reset,
+      onClearAll: () => _setView(_view.clearFilters()),
+      sections: (BuildContext ctx, LibraryFilterPanelUpdate update) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return StatefulBuilder(
-          builder: (BuildContext ctx, StateSetter setSheetState) {
-            void apply(GalgameLibraryView next) {
-              setSheetState(() {});
-              _setView(next);
-            }
-
-            Widget sectionLabel(String text) => Padding(
-                  padding: EdgeInsets.only(
-                    top: tokens.spacing.gap * 2,
-                    bottom: tokens.spacing.gap,
-                  ),
-                  child: Text(text, style: tokens.type.sectionLabel),
-                );
-
-            return FushiModalSheetFrame(
-              title: t.game_filter,
-              leadingIcon: FushiIcons.filter,
-              scrollable: true,
-              bodyPadding:
-                  EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              body: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  sectionLabel(t.game_filter_status),
-                  Wrap(
-                    spacing: tokens.spacing.gap,
-                    runSpacing: tokens.spacing.gap,
-                    children: <Widget>[
-                      // M3E：单选维度用 choice chip、多选维度（标签）用 filter
-                      // chip；状态 chip 带各自的语义图标（与封面角标同一套）。
-                      FushiChoiceChip(
-                        label: Text(t.game_filter_all),
-                        selected: _view.status == null,
-                        onSelected: (_) =>
-                            apply(_view.copyWith(clearStatus: true)),
-                      ),
-                      for (final GalgamePlayStatus status
-                          in <GalgamePlayStatus>[
-                        ...kGalgamePlayStatusMenuOrder,
-                        GalgamePlayStatus.unset,
-                      ])
-                        FushiChoiceChip(
-                          avatar: FushiIcon(
-                            galgamePlayStatusIcon(status),
-                            size: 18,
-                          ),
-                          label: Text(galgamePlayStatusLabel(status)),
-                          selected: _view.status == status,
-                          onSelected: (bool selected) => apply(
-                            selected
-                                ? _view.copyWith(status: status)
-                                : _view.copyWith(clearStatus: true),
-                          ),
-                        ),
-                    ],
-                  ),
-                  sectionLabel(t.game_filter_source),
-                  Wrap(
-                    spacing: tokens.spacing.gap,
-                    runSpacing: tokens.spacing.gap,
-                    children: <Widget>[
-                      for (final GalgameLocalFilter filter
-                          in GalgameLocalFilter.values)
-                        FushiChoiceChip(
-                          label: Text(galgameLocalFilterLabel(filter)),
-                          selected: _view.localFilter == filter,
-                          onSelected: (_) =>
-                              apply(_view.copyWith(localFilter: filter)),
-                        ),
-                    ],
-                  ),
-                  if (allTags.isNotEmpty) ...<Widget>[
-                    sectionLabel(t.game_filter_tags),
-                    Wrap(
-                      spacing: tokens.spacing.gap,
-                      runSpacing: tokens.spacing.gap,
-                      children: <Widget>[
-                        for (final String tag in allTags)
-                          FushiFilterChip(
-                            label: Text(tag),
-                            selected: _view.tags.contains(tag),
-                            onSelected: (bool selected) {
-                              final Set<String> next =
-                                  Set<String>.of(_view.tags);
-                              if (selected) {
-                                next.add(tag);
-                              } else {
-                                next.remove(tag);
-                              }
-                              apply(_view.copyWith(tags: next));
-                            },
-                          ),
-                      ],
-                    ),
-                  ],
-                  SizedBox(height: tokens.spacing.gap),
-                  AdaptiveSettingsSwitchRow(
-                    title: t.game_filter_hide_nsfw,
-                    value: _view.hideNsfw,
-                    onChanged: (bool value) =>
-                        apply(_view.copyWith(hideNsfw: value)),
-                  ),
-                  SizedBox(height: tokens.spacing.gap),
-                ],
+        void apply(GalgameLibraryView next) => update(() => _setView(next));
+        return <Widget>[
+          // M3E：单选维度用 choice chip、多选维度（标签）用 filter chip；状态
+          // chip 带各自的语义图标（与封面角标同一套）。
+          LibraryFilterSection(
+            title: t.game_filter_status,
+            children: <Widget>[
+              FushiChoiceChip(
+                label: Text(t.game_filter_all),
+                selected: _view.status == null,
+                onSelected: (_) => apply(_view.copyWith(clearStatus: true)),
               ),
-              footer: Row(
-                children: <Widget>[
-                  const Spacer(),
-                  FushiTextButton(
-                    onPressed: () => apply(_view.clearFilters()),
-                    child: Text(t.game_filter_reset),
+              for (final GalgamePlayStatus status in <GalgamePlayStatus>[
+                ...kGalgamePlayStatusMenuOrder,
+                GalgamePlayStatus.unset,
+              ])
+                FushiChoiceChip(
+                  avatar: FushiIcon(galgamePlayStatusIcon(status), size: 18),
+                  label: Text(galgamePlayStatusLabel(status)),
+                  selected: _view.status == status,
+                  onSelected: (bool selected) => apply(
+                    selected
+                        ? _view.copyWith(status: status)
+                        : _view.copyWith(clearStatus: true),
                   ),
-                ],
-              ),
-            );
-          },
-        );
+                ),
+            ],
+          ),
+          LibraryFilterChoiceSection<GalgameLocalFilter>(
+            title: t.game_filter_source,
+            values: GalgameLocalFilter.values,
+            selected: _view.localFilter,
+            allValue: GalgameLocalFilter.all,
+            allLabel: t.game_filter_all,
+            labelOf: galgameLocalFilterLabel,
+            onSelected: (GalgameLocalFilter filter) =>
+                apply(_view.copyWith(localFilter: filter)),
+          ),
+          if (allTags.isNotEmpty)
+            LibraryFilterSection(
+              title: t.game_filter_tags,
+              children: <Widget>[
+                for (final String tag in allTags)
+                  FushiFilterChip(
+                    label: Text(tag),
+                    selected: _view.tags.contains(tag),
+                    onSelected: (bool selected) {
+                      final Set<String> next = Set<String>.of(_view.tags);
+                      if (selected) {
+                        next.add(tag);
+                      } else {
+                        next.remove(tag);
+                      }
+                      apply(_view.copyWith(tags: next));
+                    },
+                  ),
+              ],
+            ),
+          SizedBox(height: tokens.spacing.gap),
+          AdaptiveSettingsSwitchRow(
+            title: t.game_filter_hide_nsfw,
+            value: _view.hideNsfw,
+            onChanged: (bool value) => apply(_view.copyWith(hideNsfw: value)),
+          ),
+        ];
       },
     );
   }

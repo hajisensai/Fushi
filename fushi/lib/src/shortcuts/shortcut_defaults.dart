@@ -160,10 +160,20 @@ class ShortcutDefaults {
     // Keyboard stays on Ctrl+1/2/3 absolute jumps above.
     ShortcutAction.homeTabPrev: _kb([], [_gLT]),
     ShortcutAction.homeTabNext: _kb([], [_gRT]),
+    // 跳到查词页并聚焦搜索框：Ctrl+K（macOS ⌘K）。2026-10-14 前是 Ctrl+F，库页
+    // 搜索（librarySearch）接手 Ctrl+F 后让出——Ctrl+K 是浏览器 / Slack / Discord
+    // 等「快速搜索 / 跳转」的通用键，home+global 组内未被占用。老用户没改过的
+    // Ctrl+F 由 registry v14 迁移换过来。
     ShortcutAction.homeFocusSearch: _kb([
-      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.keyK, {ModifierKey.ctrl}),
     ], [
       _gY
+    ]),
+    // 库页页头搜索：Ctrl+F（macOS ⌘F）+ `/`（焦点不在输入框时）。手柄留空——home
+    // 组的 Y 已是 homeFocusSearch，库页卡片 X 是详情。
+    ShortcutAction.librarySearch: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.slash),
     ]),
     // 全 app 唯一的「返回上一级 / 退出当前界面」（universal scope）。
     //

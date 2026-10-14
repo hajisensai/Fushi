@@ -44,8 +44,13 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.inlineTags = false,
     this.onTagsChanged,
     this.sortMenuController,
+    this.leadingChips = const <Widget>[],
     super.key,
   });
+
+  /// [FushiTagFilterBarPart.tags] 行首的额外 chip（库页生效中的筛选条件，带 ✕；
+  /// 2026-10-14）。非空时即使没有标签也出这一行；与标签之间画一道竖分隔。
+  final List<Widget> leadingChips;
 
   /// 外部持有的排序菜单控制器（[FushiTagFilterBarPart.sortMenuAnchor] 用：页头
   /// 里的排序按钮经它打开本组件画的菜单）。null 时自建。
@@ -167,7 +172,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       );
     }
     final bool tagsOnly = widget.part == FushiTagFilterBarPart.tags;
-    if (tagsOnly && widget.tags.isEmpty) return const SizedBox.shrink();
+    if (tagsOnly && widget.tags.isEmpty && widget.leadingChips.isEmpty) {
+      return const SizedBox.shrink();
+    }
     // 标签段不再重复「管理标签」：它已常驻在工具行行尾。
     final List<Widget> trailing = tagsOnly
         ? const <Widget>[]
@@ -178,7 +185,20 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 拆段形态（库页标签栏）：不再有行首「管理标签」大 chip——它与工具行行尾常驻
     // 的「管理标签」齿轮（`library_tag_settings`）是同一个入口，重复（2026-10-09
     // 用户拍板砍掉大的）。有筛选时行尾一枚「清除」chip。
-    const List<Widget> leadingChips = <Widget>[];
+    // 行首可选的「生效中筛选条件」chip（库页筛选面板的结果），与标签之间一道
+    // 竖分隔把两类条件分开。
+    final List<Widget> leadingChips = <Widget>[
+      if (tagsOnly) ...widget.leadingChips,
+      if (tagsOnly && widget.leadingChips.isNotEmpty && widget.tags.isNotEmpty)
+        SizedBox(
+          height: 20,
+          child: VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: tokens.surfaces.outline,
+          ),
+        ),
+    ];
     final List<Widget> trailingChips = <Widget>[
       if (tagsOnly && selectedIds.isNotEmpty)
         FushiTagActionChip(

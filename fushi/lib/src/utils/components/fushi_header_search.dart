@@ -1,9 +1,14 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/models/app_model.dart' show appProvider;
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -26,8 +31,9 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 //   永不收进 ⋯）。[FushiPageHeader] 收到 `search` 时自动把它排在动作首位。
 // - [FushiHeaderSearchBar]：展开后占满整行的搜索栏。库页外壳的浮动工具栏行
 //   （`FushiFloatingChromeBar`）与独立使用的页头行都用它替换整行。
-// - [FushiHeaderSearchKeys]：Ctrl+F（macOS ⌘F）与 `/`（焦点不在输入框时）展开
-//   搜索；搜索展开时 Esc 先清空、再收起。
+// - [FushiHeaderSearchKeys]：快捷键 [ShortcutAction.librarySearch]（可在快捷键
+//   设置里改绑，默认 Ctrl+F / macOS ⌘F 与 `/`）展开搜索；搜索展开时 Esc 先清空、
+//   再收起。
 //
 // 收起语义：← / 第二次 Esc 是「退出搜索」，收起即清空搜索词——收起后页头上
 // 看不见搜索框，留着过滤词只会让人以为库里东西少了。收起后焦点回到 🔍。
@@ -195,11 +201,14 @@ class FushiHeaderSearchBar extends StatelessWidget {
   }
 }
 
-/// 库页搜索快捷键：Ctrl+F（macOS ⌘F）与 `/`（焦点不在输入框时）展开 [resolve]
-/// 给出的搜索；搜索展开、焦点在页面其它地方时 Esc 先清空、再收起。
+/// 库页搜索快捷键：命中 [ShortcutAction.librarySearch] 的绑定（用户在快捷键设置
+/// 里改过就按改过的，默认 Ctrl+F / macOS ⌘F 与 `/`）时展开 [resolve] 给出的
+/// 搜索；搜索展开、焦点在页面其它地方时 Esc 先清空、再收起。
 ///
 /// 包在库页外壳（页签 + 内容）外面：焦点在页签、动作或网格卡片上都认。
-/// [resolve] 返回 null（当前视图没有搜索）时全部放行。
+/// [resolve] 返回 null（当前视图没有搜索）时全部放行。它挂在首页键事件节点之下，
+/// 所以库页里同一个键先归库页搜索；库页之外首页照常解析（homeFocusSearch 等）。
+/// 不带 Ctrl / Alt / Meta 的绑定（如 `/`）在焦点停在输入框里时放行给输入框。
 class FushiHeaderSearchKeys extends StatelessWidget {
   const FushiHeaderSearchKeys({
     required this.resolve,
@@ -210,36 +219,64 @@ class FushiHeaderSearchKeys extends StatelessWidget {
   final FushiHeaderSearchController? Function() resolve;
   final Widget child;
 
+  /// 当前生效的 librarySearch 绑定：有 ProviderScope 且注册表已装载时读用户
+  /// 绑定；否则（没挂 ProviderScope 的组件测试、启动早期）回落平台默认。
+  static List<InputBinding> _bindings(BuildContext context) {
+    final bool hasScope =
+        context
+            .getElementForInheritedWidgetOfExactType<
+              UncontrolledProviderScope
+            >() !=
+        null;
+    if (hasScope) {
+      final registry = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider).shortcutRegistry;
+      if (registry.isLoaded) {
+        return registry
+            .bindingsFor(ShortcutAction.librarySearch)
+            .keyboardBindings;
+      }
+    }
+    return ShortcutDefaults.forPlatform(
+          defaultTargetPlatform,
+        )[ShortcutAction.librarySearch]?.keyboardBindings ??
+        const <InputBinding>[];
+  }
+
+  static bool _matches(InputBinding binding, KeyEvent event) {
+    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+    final bool bare =
+        !binding.modifiers.contains(ModifierKey.ctrl) &&
+        !binding.modifiers.contains(ModifierKey.alt) &&
+        !binding.modifiers.contains(ModifierKey.meta);
+    // 裸键（`/` 之类）在输入框里是要打进去的字符。
+    if (bare && focusedEditableText() != null) return false;
+    if (binding.toActivator(includeRepeats: false).accepts(event, keyboard)) {
+      return true;
+    }
+    // 非 US 布局上 `/` 要按 Shift（德语 Shift+7）：逻辑键与修饰键都对不上，
+    // 按产出的字符认（与改造前写死的判据一致）。
+    return binding.key == LogicalKeyboardKey.slash &&
+        binding.modifiers.isEmpty &&
+        event.character == '/' &&
+        !keyboard.isControlPressed &&
+        !keyboard.isAltPressed &&
+        !keyboard.isMetaPressed;
+  }
+
   KeyEventResult _onKey(BuildContext context, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final FushiHeaderSearchController? search = resolve();
     if (search == null) return KeyEventResult.ignored;
-    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
-    final bool primaryModifier =
-        defaultTargetPlatform == TargetPlatform.macOS ||
-            defaultTargetPlatform == TargetPlatform.iOS
-        ? keyboard.isMetaPressed && !keyboard.isControlPressed
-        : keyboard.isControlPressed && !keyboard.isMetaPressed;
-    final LogicalKeyboardKey key = event.logicalKey;
-    if (key == LogicalKeyboardKey.keyF &&
-        primaryModifier &&
-        !keyboard.isAltPressed &&
-        !keyboard.isShiftPressed) {
-      search.expand();
-      return KeyEventResult.handled;
+    for (final InputBinding binding in _bindings(context)) {
+      if (_matches(binding, event)) {
+        search.expand();
+        return KeyEventResult.handled;
+      }
     }
-    final bool noModifier =
-        !keyboard.isControlPressed &&
-        !keyboard.isMetaPressed &&
-        !keyboard.isAltPressed &&
-        !keyboard.isShiftPressed;
-    if (noModifier &&
-        (key == LogicalKeyboardKey.slash || event.character == '/') &&
-        focusedEditableText() == null) {
-      search.expand();
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.escape &&
+    if (event.logicalKey == LogicalKeyboardKey.escape &&
         search.expanded &&
         focusedEditableText() == null) {
       if (search.hasQuery) {

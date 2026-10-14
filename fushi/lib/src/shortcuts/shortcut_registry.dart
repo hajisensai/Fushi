@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 13;
+const int kShortcutSchemaVersion = 14;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -305,6 +305,28 @@ class FushiShortcutRegistry extends ChangeNotifier {
         ShortcutAction.globalToggleFullscreen,
         oldDefaultKeyboard: const <InputBinding>[
           InputBinding(key: LogicalKeyboardKey.f11),
+        ],
+        defaults: defaults,
+      );
+    }
+    // v13 -> v14（2026-10-14 用户拍板：库页搜索归入快捷键体系）：新增 librarySearch
+    // （home scope，默认 Ctrl+F / ⌘F + `/`；全新 action，loadDefaults 已播种），
+    // homeFocusSearch 让出 Ctrl+F 改为 Ctrl+K / ⌘K。只换**键盘**、且只换恰等于旧
+    // 默认（用户没动过）的那份，手柄 Y 原样保留；用户自己改过的键不碰——那种情况
+    // 下两者同键时，库页内由库页外壳先拦下（librarySearch），库页之外 home 解析按
+    // 声明序命中 homeFocusSearch，作用域不重叠。
+    if (from < 14) {
+      _replaceKeyboardIfUntouched(
+        ShortcutAction.homeFocusSearch,
+        oldDefaultKeyboard: <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.keyF,
+            modifiers: <ModifierKey>{
+              platform == TargetPlatform.macOS
+                  ? ModifierKey.meta
+                  : ModifierKey.ctrl,
+            },
+          ),
         ],
         defaults: defaults,
       );
