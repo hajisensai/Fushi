@@ -1944,7 +1944,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 含设置，BUG-3351）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
+    return homeModuleSwipeArmed(
+      tabs: _activeTabs(),
+      current: _visibleTab,
+      lookupInBar: appModel.navBarCenterLauncher,
+    );
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
@@ -1954,6 +1958,7 @@ class _HomePageState extends BasePageState<HomePage>
         reversed: appModel.reverseNavigationBar,
         fingerTowardStart: fingerTowardStart,
         textDirection: Directionality.of(context),
+        lookupInBar: appModel.navBarCenterLauncher,
       );
 
   Widget _buildMobileLayout() {
