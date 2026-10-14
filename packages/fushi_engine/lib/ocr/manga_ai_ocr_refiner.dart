@@ -959,14 +959,11 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
       if (layout != null) {
         // 拉丁文按字格切开时，接缝上的空格会落在行首 / 行尾。
         lines = <String>[for (final String line in layout.lines) line.trim()];
+        // 切分按外接框做，写回时按原四边形的倾角还原（斜行不能退化成轴对齐框，
+        // 否则覆盖层的逐字格又落不到字上）。
+        final double tilt = _mangaLinesTilt(coords);
         linesCoords = <List<List<double>>>[
-          for (final OcrRect r in layout.boxes)
-            <List<double>>[
-              <double>[r.left, r.top],
-              <double>[r.right, r.top],
-              <double>[r.right, r.bottom],
-              <double>[r.left, r.bottom],
-            ],
+          for (final OcrRect r in layout.boxes) mangaTiltedLineQuad(r, tilt),
         ];
       }
     }
@@ -981,6 +978,28 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
     confidence: block.confidence,
     aiRecognized: true,
   );
+}
+
+/// 行四边形的共同倾角（同一块里各行同一个倾角，见 `ppBlockTilt`）：取能拟合成
+/// 旋转矩形的四边形里**沿行方向最长**的那个的角度；都拟合不了视为正立。
+///
+/// 不能取第一个：[mokuroOrientedRectFromQuad] 按该四边形自己的长度判倾斜是否
+/// 可忽略（[mokuroTiltIsNegligible]），整块斜 3° 时 3 个字的短列会被归成 0，
+/// 而同块 20 个字的长列重排后就全退回轴对齐、首尾字点不中。最长的行角度估计
+/// 最稳、可忽略判据也最宽；它都被判可忽略时，块里所有行（更短）同样可忽略。
+double _mangaLinesTilt(List<List<List<double>>> coords) {
+  double tilt = 0;
+  double longest = -1;
+  for (final List<List<double>> polygon in coords) {
+    final MokuroOrientedRect? oriented = mokuroOrientedRectFromQuad(polygon);
+    if (oriented == null) continue;
+    final double length = math.max(oriented.width, oriented.height);
+    if (length > longest) {
+      longest = length;
+      tilt = oriented.rotation;
+    }
+  }
+  return tilt;
 }
 
 OcrRect _polygonBounds(List<List<double>> polygon) {
