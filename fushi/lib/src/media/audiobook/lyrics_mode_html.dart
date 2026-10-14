@@ -531,6 +531,16 @@ body.lyrics-blur .cue.revealed {
 .cue.current .fushi-dict-highlight {
   color: var(--ly-hl-text, $backgroundColor);
 }
+/* BUG-3367：选区脚本对 <ruby> 里的字不走 ::highlight / 包裹，只给 ruby 元素挂
+   fushi-selection-ruby-active（BUG-110，竖排防双绘），背景要页面自己画。歌词页此前
+   没有这条规则 → 带注音的词（烏滸がましい）查词时基字永远不高亮，只亮后半截。 */
+ruby.fushi-selection-ruby-active {
+  background-color: var(--ly-hl, $accentColor) !important;
+  border-radius: 2px;
+}
+.cue.current ruby.fushi-selection-ruby-active {
+  color: var(--ly-hl-text, $backgroundColor);
+}
 .cue.favorited::before {
   content: '\\2605';
   position: absolute;
@@ -1229,7 +1239,10 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       r.style.color = accentColor;
     } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .fushi-dict-highlight') {
       r.style.color = bgColor;
-    } else if (r.selectorText === '.fushi-dict-highlight') {
+    } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current ruby.fushi-selection-ruby-active') {
+      r.style.color = bgColor;
+    } else if (r.selectorText === '.fushi-dict-highlight' ||
+        r.selectorText === 'ruby.fushi-selection-ruby-active') {
       r.style.setProperty('background-color', accentColor, 'important');
     } else if (r.selectorText === '::highlight(fushi-selection)') {
       r.style.setProperty('background-color', accentColor);
