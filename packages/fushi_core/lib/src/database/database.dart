@@ -34,6 +34,7 @@ part 'database_content_misc.part.dart';
 part 'database_tags_sync.part.dart';
 part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
+part 'database_srs.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -706,10 +707,19 @@ void _requireOneVideoMetadataOwner({
   AnidbFileIdentities,
   VideoEpisodeBindingOverrides,
   PendingMineQueue,
+  SrsEntities,
+  SrsFieldEdits,
+  SrsReviewLogs,
+  SrsUnknownEvents,
+  SrsEventLocal,
+  SrsLocalState,
+  SrsNotesCache,
+  SrsCardsCache,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
         _FushiDbInfra,
+        _FushiDbSrs,
         _FushiDbTagsSync,
         _FushiDbLibrary,
         _FushiDbPrefsMedia,
@@ -738,7 +748,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 116;
+  int get schemaVersion => 117;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3513,6 +3523,30 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(pendingMineQueue);
             }
           }
+          if (from < 117) {
+            // v117（Fushi SRS，docs/specs/2026-10-14-fushi-srs-design.md）：
+            // profiles.uid（全局身份，存量行生成 UUIDv7）+ 八张 srs_* 表（三张同步事件表、
+            // 不认识事件表、本机元信息 / 状态、两张可重建缓存）。全部幂等守卫。
+            if (!await _columnExists('profiles', 'uid')) {
+              await m.addColumn(profiles, profiles.uid);
+            }
+            await _backfillProfileUids();
+            for (final TableInfo<Table, Object?> t in <TableInfo<Table, Object?>>[
+              srsEntities,
+              srsFieldEdits,
+              srsReviewLogs,
+              srsUnknownEvents,
+              srsEventLocal,
+              srsLocalState,
+              srsNotesCache,
+              srsCardsCache,
+            ]) {
+              if (!await _tableExists(t.actualTableName)) {
+                await m.createTable(t);
+              }
+            }
+            await _ensureSrsIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -3526,6 +3560,7 @@ class FushiDatabase extends _$FushiDatabase
               'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_uid_created '
               'ON bookmarks (book_uid, created_at DESC)');
           await _ensureIndexes();
+          await _ensureSrsIndexes();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen
