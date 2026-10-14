@@ -1104,7 +1104,13 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_pause_ocr_scope,
             subtitle: t.video_setting_pause_ocr_scope_hint,
             icon: FushiIcons.ocr,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 60),
+            // 接替被它取代的「无字幕轨也暂停 OCR」开关的位置（字幕行为小节、显形开关
+            // 之后的 58）；60 已是外观小节的「遵循 ASS 样式」。
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 58,
+              section: t.section_video_subtitle_behavior,
+            ),
             options: <SettingsSegmentOption<VideoPauseOcrScope>>[
               SettingsSegmentOption<VideoPauseOcrScope>(
                 value: VideoPauseOcrScope.all,

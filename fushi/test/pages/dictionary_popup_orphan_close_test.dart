@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 class _OrphanCloseAppModel extends AppModel {
   _OrphanCloseAppModel(this.directory) : super(testPlatformServices());
@@ -119,7 +120,10 @@ void main() {
     addTearDown(tabVisible.dispose);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+          ...popupMiningTargetTestOverrides(),
+        ],
         child: TranslationProvider(
           child: MaterialApp(
             navigatorKey: appModel.navigatorKey,
