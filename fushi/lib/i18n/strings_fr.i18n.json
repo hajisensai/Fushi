@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "Défiler d'un écran vers le bas",
   "shortcut_action_global_scroll_page_up": "Défiler d'un écran vers le haut",
   "shortcut_action_global_toggle_fullscreen": "Plein écran",
-  "shortcut_action_home_focus_search": "Focus sur la recherche",
+  "shortcut_action_home_focus_search": "Aller à la recherche dans le dictionnaire",
   "shortcut_action_home_tab_books": "Onglet Livres",
   "shortcut_action_home_tab_dict": "Onglet Dictionnaire",
   "shortcut_action_home_tab_next": "Onglet suivant",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
   "video_setting_pause_ocr_scope_off": "Off",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "Rechercher dans la bibliothèque"
 }

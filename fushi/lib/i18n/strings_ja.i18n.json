@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "1画面分下にスクロール",
   "shortcut_action_global_scroll_page_up": "1画面分上にスクロール",
   "shortcut_action_global_toggle_fullscreen": "全画面表示の切り替え",
-  "shortcut_action_home_focus_search": "検索にフォーカス",
+  "shortcut_action_home_focus_search": "辞書検索へ移動",
   "shortcut_action_home_tab_books": "書籍タブ",
   "shortcut_action_home_tab_dict": "辞書タブ",
   "shortcut_action_home_tab_next": "次のタブ",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "すべての動画",
   "video_setting_pause_ocr_scope_graphic": "画像字幕のみ",
   "video_setting_pause_ocr_scope_off": "オフ",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "ライブラリ内を検索"
 }

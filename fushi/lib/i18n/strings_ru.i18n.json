@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "Прокрутить вниз на экран",
   "shortcut_action_global_scroll_page_up": "Прокрутить вверх на экран",
   "shortcut_action_global_toggle_fullscreen": "Переключить полноэкранный режим",
-  "shortcut_action_home_focus_search": "Фокус на поиск",
+  "shortcut_action_home_focus_search": "Перейти к поиску по словарю",
   "shortcut_action_home_tab_books": "Вкладка «Книги»",
   "shortcut_action_home_tab_dict": "Вкладка «Словарь»",
   "shortcut_action_home_tab_next": "Следующая вкладка",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
   "video_setting_pause_ocr_scope_off": "Off",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "Поиск в библиотеке"
 }

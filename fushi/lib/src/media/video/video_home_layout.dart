@@ -150,13 +150,9 @@ int? videoAirSeasonQuarter(String? airDate) {
 /// 数据结构消掉特例：`year == null && unknownOnly == false` 即「全部」，
 /// 不需要独立的 all 标志位。
 class VideoYearFilter {
-  const VideoYearFilter.all()
-      : year = null,
-        unknownOnly = false;
+  const VideoYearFilter.all() : year = null, unknownOnly = false;
 
-  const VideoYearFilter.unknown()
-      : year = null,
-        unknownOnly = true;
+  const VideoYearFilter.unknown() : year = null, unknownOnly = true;
 
   const VideoYearFilter.year(int this.year) : unknownOnly = false;
 
@@ -198,7 +194,12 @@ enum VideoSeriesFilter { all, inSeries, standalone }
 /// 偏好值 → 系列归属档位；空值 / 脏值退回默认的 [VideoSeriesFilter.standalone]
 /// （BUG-2835：合集成员在系列页折成卡，「全部视频」默认只看散片）。
 VideoSeriesFilter videoSeriesFilterFromName(String name) =>
-    VideoSeriesFilter.values.asNameMap()[name] ?? VideoSeriesFilter.standalone;
+    VideoSeriesFilter.values.asNameMap()[name] ?? kDefaultVideoSeriesFilter;
+
+/// 「全部视频」系列归属的分区默认档（BUG-2835：默认只看散片）。库页筛选按钮的
+/// 圆点与生效 chip 只认**偏离**这一档的选择，chip 的 ✕ 也复位回这一档。
+const VideoSeriesFilter kDefaultVideoSeriesFilter =
+    VideoSeriesFilter.standalone;
 
 /// 「全部视频」媒体类型筛选档位（BUG-2835）：纯音频（专辑曲目等）与视频分开看。
 enum VideoMediaTypeFilter { all, video, audio }
@@ -211,23 +212,21 @@ enum VideoExtrasFilter { all, main, extras }
 bool matchesVideoMediaType({
   required VideoMediaTypeFilter filter,
   required bool isAudio,
-}) =>
-    switch (filter) {
-      VideoMediaTypeFilter.all => true,
-      VideoMediaTypeFilter.video => !isAudio,
-      VideoMediaTypeFilter.audio => isAudio,
-    };
+}) => switch (filter) {
+  VideoMediaTypeFilter.all => true,
+  VideoMediaTypeFilter.video => !isAudio,
+  VideoMediaTypeFilter.audio => isAudio,
+};
 
 /// 条目级正片 / 特典判定（本地即筛）。
 bool matchesVideoExtras({
   required VideoExtrasFilter filter,
   required bool isExtra,
-}) =>
-    switch (filter) {
-      VideoExtrasFilter.all => true,
-      VideoExtrasFilter.main => !isExtra,
-      VideoExtrasFilter.extras => isExtra,
-    };
+}) => switch (filter) {
+  VideoExtrasFilter.all => true,
+  VideoExtrasFilter.main => !isExtra,
+  VideoExtrasFilter.extras => isExtra,
+};
 
 /// 条目级来源判定：[sourceFilter] 为 null = 不限；否则只留该来源的条目
 /// （无来源的手动导入条目、远端占位都不属于任何来源）。
@@ -291,9 +290,7 @@ int? latestPlayedSeriesIndex(List<VideoSeriesPlaybackState> members) {
 
 /// The Next Episode target is always the member immediately after the episode
 /// returned by [latestPlayedSeriesIndex].
-int? nextEpisodeAfterLatestPlayed(
-  List<VideoSeriesPlaybackState> members,
-) {
+int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
   if (current == null || current + 1 >= members.length) return null;
   return current + 1;
@@ -397,17 +394,19 @@ List<T> selectVideoHeroUnits<T>(
   List<VideoHeroCandidate<T>> candidates, {
   int limit = 5,
 }) {
-  final List<VideoHeroCandidate<T>> watching = <VideoHeroCandidate<T>>[
-    for (final VideoHeroCandidate<T> c in candidates)
-      if (c.hasUnfinishedTrace && c.lastWatchedAt != null) c,
-  ]..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
-      b.lastWatchedAt!.compareTo(a.lastWatchedAt!));
+  final List<VideoHeroCandidate<T>> watching =
+      <VideoHeroCandidate<T>>[
+        for (final VideoHeroCandidate<T> c in candidates)
+          if (c.hasUnfinishedTrace && c.lastWatchedAt != null) c,
+      ]..sort(
+        (VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
+            b.lastWatchedAt!.compareTo(a.lastWatchedAt!),
+      );
   final List<VideoHeroCandidate<T>> pool = watching.isNotEmpty
       ? watching
-      : (List<VideoHeroCandidate<T>>.of(candidates)
-        ..sort((VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
-            b.latestImportedAt.compareTo(a.latestImportedAt)));
-  return <T>[
-    for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit,
-  ];
+      : (List<VideoHeroCandidate<T>>.of(candidates)..sort(
+          (VideoHeroCandidate<T> a, VideoHeroCandidate<T> b) =>
+              b.latestImportedAt.compareTo(a.latestImportedAt),
+        ));
+  return <T>[for (final VideoHeroCandidate<T> c in pool.take(limit)) c.unit];
 }

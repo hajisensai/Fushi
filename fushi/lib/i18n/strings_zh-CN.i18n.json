@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "向下翻一屏",
   "shortcut_action_global_scroll_page_up": "向上翻一屏",
   "shortcut_action_global_toggle_fullscreen": "全屏切换",
-  "shortcut_action_home_focus_search": "聚焦搜索",
+  "shortcut_action_home_focus_search": "跳到查词搜索",
   "shortcut_action_home_tab_books": "书架标签",
   "shortcut_action_home_tab_dict": "词典标签",
   "shortcut_action_home_tab_next": "下一个标签页",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
   "video_setting_pause_ocr_scope_off": "关闭",
-  "shortcut_action_library_search": "在库页中搜索"
+  "shortcut_action_library_search": "在书架 / 媒体库中搜索"
 }

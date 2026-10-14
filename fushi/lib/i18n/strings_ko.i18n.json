@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "한 화면 아래로 스크롤",
   "shortcut_action_global_scroll_page_up": "한 화면 위로 스크롤",
   "shortcut_action_global_toggle_fullscreen": "전체 화면 전환",
-  "shortcut_action_home_focus_search": "검색 포커스",
+  "shortcut_action_home_focus_search": "사전 검색으로 이동",
   "shortcut_action_home_tab_books": "책 탭",
   "shortcut_action_home_tab_dict": "사전 탭",
   "shortcut_action_home_tab_next": "다음 탭",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
   "video_setting_pause_ocr_scope_off": "Off",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "라이브러리에서 검색"
 }

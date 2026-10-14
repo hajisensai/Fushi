@@ -558,7 +558,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `video_all_series_filter`）——合集成员已在系列页折成卡，平铺视图默认再铺一遍
   /// 只会把散片淹掉。与年份 / 看完状态「不持久化」的理由不冲突：那两个的默认是
   /// 「全部」，挂着上次的值会让人以为库空了；这一档本身就是常驻默认。
-  VideoSeriesFilter _seriesFilter = VideoSeriesFilter.standalone;
+  VideoSeriesFilter _seriesFilter = kDefaultVideoSeriesFilter;
 
   /// BUG-2835：「全部视频」的媒体类型 / 正片特典 / 来源筛选（本地即筛，与年份 /
   /// 看完状态同样不持久化）。来源 null = 不限。
@@ -7061,15 +7061,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 筛选面板里的维度当前有没有任何一档不是「全部」（页头「筛选」按钮亮圆点）。
-  /// 口径与 [_activeFilterChips] 一致：只算当前分区真露出、真生效的维度。
+  /// 筛选面板里的维度当前有没有任何一档偏离**分区默认值**（页头「筛选」按钮亮
+  /// 圆点）。默认值不算「用户主动生效的筛选」（2026-10-14 用户拍板）：多数维度
+  /// 默认是「全部」，「全部视频」的系列归属默认是「非系列」
+  /// （[kDefaultVideoSeriesFilter]）。口径与 [_activeFilterChips] 一致：只算当前
+  /// 分区真露出、真生效的维度。
   bool get _hasActivePanelFilter =>
       !_yearFilter.isAll ||
       _watchStatusFilter != VideoWatchStatusFilter.all ||
-      (_isAllVideosSection && _seriesFilter != VideoSeriesFilter.all) ||
+      _seriesFilterIsNonDefault ||
       _effectiveMediaTypeFilter != VideoMediaTypeFilter.all ||
       _effectiveExtrasFilter != VideoExtrasFilter.all ||
       _effectiveSourceFilter != null;
+
+  /// 系列归属偏离分区默认档（只在「全部视频」露出）。
+  bool get _seriesFilterIsNonDefault =>
+      _isAllVideosSection && _seriesFilter != kDefaultVideoSeriesFilter;
 
   void _setSeriesFilter(VideoSeriesFilter value) {
     setState(() => _seriesFilter = value);
@@ -7079,8 +7086,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 页头下方 chip 行行首：每个生效中的筛选条件一枚带 ✕ 的 chip，点 ✕ 把该
-  /// 维度复位成「全部」，点 chip 本身打开筛选面板。数字 / 名称类的值（年份、
+  /// 页头下方 chip 行行首：每个偏离分区默认值的筛选条件一枚带 ✕ 的 chip，点 ✕
+  /// 把该维度复位成**分区默认值**（多数是「全部」，系列归属是「非系列」），点
+  /// chip 本身打开筛选面板。默认档不出 chip。数字 / 名称类的值（年份、
   /// 类型、来源）前缀维度名，免得一枚「2023」「视频」看不出是什么条件。
   List<Widget> _activeFilterChips() {
     void openPanel() => unawaited(_showFilterPanel());
@@ -7104,12 +7112,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           onRemove: () =>
               setState(() => _watchStatusFilter = VideoWatchStatusFilter.all),
         ),
-      if (_isAllVideosSection && _seriesFilter != VideoSeriesFilter.all)
+      if (_seriesFilterIsNonDefault)
         LibraryActiveFilterChip(
           key: const ValueKey<String>('video_active_filter_series'),
-          label: _seriesFilterLabel(_seriesFilter),
+          // 「全部」档要带维度名，单一枚「全部」看不出是哪个条件。
+          label: _seriesFilter == VideoSeriesFilter.all
+              ? '${t.video_filter_series} · ${t.home_filter_all}'
+              : _seriesFilterLabel(_seriesFilter),
           onTap: openPanel,
-          onRemove: () => _setSeriesFilter(VideoSeriesFilter.all),
+          onRemove: () => _setSeriesFilter(kDefaultVideoSeriesFilter),
         ),
       if (_effectiveMediaTypeFilter != VideoMediaTypeFilter.all)
         LibraryActiveFilterChip(
@@ -7238,8 +7249,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 面板「清除全部」：只复位面板里的维度（搜索词与标签各有自己的入口，不动）。
-  /// 系列归属与 [_clearAllFilters] 同样复位到「全部」并写回偏好。
+  /// 面板「清除全部」：只复位面板里的维度（搜索词与标签各有自己的入口，不动），
+  /// 一律回到**分区默认值**——系列归属回「非系列」并写回偏好，清完筛选按钮的
+  /// 圆点与 chip 一起消失。筛空态的 [_clearAllFilters] 不同：那里是「把东西找
+  /// 回来」，系列归属放到「全部」。
   void _clearPanelFilters() {
     setState(() {
       _yearFilter = const VideoYearFilter.all();
@@ -7248,7 +7261,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
     });
-    _setSeriesFilter(VideoSeriesFilter.all);
+    _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条

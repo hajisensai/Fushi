@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "向下捲動一頁",
   "shortcut_action_global_scroll_page_up": "向上捲動一頁",
   "shortcut_action_global_toggle_fullscreen": "全屏切換",
-  "shortcut_action_home_focus_search": "聚焦搜尋",
+  "shortcut_action_home_focus_search": "跳到查詞搜尋",
   "shortcut_action_home_tab_books": "書架分頁",
   "shortcut_action_home_tab_dict": "詞典分頁",
   "shortcut_action_home_tab_next": "下一個分頁",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "所有影片",
   "video_setting_pause_ocr_scope_graphic": "僅圖片字幕",
   "video_setting_pause_ocr_scope_off": "關閉",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "在書架 / 媒體庫中搜尋"
 }

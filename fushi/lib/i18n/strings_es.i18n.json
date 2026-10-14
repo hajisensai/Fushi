@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "Desplazar una pantalla hacia abajo",
   "shortcut_action_global_scroll_page_up": "Desplazar una pantalla hacia arriba",
   "shortcut_action_global_toggle_fullscreen": "Alternar pantalla completa",
-  "shortcut_action_home_focus_search": "Enfocar búsqueda",
+  "shortcut_action_home_focus_search": "Ir a la búsqueda del diccionario",
   "shortcut_action_home_tab_books": "Pestaña de libros",
   "shortcut_action_home_tab_dict": "Pestaña de diccionario",
   "shortcut_action_home_tab_next": "Pestaña siguiente",
@@ -7417,5 +7417,5 @@
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
   "video_setting_pause_ocr_scope_off": "Off",
-  "shortcut_action_library_search": "Search in library"
+  "shortcut_action_library_search": "Buscar en la biblioteca"
 }

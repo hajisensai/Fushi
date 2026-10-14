@@ -2894,7 +2894,7 @@
   "shortcut_action_global_scroll_page_down": "Scroll down one screen",
   "shortcut_action_global_scroll_page_up": "Scroll up one screen",
   "shortcut_action_global_toggle_fullscreen": "Toggle fullscreen",
-  "shortcut_action_home_focus_search": "Focus search",
+  "shortcut_action_home_focus_search": "Jump to dictionary search",
   "shortcut_action_home_tab_books": "Books tab",
   "shortcut_action_home_tab_dict": "Dictionary tab",
   "shortcut_action_home_tab_next": "Next tab",
