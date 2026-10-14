@@ -57,6 +57,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
@@ -446,7 +447,7 @@ Future<void> main(List<String> args) async {
                 (parallel ? heavyNeedFor(HeavyKind.analyze).capMb : 0),
         log: stdout.writeln);
   }
-  final String flutter = _flutterExecutable();
+  final String flutter = FlutterSdkExecutables.current().flutter();
   final String dart = Platform.resolvedExecutable;
   final List<_Step> steps = <_Step>[];
 
@@ -746,24 +747,6 @@ Map<String, String> _packageNames(String root) {
     }
   }
   return out;
-}
-
-/// The flutter of the SDK whose dart runs this tool
-/// (`<flutter>/bin/cache/dart-sdk/bin/dart`), then FLUTTER_ROOT, then PATH.
-String _flutterExecutable() {
-  final String name = Platform.isWindows ? 'flutter.bat' : 'flutter';
-  final List<String> seg =
-      Platform.resolvedExecutable.replaceAll('\\', '/').split('/');
-  final int cache = seg.lastIndexOf('cache');
-  if (cache >= 2 && seg[cache - 1] == 'bin') {
-    final String candidate = '${seg.sublist(0, cache).join('/')}/$name';
-    if (File(candidate).existsSync()) return candidate;
-  }
-  final String? envRoot = Platform.environment['FLUTTER_ROOT'];
-  if (envRoot != null && File('$envRoot/bin/$name').existsSync()) {
-    return '$envRoot/bin/$name';
-  }
-  return 'flutter';
 }
 
 String? _ciFlutterVersion(String root) {

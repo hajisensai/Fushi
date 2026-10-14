@@ -159,6 +159,29 @@ void main() {
       expect(host.started, isEmpty);
     });
 
+    // launch 必须按宿主平台解析命令：同一份「没配路径」在 macOS / Linux 上有默认入口。
+    test('macOS / Linux 没配路径：按宿主平台走默认入口启动', () async {
+      final _FakeHost mac = _FakeHost(operatingSystem: 'macos');
+      AnkiDesktopLauncher.debugHost = mac;
+      final AnkiDesktopLaunchResult macResult =
+          await AnkiDesktopLauncher.launch(const AnkiSettings());
+      expect(macResult.status, AnkiDesktopLaunchStatus.launched);
+      expect(
+        mac.started.single,
+        const AnkiDesktopLaunchCommand('open', <String>['-a', 'Anki']),
+      );
+
+      final _FakeHost linux = _FakeHost(operatingSystem: 'linux');
+      AnkiDesktopLauncher.debugHost = linux;
+      final AnkiDesktopLaunchResult linuxResult =
+          await AnkiDesktopLauncher.launch(const AnkiSettings());
+      expect(linuxResult.status, AnkiDesktopLaunchStatus.launched);
+      expect(
+        linux.started.single,
+        const AnkiDesktopLaunchCommand('anki', <String>[]),
+      );
+    });
+
     test('启动抛异常：failed 并带出错误文本', () async {
       AnkiDesktopLauncher.debugHost = _FakeHost(
         startError: const ProcessException('anki.exe', <String>[], 'nope'),

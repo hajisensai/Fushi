@@ -104,9 +104,9 @@ class CtlServer {
       if (method == 'POST') {
         switch (path) {
           case kCtlOpenPath:
-            return _open(request);
+            return await _open(request);
           case kCtlLookupPath:
-            return _lookup(request);
+            return await _lookup(request);
           case kCtlQuitPath:
             // 先把 202 送出去再退出：quit 会 exit(0)，晚了 CLI 只能看到连接断开。
             Timer.run(() => unawaited(handler.quit()));
