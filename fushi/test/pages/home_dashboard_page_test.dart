@@ -964,11 +964,15 @@ void main() {
     final HomeContinueCoverCard bookB = cards.firstWhere(
       (HomeContinueCoverCard c) => c.title == '书B',
     );
-    // 书照旧 2:3 竖卡；横版截帧的视频 16:9 横卡，宽约 1.5 倍竖卡。
+    // 书照旧 2:3 竖卡；横版截帧的视频是与竖卡同高的 16:9 横卡。
     expect(bookB.width, closeTo(bookB.height * 2 / 3, 0.01));
     expect(video.width, closeTo(video.height * 16 / 9, 0.01));
-    expect(video.width, closeTo(bookB.width * 1.5, 0.01));
-    // 横卡封面矮、贴行底：两张卡的底边（标题块底）对齐。
+    expect(video.height, closeTo(bookB.height, 0.01));
+    // 横竖卡同高：两张卡的顶边与底边（标题块底）都对齐。
+    expect(
+      tester.getRect(find.byWidget(video)).top,
+      closeTo(tester.getRect(find.byWidget(bookB)).top, 0.5),
+    );
     final Rect videoRect = tester.getRect(find.byWidget(video));
     final Rect bookRect = tester.getRect(find.byWidget(bookB));
     expect(videoRect.bottom, closeTo(bookRect.bottom, 0.5));
@@ -1161,14 +1165,14 @@ void main() {
     expect(homeCoverIsLandscape(null), isFalse);
   });
 
-  test('homeContinueCoverSize：竖 2:3，横 16:9 且宽 1.5 倍', () {
+  test('homeContinueCoverSize：竖 2:3，横 16:9 且与竖卡同高', () {
     expect(
       homeContinueCoverSize(portraitWidth: 100, landscape: false),
       const Size(100, 150),
     );
     final Size l = homeContinueCoverSize(portraitWidth: 100, landscape: true);
-    expect(l.width, 150);
-    expect(l.height, closeTo(150 * 9 / 16, 1e-9));
+    expect(l.height, 150);
+    expect(l.width, closeTo(150 * 16 / 9, 1e-9));
   });
 
   group('dashboardVideoCoverPath', () {

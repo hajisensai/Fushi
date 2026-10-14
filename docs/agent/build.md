@@ -155,6 +155,11 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   列表被 debug 构建淹掉（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。
   09-14 ~ 09-16 的定时通道 `testflight-debug.yml` 已撤（两条节律并存会重复上传），守卫钉着
   不得回潮。
+- **大合并后保证一次 TestFlight**（2026-10-14 用户拍板，CLAUDE.md「提交」节的硬规则）：
+  批量合入多条 PR 或合入一条大型功能 PR 后，若该 push 的发布序列不能被 3 整除（或那条 push
+  run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
+  --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
+  不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug

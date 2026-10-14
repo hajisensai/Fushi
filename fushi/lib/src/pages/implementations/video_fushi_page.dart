@@ -5696,12 +5696,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
+    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
+    _frameProbe.stop();
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
-    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
-    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
-    _frameProbe.stop();
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();

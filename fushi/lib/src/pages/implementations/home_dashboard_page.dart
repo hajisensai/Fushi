@@ -1998,10 +1998,8 @@ class _HomeDashboardPageState
     // 行外。卡高 = 封面 + 标题块。
     final double cardHeight = coverHeight + homeCoverTitleBlockHeight(context);
     final double liftHeadroom = cardHeight * (kFushiHoverLiftScale - 1) / 2;
-    final double liftSideRoom = coverHeight *
-        _kContinueCoverAspect *
-        kHomeLandscapeCoverWidthFactor *
-        (kFushiHoverLiftScale - 1) /
+    final double liftSideRoom =
+        coverHeight * kHomeLandscapeCoverAspect * (kFushiHoverLiftScale - 1) /
         2;
     return SizedBox(
       key: ValueKey<String>(rowKey),
@@ -2035,9 +2033,9 @@ class _HomeDashboardPageState
 
   /// 「继续」单卡：[HomeContinueCoverCard]（封面 + 底部进度条 + 右上角进度角标 +
   /// 下方两行标题）。书 / 游戏 / 有作品竖版海报的视频是 2:3 竖卡；视频回落到每集
-  /// 截图 / 横版画面时是 16:9 横卡（宽约 1.5 倍竖卡，完整显示截图）——比例跟着
-  /// 实际用到的那张图的真实宽高比走（用户 2026-10-14）。横卡封面矮，整卡贴行底
-  /// 对齐，一排卡的标题仍在同一条线上。
+  /// 截图 / 横版画面时是与竖卡同高的 16:9 横卡（完整显示截图）——比例跟着
+  /// 实际用到的那张图的真实宽高比走（用户 2026-10-14）。横竖卡封面同高，一排卡的
+  /// 封面与标题都在同一条线上。
   Widget _buildContinueCard(
     FushiDesignTokens tokens,
     AppModel appModel,

@@ -171,9 +171,13 @@ overlay/.../DexAllocationRepair.kt:
   exactAllocationReader (wired into PackageTools.dex2jar by the patch) applies
   the same receiver proof *before* dex2jar: dex2jar takes the NEW type from the
   <init> owner, so a proven `invoke-direct Super.<init>` on a `new-instance X`
-  register is pointed at X (Super must be X's direct superclass, X must not
-  already declare that descriptor, Super's constructor must be accessible) and
-  X gets the forwarding constructor R8 erased. Without it, constructor-less
+  register is pointed at X and every class from X up to (excluding) Super gets
+  the forwarding constructor R8 erased (each layer a non-interface DEX class
+  whose parent constructor is accessible; a layer that already declares the
+  descriptor is reused only if its body is exactly `super.<init>(args);
+  return`, otherwise the site is left alone). R8 can erase several layers at
+  once: SpeedBinb's `a0 extends t0` invokes Object.<init> directly (BUG-3364,
+  `Bad type on operand stack in putfield` in u0.intercept). Without it, constructor-less
   subclasses such as every suspend function's continuation all matched the
   generalized NEW and upstream BytecodeEditor.repairAllocation handed them out
   by iteration order (BUG-2826: mokuro 1.6.6 getPageList,
