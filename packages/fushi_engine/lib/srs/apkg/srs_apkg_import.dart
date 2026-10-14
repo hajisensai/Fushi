@@ -28,7 +28,8 @@ export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
 export 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 
 /// 媒体落盘回调：返回存储后的文件名（例如按内容哈希改名），字段里的引用按它改写。
-typedef SrsMediaStore = Future<String> Function(String name, Uint8List bytes);
+typedef SrsImportMediaSink =
+    Future<String> Function(String name, Uint8List bytes);
 
 /// 导入一个 .apkg / .colpkg（新旧格式都支持）。
 ///
@@ -38,7 +39,7 @@ typedef SrsMediaStore = Future<String> Function(String name, Uint8List bytes);
 Future<SrsImportReport> importAnkiPackage({
   required SrsDbStore store,
   required Uint8List bytes,
-  required SrsMediaStore storeMedia,
+  required SrsImportMediaSink storeMedia,
   bool updateExisting = false,
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
@@ -69,7 +70,7 @@ Future<SrsImportReport> importAnkiPackage({
 Future<SrsImportReport> importAnkiPackageFile({
   required SrsDbStore store,
   required File file,
-  required SrsMediaStore storeMedia,
+  required SrsImportMediaSink storeMedia,
   bool updateExisting = false,
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
@@ -185,7 +186,7 @@ class _Importer {
   final SrsDbStore store;
   final SrsAnkiPackage pkg;
   final SrsAnkiCollection col;
-  final SrsMediaStore storeMedia;
+  final SrsImportMediaSink storeMedia;
   final bool updateExisting;
   final void Function(double progress)? onProgress;
 

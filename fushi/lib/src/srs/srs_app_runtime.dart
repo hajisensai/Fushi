@@ -106,6 +106,7 @@ class SrsAppRuntime {
         ),
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
+    readMediaRoot: () async => (await _readMedia())?.root,
   );
 
   late final SrsOptimizationScheduler optimizer = SrsOptimizationScheduler(

@@ -13,7 +13,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart' hide SrsMediaStore;
+import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';

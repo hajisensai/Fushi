@@ -13,9 +13,12 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
+import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -44,6 +47,21 @@ Future<SrsSyncReport> srsDefaultSyncRunner(
   replica: store,
 ).syncOnce();
 
+/// 一轮媒体同步（测试注入假实现）。
+typedef SrsMediaSyncRunner =
+    Future<SrsMediaSyncReport> Function(
+      SyncAssetStore backend,
+      SrsDbStore store,
+      Directory mediaRoot,
+    );
+
+/// 生产实现：见 packages/fushi_engine/lib/srs/srs_media_sync.dart。
+Future<SrsMediaSyncReport> srsDefaultMediaSyncRunner(
+  SyncAssetStore backend,
+  SrsDbStore store,
+  Directory mediaRoot,
+) => srsSyncMedia(backend: backend, store: store, mediaRoot: mediaRoot);
+
 /// 「对所有已认证通道跑一次」的入口（生产：`runOnAuthenticatedSyncChannels`）。
 typedef SrsChannelRunner =
     Future<int> Function(Future<void> Function(SyncAssetStore backend) body);
@@ -64,8 +82,12 @@ class SrsSyncScheduler {
     required void Function() onDataChanged,
     required void Function(SrsSyncNotice notice) onNotice,
     SrsSyncRunner runner = srsDefaultSyncRunner,
+    Future<Directory?> Function()? readMediaRoot,
+    SrsMediaSyncRunner mediaRunner = srsDefaultMediaSyncRunner,
     DateTime Function()? clock,
-  }) : _readStore = readStore,
+  }) : _readMediaRoot = readMediaRoot,
+       _mediaRunner = mediaRunner,
+       _readStore = readStore,
        _channels = channels,
        _onDataChanged = onDataChanged,
        _onNotice = onNotice,
@@ -77,6 +99,8 @@ class SrsSyncScheduler {
   final void Function() _onDataChanged;
   final void Function(SrsSyncNotice notice) _onNotice;
   final SrsSyncRunner _runner;
+  final Future<Directory?> Function()? _readMediaRoot;
+  final SrsMediaSyncRunner _mediaRunner;
   final DateTime Function() _clock;
 
   final Set<SrsSyncNotice> _noticed = <SrsSyncNotice>{};
@@ -105,7 +129,29 @@ class SrsSyncScheduler {
     if (report.error == kSrsSyncServerTimeUnavailable) {
       _noticeOnce(SrsSyncNotice.backendUnsupported);
     }
-    if (report.applied > 0 || report.published > 0 || report.reincarnated) {
+    bool mediaChanged = false;
+    final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
+    if (report.error == null && readMediaRoot != null && !_disposed) {
+      // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
+      // 媒体失败只记日志，不影响复习数据本身的同步结果。
+      try {
+        final Directory? root = await readMediaRoot();
+        if (root != null) {
+          final SrsMediaSyncReport media = await _mediaRunner(
+            backend,
+            store,
+            root,
+          );
+          mediaChanged = media.downloaded > 0;
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsSyncScheduler.media', e, stack);
+      }
+    }
+    if (report.applied > 0 ||
+        report.published > 0 ||
+        report.reincarnated ||
+        mediaChanged) {
       _onDataChanged();
     }
     return report;
