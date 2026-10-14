@@ -75,6 +75,18 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   html.scrollTop = vertical ? 0 : initial;
   const window = {scrollX: vertical ? initial : 0, scrollY: 0, innerWidth: 100, innerHeight: 100,
     __fushiCssHighlightsSupported: css, getSelection: () => native,
+    // Shared DOM-surgery guard reduced to the plain DOM steps on this fake DOM; the
+    // real one runs in Chrome in favorite_removal_lookup_selection_test.dart (BUG-3328).
+    __fushiLiveRanges: {
+      unwrap(wrapper) {
+        const parent = wrapper.parentNode;
+        if (!parent) return null;
+        while (wrapper.firstChild) parent.insertBefore(wrapper.firstChild, wrapper);
+        parent.removeChild(wrapper);
+        return parent;
+      },
+      normalize(node) { if (node) node.normalize(); },
+    },
     getComputedStyle: () => ({writingMode}),
     scrollBy({top = 0, left = 0}) {
       html.scrollTop = Math.max(0, Math.min(300, html.scrollTop + top));

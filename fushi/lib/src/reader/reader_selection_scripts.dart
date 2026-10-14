@@ -476,6 +476,42 @@ if (!window.__fushiLiveRanges) {
         var nf = read(native.f);
         sel.setBaseAndExtent(na[0], na[1], nf[0], nf[1]);
       }
+    },
+    // 把 node 里 [start, end) 这段文字原地包进 wrapper：先在首尾切开，再把中间那个文本节点原样搬进
+    // wrapper（不用 surroundContents / extractContents，理由见上）。返回 wrapper。
+    wrapText: function(node, start, end, wrapper) {
+      if (end < node.data.length) this.splitText(node, end);
+      var mid = start > 0 ? this.splitText(node, start) : node;
+      var parent = mid.parentNode;
+      this.moveNodes([mid], function() {
+        parent.insertBefore(wrapper, mid);
+        wrapper.appendChild(mid);
+      });
+      return wrapper;
+    },
+    // 拆掉 wrapper、子节点原样留在原位，返回原父节点（没挂在文档里返回 null）。不合并文本节点，
+    // 调用方拆完一批后对父节点调 normalize()。
+    unwrap: function(wrapper) {
+      var parent = wrapper.parentNode;
+      if (!parent) return null;
+      var moved = Array.prototype.slice.call(wrapper.childNodes);
+      this.moveNodes(moved, function() {
+        moved.forEach(function(m) { parent.insertBefore(m, wrapper); });
+        parent.removeChild(wrapper);
+      });
+      return parent;
+    },
+    // BUG-3328：Node.normalize() 把相邻文本节点并进第一个、其余移出文档。live Range 与原生选区由
+    // DOM 规范自己换算到合并后的节点；查词选区与拖选锚点是「节点 + 偏移」普通对象，指向被并掉
+    // 节点的点会失效（删除收藏 / 标注时高亮桥拆包裹并 normalize，查词选区随之丢失）。合并一律走
+    // 这里，由选区的拥有者（trackTextPoints）在合并期间跟踪这些点、合并完写回。
+    normalize: function(node) {
+      if (!node) return;
+      var selection = window.fushiSelection;
+      var restore = selection && typeof selection.trackTextPoints === 'function'
+        ? selection.trackTextPoints() : null;
+      node.normalize();
+      if (restore) restore();
     }
   };
 }
@@ -2440,16 +2476,16 @@ window.fushiSelection = {
       selHl.priority = 1;
       CSS.highlights.set('fushi-selection', selHl);
     } else {
+      // 拆旧包裹时合并文本节点，trimmedRanges（= selection.matchedRanges）的段由 trackTextPoints
+      // 就地换算。包裹走 __fushiLiveRanges.wrapText（BUG-3328）：extractContents 会把选中的字复制进
+      // 新节点、原节点截掉这段，选区的「节点 + 偏移」从此指向别的字。倒序包裹：切开只影响切点之后。
       this.clearHighlightWrappers();
-      var range = document.createRange();
       for (var i = trimmedRanges.length - 1; i >= 0; i--) {
         var seg = trimmedRanges[i];
-        range.setStart(seg.node, seg.start);
-        range.setEnd(seg.node, seg.end);
+        if (seg.end <= seg.start) continue;
         var wrapper = document.createElement('span');
         wrapper.className = 'fushi-dict-highlight';
-        wrapper.appendChild(range.extractContents());
-        range.insertNode(wrapper);
+        window.__fushiLiveRanges.wrapText(seg.node, seg.start, seg.end, wrapper);
         this.highlightWrappers.push(wrapper);
       }
       this.highlightWrappers.reverse();
@@ -2526,14 +2562,9 @@ window.fushiSelection = {
   clearHighlightWrappers: function() {
     if (!this.highlightWrappers.length) return;
     for (var i = 0; i < this.highlightWrappers.length; i++) {
-      var wrapper = this.highlightWrappers[i];
-      var parent = wrapper.parentNode;
-      if (!parent) continue;
-      while (wrapper.firstChild) {
-        parent.insertBefore(wrapper.firstChild, wrapper);
-      }
-      parent.removeChild(wrapper);
-      parent.normalize();
+      // BUG-3328：拆包裹与合并都经 __fushiLiveRanges，查词选区（highlightSelection 重画时仍要用）
+      // 与 live Range 换算到合并后的节点。
+      window.__fushiLiveRanges.normalize(window.__fushiLiveRanges.unwrap(this.highlightWrappers[i]));
     }
     this.highlightWrappers = [];
     if (!window.__fushiCssHighlightsSupported && window.fushiReader && window.fushiReader.buildNodeOffsets) {
@@ -2578,6 +2609,37 @@ window.fushiSelection = {
       var e = point(anchor.endNode, anchor.endOffset);
       anchor.endNode = e.node; anchor.endOffset = e.offset;
     }
+  },
+  // BUG-3328：合并相邻文本节点（__fushiLiveRanges.normalize）前调这里。选区与拖选锚点里的每个
+  // 「节点 + 偏移」各由一个折叠的 live Range 跟踪——DOM 规范在 normalize() 里对 live Range 做的
+  // 换算（并进前一个节点、偏移加上前面的长度）正是这些点该有的换算；返回的函数在合并之后把
+  // 换算结果原地写回（ranges / matchedRanges 的段对象就地改，别处持有的同一批段也一起更新）。
+  trackTextPoints: function() {
+    var writes = [];
+    var track = function(node, offset, write) {
+      if (!node) return;
+      var probe = document.createRange();
+      try { probe.setStart(node, offset); } catch (_ignored) { return; }
+      writes.push(function() { write(probe.startContainer, probe.startOffset); });
+    };
+    var trackSegments = function(list) {
+      (list || []).forEach(function(seg) {
+        track(seg.node, seg.start, function(n, o) { seg.node = n; seg.start = o; });
+        track(seg.node, seg.end, function(n, o) { seg.end = o; });
+      });
+    };
+    var sel = this.selection;
+    if (sel) {
+      track(sel.startNode, sel.startOffset, function(n, o) { sel.startNode = n; sel.startOffset = o; });
+      trackSegments(sel.ranges);
+      if (sel.matchedRanges !== sel.ranges) trackSegments(sel.matchedRanges);
+    }
+    var anchor = this.dragAnchor;
+    if (anchor) {
+      track(anchor.node, anchor.offset, function(n, o) { anchor.node = n; anchor.offset = o; });
+      track(anchor.endNode, anchor.endOffset, function(n, o) { anchor.endNode = n; anchor.endOffset = o; });
+    }
+    return function() { writes.forEach(function(write) { write(); }); };
   },
   clearSelectionOnViewportChange: function() {
     if (this.dragAnchor || this.activeHandle) return;
