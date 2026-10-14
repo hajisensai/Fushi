@@ -254,6 +254,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'mineEntry',
   'minedCardAction',
   'onLinkClick',
+  'openAdvancedMining',
   'openInAnki',
   'openLink',
   'openMinedNote',

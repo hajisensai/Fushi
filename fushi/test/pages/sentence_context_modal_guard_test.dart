@@ -10,9 +10,10 @@ import 'reader_fushi_page_source_corpus.dart';
 /// 「这个是要顶层弹窗，不是查词弹窗内」）。
 ///
 /// 本守卫钉死：① 旧 WebView HTML 模态（openSentenceContextModal / .scm-* 样式）已彻底删除；
-/// ② 词条「调整上下文」按钮改成 `callHandler('openSentenceContextModal', {entryIndex, matched})`；
-/// ③ Dart 侧新 handler → layer → base/mixin 弹原生对话框，确认制卡回 WebView 精确点中该词条
-/// （fushiPopupMineEntryByIndex / mineEntryByIndex）；④ 宿主后端预览/增减回调仍在（对话框复用）。
+/// ② 词条入口按钮（现为「高级制卡」）改成 `callHandler('openAdvancedMining',
+/// {entryIndex, matched, expression})`；③ Dart 侧 handler → layer → base/mixin 弹原生对话框，
+/// 确认制卡回 WebView 精确点中该词条并带上覆盖项（fushiPopupMineEntryByIndex /
+/// mineEntryByIndex）；④ 宿主后端预览/增减回调仍在（对话框的句子分区复用）。
 /// 无头测试照不到真实 WebView，故用源码扫描守卫钉死每段接线（对话框行为另见 widget 测试）。
 void main() {
   String read(String relativePath) {
@@ -54,16 +55,23 @@ void main() {
     });
   });
 
-  group('词条「调整上下文」按钮改触发原生对话框', () {
-    test('popup.js 按钮 callHandler openSentenceContextModal 带 entryIndex+matched', () {
+  group('词条「高级制卡」按钮触发原生对话框（原「调整上下文」）', () {
+    test('popup.js 按钮门控 advancedMiningEnabled，callHandler openAdvancedMining 带 entryIndex+matched+expression', () {
       final String js = read('assets/popup/popup.js');
       expect(js.contains('ctx-adjust-button'), isTrue);
-      expect(js.contains("'openSentenceContextModal'"), isTrue,
-          reason: '按钮必须 callHandler openSentenceContextModal 弹宿主原生对话框');
-      expect(js.contains('entryIndex'), isTrue);
-      expect(js.contains('matched: matched'), isTrue);
+      expect(js.contains('window.advancedMiningEnabled === true'), isTrue,
+          reason: '入口必须由宿主注入的 advancedMiningEnabled 门控');
+      expect(js.contains("'openAdvancedMining'"), isTrue,
+          reason: '按钮必须 callHandler openAdvancedMining 弹宿主原生对话框');
+      expect(
+          js.contains(
+              '{ entryIndex: idx, matched: matched, expression: expression }'),
+          isTrue,
+          reason: '参数是对象（BUG-1326），带 entryIndex / matched / expression');
       // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与回点同源。
       expect(js.contains(':scope > .entry'), isTrue);
+      // 提示文案用「高级制卡」那份（宿主注入的 i18nCtx.advancedMining）。
+      expect(js.contains('ctxI18n.advancedMining'), isTrue);
     });
 
     test('popup.js 提供 fushiPopupMineEntryByIndex 供确认制卡精确回点', () {
@@ -78,67 +86,69 @@ void main() {
   });
 
   group('Dart 侧原生对话框接线', () {
-    test('webview 注册 openSentenceContextModal handler + onOpenSentenceContextModal 字段 + mineEntryByIndex', () {
+    test('webview 注册 openAdvancedMining handler + onOpenAdvancedMining 字段 + mineEntryByIndex', () {
       final String src =
           read('lib/src/pages/implementations/dictionary_popup_webview.dart');
-      expect(src.contains("handlerName: 'openSentenceContextModal'"), isTrue);
-      expect(src.contains('widget.onOpenSentenceContextModal'), isTrue);
-      expect(src.contains('onOpenSentenceContextModal'), isTrue);
+      expect(src.contains("handlerName: 'openAdvancedMining'"), isTrue);
+      expect(src.contains('widget.onOpenAdvancedMining'), isTrue);
+      expect(src.contains('final OpenAdvancedMiningCallback? onOpenAdvancedMining;'),
+          isTrue);
       // 确认制卡回点：Dart 精确点第 idx 个词条（复用 mineEntry 全逻辑）。
       // BUG-2627：必须回传「有没有真的点到」，否则 popup.js 的三条 return false
       // 与「控制器已没了」一样被整个吞掉，任何关栈竞态都长成「点了没反应」。
       expect(src.contains('Future<bool> mineEntryByIndex('), isTrue);
       expect(src.contains('fushiPopupMineEntryByIndex'), isTrue);
-      // 预览/增减 handler 仍在（对话框仍复用后端）。
-      expect(src.contains("handlerName: 'sentenceContextPreview'"), isTrue);
+      // 入口门控随宿主回调注入（热槽重发键含它），app 里不再有旧的双入口。
+      expect(src.contains(r'window.advancedMiningEnabled = $advancedMiningEnabled;'),
+          isTrue);
+      expect(src.contains('advancedMining: advancedMiningEnabled'), isTrue,
+          reason: 'extrasKey 必须把高级制卡门控算进去，否则热槽 WebView 残留旧值');
+      expect(src.contains('sentenceContextPreviewEnabled'), isFalse,
+          reason: 'app 内不再注入旧入口门控（只留高级制卡一个入口）');
+      expect(src.contains("handlerName: 'openSentenceContextModal'"), isFalse);
     });
 
-    test('layer 透传 onOpenSentenceContextModal', () {
+    test('layer 透传 onOpenAdvancedMining', () {
       final String src =
           read('lib/src/pages/implementations/dictionary_popup_layer.dart');
-      expect(
-          src.contains(
-              'final Future<void> Function(int entryIndex, String matched)?'),
+      expect(src.contains('final OpenAdvancedMiningCallback? onOpenAdvancedMining;'),
           isTrue);
-      expect(src.contains('this.onOpenSentenceContextModal,'), isTrue);
-      expect(
-          src.contains(
-              'onOpenSentenceContextModal: onOpenSentenceContextModal'),
-          isTrue);
+      expect(src.contains('this.onOpenAdvancedMining,'), isTrue);
+      expect(src.contains('onOpenAdvancedMining: onOpenAdvancedMining'), isTrue);
     });
 
-    test('reader 车道 (base) 弹原生对话框 + 确认回点 mineEntryByIndex', () {
+    test('reader 车道 (base) 弹原生对话框 + 确认回点 mineEntryByIndex 带覆盖项', () {
       final String src = read('lib/src/pages/base_source_page.dart');
-      // 门控变量改名成 sentenceDraftEnabled（= supportsSentenceDraft && 制卡模块开）。
-      // 「只在支持草稿的表面接线」这条不变式没变，所以除了接线本身，再单独钉它的
-      // 定义 —— 只钉接线的话，哪天有人把表面判据从定义里丢了，这条照样绿。
+      // 入口只跟制卡模块走（纯查词页也有，只是只有卡组分区）。
       expect(
-        RegExp(r'onOpenSentenceContextModal:\s*sentenceDraftEnabled')
-            .hasMatch(src),
+        RegExp(r'onOpenAdvancedMining:\s*cardCreationEnabled').hasMatch(src),
         isTrue,
       );
+      // 「+句」草稿门控仍然 AND 上「该表面支持草稿」，不能只剩模块闸。
       expect(
         RegExp(r'sentenceDraftEnabled\s*=[\s\S]{0,80}?supportsSentenceDraft')
             .hasMatch(src),
         isTrue,
         reason: '草稿门控必须仍然 AND 上「该表面支持草稿」，不能只剩模块闸',
       );
-      expect(src.contains('showAppDialog<void>'), isTrue);
-      expect(src.contains('SentenceContextDialog('), isTrue);
-      expect(src.contains('webViewKey.currentState?.mineEntryByIndex('), isTrue);
-      // 后端预览/增减回调仍复用（未改）。
-      expect(src.contains('fetchPreview: onSentenceContextPreviewFromDraft'),
+      expect(src.contains('showAdvancedMiningDialog('), isTrue);
+      expect(src.contains('loadAdvancedMiningDeckSection(ref)'), isTrue);
+      expect(src.contains('buildAdvancedMiningSections(matched: matched)'),
           isTrue);
-      expect(src.contains('setContext: onSetSentenceContextToDraft'), isTrue);
+      expect(src.contains('webViewKey.currentState?.mineEntryByIndex('), isTrue);
+      expect(src.contains('overrides: overrides,'), isTrue,
+          reason: '确认时必须把对话框的覆盖项并进这次回点');
     });
 
-    test('video 车道 (mixin) 弹原生对话框 + 确认回点', () {
+    test('video 车道 (mixin) 弹原生对话框 + 确认回点带覆盖项', () {
       final String src =
           read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-      expect(src.contains('onOpenSentenceContextModal:'), isTrue);
-      expect(src.contains('showAppDialog<void>'), isTrue);
-      expect(src.contains('SentenceContextDialog('), isTrue);
+      expect(src.contains('onOpenAdvancedMining:'), isTrue);
+      expect(src.contains('showAdvancedMiningDialog('), isTrue);
+      expect(src.contains('buildAdvancedMiningSections(matched: matched)'),
+          isTrue);
       expect(src.contains('webViewKey.currentState?.mineEntryByIndex('), isTrue);
+      expect(src.contains('overrides: overrides,'), isTrue);
     });
   });
 

@@ -9,6 +9,7 @@ import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
 import 'card_source_link.dart';
+import 'mining_request_overrides.dart';
 
 class AnkiDeck {
   const AnkiDeck({required this.id, required this.name});
@@ -654,6 +655,7 @@ class AnkiMiningPayload {
     this.audio = '',
     this.selectedDictionary = '',
     this.dictionaryMedia = const [],
+    this.overrides,
   });
 
   /// [allowDuplicate] 在 wire 上的键名（应用内桥的 `Map<String, String>` 与远端
@@ -744,6 +746,7 @@ class AnkiMiningPayload {
       audio: json['audio'] as String? ?? '',
       selectedDictionary: json['selectedDictionary'] as String? ?? '',
       dictionaryMedia: dictionaryMedia,
+      overrides: MiningRequestOverrides.readFrom(json),
     );
   }
   final String expression;
@@ -782,6 +785,15 @@ class AnkiMiningPayload {
   final String audio;
   final String selectedDictionary;
   final List<DictionaryMedia> dictionaryMedia;
+
+  /// 「高级制卡」对话框里用户为**这一张卡**做的调整（卡组 / 音频 / 卡图等）。
+  ///
+  /// 与 [allowDuplicate] 同一先例：这是**单次请求**的裁决，随 fields map 走
+  /// （键 [MiningRequestOverrides.wireKey]），所以待发队列、互联转发、暂存都不必另铺
+  /// 字段；不改用户的任何全局设置。旧 payload 没有这个键（或解析失败 / 什么都没改）
+  /// → `null` → 行为逐字节不变。后端只在这里读卡组覆盖，见
+  /// `AnkiNoteComposer.resolveTargetDeck`。
+  final MiningRequestOverrides? overrides;
 }
 
 class DictionaryMedia {
