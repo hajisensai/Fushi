@@ -94,11 +94,11 @@ get_filename_component(
 # patches/disc-navigation-state.patch, plus patches/gpu-dumb-mode-hwdec-crop.patch
 # (BUG-3296: vo=gpu dumb mode squashed the padded d3d11va surface, e.g. 1088
 # coded rows of 1080p H.264, into the picture). See NATIVE_BUILD.md.
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1.7z")
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "78c29cb5a125f852b2f33401da76d033")
+set(LIBMPV_MD5 "86f5a1767b5c394474577198685e77e0")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

@@ -6,9 +6,9 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1.7z` (45,060,252 bytes).
-SHA-256: `97316a1f4b0276f8255dccbf404e50dfe125998309159c00452c80b9d697a0ac`.
-The `fushi-discnav1-hwcrop1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1.7z` (45,284,813 bytes).
+SHA-256: `170e47ac25a0fe476d166f9fc1d1ec15f0a4431a9e8c5e7c6110133f6008cec4`.
+The `fushi-discnav1-hwcrop1-lua1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
 
@@ -64,8 +64,26 @@ The runtime uses MSYS2 FFmpeg 9.0.1, libbluray 1.5.0 and libplacebo 7.360.1.
 Its `msys2-packages.json` records the exact dependency package versions.
 `package_libmpv.py` follows PE imports recursively, fails on unresolved imports,
 includes package licenses and records each DLL's size and SHA-256. This closure
-includes the TrueHD decoder. Lua/JavaScript player scripts are disabled; Fushi's
-Flutter controls and C client/render APIs do not depend on them.
+includes the TrueHD decoder. Lua scripting is enabled (`-Dlua=luajit`, BUG-3325):
+Fushi's own controls do not use it, but the user mpv script feature (video
+settings, BUG-2032) loads `.lua` files with `load-script`, which a
+`-Dlua=disabled` build accepts and then silently never runs. JavaScript scripting
+stays disabled. mpv's built-in Lua scripts (ytdl_hook, stats, console, ...) are
+turned off before `mpv_initialize` by the media_kit overlay
+(`ci/patches/hosted/media_kit-1.2.6/PATCHES.md`, BUG-3325).
+
+The `-lua1` rebuild (2026-10-14) uses the same mpv commit and patches as
+`-hwcrop1`. Its MSYS2 runtime packages were installed at the exact versions of
+the previous `native-dependency-packages.json` from repo.msys2.org, plus
+`mingw-w64-x86_64-luajit`. The only other drift is the GCC runtime: the pinned
+`gcc-libs 16.2.0-3` conflicts with the current toolchain, so `libgcc` /
+`libgomp` / `libstdc++` come from 16.2.0-6 (same GCC release, repackaged) and
+`libwinpthread` follows the toolchain's crt. Compared with `-hwcrop1`, the
+runtime closure adds `lua51.dll`; besides `libmpv-2.dll` and those four GCC
+runtime DLLs, every source DLL is byte-identical (see `source_sha256` in
+`native-runtime-manifest.json`). pacman's keyring could not be initialised on
+the build machine (gpg-agent hang), so packages were fetched over HTTPS with
+signature checking disabled.
 
 The packager requires Python's `pefile` module. It gives all 121 non-system
 dependencies fixed, same-length `fbd` module names, preserving the public

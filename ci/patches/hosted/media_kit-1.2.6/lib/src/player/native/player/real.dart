@@ -2387,6 +2387,20 @@ class NativePlayer extends PlatformPlayer {
         // Set --vid=no by default to prevent redundant video decoding.
         // [VideoController] internally sets --vid=auto upon attachment to enable video rendering & decoding.
         if (!test) 'vid': 'no',
+        // FUSHI BUG-3325: mpv's built-in Lua scripts. The `libmpv` profile only
+        // turns off the OSC, so a Lua-enabled build would otherwise run
+        // ytdl_hook on every http(s) open (spawning yt-dlp when it is on PATH)
+        // and keep stats/console/select/... interpreters alive in every
+        // player. Only user scripts (`load-script`) should run. Builds without
+        // Lua reject these names; mpv_set_option_string's error is ignored.
+        'ytdl': 'no',
+        'load-stats-overlay': 'no',
+        'load-console': 'no',
+        'load-auto-profiles': 'no',
+        'load-select': 'no',
+        'load-positioning': 'no',
+        'load-commands': 'no',
+        'load-context-menu': 'no',
       };
 
       if (Platform.isAndroid &&
