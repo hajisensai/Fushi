@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -996,9 +997,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     );
   }
 
-  // ── 「调整上下文」：草稿只在电脑端（本次查词上下文里），手机只发命令 ──────────
+  // ── 「高级制卡」：草稿只在电脑端（本次查词上下文里），手机只发命令 ──────────────
   //
-  // 与视频页同一个 [SentenceContextDialog]（mixin 的 `_openSentenceContextDialogForVideo`）：
+  // 与视频页同一个「高级制卡」对话框（mixin 的 `_openAdvancedMiningDialog`）：
   // 草稿模型、上下 N 句的取法、预览 map、合成文本 / 区间全在电脑端，手机经
   // `lookupContext` 驱动它；制卡时电脑按这份草稿出卡（见 [onMineEntry]）。试听也在
   // 电脑的播放器上放——手机没有视频音频。
@@ -1114,6 +1115,26 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<void> Function()? get onStopSentenceAudioPreviewToDraft => () async {
     await _lookupContext('stopAudio', report: false);
   };
+
+  /// 卡组由电脑那台的 Anki 设置决定，手机本地的卡组列表对它没有意义——不给卡组分区。
+  @override
+  bool get advancedMiningDeckChoiceAvailable => false;
+
+  /// 「高级制卡」（手机遥控）：只有句子分区，仍经 `lookupContext` 驱动电脑上的草稿。
+  /// 句子音频与画面都在电脑上抽、按电脑的设置出卡，手机这边不提供音频 / 图片分区。
+  /// 对话框关闭时停掉电脑上可能还在放的试听。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async => AdvancedMiningSections(
+    sentence: AdvancedMiningSentenceSection(
+      fetchPreview: onSentenceContextPreviewToDraft!,
+      setContext: onSetSentenceContextToDraft!,
+      editSentence: onEditSentenceContextText,
+      removeSentence: onRemoveSentenceContext,
+    ),
+    onClosed: onStopSentenceAudioPreviewToDraft,
+  );
 
   /// 制卡交给电脑：用电脑本地的 Anki 配置，素材从电脑正在播的视频按本次查词绑定的
   /// 字幕句抽取。网络失败（没拿到任何响应）时才按 requestId 回查任务——电脑明确

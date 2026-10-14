@@ -1857,6 +1857,10 @@ window.fushiSelection = {
     if (!Number.isInteger(mangaPageIndex) || mangaPageIndex < 0) {
       mangaPageIndex = null;
     }
+    var mangaGroupNumber = mangaGroup !== null ? Number(mangaGroup) : null;
+    if (!Number.isInteger(mangaGroupNumber) || mangaGroupNumber < 0) {
+      mangaGroupNumber = null;
+    }
     if (mangaGroup !== null && mangaPage) {
       var groupBoxes = mangaPage.querySelectorAll(
         '.ocr-box[data-manga-sentence-group]'
@@ -1925,7 +1929,11 @@ window.fushiSelection = {
       sentenceNormalizedOffset: sentenceNormalizedOffset,
       sentenceNormalizedLength: sentenceNormalizedLength,
       verticalWriting: verticalWriting,
-      mangaPageIndex: mangaPageIndex
+      mangaPageIndex: mangaPageIndex,
+      // Sentence group of the hit OCR block. The host maps it back to the
+      // page's OCR blocks to get the sentence rect in source-image space
+      // (card-image cropping); the viewport rect above cannot provide that.
+      mangaSentenceGroup: mangaGroupNumber
     };
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and

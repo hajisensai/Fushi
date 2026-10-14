@@ -4136,6 +4136,17 @@ class PreferencesRepository extends ChangeNotifier
 
   bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
 
+  /// 一键制卡的卡图默认裁到所在分镜（只在分镜模型可用且非条漫时生效）。
+  bool get mangaMiningCropToPanel => getPref(
+        'manga_mining_crop_to_panel',
+        defaultValue: kMangaMiningCropToPanelDefault,
+      ) as bool;
+
+  Future<void> setMangaMiningCropToPanel(bool value) async {
+    await setPref('manga_mining_crop_to_panel', value);
+    notifyListeners();
+  }
+
   Future<void> setMangaPanelNavigationEnabled(bool value) =>
       setMangaPanelNavigation(value);
 

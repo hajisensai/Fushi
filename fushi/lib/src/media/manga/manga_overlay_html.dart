@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import 'package:characters/characters.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -99,6 +100,50 @@ List<String> mangaBlockSentenceTexts(MokuroImage page) {
   return _mangaBlockSentenceAssignments(page)
       .map((({int group, String sentence}) assignment) => assignment.sentence)
       .toList(growable: false);
+}
+
+/// 句子分组 [group]（即 overlay 写进 `data-manga-sentence-group` 的那个组号）里全部
+/// OCR 块的下标。组号与 [mangaOcrBoxesHtml] 同一次分组算出，所以 JS 回传的组号能
+/// 原样映射回块。
+List<int> mangaSentenceGroupBlockIndices(MokuroImage page, int group) {
+  final List<({int group, String sentence})> assignments =
+      _mangaBlockSentenceAssignments(page);
+  return <int>[
+    for (int i = 0; i < assignments.length; i++)
+      if (assignments[i].group == group) i,
+  ];
+}
+
+/// 这句话（句子分组 [group]）的 OCR 文本块并集，按 `page.size` 归一化到 0..1。
+///
+/// 制卡裁切要的是**相对原页图**的坐标；JS 回传的选区矩形是 WebView 视口 CSS 像素，
+/// 宽页旋转 / 拆页 / 裁边都会让它和原页对不上，所以真值只能在 Dart 侧从 OCR 块算。
+/// 组号不存在 / 页尺寸非法时返回 null。
+Rect? mangaSentenceGroupNormalizedRect(MokuroImage page, int group) {
+  final double pageWidth = page.size.width;
+  final double pageHeight = page.size.height;
+  if (pageWidth <= 0 || pageHeight <= 0) return null;
+  final List<int> indices = mangaSentenceGroupBlockIndices(page, group);
+  if (indices.isEmpty) return null;
+  double left = double.infinity;
+  double top = double.infinity;
+  double right = double.negativeInfinity;
+  double bottom = double.negativeInfinity;
+  for (final int index in indices) {
+    final MokuroRect r = page.blocks[index].rectangle;
+    left = math.min(left, r.left);
+    top = math.min(top, r.top);
+    right = math.max(right, r.right);
+    bottom = math.max(bottom, r.bottom);
+  }
+  double unit(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+  final Rect rect = Rect.fromLTRB(
+    unit(left / pageWidth),
+    unit(top / pageHeight),
+    unit(right / pageWidth),
+    unit(bottom / pageHeight),
+  );
+  return rect.width > 0 && rect.height > 0 ? rect : null;
 }
 
 List<({int group, String sentence})> _mangaBlockSentenceAssignments(

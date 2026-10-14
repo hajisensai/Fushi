@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// BUG-797 / BUG-1040 守卫：任何盖在查词弹窗之上的 Flutter 对话框（「制卡·选择句子
-/// 上下文」[SentenceContextDialog]、「卡片已在 Anki 中」动作对话框、「打开卡片」多卡
+/// 上下文」→「高级制卡」对话框 `AdvancedMiningDialog`、「卡片已在 Anki 中」动作对话框、「打开卡片」多卡
 /// 选择框）打开期间，必须把查词弹窗 WebView 停靠屏外，否则**原生平台视图**（桌面
 /// WebView2 / Android platform view，靠 airspace 总画在 Flutter overlay 之上）会盖住
 /// `showAppDialog` 弹的对话框（用户报「层级不对 / 看不见」）。
@@ -142,8 +142,9 @@ void main() {
           reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿');
     }
     expect(
-        read('lib/src/pages/implementations/sentence_context_dialog.dart')
-            .contains('final Future<bool> Function() onConfirm;'),
+        RegExp(r'typedef AdvancedMiningConfirm\s*=\s*Future<bool> Function\(')
+            .hasMatch(read(
+                'lib/src/mining/advanced_mining/advanced_mining_capabilities.dart')),
         isTrue,
         reason: 'onConfirm 的契约必须是「回传有没有点到」，不是 VoidCallback');
   });

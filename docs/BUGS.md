@@ -93,6 +93,7 @@
 | [BUG-3328](bugs/BUG-3328-shelf-name-sort-display-title.md) | ✅ | ✅ | 书架/漫画库按名称排序与显示名不一致、全角数字不按数值排 |
 | [BUG-3328](bugs/BUG-3328-manga-drop-epub-multi.md) | ✅ | ✅ | 漫画库拖入 EPUB 先走书籍导入、多选拖入只导一本 |
 | [BUG-3328](bugs/BUG-3328-popup-imported-font-synthetic-bold.md) | ✅ | ✅ | 查词弹窗导入字体只有常规字重时词头被合成加粗、字形中空 |
+| [BUG-3328](bugs/BUG-3328-video-preview-padding.md) | ✅ | ✅ | 视频句子音频试听不含首尾留白，与写卡区间不一致 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

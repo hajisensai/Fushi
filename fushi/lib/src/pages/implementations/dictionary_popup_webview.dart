@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
-    show AnkiOpenWordOutcome, MineOutcome, MineResult;
+    show AnkiOpenWordOutcome, MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -240,6 +240,15 @@ Set<String> configuredDictionaryFontPaths(AppModel appModel) {
       .toSet();
 }
 
+/// 词条「高级制卡」按钮的宿主回调。
+///
+/// * [entryIndex]：该词条在 `:scope > .entry` 里的稳定 DOM 序，确认时
+///   [DictionaryPopupWebViewState.mineEntryByIndex] 按它精确回点同一颗「+」。
+/// * [matched]：查到的词在句中的表现形（对话框里当前句高亮用）。
+/// * [expression]：词条原形（对话框标题行用；老 popup.js 不传时为空串）。
+typedef OpenAdvancedMiningCallback =
+    Future<void> Function(int entryIndex, String matched, String expression);
+
 class DictionaryPopupWebView extends ConsumerStatefulWidget {
   const DictionaryPopupWebView({
     required this.result,
@@ -261,8 +270,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
-    this.onSentenceContextPreview,
-    this.onOpenSentenceContextModal,
+    this.onOpenAdvancedMining,
     this.onScrolledToBottom,
     this.onScrolledUnderChanged,
     this.forwardScrollToHost = false,
@@ -386,20 +394,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 角标归零。非空才在 popup 渲染清空入口（与 [onAppendSentence] 同生命周期）。
   final Future<int> Function()? onClearSentenceDraft;
 
-  /// Niratan「制卡前调整·选择句子上下文」：popup 点「调整上下文」打开模态时经
-  /// `sentenceContextPreview` JS 处理器触发本回调，宿主把当前草稿的真实上下文句
-  /// （前/当前/后）+ 词在当前句的偏移打包成 JSON-safe Map（见 `buildSentenceContextPreview`）
-  /// 回给 popup 渲染三栏预览。非空才在 popup 渲染「调整上下文」按钮（与 [onSetSentenceContext]
-  /// 同生命周期；reader/视频启用）。
-  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
-
-  /// BUG-763/766：popup 里点某词条的「调整上下文」按钮经 `openSentenceContextModal` JS
-  /// 处理器触发本回调，宿主弹 **app 原生顶层对话框**（`SentenceContextDialog`，不再画在
-  /// 弹窗 WebView 内）。[entryIndex] 是该词条在 `:scope > .entry` 里的稳定 DOM 序（确认
-  /// 制卡时用 [DictionaryPopupWebViewState.mineEntryByIndex] 精确回点），[matched] 是查到
-  /// 的词表现形（对话框里在当前句高亮）。非空才在 popup 渲染「调整上下文」按钮。
-  final Future<void> Function(int entryIndex, String matched)?
-      onOpenSentenceContextModal;
+  /// 「高级制卡」：popup 里点某词条的「高级制卡」按钮经 `openAdvancedMining` JS 处理器
+  /// 触发本回调，宿主弹 **app 原生顶层对话框**（`showAdvancedMiningDialog`，不画在弹窗
+  /// WebView 内——BUG-763/766 的教训）。确认后宿主经
+  /// [DictionaryPopupWebViewState.mineEntryByIndex] 带上覆盖项回点该词条的「+」。
+  /// 非空才在 popup 渲染这颗按钮（经 `window.advancedMiningEnabled`）；宿主只在制卡
+  /// 模块开着时接线。参数语义见 [OpenAdvancedMiningCallback]。
+  final OpenAdvancedMiningCallback? onOpenAdvancedMining;
   final VoidCallback? onScrolledToBottom;
 
   /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
@@ -780,10 +781,10 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   }
 
   /// BUG-717 ③：最近一次已注入的 in-app 固定块（`__fushiResetPopupScroll` 钩子 +
-  /// 句子上下文 i18n 文案 + `sentenceContextPreviewEnabled`）的键。该块只随静态段
-  /// 版本（含语言切换——locale 在 builder 的 memo 键里）与 preview 回调的有无变化，
+  /// 句子上下文 i18n 文案 + `advancedMiningEnabled`）的键。该块只随静态段
+  /// 版本（含语言切换——locale 在 builder 的 memo 键里）与「高级制卡」回调的有无变化，
   /// 此前每次查词都重发约 1-2KB。页面重载时同样置 null。
-  ({int revision, bool preview})? _lastSentInAppExtrasKey;
+  ({int revision, bool advancedMining})? _lastSentInAppExtrasKey;
 
   Future<T> _guardJsBridge<T>(
     String logTag,
@@ -1282,7 +1283,7 @@ JSON.stringify((function(){
   /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
   /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
-  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`AdvancedMiningDialog`）据此
   /// 提示用户。
   /// 「回点前」这一段（下发 JS → 查重 → 取音 → 组 payload）的上限。BUG-2634：这个
   /// 超时**只盖到宿主接手为止**——宿主的 Dart 代码一旦在跑（可能在等用户从「已有卡」
@@ -1297,6 +1298,21 @@ JSON.stringify((function(){
   /// 本次往返的宿主是否保证「在首个 await 之前同步读走草稿 / 制卡上下文」。
   /// 见 [mineEntryByIndex] 的 `releaseWhenPayloadConsumed`。
   bool _confirmMineReleaseWhenConsumed = false;
+
+  /// 本次「高级制卡」往返要并进制卡 fields 的覆盖项（[mineEntryByIndex] 的
+  /// `overrides`）。与 [_confirmMineRoundTrip] 同生命周期：往返开始时设、`finally`
+  /// 里清，所以只有**这一次**回点触发的桥调用才带——用户普通点「+」时为 null。
+  /// 不挂在页面状态上的理由见 [MiningRequestOverrides] 的类注释（串行队列异步启动）。
+  MiningRequestOverrides? _confirmMineOverrides;
+
+  /// 三个制卡桥 handler 解析出 fields 后**同步**调用：本次往返带了覆盖项就并进去。
+  /// 必须在把 fields 交给宿主之前、且不隔 await——否则 finally 清掉之后才到的桥调用
+  /// （或下一次普通「+」）会读错。
+  Map<String, String> _withConfirmMineOverrides(Map<String, String> fields) {
+    final MiningRequestOverrides? overrides = _confirmMineOverrides;
+    if (overrides == null) return fields;
+    return MiningRequestOverrides.attach(fields, overrides);
+  }
 
   /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
   /// 交出去的那一刻调。
@@ -1318,17 +1334,22 @@ JSON.stringify((function(){
   /// [releaseWhenPayloadConsumed]：本次往返的宿主是否保证**在首个 `await` 之前**把
   /// 草稿 / 制卡上下文同步读完。
   ///
-  /// * 视频车道（`_openSentenceContextDialogForVideo`）传 true：`_onMineEntryImpl`
+  /// * 视频车道（mixin 的 `_openAdvancedMiningDialog`）传 true：`_onMineEntryImpl`
   ///   在 `await _mineVideoCard(...)` 之前就把草稿、cue、历史快照读完，连当前帧截图
   ///   的 Future 都在点击当下同步启动，所以提前关窗不会截到别的帧。
-  /// * 阅读器车道（`base_source_page` 的 `_openSentenceContextDialog`）传 false：它的
+  /// * 阅读器车道（`base_source_page` 的 `_openAdvancedMiningDialog`）传 false：它的
   ///   `onMineFromPopup` 经制卡串行队列入队（TODO-644 / BUG-357），草稿要等前一次制卡
   ///   整段跑完才被读走；提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿合成——
   ///   卡制出来、toast 报成功、用户刚调的上下文全丢（BUG-2627 第二轮正是修的这个）。
   ///   它退回「等落地」这条老路，只是不会再因为宿主慢而误报失败。
+  ///
+  /// [overrides]：「高级制卡」对话框里用户为这张卡做的调整。只并进**本次往返**回点
+  /// 出来的 `mineEntry` / `updateEntry` / `minedCardAction` 桥调用的 fields（见
+  /// [_withConfirmMineOverrides]），往返结束即清。
   Future<bool> mineEntryByIndex(
     int idx, {
     required bool releaseWhenPayloadConsumed,
+    MiningRequestOverrides? overrides,
   }) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) {
@@ -1343,6 +1364,8 @@ JSON.stringify((function(){
         ConfirmMineRoundTrip(preHostTimeout: _kMineRoundTripTimeout);
     _confirmMineRoundTrip = trip;
     _confirmMineReleaseWhenConsumed = releaseWhenPayloadConsumed;
+    _confirmMineOverrides =
+        overrides == null || overrides.isEmpty ? null : overrides;
     try {
       // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
       // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。
@@ -1395,6 +1418,7 @@ JSON.stringify((function(){
       if (identical(_confirmMineRoundTrip, trip)) {
         _confirmMineRoundTrip = null;
         _confirmMineReleaseWhenConsumed = false;
+        _confirmMineOverrides = null;
       }
     }
   }
@@ -1708,18 +1732,21 @@ JSON.stringify((function(){
         ? 'window.dictionaryStyles = ${jsonEncode(remoteStyles)};'
         : '';
     // BUG-717 ③：in-app 固定块（__fushiResetPopupScroll 钩子 + 句子上下文 i18n +
-    // sentenceContextPreviewEnabled）并入静态段的失效节奏：随静态段版本重发
+    // advancedMiningEnabled）并入静态段的失效节奏：随静态段版本重发
     // （语言切换 → builder memo 键含 locale → 新 revision → 必然重发），另跟踪
-    // preview 回调有无（宿主换回调时也要刷新）。原来每次查词都重发这 1-2KB。
-    final bool sentencePreviewEnabled = widget.onSentenceContextPreview != null;
-    final ({int revision, bool preview}) extrasKey =
-        (revision: staticSettings.revision, preview: sentencePreviewEnabled);
+    // 「高级制卡」回调有无（热槽 WebView 换宿主 / 制卡模块开关翻转时，旧的
+    // window.advancedMiningEnabled 会跨渲染残留，必须随之重发）。原来每次查词都重发这 1-2KB。
+    final bool advancedMiningEnabled = widget.onOpenAdvancedMining != null;
+    final ({int revision, bool advancedMining}) extrasKey = (
+      revision: staticSettings.revision,
+      advancedMining: advancedMiningEnabled,
+    );
     final bool extrasChanged = extrasKey != _lastSentInAppExtrasKey;
     if (extrasChanged) {
       _lastSentInAppExtrasKey = extrasKey;
     }
     final String inAppExtrasJs = extrasChanged
-        ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
+        ? _inAppStaticExtrasJs(advancedMiningEnabled: advancedMiningEnabled)
         : '';
     final String entriesJs = buildPopupEntriesJs(
       widget.result,
@@ -1778,11 +1805,11 @@ JSON.stringify((function(){
     );
   }
 
-  /// BUG-717 ③：in-app 专属的固定注入块。内容与拆分前逐字节一致，只是不再每次
-  /// 查词重发——注入时机由 [_lastSentInAppExtrasKey]（静态段 revision + preview
-  /// 回调有无）门控，热槽 WebView 的 window.* 跨渲染持久。语言切换经静态段
-  /// revision 失效（builder memo 键含 locale），文案随之重发。
-  String _inAppStaticExtrasJs({required bool sentencePreviewEnabled}) {
+  /// BUG-717 ③：in-app 专属的固定注入块。不再每次查词重发——注入时机由
+  /// [_lastSentInAppExtrasKey]（静态段 revision + 「高级制卡」回调有无）门控，热槽
+  /// WebView 的 window.* 跨渲染持久。语言切换经静态段 revision 失效（builder memo
+  /// 键含 locale），文案随之重发。
+  String _inAppStaticExtrasJs({required bool advancedMiningEnabled}) {
     return '''
       window.__fushiResetPopupScroll = function() {
         window.scrollTo(0, 0);
@@ -1796,27 +1823,15 @@ JSON.stringify((function(){
       window.i18nClearSentenceDraftTooltip = ${jsonEncode(t.popup_clear_sentence_draft_tooltip)};
       window.i18nContextPrevLabel = ${jsonEncode(t.popup_sentence_context_prev_label)};
       window.i18nContextNextLabel = ${jsonEncode(t.popup_sentence_context_next_label)};
-      // Niratan「制卡前调整·选择句子上下文」：独立于旧内联步进器（kSentenceContextPickerEnabled
-      // 恒 false）的新特性门控——宿主接入了预览回调（reader/有声书/视频，supportsSentenceDraft
-      // 为真）才为真，popup.js 据此渲染「调整上下文」按钮。app 外 / 悬浮独立窗不走本注入块，
+      // 「高级制卡」入口门控：宿主接了 onOpenAdvancedMining（只在制卡模块开着时接）才为真，
+      // popup.js 据此在每个词条头渲染「高级制卡」按钮。所有挂 DictionaryPopupWebView 的
+      // 表面都接（纯查词页的对话框只有卡组分区）。app 外 / 悬浮独立窗不走本注入块，
       // 该 flag undefined → 按钮不渲染。
-      window.sentenceContextPreviewEnabled = $sentencePreviewEnabled;
-      // Niratan「制卡前调整·选择句子上下文」模态文案（popup.js 无自带 i18n，靠宿主注入）。
+      window.advancedMiningEnabled = $advancedMiningEnabled;
+      // 「高级制卡」按钮提示文案（popup.js 无自带 i18n，靠宿主注入）。对话框本体是原生
+      // Flutter 对话框，文案走 slang，不经这里。
       window.i18nCtx = {
-        adjust: ${jsonEncode(t.popup_ctx_adjust_button)},
-        eyebrow: ${jsonEncode(t.popup_ctx_modal_eyebrow)},
-        title: ${jsonEncode(t.popup_ctx_modal_title)},
-        count: ${jsonEncode(t.popup_ctx_modal_count)},
-        boxPrev: ${jsonEncode(t.popup_ctx_box_prev)},
-        boxCurrent: ${jsonEncode(t.popup_ctx_box_current)},
-        boxNext: ${jsonEncode(t.popup_ctx_box_next)},
-        boxEmpty: ${jsonEncode(t.popup_ctx_box_empty)},
-        prevMinus: ${jsonEncode(t.popup_ctx_prev_minus)},
-        prevPlus: ${jsonEncode(t.popup_ctx_prev_plus)},
-        nextMinus: ${jsonEncode(t.popup_ctx_next_minus)},
-        nextPlus: ${jsonEncode(t.popup_ctx_next_plus)},
-        confirm: ${jsonEncode(t.popup_ctx_confirm)},
-        cancel: ${jsonEncode(t.popup_ctx_cancel)},
+        advancedMining: ${jsonEncode(t.popup_advanced_mining_button)},
       };
 ''';
   }
@@ -2635,9 +2650,13 @@ JSON.stringify((function(){
               if (args.isNotEmpty &&
                   args[0] is Map &&
                   widget.onMineEntry != null) {
-                final fields = Map<String, String>.from(
-                  (args[0] as Map)
-                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 「高级制卡」往返的覆盖项在这里同步并进 fields（解析后、交宿主前，
+                // 不隔 await），普通点「+」时原样不动。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map)
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
                 // 落盘词典媒体（gaiji）字节供 repo 嵌进卡片；必须在 onMineEntry
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
@@ -2676,9 +2695,13 @@ JSON.stringify((function(){
               if (args.isNotEmpty &&
                   args[0] is Map &&
                   widget.onMinedCardAction != null) {
-                final fields = Map<String, String>.from(
-                  (args[0] as Map)
-                      .map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 覆盖项并进这份 fields：宿主的 mineNew / overwrite 两条分支都从它
+                // 出发，用户在操作单里选哪条都带着本次的调整。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    (args[0] as Map)
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
                 // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
                 await writeDictionaryMediaCache(
@@ -2753,8 +2776,13 @@ JSON.stringify((function(){
                 if (noteId == null || fieldsRaw is! Map) {
                   return const MinePopupResult().toJson();
                 }
-                final fields = Map<String, String>.from(
-                  fieldsRaw.map((k, v) => MapEntry(k.toString(), v.toString())),
+                // 覆写同样带上本次「高级制卡」的覆盖项（媒体类调整照样生效；
+                // 卡组覆盖对覆写无效——卡留在原卡组）。
+                final fields = _withConfirmMineOverrides(
+                  Map<String, String>.from(
+                    fieldsRaw
+                        .map((k, v) => MapEntry(k.toString(), v.toString())),
+                  ),
                 );
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
                 // 结果来自别的设备时清单留空（本机没有那部词典，卡由那台设备落地）。
@@ -2938,50 +2966,34 @@ JSON.stringify((function(){
           },
         );
 
-        // Niratan「制卡前调整·选择句子上下文」：popup 打开模态 / 每次调整后拉取当前草稿
-        // 的真实上下文句（前/当前/后）+ 词偏移做预览。只读，不改草稿（调整仍走
-        // setSentenceContext）。宿主未接入 / 出错时回传空 Map，popup 侧兜底不渲染文本。
+        // 「高级制卡」：popup 点某词条的「高级制卡」→ 宿主弹 app 原生顶层对话框
+        // （BUG-763/766：不画在弹窗 WebView 内，那受弹窗尺寸/半透明限制）。
+        // args[0] = {entryIndex, matched, expression}。
         controller.addJavaScriptHandler(
-          handlerName: 'sentenceContextPreview',
-          callback: (_) async {
-            return _guardJsBridge<Object?>(
-              'DictPopupWebview.sentenceContextPreview',
-              const <String, Object?>{},
-              ErrorLogService.instance,
-              () async {
-                if (widget.onSentenceContextPreview == null) {
-                  return const <String, Object?>{};
-                }
-                return widget.onSentenceContextPreview!();
-              },
-            );
-          },
-        );
-
-        // BUG-763/766：popup 点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框
-        // （SentenceContextDialog），不再画在弹窗 WebView 内（那受弹窗尺寸/半透明限制，
-        // 句子框重叠、显示不全）。args[0] = {entryIndex, matched}。
-        controller.addJavaScriptHandler(
-          handlerName: 'openSentenceContextModal',
+          handlerName: 'openAdvancedMining',
           callback: (args) async {
             return _guardJsBridge<Object?>(
-              'DictPopupWebview.openSentenceContextModal',
+              'DictPopupWebview.openAdvancedMining',
               null,
               ErrorLogService.instance,
               () async {
-                if (widget.onOpenSentenceContextModal == null) return null;
+                final OpenAdvancedMiningCallback? open =
+                    widget.onOpenAdvancedMining;
+                if (open == null) return null;
                 int entryIndex = 0;
                 String matched = '';
-                // BUG-1326：popup.js 现在传对象；老的扩展 vendor 副本（用户装在浏览器
-                // 里、与 app 不同步更新）还可能传 JSON 字符串。两种形态都解析，否则
-                // entryIndex 静默退化成 0 → 确认制卡永远点第一个词条。
+                String expression = '';
+                // BUG-1326：popup.js 传对象；也兼容 JSON 字符串（老的扩展 vendor 副本
+                // 曾经 stringify 过），否则 entryIndex 静默退化成 0 → 确认制卡永远点
+                // 第一个词条。
                 final Map<dynamic, dynamic>? data =
                     decodeBridgeMap(args.isEmpty ? null : args[0]);
                 if (data != null) {
                   entryIndex = (data['entryIndex'] as num?)?.toInt() ?? 0;
                   matched = data['matched']?.toString() ?? '';
+                  expression = data['expression']?.toString() ?? '';
                 }
-                await widget.onOpenSentenceContextModal!(entryIndex, matched);
+                await open(entryIndex, matched, expression);
                 return null;
               },
             );
@@ -3674,7 +3686,7 @@ JSON.stringify((function(){
 ///
 /// popup.js 的 `callHandler` 一律传**对象**，宿主收到 `Map`。但浏览器扩展的 vendor 副本
 /// 是用户自己装在浏览器里的、与 app 不同步更新，老副本可能仍传 `JSON.stringify(...)` 的
-/// 字符串；只认 `is Map` 会让字段静默退化成默认值（`openSentenceContextModal` 的
+/// 字符串；只认 `is Map` 会让字段静默退化成默认值（`openAdvancedMining` 的
 /// `entryIndex` 退化成 0 → 确认制卡永远点第一个词条，用户只看到「没反应」）。
 ///
 /// 认三种形态：`Map` 原样、JSON 对象字符串解出 Map、其余（含 null / JSON 数组 / 非法串）

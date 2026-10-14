@@ -119,15 +119,16 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         }
       },
       mine: _mineRemoteVideoCue,
-      previewAudio: (VideoRemoteCue anchor, int startMs, int endMs) =>
-          _replaySubtitleSpan(
-            anchor.track == 'secondary'
-                ? controller.secondaryCues
-                : controller.cues,
-            startMs,
-            endMs,
-          ),
-      stopAudio: controller.pause,
+      // 手机试听放的是电脑会写进卡片的那段（与 [_mineRemoteVideoCue] 同一个
+      // [_remoteVideoMiningWindow]，含首尾留白与调轴），不是按 cue 边界放（BUG-3328）。
+      previewAudio: (VideoRemoteCue anchor, int startMs, int endMs) async {
+        final ({int clipStartMs, int clipEndMs}) window =
+            _remoteVideoMiningWindow(controller, anchor, startMs, endMs);
+        if (window.clipEndMs <= window.clipStartMs) return false;
+        await controller.playRangeMs(window.clipStartMs, window.clipEndMs);
+        return true;
+      },
+      stopAudio: controller.stopPlayRange,
       openFavorite: _openRemoteVideoFavorite,
       addListener: controller.addListener,
       removeListener: controller.removeListener,
@@ -135,6 +136,29 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
+  }
+
+  /// 遥控制卡 / 试听共用的音频与画面窗：字幕时基区间 `[startMs, endMs]`（[anchor] 所在
+  /// 那条字幕流）按本页规则加首尾留白，再按 [anchor] 的调轴换到播放器轴。试听与写卡
+  /// 只算这一处（BUG-2196 ②）。
+  ({int clipStartMs, int clipEndMs}) _remoteVideoMiningWindow(
+    VideoPlayerController controller,
+    VideoRemoteCue anchor,
+    int startMs,
+    int endMs,
+  ) {
+    final AudioPlaybackRange padded = padSentenceRange(
+      AudioPlaybackRange(audioFileIndex: 0, startMs: startMs, endMs: endMs),
+      cues: anchor.track == 'secondary'
+          ? controller.secondaryCues
+          : controller.cues,
+      headPadMs: appModel.miningAudioHeadPadMs,
+      tailPadMs: appModel.miningAudioTailPadMs,
+    );
+    return (
+      clipStartMs: miningClipTimeMs(padded.startMs, anchor.delayMs),
+      clipEndMs: miningClipTimeMs(padded.endMs, anchor.delayMs),
+    );
   }
 
   /// 遥控制卡：手机经 `lookupContext` 调好的上下文由宿主冻结成 [selection]
@@ -168,18 +192,25 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     if (requestSentence != null && requestSentence is! String) {
       throw const VideoRemoteException(400, 'invalid_fields');
     }
-    final AudioPlaybackRange padded = padSentenceRange(
-      AudioPlaybackRange(
-        audioFileIndex: 0,
-        startMs: selection.startMs,
-        endMs: selection.endMs,
-      ),
-      cues: cue.track == 'secondary'
-          ? controller.secondaryCues
-          : controller.cues,
-      headPadMs: appModel.miningAudioHeadPadMs,
-      tailPadMs: appModel.miningAudioTailPadMs,
+    // 手机经 rawFields 原样带来的「高级制卡」覆盖项（遥控页只给句子分区，通常为空；
+    // 卡组由落卡层按同一个键读）。与本机制卡同在首个 await 之前读。
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
     );
+    final ({int clipStartMs, int clipEndMs}) window = _remoteVideoMiningWindow(
+      controller,
+      cue,
+      selection.startMs,
+      selection.endMs,
+    );
+    final VideoMiningRange range = applyVideoMiningOverrides((
+      clipStartMs: window.clipStartMs,
+      clipEndMs: window.clipEndMs,
+      // 与本页制卡同：封面锚在合并区间**未 pad** 的起点。
+      stillFrameAtMs: miningClipTimeMs(selection.startMs, cue.delayMs),
+      sentence: '',
+      cueSentence: null,
+    ), overrides);
     // 手机调过上下文（加句 / 改字）时以合成文本为准；否则沿用手机带来的句子。
     final String sentence = selection.adjusted
         ? selection.sentence
@@ -205,12 +236,12 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     // 会让卡片用旧集字幕的时间去裁新集的音频和画面。
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
-      clipStartMs: miningClipTimeMs(padded.startMs, cue.delayMs),
-      clipEndMs: miningClipTimeMs(padded.endMs, cue.delayMs),
-      // 与本页制卡同：封面锚在合并区间**未 pad** 的起点。
-      stillFrameAtMs: miningClipTimeMs(selection.startMs, cue.delayMs),
+      clipStartMs: range.clipStartMs,
+      clipEndMs: range.clipEndMs,
+      stillFrameAtMs: range.stillFrameAtMs,
       sentence: sentence,
       cueSentence: selection.cueSentence,
+      overrides: overrides,
       silent: true,
       forceForeground: true,
       forceSubtitleStart: true,

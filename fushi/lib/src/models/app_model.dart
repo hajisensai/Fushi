@@ -9471,6 +9471,13 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaPanelNavigation(value);
 
   bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
+
+  /// 一键制卡默认裁到所在分镜。弹窗 / 悬浮词典 entry point 不经 `initialise()`，
+  /// `_prefsRepo` 可能为空，回落到同一个默认值常量。
+  bool get mangaMiningCropToPanel =>
+      _prefsRepo?.mangaMiningCropToPanel ?? kMangaMiningCropToPanelDefault;
+  Future<void> setMangaMiningCropToPanel(bool value) =>
+      prefsRepo.setMangaMiningCropToPanel(value);
   Future<void> setMangaPanelNavigationEnabled(bool value) =>
       setMangaPanelNavigation(value);
 

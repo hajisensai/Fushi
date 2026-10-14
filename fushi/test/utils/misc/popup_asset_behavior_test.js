@@ -3482,11 +3482,11 @@ async function testAdjustContextButtonSnapshotsSelectionForConfirm() {
   const context = loadPopup();
   const mined = [];
   stubMineBridge(context, mined);
-  context.window.sentenceContextPreviewEnabled = true;
+  context.window.advancedMiningEnabled = true;
   mountEntriesWith(context, ['自体']);
   await flush();
   const adjust = findByClassName(context.window.__fushiRoot, 'ctx-adjust-button');
-  assert.ok(adjust, 'adjust-context button must render when preview is enabled');
+  assert.ok(adjust, 'advanced-mining button must render when the host wired it');
 
   const selected = 'それ自身。そのもの。';
   context.window.getSelection().text = selected;
@@ -3498,7 +3498,82 @@ async function testAdjustContextButtonSnapshotsSelectionForConfirm() {
   await flush();
   assert.equal(mined.length, 1);
   assert.equal(mined[0].popupSelectionText, selected,
-    'confirm from the adjust-context dialog must carry the selection made before opening it');
+    'confirm from the advanced-mining dialog must carry the selection made before opening it');
+}
+
+// 「高级制卡」入口：app 内由 window.advancedMiningEnabled 门控（所有表面，不再只限句子草稿
+// 表面），点它把 {entryIndex, matched, expression} **对象**（BUG-1326：不 stringify）交给
+// openAdvancedMining；entryIndex 是点的那个词条的 DOM 序。浏览器扩展没有这个宿主，仍走
+// 它自己的 openSentenceContextModal；制卡模块关掉（「+」不渲染）时入口也不渲染。
+async function testAdvancedMiningButtonOpensHostDialog() {
+  const context = loadPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push([name, payload]);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  context.window.advancedMiningEnabled = true;
+  context.window.i18nCtx = { advancedMining: 'Advanced mining', adjust: 'Adjust context' };
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const entries = context.window.__fushiRoot.children[0].children;
+  const second = findByClassName(entries[1], 'ctx-adjust-button');
+  assert.ok(second, 'every entry header renders the advanced-mining button');
+  second.onclick();
+  const opened = calls.filter(([name]) => name === 'openAdvancedMining');
+  assert.equal(opened.length, 1, 'one click opens the host dialog exactly once');
+  assert.equal(typeof opened[0][1], 'object', 'payload is an object, never a JSON string');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(opened[0][1])),
+    { entryIndex: 1, matched: '事典', expression: '事典' });
+  assert.equal(calls.some(([name]) => name === 'openSentenceContextModal'), false,
+    'the in-app surface has a single entry point');
+}
+
+async function testAdvancedMiningButtonGating() {
+  // 没注入任何能力 → 不渲染。
+  const bare = loadPopup();
+  stubMineBridge(bare, []);
+  mountEntriesWith(bare, ['自体']);
+  await flush();
+  assert.equal(findByClassName(bare.window.__fushiRoot, 'ctx-adjust-button'), null,
+    'no host capability → no button');
+
+  // 制卡模块关掉：「+」不渲染，回点无从谈起 → 入口也不渲染。
+  const miningOff = loadPopup();
+  stubMineBridge(miningOff, []);
+  miningOff.window.advancedMiningEnabled = true;
+  miningOff.window.__fushiMiningEnabled = false;
+  // mountEntriesWith 断言每个词条都有「+」，这里「+」本就不该有，直接建词条头。
+  const offHeader = miningOff.createEntryHeader({
+    expression: '自体', reading: '自体', matched: '自体',
+    frequencies: [], pitches: [], rules: [],
+  }, 0);
+  await flush();
+  assert.equal(findByClassName(offHeader, 'mine-button'), null);
+  assert.equal(findByClassName(offHeader, 'ctx-adjust-button'), null,
+    'card creation off → no advanced-mining entry');
+
+  // 浏览器扩展：只有它自己的「调整上下文」能力 → 仍走 openSentenceContextModal。
+  const ext = loadPopup();
+  const calls = [];
+  ext.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push([name, payload]);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  ext.window.sentenceContextPreviewEnabled = true;
+  mountEntriesWith(ext, ['自体']);
+  await flush();
+  const button = findByClassName(ext.window.__fushiRoot, 'ctx-adjust-button');
+  assert.ok(button, 'extension keeps its adjust-context entry');
+  button.onclick();
+  assert.deepEqual(
+    calls.filter(([name]) => name === 'openSentenceContextModal')
+      .map(([, payload]) => JSON.parse(JSON.stringify(payload))),
+    [{ entryIndex: 0, matched: '自体' }]);
+  assert.equal(calls.some(([name]) => name === 'openAdvancedMining'), false);
 }
 
 async function testShortcutMineUsesLiveSelection() {
@@ -3538,6 +3613,8 @@ async function testShortcutMineCapturesLiveSelection() {
 Promise.all([
   testNewLookupDropsPreviousSelectionSnapshot(),
   testAdjustContextButtonSnapshotsSelectionForConfirm(),
+  testAdvancedMiningButtonOpensHostDialog(),
+  testAdvancedMiningButtonGating(),
   testShortcutMineUsesLiveSelection(),
   testShortcutMineCapturesLiveSelection(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
