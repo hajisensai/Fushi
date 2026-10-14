@@ -4,8 +4,7 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart'
-    show Clipboard, KeyDownEvent, KeyEvent;
+import 'package:flutter/services.dart' show Clipboard, KeyDownEvent, KeyEvent;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -157,6 +156,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   final TextEditingController _controller = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+
   /// 语言取 [appModelNoUpdate] 而**不是** `appModel`：后者在 mounted 时是
   /// `ref.watch`（`base_page.dart`），而 [LookupImeBinding.attach] 在 `initState`
   /// 里**同步**调一次 `languageOf()`——在 build 之外建立 InheritedWidget 依赖会被
@@ -229,8 +229,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   /// 搜索区的身份：宽窄布局切换（拖窗跨断点）时搜索区换了父节点，用 GlobalKey 让
   /// 输入框连同焦点 / 组字状态一起搬过去，而不是重建成一个失焦的新输入框。
-  final GlobalKey _searchRegionKey =
-      GlobalKey(debugLabel: 'home-dictionary-search-region');
+  final GlobalKey _searchRegionKey = GlobalKey(
+    debugLabel: 'home-dictionary-search-region',
+  );
 
   /// 仅测试可见：最近一次派发的查词 future（[debugSearch] 返回它以便
   /// await 失败路径）。生产路径仍 fire-and-forget，不改变行为。
@@ -242,8 +243,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     appModelNoUpdate.dictionarySearchAgainNotifier.addListener(_searchAgain);
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
-    appModelNoUpdate.dictionaryEntriesNotifier
-        .addListener(_onDictionaryEntriesChanged);
+    appModelNoUpdate.dictionaryEntriesNotifier.addListener(
+      _onDictionaryEntriesChanged,
+    );
     _searchFocusNode.addListener(_onFocusChanged);
     _imeBinding.attach(focusNode: _searchFocusNode);
     widget.focusSignal?.addListener(_consumeFocusRequest);
@@ -463,8 +465,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   @override
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
       _escapeMinimizesWindow
-          ? const <ShortcutAction>{ShortcutAction.globalBack}
-          : const <ShortcutAction>{};
+      ? const <ShortcutAction>{ShortcutAction.globalBack}
+      : const <ShortcutAction>{};
 
   @override
   bool onDictionaryPopupInputToken(String token) {
@@ -487,8 +489,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _searchFocusNode.removeListener(_onFocusChanged);
     _imeBinding.detach();
     appModelNoUpdate.dictionarySearchAgainNotifier.removeListener(_searchAgain);
-    appModelNoUpdate.dictionaryEntriesNotifier
-        .removeListener(_onDictionaryEntriesChanged);
+    appModelNoUpdate.dictionaryEntriesNotifier.removeListener(
+      _onDictionaryEntriesChanged,
+    );
     _commitHistory();
     _debounceTimer?.cancel();
     _searchFocusNode.dispose();
@@ -616,7 +619,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 断点（expanded，≥ 840），按**真实**宽度判档（BUG-401：界面缩放下逻辑宽被放大）。
   bool _isWideLayout(double logicalWidth) =>
       windowSizeClassReal(logicalWidth, FushiAppUiScale.of(context)) ==
-          WindowSizeClass.expanded;
+      WindowSizeClass.expanded;
 
   /// Apple（iOS）搜索中折叠大标题：搜索区持焦或已有查询时收起，把高度让给建议与
   /// 结果（UISearchController 搜索态隐藏导航栏大标题的同款）。只在窄屏——桌面 /
@@ -893,8 +896,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Widget _buildSearchHeader() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
-    final double horizontalPadding =
-        isCupertinoPlatform(context) ? tokens.spacing.gap : tokens.spacing.page;
+    final double horizontalPadding = isCupertinoPlatform(context)
+        ? tokens.spacing.gap
+        : tokens.spacing.page;
     // Apple 搜索栏的「取消」：搜索中（持焦或已有查询）才滑出，点了退出搜索。
     final bool showCancel = glass && (_searchRegionFocused || _hasActiveQuery);
     return Padding(
@@ -913,46 +917,50 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               enabled: !glass && !isEinkTheme(context),
               focused: _searchRegionFocused,
               child: FushiSearchField(
-              fieldKey: const ValueKey<String>('home_dictionary_search_field'),
-              clearButtonKey: const ValueKey<String>(
-                'home_dictionary_search_clear_button',
-              ),
-              controller: _controller,
-              focusNode: _searchFocusNode,
-              hintText: t.search_ellipsis,
-              onChanged: _onQueryChanged,
-              onClear: _clearSearch,
-              onSubmitted: _search,
-              // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple 仍是
-              // 36 的 iOS 搜索胶囊（large 在 Apple 下不拉伸）。
-              size: FushiSearchFieldSize.large,
-              // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
-              // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。
-              // 墨水屏不铺 tonal 底。Apple 下没有这枚钮（与原来一致）。
-              trailing: glass
-                  ? const <Widget>[]
-                  : <Widget>[
-                      FushiIconButton(
-                        key: const ValueKey<String>(
-                          'home_dictionary_manage_button',
+                fieldKey: const ValueKey<String>(
+                  'home_dictionary_search_field',
+                ),
+                clearButtonKey: const ValueKey<String>(
+                  'home_dictionary_search_clear_button',
+                ),
+                controller: _controller,
+                focusNode: _searchFocusNode,
+                hintText: t.search_ellipsis,
+                onChanged: _onQueryChanged,
+                onClear: _clearSearch,
+                onSubmitted: _search,
+                // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple 仍是
+                // 36 的 iOS 搜索胶囊（large 在 Apple 下不拉伸）。
+                size: FushiSearchFieldSize.large,
+                // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
+                // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。
+                // 墨水屏不铺 tonal 底。Apple 下没有这枚钮（与原来一致）。
+                trailing: glass
+                    ? const <Widget>[]
+                    : <Widget>[
+                        FushiIconButton(
+                          key: const ValueKey<String>(
+                            'home_dictionary_manage_button',
+                          ),
+                          tooltip: t.dictionaries,
+                          icon: FushiIcons.dictionary,
+                          backgroundColor: isEinkTheme(context)
+                              ? null
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.secondaryContainer,
+                          enabledColor: isEinkTheme(context)
+                              ? null
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.onSecondaryContainer,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 40,
+                            height: 40,
+                          ),
+                          onTap: appModel.showDictionaryMenu,
                         ),
-                        tooltip: t.dictionaries,
-                        icon: FushiIcons.dictionary,
-                        backgroundColor: isEinkTheme(context)
-                            ? null
-                            : Theme.of(context).colorScheme.secondaryContainer,
-                        enabledColor: isEinkTheme(context)
-                            ? null
-                            : Theme.of(
-                                context,
-                              ).colorScheme.onSecondaryContainer,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 40,
-                          height: 40,
-                        ),
-                        onTap: appModel.showDictionaryMenu,
-                      ),
-                    ],
+                      ],
               ),
             ),
           ),
@@ -1086,15 +1094,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) =>
           SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          // 空态挂载即淡入（无进场窗口祖先 → 单项进场只播一次）。
-          child: Center(
-            child: FushiStaggeredEntrance(index: 0, child: content),
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              // 空态挂载即淡入（无进场窗口祖先 → 单项进场只播一次）。
+              child: Center(
+                child: FushiStaggeredEntrance(index: 0, child: content),
+              ),
+            ),
           ),
-        ),
-      ),
     );
   }
 
@@ -1220,8 +1228,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 清空全部（键盘 / 手柄删除走它）。
     final FushiAppleColors apple = appleColorsOf(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final List<String> rows =
-        recents.take(_kRecentSearchAppleRows).toList(growable: false);
+    final List<String> rows = recents
+        .take(_kRecentSearchAppleRows)
+        .toList(growable: false);
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Column(
@@ -1241,11 +1250,14 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 separatorIndent: metrics.rowHorizontal + 30,
                 onTap: () => _searchRecent(rows[i]),
                 child: Dismissible(
-                  key: ValueKey<String>('home_dictionary_recent_swipe_${rows[i]}'),
+                  key: ValueKey<String>(
+                    'home_dictionary_recent_swipe_${rows[i]}',
+                  ),
                   direction: DismissDirection.endToStart,
                   onUpdate: (DismissUpdateDetails details) {
-                    final String? swiping =
-                        details.progress > 0 ? rows[i] : null;
+                    final String? swiping = details.progress > 0
+                        ? rows[i]
+                        : null;
                     if (swiping == _swipingRecentSearch) return;
                     setState(() => _swipingRecentSearch = swiping);
                   },
@@ -1354,14 +1366,16 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           final hasWordInfo = word.isNotEmpty && word != searchTerm;
           final hasReading =
               reading.isNotEmpty && reading != word && reading != searchTerm;
-          final dictCount =
-              result.entries.map((e) => e.dictionaryName).toSet().length;
-          final bool rowSelected =
-              _hasActiveQuery && _lastQuery == searchTerm;
+          final dictCount = result.entries
+              .map((e) => e.dictionaryName)
+              .toSet()
+              .length;
+          final bool rowSelected = _hasActiveQuery && _lastQuery == searchTerm;
           void openRow() {
             _controller.text = searchTerm;
-            _controller.selection =
-                TextSelection.collapsed(offset: searchTerm.length);
+            _controller.selection = TextSelection.collapsed(
+              offset: searchTerm.length,
+            );
             _showCachedResult(result);
           }
 
@@ -1408,17 +1422,20 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             selected: _hasActiveQuery && _lastQuery == searchTerm,
             onTap: () {
               _controller.text = searchTerm;
-              _controller.selection =
-                  TextSelection.collapsed(offset: searchTerm.length);
+              _controller.selection = TextSelection.collapsed(
+                offset: searchTerm.length,
+              );
               _showCachedResult(result);
             },
             child: FushiListItem(
               title: Text(searchTerm.replaceAll('\n', ' ')),
               subtitle: hasWordInfo || hasReading
-                  ? Text([
-                      if (hasWordInfo) word,
-                      if (hasReading) reading,
-                    ].join('  '))
+                  ? Text(
+                      [
+                        if (hasWordInfo) word,
+                        if (hasReading) reading,
+                      ].join('  '),
+                    )
                   : null,
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1592,7 +1609,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         // 这里不能再判 `overrideMaximumTerms == null`：它上面已被 `??=` 补过默认值，
         // 那个判空恒假，主查词会一路拿到 null 锚点、高亮再也不落。用入口处算好的
         // 标志，它记的正是「本次是不是接管搜索框与源文本条的顶层查词」。
-        highlightAnchor: scanAnchor ??
+        highlightAnchor:
+            scanAnchor ??
             (replaceSourceLookupText
                 ? SourceLookupScan(query: trimmed, charIndex: 0)
                 : null),
@@ -1652,8 +1670,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         if (shouldAutoRead) {
           final entry = result.entries.first;
           if (entry.word.isNotEmpty) {
-            autoReadWord(entry.word, entry.reading,
-                popupState: _resultWebViewKey.currentState);
+            autoReadWord(
+              entry.word,
+              entry.reading,
+              popupState: _resultWebViewKey.currentState,
+            );
           }
         }
       }
@@ -1675,8 +1696,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 「更多」要更多的是**眼下这份结果**的查询串。扫描查词之后它是句中的一段后缀，
     // 而搜索框里仍是整句——照旧拿 `_controller.text` 去加载更多，会把结果整个换成
     // 另一个词的，用户只是滚到底就看见结果被掉包。
-    final String activeQuery =
-        _lastQuery.isNotEmpty ? _lastQuery : _controller.text;
+    final String activeQuery = _lastQuery.isNotEmpty
+        ? _lastQuery
+        : _controller.text;
     _lastQuery = '';
     _search(
       activeQuery,
@@ -1704,17 +1726,17 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   Future<int> debugOpenPopup(String term) => _pushNestedPopup(
-        term,
-        const Rect.fromLTWH(180, 180, 24, 24),
-        reuseWarmSlot: true,
-      );
+    term,
+    const Rect.fromLTWH(180, 180, 24, 24),
+    reuseWarmSlot: true,
+  );
 
   @override
   Future<int> debugOpenNestedPopup(String term) => _pushNestedPopup(
-        term,
-        const Rect.fromLTWH(220, 220, 24, 24),
-        reuseWarmSlot: false,
-      );
+    term,
+    const Rect.fromLTWH(220, 220, 24, 24),
+    reuseWarmSlot: false,
+  );
 
   @override
   Object? get debugTopPopupWebViewState {
@@ -1724,9 +1746,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   ({int depth, int parkedRealms}) get debugPopupStackShape => (
-        depth: _popup.lastVisibleIndex + 1,
-        parkedRealms: _popup.parkedRealms.length,
-      );
+    depth: _popup.lastVisibleIndex + 1,
+    parkedRealms: _popup.parkedRealms.length,
+  );
 
   @override
   double? get debugTopPopupAutoFitHeight {
@@ -1761,11 +1783,19 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 透明（popup.css `html.fushi-glass-host`），词条直接落在卡面上。卡片不裁剪
     // （Clip.none）——给平台视图加圆角裁剪在 Android 混合合成下有额外合成开销；
     // 卡身的内边距把滚动中的正文挡在圆角之内。
+    // 手机窄屏：卡外 20 + 卡内 4 + popup.css body 10 叠成单侧 34pt 的空边，393pt
+    // 宽的屏幕两侧白丢近 70pt。窄屏把卡外边距收到 gap/2、卡内水平内边距归零，正文
+    // 只剩 body 自己的 10px（顶部 gap 内边距处 28 圆角弧线只内缩约 8px，正文不出卡）。
+    final bool compact = _isCompactResultLayout();
+    final double cardSideMargin = compact
+        ? tokens.spacing.gap / 2
+        : tokens.spacing.page;
+    final double bodySideInset = compact ? 0 : tokens.spacing.gap / 2;
     return FushiCard(
       margin: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        cardSideMargin,
         0,
-        tokens.spacing.page,
+        cardSideMargin,
         tokens.spacing.gap,
       ),
       padding: EdgeInsets.zero,
@@ -1781,8 +1811,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 text: _sourceLookupText,
                 // 与下方结果 WebView 同一口径：Material（非玻璃 / 非墨水屏）挂
                 // html.fushi-m3e，卡内命中走 primaryContainer，本条同色。
-                tonalHighlight: !isGlassDesign(context) && !isEinkTheme(context),
-                dictionaryHeadwordScale: appModel.dictionaryFontSize /
+                tonalHighlight:
+                    !isGlassDesign(context) && !isEinkTheme(context),
+                dictionaryHeadwordScale:
+                    appModel.dictionaryFontSize /
                     appModel.defaultDictionaryFontSize,
                 highlight: _sourceHighlight,
                 // 点字换的是下方那份结果（Yomitan 式扫描），不再压一张浮在字上的查词卡，
@@ -1804,9 +1836,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           Expanded(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
-                tokens.spacing.gap / 2,
+                bodySideInset,
                 hasSourceText ? tokens.spacing.gap / 2 : tokens.spacing.gap,
-                tokens.spacing.gap / 2,
+                bodySideInset,
                 tokens.spacing.gap,
               ),
               child: FushiAppUiScaleNeutralizer(
@@ -1866,6 +1898,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
+  /// 结果卡是否按手机窄屏收窄两侧空边：与 [DesktopContentLayout] 同一 compact
+  /// 断点（< 600），按**真实**宽度判档（BUG-401：界面缩放下逻辑宽被放大）。
+  bool _isCompactResultLayout() =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
+
   /// 结果卡（及宽屏右栏空态卡）的圆角：MD3 Expressive 大面板 28；Apple 走 inset
   /// grouped 分组圆角（iOS ≈ 24 / 桌面 12），与同屏历史分组同形。
   BorderRadius _resultCardRadius() => isGlassDesign(context)
@@ -1921,62 +1962,65 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (!mounted || _overlayInert) return const SizedBox.shrink();
     // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
     return LookupOverlayNavigator(
-     child: FushiAppUiScaleNeutralizer(
-      child: Theme(
-        data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            if (!mounted || _overlayInert) return const SizedBox.shrink();
-            final Size screen =
-                Size(constraints.maxWidth, constraints.maxHeight);
-            return Stack(
-              // BUG-135：隐藏热槽停到屏幕右外侧（buildNestedPopupLayer），Clip.none 让它在
-              // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
-                // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并
-                // 判成「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
-                if (shouldShowLookupDismissBarrier(
-                  hasVisiblePopup: _hasVisiblePopup,
-                  isSearching: _popup.isSearchingUi,
-                  hiddenByDialog: lookupPopupHiddenByDialog,
-                ))
-                  Positioned.fill(
-                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
-                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
-                    child: LookupDismissBarrier(
-                      // 本表面不按落点分流，点真空白一律关栈根层。
-                      onTapDismiss: (_) => _popNestedPopupAt(0),
-                      // TODO-1052：水平拖过阈关一层（逐层关）。
-                      onSwipeDismiss: _dismissTopNestedPopup,
-                      swipeEnabled:
-                          ReaderFushiSource.instance.enableSwipeToClose,
-                      // BUG-2770：触摸半边未设置时所有平台默认开。
-                      touchSwipeEnabled:
-                          ReaderFushiSource.instance.enableTouchSwipeToClose,
-                      sensitivity:
-                          ReaderFushiSource.instance.dismissSwipeSensitivity,
-                      // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
-                      // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
-                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
+      child: FushiAppUiScaleNeutralizer(
+        child: Theme(
+          data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              if (!mounted || _overlayInert) return const SizedBox.shrink();
+              final Size screen = Size(
+                constraints.maxWidth,
+                constraints.maxHeight,
+              );
+              return Stack(
+                // BUG-135：隐藏热槽停到屏幕右外侧（buildNestedPopupLayer），Clip.none 让它在
+                // 屏外照常预热又不被裁；飘出窗的弹窗同理不裁。
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  // BUG-1327：对话框期间连 barrier 一起撤——浮层子树挂在根 Overlay，排在
+                  // showAppDialog 推的路由之上，全屏 barrier 会把落在对话框上的点击吃掉并
+                  // 判成「点弹窗外面」关栈。判据收口在 [shouldShowLookupDismissBarrier]。
+                  if (shouldShowLookupDismissBarrier(
+                    hasVisiblePopup: _hasVisiblePopup,
+                    isSearching: _popup.isSearchingUi,
+                    hiddenByDialog: lookupPopupHiddenByDialog,
+                  ))
+                    Positioned.fill(
+                      // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                      // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                      child: LookupDismissBarrier(
+                        // 本表面不按落点分流，点真空白一律关栈根层。
+                        onTapDismiss: (_) => _popNestedPopupAt(0),
+                        // TODO-1052：水平拖过阈关一层（逐层关）。
+                        onSwipeDismiss: _dismissTopNestedPopup,
+                        swipeEnabled:
+                            ReaderFushiSource.instance.enableSwipeToClose,
+                        // BUG-2770：触摸半边未设置时所有平台默认开。
+                        touchSwipeEnabled:
+                            ReaderFushiSource.instance.enableTouchSwipeToClose,
+                        sensitivity:
+                            ReaderFushiSource.instance.dismissSwipeSensitivity,
+                        // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形
+                        // 之外」按鼠标非主键这半边只能在这里接（见钩子文档）。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
+                      ),
                     ),
-                  ),
-                // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
-                if (_popup.isSearchingUi && _popup.pendingRect != null)
-                  buildPopupLoadingPlaceholder(
-                    rect: _popup.pendingRect!,
-                    screen: screen,
-                  ),
-                for (int i = 0; i < _popup.entries.length; i++)
-                  _buildNestedPopupLayer(i, screen),
-                ...buildParkedRealmLayers(screen: screen, controller: _popup),
-              ],
-            );
-          },
+                  // 搜索期加载占位卡（搜索→就绪才显示，与书内同观感）。
+                  if (_popup.isSearchingUi && _popup.pendingRect != null)
+                    buildPopupLoadingPlaceholder(
+                      rect: _popup.pendingRect!,
+                      screen: screen,
+                    ),
+                  for (int i = 0; i < _popup.entries.length; i++)
+                    _buildNestedPopupLayer(i, screen),
+                  ...buildParkedRealmLayers(screen: screen, controller: _popup),
+                ],
+              );
+            },
+          ),
         ),
       ),
-     ),
     );
   }
 
@@ -2109,10 +2153,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
 @visibleForTesting
 class HomeDictionaryClearHistoryDialog extends StatelessWidget {
-  const HomeDictionaryClearHistoryDialog({
-    required this.onConfirm,
-    super.key,
-  });
+  const HomeDictionaryClearHistoryDialog({required this.onConfirm, super.key});
 
   final VoidCallback onConfirm;
 
@@ -2164,7 +2205,6 @@ class HomeDictionaryClearHistoryDialog extends StatelessWidget {
     );
   }
 }
-
 
 /// 搜索栏聚焦时的 M3E 抬升：spring 微放大 + level2 投影；失焦落回。墨水屏 / 减弱
 /// 动态效果下瞬间到位（[fushiMotionDuration] 归零）。Apple 设计系统不套（enabled=false
