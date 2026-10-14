@@ -953,8 +953,11 @@ void main() {
           reason: '冲突时也不能把本机进度推上 host');
     });
 
-    test('video: no baseline and positions differ -> conflict (asked once)',
-        () async {
+    // 升级前从没记过基线：无基线时退回旧 LWW 一次并记下基线，不能把每条只有一端
+    // 动过的条目都弹成冲突。
+    test(
+        'video: no baseline and positions differ -> legacy LWW once '
+        '(newer host wins), baseline recorded, no conflict', () async {
       await _seedHostVideo(hostDb, work, 'video/nobase', 'NoBase');
       await hostDb.setPrefTyped<int>(
           videoRemotePositionPrefKey('video/nobase'), 300000);
@@ -975,11 +978,16 @@ void main() {
       final SyncRunReport report = SyncRunReport();
       await orch.syncVideoProgressLiveForTest(report, backend);
 
-      expect(report.conflicts, hasLength(1));
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.conflicts, isEmpty);
       expect(
           await localDb.getPrefTyped<int>(
               videoRemotePositionPrefKey('video/nobase'), 0),
-          800000);
+          300000);
+      expect(
+          await localDb.getSyncBaseline(
+              'video/nobase', kInterconnectVideoPositionDimension),
+          300000);
     });
 
     test(

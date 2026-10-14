@@ -1749,7 +1749,10 @@ int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
 /// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
 /// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
 /// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
-/// - 没有基线且两端位置不同 → 无法知道谁动了，按冲突交用户（只发生一次）；
+/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
+///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
+///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
+
 /// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
 ///   谁都不覆盖。
 ///
@@ -1775,7 +1778,17 @@ BookProgressSyncAction resolvePlaybackPositionThreeWay({
   if (local.positionMs == remote.positionMs) {
     return BookProgressSyncAction.synced;
   }
-  if (basePositionMs == null) return BookProgressSyncAction.conflict;
+  if (basePositionMs == null) {
+    if (local.updatedAtMs > remote.updatedAtMs) {
+      return BookProgressSyncAction.pushLocal;
+    }
+    if (remote.updatedAtMs > local.updatedAtMs) {
+      return BookProgressSyncAction.applyRemote;
+    }
+    return local.positionMs > remote.positionMs
+        ? BookProgressSyncAction.pushLocal
+        : BookProgressSyncAction.applyRemote;
+  }
   final bool localMoved = local.positionMs != basePositionMs;
   final bool remoteMoved = remote.positionMs != basePositionMs;
   if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;

@@ -99,14 +99,26 @@ class InterconnectPlaybackPositionSync {
 
   /// 本端胜出：推给 host（时间戳不新于 host 时抬到 host + 1，见类头），本端只对齐
   /// 时间戳 pref，记基线。返回两端对齐后的位置。
+  ///
+  /// 抬戳纪律与书籍版 `InterconnectBookProgressSync.pushLocal` 一致：抬出来的戳
+  /// 至少是 [nowMs]；host 已存的超限毒戳（[trustedStoredSyncStamp]）按 0 比较，
+  /// 结果再截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会写进本端 `_at_` pref，
+  /// host 却把上报戳截成 `now + 余量`，下一轮两端位置相同、本端戳更新 →
+  /// [alignSynced] 又 PUT 一次，每轮重复写。
   Future<PlaybackPosition> pushLocal(
     String key, {
     required PlaybackPosition local,
     required PlaybackPosition remote,
+    int? nowMs,
   }) async {
-    final int ts = local.updatedAtMs > remote.updatedAtMs
-        ? local.updatedAtMs
-        : remote.updatedAtMs + 1;
+    final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    final int remoteTs = trustedStoredSyncStamp(remote.updatedAtMs, nowMs: now);
+    int ts = local.updatedAtMs;
+    if (ts <= remoteTs) {
+      ts = remoteTs + 1;
+      if (now > ts) ts = now;
+    }
+    ts = capFutureSyncStamp(ts, nowMs: now);
     final PlaybackPosition agreed = (
       positionMs: local.positionMs,
       updatedAtMs: ts,
@@ -117,6 +129,21 @@ class InterconnectPlaybackPositionSync {
     }
     await recordBaseline(key, agreed.positionMs);
     return agreed;
+  }
+
+  /// 播放页实时上报（节流回调）：本端位置 [live] 已由播放页写进本地 pref，这里推给
+  /// host 并把基线推进到上报位置。
+  ///
+  /// 与 sweep 共用这一入口而不是播放页裸调 `putRemoteVideoPosition`：实时上报本身
+  /// 就是「两端在这个位置达成一致」，不推进基线的话，A 串流到 600（host=600、基线
+  /// 仍停在旧的 100）→ B 从 600 接着看到 900 → A 下轮 sweep 见 local=600 ≠ 基线、
+  /// remote=900 ≠ 基线，会把顺序接力误判成两端分叉而弹冲突（BUG-3366）。
+  ///
+  /// host 端 PUT 仍是 LWW：若 host 已存更新的戳而拒收，基线停在本端位置，下一轮
+  /// sweep 判「只 host 动了」→ [applyRemote]，与 host 的 LWW 结论一致。
+  Future<void> reportLive(String key, PlaybackPosition live) async {
+    await _putRemote(key, live);
+    await recordBaseline(key, live.positionMs);
   }
 
   /// host 胜出：落回本端，记基线。

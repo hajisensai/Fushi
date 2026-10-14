@@ -167,10 +167,23 @@ void main() {
       );
     });
 
-    test('无基线且两端位置不同 → 冲突（不知道谁动了，宁可问一次）', () {
+    test('无基线且两端位置不同 → 退回旧 LWW 一次（升级后首轮不批量弹冲突）', () {
       expect(
         resolve(_pos(800, 10), _pos(300, 20)),
-        BookProgressSyncAction.conflict,
+        BookProgressSyncAction.applyRemote,
+      );
+      expect(
+        resolve(_pos(800, 30), _pos(300, 20)),
+        BookProgressSyncAction.pushLocal,
+      );
+      // 时间戳相等：取较远位置。
+      expect(
+        resolve(_pos(800, 20), _pos(300, 20)),
+        BookProgressSyncAction.pushLocal,
+      );
+      expect(
+        resolve(_pos(300, 20), _pos(800, 20)),
+        BookProgressSyncAction.applyRemote,
       );
     });
   });
@@ -320,7 +333,13 @@ void main() {
 
       final PlaybackPosition local = await sync.localPosition('v1');
       expect(local, _pos(800000, 1000));
-      await sync.pushLocal('v1', local: local, remote: _pos(100000, 5000));
+      // nowMs 落后于 host 戳（本机时钟慢）：抬戳只能取 host + 1。
+      await sync.pushLocal(
+        'v1',
+        local: local,
+        remote: _pos(100000, 5000),
+        nowMs: 3000,
+      );
 
       expect(
         backend.video['v1'],
@@ -334,6 +353,103 @@ void main() {
       final VideoBookRow row = (await db.getVideoBookByBookUid('v1'))!;
       expect(row.lastPlayedAt, 1000, reason: '抬戳不是一次观看，不能污染续播锚点（BUG-1542）');
       expect(await sync.baseline('v1'), 800000);
+    });
+
+    test('视频 pushLocal：host 存的是超限毒戳时不把「毒戳+1」写进本端，下一轮不再重复 PUT', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      const int now = 1700000000000;
+      const int poison = now + 86400000;
+      await db.setPrefTyped<int>(videoRemotePositionPrefKey('vp'), 800000);
+      await db.setPrefTyped<int>(videoRemotePositionAtPrefKey('vp'), now - 10);
+      final _FakePositionBackend backend = _FakePositionBackend()
+        ..video['vp'] = _pos(100000, poison);
+      final InterconnectPlaybackPositionSync sync =
+          InterconnectPlaybackPositionSync(
+            db: db,
+            backend: backend,
+            kind: PlaybackPositionKind.video,
+          );
+
+      final PlaybackPosition agreed = await sync.pushLocal(
+        'vp',
+        local: await sync.localPosition('vp'),
+        remote: _pos(100000, poison),
+        nowMs: now,
+      );
+      expect(
+        agreed.updatedAtMs,
+        lessThanOrEqualTo(now + kSyncFutureStampToleranceMs),
+        reason: '毒戳 + 1 不能抬进本端 _at_ pref',
+      );
+      expect(
+        await db.getPrefTyped<int>(videoRemotePositionAtPrefKey('vp'), 0),
+        agreed.updatedAtMs,
+      );
+
+      // 真 host 会截断上报戳、把毒戳当 0 比较——这里把 host 存值换成截断后的结果，
+      // 模拟下一轮 sweep：两端位置与时间戳都一致 → alignSynced 不再 PUT。
+      backend.video['vp'] = (
+        positionMs: 800000,
+        updatedAtMs: capFutureSyncStamp(agreed.updatedAtMs, nowMs: now),
+      );
+      backend.puts.clear();
+      final PlaybackPosition local = await sync.localPosition('vp');
+      final PlaybackPosition remote = await sync.remotePosition('vp');
+      expect(
+        resolvePlaybackPositionThreeWay(
+          local: local,
+          remote: remote,
+          basePositionMs: await sync.baseline('vp'),
+        ),
+        BookProgressSyncAction.synced,
+      );
+      await sync.alignSynced('vp', local: local, remote: remote);
+      expect(backend.puts, isEmpty, reason: '对齐后每轮都 PUT 就是这个 bug');
+    });
+
+    test('顺序接力：A 实时上报推进基线 → B 接着看 → A 下轮 sweep 判拉取而不是冲突', () async {
+      final FushiDatabase dbA = _memDb();
+      addTearDown(dbA.close);
+      final _FakePositionBackend host = _FakePositionBackend();
+      final InterconnectPlaybackPositionSync syncA =
+          InterconnectPlaybackPositionSync(
+            db: dbA,
+            backend: host,
+            kind: PlaybackPositionKind.video,
+          );
+      // 起点：A 与 host 在 100 达成一致（基线 100）。
+      await dbA.setPrefTyped<int>(videoRemotePositionPrefKey('relay'), 100);
+      await dbA.setPrefTyped<int>(videoRemotePositionAtPrefKey('relay'), 1000);
+      host.video['relay'] = _pos(100, 1000);
+      await syncA.recordBaseline('relay', 100);
+
+      // A 串流看到 600：播放页写本地 pref 后走 reportLive 上报（与
+      // video_fushi_page._persistRemotePosition 同一入口）。
+      await dbA.setPrefTyped<int>(videoRemotePositionPrefKey('relay'), 600);
+      await dbA.setPrefTyped<int>(videoRemotePositionAtPrefKey('relay'), 2000);
+      await syncA.reportLive('relay', _pos(600, 2000));
+      expect(host.video['relay'], _pos(600, 2000));
+      expect(await syncA.baseline('relay'), 600);
+
+      // B 从 600 接着看到 900，上报 host。
+      await host.putRemoteVideoPosition('relay', 900, 3000);
+
+      // A 下轮 sweep。
+      final PlaybackPosition local = await syncA.localPosition('relay');
+      final PlaybackPosition remote = await syncA.remotePosition('relay');
+      final BookProgressSyncAction action = resolvePlaybackPositionThreeWay(
+        local: local,
+        remote: remote,
+        basePositionMs: await syncA.baseline('relay'),
+      );
+      expect(action, BookProgressSyncAction.applyRemote, reason: '顺序接力不是分叉');
+      await syncA.applyRemote('relay', remote);
+      expect(
+        await dbA.getPrefTyped<int>(videoRemotePositionPrefKey('relay'), 0),
+        900,
+      );
+      expect(await syncA.baseline('relay'), 900);
     });
 
     test('视频 applyRemote：写回行与 pref，playedAt 用对端时刻；流式视频不建行', () async {
