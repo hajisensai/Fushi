@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +19,7 @@ import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:path/path.dart' as p;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -41,6 +43,7 @@ import 'package:fushi/utils.dart';
 /// 用户明确多选音频文件（TODO-1031 删掉了旧的「选目录」整目录吞并入口）。
 class AudiobookImportDialog extends StatefulWidget {
   const AudiobookImportDialog({
+    this.prefs,
     required this.bookKey,
     required this.repo,
     this.extractDir,
@@ -69,6 +72,10 @@ class AudiobookImportDialog extends StatefulWidget {
   /// 拖拽导入预填：对齐用的字幕/对齐文件路径（覆盖既有 alignmentPath）。
   final String? initialAlignmentPath;
 
+
+  /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
+  /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
+  final PreferencesRepository? prefs;
   @override
   State<AudiobookImportDialog> createState() => _AudiobookImportDialogState();
 }
@@ -85,8 +92,18 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
 
   /// TODO-935 ①A：导入时「引用原文件（不复制）」开关。仅桌面可见/可选；
   /// 移动端 file_picker 返回的是缓存临时副本，引用即指向会被系统清掉的文件，
-  /// 故移动端恒 false（隐藏开关、保持复制行为，零回归）。
+  /// 故移动端恒 false（隐藏开关、保持复制行为，零回归）。桌面端初值取上次的
+  /// 选择（[PreferencesRepository.audiobookImportReferenceOriginal]）。
   bool _referenceOriginal = false;
+
+  /// 切换「引用原文件」并记住这次选择（下次打开任一导入对话框沿用）。
+  void _setReferenceOriginal(bool value) {
+    setState(() => _referenceOriginal = value);
+    final PreferencesRepository? prefs = widget.prefs;
+    if (prefs != null) {
+      unawaited(prefs.setAudiobookImportReferenceOriginal(value: value));
+    }
+  }
 
   /// 已有记录但缺音频源 → 进入"补音频"模式，显示导入表单而非只读视图。
   bool _patchingAudio = false;
@@ -136,6 +153,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   @override
   void initState() {
     super.initState();
+    _referenceOriginal = isDesktopPlatform &&
+        (widget.prefs?.audiobookImportReferenceOriginal ?? false);
     _initExisting();
   }
 
@@ -460,7 +479,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
                     value: _referenceOriginal,
                     onChanged: importing
                         ? null
-                        : (bool v) => setState(() => _referenceOriginal = v),
+                        : _setReferenceOriginal,
                   ),
                 ],
               ),

@@ -3592,22 +3592,60 @@ class FushiSnackBar extends SnackBar {
     super.clipBehavior,
   });
 
+  /// 是否由本组件补一个显式关闭按钮。
+  ///
+  /// 带动作的 SnackBar 默认 [persist]（`persist ?? action != null`）：不会自己
+  /// 消失，而 [showCloseIcon] 默认关——用户只剩「横滑」这一条想不到的路，提示就
+  /// 一直钉在底部（反馈 9WaqDjw84y）。凡是常驻的提示条都必须有看得见的关闭入口；
+  /// 调用方显式要了原生关闭图标（`showCloseIcon: true`）就不重复画。
+  bool get _closable => persist && super.showCloseIcon != true;
+
   @override
-  Widget get content =>
-      _FushiSnackBarContent(content: super.content, action: super.action);
+  Widget get content => _FushiSnackBarContent(
+    content: super.content,
+    action: super.action,
+    closable: _closable,
+  );
 
   @override
   SnackBarAction? get action {
     final SnackBarAction? raw = super.action;
-    return raw == null ? null : _FushiSnackBarAction(raw);
+    return raw == null ? null : _FushiSnackBarAction(raw, closable: _closable);
+  }
+}
+
+/// 常驻提示条的关闭按钮（MD3 画在动作槽里动作之后，玻璃画在胶囊内动作之后）。
+class _FushiSnackBarCloseButton extends StatelessWidget {
+  const _FushiSnackBarCloseButton({required this.glass});
+
+  final bool glass;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiIconButtonControl(
+      key: const ValueKey<String>('fushi-snackbar-close'),
+      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+      onPressed: () => ScaffoldMessenger.of(
+        context,
+      ).hideCurrentSnackBar(reason: SnackBarClosedReason.dismiss),
+      icon: FushiIcon(
+        glass ? CupertinoIcons.xmark : Icons.close,
+        size: glass ? 17 : 20,
+      ),
+    );
   }
 }
 
 class _FushiSnackBarContent extends StatelessWidget {
-  const _FushiSnackBarContent({required this.content, required this.action});
+  const _FushiSnackBarContent({
+    required this.content,
+    required this.action,
+    required this.closable,
+  });
 
   final Widget content;
   final SnackBarAction? action;
+  final bool closable;
 
   @override
   Widget build(BuildContext context) {
@@ -3628,7 +3666,7 @@ class _FushiSnackBarContent extends StatelessWidget {
           child: Padding(
             padding: EdgeInsetsDirectional.only(
               start: 20,
-              end: action != null ? 8 : 20,
+              end: action != null || closable ? 8 : 20,
               top: 4,
               bottom: 4,
             ),
@@ -3653,6 +3691,7 @@ class _FushiSnackBarContent extends StatelessWidget {
                   const SizedBox(width: 8),
                   _FushiGlassSnackBarActionButton(action: action!),
                 ],
+                if (closable) const _FushiSnackBarCloseButton(glass: true),
               ],
             ),
           ),
@@ -3665,7 +3704,7 @@ class _FushiSnackBarContent extends StatelessWidget {
 /// SnackBar 自己动作槽里的那一个：MD3 下原样渲染原 [SnackBarAction]，
 /// 玻璃下让空（动作已在玻璃胶囊里）。
 class _FushiSnackBarAction extends SnackBarAction {
-  _FushiSnackBarAction(this.raw)
+  _FushiSnackBarAction(this.raw, {required this.closable})
     : super(
         textColor: raw.textColor,
         disabledTextColor: raw.disabledTextColor,
@@ -3676,6 +3715,7 @@ class _FushiSnackBarAction extends SnackBarAction {
       );
 
   final SnackBarAction raw;
+  final bool closable;
 
   @override
   State<SnackBarAction> createState() => _FushiSnackBarActionState();
@@ -3685,7 +3725,15 @@ class _FushiSnackBarActionState extends State<SnackBarAction> {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return const SizedBox.shrink();
-    return (widget as _FushiSnackBarAction).raw;
+    final _FushiSnackBarAction action = widget as _FushiSnackBarAction;
+    if (!action.closable) return action.raw;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        action.raw,
+        const _FushiSnackBarCloseButton(glass: false),
+      ],
+    );
   }
 }
 

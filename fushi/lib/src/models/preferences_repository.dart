@@ -391,6 +391,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 有声书 / 书籍导入对话框「引用原文件（不复制）」开关的上次选择（仅桌面有这个
+  /// 开关）。默认 false = 复制进应用目录（原有行为）。两个导入对话框共用这一个键：
+  /// 同一个用户对「音频要不要复制」的取向不随入口变（反馈 qLuedSmAnt：每次打开都
+  /// 回到关，像被回退了）。
+  bool get audiobookImportReferenceOriginal =>
+      getPref('audiobook_import_reference_original', defaultValue: false)
+          as bool;
+
+  Future<void> setAudiobookImportReferenceOriginal({
+    required bool value,
+  }) async {
+    await setPref('audiobook_import_reference_original', value);
+    notifyListeners();
+  }
+
   // ── search & dictionary display ──────────────────────────────────────
 
   bool get autoSearchEnabled =>

@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "開發者看得到你的暱稱",
   "feedback_compose_privacy": "回饋會傳送給 fushi.moe 上的 Fushi 開發者，只用於排查與改進。",
   "feedback_compose_submit": "提交",
-  "feedback_compose_missing": "請填寫標題和詳細描述。",
   "feedback_stage_sending": "正在提交…",
   "feedback_stage_screenshots": "正在上傳截圖…",
   "feedback_stage_logs": "正在上傳日誌…",
@@ -7424,5 +7423,7 @@
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
-  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word"
+  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word",
+  "feedback_compose_title_missing": "請填寫標題。",
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
 }

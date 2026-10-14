@@ -924,7 +924,7 @@ void main() {
     expect(tester.getRect(card), originalRect);
   });
 
-  testWidgets('精简 · 整排统一 2:3 竖卡：横版截帧的视频也裁进竖卡（不再横竖混排）',
+  testWidgets('卡片比例跟着实际用到的图走：只有横版截帧的视频在横滑行是 16:9 横卡（反馈 5CTpiVJ7-v）',
       (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     final File cover = File('${storeDir.path}/landscape_cover.png')
@@ -957,11 +957,31 @@ void main() {
         tester.widgetList<HomeContinueCoverCard>(rowCards()).toList();
     expect(cards.map((HomeContinueCoverCard c) => c.title),
         unorderedEquals(<String>['在看的横版视频', '书B']));
-    for (final HomeContinueCoverCard c in cards) {
-      expect(c.width, closeTo(c.height * 2 / 3, 0.01), reason: c.title);
-    }
-    expect(tester.getSize(rowCards().first), tester.getSize(rowCards().last));
-    // 横版截帧裁进竖卡：直接 cover 铺满，不走模糊垫底 + contain。
+    final HomeContinueCoverCard video = cards.firstWhere(
+      (HomeContinueCoverCard c) => c.title == '在看的横版视频',
+    );
+    final HomeContinueCoverCard bookB = cards.firstWhere(
+      (HomeContinueCoverCard c) => c.title == '书B',
+    );
+    // 书照旧 2:3 竖卡；横版截帧的视频 16:9 横卡，宽约 1.5 倍竖卡。
+    expect(bookB.width, closeTo(bookB.height * 2 / 3, 0.01));
+    expect(video.width, closeTo(video.height * 16 / 9, 0.01));
+    expect(video.width, closeTo(bookB.width * 1.5, 0.01));
+    // 横卡封面矮、贴行底：两张卡的底边（标题块底）对齐。
+    final Rect videoRect = tester.getRect(find.byWidget(video));
+    final Rect bookRect = tester.getRect(find.byWidget(bookB));
+    expect(videoRect.bottom, closeTo(bookRect.bottom, 0.5));
+    // 视频卡画的是截图本身，不是占位（书没有封面才画占位，不在此列）。
+    expect(
+      find.descendant(
+        of: find.byWidget(video),
+        matching: find.byKey(
+          const ValueKey<String>('home-continue-cover-fallback'),
+        ),
+      ),
+      findsNothing,
+    );
+    // 横槽里的 16:9 截图直接 cover 铺满 = 完整显示，不再裁进竖卡。
     final Image frame = tester.widget<Image>(find.descendant(
       of: find.byWidgetPredicate((Widget w) =>
           w is HomeContinueCoverCard && w.title == '在看的横版视频'),
@@ -1010,6 +1030,199 @@ void main() {
     }
 
     expect(images.map(pathOf), everyElement(poster.path));
+  });
+
+  // 反馈 5CTpiVJ7-v：合集主封面指向的文件不在时，主角卡掉成「图标 + 名字」占位，
+  // 而视频页同一部作品照样有封面——要回落到这一集 / 同合集其它集的封面。
+  testWidgets('精简 · 作品海报文件不在时回落到集封面，不画占位',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final File frame = File('${storeDir.path}/frame.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        coverPath: Value(frame.path),
+        lastPositionMs: const Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.updateMediaCollectionCoverPath(
+      cid,
+      '${storeDir.path}/gone/poster.png',
+    );
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byKey(continueCardKey),
+        matching: find.byKey(
+          const ValueKey<String>('home-continue-cover-fallback'),
+        ),
+      ),
+      findsNothing,
+    );
+    final Iterable<Image> images = tester.widgetList<Image>(
+      find.descendant(
+        of: find.byKey(continueCardKey),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(images, isNotEmpty);
+    String pathOf(Image i) {
+      ImageProvider p = i.image;
+      if (p is ResizeImage) p = p.imageProvider;
+      return (p as FileImage).file.path;
+    }
+
+    expect(images.map(pathOf), everyElement(frame.path));
+  });
+
+  Future<void> pumpDecoded(WidgetTester tester, Widget app) async {
+    // 卡片是数据回填后才建的、解码是真异步 I/O：两段都必须在同一个 runAsync 里。
+    await tester.runAsync(() async {
+      await tester.pumpWidget(app);
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await tester.pump();
+    });
+    await tester.pump(const Duration(seconds: 1));
+  }
+
+  Size heroCoverSize(WidgetTester tester) => tester.getSize(
+        find.byKey(const ValueKey<String>('home-continue-hero-cover')),
+      );
+
+  testWidgets('主角卡：只有横版截帧 → 16:9 横封面槽（反馈 5CTpiVJ7-v）',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final File frame = File('${storeDir.path}/hero_frame.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('hero-landscape'),
+      title: const Value('横版主角'),
+      videoPath: const Value('/abs/hero-landscape.mp4'),
+      coverPath: Value(frame.path),
+      lastPositionMs: const Value(60000),
+    ));
+    await pumpDecoded(tester, buildApp());
+
+    expect(tester.takeException(), isNull);
+    final Size cover = heroCoverSize(tester);
+    expect(cover.width / cover.height, closeTo(16 / 9, 0.01));
+    expect(find.byKey(const ValueKey<String>('home-continue-cover-fallback')),
+        findsNothing);
+  });
+
+  testWidgets('主角卡：作品竖版海报 → 2:3 竖封面槽，横卡不出现',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    final File poster = File('${storeDir.path}/hero_poster.png')
+      ..writeAsBytesSync(_kOnePixelPng);
+    final File frame = File('${storeDir.path}/hero_frame2.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        coverPath: Value(frame.path),
+        lastPositionMs: const Value(60000),
+      ),
+      e2: const VideoBooksCompanion(
+        bookUid: Value('e2'),
+        title: Value('S01E02'),
+        videoPath: Value('/abs/e2.mp4'),
+      ),
+    );
+    await db.updateMediaCollectionCoverPath(cid, poster.path);
+    await pumpDecoded(tester, buildApp());
+
+    expect(tester.takeException(), isNull);
+    final Size cover = heroCoverSize(tester);
+    expect(cover.width / cover.height, closeTo(2 / 3, 0.01));
+  });
+
+  test('homeCoverIsLandscape：真实宽高比 > 1 才是横图', () {
+    expect(homeCoverIsLandscape(16 / 9), isTrue);
+    expect(homeCoverIsLandscape(1.01), isTrue);
+    expect(homeCoverIsLandscape(1), isFalse);
+    expect(homeCoverIsLandscape(2 / 3), isFalse);
+    expect(homeCoverIsLandscape(null), isFalse);
+  });
+
+  test('homeContinueCoverSize：竖 2:3，横 16:9 且宽 1.5 倍', () {
+    expect(
+      homeContinueCoverSize(portraitWidth: 100, landscape: false),
+      const Size(100, 150),
+    );
+    final Size l = homeContinueCoverSize(portraitWidth: 100, landscape: true);
+    expect(l.width, 150);
+    expect(l.height, closeTo(150 * 9 / 16, 1e-9));
+  });
+
+  group('dashboardVideoCoverPath', () {
+    bool existsIn(Set<String> files, String path) => files.contains(path);
+
+    test('海报存在优先用海报', () {
+      expect(
+        dashboardVideoCoverPath(
+          collectionCover: 'poster',
+          ownCover: 'frame',
+          exists: (String p) => existsIn(<String>{'poster', 'frame'}, p),
+        ),
+        'poster',
+      );
+    });
+
+    test('海报文件不在 → 这一集封面', () {
+      expect(
+        dashboardVideoCoverPath(
+          collectionCover: 'poster',
+          ownCover: 'frame',
+          exists: (String p) => existsIn(<String>{'frame'}, p),
+        ),
+        'frame',
+      );
+    });
+
+    test('这一集也没封面 → 借同合集其它集的第一张存在的封面，找到就停', () {
+      final List<String> probed = <String>[];
+      expect(
+        dashboardVideoCoverPath(
+          collectionCover: null,
+          ownCover: '',
+          memberCovers: <String?>[null, 'm1', 'm2', 'm3'],
+          exists: (String p) {
+            probed.add(p);
+            return p == 'm2' || p == 'm3';
+          },
+        ),
+        'm2',
+      );
+      expect(probed, <String>['m1', 'm2']);
+    });
+
+    test('全不存在 → null', () {
+      expect(
+        dashboardVideoCoverPath(
+          collectionCover: 'a',
+          ownCover: 'b',
+          memberCovers: <String?>['c'],
+          exists: (String _) => false,
+        ),
+        isNull,
+      );
+    });
   });
 
   testWidgets('精简 · 窄屏横滑卡上的集数角标完整显示，不被卡边裁掉；主角卡进度文案同样完整',

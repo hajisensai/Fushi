@@ -614,8 +614,10 @@ class _FeedbackDetailPageState extends ConsumerState<FeedbackDetailPage> {
                               ),
                             ),
                           ],
-                          SizedBox(height: tokens.spacing.gap),
-                          SelectableText(d.body),
+                          if (d.body.isNotEmpty) ...<Widget>[
+                            SizedBox(height: tokens.spacing.gap),
+                            SelectableText(d.body),
+                          ],
                           if (d.status.isClosed) ...<Widget>[
                             SizedBox(height: tokens.spacing.gap),
                             Align(

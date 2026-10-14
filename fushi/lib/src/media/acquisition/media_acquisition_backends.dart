@@ -28,6 +28,7 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -283,8 +284,14 @@ class MihonMangaAcquisitionBackend implements MediaAcquisitionBackend {
       );
       return true;
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MediaAcquisition.mihon', error, stack);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: describeOnlineSourceError(
+          error,
+          logTag: 'MediaAcquisition.mihon',
+          stackTrace: stack,
+        ),
+        severity: ToastSeverity.error,
+      );
       return false;
     }
   }
@@ -368,8 +375,14 @@ class LnReaderNovelAcquisitionBackend implements MediaAcquisitionBackend {
       await _manager.load(hit.plugin);
       novel = await _manager.runtime.novel(hit.plugin.id, hit.item.path);
     } on Object catch (error, stack) {
-      ErrorLogService.instance.log('MediaAcquisition.lnreader', error, stack);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: describeOnlineSourceError(
+          error,
+          logTag: 'MediaAcquisition.lnreader',
+          stackTrace: stack,
+        ),
+        severity: ToastSeverity.error,
+      );
       return false;
     }
     if (novel.chapters.isEmpty) {

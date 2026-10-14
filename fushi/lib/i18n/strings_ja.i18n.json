@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "開発者にニックネームが表示されます",
   "feedback_compose_privacy": "フィードバックは fushi.moe の Fushi 開発者に送られ、不具合の調査と改善にのみ使われます。",
   "feedback_compose_submit": "送信",
-  "feedback_compose_missing": "タイトルと詳細を入力してください。",
   "feedback_stage_sending": "送信中…",
   "feedback_stage_screenshots": "スクリーンショットをアップロード中…",
   "feedback_stage_logs": "ログをアップロード中…",
@@ -7424,5 +7423,7 @@
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
-  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word"
+  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word",
+  "feedback_compose_title_missing": "タイトルを入力してください。",
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
 }

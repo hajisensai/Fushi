@@ -74,6 +74,15 @@
 |---|:--:|:--:|---|
 | [BUG-3329](bugs/BUG-3329-ios-reader-edge-swipe-webview-history.md) | ✅ | ✅ | iOS 阅读器边缘侧滑触发 WKWebView 历史后退，正文位置被跳走 |
 | [BUG-3328](bugs/BUG-3328-blink-vertical-highlight-misplaced.md) | ✅ | ✅ | Android 旧 WebView（Blink 105–119）竖排查词高亮错位 / 不可见 |
+> 共 3019 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3332](bugs/BUG-3332-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
+| [BUG-3331](bugs/BUG-3331-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |
+| [BUG-3330](bugs/BUG-3330-dashboard-video-cover-placeholder.md) | ✅ | ✅ | 首页继续区视频作品海报文件不在时直接显示占位，不回落到集封面 |
+| [BUG-3329](bugs/BUG-3329-persistent-snackbar-no-close.md) | ✅ | ✅ | 带动作的提示条常驻且没有关闭按钮，只能横滑关 |
+| [BUG-3328](bugs/BUG-3328-online-source-bridge-error-raw.md) | ✅ | ✅ | AI 下载漫画失败时把 BRIDGE_HTTP_500 原始异常甩给用户 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

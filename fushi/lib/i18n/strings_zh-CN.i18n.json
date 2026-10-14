@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "开发者能看到你的昵称",
   "feedback_compose_privacy": "反馈会发送给 fushi.moe 上的 Fushi 开发者，仅用于排查与改进。",
   "feedback_compose_submit": "提交",
-  "feedback_compose_missing": "请填写标题和详细描述。",
   "feedback_stage_sending": "正在提交…",
   "feedback_stage_screenshots": "正在上传截图…",
   "feedback_stage_logs": "正在上传日志…",
@@ -7424,5 +7423,7 @@
   "video_subtitle_graphic_ocr_enable_hint": "图片字幕需开启 OCR 识别才能点字查词",
   "video_subtitle_graphic_ocr_enable_action": "开启",
   "video_subtitle_frame_ocr_status_recognizing": "正在识别画面文字…",
-  "video_subtitle_frame_ocr_status_ready": "已识别画面文字 · 点字查词"
+  "video_subtitle_frame_ocr_status_ready": "已识别画面文字 · 点字查词",
+  "feedback_compose_title_missing": "请填写标题。",
+  "online_source_error_webview_unavailable": "这个来源需要内置浏览器（WebView），桌面版暂不支持。"
 }

@@ -457,6 +457,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,

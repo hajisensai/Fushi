@@ -1133,10 +1133,17 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     final List<Widget> sections = <Widget>[
       _sectionCard(
         context,
-        child: Text(
-          summary ?? t.game_summary_none,
-          style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
-        ),
+        // 刮削来的简介要能复制去编辑 tab 改写（反馈 2DmrXg-wtD）：用可选择文本。
+        child: summary == null
+            ? Text(
+                t.game_summary_none,
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+              )
+            : SelectableText(
+                summary,
+                key: const ValueKey<String>('galgame-summary-text'),
+                style: theme.textTheme.bodyMedium?.copyWith(height: 1.6),
+              ),
       ),
       if (details.isNotEmpty)
         _sectionCard(
@@ -1181,7 +1188,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 4),
-          Text(value, style: theme.textTheme.bodyMedium),
+          SelectableText(value, style: theme.textTheme.bodyMedium),
         ],
       ),
     );

@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "Developers can see your nickname",
   "feedback_compose_privacy": "Feedback goes to the Fushi developers at fushi.moe and is only used to fix problems.",
   "feedback_compose_submit": "Send",
-  "feedback_compose_missing": "Please fill in the title and details.",
   "feedback_stage_sending": "Sending…",
   "feedback_stage_screenshots": "Uploading screenshots…",
   "feedback_stage_logs": "Uploading logs…",
@@ -7424,5 +7423,7 @@
   "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
   "video_subtitle_graphic_ocr_enable_action": "Turn on",
   "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
-  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word"
+  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word",
+  "feedback_compose_title_missing": "Please fill in a title.",
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
 }
