@@ -147,9 +147,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('top action extent: mobile 40, desktop 36 (BUG-3412)', () {
-    // BUG-3412：用户要求三组按钮「一样大、可以变小」，移动端由 44 收到 40。
-    expect(dictionaryPopupTopActionExtent(mobile: true), 40);
+  test('top action extent: mobile >= 44, desktop 36 (BUG-3412)', () {
+    // BUG-3412：三组按钮统一尺寸靠布局（header 拿两簇之间全部剩余宽）与统一图标
+    // 尺寸解决，移动端命中区仍守 44 触控下限，不能为了「变小」收边长。
+    expect(dictionaryPopupTopActionExtent(mobile: true),
+        greaterThanOrEqualTo(44));
     // 桌面保持压缩顶栏的 36（design-2026-08）。
     expect(dictionaryPopupTopActionExtent(mobile: false), 36);
   });

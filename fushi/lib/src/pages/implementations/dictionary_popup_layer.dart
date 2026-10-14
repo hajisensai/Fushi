@@ -853,14 +853,16 @@ class DictionaryPopupHistoryNav {
   final VoidCallback onForward;
 }
 
-/// 顶栏动作按钮的边长：桌面 36（鼠标精确，压缩顶栏）；移动端 40。
+/// 顶栏动作按钮的边长（= 命中区）：桌面 36（鼠标精确，压缩顶栏）；移动端 44——
+/// 触控目标下限，不得再往下收。
 ///
 /// 这一个值同时是**三组**控件的可见尺寸——左簇按钮组胶囊高、中段宿主 header（收藏 /
-/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3412）。移动端此前是 44：44×（左簇
-/// 3 颗）的胶囊在手机宽度上把中段挤到放不下 4 颗，header 只能整体 scaleDown 到半大，
-/// 于是同一条顶栏出现三种尺寸；用户要求「做到一样大、可以变小」，收到 40。
+/// 有声书）胶囊高、右簇关闭圆钮直径，都等于它（BUG-3412）。中段此前被挤小不是 44 本身
+/// 的问题，而是对称预留布局只给 header 留 `宽 − 2×左簇宽`；[_PopupTopBarLayout] 改为把
+/// 两簇之间的全部剩余宽给 header 后，390 宽手机上 44 边长的 4 颗中段按钮放得下。
+/// 「可以变小」由统一的 [kDictionaryPopupTopActionIconSize]（20 → 18）承担。
 double dictionaryPopupTopActionExtent({required bool mobile}) =>
-    mobile ? 40 : 36;
+    mobile ? 44 : 36;
 
 /// 顶栏所有动作按钮（左簇 / 中段 header / 右簇关闭 / 溢出菜单 / 制卡目标）共用的图标
 /// 尺寸（BUG-3412）。宿主 header 也必须用它，不得各写各的 `size:`。
