@@ -129,27 +129,21 @@ bool BitnessMatches(HANDLE target, bool* target_is_wow64) {
   return (self_wow != FALSE) == (tgt_wow != FALSE);
 }
 
-// 默认 DLL 路径：跟随注入器 basename。旧 Hibiki host 启动
-// hibiki_voice_injector.exe 时必须继续加载 hibiki_voice_hook.dll，使两侧共同选择旧 IPC 名；
-// 正常 Fushi 分发保持 fushi_voice_hook.dll。
+// 默认 DLL 路径：注入器同目录的 fushi_voice_hook.dll（两者同一次构建产出、同目录落地）。
 std::wstring DefaultDllPath() {
   wchar_t exe[MAX_PATH] = {0};
   const DWORD n = GetModuleFileNameW(nullptr, exe, MAX_PATH);
   if (n == 0 || n >= MAX_PATH) {
     return L"fushi_voice_hook.dll";
   }
-  const std::wstring executable_path(exe, n);
-  const bool legacy_hibiki =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(executable_path);
-  std::wstring path = executable_path;
+  std::wstring path(exe, n);
   const size_t slash = path.find_last_of(L"\\/");
   if (slash != std::wstring::npos) {
     path.resize(slash + 1);
   } else {
     path.clear();
   }
-  return path +
-         (legacy_hibiki ? L"hibiki_voice_hook.dll" : L"fushi_voice_hook.dll");
+  return path + L"fushi_voice_hook.dll";
 }
 
 // 目标进程里某个模块的加载基址；找不到（含模块尚未映射）返回 nullptr。
@@ -2001,9 +1995,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
                               text_region_bytes + clip_region_bytes +
                               loopback_capacity + loopback_marker_bytes +
                               thread_preview_bytes + lookup_region_bytes;
-  const bool legacy_hibiki_ipc =
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(dll_path);
-  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
+  const std::wstring shm = SharedMemoryName(pid);
   SetLastError(ERROR_SUCCESS);
   HANDLE mapping = CreateFileMappingW(
       INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
@@ -2198,7 +2190,7 @@ int RunInjection(HANDLE target, DWORD pid, const std::wstring& dll_path,
             "[unity-audio] resource extractor runtime missing; Unity audio will use normal fallback\n");
   }
   // 就绪事件（auto-reset，初始未触发）；hook DLL 装好后 SetEvent。
-  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
+  const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = CreateEventW(nullptr, FALSE, FALSE, evt.c_str());
   if (ready == nullptr) {
     revoke_loopback_before_failure();

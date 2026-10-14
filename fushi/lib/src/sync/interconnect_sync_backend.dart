@@ -1286,7 +1286,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// [displayTitle] / [displayTitleAt] 是本机用户给这本书改的名字及其 LWW 毫秒戳
   /// （BUG-1503）。body 是**裸 .epub 字节流**，没有 sidecar 也没有 multipart，所以
-  /// 元数据走自定义 header —— 与本类视频推送的 `X-Hibiki-Video-Title` 同一套先例
+  /// 元数据走自定义 header —— 与本类视频推送的 [kVideoTitleHeader] 同一套先例
   /// （header 只收 ASCII，日文书名必须 [Uri.encodeComponent]）。
   ///
   /// additive：没改过名就一个 header 都不发，旧 host 对未知 header 一律静默忽略
@@ -1310,12 +1310,17 @@ class InterconnectSyncBackend extends SyncBackend
     if (displayTitle != null &&
         displayTitle.isNotEmpty &&
         displayTitle != title) {
-      req.headers.set(
+      setInterconnectHeader(
+        req.headers,
         kBookDisplayTitleHeader,
         Uri.encodeComponent(displayTitle),
       );
       if (displayTitleAt > 0) {
-        req.headers.set(kBookDisplayTitleAtHeader, '$displayTitleAt');
+        setInterconnectHeader(
+          req.headers,
+          kBookDisplayTitleAtHeader,
+          '$displayTitleAt',
+        );
       }
     }
     int sent = 0;
@@ -2076,8 +2081,10 @@ class InterconnectSyncBackend extends SyncBackend
     final String baseName = file.path.split(RegExp(r'[/\\]')).last;
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
-    req.headers.set('X-Hibiki-Video-Title', Uri.encodeComponent(title));
-    req.headers.set('X-Hibiki-Video-Filename', Uri.encodeComponent(baseName));
+    setInterconnectHeader(
+        req.headers, kVideoTitleHeader, Uri.encodeComponent(title));
+    setInterconnectHeader(
+        req.headers, kVideoFilenameHeader, Uri.encodeComponent(baseName));
     int sent = 0;
     await req.addStream(file.openRead().map((List<int> chunk) {
       sent += chunk.length;
@@ -2144,10 +2151,11 @@ class InterconnectSyncBackend extends SyncBackend
   /// BUG-2728：先看 host 的能力位 `liveLibrary.videoSubtitleDefault`
   /// （[hostSupportsVideoSubtitleDefault]），不支持就**不发请求**、返回
   /// [RemoteSubtitleDefaultUpload.hostUnsupported]。老 host 不认
-  /// `X-Hibiki-Subtitle-Default`，会走 live push 旧路径按 [suffix] 落盘，
+  /// [kSubtitleDefaultHeader]，会走 live push 旧路径按 [suffix] 落盘，
   /// `rename` 直接覆盖 host 上同名的旧字幕、不留备份——宁可只留本机。
   ///
-  /// 只有 host 回了实际落盘后缀（响应头 `x-hibiki-subtitle-suffix`，新语义才有）才算
+  /// 只有 host 回了实际落盘后缀（响应头 [kSubtitleSuffixHeader]，新语义才有；
+  /// 改名前的 host 只回旧名，按 [interconnectHeaderNameCandidates] 回退）才算
   /// [RemoteSubtitleDefaultUpload.applied]。网络 / 其余 HTTP 失败照常抛。
   Future<RemoteSubtitleDefaultUpload> putRemoteVideoSubtitleAsDefault(
     String id,
@@ -2163,7 +2171,12 @@ class InterconnectSyncBackend extends SyncBackend
       suffix: suffix,
       asDefault: true,
     );
-    final String? placed = res.headers.value('x-hibiki-subtitle-suffix');
+    String? placed;
+    for (final String name
+        in interconnectHeaderNameCandidates(kSubtitleSuffixHeader)) {
+      placed = res.headers.value(name);
+      if (placed != null && placed.isNotEmpty) break;
+    }
     await res.drain<void>();
     // 404/405：没有上传端点；409：新 host 的库服务不支持默认字幕（server 侧第二道门，
     // 已拒绝、未落盘）。
@@ -2192,8 +2205,11 @@ class InterconnectSyncBackend extends SyncBackend
     final int length = await file.length();
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
-    req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
-    if (asDefault) req.headers.set('X-Hibiki-Subtitle-Default', '1');
+    setInterconnectHeader(
+        req.headers, kSubtitleSuffixHeader, Uri.encodeComponent(suffix));
+    if (asDefault) {
+      setInterconnectHeader(req.headers, kSubtitleDefaultHeader, '1');
+    }
     await req.addStream(file.openRead());
     // 流式上传，不走 _sendBounded（BUG-1567 白名单，见 interconnect_request_timeout_test）。
     return await req.close();

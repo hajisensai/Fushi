@@ -2833,28 +2833,14 @@ static_assert(sizeof(LoopbackMarker) % 8 == 0, "LoopbackMarker must stay 8-align
 // injector 创建、hook DLL 打开：共享内存 + 「就绪」事件（DLL 装好后 SetEvent，injector 据此
 // 确认注入成功并读回格式）。
 //
-// Fushi 改名后的 host 使用 FushiVoiceHook；旧 Hibiki host 仍只会打开 HibikiVoiceHook。
-// helper/DLL 可能被部署到旧安装中做兼容修复，因此两侧都按实际组件文件名选同一命名空间，
-// 而不是让新版默认名静默破坏旧 host。严格只认完整 basename，避免任意路径子串误判。
-inline bool ComponentUsesLegacyHibikiIpc(const std::wstring& component_path) {
-  const size_t slash = component_path.find_last_of(L"\\/");
-  const wchar_t* basename = slash == std::wstring::npos
-                                ? component_path.c_str()
-                                : component_path.c_str() + slash + 1;
-  return _wcsicmp(basename, L"hibiki_voice_injector.exe") == 0 ||
-         _wcsicmp(basename, L"hibiki_voice_hook.dll") == 0;
+// injector 与 hook DLL 同一次构建产出、同目录随 fushi.exe 落地（BUG-1449，运行期不下载
+// helper），两侧永远同版本，所以只有一套名字。改名前 Hibiki 的 `HibikiVoiceHook*` 命名空间
+// 只在旧 Hibiki 安装自带的 hibiki_voice_* 组件里存在，本源码不再产出那组文件。
+inline std::wstring SharedMemoryName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHook_") + std::to_wstring(target_pid);
 }
-
-inline std::wstring SharedMemoryName(DWORD target_pid,
-                                     bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHook_"
-                                    : L"Local\\FushiVoiceHook_") +
-         std::to_wstring(target_pid);
-}
-inline std::wstring ReadyEventName(DWORD target_pid,
-                                   bool legacy_hibiki = false) {
-  return std::wstring(legacy_hibiki ? L"Local\\HibikiVoiceHookReady_"
-                                    : L"Local\\FushiVoiceHookReady_") +
+inline std::wstring ReadyEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiVoiceHookReady_") +
          std::to_wstring(target_pid);
 }
 

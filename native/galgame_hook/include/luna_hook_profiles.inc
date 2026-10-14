@@ -1,4 +1,4 @@
-R"HLUNA(# Hibiki Luna hook-code profiles v2. UTF-8, tab separated.
+R"HLUNA(# Fushi Luna hook-code profiles v2. UTF-8, tab separated.
 exe_sha256	module_name	module_sha256	codepage	hook_code	label	options
 005e71107ed70e662c41cb526879cdcf0b9486e067c0e5a306308688c17409ed			932	HSX0:0@512BF:WA2.exe	WHITE ALBUM2 bundled x86 Leaf/AQUAPLUS CP932 scenario text
 36448822f1a8bc3840b304d3993c07de912db6c803dddd8db1202ed676ba7019			932	EXHVXN0@2198:nine_kokoiro.exe	9-nine Episode 1 verified executable

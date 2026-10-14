@@ -224,14 +224,14 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       tempExtension: '.epub',
       export: () => svc.exportBook(bookId),
       // BUG-1503：body 是裸 .epub，推送方用户改的书名走 header 随行（视频推送的
-      // `X-Hibiki-Video-Title` 同一先例）。旧 client 不发 → 两参 null/0 → 与
+      // [kVideoTitleHeader] 同一先例）。旧 client 不发 → 两参 null/0 → 与
       // 原来的 `svc.importBook` tear-off 逐字同行为，故不必动
       // [_serveAssetPackage] 的四域共用签名。
       import: (File epubFile) => svc.importBook(
         epubFile,
         displayTitle: _decodeHeaderValue(request, kBookDisplayTitleHeader),
         displayTitleAt: int.tryParse(
-              request.headers[kBookDisplayTitleAtHeader] ?? '',
+              _interconnectHeaderValue(request, kBookDisplayTitleAtHeader) ?? '',
             ) ??
             0,
       ),

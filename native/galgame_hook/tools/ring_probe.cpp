@@ -1133,8 +1133,7 @@ bool ResolveRemotePeExportRva(HANDLE process,
 }
 
 bool IsExpectedHookModuleName(const std::wstring& name) {
-  return _wcsicmp(name.c_str(), L"fushi_voice_hook.dll") == 0 ||
-         _wcsicmp(name.c_str(), L"hibiki_voice_hook.dll") == 0;
+  return _wcsicmp(name.c_str(), L"fushi_voice_hook.dll") == 0;
 }
 
 bool FindRemoteXAudioTrace(HANDLE process, DWORD pid,

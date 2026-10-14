@@ -216,14 +216,24 @@ String? _extractVideoId(String reqPath, String suffix) {
 
 /// 从请求 header 读一个 URL-encoded 值并解码（HTTP header 只收 ASCII，非 ASCII 值
 /// 由 client 端 [Uri.encodeComponent] 编码）。缺失/空返回 null；解码失败退回原文。
+/// 先读新名，读不到再读改名前的旧名（[interconnectHeaderNameCandidates]）。
 String? _decodeHeaderValue(shelf.Request request, String name) {
-  final String? raw = request.headers[name];
-  if (raw == null || raw.isEmpty) return null;
+  final String? raw = _interconnectHeaderValue(request, name);
+  if (raw == null) return null;
   try {
     return Uri.decodeComponent(raw);
   } catch (_) {
     return raw;
   }
+}
+
+/// 读互联自定义 header 的原文：新名优先，缺失/空时回退改名前的旧名。
+String? _interconnectHeaderValue(shelf.Request request, String name) {
+  for (final String candidate in interconnectHeaderNameCandidates(name)) {
+    final String? raw = request.headers[candidate];
+    if (raw != null && raw.isNotEmpty) return raw;
+  }
+  return null;
 }
 
 File? _coverFile(String? path) {

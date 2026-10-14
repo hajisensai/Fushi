@@ -145,6 +145,8 @@ List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
   final List<LunaHookCodeProfile> result = <LunaHookCodeProfile>[];
   for (final String rawLine in const LineSplitter().convert(input)) {
     final String line = rawLine.trimRight();
+    // 注释行（含首行版本说明）一律跳过、不校验文字：改名前写的
+    // `# Hibiki Luna hook-code profiles v1/v2` 与现在的 `# Fushi …` 同样能读。
     if (line.isEmpty ||
         line.startsWith('#') ||
         line.startsWith(_profileHeaderPrefix)) {
@@ -173,13 +175,13 @@ List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
 String encodeLunaHookCodeProfiles(Iterable<LunaHookCodeProfile> profiles) {
   final List<LunaHookCodeProfile> sorted = profiles.toList()
     ..sort((a, b) => a.identityKey.compareTo(b.identityKey));
-  // 没有任何一行用到 options 就照旧写 v1：绝大多数用户表按字节不变，旧版本 Hibiki
+  // 没有任何一行用到 options 就照旧写 v1：绝大多数用户表只有首行注释变化，旧版本
   // （只认六列）读自己的表不会炸。真有 options 要存时才升 v2——native 的解析器本来
   // 就同时吃 v1/v2。
   final bool needsOptions =
       sorted.any((LunaHookCodeProfile profile) => profile.options.isNotEmpty);
   return <String>[
-    '# Hibiki Luna hook-code profiles ${needsOptions ? 'v2' : 'v1'}. '
+    '# Fushi Luna hook-code profiles ${needsOptions ? 'v2' : 'v1'}. '
         'UTF-8, tab separated.',
     needsOptions ? _profileHeaderV2 : _profileHeaderV1,
     ...sorted.map((profile) => profile.toTsvRow(includeOptions: needsOptions)),
