@@ -7,6 +7,8 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.da
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 
+import '../../helpers/source_guard.dart';
+
 void main() {
   group('mangaContainingPanel', () {
     const Rect left = Rect.fromLTRB(0, 0, 0.5, 0.5);
@@ -243,11 +245,11 @@ void main() {
   });
 
   group('漫画页制卡接线（源码守卫）', () {
-    // 先去掉行注释（注释里会写「await」之类的字眼），再去空白。
-    final String flat = File('lib/src/media/manga/reader/manga_fushi_page.dart')
-        .readAsStringSync()
-        .replaceAll(RegExp(r'//[^\n]*'), '')
-        .replaceAll(RegExp(r'\s+'), '');
+    // 注释掩掉再折叠空白（注释里会写「await」之类的字眼），走共享词法掩码。
+    final String flat = compactCode(
+      File('lib/src/media/manga/reader/manga_fushi_page.dart')
+          .readAsStringSync(),
+    );
 
     String onMineBody() {
       final int start = flat.indexOf(
