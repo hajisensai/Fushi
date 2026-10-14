@@ -126,7 +126,6 @@ class MangaCropWorkspace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AdvancedMiningController c = controller;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final MangaCropSuggestions? s = c.cropSuggestions;
     final Widget canvas = c.mangaLoading
         ? const Center(child: FushiLoadingView(compact: true))
@@ -156,7 +155,8 @@ class MangaCropWorkspace extends StatelessWidget {
         Expanded(
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
+              // 页图垫底用搜索面（比分区卡高一阶），页面四周留白才看得出边界。
+              color: FushiDesignTokens.of(context).surfaces.search,
               borderRadius: const BorderRadius.all(Radius.circular(14)),
             ),
             child: Padding(padding: const EdgeInsets.all(12), child: canvas),
@@ -327,14 +327,13 @@ class MangaCropThumbnail extends StatelessWidget {
       );
       final Rect box = containRect(cropPx, maxSize);
       final double scale = box.width / cropPx.width;
-      final ColorScheme scheme = Theme.of(context).colorScheme;
       return ClipRRect(
         borderRadius: const BorderRadius.all(Radius.circular(8)),
         child: SizedBox(
           width: box.width,
           height: box.height,
           child: ColoredBox(
-            color: scheme.surfaceContainerHighest,
+            color: FushiDesignTokens.of(context).surfaces.overlay,
             child: bytes == null
                 ? null
                 : OverflowBox(

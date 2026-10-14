@@ -640,10 +640,12 @@ class _FoldRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 摘要行与分区卡同一面（设计令牌的分组面，FushiCard 默认底）。
+    final Color surface = FushiDesignTokens.of(context).surfaces.group;
     final Widget row = FushiPressScale(
       enabled: onTap != null,
       child: Material(
-        color: scheme.surfaceContainerLow,
+        color: surface,
         child: InkWell(
           onTap: onTap,
           child: ConstrainedBox(
@@ -701,7 +703,7 @@ class _FoldRow extends StatelessWidget {
               curve: context.fushiMotion.spatialDefault.curve,
               alignment: Alignment.topCenter,
               child: expanded
-                  ? ColoredBox(color: scheme.surfaceContainerLow, child: child)
+                  ? ColoredBox(color: surface, child: child)
                   : const SizedBox(width: double.infinity),
             ),
         ],

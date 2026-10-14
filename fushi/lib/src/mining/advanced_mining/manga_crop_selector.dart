@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_geometry.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 选中框这一次变化是怎么来的。父组件据此决定是否把选项切到「自定义」：
@@ -433,7 +434,7 @@ class _MangaCropSelectorState extends State<MangaCropSelector>
   Widget _page(ColorScheme scheme) {
     final Uint8List? bytes = widget.pageBytes;
     if (bytes == null) {
-      return ColoredBox(color: scheme.surfaceContainerHighest);
+      return ColoredBox(color: FushiDesignTokens.of(context).surfaces.overlay);
     }
     return Image.memory(
       bytes,

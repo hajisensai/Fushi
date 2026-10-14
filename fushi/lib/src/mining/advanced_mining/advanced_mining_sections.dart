@@ -360,7 +360,8 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     return FushiCard(
       padding: EdgeInsets.fromLTRB(16, current ? 12 : 10, 8, current ? 12 : 10),
       tone: current ? FushiCardTone.primary : FushiCardTone.neutral,
-      color: current ? null : scheme.surfaceContainerLowest,
+      // 句子卡嵌在分区卡里：取设计令牌的「分组里再嵌一层」面，与分区卡分得开。
+      color: current ? null : FushiDesignTokens.of(context).surfaces.card,
       borderRadius: const BorderRadius.all(Radius.circular(14)),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,17 +398,15 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     );
   }
 
-  /// 句子卡右侧的小图标按钮。收到最小尺寸（32）+ compact 密度：默认 48 的命中框
-  /// 会把每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
+  /// 句子卡右侧的小图标按钮。取 M3E 图标按钮 XS 档（32）：默认 48 的命中框会把
+  /// 每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
   Widget _iconAction({
     required String tooltip,
     required IconData icon,
     required VoidCallback? onPressed,
   }) => FushiIconButtonControl(
     tooltip: tooltip,
-    visualDensity: VisualDensity.compact,
-    padding: EdgeInsets.zero,
-    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    size: FushiIconButtonSize.xs,
     onPressed: onPressed,
     icon: FushiIcon(icon, size: 18),
   );
@@ -1154,7 +1153,6 @@ class AdvancedMiningFrameTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1166,7 +1164,9 @@ class AdvancedMiningFrameTile extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: <Widget>[
-                ColoredBox(color: scheme.surfaceContainerHighest),
+                ColoredBox(
+                  color: FushiDesignTokens.of(context).surfaces.overlay,
+                ),
                 if (frameAt != null)
                   AdvancedMiningFrameThumb(atMs: atMs, frameAt: frameAt!),
                 Align(
