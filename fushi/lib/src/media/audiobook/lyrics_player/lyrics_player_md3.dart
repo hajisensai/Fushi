@@ -963,7 +963,11 @@ class _SpeedButton extends StatelessWidget {
               speed: speed,
               onChanged: onSpeedChanged,
             ),
-            child: Text(formatLyricsSpeed(speed), style: style),
+            // 邻居被按下时本键按 M3E 设计让出宽度：标签缩一点而不是折成两行。
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(formatLyricsSpeed(speed), style: style, maxLines: 1),
+            ),
           ),
         ),
       ),
