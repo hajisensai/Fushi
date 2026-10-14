@@ -1960,10 +1960,6 @@ JSON.stringify((function(){
         '</head>'
         '<body>'
         '<div id="entries-container"></div>'
-        '<div class="overlay">'
-        '<div class="overlay-close" onclick="closeOverlay()">×</div>'
-        '<div class="overlay-content"></div>'
-        '</div>'
         '</body></html>';
     _inlineHtmlCacheKey = cacheKey;
     _inlineHtmlCache = html;
