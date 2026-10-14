@@ -482,8 +482,11 @@ class VideoSourceScrapeCoordinator
     final VideoMetadataWorkRow? row =
         await database.getVideoMetadataWorkById(workId);
     if (row == null) return null;
-    final VideoMetadataWork metadata =
+    final VideoMetadataWork? metadata =
         await loadVideoMetadataWork(database, row);
+    if (metadata == null) {
+      throw StateError('work $workId 还没有刮削身份（扫描器骨架），没有可写的 sidecar');
+    }
     SourceLibraryRow? source;
     VideoSourceScrapeWork? localWork;
     for (final SourceLibraryRow candidate
