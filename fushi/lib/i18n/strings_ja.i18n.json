@@ -7416,5 +7416,8 @@
   "video_setting_pause_ocr_scope_hint": "一時停止した画面の文字を OCR で認識し、タップで辞書を引けるようにします。Fushi が表示しているテキスト字幕がある場合はそちらを優先します。",
   "video_setting_pause_ocr_scope_all": "すべての動画",
   "video_setting_pause_ocr_scope_graphic": "画像字幕のみ",
-  "video_setting_pause_ocr_scope_off": "オフ"
+  "video_setting_pause_ocr_scope_off": "オフ",
+  "lyrics_sentence_replay": "Replay current sentence",
+  "lookup_popup_close_after_mining": "Close lookup popup after creating a card",
+  "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text"
 }

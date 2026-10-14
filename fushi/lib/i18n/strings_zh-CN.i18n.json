@@ -7416,5 +7416,8 @@
   "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。画面上已有 Fushi 显示的文字字幕时以字幕为准。",
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
-  "video_setting_pause_ocr_scope_off": "关闭"
+  "video_setting_pause_ocr_scope_off": "关闭",
+  "lyrics_sentence_replay": "重播当前句",
+  "lookup_popup_close_after_mining": "制卡后关闭查词弹窗",
+  "lookup_popup_close_after_mining_hint": "制卡成功（或进入待发队列）后关掉整个查词弹窗，不再挡住正文"
 }

@@ -2319,10 +2319,11 @@ updateLive: function(patch) {
           },
         );
 
-        // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
-        // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
-        // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
-        // 直接映射成 _paginate 的导航方向。横向触控板惯性先经跨 document 持久的
+        // TODO-737: 分页滚轮翻页专用 handler。JS 回传主轴 delta 的符号
+        // (forward = delta>0) 与轴、设备类型；方向由纯谓词 readerWheelTickIsForward
+        // 一处决定：纵向与鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死），
+        // 只有横向触控板（= 滑动翻页手势）按书写方向 + 该开关折算（反馈 794gISjvgV）。
+        // 横向触控板惯性先经跨 document 持久的
         // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(
           handlerName: 'onWheelPaginate',
@@ -2359,17 +2360,20 @@ updateLive: function(patch) {
               return;
             }
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
-            if (dir == 'forward') {
-              _paginate(
-                ReaderNavigationDirection.forward,
-                throttleMs: throttleMs,
-              );
-            } else if (dir == 'backward') {
-              _paginate(
-                ReaderNavigationDirection.backward,
-                throttleMs: throttleMs,
-              );
-            }
+            if (dir != 'forward' && dir != 'backward') return;
+            _paginate(
+              readerWheelTickIsForward(
+                    deltaPositive: dir == 'forward',
+                    horizontal: axis == 'horizontal',
+                    trackpad: pointerKind == 'trackpad',
+                    rtl: _isRtlReading,
+                    invertSwipe:
+                        ReaderFushiSource.instance.invertSwipeDirection,
+                  )
+                  ? ReaderNavigationDirection.forward
+                  : ReaderNavigationDirection.backward,
+              throttleMs: throttleMs,
+            );
           },
         );
 

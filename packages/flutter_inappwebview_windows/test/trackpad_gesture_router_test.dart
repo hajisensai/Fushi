@@ -58,6 +58,54 @@ void main() {
     expect(math.exp(-out.pinchWheelDelta / 100), closeTo(0.9, 1e-9));
   });
 
+  // 反馈 SUsLYAlCJF：scale 是累计值，慢速长距离两指滑动途中两指间距会缓慢漂移。
+  // 一旦平移先走过锁定距离，本次手势就是滚动，之后漂移越过阈值也不得改判捏合、
+  // 平移不得丢。
+  test('已锁定为滚动的慢滑，scale 中途漂移越过阈值仍全部转发平移', () {
+    final TrackpadGestureRouter router = TrackpadGestureRouter()..start();
+    double forwarded = 0;
+    double scale = 1.0;
+    for (int i = 0; i < 60; i++) {
+      scale += 0.001; // 累计漂移到 1.06，远超 3% 阈值
+      final TrackpadGestureOutput out = router.update(
+        panDelta: const Offset(0, -1.5),
+        scale: scale,
+      );
+      expect(out.kind, TrackpadGestureKind.scroll, reason: 'tick $i');
+      forwarded += out.scrollDelta.dy;
+    }
+    expect(forwarded, closeTo(-90, 1e-9));
+    expect(router.isPinching, isFalse);
+  });
+
+  test('平移未走过锁定距离前缩放先越过阈值：仍判捏合', () {
+    final TrackpadGestureRouter router = TrackpadGestureRouter()..start();
+    expect(
+      router.update(panDelta: const Offset(0, 2), scale: 1.0).kind,
+      TrackpadGestureKind.scroll,
+    );
+    expect(
+      router.update(panDelta: const Offset(1, 1), scale: 1.04).kind,
+      TrackpadGestureKind.pinch,
+    );
+    expect(router.isPinching, isTrue);
+  });
+
+  test('滚动锁只管本次手势：下一次手势的捏合照常识别', () {
+    final TrackpadGestureRouter router = TrackpadGestureRouter()..start();
+    router.update(
+      panDelta: const Offset(0, TrackpadGestureRouter.scrollLockPanDistance),
+      scale: 1.0,
+    );
+    router.update(panDelta: Offset.zero, scale: 1.2);
+    expect(router.isPinching, isFalse);
+    router.start();
+    expect(
+      router.update(panDelta: Offset.zero, scale: 1.2).kind,
+      TrackpadGestureKind.pinch,
+    );
+  });
+
   test('新手势重新分类：上一手势的捏合不延续到下一次两指滚动', () {
     final TrackpadGestureRouter router = TrackpadGestureRouter()..start();
     router.update(panDelta: Offset.zero, scale: 1.2);

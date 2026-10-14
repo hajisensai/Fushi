@@ -23,7 +23,10 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult, DictionaryPopupWebViewState;
+    show
+        MinePopupResult,
+        DictionaryPopupWebViewState,
+        closePopupAfterAcceptedMine;
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -1059,7 +1062,13 @@ mixin DictionaryPageMixin {
               query: query,
               autoRead: autoReadOnNavigate,
             ),
-            onMineEntry: onMineEntry,
+            onMineEntry: closePopupAfterAcceptedMine(
+              onMineEntry,
+              enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
+              closeAll: () {
+                if (mounted) onPop(0);
+              },
+            ),
             onUpdateEntry: onUpdateEntry,
             // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。结果来自
             // 别的设备（[popupResourceSource] 非 null，如手机遥控电脑制卡）时卡片落在

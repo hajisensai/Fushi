@@ -1461,6 +1461,53 @@ class AudiobookPlayerController extends ChangeNotifier {
     await skipToCue(_chapterCues[target]);
   }
 
+  /// 重播当前句：回到当前句起点接着播（暂停中则开始播放）。
+  ///
+  /// 「当前句」就是高亮的那句——句间静音里 [_updateCurrentCue] 保留上一句，所以在
+  /// 两句之间按下重播的是刚听完的那句，而不是下一句。还没定位到任何句时按播放器
+  /// 位置解析，与 [skipByCues] 同一起点（[_cueIndexAtFilePosition]）。
+  Future<void> replayCurrentCue() async {
+    final int target = _replayCueIndex(
+      cues: _chapterCues,
+      currentCueIndex: _currentCueIndex,
+      audioFileIndex: _player.currentIndex ?? 0,
+      positionMs: position.inMilliseconds,
+    );
+    if (target < 0) return;
+    await playCueAndContinue(_chapterCues[target]);
+  }
+
+  static int _replayCueIndex({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required int audioFileIndex,
+    required int positionMs,
+  }) {
+    if (cues.isEmpty) return -1;
+    if (currentCueIndex >= 0 && currentCueIndex < cues.length) {
+      return currentCueIndex;
+    }
+    return _cueIndexAtFilePosition(
+      cues: cues,
+      audioFileIndex: audioFileIndex,
+      positionMs: positionMs,
+    );
+  }
+
+  /// 测试钩子：[replayCurrentCue] 的目标句解析。
+  @visibleForTesting
+  static int replayCueIndexForTesting({
+    required List<AudioCue> cues,
+    required int currentCueIndex,
+    required int positionMs,
+    int audioFileIndex = 0,
+  }) => _replayCueIndex(
+    cues: cues,
+    currentCueIndex: currentCueIndex,
+    audioFileIndex: audioFileIndex,
+    positionMs: positionMs,
+  );
+
   /// 前跳或后跳 [delta] 句（正数前跳，负数后跳）。
   ///
   /// 超出章节边界时 clamp 到首句 / 末句。

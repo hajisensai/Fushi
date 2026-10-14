@@ -30,7 +30,8 @@ window.__wheel = [];
 window.__moves = 0;
 document.addEventListener('mousemove', function(){ window.__moves++; });
 document.addEventListener('wheel', function(e){
-  window.__wheel.push({dy: e.deltaY, mode: e.deltaMode});
+  window.__wheel.push({dy: e.deltaY, dx: e.deltaX, mode: e.deltaMode,
+    ctrl: e.ctrlKey});
   e.preventDefault();
 }, {passive:false});
 </script></body></html>
@@ -135,6 +136,133 @@ void main() {
       notchDy,
       closeTo(100, 2),
       reason: '一档应与原生 WHEEL_DELTA 同量（旧换算为 5 倍）；实测 $notchDy',
+    );
+  });
+
+  // 反馈 794gISjvgV / SUsLYAlCJF：横向符号与触控板慢滑。
+  //
+  // ① WM_MOUSEHWHEEL 的正值是「向右滚」，与 WM_MOUSEWHEEL「正 = 向上」相反；fork 的
+  //    sendScroll 入参是「内容移动量」，横向必须取反才对上。倾斜滚轮向右
+  //    （Flutter scrollDelta.dx > 0）在 DOM 里必须是 deltaX > 0。
+  // ② 触控板两指向左划（panDelta.dx < 0，内容跟手向左）= 视口向右滚 = deltaX > 0。
+  // ③ 触控板两指慢慢上滑一长段，scale 途中漂移越过 3%：必须一路以普通（非 Ctrl）
+  //    滚轮到达 DOM，总量与平移一致——此前中途被锁成捏合，之后全部丢弃。
+  testWidgets('横向滚轮符号与触控板慢滑到达 DOM', (WidgetTester tester) async {
+    if (!Platform.isWindows) return;
+    InAppWebViewController? controller;
+    bool loaded = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 400,
+              height: 400,
+              child: InAppWebView(
+                initialData: InAppWebViewInitialData(data: _html),
+                onWebViewCreated: (InAppWebViewController c) => controller = c,
+                onLoadStop: (InAppWebViewController c, WebUri? url) =>
+                    loaded = true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (int i = 0; i < 120 && !loaded; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(loaded, isTrue, reason: 'WebView2 应在 30s 内加载完测试页');
+    await tester.pump(const Duration(milliseconds: 500));
+    final Offset center = tester.getCenter(find.byType(InAppWebView));
+
+    Future<List<Map<String, dynamic>>> drain() async {
+      await tester.pump(const Duration(milliseconds: 400));
+      final Object? raw = await controller!.evaluateJavascript(
+        source: 'JSON.stringify(window.__wheel.splice(0))',
+      );
+      final Object? decoded = raw is String ? jsonDecode(raw) : raw;
+      return (decoded as List<dynamic>? ?? <dynamic>[])
+          .cast<Map<String, dynamic>>();
+    }
+
+    double sum(List<Map<String, dynamic>> events, String key) => events.fold(
+      0.0,
+      (double acc, Map<String, dynamic> e) => acc + (e[key] as num).toDouble(),
+    );
+
+    await tester.sendEventToBinding(
+      PointerAddedEvent(kind: PointerDeviceKind.mouse, position: center),
+    );
+    await tester.sendEventToBinding(
+      PointerHoverEvent(kind: PointerDeviceKind.mouse, position: center),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // ① 倾斜滚轮向右一档。
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        kind: PointerDeviceKind.mouse,
+        position: center,
+        scrollDelta: Offset(100 / tester.view.devicePixelRatio, 0),
+      ),
+    );
+    final List<Map<String, dynamic>> tilt = await drain();
+    debugPrint('[wheel-units] tiltRight=$tilt');
+    expect(tilt, isNotEmpty);
+    expect(sum(tilt, 'dx'), greaterThan(0), reason: '向右倾斜必须向右滚');
+
+    const int device = 7;
+    Future<void> panZoom(List<({Offset pan, double scale})> frames) async {
+      await tester.sendEventToBinding(
+        PointerPanZoomStartEvent(device: device, position: center),
+      );
+      Offset pan = Offset.zero;
+      for (final ({Offset pan, double scale}) f in frames) {
+        pan += f.pan;
+        await tester.sendEventToBinding(
+          PointerPanZoomUpdateEvent(
+            device: device,
+            position: center,
+            pan: pan,
+            panDelta: f.pan,
+            scale: f.scale,
+          ),
+        );
+      }
+      await tester.sendEventToBinding(
+        PointerPanZoomEndEvent(device: device, position: center),
+      );
+    }
+
+    // ② 两指向左划 40 逻辑像素。
+    await panZoom(<({Offset pan, double scale})>[
+      for (int i = 0; i < 20; i++) (pan: const Offset(-2, 0), scale: 1.0),
+    ]);
+    final List<Map<String, dynamic>> swipeLeft = await drain();
+    debugPrint('[wheel-units] trackpadLeft=$swipeLeft');
+    expect(swipeLeft, isNotEmpty);
+    expect(sum(swipeLeft, 'dx'), greaterThan(0), reason: '内容跟手向左 = 视口向右滚');
+
+    // ③ 两指慢慢上滑 90 逻辑像素，scale 漂移到 1.06。
+    double scale = 1.0;
+    await panZoom(<({Offset pan, double scale})>[
+      for (int i = 0; i < 60; i++)
+        (pan: const Offset(0, -1.5), scale: scale += 0.001),
+    ]);
+    final List<Map<String, dynamic>> slow = await drain();
+    debugPrint('[wheel-units] trackpadSlowUp=$slow');
+    expect(
+      slow.where((Map<String, dynamic> e) => e['ctrl'] == true),
+      isEmpty,
+      reason: '慢滑途中不得被改判成捏合（Ctrl+滚轮）',
+    );
+    // DOM deltaY（CSS px，页面缩放 1）= 逻辑像素 × dpr（见上一条测试的一档换算）。
+    final double dpr = tester.view.devicePixelRatio;
+    expect(
+      sum(slow, 'dy'),
+      closeTo(90 * dpr, 6 * dpr),
+      reason: '内容跟手向上 = 视口向下滚，总量与平移一致',
     );
   });
 }
