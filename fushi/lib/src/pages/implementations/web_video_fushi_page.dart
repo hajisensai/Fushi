@@ -20,8 +20,6 @@ import 'package:fushi/src/focus/panel_focus_scope.dart';
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
-import 'package:fushi/src/media/video/video_chrome_colors.dart'
-    show videoChromeNeutralForeground;
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -1659,10 +1657,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool m3e = videoM3eChrome(context);
-    // 失败 / 加载态的页底：M3E（非墨水屏）与播放页同一块黑底，正文进面板中性深色主题；
+    // 失败 / 加载态的页底：M3E（非墨水屏）深色模式与播放页同一块黑底、日间模式是
+    // 面板方案的浅色 surface（[videoM3ePanelBackdrop]），正文进面板主题；
     // Apple / 墨水屏保持主题页底（墨水屏不铺大面积黑）。
     final Color? stateBackground = videoM3ePanelNeutral(context)
-        ? Colors.black
+        ? videoM3ePanelBackdrop(cs)
         : null;
     final String? fail = _failReason;
     if (fail != null) {
@@ -1851,7 +1850,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 与原生播放器顶栏同一根弹簧；墨水屏 / 减弱动态效果下直接到位）。
   Widget _buildM3eTopBar(VideoBookRow? row) {
     final FushiTypography type = context.fushiType;
-    const Color fg = videoChromeNeutralForeground;
+    // 胶囊前景跟胶囊底走（随 app 日间 / 深色模式，墨水屏恒白）。
+    final Color fg = videoM3eChromeForegroundOf(context);
     final ({int done, int total})? progress = row == null
         ? null
         : _mineProgress;

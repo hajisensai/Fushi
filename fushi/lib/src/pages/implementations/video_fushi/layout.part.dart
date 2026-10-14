@@ -1008,7 +1008,6 @@ extension _VideoLayout on _VideoFushiPageState {
         if (!immersiveOnly || item == VideoControlItem.immersiveLock) item,
     ];
     if (items.isEmpty) return const SizedBox.shrink();
-    final ColorScheme cs = _videoChromeColorScheme(context);
 
     Widget buttonFor(VideoControlItem item) {
       final LayerLink? popoverLink = item == VideoControlItem.speed
@@ -1030,7 +1029,10 @@ extension _VideoLayout on _VideoFushiPageState {
           // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
           // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
           // 2026-10-06：字形改中性前景，强调色只留给主操作与进度。
-          color: _videoChromeButtonForeground(cs),
+          // 2026-10-14：胶囊里的按钮前景跟随 app 日间 / 深色模式
+          // （[_videoChromeButtonForeground]），这枚是**裸压画面**的单钮、没有胶囊
+          // 垫底，日间近黑会在暗画面上看不见，所以固定近白。
+          color: videoChromeNeutralForeground,
           onPressed: () => _activateVideoControlItem(
             item,
             controller,

@@ -275,7 +275,7 @@ void main() {
     },
   );
 
-  testWidgets('video panel color dialog editor follows captured dark theme', (
+  testWidgets('video panel color dialog editor follows captured panel theme', (
     WidgetTester tester,
   ) async {
     final VideoSheetHarness harness = await VideoSheetHarness.create();
@@ -336,9 +336,14 @@ void main() {
       'editableText=${foreground?.toARGB32()}, paintedMaterial=${background?.toARGB32()}, '
       'contrast=$contrast',
     );
-    // Production panel deliberately has a neutral dark scheme even with a light
-    // application. The actual editor must use that captured theme and remain legible.
-    expect(modern.brightness, Brightness.dark);
+    // Production panel follows the app's light / dark mode (BUG-3365) through
+    // its own tinted scheme. The actual editor must use that captured theme and
+    // remain legible.
+    final ColorScheme appScheme = Theme.of(
+      tester.element(find.byType(Scaffold).first),
+    ).colorScheme;
+    expect(modern.brightness, videoM3ePanelScheme(appScheme).brightness);
+    expect(modern.brightness, appScheme.brightness);
     expect(foreground, modern.colorScheme.onSurface);
     expect(contrast, isNotNull);
     expect(contrast!, greaterThanOrEqualTo(4.5));

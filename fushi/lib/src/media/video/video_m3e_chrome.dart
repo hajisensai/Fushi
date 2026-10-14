@@ -39,66 +39,139 @@ import 'package:media_kit_video/media_kit_video.dart';
 //   与画面色调冲突，且让同一层控件出现三种配色）；
 // - [VideoM3eTimeText]：等宽数字时间（点按切「已播 / 剩余」）。
 //
-// 播放器 chrome 永远压在画面（深色）上，所以前景 / 容器色一律取**深色**方案
-// （[videoM3eChromeScheme]，由 app 主色生成），不跟随 app 的浅色主题。墨水屏：
-// 实色 + 描边、不模糊、不形变；系统「减弱动态效果」：不形变、不流动，状态瞬间到位。
+// 配色跟随 app 的日间 / 深色模式（2026-10-14 用户：「播放器不吃深色模式和日间
+// 模式」——日间模式下设置面板是固定深色、旁边的面板切换竖条却是浅色，一深一浅；
+// 顶 / 底栏胶囊、音量 / 倍速浮层、OSD 同理）。单一真相源是下面几只工厂：
+// [videoM3eChromeScheme] 按 `cs.brightness` 生成以 app 主色为种子的同亮度方案，
+// [videoM3eNeutralChromeScheme] 给出同亮度的无色相中性表面族，前景 / tonal 容器 /
+// 悬浮表面都从它们取——消费点只拿结果，不各写 `brightness ==`。深色模式取值与旧
+// 实现一致；日间模式是浅色悬浮表面（不透明度更高，压在画面上仍可读）+ 近黑前景。
+// **直接压在画面上、没有自有表面**的东西（暂停提示图标、双击快进波纹、底部暗角、
+// 进度细轨与章节刻度、画面上的裸图标）仍是白色前景——它们底下只有画面，跟着
+// 日间模式变黑会在暗画面上看不见。墨水屏：实色 + 描边、不模糊、不形变，胶囊恒是
+// 纯黑、前景恒白；系统「减弱动态效果」：不形变、不流动，状态瞬间到位。
 
 /// MD3 设计系统下的播放器 chrome 是否生效（Apple 分支走 video_apple_chrome.dart）。
 bool videoM3eChrome(BuildContext context) => !isGlassDesign(context);
 
-final Map<int, ColorScheme> _chromeSchemeCache = <int, ColorScheme>{};
+bool _videoM3eLight(ColorScheme cs) => cs.brightness == Brightness.light;
 
-/// 播放器 chrome 的深色配色：以 app 主色为种子的深色 [ColorScheme]（缓存）。
+final Map<(int, Brightness), ColorScheme> _chromeSchemeCache =
+    <(int, Brightness), ColorScheme>{};
+
+/// 播放器 chrome 的配色：以 app 主色为种子、与 app **同亮度**的 [ColorScheme]
+/// （按主色 + 亮度缓存——只按主色缓存时切日间 / 深色会命中旧方案）。
 ///
-/// chrome 压在画面上、底下是固定深色 scrim，浅色主题下的 tonal 容器（偏白）会把
-/// 白字吞掉，所以容器色恒取深色方案；强调色与 [videoChromeAccentColor] 同一亮 tone。
+/// 深色模式与旧实现一致（深色方案，强调色与 [videoChromeAccentColor] 同一亮
+/// tone）；日间模式是浅色方案，容器 / 前景随之换成浅底深字。
 ColorScheme videoM3eChromeScheme(ColorScheme cs) {
-  final int key = cs.primary.toARGB32();
+  final (int, Brightness) key = (cs.primary.toARGB32(), cs.brightness);
   return _chromeSchemeCache[key] ??= ColorScheme.fromSeed(
     seedColor: cs.primary,
-    brightness: Brightness.dark,
+    brightness: cs.brightness,
   );
 }
 
-/// 播放器悬浮表面的固定中性色：HCT chroma 0、tone ≈ 18（#2D2D2D）。**完全不带
-/// 色相**——不从 app 主色生成的深色方案取 surfaceContainerHigh（那份灰带主色色相，
-/// 绿主题下胶囊发绿、和暖色画面打架）。浮在画面上的控件是一层统一的中性表面，
-/// 强调色只留给播放键、进度已播段 / 手柄与开关的「开」态（M3E 视频播放器）。
+/// 深色模式下播放器悬浮表面的固定中性色：HCT chroma 0、tone ≈ 18（#2D2D2D）。
+/// **完全不带色相**——浮在画面上的控件是一层统一的中性表面，强调色只留给播放键、
+/// 进度已播段 / 手柄与开关的「开」态（M3E 视频播放器）。
 const Color kVideoM3eNeutralSurface = Color(0xFF2D2D2D);
 
-/// 悬浮表面不透明度：画面颜色能隐约透出来，白字始终压在近实色上可读。
+/// 日间模式下的同一枚中性表面（tone ≈ 93）。
+const Color kVideoM3eNeutralSurfaceLight = Color(0xFFEDEDED);
+
+/// 深色模式悬浮表面不透明度：画面颜色能隐约透出来，白字始终压在近实色上可读。
 const double kVideoM3eNeutralSurfaceAlpha = 0.86;
 
-/// 悬浮表面上的次要文字 / 字形（白 70%）。
+/// 日间模式悬浮表面不透明度：浅底被暗画面透上来会发灰、深字对比随之下降，所以
+/// 比深色档更实一点。
+const double kVideoM3eNeutralSurfaceAlphaLight = 0.92;
+
+/// 深色模式悬浮表面上的次要文字 / 字形（白 70%）。
 const Color kVideoM3eSecondaryForeground = Color(0xB3FFFFFF);
 
-/// tonal 圆钮的容器色：中性表面上再提一档的白 12%（不带色相）。
-Color videoM3eTonalContainer() => Colors.white.withValues(alpha: 0.12);
+/// 当前亮度下播放器的无色相中性表面。
+Color videoM3eNeutralSurface(ColorScheme cs) =>
+    _videoM3eLight(cs) ? kVideoM3eNeutralSurfaceLight : kVideoM3eNeutralSurface;
+
+/// 当前亮度下悬浮表面（胶囊 / 浮层 / 面板）的不透明度。
+double videoM3eSurfaceAlpha(ColorScheme cs) => _videoM3eLight(cs)
+    ? kVideoM3eNeutralSurfaceAlphaLight
+    : kVideoM3eNeutralSurfaceAlpha;
+
+/// 悬浮表面上的主前景（深色：纯白；日间：近黑）。
+Color videoM3eForeground(ColorScheme cs) =>
+    videoM3eNeutralChromeScheme(cs).onSurface;
+
+/// 悬浮表面上的次要文字 / 字形（深色：白 70%；日间：黑 70%）。
+Color videoM3eSecondaryForeground(ColorScheme cs) =>
+    videoM3eNeutralChromeScheme(cs).onSurfaceVariant;
+
+/// 带墨水屏判据的胶囊前景：墨水屏胶囊恒是纯黑 + 白描边，前景恒白；其余按 app
+/// 亮度（[videoM3eForeground]）。
+Color videoM3eChromeForegroundOf(BuildContext context) => isEinkTheme(context)
+    ? Colors.white
+    : videoM3eForeground(Theme.of(context).colorScheme);
+
+/// tonal 圆钮的容器色：中性表面上再提一档（深色：白 12%；日间：前景 8%），不带
+/// 色相。
+Color videoM3eTonalContainer(ColorScheme cs) => _videoM3eLight(cs)
+    ? videoM3eForeground(cs).withValues(alpha: 0.08)
+    : Colors.white.withValues(alpha: 0.12);
+
+/// 画面中央自带半透明圆底的控件（大播放键 / ±N 秒键）的底色：深色按 [alpha]；
+/// 日间的浅底被暗画面透上来会发灰、深字看不清，统一抬到至少 0.8。
+Color videoM3eTranslucentSurface(ColorScheme cs, double alpha) =>
+    videoM3eNeutralSurface(
+      cs,
+    ).withValues(alpha: _videoM3eLight(cs) ? math.max(alpha, 0.8) : alpha);
 
 /// 播放器上所有悬浮胶囊 / 面板（顶栏返回 / 标题 / 按钮组、底部面板、音量 / 倍速
-/// 浮层）共用的底色。
+/// 浮层、OSD）共用的底色。
 ///
-/// 给了 [cs]（当前主题）时取「带一点主题色调的中性」：以主题主色为种子的深色方案
-/// surfaceContainerHigh（tinted neutral，chroma 很低，不会把画面染色），86% 不透明
+/// 给了 [cs]（当前主题）时取「带一点主题色调的中性」：以主题主色为种子、与 app
+/// 同亮度方案的 surfaceContainerHigh（tinted neutral，chroma 很低，不会把画面染色）
 /// ——2026-10-06 用户嫌纯灰「有点灰」。不给时退回无色相的 [kVideoM3eNeutralSurface]。
 Color videoM3eFloatingColor([ColorScheme? cs]) => cs == null
     ? kVideoM3eNeutralSurface.withValues(alpha: kVideoM3eNeutralSurfaceAlpha)
     : videoM3eChromeScheme(
         cs,
-      ).surfaceContainerHigh.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+      ).surfaceContainerHigh.withValues(alpha: videoM3eSurfaceAlpha(cs));
 
 /// 播放器按钮的 tonal 强调档（M3E「中性面 + 关键处 tonal 色块」）：未激活中性；
 /// 状态型按钮激活（字幕已开 / 面板已打开 / 倍速≠1）走 secondary，收藏走 tertiary，
-/// 静音走 error。颜色都取主题派生的深色方案容器色。
+/// 静音走 error。颜色都取主题派生、与 app 同亮度的方案容器色。
 enum VideoM3eButtonTone { neutral, secondary, tertiary, error }
 
-final Map<int, ColorScheme> _neutralChromeSchemeCache = <int, ColorScheme>{};
+final Map<(int, Brightness), ColorScheme> _neutralChromeSchemeCache =
+    <(int, Brightness), ColorScheme>{};
 
-/// 播放器悬浮浮层（音量 / 倍速 popover）用的配色：表面族全换成无色相中性灰、前景
-/// 纯白 / 白 70%，强调色族（primary / primaryContainer …）仍是以 app 主色为种子的
-/// 深色方案。浮层内部的滑条 / 文字按钮读这份方案，浅色主题下也不会黑压黑。
+/// 播放器悬浮浮层（音量 / 倍速 popover、OSD 前景）用的配色：表面族全换成无色相
+/// 中性灰阶，强调色族（primary / primaryContainer …）仍是以 app 主色为种子的同
+/// 亮度方案。深色：深灰表面 + 纯白 / 白 70% 前景（与旧实现一致）；日间：浅灰表面
+/// + 近黑 / 黑 70% 前景。
 ColorScheme videoM3eNeutralChromeScheme(ColorScheme cs) {
-  final int key = cs.primary.toARGB32();
+  final (int, Brightness) key = (cs.primary.toARGB32(), cs.brightness);
+  if (_videoM3eLight(cs)) {
+    return _neutralChromeSchemeCache[key] ??= videoM3eChromeScheme(cs).copyWith(
+      surface: const Color(0xFFF9F9F9),
+      onSurface: const Color(0xFF1B1B1B),
+      onSurfaceVariant: const Color(0xB3000000),
+      surfaceDim: const Color(0xFFDADADA),
+      surfaceBright: const Color(0xFFF9F9F9),
+      surfaceContainerLowest: Colors.white,
+      surfaceContainerLow: const Color(0xFFF3F3F3),
+      surfaceContainer: const Color(0xFFEFEFEF),
+      surfaceContainerHigh: const Color(0xFFE9E9E9),
+      surfaceContainerHighest: kVideoM3eNeutralSurfaceLight,
+      surfaceTint: Colors.transparent,
+      outline: const Color(0x8A000000),
+      outlineVariant: const Color(0x1F000000),
+      shadow: Colors.black,
+      inverseSurface: const Color(0xFF303030),
+      onInverseSurface: const Color(0xFFF1F1F1),
+    );
+  }
   return _neutralChromeSchemeCache[key] ??= videoM3eChromeScheme(cs).copyWith(
     surface: const Color(0xFF1F1F1F),
     onSurface: Colors.white,
@@ -228,8 +301,8 @@ class VideoM3eFloatingSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
     // 外形 / 投影与阅读器、漫画的浮动工具栏同一份（共享
-    // [fushiFloatingPillDecoration]）；底色取播放器 chrome 的深色方案（胶囊恒压在
-    // 画面上，不随 app 的浅色主题变白）。墨水屏：纯黑 + 白描边。
+    // [fushiFloatingPillDecoration]）；底色取播放器 chrome 与 app 同亮度的悬浮表面
+    // （[videoM3eFloatingColor]）。墨水屏：纯黑 + 白描边。
     final ShapeDecoration decoration = !enabled
         ? const ShapeDecoration(
             color: Colors.transparent,
@@ -313,27 +386,28 @@ class VideoM3eIconButton extends StatelessWidget {
   /// 开关类按钮的「开」态：常驻主色容器 + 方圆角（M3E toggle）。
   final bool selected;
 
-  /// 字形颜色；null = 深色方案 onSurface（近白）。
+  /// 字形颜色；null = 胶囊前景（[videoM3eChromeForegroundOf]：深色近白、日间
+  /// 近黑、墨水屏白）。
   final Color? foreground;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ColorScheme chrome = videoM3eChromeScheme(cs);
     final bool eink = isEinkTheme(context);
+    final Color neutralFg = videoM3eChromeForegroundOf(context);
     final VideoM3eButtonTone effectiveTone =
         selected && tone == VideoM3eButtonTone.neutral
         ? VideoM3eButtonTone.secondary
         : tone;
     final bool toned = !eink && effectiveTone != VideoM3eButtonTone.neutral;
     final Color fg = !toned
-        ? (eink && selected ? Colors.white : foreground ?? Colors.white)
+        ? (eink && selected ? Colors.white : foreground ?? neutralFg)
         : switch (effectiveTone) {
             VideoM3eButtonTone.secondary => chrome.onSecondaryContainer,
             VideoM3eButtonTone.tertiary => chrome.onTertiaryContainer,
             VideoM3eButtonTone.error => chrome.onErrorContainer,
-            VideoM3eButtonTone.neutral => Colors.white,
+            VideoM3eButtonTone.neutral => neutralFg,
           };
     final Color bg = toned
         ? switch (effectiveTone) {
@@ -343,7 +417,7 @@ class VideoM3eIconButton extends StatelessWidget {
             VideoM3eButtonTone.neutral => Colors.transparent,
           }
         : tonal || (eink && selected)
-        ? (eink ? Colors.black : videoM3eTonalContainer())
+        ? (eink ? Colors.black : videoM3eTonalContainer(cs))
         : Colors.transparent;
     final ButtonStyle style = IconButton.styleFrom(
       foregroundColor: fg,
@@ -466,21 +540,20 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ColorScheme chrome = videoM3eChromeScheme(cs);
     final bool eink = isEinkTheme(context);
     final bool translucent =
         widget.style == VideoM3ePlayButtonStyle.translucent;
     final Color bg = eink
         ? Colors.black
         : translucent
-        ? kVideoM3eNeutralSurface.withValues(alpha: 0.5)
+        ? videoM3eTranslucentSurface(cs, 0.5)
         : chrome.primary;
     final Color fg = eink
         ? Colors.white
         : translucent
-        ? Colors.white
+        ? videoM3eForeground(cs)
         : chrome.onPrimary;
     final double h = widget.extent;
     final double w = widget.width ?? h;
@@ -690,7 +763,8 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
     final double e = widget.extent;
-    const Color fg = Colors.white;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color fg = eink ? Colors.white : videoM3eForeground(cs);
     final double dir = widget.forward ? 1 : -1;
     return SizedBox.square(
       dimension: e,
@@ -700,9 +774,7 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: eink
-                ? Colors.black
-                : kVideoM3eNeutralSurface.withValues(alpha: 0.38),
+            color: eink ? Colors.black : videoM3eTranslucentSurface(cs, 0.38),
             border: eink ? Border.all(color: Colors.white, width: 1.5) : null,
           ),
           child: _M3eInk(

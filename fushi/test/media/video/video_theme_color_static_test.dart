@@ -32,13 +32,17 @@ void main() {
       },
     );
 
-    test('neutral button foreground resolves through the shared constant', () {
+    test('neutral button foreground resolves through the shared helpers', () {
       final String helper = methodBody(
         page,
         'Color _videoChromeButtonForeground(',
       );
+      // Apple 恒白；M3E 走胶囊前景工厂（随 app 日间 / 深色模式，BUG：播放器不吃
+      // 日间 / 深色模式）。都不能退回裸 cs.primary / cs.onSurface。
       expect(helper, contains('videoChromeNeutralForeground'));
+      expect(helper, contains('videoM3eChromeForegroundOf(context)'));
       expect(helper, isNot(contains('cs.primary')));
+      expect(helper, isNot(contains('cs.onSurface')));
     });
 
     test('控制条按钮不再用 cs.primary / onSurface / 硬编码白色', () {
