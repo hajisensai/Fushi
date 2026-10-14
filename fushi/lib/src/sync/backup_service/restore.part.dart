@@ -642,6 +642,62 @@ class BackupRestoreService {
       archive.findFile(_dbName) ??
       archive.findFile(legacyHibikiDatabaseFileName);
 
+  /// 备份归档里主库的 schema 若低于 [kMinSupportedSchemaVersion]，抛
+  /// [UnsupportedLegacySchemaException]（与开库时同一类型，UI 同一句提示）。
+  ///
+  /// 只读 SQLite 文件头（`user_version` 在偏移 60）：Fushi 备份的条目是 STORE，
+  /// 原始窗口就是文件字节，直接取前 100 字节，不解压整库；DEFLATE 条目（老归档 /
+  /// 测试夹具）流式解到 [probePath] 再读头，读完即删。文件头不是 SQLite（坏包）时
+  /// 不在这里判，交给后续原有的打开校验。
+  static Future<void> _checkArchivedDbSchemaSupported({
+    required String zipPath,
+    required ArchiveFile dbFile,
+    required String probePath,
+  }) async {
+    final int? version = await _peekArchivedDbUserVersion(
+      zipPath: zipPath,
+      dbFile: dbFile,
+      probePath: probePath,
+    );
+    if (version != null) {
+      checkSupportedSchemaVersion(version, dbPath: dbFile.name);
+    }
+  }
+
+  static Future<int?> _peekArchivedDbUserVersion({
+    required String zipPath,
+    required ArchiveFile dbFile,
+    required String probePath,
+  }) async {
+    const int headerSize = 100;
+    final InputStreamBase? raw = dbFile.rawContent;
+    if (raw != null && !dbFile.isCompressed) {
+      raw.reset();
+      final int available = raw.length;
+      if (available < headerSize) return null;
+      return sqliteUserVersionFromHeader(
+        raw.peekBytes(headerSize).toUint8List(),
+      );
+    }
+    try {
+      await _safeDelete(probePath);
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbFile.name, probePath),
+        ],
+      );
+      final RandomAccessFile f = await File(probePath).open();
+      try {
+        return sqliteUserVersionFromHeader(await f.read(headerSize));
+      } finally {
+        await f.close();
+      }
+    } finally {
+      await _safeDelete(probePath);
+    }
+  }
+
   /// Validate a backup ZIP. Returns metadata if valid.
   ///
   /// Streams the central directory via [InputFileStream] instead of reading the
@@ -723,6 +779,15 @@ class BackupRestoreService {
       final archive = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      // 最低 schema 门槛：备份里的库低于本版本能升级的下限时，必须在**任何**破坏性
+      // 动作（快照、删 -wal/-shm、覆盖主库、换内容树）之前拒绝，当前库原样不动。
+      // 放到覆盖之后再由开库的 onUpgrade 拒绝就晚了：那时活库已经被老库顶掉。
+      await _checkArchivedDbSchemaSupported(
+        zipPath: zipPath,
+        dbFile: dbFile,
+        probePath: '$dbPath.restore-probe',
+      );
 
       // TODO-1183: determinate progress across every streamed byte.
       final void Function(int deltaBytes) reportBytes =
@@ -1137,6 +1202,14 @@ class BackupRestoreService {
       final Archive archive = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      // 最低 schema 门槛：先于解压 / 迁移 / 快照 / 合并拒绝（第 2 步开 merge-src
+      // 时 onUpgrade 也会拒绝，这里提前判定省掉一次整库解压，且失败面更干净）。
+      await _checkArchivedDbSchemaSupported(
+        zipPath: zipPath,
+        dbFile: dbFile,
+        probePath: '$mergeSrcPath.probe',
+      );
 
       // TODO-1183: determinate progress across every streamed byte.
       final void Function(int deltaBytes) reportBytes =

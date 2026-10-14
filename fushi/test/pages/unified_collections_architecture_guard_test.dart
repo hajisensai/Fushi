@@ -13,8 +13,6 @@ void main() {
   final File mergeEngine = File('lib/src/sync/backup_merge_engine.dart');
   final File importDialog =
       File('lib/src/media/video/video_import_dialog.dart');
-  final File database =
-      File('../packages/fushi_core/lib/src/database/database.dart');
   final File homeVideo =
       File('lib/src/pages/implementations/home_video_page.dart');
   final File historyPage =
@@ -22,7 +20,6 @@ void main() {
 
   late String mergeSrc;
   late String importSrc;
-  late String dbSrc;
   late String homeSrc;
   late String historySrc;
 
@@ -30,7 +27,6 @@ void main() {
     for (final File f in <File>[
       mergeEngine,
       importDialog,
-      database,
       homeVideo,
       historyPage,
     ]) {
@@ -38,19 +34,12 @@ void main() {
     }
     mergeSrc = mergeEngine.readAsStringSync();
     importSrc = importDialog.readAsStringSync();
-    dbSrc = database.readAsStringSync();
     homeSrc = homeVideo.readAsStringSync();
     historySrc = historyPage.readAsStringSync();
   });
 
-  test('迁移在 v38 同时拆播放列表 + 迁 series→合集（先拆后迁的顺序）', () {
-    final int split = dbSrc.indexOf('await splitPlaylistVideoBooksV38();');
-    final int migrate = dbSrc.indexOf('await migrateSeriesToCollectionsV38();');
-    expect(split, isNonNegative, reason: 'v38 必须调用 splitPlaylistVideoBooksV38');
-    expect(migrate, isNonNegative,
-        reason: 'v38 必须调用 migrateSeriesToCollectionsV38');
-    expect(split, lessThan(migrate), reason: '必须先拆播放列表再迁 series，避免拆出的集重复归组');
-  });
+  // （原「v38 先拆播放列表再迁 series」的迁移顺序守卫已随最低 schema 门槛 v75
+  // 删除：v38 台阶本身不在了，低于门槛的库直接拒绝打开。）
 
   test('备份合并携带 media_collections（Phase 5a：合集随备份存活）', () {
     final int mergeFn = mergeSrc.indexOf('Future<void> merge() async {');

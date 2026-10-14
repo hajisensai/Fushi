@@ -7481,5 +7481,8 @@
   "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde telefoons kunnen op deze manier geen kaarten afleveren. Zet op die telefoons in plaats daarvan 'Kaarten naar gekoppeld apparaat sturen' aan.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "db_legacy_schema_title": "Old data needs an upgrade first",
+  "db_legacy_schema_message": "This database was created by an earlier version of Fushi that this version can no longer upgrade directly. Your data has not been changed. Install Fushi v$version, open it once to upgrade the data, then install this version again.",
+  "backup_legacy_schema": "This backup comes from an earlier version of Fushi that this version can no longer import. Your current data has not been changed. Install Fushi v$version, import the backup there once, then update to this version."
 }

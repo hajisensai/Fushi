@@ -8,53 +8,17 @@ import 'package:fushi_core/fushi_core.dart';
 final int kFutureSchemaVersion =
     FushiDatabase.forTesting(NativeDatabase.memory()).schemaVersion + 1;
 
-/// TODO-1017 阶段1：互联 per-peer 授权凭据表 fushi_paired_peers 的建表迁移
-/// （v30 -> v31；历史上以旧名 hibiki_paired_peers 建出，v69 起统一新名）与
-/// DB 方法的守护测试。
+/// TODO-1017 阶段1：互联 per-peer 授权凭据表 fushi_paired_peers（v31 引入；历史上
+/// 以旧名 hibiki_paired_peers 建出，v69 起统一新名）与 DB 方法的守护测试。
 ///
 /// 覆盖：
-/// ① v30 -> 当前 升级：建出 fushi_paired_peers（<31 阶梯按当前 Dart 表定义
-///    直接建新名），且旧库既有行零丢（Never break userspace，无损迁移）。
-/// ② fresh DB：onCreate 的 createAll 已含新表，多次开库幂等（表已存在不重建）。
-/// ③ upsertPairedPeer 幂等（peerId UNIQUE 冲突键整行更新，不新增行）、
+/// ① fresh DB：onCreate 的 createAll 已含新表，多次开库幂等（表已存在不重建）。
+/// ② upsertPairedPeer 幂等（peerId UNIQUE 冲突键整行更新，不新增行）、
 ///    getPairedPeers 按 pairedAtMs 升序、revokePairedPeer 返回删除行数。
-/// ④ 降级（DB 版本 > 代码 schemaVersion）抛 FushiDatabaseDowngradeException。
+/// ③ 降级（DB 版本 > 代码 schemaVersion）抛 FushiDatabaseDowngradeException。
 ///
-/// 迁移测试沿用 migration_book_key_test 的「手写旧 schema raw seed」范式：只建
-/// v30 时已存在的表并写真实行，PRAGMA user_version = 30 触发 onUpgrade(30 -> 当前)。
-
-/// 手写一个 v30 库：epub_books（v16 book-key 形态）+ 一条真实行，user_version=30。
-/// 开库触发 onUpgrade(30 -> 当前)，只有 from<31 步会 createTable(fushiPairedPeers)。
-FushiDatabase _openMigratedFromV30() {
-  return FushiDatabase.forTesting(
-    NativeDatabase.memory(
-      setup: (raw) {
-        raw.execute('PRAGMA foreign_keys = ON');
-        raw.execute('''
-CREATE TABLE epub_books (
-  book_key TEXT NOT NULL PRIMARY KEY,
-  title TEXT NOT NULL,
-  author TEXT,
-  cover_path TEXT,
-  epub_path TEXT NOT NULL,
-  extract_dir TEXT NOT NULL,
-  chapter_count INTEGER NOT NULL,
-  chapters_json TEXT NOT NULL,
-  toc_json TEXT,
-  source_metadata TEXT,
-  source_id INTEGER,
-  imported_at INTEGER NOT NULL
-)''');
-        raw.execute(
-          "INSERT INTO epub_books "
-          "(book_key, title, epub_path, extract_dir, chapter_count, chapters_json, imported_at) "
-          "VALUES ('Existing Book', 'Existing Book', '/x.epub', '/x', 0, '[]', 42)",
-        );
-        raw.execute('PRAGMA user_version = 30');
-      },
-    ),
-  );
-}
+/// v30 -> 当前 的升级用例（含 v69 改名）随最低 schema 门槛 v75 一起删除：低于门槛
+/// 的库本版本直接拒绝打开（见 migration_min_schema_floor_test）。
 
 /// 手写一个「未来版本」库以强制走降级保护分支。
 ///
@@ -86,44 +50,6 @@ CREATE TABLE fushi_paired_peers (
 }
 
 void main() {
-  test('v30 -> current creates fushi_paired_peers with zero loss of old rows',
-      () async {
-    final FushiDatabase db = _openMigratedFromV30();
-    addTearDown(db.close);
-
-    // Opening runs onUpgrade(30 -> current). Compare to the live schemaVersion
-    // so this never goes stale on a future bump.
-    final QueryRow ver =
-        await db.customSelect('PRAGMA user_version').getSingle();
-    expect(ver.read<int>('user_version'), db.schemaVersion,
-        reason: 'migration must land on the current schema version');
-    // paired peers 表自 v31（TODO-1017 阶段1）引入；断言下界而非瞬时值，
-    // 使后续 schema bump 不会把这个迁移守护测试拖 stale。
-    expect(db.schemaVersion, greaterThanOrEqualTo(31),
-        reason: 'paired peers 表自 v31 引入，schema 版本不应回退到其之前');
-
-    // 终局清算（v69）：走完整阶梯建出的必须是新名，旧名零残留。
-    final List<QueryRow> tables = await db
-        .customSelect(
-          "SELECT name FROM sqlite_master WHERE type = 'table' "
-          "AND name IN ('fushi_paired_peers', 'hibiki_paired_peers')",
-        )
-        .get();
-    expect(tables.map((QueryRow r) => r.read<String>('name')).toList(),
-        <String>['fushi_paired_peers'],
-        reason: '<31 阶梯按当前表定义直接建新名；旧名只允许出现在 v69 改名步里');
-
-    // Old epub_books row survived the upgrade untouched (Never break userspace).
-    final List<EpubBookRow> books = await db.getAllEpubBooks();
-    expect(books.length, 1);
-    expect(books.single.bookKey, 'Existing Book');
-    expect(books.single.importedAt, 42);
-
-    // The new table now exists and starts empty.
-    final List<FushiPairedPeerRow> peers = await db.getPairedPeers();
-    expect(peers, isEmpty, reason: '空表 = 无已配对对端 = auth 未接线前行为零变化');
-  });
-
   test('fresh DB has fushi_paired_peers from createAll and is idempotent',
       () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());

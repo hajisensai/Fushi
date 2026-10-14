@@ -6,7 +6,8 @@ import 'package:test/test.dart';
 ///
 /// fushi_core cannot import the app package (reverse dependency), so it keeps
 /// a private copy of `sanitizeTtuFilename` in `lib/src/utils/ttu_sanitize.dart`
-/// (the v16 book-key migration's `_sanitizeBookKey` now delegates to it). The
+/// (`coreSingleVideoBookUid` / `corePlaylistBookUid` derive video identities
+/// from it). The
 /// app truth source lives in `fushi/lib/src/sync/ttu_filename.dart`. If either
 /// body is edited without the other, cross-device book identity silently
 /// diverges — the same title would map to different keys on different code

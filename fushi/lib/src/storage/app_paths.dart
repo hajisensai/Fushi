@@ -451,9 +451,10 @@ class AppPaths {
   /// 纪律：**只准异步 `exists()` + 超时**，绝不 `existsSync()`（这条路径同样在启动最早期
   /// 的主 isolate 上跑）。超时/抛错都按「老安装」处理（保守）。
   ///
-  /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：老安装在第一次开库前主库还叫
-  /// `hibiki.db`（开库时 fushi_core 才做一次性改名），这里若只认新名会把老安装
-  /// 误判成全新安装。
+  /// 兼看旧文件名 [legacyHibikiDatabaseFileName]：改名前从未升级过的老安装主库还叫
+  /// `hibiki.db`。本版本不再改名迁移它（开库时 fushi_core 抛
+  /// `UnsupportedLegacySchemaException`，提示先装桥接版本），但这里仍必须认它——
+  /// 只认新名会把老安装误判成全新安装、换到新布局的空数据根上。
   static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();

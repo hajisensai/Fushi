@@ -16,7 +16,12 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show fushiDatabaseFileName, PrefCodec;
+    show
+        fushiDatabaseFileName,
+        kLegacySchemaBridgeAppVersion,
+        kMinSupportedSchemaVersion,
+        PrefCodec,
+        UnsupportedLegacySchemaException;
 import 'package:path/path.dart' as p;
 
 /// 「从 Hibiki 导入」页（改名迁移计划 P2-2/P2-3，Fushi 侧）。
@@ -168,6 +173,18 @@ class _MigrationImportPageState extends State<MigrationImportPage>
     if (_running) return;
     final MigrationScanResult? scan = _scan;
     if (scan == null || scan.ready.isEmpty) return;
+    // 最低 schema 门槛：清单里记着归档内库的 user_version。低于下限的老包本版本
+    // 已无法升级，在关库 / 上遮罩之前就拒绝（活库零改动）。清单缺版本号时交给
+    // mergeRestoreBackup 自己的文件头判定兜底。
+    final bool hasLegacyBatch = scan.ready.any((MigrationImportBatch b) {
+      final int? v = b.manifest.sourceSchemaVersion;
+      return v != null && v > 0 && v < kMinSupportedSchemaVersion;
+    });
+    if (hasLegacyBatch) {
+      setState(() => _error =
+          t.backup_legacy_schema(version: kLegacySchemaBridgeAppVersion));
+      return;
+    }
     setState(() {
       _running = true;
       _error = null;
@@ -278,8 +295,9 @@ class _MigrationImportPageState extends State<MigrationImportPage>
       // 把 append 挂进 fire-and-forget 串行链，2 秒后的 System.exit 会连同在途写入
       // 一起带走，所以用户机器上导入失败后「错误日志 (0)」。
       await ErrorLogService.instance.flush();
-      appModel.failBackupImport(
-          t.migration_import_verify_failed(batch: '', detail: '$e'));
+      appModel.failBackupImport(e is UnsupportedLegacySchemaException
+          ? t.backup_legacy_schema(version: kLegacySchemaBridgeAppVersion)
+          : t.migration_import_verify_failed(batch: '', detail: '$e'));
       // BUG-1505：失败停在遮罩上，重启交给用户点（理由同 verifyCounts 分支）。
     } finally {
       if (mounted) {

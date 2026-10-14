@@ -141,6 +141,7 @@ import 'package:fushi_core/fushi_core.dart'
         BookFormat,
         EpubBookRow,
         FushiDatabaseFailureKind,
+        kLegacySchemaBridgeAppVersion,
         ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
@@ -2253,7 +2254,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // retrying re-runs init and fails identically; the DB is intentionally left
     // untouched). Checked BEFORE the generic init-error screen.
     final downgrade = appModel.downgradeError;
-    if (downgrade != null) {
+    // 最低 schema 门槛：库比本版本能升级的下限还老（或只有改名前的 hibiki.db）。
+    // 与降级同一块非重试专屏，只是文案换成「先装桥接版本打开一次，再更新」。
+    final legacySchema = appModel.legacySchemaError;
+    if (downgrade != null || legacySchema != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
@@ -2273,7 +2277,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     FushiIcon(Icons.system_update, size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
-                      t.db_downgrade_title,
+                      downgrade != null
+                          ? t.db_downgrade_title
+                          : t.db_legacy_schema_title,
                       style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
@@ -2281,10 +2287,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      t.db_downgrade_message(
-                        dbVersion: downgrade.dbVersion,
-                        appVersion: downgrade.appSchemaVersion,
-                      ),
+                      downgrade != null
+                          ? t.db_downgrade_message(
+                              dbVersion: downgrade.dbVersion,
+                              appVersion: downgrade.appSchemaVersion,
+                            )
+                          : t.db_legacy_schema_message(
+                              version: kLegacySchemaBridgeAppVersion,
+                            ),
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),

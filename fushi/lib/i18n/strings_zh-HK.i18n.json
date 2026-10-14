@@ -7481,5 +7481,8 @@
   "anki_pending_mine_landing_host_note": "本機是互聯主機，配對的手機沒法經這條路把卡交過來：請在那些手機上改開「製卡到 Fushi 互聯服務端」。",
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "db_legacy_schema_title": "舊資料需要先升級",
+  "db_legacy_schema_message": "此資料庫來自較早版本的 Fushi，目前版本已無法直接升級它。你的資料沒有被改動。請先安裝 Fushi v$version，開啟一次完成資料升級，再安裝目前版本。",
+  "backup_legacy_schema": "此備份來自較早版本的 Fushi，目前版本已無法直接匯入。你目前的資料沒有任何改動。請先安裝 Fushi v$version 匯入此備份，再更新到目前版本。"
 }

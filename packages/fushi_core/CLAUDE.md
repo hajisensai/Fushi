@@ -77,7 +77,7 @@
 - `GalgameSessions` -- 游玩会话事实表，由前台窗口计时器写入（脱离 hook 文本）。**刻意无统计投影表**，时长/次数/最后游玩一律现算 GROUP BY。
 - `GalgameTagMappings` -- v59（BUG-1113）游戏 ↔ 用户标签映射（复用共享 `BookTags` 池）。**无 `addedAt` 时钟、无移除墓碑**：游戏是本机局域身份，整套游戏数据不进 live-sync 也不进备份合并导入，标签跟随宿主不跨端传播。与游戏**元数据标签**（bgm/vndb 刮削字符串）是两条正交轴。
 
-迁移策略：`onUpgrade` 逐版本增量迁移（v1->v57），支持降级时自动备份并重建。
+迁移策略：`onUpgrade` 逐版本增量迁移，**最低可升级 schema 是 `kMinSupportedSchemaVersion`（v75）**——v2–v75 的阶梯（含 Hibiki 时代的 `hibiki.db` 改名与 `reader_ttu` / `sasayaki` / `hoshi://` / `s:hibikiServer` 等存量改写）已删除。低于门槛的库（含目录里只有改名前 `hibiki.db` 的情况）在任何迁移语句之前抛 `UnsupportedLegacySchemaException`，库文件原样保留，app 提示先装 `kLegacySchemaBridgeAppVersion`（v2.9.1，仍带完整阶梯）打开一次再更新；备份恢复 / 合并导入用 `checkSupportedSchemaVersion` + 文件头 `user_version` 在覆盖前做同样判定。降级（库比代码新）同样拒绝打开（`FushiDatabaseDowngradeException`），绝不重建。
 
 ## 测试与质量
 

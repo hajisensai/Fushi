@@ -196,8 +196,8 @@ class VideoBookRepository {
       );
 
   /// 统一合集 Phase 2：把一个多集播放列表拆成 N 条独立 VideoBooks 行 + 一个 playlist
-  /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，与 v38 迁移
-  /// `splitPlaylistVideoBooksV38` 落库形状对齐（每集自带 positionMs 进 lastPositionMs；
+  /// [MediaCollections]（成员按序）。是「导入时拆集」的单一真相源，落库形状沿用已
+  /// 删除的 v38 拆集迁移（每集自带 positionMs 进 lastPositionMs；
   /// 每集 uid = coreUniqueVideoBookUid(coreSingleVideoBookUid(path))；playlistJson 不写、
   /// currentEpisode 恒 0；completed_at 不设）。整批包一个事务：全成或全回滚。
   ///

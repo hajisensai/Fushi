@@ -1537,6 +1537,13 @@ class AppModel with ChangeNotifier {
       _unrecoverableDbError;
   FushiDatabaseUnrecoverableException? _unrecoverableDbError;
 
+  /// 非 null 表示库的 schema 低于本版本能升级的下限（[kMinSupportedSchemaVersion]，
+  /// 或目录里只有改名前的 `hibiki.db`）：迁移阶梯的那一段已删除，开库被拒、库文件
+  /// 原样保留。UI 显专屏提示先装 [kLegacySchemaBridgeAppVersion] 打开一次再更新；
+  /// 不给重试——重试会以同样的方式失败。
+  UnsupportedLegacySchemaException? get legacySchemaError => _legacySchemaError;
+  UnsupportedLegacySchemaException? _legacySchemaError;
+
   /// BUG-815：非 null 表示桌面**配置了自定义数据根、但本次启动它不可达**（休眠 / 掉线 /
   /// 拔出的盘）。UI 据此显「数据位置未响应」逃生屏（重试 / 显式用默认位置启动），而**不**
   /// 静默把空默认库当真数据显示。真实数据仍原封不动躺在 [DataRootUnavailableException.
@@ -1598,6 +1605,7 @@ class AppModel with ChangeNotifier {
     _initError = null;
     _downgradeError = null;
     _unrecoverableDbError = null;
+    _legacySchemaError = null;
     _dataRootUnavailable = null;
     _isInitialised = false;
     notifyListeners();
@@ -3554,6 +3562,15 @@ class AppModel with ChangeNotifier {
       debugPrint('[Fushi] init REFUSED (DB downgrade): $e\n$stack');
       ErrorLogService.instance.log('AppModel.initialise.downgrade', e, stack);
       _downgradeError = e;
+      _initError = '$e';
+      notifyListeners();
+    } on UnsupportedLegacySchemaException catch (e, stack) {
+      // 库比本版本能升级的下限还老（低于最低 schema 门槛，或只有改名前的
+      // hibiki.db）。开库在任何迁移语句之前被拒，文件原样保留。与降级同理：专屏、
+      // 不重试、不继续 init、绝不删库重建。
+      debugPrint('[Fushi] init REFUSED (legacy schema): $e\n$stack');
+      ErrorLogService.instance.log('AppModel.initialise.legacySchema', e, stack);
+      _legacySchemaError = e;
       _initError = '$e';
       notifyListeners();
     } on FushiDatabaseUnrecoverableException catch (e, stack) {

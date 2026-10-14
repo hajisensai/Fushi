@@ -1031,6 +1031,18 @@ Future<void> runBackupImportFlowForFile({
       );
       return;
     }
+    // 最低 schema 门槛：清单版本低于下限的老备份在关库之前就拒绝（活库零改动）。
+    // 清单可能与包里的库不一致，restoreBackup / mergeRestoreBackup 自己还会按
+    // 库文件头再判一次。
+    if (validated.schemaVersion > 0 &&
+        validated.schemaVersion < kMinSupportedSchemaVersion) {
+      await _endValidatingThenSnack(
+        appModel,
+        overlay,
+        t.backup_legacy_schema(version: kLegacySchemaBridgeAppVersion),
+      );
+      return;
+    }
 
     // TODO-1195 part B: best-effort merge preview for the confirm dialog.
     // Runs against the still-open live DB; null on any failure → generic UI.
