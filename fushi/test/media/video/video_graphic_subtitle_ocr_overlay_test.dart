@@ -60,6 +60,7 @@ Widget _overlay(
   VideoPlayerController c,
   _Probe probe, {
   VideoPauseOcrScope scope = VideoPauseOcrScope.graphicSubtitles,
+  VoidCallback? onEnableRequested,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -74,6 +75,7 @@ Widget _overlay(
           captureFrame: probe.capture,
           recognizeFrame: probe.recognize,
           scope: scope,
+          onEnableRequested: onEnableRequested,
         ),
       ),
     ),
@@ -179,6 +181,166 @@ void main() {
     await tester.pump();
     expect(_hitBoxes, findsNothing, reason: '副字幕出现后不能再有整帧 OCR 区域压在它上面');
     await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+  });
+
+  group('BUG-3328 暂停 OCR 默认关闭、仅图片字幕提示开启', () {
+    final Finder hint = find.byKey(
+      const ValueKey<String>('graphic_subtitle_ocr_enable_hint'),
+    );
+    final Finder enableButton = find.byKey(
+      const ValueKey<String>('graphic_subtitle_ocr_enable_button'),
+    );
+
+    testWidgets('关闭档 + 图片字幕：不截帧、不识别（不弹 Lens 同意框），只显示开启提示', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: true);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      int enableRequests = 0;
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () => enableRequests++,
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(probe.captures, 0, reason: '默认不自动 OCR');
+      expect(hint, findsOneWidget);
+      expect(
+        find.text(t.video_subtitle_graphic_ocr_enable_hint),
+        findsOneWidget,
+      );
+
+      await tester.tap(enableButton);
+      await tester.pump();
+      expect(enableRequests, 1);
+    });
+
+    testWidgets('点开启后范围变为仅图片字幕：提示消失并立即识别当前帧', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: true);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      VideoPauseOcrScope scope = VideoPauseOcrScope.off;
+      late StateSetter rebuild;
+      await tester.pumpWidget(
+        StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            rebuild = setState;
+            return _overlay(
+              c,
+              probe,
+              scope: scope,
+              onEnableRequested: () =>
+                  rebuild(() => scope = VideoPauseOcrScope.graphicSubtitles),
+            );
+          },
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsOneWidget);
+
+      await tester.tap(enableButton);
+      await tester.pump();
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(probe.captures, 1);
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+      expect(hint, findsNothing);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('关闭档 + 文本字幕 / 无字幕：不提示、不识别', (tester) async {
+      final VideoPlayerController noSubs = _pausedController(graphic: false);
+      addTearDown(noSubs.dispose);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(
+          noSubs,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () {},
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      expect(hint, findsNothing, reason: '无字幕不提示');
+      expect(probe.captures, 0);
+
+      final VideoPlayerController text = _pausedController(graphic: false);
+      addTearDown(text.dispose);
+      text.setCues(<AudioCue>[_textCue('テキスト字幕')]);
+      text.debugUpdateCueForPosition(5000);
+      await tester.pumpWidget(
+        _overlay(
+          text,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () {},
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      expect(hint, findsNothing, reason: '文本字幕不提示');
+      expect(probe.captures, 0);
+    });
+
+    testWidgets('播放中不提示；关掉提示后本次不再出现', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: true);
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () {},
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsNothing, reason: '播放中不打扰');
+
+      c.debugSetIsPlayingForTesting(false);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('graphic_subtitle_ocr_enable_dismiss'),
+        ),
+      );
+      // 第一帧开始淡出动画，再推过淡出时长。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsNothing);
+
+      c.debugSetIsPlayingForTesting(true);
+      await tester.pump();
+      c.debugSetIsPlayingForTesting(false);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsNothing, reason: '关掉后本次播放不再提示');
+      expect(probe.captures, 0);
+    });
+
+    testWidgets('所有视频档的普通画面：状态标记说「画面文字」而不是「字幕」', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.all),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(t.video_subtitle_frame_ocr_status_ready),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.video_subtitle_graphic_ocr_status_ready),
+        findsNothing,
+      );
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
   });
 
   group('graphicSubtitlePauseOcrStatus', () {

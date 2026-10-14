@@ -67,6 +67,7 @@
 | [BUG-3330](bugs/BUG-3330-dropdown-menu-scroll-leak.md) | ✅ | ✅ | 下拉选择框（漫画源等）滚轮滚不动、页面顶栏反而跟着收起 |
 | [BUG-3329](bugs/BUG-3329-detail-backdrop-contained.md) | ✅ | ✅ | 两栏详情页模糊背景只画成窗口中间一块竖条（像莫名的毛玻璃） |
 | [BUG-3328](bugs/BUG-3328-manga-card-menu-ocr.md) | ✅ | ✅ | 漫画卡菜单显示「导入有声书」而没有 OCR，多选也没有批量 OCR |
+| [BUG-3328](bugs/BUG-3328-video-pause-ocr-opt-in.md) | ✅ | ✅ | 视频暂停 OCR 默认自动运行并弹漫画文案的 Lens 同意框 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

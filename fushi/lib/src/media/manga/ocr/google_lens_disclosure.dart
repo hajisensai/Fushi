@@ -8,17 +8,54 @@ const int kGoogleLensDisclosureVersion = 1;
 const String kGoogleLensDisclosurePreferenceKey =
     'manga_google_lens_disclosure_version';
 
+/// 视频画面 / 图片字幕上传同意的设备本地键（BUG-3328）。与漫画分开：漫画那份同意书
+/// 说的是「漫画页面」，用户没同意过把视频画面发给 Google。
+const String kVideoGoogleLensDisclosurePreferenceKey =
+    'video_google_lens_disclosure_version';
+
 typedef GoogleLensDisclosureGate = Future<bool> Function(BuildContext context);
+
+/// 要上传给 Google Lens 的是什么。决定同意框文案与同意记录的键。
+enum GoogleLensDisclosureScene {
+  /// 漫画页面（漫画阅读 / 在线直读 / 整卷 OCR）。
+  mangaPages(kGoogleLensDisclosurePreferenceKey),
+
+  /// 视频画面（暂停帧识别、图片字幕整轨转文字）。
+  videoFrames(kVideoGoogleLensDisclosurePreferenceKey);
+
+  const GoogleLensDisclosureScene(this.preferenceKey);
+
+  /// 同意记录（版本号）存在 SharedPreferences 的键。
+  final String preferenceKey;
+
+  String get title => switch (this) {
+    GoogleLensDisclosureScene.mangaPages =>
+      t.manga_google_lens_disclosure_title,
+    GoogleLensDisclosureScene.videoFrames =>
+      t.video_google_lens_disclosure_title,
+  };
+
+  String get body => switch (this) {
+    GoogleLensDisclosureScene.mangaPages => t.manga_google_lens_disclosure_body,
+    GoogleLensDisclosureScene.videoFrames =>
+      t.video_google_lens_disclosure_body,
+  };
+}
 
 /// Device-local, versioned privacy gate for full-page Google Lens OCR.
 ///
 /// SharedPreferences is intentional: Drift preferences participate in profile
 /// snapshots and backup/sync, while consent must be collected independently on
 /// every device that uploads page images.
-Future<bool> ensureGoogleLensDisclosure(BuildContext context) async {
+///
+/// [scene] 决定文案与同意记录：视频调用方必须传 [GoogleLensDisclosureScene.videoFrames]，
+/// 否则用户看到的是「将漫画页面发送到 Google Lens？」（BUG-3328）。
+Future<bool> ensureGoogleLensDisclosure(
+  BuildContext context, {
+  GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,
+}) async {
   final SharedPreferences preferences = await SharedPreferences.getInstance();
-  if (preferences.getInt(kGoogleLensDisclosurePreferenceKey) ==
-      kGoogleLensDisclosureVersion) {
+  if (preferences.getInt(scene.preferenceKey) == kGoogleLensDisclosureVersion) {
     return true;
   }
   if (!context.mounted) {
@@ -26,8 +63,8 @@ Future<bool> ensureGoogleLensDisclosure(BuildContext context) async {
   }
   final bool accepted = await showFushiConfirmDialog(
     context: context,
-    title: t.manga_google_lens_disclosure_title,
-    message: t.manga_google_lens_disclosure_body,
+    title: scene.title,
+    message: scene.body,
     icon: FushiIcons.cloudUpload,
     cancelLabel: t.manga_google_lens_disclosure_decline,
     confirmLabel: t.manga_google_lens_disclosure_accept,
@@ -35,9 +72,6 @@ Future<bool> ensureGoogleLensDisclosure(BuildContext context) async {
   if (!accepted) {
     return false;
   }
-  await preferences.setInt(
-    kGoogleLensDisclosurePreferenceKey,
-    kGoogleLensDisclosureVersion,
-  );
+  await preferences.setInt(scene.preferenceKey, kGoogleLensDisclosureVersion);
   return true;
 }

@@ -136,11 +136,36 @@ void main() {
   });
 
   group('VideoPauseOcrScope', () {
-    test('默认所有视频；未知值回退默认', () {
-      expect(VideoPauseOcrScope.fromWireName(null), VideoPauseOcrScope.all);
-      expect(VideoPauseOcrScope.fromWireName('x'), VideoPauseOcrScope.all);
+    test('BUG-3328：默认关闭（需用户手动开启）；未知值回退默认；存过的值照旧', () {
+      expect(VideoPauseOcrScope.defaultScope, VideoPauseOcrScope.off);
+      expect(VideoPauseOcrScope.fromWireName(null), VideoPauseOcrScope.off);
+      expect(VideoPauseOcrScope.fromWireName('x'), VideoPauseOcrScope.off);
       for (final VideoPauseOcrScope scope in VideoPauseOcrScope.values) {
         expect(VideoPauseOcrScope.fromWireName(scope.wireName), scope);
+      }
+    });
+
+    test('BUG-3328：只有识别关着且是图片字幕时才提示开启', () {
+      expect(
+        VideoPauseOcrScope.off.offersEnableHint(graphicSubtitleActive: true),
+        isTrue,
+      );
+      expect(
+        VideoPauseOcrScope.off.offersEnableHint(graphicSubtitleActive: false),
+        isFalse,
+        reason: '文本字幕 / 无字幕不提示',
+      );
+      for (final VideoPauseOcrScope on in <VideoPauseOcrScope>[
+        VideoPauseOcrScope.all,
+        VideoPauseOcrScope.graphicSubtitles,
+      ]) {
+        for (final bool graphic in <bool>[false, true]) {
+          expect(
+            on.offersEnableHint(graphicSubtitleActive: graphic),
+            isFalse,
+            reason: '已开启时不再提示',
+          );
+        }
       }
     });
 

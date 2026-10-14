@@ -2839,7 +2839,8 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 暂停时识别画面文字的范围（见 [VideoPauseOcrScope]）。默认 all。
+  // 暂停时识别画面文字的范围（见 [VideoPauseOcrScope]）。默认 off（BUG-3328：用户
+  // 手动开启；存过 all / graphic_subtitles 的用户照旧）。
   VideoPauseOcrScope get videoPauseOcrScope => VideoPauseOcrScope.fromWireName(
       getPref('video_pause_ocr_scope', defaultValue: null) as String?);
 

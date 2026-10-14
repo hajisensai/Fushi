@@ -7418,5 +7418,11 @@
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
   "video_setting_pause_ocr_scope_off": "Off",
   "manga_library_ocr_action": "Recognize text (OCR)",
-  "manga_library_ocr_none": "Nothing to recognize: the selected manga are already recognized or not downloaded"
+  "manga_library_ocr_none": "Nothing to recognize: the selected manga are already recognized or not downloaded",
+  "video_google_lens_disclosure_title": "Send video frames to Google Lens?",
+  "video_google_lens_disclosure_body": "Recognizing text in this video sends a reduced JPEG copy of the paused frame (including image subtitles) to Google. The endpoint is unofficial and may stop working. Nothing is uploaded unless you agree.",
+  "video_subtitle_graphic_ocr_enable_hint": "Image subtitles need OCR for tap-to-look-up",
+  "video_subtitle_graphic_ocr_enable_action": "Turn on",
+  "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
+  "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word"
 }
