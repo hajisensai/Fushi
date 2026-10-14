@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 // 浮层族（对话框 / 弹出菜单 / 下拉 / 提示条）的「设计系统分派」包装：构造参数
@@ -3629,7 +3630,7 @@ class _FushiSnackBarCloseButton extends StatelessWidget {
         context,
       ).hideCurrentSnackBar(reason: SnackBarClosedReason.dismiss),
       icon: FushiIcon(
-        glass ? CupertinoIcons.xmark : Icons.close,
+        glass ? CupertinoIcons.xmark : FushiIcons.close,
         size: glass ? 17 : 20,
       ),
     );

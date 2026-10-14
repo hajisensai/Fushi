@@ -77,7 +77,9 @@ class BookSeriesGrouper {
       final _Volume v = _Volume(
         title: book.title,
         key: key,
-        shelf: book.format == 'manga' ? 'manga' : 'book',
+        shelf: BookFormat.parseOrEpub(book.format) == BookFormat.manga
+            ? 'manga'
+            : 'book',
         members: <_Member>[
           _Member(
             MediaKind.epub,

@@ -2613,11 +2613,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       FushiMotion.medium,
     );
     // 行平铺在面板上：闲置不画底（面板本身就是表面），只有当前句 / 悬停才出色块。
+    final Color hoverSurface = FushiDesignTokens.of(context).surfaces.overlay;
     final Color background = selected
         ? cs.primaryContainer
         : hovered
-        ? cs.surfaceContainerHighest
-        : cs.surfaceContainerHighest.withValues(alpha: 0);
+        ? hoverSurface
+        : hoverSurface.withValues(alpha: 0);
     final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
     final Color secondary = selected
         ? cs.onPrimaryContainer

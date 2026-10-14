@@ -167,6 +167,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/manga/manga_panel_detection_offload_guard_test.dart'
       '（两个消费点都按开关 + isWebtoon 收口）'
       ' + packages/fushi_engine/test/panel_detection_test.dart（检测契约）',
+  // 一键制卡按分格裁图：写 appModel（changed=true），生效点是阅读器制卡时的
+  // 裁切决策（resolveMangaCardImagePlan 的 cropToPanelByDefault），harness 里
+  // 没有挂漫画阅读器。决策函数按开关取舍、阅读器把这个开关接进决策，两件事
+  // 都在同一个测试文件里咬住。
+  'manga/Crop one-click cards to the panel':
+      'test/media/manga/manga_mining_crop_test.dart'
+      '（cropToPanelByDefault 决策 + 阅读器接线守卫）',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',

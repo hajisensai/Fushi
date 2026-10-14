@@ -532,7 +532,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             key: const ValueKey<String>('reader_shelf_batch_ocr'),
             enabled: hasLocalSelection,
             onTap: _batchOcrSelectedManga,
-            icon: Icons.document_scanner_outlined,
+            icon: FushiIcons.ocr,
             tooltip: t.manga_library_ocr_action,
           ),
         FushiIconButton(

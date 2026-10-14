@@ -914,8 +914,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                       const SizedBox(width: 12),
                       FushiIcon(
                         _view.ascending
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
+                            ? FushiIcons.arrowUp
+                            : FushiIcons.arrowDown,
                         size: 16,
                       ),
                     ],

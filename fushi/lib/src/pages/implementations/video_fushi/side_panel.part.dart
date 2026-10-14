@@ -103,11 +103,11 @@ extension _VideoSidePanel on _VideoFushiPageState {
       case _VideoSidePanelKind.settings:
         return FushiIcons.settings;
       case _VideoSidePanelKind.subtitle:
-        return Icons.subtitles;
+        return FushiIcons.subtitles;
       case _VideoSidePanelKind.audio:
-        return Icons.audiotrack;
+        return FushiIcons.music;
       case _VideoSidePanelKind.chapters:
-        return Icons.format_list_numbered;
+        return FushiIcons.numberedList;
       case _VideoSidePanelKind.quality:
         return FushiIcons.highQuality;
       case _VideoSidePanelKind.danmakuMatch:
