@@ -49,15 +49,18 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
 
     await _syncPositionsLive(
       report,
+      sync: InterconnectPlaybackPositionSync(
+        db: _db,
+        backend: backend,
+        kind: PlaybackPositionKind.audiobook,
+      ),
       errorLabel: 'live audiobook progress',
       localKeys: localKeys,
       hostKeys: hostById.keys.toSet(),
-      readLocal: (String bookKey) async => (
-        positionMs:
-            await _db.getPrefTyped<int>(audiobookPositionPrefKey(bookKey), 0),
-        updatedAtMs:
-            await _db.getPrefTyped<int>(audiobookPositionAtPrefKey(bookKey), 0),
-      ),
+      titleOf: (String identity) {
+        final String? title = hostById[identity]?.title;
+        return title == null || title.isEmpty ? identity : title;
+      },
       // 新 host 清单已内联断点（互联完整支持批次）→ 免逐本 GET；旧 host 清单无此
       // 字段（0@0）→ 退回逐本 GET（真无进度的书多打一次也无害，幂等）。
       readHost: (String bookKey) async {
@@ -69,14 +72,6 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
           );
         }
         return backend.remoteAudiobookPosition(bookKey);
-      },
-      pushToHost: (String bookKey, int positionMs, int updatedAtMs) =>
-          backend.putRemoteAudiobookPosition(bookKey, positionMs, updatedAtMs),
-      writeBackLocal: (String bookKey, int positionMs, int updatedAtMs) async {
-        await _db.setPrefTyped<int>(
-            audiobookPositionPrefKey(bookKey), positionMs);
-        await _db.setPrefTyped<int>(
-            audiobookPositionAtPrefKey(bookKey), updatedAtMs);
       },
     );
 
