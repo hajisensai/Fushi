@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "開発者にニックネームが表示されます",
   "feedback_compose_privacy": "フィードバックは fushi.moe の Fushi 開発者に送られ、不具合の調査と改善にのみ使われます。",
   "feedback_compose_submit": "送信",
-  "feedback_compose_missing": "タイトルと詳細を入力してください。",
   "feedback_stage_sending": "送信中…",
   "feedback_stage_screenshots": "スクリーンショットをアップロード中…",
   "feedback_stage_logs": "ログをアップロード中…",
@@ -7416,5 +7415,7 @@
   "video_setting_pause_ocr_scope_hint": "一時停止した画面の文字を OCR で認識し、タップで辞書を引けるようにします。Fushi が表示しているテキスト字幕がある場合はそちらを優先します。",
   "video_setting_pause_ocr_scope_all": "すべての動画",
   "video_setting_pause_ocr_scope_graphic": "画像字幕のみ",
-  "video_setting_pause_ocr_scope_off": "オフ"
+  "video_setting_pause_ocr_scope_off": "オフ",
+  "feedback_compose_title_missing": "タイトルを入力してください。",
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
 }

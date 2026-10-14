@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "開發者看得到你的暱稱",
   "feedback_compose_privacy": "回饋會傳送給 fushi.moe 上的 Fushi 開發者，只用於排查與改進。",
   "feedback_compose_submit": "提交",
-  "feedback_compose_missing": "請填寫標題和詳細描述。",
   "feedback_stage_sending": "正在提交…",
   "feedback_stage_screenshots": "正在上傳截圖…",
   "feedback_stage_logs": "正在上傳日誌…",
@@ -7416,5 +7415,7 @@
   "video_setting_pause_ocr_scope_hint": "暫停時對畫面做文字辨識，辨識出的字可直接點按查詞。畫面上已有 Fushi 顯示的文字字幕時以字幕為準。",
   "video_setting_pause_ocr_scope_all": "所有影片",
   "video_setting_pause_ocr_scope_graphic": "僅圖片字幕",
-  "video_setting_pause_ocr_scope_off": "關閉"
+  "video_setting_pause_ocr_scope_off": "關閉",
+  "feedback_compose_title_missing": "請填寫標題。",
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
 }

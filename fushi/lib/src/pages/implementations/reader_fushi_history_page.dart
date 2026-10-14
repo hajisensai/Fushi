@@ -2607,6 +2607,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                   builder: (_) => _mangaOnly
                       ? MangaImportDialog(db: appModel.database)
                       : BookImportDialog(
+                          prefs: appModel.prefsRepo,
                           repo: SrtBookRepository(appModel.database),
                           audiobookRepo: AudiobookRepository(appModel.database),
                           db: appModel.database,

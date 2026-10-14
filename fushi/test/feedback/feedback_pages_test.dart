@@ -761,7 +761,9 @@ void main() {
     expect(status.body, contains('old-ticket'));
   });
 
-  testWidgets('提交页：空表单就地报错不发请求；填好提交回到中心，列表出现新反馈', (WidgetTester tester) async {
+  testWidgets('提交页：空标题就地报错不发请求；只填标题即可提交回到中心，列表出现新反馈', (
+    WidgetTester tester,
+  ) async {
     tallView(tester);
     final LeaderboardService b = board();
     final FeedbackService f = feedback(b);
@@ -781,7 +783,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
     await tester.pump();
-    expect(find.text(t.feedback_compose_missing), findsOneWidget);
+    expect(find.text(t.feedback_compose_title_missing), findsOneWidget);
     expect(
       server.requests.where((http.Request r) => r.url.path == '/v1/feedback'),
       isEmpty,
@@ -794,10 +796,7 @@ void main() {
       find.byKey(const ValueKey<String>('feedback-title')),
       '想要深色图标',
     );
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('feedback-body')),
-      '桌面版图标在深色任务栏上看不清',
-    );
+    // 详细描述可以不写：只有标题就能提交（反馈 JHR0a8mT5M）。
     await tester.tap(find.byKey(const ValueKey<String>('feedback-submit')));
     await settleIo(tester, () => f.byId('newnewnew0') != null);
     await settleIo(
@@ -825,6 +824,7 @@ void main() {
         jsonDecode(submit.body) as Map<String, dynamic>;
     expect(body['category'], 'suggestion');
     expect(body['title'], '想要深色图标');
+    expect(body['body'], '');
     // 未登录排行榜账户：匿名提交。
     expect(submit.headers.containsKey('X-Fushi-Account'), isFalse);
     expect(
@@ -1731,9 +1731,7 @@ void main() {
     expect(composeContact(tester), 'draft@example.com');
   });
 
-  testWidgets('提交页：丢弃恢复的草稿后联系方式回到上次提交用的，而不是变空', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('提交页：丢弃恢复的草稿后联系方式回到上次提交用的，而不是变空', (WidgetTester tester) async {
     tallView(tester);
     final LeaderboardService b = board();
     final FeedbackService f = feedback(b);

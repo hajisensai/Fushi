@@ -344,6 +344,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
@@ -847,25 +848,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final OnboardingStepId step = steps[_stepIndex];
     final bool isLast = _stepIndex == steps.length - 1;
 
-    // 单行页头：返回按钮和标题同一行，页头下方挂 M3E 分段进度条。
+    // 单行页头：只有标题，页头下方挂 M3E 分段进度条。
     //
-    // 手动返回按钮与标题共用 [FushiPageHeader]；关闭自动推导，避免将来本页在可返回
-    // route 中嵌套时重复插入第二个返回按钮。脚手架的 PrimaryScrollController /
-    // PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
+    // 页头**不放返回箭头**（反馈 YupByu8gxD）：向导的离开入口是底栏左侧的「暂时
+    // 跳过」，步骤间回退是底栏的「返回」。左上角再挂一个返回箭头，用户会当成「回到
+    // 上一步」，点了却是整个向导被关掉——与「暂时跳过」重复又语义相反。MD3 的分步
+    // 流程与 Apple 的引导页都只保留一组前进 / 后退 / 跳过控件；系统返回手势 / 键
+    // 照旧可离开。关闭自动推导，避免本页在可返回 route 中被脚手架补回返回按钮。
+    // 脚手架的 PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
     return FushiPageScaffold(
       automaticallyImplyLeading: false,
       headerCompact: true,
-      leading: FushiIconButton(
-        key: const ValueKey<String>('onboarding_back'),
-        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-        icon: FushiIcons.back,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(
-          minWidth: kMinInteractiveDimension,
-          minHeight: kMinInteractiveDimension,
-        ),
-        onTap: () => Navigator.of(context).maybePop(),
-      ),
       title: t.onboarding_title,
       headerBottom: OnboardingProgressBar(
         current: _stepIndex,

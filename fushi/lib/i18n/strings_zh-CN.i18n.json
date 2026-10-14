@@ -6810,7 +6810,6 @@
   "feedback_compose_link_account_hint": "开发者能看到你的昵称",
   "feedback_compose_privacy": "反馈会发送给 fushi.moe 上的 Fushi 开发者，仅用于排查与改进。",
   "feedback_compose_submit": "提交",
-  "feedback_compose_missing": "请填写标题和详细描述。",
   "feedback_stage_sending": "正在提交…",
   "feedback_stage_screenshots": "正在上传截图…",
   "feedback_stage_logs": "正在上传日志…",
@@ -7416,5 +7415,7 @@
   "video_setting_pause_ocr_scope_hint": "暂停时对画面做文字识别，识别出的字可直接点按查词。画面上已有 Fushi 显示的文字字幕时以字幕为准。",
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
-  "video_setting_pause_ocr_scope_off": "关闭"
+  "video_setting_pause_ocr_scope_off": "关闭",
+  "feedback_compose_title_missing": "请填写标题。",
+  "online_source_error_webview_unavailable": "这个来源需要内置浏览器（WebView），桌面版暂不支持。"
 }

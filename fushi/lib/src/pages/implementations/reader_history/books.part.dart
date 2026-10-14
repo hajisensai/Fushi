@@ -1501,6 +1501,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,
@@ -1680,6 +1681,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
@@ -1723,6 +1725,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,

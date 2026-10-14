@@ -186,7 +186,8 @@ export function normalizeSubmission(body) {
   if (!category) throw new HttpError(400, 'bad_category');
   const sink = { hidden: false };
   const title = cleanText(body.title, FEEDBACK_LIMITS.titleMax, 'title', { required: true }, sink);
-  const text = cleanText(body.body, FEEDBACK_LIMITS.bodyMax, 'body', { required: true }, sink);
+  // 正文可空：很多反馈一句标题就说清了，强制写详情只会逼人填「无」（反馈 JHR0a8mT5M）。
+  const text = cleanText(body.body, FEEDBACK_LIMITS.bodyMax, 'body', {}, sink);
   const contact = cleanText(body.contact, FEEDBACK_LIMITS.contactMax, 'contact', {}, sink);
   return {
     category,

@@ -113,6 +113,31 @@ double dashboardHeroCoverHeight(double mainColumnWidth) =>
 double dashboardRowCoverHeight(double mainColumnWidth) =>
     (mainColumnWidth * 0.2).clamp(132.0, 200.0);
 
+/// 「继续」视频竖卡的封面路径：按「作品海报（合集主封面）→ 这一集自己的封面 →
+/// 同合集其它集的封面」顺序取**第一张磁盘上真存在**的（与视频页合集卡
+/// `_collectionRowCoverProvider` 同口径：自有封面不在就借成员的）。
+///
+/// 反馈 5CTpiVJ7-v：此前只认 `海报 ?? 这一集封面` 一个候选，合集主封面指向的
+/// 文件不在（换盘 / 清缓存 / 刮削改过路径）或这一集还没抽帧时，主角卡与横滑卡
+/// 直接掉成「图标 + 名字」占位，而视频页同一部作品照样有封面。全部候选都不存在
+/// 返回 null（调用方画占位）。
+@visibleForTesting
+String? dashboardVideoCoverPath({
+  required String? collectionCover,
+  required String? ownCover,
+  Iterable<String?> memberCovers = const <String?>[],
+  required bool Function(String path) exists,
+}) {
+  bool usable(String? path) => path != null && path.isNotEmpty && exists(path);
+  if (usable(collectionCover)) return collectionCover;
+  if (usable(ownCover)) return ownCover;
+  // 逐个惰性取：找到第一张存在的就停。
+  for (final String? path in memberCovers) {
+    if (usable(path)) return path;
+  }
+  return null;
+}
+
 /// 「继续」视频卡的进度（[dashboardVideoContinueProgress] 的结果）。
 ///
 /// - [fraction]：封面底部进度条（0..1）；null = 不画。
@@ -2143,14 +2168,20 @@ class _HomeDashboardPageState
     if (entry.remote != null) return _remoteCover(tokens, entry);
     if (entry.isVideo) {
       // 竖卡选图：作品海报（合集主封面）优先；没有竖版海报才用这一集自己的
-      // 封面（多是横版截帧），裁进竖卡。
-      final String? poster = entry.collectionId == null
-          ? null
-          : _collectionCoverById[entry.collectionId];
-      return _videoCover(
+      // 封面（多是横版截帧，裁进竖卡），再不行借同合集其它集的封面。
+      final VideoBookRow video = entry.video!;
+      final int? cid = entry.collectionId;
+      return _localCover(
         tokens,
-        entry.video!,
-        posterPath: poster,
+        kind: MediaKind.video,
+        path: dashboardVideoCoverPath(
+          collectionCover: cid == null ? null : _collectionCoverById[cid],
+          ownCover: video.coverPath,
+          memberCovers: cid == null
+              ? const <String?>[]
+              : _collectionMemberCovers(cid, except: video.bookUid),
+          exists: (String path) => File(path).existsSync(),
+        ),
         title: title,
       );
     }
@@ -2214,21 +2245,20 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 视频封面：来源解析与游戏/剧集列表共用 [resolveMediaCoverImage]。
-  /// BUG-1299：封面可能是抽帧（16:9 横）也可能是刮削海报（2:3 竖），渲染交给
-  /// [PortraitCoverImage] 做槽向自适应，不再 `BoxFit.cover` 硬裁。
-  Widget _videoCover(
-    FushiDesignTokens tokens,
-    VideoBookRow video, {
-    String? posterPath,
-    required String title,
-  }) {
-    return _localCover(
-      tokens,
-      kind: MediaKind.video,
-      path: posterPath ?? video.coverPath,
-      title: title,
-    );
+  /// 同一主合集里其它集的封面路径（懒序列，[dashboardVideoCoverPath] 找到第一张
+  /// 存在的就停，不会把整部作品的文件都探一遍）。
+  Iterable<String?> _collectionMemberCovers(
+    int collectionId, {
+    required String except,
+  }) sync* {
+    for (final VideoBookRow v in _videos) {
+      if (v.bookUid == except) continue;
+      if (_primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)] !=
+          collectionId) {
+        continue;
+      }
+      yield v.coverPath;
+    }
   }
 
   /// 游戏封面（BUG-1111 / BUG-1112）：目录扫描 / exe 图标 / 刮削最终都落到

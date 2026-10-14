@@ -709,6 +709,50 @@ void main() {
       expect(undone, 1);
       expect(find.text('saved'), findsNothing);
     });
+
+    // 反馈 9WaqDjw84y：带动作的提示条默认常驻，只能横滑关掉——两套设计都要有
+    // 看得见的关闭按钮，点了就收起。
+    for (final bool glass in <bool>[false, true]) {
+      testWidgets('persistent snackbar has a close button (glass: $glass)', (
+        WidgetTester tester,
+      ) async {
+        await show(tester, glass: glass);
+        final Finder close = find.byKey(
+          const ValueKey<String>('fushi-snackbar-close'),
+        );
+        expect(close, findsOneWidget);
+        if (glass) {
+          expect(
+            find.ancestor(of: close, matching: find.byType(GlassContainer)),
+            findsOneWidget,
+          );
+        }
+        await tester.tap(close);
+        await settle(tester);
+        expect(find.text('saved'), findsNothing);
+      });
+    }
+
+    testWidgets('auto-dismissing snackbar gets no extra close button', (
+      WidgetTester tester,
+    ) async {
+      await pumpOpener(
+        tester,
+        glass: false,
+        onOpen: (BuildContext c) => ScaffoldMessenger.of(c).showSnackBar(
+          FushiSnackBar(
+            content: const Text('saved'),
+            persist: false,
+            action: SnackBarAction(label: 'undo', onPressed: () {}),
+          ),
+        ),
+      );
+      expect(find.text('saved'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('fushi-snackbar-close')),
+        findsNothing,
+      );
+    });
   });
 
   group('FushiAppBar', () {
