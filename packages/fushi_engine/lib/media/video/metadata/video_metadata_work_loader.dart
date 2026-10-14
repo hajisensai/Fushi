@@ -14,12 +14,14 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 
-/// 把 [row] 及其全部子表装载成领域模型。
+/// 把 [row] 及其全部子表装载成领域模型；作品还没有可用的 provider 身份时返回 null。
 ///
 /// - `provider`：取 work 级主身份（`isPrimary`）的 provider；没有主身份取第一条
-///   身份；一条身份都没有（例如扫描器写的 `local` 骨架作品）抛 [StateError]——
-///   调用方先用 [lookupOfWork] 过滤，别拿它当探测手段。
-/// - `kind`：`row.mediaType`；非法值抛 [StateError]。
+///   身份。一条可用身份都没有（扫描器写的 `local` 骨架 / 没有 uniqueid 的 NFO）
+///   是合法的「还没刮削」状态，不是元数据条目——返回 null，不抛：以前抛
+///   [StateError] 让互联 host 每轮同步都往用户的错误日志里记一条（spec
+///   `2026-09-12-interconnect-scrape-metadata.md` §93：骨架不上 wire）。
+/// - `kind`：`row.mediaType`；非法值是真损坏，抛 [StateError]。
 ///
 /// 与 apply 的差异清单（读回来的东西和当初写进去的不一样）：
 /// 1. `aliases` / `seasonCount` / `episodeCount`：`VideoMetadataWorks` 没这三列，
@@ -46,7 +48,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 /// 8. seasons / episodes：DB 的 `title` 可空，模型必填——读回 `?? ''`；
 ///    `VideoMetadataSeasons.endDate` 列模型没有，读不回。
 /// 9. `lockedFields` / `updatedAt`：模型没有，由 wire entry 另行携带。
-Future<VideoMetadataWork> loadVideoMetadataWork(
+Future<VideoMetadataWork?> loadVideoMetadataWork(
   FushiDatabase db,
   VideoMetadataWorkRow row,
 ) async {
@@ -62,11 +64,7 @@ Future<VideoMetadataWork> loadVideoMetadataWork(
   final VideoMetadataProviderKind? provider = primary == null
       ? null
       : VideoMetadataProviderKind.values.asNameMap()[primary.provider];
-  if (provider == null) {
-    throw StateError(
-      'work ${row.id} 没有可用的 provider 身份（${primary?.provider}）',
-    );
-  }
+  if (provider == null) return null;
   final Map<String, List<String>> terms = await _termsByKind(db, row.id);
   return VideoMetadataWork(
     provider: provider,

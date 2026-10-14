@@ -1,0 +1,18 @@
+## BUG-3364 · Mihon 桌面 sidecar：SpeedBinb 系日漫源搜索报 VerifyError（R8 内联两层构造器）
+- **报告**：2026-10-14（用户：Windows 桌面 sidecar 上约 8 个 keiyoushi 日本漫画源，包括 SpeedBinb 系的ヤンマガ、C'moA、Yomonga、Kiraboshi、Ohta Web Comic 等，一搜索就报 `MihonRuntimeException(BRIDGE_HTTP_500): Bad type on operand stack in putfield / Location: u0.intercept(...) @564: putfield / Reason: Type 'java/lang/Object' (current frame, stack[0]) is not assignable to 'a0'`）
+- **真实性**：✅ 真 bug，只影响桌面 sidecar（Android 不经 dex2jar）。
+  - 根因链：SpeedBinb 的两个解扰器 `a0 extends t0`、`y extends t0` 都没有构造器，`t0()` 只有一句 `super()`。R8 把 `a0.<init>` 和 `t0.<init>` **两层**都内联掉了，dex 里只剩 `new-instance a0; invoke-direct Object.<init>()`。ART 接受这种写法；JVM 要求 NEW 的类型与 `<init>` 的 owner 一致。dex2jar 按 owner 把它泛化成 `NEW Object`，于是 `putfield a0.a` 过不了校验。
+  - 本仓修补器漏了这种形状。dex2jar 前的 pass 只认直接父类（旧 `overlay/.../DexAllocationRepair.kt:151-152`，`allocated.superClass != evidence.owner` 就放过）。jar 侧的兜底（旧 `:478-484`）也放过了：同一方法里有两个都泛化成 `NEW Object` 的无构造器候选（a0、y），它判定歧义，原样不动。
+  - 本机 127 个已装扩展 APK（`D:/APP/HIBIKI_date/support/mihon/extensions`）全部 dex2jar 后带校验加载，修复前共 6 个 VerifyError：cmoa `o1`、comicmeteor `k1`、gaugaumonsterplus `x0`、ohtawebcomic `u0`、yanmaga `u0`、yomonga `q0`。Kiraboshi 本机没有安装，未验证。
+- **[x] ① 已修复** — `overlay/.../DexAllocationRepair.kt:174` `forwardedConstructor`
+  - 沿 `allocated` 的父类链一直走到证据里的 owner（`superclassChain` `:207`），链上每一层都必须是 dex 内的非接口类。
+  - 从上往下逐层处理。某层已有同签名 `<init>` 时，只有方法体恰好是「`invoke-direct` 直接父类 `<init>`（参数就是自己的入参寄存器）+ `return-void`」才复用（`isTrivialForwarder` `:229`）；方法体多出任何逻辑都整条放弃，以免把已内联的初始化再跑一遍。缺失的层合成转发构造器，转到它的直接父类。
+  - 每层都检查父构造器的可访问性（合成出来的构造器是 public）。复用最底层的已有构造器时，还要检查调用点能不能访问它。
+  - 调用点的 `Object.<init>` 改为指向 `a0.<init>()`。不关字节码校验，不按源名或包名特判。
+  - 单层情形（BUG-2406 / BUG-2826）走同一条路径，链长为 1，行为不变。
+- **[x] ② 已加自动化测试** — `third_party/m_extension_server/overlay/server/src/test/kotlin/mextensionserver/util/DexInlinedConstructorTest.kt`
+  - 正向：`two erased constructor layers are rebuilt for sibling subclasses of one grandparent`。用 DexFileWriter 造 abstract `Base`（`<init>` 平凡）和两个无构造器子类，`Factory.create` 分别分配两者，并直接调 `Object.<init>`，再 `iput` 子类字段。走完整 `PackageTools.dex2jar` 后 `Class.forName(init=true)` 触发校验，断言两处分配的类型分别是 A / B，字段写入生效。
+  - 负向：`intermediate constructor with its own work is never chained into`。`Base.<init>` 多一句 `iput`，`restoreConstructorOwners` 之后两处调用仍指向 `Object.<init>`，子类没有新增构造器。
+  - 变异实测：主文件换回 HEAD 版本，正向测试变红；把 `isTrivialForwarder` 判据去掉，负向测试变红。
+  - sidecar 全量 `:server:test` 共 88 个测试，0 失败（在 upstream_src + patch + overlay 重建的树上跑）。
+- **备注**：真实样本验证用的是临时探针测试（未入库）：127 个 APK 逐个 `PackageTools.dex2jar` 后，对每个类做 `Class.forName(init=true)`。VerifyError 从 6 降到 0；成功初始化的类从 9049 增加到 9055，正好多出这 6 个，没有新增失败。ohtawebcomic / yanmaga 的 `u0.intercept` 里 NEW 序列从 `[f0, Object, Object, …]` 恢复为 `[f0, a0, y, …]`。修复随下一次桌面 sidecar 重新构建生效。真机 app 搜索链路没有重跑。
