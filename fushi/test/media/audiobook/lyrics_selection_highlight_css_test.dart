@@ -3,7 +3,7 @@ import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
-/// BUG-3367：歌词页复用阅读器的选区脚本，查词高亮有三条绘制路径——
+/// BUG-3368：歌词页复用阅读器的选区脚本，查词高亮有三条绘制路径——
 /// `::highlight(fushi-selection)`、旧引擎的 `.fushi-dict-highlight` 包裹、以及
 /// `<ruby>` 内的字专用的 `ruby.fushi-selection-ruby-active`（BUG-110：ruby 不进
 /// ::highlight，背景要页面自己画）。歌词页只写了前两条，带注音的词（烏滸がましい）

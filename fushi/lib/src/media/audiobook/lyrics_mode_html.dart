@@ -531,7 +531,7 @@ body.lyrics-blur .cue.revealed {
 .cue.current .fushi-dict-highlight {
   color: var(--ly-hl-text, $backgroundColor);
 }
-/* BUG-3367：选区脚本对 <ruby> 里的字不走 ::highlight / 包裹，只给 ruby 元素挂
+/* BUG-3368：选区脚本对 <ruby> 里的字不走 ::highlight / 包裹，只给 ruby 元素挂
    fushi-selection-ruby-active（BUG-110，竖排防双绘），背景要页面自己画。歌词页此前
    没有这条规则 → 带注音的词（烏滸がましい）查词时基字永远不高亮，只亮后半截。 */
 ruby.fushi-selection-ruby-active {
