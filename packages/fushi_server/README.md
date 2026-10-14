@@ -378,7 +378,7 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 需要随包的 `bin/fushi-anki-sync`（链接 Anki 官方 rslib 26.09.3，AGPL-3.0-or-later，
   源码说明见旁边的 `fushi-anki-sync.SOURCE.txt`）。没带时 WebUI 的 Anki 页如实显示不可用。
 - WebUI → Anki：登录同步服务器（密码只用来换取凭据，不保存；AnkiWeb 登录前有条款风险确认）
-  → 选牌组 / 笔记类型、填字段映射 → 打开「本机负责落地其它设备的卡片」。
+  → 选牌组 / 笔记类型、填字段映射 → 打开「接收其他设备的卡片」。
 - 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
   `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
   不做，停在「被拦」，等你在官方 Anki 里同步一次。

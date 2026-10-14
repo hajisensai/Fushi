@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Tanım",
   "anki_lapis_visual_target_inside_definition": "Tanım içinde",
   "anki_mine_to_server": "Eşleştirilmiş cihaza çıkar",
-  "anki_mine_to_server_hint": "Çıkarılan kartları bu cihaz yerine eşleştirilmiş ana bilgisayarın Anki'sine (onun desteleri ve ayarları) gönderir. Bir interconnect eşleştirmesi gerektirir.",
+  "anki_mine_to_server_hint": "Çıkarılan kartları bu cihaz yerine eşleştirilmiş ana bilgisayarın Anki'sine (onun desteleri ve ayarları) gönderir. Bir interconnect eşleştirmesi gerektirir. Sunucu çevrimdışıysa kartlar bu cihazda bekler ve bağlantı geri geldiğinde gönderilir.",
   "anki_mined_action_add_duplicate": "Yeni kart olarak ekle",
   "anki_mined_action_overwrite": "Bu kartın üzerine yaz",
   "anki_mined_action_view": "Anki'de görüntüle / aç",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "Her kart AnkiMobile'ı kısa süreliğine açar. Fushi, geri döndüğünüzde bir sonrakini gönderir, ardından AnkiMobile'dan eşitlemesini ister.",
   "anki_pending_mines_status_failed": "Başarısız: $error",
   "anki_pending_mines_flush_result": "Gönderilen $delivered, başarısız $failed, kalan $remaining",
-  "anki_pending_mine_landing_title": "Diğer cihazlardan gelen kartları teslim et",
+  "anki_pending_mine_landing_title": "Diğer cihazların kartlarını al",
   "anki_error_sync_signed_out": "Önce Anki eşitleme sunucunuzda oturum açın (Anki ayarları › Anki eşitleme).",
   "anki_error_sync_unavailable": "Bu cihazda fushi-anki-sync yok, bu yüzden doğrudan Anki'ye eşitlenemiyor.",
   "anki_sync_client_section_title": "Anki eşitleme (Anki gerekmez)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "Yine de AnkiWeb'i kullan",
   "anki_sync_client_has_unsynced": "$count kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.",
   "anki_sync_client_sign_in_failed": "Oturum açma başarısız oldu: $error",
-  "anki_pending_mine_landing_hint": "Anki'si olmayan cihazlarda kaydedilen kartlar eşitleme hizmetiniz (bulut depolama veya bu cihaz bir ana makineyle eşitleniyorsa interconnect) üzerinden gider ve bu cihazda Anki'ye eklenir. Aynı anda yalnızca bir cihaz bunu yapar. Interconnect ana makinesi olarak çalışan bir bilgisayar bu rolü üstlenmez: onunla eşleştirilmiş telefonlar bunun yerine Fushi Interconnect sunucusuna kart oluştur seçeneğini açmalıdır (bilgisayar kapalıyken kartlar telefonda bekler). Bir Fushi sunucusu bu rolü üstlenebilir.",
+  "anki_pending_mine_landing_hint": "Anki olmayan cihazlarda oluşturulan kartlar senkronizasyonla bu cihaza ulaşır ve burada Anki'ye eklenir. Aynı anda yalnızca bir cihaz alır.",
   "anki_sync_client_relogin": "Yeniden oturum aç",
   "anki_sync_client_discard_confirm": "$count kart henüz Anki'ye eşitlenmedi. Atılıp çıkış yapılsın mı? Geri alınamazlar.",
   "anki_sync_client_discard_action": "At ve çıkış yap",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "Bu cihaz bir ara bağlantı sunucusu, bu yüzden eşleştirilmiş telefonlar kartları bu yolla teslim edemez. Bunun yerine o telefonlarda \"Eşleştirilmiş cihaza çıkar\" seçeneğini açın."
 }

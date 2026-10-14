@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "التعريف",
   "anki_lapis_visual_target_inside_definition": "داخل التعريف",
   "anki_mine_to_server": "إرسال إلى الجهاز المقترن",
-  "anki_mine_to_server_hint": "أرسل البطاقات المستخرجة إلى Anki على الجهاز المضيف المقترن (رزمه وإعداداته) بدلاً من هذا الجهاز. يتطلب اقتراناً عبر الربط.",
+  "anki_mine_to_server_hint": "أرسل البطاقات المستخرجة إلى Anki على الجهاز المضيف المقترن (رزمه وإعداداته) بدلاً من هذا الجهاز. يتطلب اقتراناً عبر الربط. إذا كان الخادم غير متصل، تنتظر البطاقات على هذا الجهاز وتُرسل عند عودته.",
   "anki_mined_action_add_duplicate": "إضافة كبطاقة جديدة",
   "anki_mined_action_overwrite": "الكتابة فوق هذه البطاقة",
   "anki_mined_action_view": "عرض / فتح في Anki",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "تفتح كل بطاقة AnkiMobile لوهلة. يرسل Fushi البطاقة التالية عند عودتك، ثم يطلب من AnkiMobile المزامنة.",
   "anki_pending_mines_status_failed": "فشل: $error",
   "anki_pending_mines_flush_result": "أُرسل $delivered، وفشل $failed، وتبقى $remaining",
-  "anki_pending_mine_landing_title": "تسليم البطاقات من الأجهزة الأخرى",
+  "anki_pending_mine_landing_title": "استلام البطاقات من الأجهزة الأخرى",
   "anki_error_sync_signed_out": "سجّل الدخول إلى خادم مزامنة Anki أولًا (إعدادات Anki › مزامنة Anki).",
   "anki_error_sync_unavailable": "لا يملك هذا الجهاز fushi-anki-sync، لذا لا يمكنه المزامنة مع Anki مباشرة.",
   "anki_sync_client_section_title": "مزامنة Anki (دون الحاجة إلى Anki)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "استخدام AnkiWeb على أي حال",
   "anki_sync_client_has_unsynced": "$count بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.",
   "anki_sync_client_sign_in_failed": "فشل تسجيل الدخول: $error",
-  "anki_pending_mine_landing_hint": "تنتقل البطاقات المحفوظة على الأجهزة التي بلا Anki عبر خدمة المزامنة لديك (التخزين السحابي، أو الربط عندما يزامن هذا الجهاز مع مضيف) وتُضاف إلى Anki على هذا الجهاز. جهاز واحد فقط يفعل ذلك في كل مرة. الحاسوب الذي يعمل كمضيف ربط لا يتولى هذا الدور: الهواتف المقترنة به ينبغي أن تفعّل «الاستخراج إلى خادم Fushi Interconnect» بدلًا من ذلك (تنتظر البطاقات على الهاتف أثناء إيقاف الحاسوب). يمكن لخادم Fushi تولي هذا الدور.",
+  "anki_pending_mine_landing_hint": "تصل البطاقات المُنشأة على أجهزة بلا Anki إلى هذا الجهاز عبر المزامنة وتُضاف إلى Anki هنا. يستلمها جهاز واحد فقط في كل مرة.",
   "anki_sync_client_relogin": "تسجيل الدخول مرة أخرى",
   "anki_sync_client_discard_confirm": "$count بطاقة لم تُزامَن مع Anki بعد. هل تتجاهلها وتسجل الخروج؟ لا يمكن استردادها.",
   "anki_sync_client_discard_action": "تجاهل وتسجيل الخروج",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "هذا الجهاز مضيف للربط البيني، لذا لا تستطيع الهواتف المقترنة تسليمه البطاقات بهذه الطريقة. فعّل بدلًا من ذلك «إرسال إلى الجهاز المقترن» على تلك الهواتف."
 }

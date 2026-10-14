@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "ความหมาย",
   "anki_lapis_visual_target_inside_definition": "ภายในความหมาย",
   "anki_mine_to_server": "สร้างบัตรไปยังอุปกรณ์ที่จับคู่",
-  "anki_mine_to_server_hint": "ส่งบัตรที่สร้างไปยัง Anki ของโฮสต์ที่จับคู่ (สำรับและการตั้งค่าของโฮสต์) แทนที่จะเป็นอุปกรณ์นี้ ต้องมีการจับคู่ Interconnect",
+  "anki_mine_to_server_hint": "ส่งบัตรที่สร้างไปยัง Anki ของโฮสต์ที่จับคู่ (สำรับและการตั้งค่าของโฮสต์) แทนที่จะเป็นอุปกรณ์นี้ ต้องมีการจับคู่ Interconnect หากเซิร์ฟเวอร์ออฟไลน์ การ์ดจะรออยู่บนอุปกรณ์นี้และส่งเมื่อกลับมาเชื่อมต่อ",
   "anki_mined_action_add_duplicate": "เพิ่มเป็นบัตรใหม่",
   "anki_mined_action_overwrite": "เขียนทับบัตรนี้",
   "anki_mined_action_view": "ดู / เปิดใน Anki",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "การ์ดแต่ละใบจะเปิด AnkiMobile ชั่วครู่ Fushi จะส่งใบถัดไปเมื่อคุณกลับมา แล้วขอให้ AnkiMobile ซิงค์",
   "anki_pending_mines_status_failed": "ล้มเหลว: $error",
   "anki_pending_mines_flush_result": "ส่งแล้ว $delivered ล้มเหลว $failed เหลือ $remaining",
-  "anki_pending_mine_landing_title": "ส่งการ์ดจากอุปกรณ์อื่น",
+  "anki_pending_mine_landing_title": "รับการ์ดจากอุปกรณ์อื่น",
   "anki_error_sync_signed_out": "ลงชื่อเข้าใช้เซิร์ฟเวอร์ซิงค์ Anki ของคุณก่อน (การตั้งค่า Anki › ซิงค์ Anki)",
   "anki_error_sync_unavailable": "อุปกรณ์นี้ไม่มี fushi-anki-sync จึงซิงค์ไป Anki โดยตรงไม่ได้",
   "anki_sync_client_section_title": "ซิงค์ Anki (ไม่ต้องมี Anki)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "ใช้ AnkiWeb ต่อไป",
   "anki_sync_client_has_unsynced": "ยังไม่ได้ซิงค์การ์ด $count ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ",
   "anki_sync_client_sign_in_failed": "ลงชื่อเข้าใช้ไม่สำเร็จ: $error",
-  "anki_pending_mine_landing_hint": "การ์ดที่บันทึกบนอุปกรณ์ที่ไม่มี Anki จะส่งผ่านบริการซิงค์ของคุณ (ที่เก็บข้อมูลคลาวด์ หรืออินเทอร์คอนเนกต์เมื่ออุปกรณ์นี้ซิงค์กับโฮสต์) และเพิ่มลงใน Anki บนอุปกรณ์นี้ มีเพียงอุปกรณ์เดียวที่ทำหน้าที่นี้ในแต่ละครั้ง คอมพิวเตอร์ที่เป็นโฮสต์อินเทอร์คอนเนกต์ไม่ทำหน้าที่นี้ โทรศัพท์ที่จับคู่กับโฮสต์ควรเปิด สร้างการ์ดไปยังเซิร์ฟเวอร์ Fushi Interconnect แทน (การ์ดจะรออยู่บนโทรศัพท์ขณะคอมพิวเตอร์ปิด) เซิร์ฟเวอร์ Fushi ทำหน้าที่นี้ได้",
+  "anki_pending_mine_landing_hint": "การ์ดที่สร้างบนอุปกรณ์ที่ไม่มี Anki จะส่งมาถึงอุปกรณ์นี้ผ่านการซิงค์ และเพิ่มลงใน Anki ที่นี่ รับได้ครั้งละหนึ่งอุปกรณ์เท่านั้น",
   "anki_sync_client_relogin": "ลงชื่อเข้าใช้อีกครั้ง",
   "anki_sync_client_discard_confirm": "ยังไม่ได้ซิงค์การ์ด $count ใบไป Anki ทิ้งและออกจากระบบไหม? กู้คืนไม่ได้",
   "anki_sync_client_discard_action": "ทิ้งและออกจากระบบ",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "อุปกรณ์นี้เป็นโฮสต์การเชื่อมต่อ โทรศัพท์ที่จับคู่ไว้จึงส่งการ์ดมาทางนี้ไม่ได้ ให้เปิด \"สร้างบัตรไปยังอุปกรณ์ที่จับคู่\" บนโทรศัพท์เหล่านั้นแทน"
 }

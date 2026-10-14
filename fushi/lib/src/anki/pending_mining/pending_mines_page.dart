@@ -85,7 +85,7 @@ class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
   }
 }
 
-/// 「本机负责落地其他设备的卡片」开关（跨设备中转的落地设备，见
+/// 「接收其他设备的卡片」开关（跨设备中转的落地设备，见
 /// [PendingMineRelay]）。写同步域的设备本地偏好，下一轮同步时生效。
 class PendingMineLandingSwitchRow extends ConsumerStatefulWidget {
   const PendingMineLandingSwitchRow({super.key});
@@ -99,6 +99,10 @@ class _PendingMineLandingSwitchRowState
     extends ConsumerState<PendingMineLandingSwitchRow> {
   bool _enabled = false;
 
+  /// 本机是互联主机：配对的手机经互联看不到主机的落地认领，要改走「制卡到 Fushi
+  /// 互联服务端」。这句提示只对主机有意义，其它设备不显示。
+  bool _hostingInterconnect = false;
+
   SyncRepository get _repo => SyncRepository(ref.read(appProvider).database);
 
   @override
@@ -109,8 +113,16 @@ class _PendingMineLandingSwitchRowState
 
   Future<void> _load() async {
     try {
-      final bool enabled = await _repo.getPendingMineLandingClaimedAt() > 0;
-      if (mounted) setState(() => _enabled = enabled);
+      final SyncRepository repo = _repo;
+      final bool enabled = await repo.getPendingMineLandingClaimedAt() > 0;
+      final bool hosting =
+          await repo.isServerEnabled() && await repo.isInterconnectEnabled();
+      if (mounted) {
+        setState(() {
+          _enabled = enabled;
+          _hostingInterconnect = hosting;
+        });
+      }
     } catch (_) {
       // 未初始化的最小宿主（widget 测试）没有库：当关。
     }
@@ -127,7 +139,10 @@ class _PendingMineLandingSwitchRowState
       icon: FushiIcons.cloudDownload,
       showIcon: true,
       title: t.anki_pending_mine_landing_title,
-      subtitle: t.anki_pending_mine_landing_hint,
+      subtitle: _hostingInterconnect
+          ? '${t.anki_pending_mine_landing_hint}\n'
+                '${t.anki_pending_mine_landing_host_note}'
+          : t.anki_pending_mine_landing_hint,
       value: _enabled,
       onChanged: (bool v) => unawaited(_set(v)),
     );

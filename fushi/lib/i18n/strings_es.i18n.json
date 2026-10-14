@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Definición",
   "anki_lapis_visual_target_inside_definition": "Dentro de la definición",
   "anki_mine_to_server": "Enviar al dispositivo emparejado",
-  "anki_mine_to_server_hint": "Envía las tarjetas creadas al Anki del dispositivo emparejado (sus mazos y ajustes) en lugar de este dispositivo. Requiere emparejamiento por Interconnect.",
+  "anki_mine_to_server_hint": "Envía las tarjetas creadas al Anki del dispositivo emparejado (sus mazos y ajustes) en lugar de este dispositivo. Requiere emparejamiento por Interconnect. Si el servidor está desconectado, las tarjetas esperan en este dispositivo y se envían cuando vuelve.",
   "anki_mined_action_add_duplicate": "Añadir como tarjeta nueva",
   "anki_mined_action_overwrite": "Sobrescribir esta tarjeta",
   "anki_mined_action_view": "Ver / abrir en Anki",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "Cada tarjeta abre AnkiMobile brevemente. Fushi envía la siguiente cuando vuelves y luego pide a AnkiMobile que sincronice.",
   "anki_pending_mines_status_failed": "Error: $error",
   "anki_pending_mines_flush_result": "Enviadas $delivered, fallidas $failed, restantes $remaining",
-  "anki_pending_mine_landing_title": "Entregar tarjetas de otros dispositivos",
+  "anki_pending_mine_landing_title": "Recibir tarjetas de otros dispositivos",
   "anki_error_sync_signed_out": "Inicia primero sesión en tu servidor de sincronización de Anki (ajustes de Anki › Sincronización de Anki).",
   "anki_error_sync_unavailable": "Este dispositivo no tiene fushi-anki-sync, por lo que no puede sincronizar directamente con Anki.",
   "anki_sync_client_section_title": "Sincronización de Anki (sin necesidad de Anki)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "Usar AnkiWeb de todos modos",
   "anki_sync_client_has_unsynced": "$count tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.",
   "anki_sync_client_sign_in_failed": "Error al iniciar sesión: $error",
-  "anki_pending_mine_landing_hint": "Las tarjetas guardadas en dispositivos sin Anki viajan por tu servicio de sincronización (almacenamiento en la nube o interconexión cuando este dispositivo sincroniza con un anfitrión) y se añaden a Anki en este dispositivo. Solo un dispositivo hace esto a la vez. Un ordenador que actúa como anfitrión de interconexión no asume este papel: los móviles emparejados con él deben activar Crear tarjetas en el servidor Fushi Interconnect (las tarjetas esperan en el móvil mientras el ordenador está apagado). Un servidor Fushi sí puede asumir este papel.",
+  "anki_pending_mine_landing_hint": "Las tarjetas creadas en dispositivos sin Anki llegan a este dispositivo mediante la sincronización y se añaden a Anki aquí. Solo un dispositivo las recibe a la vez.",
   "anki_sync_client_relogin": "Iniciar sesión de nuevo",
   "anki_sync_client_discard_confirm": "$count tarjeta(s) aún no se han sincronizado con Anki. ¿Descartarlas y cerrar sesión? No se pueden recuperar.",
   "anki_sync_client_discard_action": "Descartar y cerrar sesión",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "Este dispositivo es un host de interconexión, así que los teléfonos emparejados no pueden entregarle tarjetas de esta forma. En esos teléfonos, activa «Enviar al dispositivo emparejado»."
 }

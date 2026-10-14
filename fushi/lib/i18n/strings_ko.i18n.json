@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "뜻풀이",
   "anki_lapis_visual_target_inside_definition": "뜻풀이 내부",
   "anki_mine_to_server": "페어링된 기기로 채굴",
-  "anki_mine_to_server_hint": "채굴한 카드를 이 기기 대신 페어링된 호스트의 Anki(해당 덱 및 설정)로 전송합니다. 인터커넥트 페어링이 필요합니다.",
+  "anki_mine_to_server_hint": "채굴한 카드를 이 기기 대신 페어링된 호스트의 Anki(해당 덱 및 설정)로 전송합니다. 인터커넥트 페어링이 필요합니다. 서버가 오프라인이면 카드는 이 기기에 보관되었다가 연결되면 전송됩니다.",
   "anki_mined_action_add_duplicate": "새 카드로 추가",
   "anki_mined_action_overwrite": "이 카드 덮어쓰기",
   "anki_mined_action_view": "Anki에서 보기 / 열기",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "카드마다 AnkiMobile이 잠깐 열립니다. Fushi로 돌아오면 다음 카드를 보내고, 이후 AnkiMobile에 동기화를 요청합니다.",
   "anki_pending_mines_status_failed": "실패: $error",
   "anki_pending_mines_flush_result": "전송 $delivered장, 실패 $failed장, 남음 $remaining장",
-  "anki_pending_mine_landing_title": "다른 기기의 카드 전달",
+  "anki_pending_mine_landing_title": "다른 기기의 카드 받기",
   "anki_error_sync_signed_out": "먼저 Anki 동기화 서버에 로그인하세요(Anki 설정 › Anki 동기화).",
   "anki_error_sync_unavailable": "이 기기에는 fushi-anki-sync가 없어 Anki에 직접 동기화할 수 없습니다.",
   "anki_sync_client_section_title": "Anki 동기화 (Anki 불필요)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "그래도 AnkiWeb 사용",
   "anki_sync_client_has_unsynced": "아직 동기화되지 않은 카드가 $count장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.",
   "anki_sync_client_sign_in_failed": "로그인 실패: $error",
-  "anki_pending_mine_landing_hint": "Anki가 없는 기기에서 저장한 카드는 동기화 서비스(클라우드 저장소, 또는 이 기기가 호스트와 동기화하는 경우 연동)를 통해 전달되어 이 기기의 Anki에 추가됩니다. 한 번에 한 기기만 이 역할을 합니다. 연동 호스트로 동작하는 컴퓨터는 이 역할을 맡지 않습니다. 그 컴퓨터와 페어링한 휴대폰은 대신 'Fushi 연동 서버로 마이닝'을 켜세요(컴퓨터가 꺼져 있는 동안 카드는 휴대폰에서 대기합니다). Fushi 서버는 이 역할을 맡을 수 있습니다.",
+  "anki_pending_mine_landing_hint": "Anki가 없는 기기에서 만든 카드는 동기화를 통해 이 기기로 전달되어 여기의 Anki에 추가됩니다. 한 번에 한 기기만 받을 수 있습니다.",
   "anki_sync_client_relogin": "다시 로그인",
   "anki_sync_client_discard_confirm": "아직 Anki에 동기화되지 않은 카드가 $count장 있습니다. 삭제하고 로그아웃하시겠습니까? 복구할 수 없습니다.",
   "anki_sync_client_discard_action": "삭제하고 로그아웃",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "이 기기는 인터커넥트 호스트이므로 페어링된 휴대폰이 이 방법으로 카드를 넘길 수 없습니다. 대신 해당 휴대폰에서 '페어링된 기기로 채굴'를 켜세요."
 }

@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "定義",
   "anki_lapis_visual_target_inside_definition": "定義の内部",
   "anki_mine_to_server": "ペアリングデバイスに制カード",
-  "anki_mine_to_server_hint": "制カードをこのデバイスではなく、ペアリングしたホストの Anki（そのデッキと設定）に送信します。互連ペアリングが必要です。",
+  "anki_mine_to_server_hint": "制カードをこのデバイスではなく、ペアリングしたホストの Anki（そのデッキと設定）に送信します。互連ペアリングが必要です。サーバーがオフラインの間、カードはこのデバイスに保存され、接続が戻ると送信されます。",
   "anki_mined_action_add_duplicate": "新しいカードとして追加",
   "anki_mined_action_overwrite": "このカードを上書き",
   "anki_mined_action_view": "表示 / Anki で開く",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "それでも AnkiWeb を使う",
   "anki_sync_client_has_unsynced": "未同期のカードが $count 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。",
   "anki_sync_client_sign_in_failed": "サインインに失敗しました: $error",
-  "anki_pending_mine_landing_hint": "Anki のないデバイスで保存されたカードは、同期サービス（クラウドストレージ、またはこのデバイスがホストと同期している場合は Interconnect）を経由して、このデバイスで Anki に追加されます。同時にこれを行うデバイスは 1 台だけです。Interconnect ホストとして動作しているコンピューターはこの役割を担いません。ペアリングしているスマートフォンで代わりに「Fushi Interconnect サーバーへマイニング」をオンにしてください（コンピューターの電源が切れている間、カードはスマートフォンで待機します）。Fushi サーバーはこの役割を担えます。",
+  "anki_pending_mine_landing_hint": "Anki のないデバイスで作ったカードは、同期を経由してこのデバイスに届き、ここの Anki に追加されます。受け取るデバイスは同時に 1 台だけです。",
   "anki_sync_client_relogin": "再度サインイン",
   "anki_sync_client_discard_confirm": "Anki に未同期のカードが $count 枚あります。破棄してサインアウトしますか？ 復元できません。",
   "anki_sync_client_discard_action": "破棄してサインアウト",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "このデバイスは Interconnect ホストなので、ペアリングしたスマートフォンはこの方法でカードを渡せません。代わりにスマートフォン側で「ペアリングデバイスに制カード」をオンにしてください。"
 }

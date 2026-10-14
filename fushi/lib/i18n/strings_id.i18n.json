@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Definisi",
   "anki_lapis_visual_target_inside_definition": "Di dalam definisi",
   "anki_mine_to_server": "Kirim kartu ke perangkat berpasangan",
-  "anki_mine_to_server_hint": "Kirim kartu yang ditambang ke Anki perangkat host berpasangan (dek dan pengaturannya) alih-alih perangkat ini. Memerlukan koneksi Interconnect.",
+  "anki_mine_to_server_hint": "Kirim kartu yang ditambang ke Anki perangkat host berpasangan (dek dan pengaturannya) alih-alih perangkat ini. Memerlukan koneksi Interconnect. Jika server sedang offline, kartu menunggu di perangkat ini dan dikirim setelah tersambung kembali.",
   "anki_mined_action_add_duplicate": "Tambah sebagai kartu baru",
   "anki_mined_action_overwrite": "Timpa kartu ini",
   "anki_mined_action_view": "Lihat / buka di Anki",
@@ -5977,7 +5977,7 @@
   "anki_pending_mines_ankimobile_hint": "Setiap kartu membuka AnkiMobile sebentar. Fushi mengirim yang berikutnya saat Anda kembali, lalu meminta AnkiMobile menyinkronkan.",
   "anki_pending_mines_status_failed": "Gagal: $error",
   "anki_pending_mines_flush_result": "Terkirim $delivered, gagal $failed, tersisa $remaining",
-  "anki_pending_mine_landing_title": "Antarkan kartu dari perangkat lain",
+  "anki_pending_mine_landing_title": "Terima kartu dari perangkat lain",
   "anki_error_sync_signed_out": "Masuk ke server sinkronisasi Anki Anda dulu (pengaturan Anki › sinkronisasi Anki).",
   "anki_error_sync_unavailable": "Perangkat ini tidak memiliki fushi-anki-sync, sehingga tidak dapat menyinkronkan langsung ke Anki.",
   "anki_sync_client_section_title": "Sinkronisasi Anki (tanpa Anki)",
@@ -6003,7 +6003,7 @@
   "anki_sync_client_ankiweb_confirm": "Tetap gunakan AnkiWeb",
   "anki_sync_client_has_unsynced": "$count kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.",
   "anki_sync_client_sign_in_failed": "Login gagal: $error",
-  "anki_pending_mine_landing_hint": "Kartu yang disimpan di perangkat tanpa Anki melewati layanan sinkronisasi Anda (penyimpanan cloud, atau interconnect saat perangkat ini menyinkronkan ke host) dan ditambahkan ke Anki di perangkat ini. Hanya satu perangkat yang melakukannya dalam satu waktu. Komputer yang bertindak sebagai host interconnect tidak mengambil peran ini: ponsel yang dipasangkan dengannya sebaiknya mengaktifkan Mining ke server Fushi Interconnect (kartu menunggu di ponsel saat komputer mati). Server Fushi dapat mengambil peran ini.",
+  "anki_pending_mine_landing_hint": "Kartu yang dibuat di perangkat tanpa Anki sampai ke perangkat ini lewat sinkronisasi dan ditambahkan ke Anki di sini. Hanya satu perangkat yang menerima pada satu waktu.",
   "anki_sync_client_relogin": "Masuk lagi",
   "anki_sync_client_discard_confirm": "$count kartu belum disinkronkan ke Anki. Buang dan keluar? Tidak dapat dipulihkan.",
   "anki_sync_client_discard_action": "Buang dan keluar",
@@ -7481,5 +7481,6 @@
   "feedback_filter_all": "All",
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
-  "feedback_filter_unread": "New replies"
+  "feedback_filter_unread": "New replies",
+  "anki_pending_mine_landing_host_note": "Perangkat ini adalah host interkoneksi, jadi ponsel yang dipasangkan tidak bisa menyerahkan kartu lewat cara ini. Di ponsel tersebut, aktifkan \"Kirim kartu ke perangkat berpasangan\"."
 }
