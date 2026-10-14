@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -184,6 +185,15 @@ mixin DictionaryPageMixin {
   /// （[BaseSourcePageState.onSentenceContextPreviewFromDraft]）对称。
   Future<Map<String, Object?>> Function()?
       get onSentenceContextPreviewToDraft => null;
+
+  /// 「高级制卡」对话框里本页面提供的句子 / 音频 / 图片分区（契约见
+  /// [AdvancedMiningCapabilities]）。默认什么都不提供——对话框只有卡组分区。
+  /// 视频页覆写。[matched] 是查到的词在句中的表现形。
+  @protected
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async =>
+      AdvancedMiningSections.none;
 
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。

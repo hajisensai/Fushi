@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
@@ -1352,6 +1353,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 默认 false；阅读器/有声书覆写为 true。
   @protected
   bool get supportsSentenceAudioPreview => false;
+
+  /// 「高级制卡」对话框里本页面提供的句子 / 音频 / 图片分区（契约见
+  /// [AdvancedMiningCapabilities]）。默认什么都不提供——对话框只有卡组分区。
+  /// 阅读器 / 有声书 / 漫画覆写。[matched] 是查到的词在句中的表现形。
+  @protected
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async =>
+      AdvancedMiningSections.none;
 
   /// TODO-270 F/G：弹窗「+句」追加当前正查句到本表面会话级制卡草稿，返回累积句数
   /// （含本句）。默认 no-op 返回 0（[supportsSentenceDraft] 为 false 时不会被调用）。
