@@ -3005,6 +3005,10 @@ class AppModel with ChangeNotifier {
       // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
       // Unicode Character Database 生成，Unicode License V3 要求随附许可。
       'unicode-data',
+      // 复习（SRS）排程内核 native/fushi_fsrs 静态链进的两个 Rust crate：
+      // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
+      'fsrs-rs',
+      'ruzstd',
     ];
 
     for (String packageName in packageNames) {
