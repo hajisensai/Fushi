@@ -7484,7 +7484,5 @@
   "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
   "home_nav_bar_style": "底栏样式",
   "home_nav_bar_style_flat": "平铺",
-  "home_nav_bar_style_launcher": "中央展开",
-  "home_nav_bar_style_pager": "分页滑动",
-  "home_nav_bar_style_launcher_pager": "中央展开 + 翻页"
+  "home_nav_bar_style_pager": "分页滑动"
 }

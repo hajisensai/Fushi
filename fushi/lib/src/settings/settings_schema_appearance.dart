@@ -426,29 +426,20 @@ SettingsDestination buildAppearanceDestination() {
             },
             defaultValue: false,
           ),
-          // 手机底栏形态：平铺 / 中央展开（左右各两项 + 「+」弧形弹出，可按住
-          // 划过去）/ 分页滑动 / 中央展开 + 翻页。四个选项标签偏长，用下拉。
+          // 手机底栏形态：平铺（放不下收进「更多」）/ 分页滑动（所有入口同级，
+          // 底栏横滑翻页、按住拖选）。
           SettingsSegmentedItem<AdaptiveNavBarStyle>(
             id: 'appearance.nav_bar_style',
             title: t.home_nav_bar_style,
-            icon: FushiIcons.add,
-            dropdown: true,
+            icon: Icons.view_carousel_outlined,
             options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
               SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.flat,
                 label: t.home_nav_bar_style_flat,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.launcher,
-                label: t.home_nav_bar_style_launcher,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.pager,
                 label: t.home_nav_bar_style_pager,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.launcherPager,
-                label: t.home_nav_bar_style_launcher_pager,
               ),
             ],
             selected: (SettingsContext settingsContext) =>

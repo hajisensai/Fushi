@@ -10,7 +10,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart'
-    show DragStartBehavior, kPrimaryMouseButton, kTouchSlop;
+    show
+        DragStartBehavior,
+        HorizontalDragGestureRecognizer,
+        LongPressGestureRecognizer;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -21,7 +24,6 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
-import 'package:fushi/src/utils/adaptive/nav_launcher_fan.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -264,11 +266,10 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// 传入的 [items] 决定（已按反转排好）。
 ///
 /// [barStyle]：底栏形态（用户偏好 `nav_bar_style`，见 [AdaptiveNavBarStyle]）。
-/// 非平铺形态都把查词收进胶囊；目的地不超过 5 个时都与平铺相同。
-/// - 中央展开：胶囊只留首尾各两项，正中「+」，其余从它沿弧线弹出
-///   （点开或按住划过去），见 [showNavLauncherFan]；
-/// - 分页滑动 / 中央展开 + 翻页：底栏左右滑翻页（MD3；Apple 胶囊暂按平铺 /
-///   中央展开画）。
+/// 分页滑动（MD3）：查词并进胶囊、所有目的地同级，每页 5 个，在底栏上横滑翻页；
+/// 按住约 0.3 秒进入拖选（震一下），手指停在哪一格就选哪一格，拖到胶囊左右
+/// 边缘停一下自动翻页，松手切过去。目的地不超过 5 个时与平铺相同。Apple 胶囊
+/// 暂不分页，仍按平铺画。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -355,7 +356,7 @@ class _MaterialNavCluster extends StatelessWidget {
     this.barStyle = AdaptiveNavBarStyle.flat,
   });
 
-  /// 底栏「中央展开」形态，见 [adaptiveBottomBar]；侧栏不读。
+  /// 底栏形态，见 [adaptiveBottomBar]；侧栏与 Apple 胶囊不读。
   final AdaptiveNavBarStyle barStyle;
 
   /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
@@ -409,11 +410,13 @@ class _MaterialNavCluster extends StatelessWidget {
     int i, {
     bool iconOnly = false,
     double? cellWidth,
+    bool? looksSelected,
   }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
       item: items[i],
-      selected: i == currentIndex,
+      // 分页底栏拖选中：选中药丸画在手指罩着的那一格（只是外观）。
+      selected: looksSelected ?? i == currentIndex,
       horizontal: axis == Axis.horizontal,
       extended: axis == Axis.vertical && extended,
       iconOnly: iconOnly,
@@ -425,88 +428,22 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// 「中央展开」的拆分：[indices]（进胶囊的目的地，按视觉序）首尾各
-  /// [_kLauncherPinnedPerSide] 项常驻，其余收进中央「+」。目的地不多于
-  /// 5 个（或没开这个形态）时返回 null，照平铺形态画。收起项按用户的模块
-  /// 顺序列（反转底栏方向时 [indices] 是倒序，这里翻回来）。
-  _LauncherSplit? _launcherSplit(List<int> indices) {
-    if (!barStyle.hasLauncher ||
-        indices.length <= 2 * _kLauncherPinnedPerSide + 1) {
-      return null;
-    }
-    final List<int> leading = indices.sublist(0, _kLauncherPinnedPerSide);
-    final List<int> trailing = indices.sublist(
-      indices.length - _kLauncherPinnedPerSide,
-    );
-    final List<int> middle = indices.sublist(
-      _kLauncherPinnedPerSide,
-      indices.length - _kLauncherPinnedPerSide,
-    );
-    return _LauncherSplit(
-      leading: leading,
-      trailing: trailing,
-      hidden: searchLeading ? middle.reversed.toList() : middle,
-    );
-  }
-
-  /// 「中央展开」的一排：左两项、「+」、右两项，五格等分。
-  Widget _buildLauncherRow(
-    BuildContext context,
-    _LauncherSplit split, {
-    double? cellWidth,
-  }) {
-    return Row(
-      children: <Widget>[
-        for (final int i in split.leading)
-          Expanded(child: _cell(context, i, cellWidth: cellWidth)),
-        Expanded(
-          child: _NavLauncherCell(
-            items: items,
-            hidden: split.hidden,
-            currentIndex: currentIndex,
-            onTap: onTap,
-            cellWidth: cellWidth,
-          ),
-        ),
-        for (final int i in split.trailing)
-          Expanded(child: _cell(context, i, cellWidth: cellWidth)),
-      ],
-    );
-  }
-
-  /// 分页形态的一排（MD3）：
-  /// - 分页滑动：每页 5 格；
-  /// - 中央展开 + 翻页：每页两侧 4 格，正中「+」不随页移动，「+」里是当前页
-  ///   之外的全部目的地。
-  /// 底栏横滑归翻页，所以不挂滑动指示器 / 拖选，各格自己画选中药丸。
+  /// 分页滑动的一排（MD3）：每页 [_kNavPageSize] 格，底栏横滑翻页、长按拖选
+  /// （见 [_NavPagedRow]）。不挂整条胶囊的滑动指示器，各格自己画选中药丸。
+  /// 拖选落地走 [onDragSelect]（宿主据此播模块切换转场），没接时退回 [onTap]。
   Widget _buildPagedRow(BuildContext context, double width, List<int> indices) {
-    final bool center = barStyle.hasLauncher;
-    final int perPage = center ? 2 * _kLauncherPinnedPerSide : 5;
     final List<List<int>> pages = <List<int>>[
-      for (int start = 0; start < indices.length; start += perPage)
-        indices.sublist(start, math.min(indices.length, start + perPage)),
+      for (int start = 0; start < indices.length; start += _kNavPageSize)
+        indices.sublist(start, math.min(indices.length, start + _kNavPageSize)),
     ];
-    final double cellWidth = width / 5;
+    final double cellWidth = width / _kNavPageSize;
+    final ValueChanged<int> dragSelect = onDragSelect ?? onTap;
     return _NavPagedRow(
       pages: pages,
       currentIndex: currentIndex,
-      centerGap: center,
-      cellBuilder: (int i) => _cell(context, i, cellWidth: cellWidth),
-      centerBuilder: !center
-          ? null
-          : (List<int> onPage) {
-              final List<int> hidden = <int>[
-                for (final int i in indices)
-                  if (!onPage.contains(i)) i,
-              ];
-              return _NavLauncherCell(
-                items: items,
-                hidden: searchLeading ? hidden.reversed.toList() : hidden,
-                currentIndex: currentIndex,
-                onTap: onTap,
-                cellWidth: cellWidth,
-              );
-            },
+      cellBuilder: (int i, bool? looksSelected) =>
+          _cell(context, i, cellWidth: cellWidth, looksSelected: looksSelected),
+      onDragSelect: dragSelect,
     );
   }
 
@@ -516,7 +453,7 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 淡出并移出焦点遍历 / 命中测试。焦点 id 与展开态一致（`nav-bar-<序号>`），
   /// 最小化圆用单独的 `nav-mini-bar`。
   Widget _buildGlassTabBar(BuildContext context) {
-    final int? rawSearch = barStyle.lookupInBar ? null : glassSearchIndex;
+    final int? rawSearch = glassSearchIndex;
     final int? search =
         rawSearch != null &&
             rawSearch >= 0 &&
@@ -545,20 +482,12 @@ class _MaterialNavCluster extends StatelessWidget {
         final double innerFull = fullWidth - 2 * _kGlassNavBarInnerPadding;
         const double innerMini =
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
-        final _LauncherSplit? split = _launcherSplit(capsuleIndices);
-        // 胶囊里实际排开的格（中央展开时「+」格记作 null）：气泡定位、拖动
-        // 透镜落点都按它数。
-        final List<int?> slots = split == null
-            ? capsuleIndices
-            : <int?>[...split.leading, null, ...split.trailing];
-        final Widget fullRow = split == null
-            ? Row(
-                children: <Widget>[
-                  for (final int i in capsuleIndices)
-                    Expanded(child: _cell(context, i)),
-                ],
-              )
-            : _buildLauncherRow(context, split);
+        final Widget fullRow = Row(
+          children: <Widget>[
+            for (final int i in capsuleIndices)
+              Expanded(child: _cell(context, i)),
+          ],
+        );
         // 隐藏的那一层不挂焦点目标：FushiFocus 按几何找方向邻居，透明但仍注册
         // 的目标会让 D-pad 落到看不见的格子上。
         final Widget miniCell = selectedInCapsule
@@ -595,11 +524,9 @@ class _MaterialNavCluster extends StatelessWidget {
           );
         }
 
-        final int? selectedPos = !selectedInCapsule
-            ? null
-            : (slots.contains(currentIndex)
-                  ? slots.indexOf(currentIndex)
-                  : slots.indexOf(null));
+        final int? selectedPos = selectedInCapsule
+            ? capsuleIndices.indexOf(currentIndex)
+            : null;
         // 搜索圆钮：默认在胶囊右侧；反转底栏方向时挪到左侧（[searchLeading]）。
         Widget searchButton(int index) => SizedBox.square(
           dimension: kGlassNavBarCapsuleHeight,
@@ -625,14 +552,12 @@ class _MaterialNavCluster extends StatelessWidget {
               _GlassTabCapsule(
                 width: minimized ? _kGlassNavBarMinimizedWidth : fullWidth,
                 minimized: minimized,
-                itemCount: slots.length,
+                itemCount: capsuleIndices.length,
                 selectedPos: selectedPos,
                 duration: duration,
                 curve: curve,
                 onSelectPos: (int pos) {
-                  // 拖到「+」格上松手 = 不切换（弹出层只由点按打开）。
-                  final int? i = slots[pos];
-                  if (i == null) return;
+                  final int i = capsuleIndices[pos];
                   if (i != currentIndex) fushiSelectionHaptic(context);
                   onTap(i);
                 },
@@ -708,7 +633,6 @@ class _MaterialNavCluster extends StatelessWidget {
       expandFocusIds: <FushiFocusId>[
         FushiFocusId('$idPrefix-$currentIndex'),
         _NavMoreCell.focusId,
-        _NavLauncherCell.focusId,
       ],
       fab: fab,
       fabLeading: searchLeading,
@@ -781,44 +705,9 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
-    if (this.barStyle.pages &&
-        indices.length > 2 * _kLauncherPinnedPerSide + 1) {
+    if (this.barStyle == AdaptiveNavBarStyle.pager &&
+        indices.length > _kNavPageSize) {
       return _buildPagedRow(context, width, indices);
-    }
-    final _LauncherSplit? split = _launcherSplit(indices);
-    if (split != null) {
-      final List<int> pinned = <int>[...split.leading, ...split.trailing];
-      final _FloatingBarStyle? launcherBarStyle = _FloatingBarStyle.maybeOf(
-        context,
-      );
-      final ValueChanged<int>? launcherDrag = onDragSelect;
-      return _SlidingIndicatorScope(
-        selectedId: pinned.contains(currentIndex)
-            ? FushiFocusId('$idPrefix-$currentIndex')
-            : (split.hidden.contains(currentIndex)
-                  ? _NavLauncherCell.focusId
-                  : null),
-        color:
-            launcherBarStyle?.indicator ??
-            Theme.of(context).colorScheme.tertiary,
-        dragTargets: launcherDrag == null
-            ? null
-            : <FushiFocusId, int>{
-                for (final int i in pinned) FushiFocusId('$idPrefix-$i'): i,
-              },
-        dragExcludedId: _NavLauncherCell.focusId,
-        // 从「+」上起手的拖动归「按住划过去」扇面手势，指示器不跟着走。
-        dragStartBlockedOnExcluded: true,
-        onDragSelect: launcherDrag,
-        hoverColor:
-            launcherBarStyle?.content ??
-            Theme.of(context).colorScheme.onSurface,
-        child: _buildLauncherRow(
-          context,
-          split,
-          cellWidth: width / (pinned.length + 1),
-        ),
-      );
     }
     final TextStyle style =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
@@ -1759,7 +1648,6 @@ class _SlidingIndicatorScope extends StatefulWidget {
     required this.child,
     this.dragTargets,
     this.dragExcludedId,
-    this.dragStartBlockedOnExcluded = false,
     this.onDragSelect,
     this.hoverColor,
   });
@@ -1778,10 +1666,6 @@ class _SlidingIndicatorScope extends StatefulWidget {
 
   /// 拖选时不参与的格（「更多」）：停在它上面松手按取消处理。
   final FushiFocusId? dragExcludedId;
-
-  /// 起手点落在 [dragExcludedId] 那一格上时整次拖选不启动（那一格有自己的
-  /// 拖动手势，如「中央展开」的「+」）。
-  final bool dragStartBlockedOnExcluded;
   final ValueChanged<int>? onDragSelect;
 
   /// 拖选经过目的地时悬停状态层的颜色（按 M3 状态层不透明度叠）。
@@ -1898,14 +1782,6 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   /// 「按住不动、想好了再拖」的路径，并给一下拎起触感）。
   void _beginDrag(Offset localPosition, {required bool lift}) {
     if (widget.dragTargets == null || _dragging) return;
-    if (widget.dragStartBlockedOnExcluded) {
-      final Rect? excluded = _rectOfCell(widget.dragExcludedId);
-      if (excluded != null &&
-          localPosition.dx >= excluded.left &&
-          localPosition.dx <= excluded.right) {
-        return;
-      }
-    }
     _dragFollows = fushiExpressiveMotionEnabled(context);
     if (lift) fushiLiftHaptic(context);
     _lift.animateTo(1, animate: _dragFollows);
@@ -2365,24 +2241,42 @@ class _FloatingNavSurface extends StatelessWidget {
   }
 }
 
-/// 底栏分页行：[pages] 每页一组目的地，手指在底栏上左右拖跟手、松手按距离 /
-/// 速度吸附到相邻页（spatial 弹簧带回弹）；底部一排小圆点提示页数与当前页。
-/// 当前项换到别的页（如正文横滑切模块）时自动翻过去。[centerGap] 为真时每页
-/// 两侧各两格、中间空一格给 [centerBuilder] 画的「+」（它不随页移动）。
+/// 分页底栏每页的格数。
+const int _kNavPageSize = 5;
+
+/// 按住多久进入拖选（短于系统长按：底栏上的长按只服务拖选）。
+const Duration _kNavPagedSelectHold = Duration(milliseconds: 300);
+
+/// 拖选中手指在胶囊左右边缘这么宽的范围内（含胶囊外）停住就翻页。
+const double _kNavPagedEdgeZone = 20;
+
+/// 停在边缘多久翻一页；一直停着就每隔这么久再翻一页。
+const Duration _kNavPagedEdgeDwell = Duration(milliseconds: 450);
+
+/// 底栏分页行：[pages] 每页一组目的地（每页 [_kNavPageSize] 格）。
+/// - 横滑：手指跟手拖动整排，松手拖过 1/4 页或甩一下就翻到相邻页（spatial
+///   弹簧带回弹），底部一排小圆点提示页数与当前页；
+/// - 按住约 0.3 秒：进入拖选（震一下），手指罩着哪一格就把选中药丸画在哪一格、
+///   换格轻震；拖到胶囊左右边缘停一下自动翻页；松手切到罩着的那一项（落在空格 /
+///   当前项上 = 取消）；
+/// - 当前项换到别的页（如正文横滑切模块）时自动翻过去；分组变了（开关模块）
+///   直接落到当前项所在页。
 class _NavPagedRow extends StatefulWidget {
   const _NavPagedRow({
     required this.pages,
     required this.currentIndex,
     required this.cellBuilder,
-    this.centerGap = false,
-    this.centerBuilder,
+    required this.onDragSelect,
   });
 
   final List<List<int>> pages;
   final int currentIndex;
-  final Widget Function(int index) cellBuilder;
-  final bool centerGap;
-  final Widget Function(List<int> onPage)? centerBuilder;
+
+  /// 画一格；`looksSelected` 非空时按它画选中态（拖选中），否则按当前项。
+  final Widget Function(int index, bool? looksSelected) cellBuilder;
+
+  /// 拖选松手落在某一项上。
+  final ValueChanged<int> onDragSelect;
 
   @override
   State<_NavPagedRow> createState() => _NavPagedRowState();
@@ -2397,6 +2291,13 @@ class _NavPagedRowState extends State<_NavPagedRow>
   late int _page = _pageOf(widget.currentIndex) ?? 0;
   double _width = 1;
 
+  /// 拖选态：手指罩着的目的地（null = 空格 / 胶囊外）。
+  bool _selecting = false;
+  int? _hover;
+  Offset? _selectPoint;
+  int _edgeDirection = 0;
+  Timer? _edgeTimer;
+
   @override
   void initState() {
     super.initState();
@@ -2406,18 +2307,13 @@ class _NavPagedRowState extends State<_NavPagedRow>
   @override
   void didUpdateWidget(_NavPagedRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 分组变了（切底栏样式 5↔4 个一页、开关模块）：旧页号已无意义，直接落到
-    // 当前项所在页。真 app 实测：从分页滑动第 2 页切到「中央展开 + 翻页」，
-    // 曾停在新分组的第 2 页、再滑一下跑到只剩一项的第 3 页。
-    if (oldWidget.centerGap != widget.centerGap ||
-        !_samePages(oldWidget.pages, widget.pages)) {
+    // 分组变了（开关模块）：旧页号已无意义，直接落到当前项所在页。
+    if (!_samePages(oldWidget.pages, widget.pages)) {
       _page = _pageOf(widget.currentIndex) ?? 0;
       _position.value = _page.toDouble();
       return;
     }
-    final int last = widget.pages.length - 1;
-    if (_page > last) _settleTo(last);
-    if (oldWidget.currentIndex != widget.currentIndex) {
+    if (oldWidget.currentIndex != widget.currentIndex && !_selecting) {
       final int? page = _pageOf(widget.currentIndex);
       if (page != null && page != _page) _settleTo(page);
     }
@@ -2425,6 +2321,7 @@ class _NavPagedRowState extends State<_NavPagedRow>
 
   @override
   void dispose() {
+    _edgeTimer?.cancel();
     _position.dispose();
     super.dispose();
   }
@@ -2456,20 +2353,22 @@ class _NavPagedRowState extends State<_NavPagedRow>
     );
   }
 
+  // ---- 横滑翻页 ----
+
   void _onDragUpdate(DragUpdateDetails details) {
     final int last = widget.pages.length - 1;
     double next = _position.value - details.delta.dx / _width;
     // 首页 / 末页之外有阻尼，不让整排被拖空。
-    if (next < 0) next = _position.value - details.delta.dx / _width / 3;
-    if (next > last) next = _position.value - details.delta.dx / _width / 3;
+    if (next < 0 || next > last) {
+      next = _position.value - details.delta.dx / _width / 3;
+    }
     _position.value = next.clamp(-0.3, last + 0.3);
   }
 
   void _onDragEnd(DragEndDetails details) {
     final double velocity = -details.velocity.pixelsPerSecond.dx / _width;
-    final double pos = _position.value;
     // 胶囊窄（每页只有一个手掌宽），半页门槛太苛：拖过 1/4 页或甩一下就翻。
-    final double moved = pos - _page;
+    final double moved = _position.value - _page;
     int target = _page;
     if (velocity.abs() > 0.8) {
       target = velocity > 0 ? _page + 1 : _page - 1;
@@ -2481,22 +2380,89 @@ class _NavPagedRowState extends State<_NavPagedRow>
     _settleTo(target, velocity: velocity);
   }
 
-  Widget _pageRow(List<int> page) {
-    final List<Widget?> slots = List<Widget?>.filled(5, null);
-    if (widget.centerGap) {
-      const List<int> order = <int>[0, 1, 3, 4];
-      for (int k = 0; k < page.length && k < order.length; k++) {
-        slots[order[k]] = widget.cellBuilder(page[k]);
-      }
-    } else {
-      for (int k = 0; k < page.length && k < 5; k++) {
-        slots[k] = widget.cellBuilder(page[k]);
-      }
+  // ---- 长按拖选 ----
+
+  /// 手指位置（本行局部坐标）罩着的目的地：按格宽算第几格，胶囊外 / 空格 = null。
+  int? _targetAt(Offset point) {
+    if (point.dx < 0 || point.dx >= _width) return null;
+    final int slot = (point.dx / (_width / _kNavPageSize)).floor();
+    final List<int> page = widget.pages[_page];
+    return slot < page.length ? page[slot] : null;
+  }
+
+  void _updateHover(Offset point) {
+    _selectPoint = point;
+    final int? hover = _targetAt(point);
+    if (hover != _hover) {
+      if (hover != null) fushiSelectionHaptic(context);
+      setState(() => _hover = hover);
     }
+    final int direction = point.dx < _kNavPagedEdgeZone
+        ? -1
+        : (point.dx > _width - _kNavPagedEdgeZone ? 1 : 0);
+    if (direction == _edgeDirection) return;
+    _edgeDirection = direction;
+    _edgeTimer?.cancel();
+    _edgeTimer = direction == 0
+        ? null
+        : Timer.periodic(_kNavPagedEdgeDwell, (_) => _edgeFlip());
+  }
+
+  /// 拖选中停在边缘：往那一侧翻一页，罩着的格按新页重算。
+  void _edgeFlip() {
+    final int next = _page + _edgeDirection;
+    if (!mounted || next < 0 || next >= widget.pages.length) return;
+    fushiSelectionHaptic(context);
+    _settleTo(next);
+    final Offset? point = _selectPoint;
+    if (point != null) {
+      final int? hover = _targetAt(point);
+      if (hover != _hover) setState(() => _hover = hover);
+    }
+  }
+
+  void _onSelectStart(LongPressStartDetails details) {
+    // 进入拖选态：一记「拎起」震动，和平铺底栏长按拎起指示器同一手感。
+    fushiLiftHaptic(context);
+    setState(() => _selecting = true);
+    _updateHover(details.localPosition);
+  }
+
+  void _onSelectMove(LongPressMoveUpdateDetails details) =>
+      _updateHover(details.localPosition);
+
+  void _onSelectEnd(LongPressEndDetails details) {
+    final int? target = _hover;
+    _stopSelecting();
+    if (target != null && target != widget.currentIndex) {
+      widget.onDragSelect(target);
+    }
+  }
+
+  void _stopSelecting() {
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+    _edgeDirection = 0;
+    _selectPoint = null;
+    if (!_selecting && _hover == null) return;
+    setState(() {
+      _selecting = false;
+      _hover = null;
+    });
+  }
+
+  Widget _pageRow(List<int> page) {
     return Row(
       children: <Widget>[
-        for (final Widget? slot in slots)
-          Expanded(child: slot ?? const SizedBox.shrink()),
+        for (int k = 0; k < _kNavPageSize; k++)
+          Expanded(
+            child: k < page.length
+                ? widget.cellBuilder(
+                    page[k],
+                    _selecting ? page[k] == _hover : null,
+                  )
+                : const SizedBox.shrink(),
+          ),
       ],
     );
   }
@@ -2505,20 +2471,46 @@ class _NavPagedRowState extends State<_NavPagedRow>
   Widget build(BuildContext context) {
     final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
     final Color dot = bar?.content ?? Theme.of(context).colorScheme.onSurface;
-    final Widget Function(List<int>)? center = widget.centerBuilder;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         _width = math.max(1, box.maxWidth);
-        return GestureDetector(
+        return RawGestureDetector(
           behavior: HitTestBehavior.translucent,
-          // 翻页是纯指针手势；读屏 / 手柄靠各格自己的焦点与点击语义，焦点移到
-          // 别页的格子上时随当前项自动翻过去。
+          // 翻页 / 拖选是纯指针手势，不进语义树；读屏 / 手柄靠各格自己的焦点与
+          // 点击语义，焦点移到别页的格子上时随当前项自动翻过去。
           excludeFromSemantics: true,
-          // 从按下点起算位移：判定拖动前的那段触摸余量也算进翻页距离，整排
-          // 贴着手指走，不会先「卡」一下。
-          dragStartBehavior: DragStartBehavior.down,
-          onHorizontalDragUpdate: _onDragUpdate,
-          onHorizontalDragEnd: _onDragEnd,
+          gestures: <Type, GestureRecognizerFactory>{
+            // 横向位移先过线 = 翻页；按住不动先到 0.3 秒 = 拖选。两者在手势
+            // 竞技场里谁先成立谁赢，赢了另一个就放弃这根指针。
+            HorizontalDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  HorizontalDragGestureRecognizer
+                >(HorizontalDragGestureRecognizer.new, (
+                  HorizontalDragGestureRecognizer r,
+                ) {
+                  r
+                    // 从按下点起算位移：判定拖动前的触摸余量也算进翻页距离，
+                    // 整排贴着手指走。
+                    ..dragStartBehavior = DragStartBehavior.down
+                    ..onUpdate = _onDragUpdate
+                    ..onEnd = _onDragEnd;
+                }),
+            LongPressGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  LongPressGestureRecognizer
+                >(
+                  () => LongPressGestureRecognizer(
+                    duration: _kNavPagedSelectHold,
+                  ),
+                  (LongPressGestureRecognizer r) {
+                    r
+                      ..onLongPressStart = _onSelectStart
+                      ..onLongPressMoveUpdate = _onSelectMove
+                      ..onLongPressEnd = _onSelectEnd
+                      ..onLongPressCancel = _stopSelecting;
+                  },
+                ),
+          },
           child: Stack(
             children: <Widget>[
               ClipRect(
@@ -2548,13 +2540,6 @@ class _NavPagedRowState extends State<_NavPagedRow>
                   },
                 ),
               ),
-              if (center != null)
-                Align(
-                  child: SizedBox(
-                    width: _width / 5,
-                    child: center(widget.pages[_page]),
-                  ),
-                ),
               Positioned(
                 left: 0,
                 right: 0,
@@ -2587,202 +2572,6 @@ class _NavPagedRowState extends State<_NavPagedRow>
           ),
         );
       },
-    );
-  }
-}
-
-/// 「中央展开」每侧常驻的目的地数（左右各两个 + 中间「+」= 五格）。
-const int _kLauncherPinnedPerSide = 2;
-
-/// [_MaterialNavCluster._launcherSplit] 的结果。
-@immutable
-class _LauncherSplit {
-  const _LauncherSplit({
-    required this.leading,
-    required this.trailing,
-    required this.hidden,
-  });
-
-  final List<int> leading;
-  final List<int> trailing;
-
-  /// 收进「+」的目的地，按用户的模块顺序。
-  final List<int> hidden;
-}
-
-/// 底栏「中央展开」正中的「+」格：点开后 [hidden] 里的目的地从它沿弧线弹出
-/// （[showNavLauncherFan]），点遮罩 / 「×」收回。当前页在其中时这一格显示
-/// 为选中。独立焦点目标 `nav-bar-launcher`，A / 回车打开。
-class _NavLauncherCell extends StatefulWidget {
-  const _NavLauncherCell({
-    required this.items,
-    required this.hidden,
-    required this.currentIndex,
-    required this.onTap,
-    required this.cellWidth,
-  });
-
-  final List<AdaptiveNavItem> items;
-  final List<int> hidden;
-  final int currentIndex;
-  final ValueChanged<int> onTap;
-  final double? cellWidth;
-
-  static const FushiFocusId focusId = FushiFocusId('nav-bar-launcher');
-
-  @override
-  State<_NavLauncherCell> createState() => _NavLauncherCellState();
-}
-
-class _NavLauncherCellState extends State<_NavLauncherCell> {
-  bool _open = false;
-
-  /// 「按住『+』直接划过去」：按下即弹出，手指位置喂给它；抬手由它决定选中 /
-  /// 收回 / 当点按。null = 这次不是从指针按下打开的（键盘 / 读屏 / 无拖动）。
-  NavLauncherDragController? _drag;
-  int? _dragPointer;
-  Offset? _dragDown;
-  bool _dragMoved = false;
-
-  void _onPointerDown(PointerDownEvent event) {
-    if (_open || _dragPointer != null) return;
-    if (event.kind == PointerDeviceKind.mouse &&
-        event.buttons != kPrimaryMouseButton) {
-      return;
-    }
-    _dragPointer = event.pointer;
-    _dragDown = event.position;
-    _dragMoved = false;
-    final NavLauncherDragController drag = NavLauncherDragController();
-    _drag = drag;
-    unawaited(_launch(drag: drag));
-  }
-
-  void _onPointerMove(PointerMoveEvent event) {
-    if (event.pointer != _dragPointer) return;
-    final Offset? down = _dragDown;
-    if (!_dragMoved &&
-        down != null &&
-        (event.position - down).distance > kTouchSlop) {
-      _dragMoved = true;
-    }
-    final Offset? local = _overlayLocal(event.position);
-    if (local != null) _drag?.move(local);
-  }
-
-  void _onPointerUp(PointerUpEvent event) {
-    if (event.pointer != _dragPointer) return;
-    _drag?.release(moved: _dragMoved);
-    _dragPointer = null;
-  }
-
-  void _onPointerCancel(PointerCancelEvent event) {
-    if (event.pointer != _dragPointer) return;
-    // 被系统收走（来电、手势导航）：拖过就收回，没拖过当点按留着。
-    if (_dragMoved) _drag?.release(moved: true);
-    _dragPointer = null;
-  }
-
-  Offset? _overlayLocal(Offset global) {
-    final RenderObject? overlay = Overlay.of(
-      context,
-      rootOverlay: true,
-    ).context.findRenderObject();
-    return overlay is RenderBox ? overlay.globalToLocal(global) : null;
-  }
-
-  Future<void> _launch({NavLauncherDragController? drag}) async {
-    if (_open) return;
-    final RenderObject? cell = context.findRenderObject();
-    final RenderObject? overlay = Overlay.of(
-      context,
-      rootOverlay: true,
-    ).context.findRenderObject();
-    if (cell is! RenderBox || overlay is! RenderBox) return;
-    final Rect rect =
-        cell.localToGlobal(Offset.zero, ancestor: overlay) & cell.size;
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final bool glass = isGlassDesign(context);
-    // 配色跟底栏走：MD3 胶囊是 tertiary 系（与「更多」菜单同），Apple 是中性
-    // 表面色 + 主色指示；墨水屏是 surface 底、反色指示、描边、浅色遮罩。
-    final NavLauncherStyle style = NavLauncherStyle(
-      container: eink
-          ? colors.surface
-          : (glass ? colors.surfaceContainerHighest : colors.tertiaryContainer),
-      content: eink
-          ? colors.onSurface
-          : (glass ? colors.onSurface : colors.onTertiaryContainer),
-      indicator: eink
-          ? colors.onSurface
-          : (glass ? colors.primary : colors.tertiary),
-      onIndicator: eink
-          ? colors.surface
-          : (glass ? colors.onPrimary : colors.onTertiary),
-      scrim: eink
-          ? colors.surface.withValues(alpha: 0.9)
-          : Colors.black.withValues(alpha: 0.5),
-      labelColor: eink ? colors.onSurface : Colors.white,
-      outline: eink ? colors.outline : null,
-      closeLabel: MaterialLocalizations.of(context).closeButtonLabel,
-    );
-    setState(() => _open = true);
-    final int? picked = await showNavLauncherFan(
-      context: context,
-      anchor: rect,
-      style: style,
-      drag: drag,
-      overlayWidth: overlay.size.width,
-      entries: <NavLauncherEntry>[
-        for (final int i in widget.hidden)
-          NavLauncherEntry(
-            icon: widget.items[i].icon,
-            selectedIcon: widget.items[i].selectedIcon,
-            label: widget.items[i].label,
-            selected: i == widget.currentIndex,
-          ),
-      ],
-    );
-    drag?.dispose();
-    if (identical(_drag, drag)) _drag = null;
-    if (!mounted) return;
-    setState(() => _open = false);
-    if (picked == null) return;
-    final int target = widget.hidden[picked];
-    if (target != widget.currentIndex) fushiSelectionHaptic(context);
-    widget.onTap(target);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool selected = widget.hidden.contains(widget.currentIndex);
-    // 弹出层打开时它自己的「×」盖在这一格正上方，这里把底下的「+」藏起来，
-    // 免得旋转中的「×」与静止的「+」叠成米字。
-    // 按下即弹出：Listener 不进手势竞技场，按下后推出的扇面路由也不会抢走这根
-    // 指针，后续移动 / 抬起照样送到这里。没移动就抬起时 InkWell 的点按照常触发，
-    // [_launch] 见已打开直接返回，等同普通点按。
-    return Listener(
-      onPointerDown: _onPointerDown,
-      onPointerMove: _onPointerMove,
-      onPointerUp: _onPointerUp,
-      onPointerCancel: _onPointerCancel,
-      child: Opacity(
-        opacity: _open ? 0 : 1,
-        child: _NavFocusCell(
-          id: _NavLauncherCell.focusId,
-          item: AdaptiveNavItem(
-            icon: FushiIcons.add,
-            label: t.home_nav_more,
-            experimentalBadge: widget.hidden.any(
-              (int i) => widget.items[i].experimentalBadge,
-            ),
-          ),
-          selected: selected,
-          horizontal: true,
-          cellWidth: widget.cellWidth,
-          onSelect: () => unawaited(_launch()),
-        ),
-      ),
     );
   }
 }

@@ -27,9 +27,7 @@ import '../helpers/test_platform_services.dart';
 /// 同一接线（`barStyle: appModel.navBarStyle`，下方源码守卫钉住）喂给生产底栏
 /// [adaptiveBottomBar]，断言屏幕上看得见的结果：
 /// - 平铺（默认）：1200 宽下 9 个入口全部平铺，没有「+」；
-/// - 中央展开：只剩首尾各两项 + 「+」；
-/// - 分页滑动：一页 5 个（T0–T4），后面的不在栏上，没有「+」；
-/// - 中央展开 + 翻页：一页两侧 4 个（T0–T3）+ 「+」。
+/// - 分页滑动：一页 5 个（T0–T4），后面的不在栏上，没有「更多」。
 void main() {
   late FushiDatabase db;
   late Directory tmp;
@@ -127,7 +125,7 @@ void main() {
     await pumpShell(tester);
   }
 
-  testWidgets('bottom bar style row switches among the four layouts', (
+  testWidgets('bottom bar style row switches between flat and paged', (
     WidgetTester tester,
   ) async {
     await tester.runAsync(() async {
@@ -143,17 +141,9 @@ void main() {
     expect(visible(), labels, reason: '默认平铺：1200 宽全部平铺');
     expect(onBar(t.home_nav_more), isFalse);
 
-    await choose(tester, AdaptiveNavBarStyle.launcher);
-    expect(visible(), <String>['T0', 'T1', 'T7', 'T8']);
-    expect(onBar(t.home_nav_more), isTrue);
-
     await choose(tester, AdaptiveNavBarStyle.pager);
     expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
     expect(onBar(t.home_nav_more), isFalse);
-
-    await choose(tester, AdaptiveNavBarStyle.launcherPager);
-    expect(visible(), <String>['T0', 'T1', 'T2', 'T3']);
-    expect(onBar(t.home_nav_more), isTrue);
 
     await choose(tester, AdaptiveNavBarStyle.flat);
     expect(visible(), labels);

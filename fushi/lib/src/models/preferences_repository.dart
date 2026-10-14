@@ -1484,8 +1484,8 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 中央展开 / 分页滑动 /
-  /// 中央展开 + 翻页。默认平铺（放不下才收进「更多」）。
+  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。默认平铺（放不下
+  /// 才收进「更多」）。
   AdaptiveNavBarStyle get navBarStyle => AdaptiveNavBarStyle.fromPref(
     getPref('nav_bar_style', defaultValue: '') as String,
   );

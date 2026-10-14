@@ -33,8 +33,8 @@ import 'package:fushi/src/utils/components/section_visibility.dart';
 /// 参与横滑切换的 tab，按**屏幕上的从左到右**排列（LTR）。
 ///
 /// [tabs] 是 `homeActiveTabs` 的逻辑顺序；[reversed] 是「反转导航栏」。
-/// [lookupInBar]：查词也是胶囊里的目的地（底栏「中央展开」形态把查词收进
-/// 「+」，不再拆成 FAB），此时它也参与横滑。
+/// [lookupInBar]：查词也是胶囊里的目的地（底栏「分页滑动」形态把查词并进
+/// 胶囊，不再拆成 FAB），此时它也参与横滑。
 List<HomeTab> homeSwipeTabs({
   required List<HomeTab> tabs,
   required bool reversed,
@@ -42,8 +42,7 @@ List<HomeTab> homeSwipeTabs({
 }) {
   // 与底栏胶囊同一份序列：只去掉不在胶囊里的查词（FAB）。设置必须留着——它是
   // 胶囊里的目的地，排除它会让落到设置上的用户再也滑不回去（BUG-3351）。
-  // 同理，中央展开形态下查词在胶囊（「+」）里，排除它会让经「+」进查词的人
-  // 滑不出去。
+  // 同理，分页滑动形态下查词在胶囊里，排除它会让落到查词上的人滑不出去。
   final List<HomeTab> modules = <HomeTab>[
     for (final HomeTab tab in tabs)
       if (lookupInBar || tab != HomeTab.dictionaries) tab,
