@@ -86,9 +86,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   Widget buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    return RawScrollbar(
-      thickness: 3,
-      thumbVisibility: true,
+    return FushiScrollbar(
       controller: _contentScrollController,
       child: SingleChildScrollView(
         controller: _contentScrollController,
@@ -135,9 +133,6 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
   }
 
   void executeSearch() async {
-    widget.onSearch(
-      _titleController.text,
-      _artistController.text,
-    );
+    widget.onSearch(_titleController.text, _artistController.text);
   }
 }

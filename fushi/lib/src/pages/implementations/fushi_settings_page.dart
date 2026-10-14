@@ -67,8 +67,10 @@ class _FushiSettingsDialogPageState extends BasePageState
   }
 
   Widget _buildContent() {
-    final SettingsContext settingsContext =
-        createSettingsContext(appModel: appModel, ref: ref);
+    final SettingsContext settingsContext = createSettingsContext(
+      appModel: appModel,
+      ref: ref,
+    );
     final SettingsDestination destination = buildReaderQuickSettingsDestination(
       settingsContext,
     );
@@ -91,9 +93,7 @@ class _FushiSettingsDialogPageState extends BasePageState
 
     return SizedBox(
       width: double.maxFinite,
-      child: RawScrollbar(
-        thickness: 3,
-        thumbVisibility: true,
+      child: FushiScrollbar(
         controller: _contentScrollController,
         child: PrimaryScrollController(
           controller: _contentScrollController,

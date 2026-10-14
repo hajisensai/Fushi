@@ -11,6 +11,7 @@ export 'src/utils/components/fushi_toolbar.dart';
 export 'src/utils/components/fushi_reorderable_column.dart';
 export 'src/utils/components/fushi_reorder_drag_listener.dart';
 export 'src/utils/components/fushi_divider.dart';
+export 'src/utils/components/fushi_scrollbar.dart';
 export 'src/utils/components/fushi_dropdown.dart';
 export 'src/utils/components/fushi_option_selection_page.dart';
 export 'src/utils/components/fushi_marquee.dart';
