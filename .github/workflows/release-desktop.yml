@@ -541,6 +541,26 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.p2p }}
           path: native\fushi_p2p\prebuilt\windows-x64
+      # SRS 排程内核（fsrs-rs）DLL：产物落 native/fushi_fsrs/prebuilt/windows-x64/，由
+      # fushi/windows/CMakeLists.txt 的 copy-if-present 随包。失败口径同 fushi_p2p：**构建失败
+      # 即 job 失败**；出包后下面还会核对 bundle 里确有这个 DLL。不进原生产物持久库（与
+      # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
+      # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_fsrs)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-windows-x64
+      - name: Build fushi_fsrs DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
       # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
       # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
       # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
@@ -595,6 +615,15 @@ jobs:
           $dll = "fushi\build\windows\x64\runner\Release\fushi_p2p.dll"
           if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_p2p/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      # 同上：fushi_fsrs 也是 CMake copy-if-present，发布前钉成硬检查。
+      - name: Verify fushi_fsrs is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Release\fushi_fsrs.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_fsrs/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
       # 持久库理由与名字契约见 build-multiplatform.yml windows job 同名步骤（名字逐字一致）。
@@ -1535,6 +1564,27 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
+      # SRS 排程内核（fsrs-rs）arm64 dylib：Runner 的「Bundle fushi_fsrs dylib」构建阶段
+      # （fushi/macos/bundle_fushi_fsrs.sh）copy-if-present 进 Contents/Frameworks，之后由下面
+      # 的 Developer ID 签名循环随其它 Mach-O 一起签。失败口径同 p2p：构建失败即 job 失败；
+      # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
+      # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
+      - name: Set up Rust (fushi_fsrs, macOS targets)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
+          targets: aarch64-apple-darwin
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-macos
+      - name: Build fushi_fsrs (macOS arm64 dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_fsrs/build_macos_dylib.sh
+          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/macos/libfushi_fsrs.dylib nm
       # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
       # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
@@ -1636,6 +1686,16 @@ jobs:
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_p2p/verify_abi.sh "$dylib" nm
+      - name: Verify fushi_fsrs is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_fsrs.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_fsrs dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_fsrs.dylib"
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
+          bash native/fushi_fsrs/verify_abi.sh "$dylib" nm
       - name: Save fushi_p2p dylib to native artifact store
         if: steps.p2p_store.outputs.hit != 'true'
         continue-on-error: true
@@ -2435,6 +2495,13 @@ jobs:
       # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 符号。
       # 持久库存整个 prebuilt/ios（.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，
       # 两条出包路径上的 Runner 符号核对照跑。
+      #
+      # fushi_fsrs（SRS 排程内核）**暂不进 iOS 包**：两份 Rust staticlib 同时 -force_load 会撞
+      # 重复的 Rust std 符号，iOS 要改链伞形库 native/fushi_ios_umbrella（fp2p_* + ffsrs_* 合一），
+      # 切换步骤见 native/fushi_fsrs/README.md「iOS」，Runner 尚未切。在切换之前 iOS 上 SRS 原生
+      # 内核判不可用；伞形库能否编过由 build-multiplatform.yml 的 ios job 在 PR 上核对。切换时
+      # 把这里的 fushi_p2p staticlib 步骤整体换成伞形库，并在下面两条出包路径的 Runner 符号
+      # 核对里加 native/fushi_fsrs/verify_abi.sh。
       - name: Restore fushi_p2p staticlib from native artifact store
         id: p2p_store
         uses: ./.github/actions/native-artifact-store
