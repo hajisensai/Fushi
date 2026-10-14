@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -177,6 +178,38 @@ void main() {
       ((later.json as Map<dynamic, dynamic>)['works'] as List<Object?>),
       isEmpty,
     );
+  });
+
+  test('7c 还没刮削的骨架作品不上 wire，也不进错误日志', () async {
+    // 用户本机每轮同步都记一条 `sync.videoMetadata.load: work N 没有可用的
+    // provider 身份`：扫描器写的 local 骨架是合法的未刮削状态，不是装载失败。
+    final EngineLogSink previous = engineLog;
+    final _RecordingLogSink sink = _RecordingLogSink();
+    engineLog = sink;
+    addTearDown(() => engineLog = previous);
+    final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
+    await store.apply(
+      localWork,
+      VideoMetadataWork(
+        provider: VideoMetadataProviderKind.local,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Show',
+      ),
+    );
+
+    for (final String path in <String>[
+      '/api/library/metadata',
+      '/api/library/metadata?since=0',
+    ]) {
+      final ({int status, Object? json}) res = await call('GET', path);
+      expect(res.status, 200, reason: path);
+      expect(
+        (res.json as Map<dynamic, dynamic>)['works'] as List<Object?>,
+        isEmpty,
+        reason: path,
+      );
+    }
+    expect(sink.errors, isEmpty);
   });
 
   test('7a 无刮削控制器：candidates 回空、scrape 回 409 notPlanned', () async {
@@ -426,4 +459,21 @@ void main() {
       VideoMetadataConflict.notPlanned,
     );
   });
+}
+
+class _RecordingLogSink implements EngineLogSink {
+  final List<String> errors = <String>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) {
+    errors.add('$source: $error');
+  }
+
+  @override
+  void logDiagnostic(String source, Object info) {}
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) {
+    errors.add('$source: $error');
+  }
 }

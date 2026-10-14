@@ -760,9 +760,15 @@ class _MediaCollectionGridDetailPageState
         final CollectionMemberEntry? next = widget.onOpenMember == null
             ? null
             : pickContinueMember(entries);
+        // 封面前排 = 「继续」会打开的那本（看到第五本就显示第五本），其余按合集序
+        // 垫在后面当叠层。
+        final CollectionMemberEntry? current =
+            next ?? pickContinueMember(entries);
         final List<Widget> covers = <Widget>[
+          if (current?.info?.cover case final Widget cover) cover,
           for (final CollectionMemberEntry e in entries)
-            if (e.info?.cover case final Widget cover) cover,
+            if (!identical(e, current))
+              if (e.info?.cover case final Widget cover) cover,
         ];
         final bool canReorder =
             _sort == CollectionMemberSort.manual &&

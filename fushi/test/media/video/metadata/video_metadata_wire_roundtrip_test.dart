@@ -188,7 +188,7 @@ void main() {
           await store.apply(localWork, work);
       final VideoMetadataWorkRow row =
           (await db.getVideoMetadataWorkById(persisted.workId))!;
-      final VideoMetadataWork loaded = await loadVideoMetadataWork(db, row);
+      final VideoMetadataWork loaded = (await loadVideoMetadataWork(db, row))!;
 
       expect(loaded.provider, work.provider, reason: '主身份 provider');
       expect(loaded.kind, work.kind);
@@ -333,18 +333,18 @@ void main() {
     test('apply → load → encode → decode → apply → load 稳定（幂等）', () async {
       final PersistedVideoMetadata first =
           await store.apply(localWork, _fullWork());
-      final VideoMetadataWork loaded1 = await loadVideoMetadataWork(
+      final VideoMetadataWork loaded1 = (await loadVideoMetadataWork(
         db,
         (await db.getVideoMetadataWorkById(first.workId))!,
-      );
+      ))!;
       final VideoMetadataWork wired =
           decodeVideoMetadataWork(encodeVideoMetadataWork(loaded1));
       expect(wired, loaded1, reason: 'load 结果本身应能无损上 wire');
       final PersistedVideoMetadata second = await store.apply(localWork, wired);
-      final VideoMetadataWork loaded2 = await loadVideoMetadataWork(
+      final VideoMetadataWork loaded2 = (await loadVideoMetadataWork(
         db,
         (await db.getVideoMetadataWorkById(second.workId))!,
-      );
+      ))!;
       expect(loaded2, loaded1);
     });
 
@@ -376,13 +376,13 @@ void main() {
       final VideoMetadataWorkRow row =
           (await db.getVideoMetadataWorkById(persisted.workId))!;
       expect(
-        () => loadVideoMetadataWork(db, row),
-        throwsStateError,
-        reason: 'imdb 不是 VideoMetadataProviderKind，没有可用 provider',
+        await loadVideoMetadataWork(db, row),
+        isNull,
+        reason: 'imdb 不是 VideoMetadataProviderKind，没有可用 provider = 还没刮削',
       );
     });
 
-    test('一条身份都没有的作品（local 骨架）load 抛 StateError', () async {
+    test('一条身份都没有的作品（local 骨架）load 返回 null，不抛', () async {
       final PersistedVideoMetadata persisted = await store.apply(
         localWork,
         VideoMetadataWork(
@@ -393,8 +393,19 @@ void main() {
       );
       final VideoMetadataWorkRow row =
           (await db.getVideoMetadataWorkById(persisted.workId))!;
-      expect(() => loadVideoMetadataWork(db, row), throwsStateError);
+      expect(await loadVideoMetadataWork(db, row), isNull);
       expect(await lookupOfWork(db, persisted.workId), isNull);
+    });
+
+    test('mediaType 损坏仍抛 StateError（真损坏不被静默吞掉）', () async {
+      final PersistedVideoMetadata persisted =
+          await store.apply(localWork, _fullWork());
+      final VideoMetadataWorkRow row =
+          (await db.getVideoMetadataWorkById(persisted.workId))!;
+      expect(
+        () => loadVideoMetadataWork(db, row.copyWith(mediaType: 'bogus')),
+        throwsStateError,
+      );
     });
   });
 }

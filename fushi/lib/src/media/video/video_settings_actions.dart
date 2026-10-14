@@ -812,7 +812,7 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
     final String? status = !live
         ? null
         : !loaded
-            ? t.video_setting_mpv_lua_scripts_status_not_loaded
+            ? t.video_setting_mpv_lua_scripts_status_pending
             : error == null
                 ? t.video_setting_mpv_lua_scripts_status_loaded
                 : '${t.video_setting_mpv_lua_scripts_status_error}: $error';

@@ -581,10 +581,10 @@ List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
         sentence: sentence,
         graphemeIndex: graphemeAtUtf16[region.utf16Start]!,
         rect: Rect.fromLTRB(
-          region.rectangle.left,
-          region.rectangle.top,
-          region.rectangle.right,
-          region.rectangle.bottom,
+          region.bounds.left,
+          region.bounds.top,
+          region.bounds.right,
+          region.bounds.bottom,
         ),
       ),
   ];

@@ -9,6 +9,7 @@
 - **[x] ① 已修复** — `944b75e34a`（分支 `worktree-lua-scripts-rootfix`）：
   - 能力门控（①）：新增 `video_lua_capability.dart`（`MpvLuaCapability` + `parseMpvLuaCapability`），controller 建 Player 后读 `mpv-configuration` 探测、页面落 pref `video_mpv_lua_capability`，开关副标题在 `unavailable` 时如实说明（按 `settings_schema_widgets.dart:168` 约定：能力只走副标题、不禁用开关）。不按 `Platform.isAndroid` 硬编码——jar 重编带 Lua 后自动翻绿。
   - 导入即启用（②）：`_setVideoLuaScriptsEnabled` 成为开关行与导入按钮的唯一写穿点，导入后置 true（host 在场即时把目录含新脚本装进活播放器，幂等）；提示改为"脚本已导入并启用"。
+    - 2026-10-14 后续（所有者要求删掉 Lua 启用开关）：开关行、pref `video_mpv_lua_scripts_enabled` 读写与 `_setVideoLuaScriptsEnabled` 均已删除，`mpv_scripts` 目录即开关（对齐 mpv `scripts/`：有就装、删文件即停）；导入后经 host 的 `onLuaScriptsChanged` 即时补装，能力不可用的说明挪到导入行副标题。守卫见 `video_lua_script_wiring_guard_test.dart`「settings schema」组。
   - 诊断面（③）：controller 订阅 `player.stream.log`，`matchLuaLogToScripts` 把 `cplayer` 装载失败（按完整路径）与脚本前缀 `Lua error`/`mp.msg.error`（按 mpv 客户端名 `luaScriptNameForPath`）归到脚本，`luaScriptStates` 经 `VideoQuickSettingsHost.luaScriptStates` 喂给新增设置项 `video.player.mpv_lua_scripts_list`（每脚本一行：未装载 / 已装载无报错 / 报错原文），列表底部原样说明输入边界。
   - OSD（④）：`applyLuaScripts` 首次真有脚本时先下发 `buildLuaOsdProperties()`（`osd-level=1` + `osd-on-seek=no`，后者防 Hibiki 自己的 seek 叠出原生进度条）再 `load-script`；没脚本的 Player 保持 media_kit 默认。
   - 状态收口：`_resetLuaScriptState()` 统一清去重集/状态表/日志订阅，dispose 与 `_releaseMediaHandles` 两处都走它。

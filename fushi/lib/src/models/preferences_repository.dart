@@ -1004,10 +1004,14 @@ class PreferencesRepository extends ChangeNotifier
         final Set<String> kept = legacy == '-'
             ? <String>{}
             : legacy.split(',').map((String s) => s.trim()).toSet();
+        // 专属按钮按出厂，全局按钮完全按旧勾选：它是用户明确选过的，不能被
+        // 按场景收窄的出厂值（[FloatingBallGlobalAction.onByDefaultIn]）筛掉。
+        final Set<String> sceneDefaults = scope.defaultButtons.toSet();
         return <String>[
-          for (final String id in scope.defaultButtons)
-            if (FloatingBallGlobalAction.fromStorage(id) == null ||
-                kept.contains(id))
+          for (final String id in scope.catalog)
+            if (FloatingBallGlobalAction.fromStorage(id) == null
+                ? sceneDefaults.contains(id)
+                : kept.contains(id))
               id,
         ];
       }
@@ -1494,18 +1498,6 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoShadersEnabled(String json) async {
     await setPref('video_shaders_enabled', json);
-    notifyListeners();
-  }
-
-  /// mpv Lua 脚本装载开关（默认关）。开时视频播放器创建后把
-  /// `<documents>/mpv_scripts` 目录里的全部 `.lua` 经 `load-script` 装载
-  /// （见 video_lua_script_manager.dart）；mpv 无 unload-script，关闭只对
-  /// 之后新建的播放器生效。
-  bool get videoMpvLuaScriptsEnabled =>
-      getPref('video_mpv_lua_scripts_enabled', defaultValue: false) as bool;
-
-  Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
-    await setPref('video_mpv_lua_scripts_enabled', value);
     notifyListeners();
   }
 

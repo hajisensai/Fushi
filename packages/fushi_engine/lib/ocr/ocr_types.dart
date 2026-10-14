@@ -123,6 +123,44 @@ class PageDetections {
   final List<DetectedTextRegion> weakTextRegions;
 }
 
+/// 外接框 [box] 内接的、旋转 [tilt] 弧度（正值顺时针）的矩形的四个角，
+/// 顺时针、从旋转后的左上角起。
+///
+/// 旋转矩形边长 a（沿旋转后的 x 轴）、b 与外接框宽高满足
+/// `W = a·c + b·s`、`H = a·s + b·c`（c = |cos|，s = |sin|），解出 a、b。
+/// 倾角为 0、或解不出正边长（框太方、角度太大，病态）时退回框本身的四角。
+List<List<double>> mangaTiltedLineQuad(OcrRect box, double tilt) {
+  List<List<double>> axisAligned() => <List<double>>[
+    <double>[box.left, box.top],
+    <double>[box.right, box.top],
+    <double>[box.right, box.bottom],
+    <double>[box.left, box.bottom],
+  ];
+  if (tilt == 0) return axisAligned();
+  final double c = math.cos(tilt).abs();
+  final double s = math.sin(tilt).abs();
+  final double det = c * c - s * s;
+  if (det <= 0.2) return axisAligned();
+  final double a = (box.width * c - box.height * s) / det;
+  final double b = (box.height * c - box.width * s) / det;
+  if (a <= 1 || b <= 1) return axisAligned();
+  final double cx = box.centerX;
+  final double cy = box.centerY;
+  // 旋转后的单位轴（图像坐标 y 向下，正角顺时针）。
+  final double ux = math.cos(tilt), uy = math.sin(tilt);
+  final double vx = -math.sin(tilt), vy = math.cos(tilt);
+  List<double> corner(double du, double dv) => <double>[
+    cx + du * ux + dv * vx,
+    cy + du * uy + dv * vy,
+  ];
+  return <List<double>>[
+    corner(-a / 2, -b / 2),
+    corner(a / 2, -b / 2),
+    corner(a / 2, b / 2),
+    corner(-a / 2, b / 2),
+  ];
+}
+
 /// 识别 + 排序之后的最终文字块（供上层消费 / 缓存序列化）。
 class OcrBlock {
   const OcrBlock({
@@ -130,6 +168,7 @@ class OcrBlock {
     required this.vertical,
     required this.lines,
     this.lineBoxes,
+    this.lineTilt = 0,
     this.score = 0,
     this.insideBubble = false,
     this.confidence,
@@ -148,6 +187,11 @@ class OcrBlock {
   /// 每行在页面上的框（页面像素坐标），对应 mokuro 的 `lines_coords`。阅读器
   /// 覆盖层靠它把字落到正确的列上；null = 没有行几何，覆盖层退回整块均铺。
   final List<OcrRect>? lineBoxes;
+
+  /// 行的整体倾角（弧度，正值顺时针，0 = 正立）。[lineBoxes] 是轴对齐外接框，
+  /// 倾斜的行要按这个角度还原成旋转矩形（mokuro `lines_coords` 写四点多边形），
+  /// 覆盖层才能把逐字命中格摆在斜着的字上。没有行几何时恒为 0。
+  final double lineTilt;
 
   final double score;
   final bool insideBubble;
@@ -168,6 +212,7 @@ class OcrBlock {
           'lineBoxes': <Map<String, dynamic>>[
             for (final OcrRect rect in lineBoxes!) rect.toJson(),
           ],
+        if (lineTilt != 0) 'lineTilt': lineTilt,
         'score': score,
         'insideBubble': insideBubble,
         if (confidence != null) 'confidence': confidence,
@@ -189,6 +234,9 @@ class OcrBlock {
       vertical: json['vertical'] as bool,
       lines: lines,
       lineBoxes: lineBoxes,
+      lineTilt: lineBoxes == null
+          ? 0
+          : (json['lineTilt'] as num?)?.toDouble() ?? 0,
       score: (json['score'] as num?)?.toDouble() ?? 0,
       insideBubble: json['insideBubble'] as bool? ?? false,
       confidence: (json['confidence'] as num?)?.toDouble(),
@@ -270,6 +318,7 @@ class OcrRecognition {
     required this.vertical,
     this.lines,
     this.lineBoxes,
+    this.lineTilt = 0,
     this.confidence,
   }) : assert((lines == null) == (lineBoxes == null));
 
@@ -290,8 +339,23 @@ class OcrRecognition {
         vertical: vertical,
         lines: lines,
         lineBoxes: lineBoxes,
+        lineTilt: lineTilt,
         confidence: value,
       );
+
+  /// 换掉行倾角的副本（路由层把块级倾角挂回子识别器的排版结果）。没有行几何时
+  /// 倾角无处可用、或倾角没变，原样返回。
+  OcrRecognition withLineTilt(double value) => lineBoxes == null ||
+          value == lineTilt
+      ? this
+      : OcrRecognition(
+          text: text,
+          vertical: vertical,
+          lines: lines,
+          lineBoxes: lineBoxes,
+          lineTilt: value,
+          confidence: confidence,
+        );
 
   /// 按行切开的 [text]（阅读序，`lines.join() == text`），与 [lineBoxes]
   /// 等长；null = 识别器没给行几何，pipeline 落成整块单行。
@@ -299,6 +363,9 @@ class OcrRecognition {
 
   /// 每行的页面坐标框，见 [OcrBlock.lineBoxes]。
   final List<OcrRect>? lineBoxes;
+
+  /// 行的整体倾角，见 [OcrBlock.lineTilt]。
+  final double lineTilt;
 }
 
 /// 可选能力：识别时顺带判定了块方向（例如块内切行后按行投票）的识别器。
