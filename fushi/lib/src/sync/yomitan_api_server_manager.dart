@@ -1,5 +1,6 @@
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
@@ -98,6 +99,17 @@ class YomitanApiServerManager {
 
   YomitanApiServer? _server;
 
+  /// AnkiConnect v6 兼容端点（Fushi SRS）。null = SRS 模块关闭，根路径 404。
+  /// 运行中切换立即作用到当前 server，下次 [start] 也带上。
+  SrsAnkiConnectEndpoint? _ankiConnectEndpoint;
+
+  SrsAnkiConnectEndpoint? get ankiConnectEndpoint => _ankiConnectEndpoint;
+
+  set ankiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _ankiConnectEndpoint = endpoint;
+    _server?.ankiConnectEndpoint = endpoint;
+  }
+
   bool get isRunning => _server?.isRunning ?? false;
   int? get port => _server?.port;
 
@@ -128,6 +140,7 @@ class YomitanApiServerManager {
       fontApi: _fontApi,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
+      ankiConnectEndpoint: _ankiConnectEndpoint,
     );
     await server.start();
     _server = server;

@@ -118,6 +118,7 @@ class AnkiConnectService {
   /// 的可重试性由**里面装了什么**决定，而不是外层动作名。
   Future<dynamic> _request(String action,
       [Map<String, dynamic>? params, bool? idempotent]) async {
+    await _guardSelfLoop();
     final body = jsonEncode({
       'action': action,
       'version': 6,
@@ -164,6 +165,38 @@ class AnkiConnectService {
       throw AnkiConnectException(message);
     }
     return result['result'];
+  }
+
+  /// 防自环判定缓存：`实例 id|scheme://host:port` → 是否指向本进程的兼容端点。
+  static final Map<String, bool> _selfLoopVerdicts = <String, bool>{};
+
+  /// 本进程挂着 Fushi 的 AnkiConnect 兼容端点时，先问一次目标地址 `fushiIdentify`：
+  /// 回的实例 id 是本进程的 → 拒绝（否则「推 Anki」会写回 Fushi 自己的 SRS，查重也查的是自己）。
+  /// 真 AnkiConnect 回 `unsupported action`，判定为「不是自己」并缓存；连接层失败不下结论，
+  /// 交给真正的请求去报错。没挂兼容端点（[fushiAnkiConnectCompatInstanceId] 为 null）时零开销。
+  Future<void> _guardSelfLoop() async {
+    final String? id = fushiAnkiConnectCompatInstanceId;
+    if (id == null || id.isEmpty) return;
+    final String key = '$id|${useHttps ? 'https' : 'http'}://$host:$port';
+    final bool? cached = _selfLoopVerdicts[key];
+    if (cached == false) return;
+    if (cached == true) throw AnkiConnectSelfLoopException();
+    final bool isSelf;
+    try {
+      final http.Response response = await _post(
+        jsonEncode(<String, Object>{'action': 'fushiIdentify', 'version': 6}),
+      );
+      if (response.statusCode != 200) return;
+      final Object? decoded = jsonDecode(response.body);
+      final Object? result = decoded is Map ? decoded['result'] : null;
+      isSelf = result is Map &&
+          result['fushi'] == true &&
+          result['instance'] == id;
+    } catch (_) {
+      return;
+    }
+    _selfLoopVerdicts[key] = isSelf;
+    if (isSelf) throw AnkiConnectSelfLoopException();
   }
 
   /// Actions that mutate Anki state and are NOT safe to *blindly* re-send.
@@ -1370,6 +1403,22 @@ class AnkiConnectException implements Exception {
   AnkiConnectException(this.message);
   @override
   String toString() => 'AnkiConnectException: $message';
+}
+
+/// 本进程挂着的 Fushi AnkiConnect 兼容端点的随机实例 id（宿主挂载兼容层时设置，卸下时置 null）。
+///
+/// fushi_anki 不依赖 fushi_engine，所以由宿主经这个全局装配点注入；[AnkiConnectService]
+/// 推 Anki 前用它识别「目标地址其实是 Fushi 自己的兼容端点」。
+String? fushiAnkiConnectCompatInstanceId;
+
+/// 推 Anki 的地址指向了 Fushi 自己的 AnkiConnect 兼容端点。
+class AnkiConnectSelfLoopException extends AnkiConnectException {
+  AnkiConnectSelfLoopException()
+      : super(
+          '推 Anki 的地址指向了 Fushi 自己的兼容端点'
+          ' (the AnkiConnect address points at the Fushi '
+          'AnkiConnect-compatible endpoint, not Anki)',
+        );
 }
 
 class AnkiConnectDuplicateException extends AnkiConnectException {

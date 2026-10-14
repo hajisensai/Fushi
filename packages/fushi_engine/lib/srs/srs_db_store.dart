@@ -869,22 +869,29 @@ class SrsDbStore implements SrsSyncReplica {
 
   // ------------------------------------------------------------------ 牌组
 
+  /// 新建牌组。ID 由「父::子」全名确定性派生（SrsIds.deck）：多台设备离线各建同名牌组不会出重复；
+  /// 同名牌组已存在（含已删除的）时复活并沿用它。身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
   Future<String> createDeck(String name, {String? parentId}) async {
-    final (int nowMs, _) = now();
-    final String id = uuidV7(nowMs: nowMs);
+    final SrsDeckTree tree = await deckTree();
+    final String parentPath = parentId == null || tree[parentId] == null
+        ? ''
+        : '${tree.fullName(parentId)}::';
+    final String id = SrsIds.deck(profileUid, '$parentPath$name');
     await _emit(<SrsEvent>[
       SrsEntityEvent(
         SrsEntityRecord(
           id: id,
           profileUid: profileUid,
           kind: SrsEntityKind.deck,
-          payload: <String, Object?>{'createdAt': nowMs},
+          payload: const <String, Object?>{'createdAt': 0},
         ),
       ),
     ]);
+    final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
     await editFields(SrsEntityKind.deck, id, <String, Object?>{
-      SrsFieldKeys.name: name,
+      SrsFieldKeys.name: name.trim(),
       if (parentId != null) SrsFieldKeys.deckParent: parentId,
+      if (current.deletedAt != null) SrsFieldKeys.deleted: null,
     });
     return id;
   }
@@ -1789,5 +1796,98 @@ class SrsDbStore implements SrsSyncReplica {
     )..where((t) => t.profileUid.equals(profileUid))).go();
     await requeue(<String>[for (final SrsEvent e in await exportAll()) e.id]);
     await rebuildCaches();
+  }
+
+  // ------------------------------------------------------------------ AnkiConnect 兼容层（只读）
+
+  /// 本 profile 的全部笔记（含已删除，调用方自行过滤），批量物化：
+  /// 三次查询（身份记录 / 修改记录 / 服务器时间）而不是每条笔记各查一遍。
+  Future<List<SrsNoteView>> allNoteViews() async {
+    final List<SrsEntityRow> rows =
+        await (db.select(db.srsEntities)..where(
+              (t) =>
+                  t.profileUid.equals(profileUid) &
+                  t.kind.equals(SrsEntityKind.note.wire),
+            ))
+            .get();
+    final List<SrsFieldEditRow> editRows =
+        await (db.select(db.srsFieldEdits)..where(
+              (t) =>
+                  t.profileUid.equals(profileUid) &
+                  t.entityKind.equals(SrsEntityKind.note.wire),
+            ))
+            .get();
+    final Map<String, List<SrsFieldEdit>> byEntity =
+        <String, List<SrsFieldEdit>>{};
+    for (final SrsFieldEditRow r in editRows) {
+      (byEntity[r.entityId] ??= <SrsFieldEdit>[]).add(
+        SrsFieldEdit.fromJson(
+          (jsonDecode(r.json) as Map).cast<String, Object?>(),
+        ),
+      );
+    }
+    final Map<String, int> serverTimes = await exportServerTimes();
+    return <SrsNoteView>[
+      for (final SrsEntityRow r in rows)
+        SrsNoteView.materialize(
+          _entityFromRow(r),
+          SrsEntityEdits.build(
+            byEntity[r.id] ?? const <SrsFieldEdit>[],
+            serverTimeOf: (String id) => serverTimes[id],
+          ),
+        ),
+    ];
+  }
+
+  /// 本 profile 的全部卡片缓存行（含隐藏）。
+  Future<List<SrsCardCacheRow>> allCardRows() => (db.select(
+    db.srsCardsCache,
+  )..where((c) => c.profileUid.equals(profileUid))).get();
+
+  /// 笔记缓存的变化戳：(行数, 最大 updatedAt)。笔记内容 / 笔记类型变化都会刷新笔记缓存行。
+  Future<(int, int)> notesCacheStamp() async {
+    final Expression<int> count = db.srsNotesCache.id.count();
+    final Expression<int> maxUpdated = db.srsNotesCache.updatedAt.max();
+    final TypedResult row =
+        await (db.selectOnly(db.srsNotesCache)
+              ..addColumns(<Expression<Object>>[count, maxUpdated])
+              ..where(db.srsNotesCache.profileUid.equals(profileUid)))
+            .getSingle();
+    return (row.read(count) ?? 0, row.read(maxUpdated) ?? 0);
+  }
+
+  Map<int, String>? _ankiNoteIndex;
+  Map<int, String>? _ankiCardIndex;
+
+  Future<void> _rebuildAnkiNumericIndex() async {
+    final List<SrsNoteCacheRow> notes = await (db.select(
+      db.srsNotesCache,
+    )..where((n) => n.profileUid.equals(profileUid))).get();
+    final List<SrsCardCacheRow> cards = await allCardRows();
+    _ankiNoteIndex = <int, String>{
+      for (final SrsNoteCacheRow n in notes) SrsIds.ankiNumericId(n.id): n.id,
+    };
+    _ankiCardIndex = <int, String>{
+      for (final SrsCardCacheRow c in cards) SrsIds.ankiNumericId(c.id): c.id,
+    };
+  }
+
+  /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId。本机索引，不同步；
+  /// 未命中时重建一次（id 由 UUID 确定性派生，旧索引只会缺新条目、不会映错）。
+  Future<String?> noteIdForAnkiNumericId(int ankiId) async {
+    String? hit = _ankiNoteIndex?[ankiId];
+    if (hit != null) return hit;
+    await _rebuildAnkiNumericIndex();
+    hit = _ankiNoteIndex![ankiId];
+    return hit;
+  }
+
+  /// AnkiConnect 整数卡片 id → cardId（同 [noteIdForAnkiNumericId]）。
+  Future<String?> cardIdForAnkiNumericId(int ankiId) async {
+    String? hit = _ankiCardIndex?[ankiId];
+    if (hit != null) return hit;
+    await _rebuildAnkiNumericIndex();
+    hit = _ankiCardIndex![ankiId];
+    return hit;
   }
 }

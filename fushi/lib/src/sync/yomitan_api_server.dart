@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -20,6 +21,7 @@ import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -144,7 +146,11 @@ class YomitanApiServer {
     ExtensionFontApi? fontApi,
     String? apiKey,
     bool allowLan = false,
+    SrsAnkiConnectEndpoint? ankiConnectEndpoint,
+    int? ankiConnectCompatPort,
   }) : _requestedPort = port,
+       _ankiConnect = ankiConnectEndpoint,
+       _ankiConnectCompatPort = ankiConnectCompatPort,
        _lookup = lookupService,
        _mining = miningService,
        _history = historyService,
@@ -237,6 +243,62 @@ class YomitanApiServer {
 
   HttpServer? _server;
 
+  /// AnkiConnect v6 兼容端点（Fushi SRS）：挂在根路径 `/`。null（SRS 模块关闭）时根路径照旧 404、
+  /// 不暴露。端点自己做 Origin 白名单 / 回环限制 / key 校验，所以根路径**不经** [_authMiddleware]
+  /// （中间件的 401 纯文本会挡掉 CORS 预检，也不是 AnkiConnect 客户端认得的错误形状）。
+  SrsAnkiConnectEndpoint? _ankiConnect;
+
+  /// 「同时监听 AnkiConnect 默认端口（8765）」的预留参数：非 null 且端点已注入时，在回环地址
+  /// 上另起一个只服务兼容端点的监听；端口被占（真 Anki 开着）就不监听、只记日志。
+  final int? _ankiConnectCompatPort;
+  HttpServer? _ankiConnectCompatServer;
+
+  SrsAnkiConnectEndpoint? get ankiConnectEndpoint => _ankiConnect;
+
+  /// 注入 / 卸下兼容端点（SRS 模块开关由 app 侧 provider 驱动）。运行中切换立即生效。
+  set ankiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _ankiConnect = endpoint;
+    if (endpoint == null) {
+      unawaited(_stopAnkiConnectCompatListener());
+    } else if (_server != null) {
+      unawaited(_startAnkiConnectCompatListener());
+    }
+  }
+
+  /// 兼容端口上实际在监听的端口（没监听为 null）。
+  int? get ankiConnectCompatListenPort => _ankiConnectCompatServer?.port;
+
+  Future<void> _startAnkiConnectCompatListener() async {
+    final int? port = _ankiConnectCompatPort;
+    if (port == null || _ankiConnect == null) return;
+    if (_ankiConnectCompatServer != null) return;
+    try {
+      _ankiConnectCompatServer = await shelf_io.serve(
+        (shelf.Request request) async {
+          final SrsAnkiConnectEndpoint? endpoint = _ankiConnect;
+          if (endpoint == null || request.url.path.isNotEmpty) {
+            return shelf.Response.notFound('Not Found');
+          }
+          return endpoint.handle(request);
+        },
+        InternetAddress.loopbackIPv4,
+        port,
+      );
+    } on SocketException catch (e) {
+      debugPrint(
+        'YomitanApiServer: AnkiConnect compat port $port unavailable '
+        '(${isAddressInUseError(e) ? 'in use — is Anki running?' : e.message}); '
+        'not listening',
+      );
+    }
+  }
+
+  Future<void> _stopAnkiConnectCompatListener() async {
+    final HttpServer? s = _ankiConnectCompatServer;
+    _ankiConnectCompatServer = null;
+    await s?.close(force: true);
+  }
+
   // 搜索候选按 handle 暂存（download 要交回候选对象本身：OpenSubtitles 的 fileId、
   // Jimaku/AJATT 的下载 URL 都只活在候选里，裸 handle 串重建不出来）；插入序 LRU。
   static const int _kSubtitleCandidateCacheLimit = 200;
@@ -283,9 +345,11 @@ class YomitanApiServer {
       }
       rethrow;
     }
+    await _startAnkiConnectCompatListener();
   }
 
   Future<void> stop() async {
+    await _stopAnkiConnectCompatListener();
     await _server?.close(force: true);
     _server = null;
     _subtitleCandidates.clear();
@@ -300,6 +364,10 @@ class YomitanApiServer {
         // 「试一试」页是浏览器地址栏直接打开的裸 GET（无 Authorization），且只吐一张
         // 静态说明页（例句 + 操作步骤，无任何用户数据）→ 与音频文件端点同策略放行。
         if ('/${request.url.path}' == kBrowserExtensionTestPagePath) {
+          return inner(request);
+        }
+        // AnkiConnect 兼容端点自带鉴权（见 [_ankiConnect]）；未注入时照常走鉴权后 404。
+        if (request.url.path.isEmpty && _ankiConnect != null) {
           return inner(request);
         }
         final String? key = _apiKey;
@@ -413,6 +481,12 @@ class YomitanApiServer {
         headOnly: method == 'HEAD',
         dictionary: true,
       );
+    }
+    // AnkiConnect 兼容端点（根路径）：OPTIONS 预检与 GET 探活都要在 405 门之前处理。
+    if (path == '/') {
+      final SrsAnkiConnectEndpoint? endpoint = _ankiConnect;
+      if (endpoint == null) return shelf.Response.notFound('Unknown endpoint');
+      return endpoint.handle(request);
     }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
