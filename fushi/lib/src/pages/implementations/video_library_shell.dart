@@ -74,7 +74,8 @@ class VideoLibraryShell extends StatefulWidget {
   final Future<void> Function(
     SourceLibraryRow source,
     SourceScanSummary summary,
-  ) onVideoScanCompleted;
+  )
+  onVideoScanCompleted;
   final VoidCallback onOpenScrapeTasks;
   final VoidCallback onLibraryChanged;
 
@@ -84,14 +85,15 @@ class VideoLibraryShell extends StatefulWidget {
 
   /// 刮削结果变化后只读重算待确认清单（见 [HomeVideoPage]，BUG-3072）。
   final Future<List<VideoPendingScrapeWork>> Function()?
-      refreshPendingScrapeWorks;
+  refreshPendingScrapeWorks;
 
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
     BuildContext context,
     Widget navigation,
     VideoLibrarySection section,
-  )? localLibraryPageBuilder;
+  )?
+  localLibraryPageBuilder;
 
   /// 「媒体服务器」分区的已登录服务器清单（生产由 HomePage 从 SyncRepository
   /// 装配）。null = 未接线（宿主测试），分区呈现空态。
@@ -99,7 +101,7 @@ class VideoLibraryShell extends StatefulWidget {
 
   /// 仅供宿主定制或 widget 测试注入媒体服务器页，不改变惰性构建/保活语义。
   final Widget Function(BuildContext context, Widget navigation)?
-      mediaServerPageBuilder;
+  mediaServerPageBuilder;
 
   /// 「发现」分区的搜索端口；与浏览页签共用 HomePage 的同一个生产实例。
   /// null = 未接线（宿主测试），发现页回落到空控制器。
@@ -121,6 +123,9 @@ class VideoLibraryShell extends StatefulWidget {
 class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
+
+  /// 「在线源」组上次停留的分区（来源 / 扩展），点组页签回到这里。
+  VideoLibrarySection _onlineSection = VideoLibrarySection.onlineSources;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
 
@@ -161,6 +166,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         _mediaServersVisited = true;
       }
       if (value == VideoLibrarySection.sources) _sourcesVisited = true;
+      if (value == VideoLibrarySection.onlineSources ||
+          value == VideoLibrarySection.extensions) {
+        _onlineSection = value;
+      }
       if (value == VideoLibrarySection.discover ||
           value == VideoLibrarySection.onlineSources ||
           value == VideoLibrarySection.extensions) {
@@ -169,18 +178,34 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     });
   }
 
-  bool get _showsLocalLibrary => switch (_section) {
-        VideoLibrarySection.home ||
-        VideoLibrarySection.series ||
-        VideoLibrarySection.allVideos =>
-          true,
-        VideoLibrarySection.mediaServers ||
-        VideoLibrarySection.discover ||
-        VideoLibrarySection.onlineSources ||
-        VideoLibrarySection.extensions ||
-        VideoLibrarySection.sources =>
-          false,
+  /// 顶栏某组页签此刻代表的分区：组内上次停留的那个。
+  VideoLibrarySection _activeSectionOf(_VideoSectionGroup group) =>
+      switch (group) {
+        _VideoSectionGroup.library => _localSection,
+        _VideoSectionGroup.discover => VideoLibrarySection.discover,
+        _VideoSectionGroup.mediaServers => VideoLibrarySection.mediaServers,
+        _VideoSectionGroup.online => _onlineSection,
+        _VideoSectionGroup.import => VideoLibrarySection.sources,
       };
+
+  String _groupLabel(_VideoSectionGroup group) => switch (group) {
+    _VideoSectionGroup.library => t.library_view_media,
+    _VideoSectionGroup.discover => t.library_view_discover,
+    _VideoSectionGroup.mediaServers => t.video_library_media_servers,
+    _VideoSectionGroup.online => t.media_import_segment_sources,
+    _VideoSectionGroup.import => t.library_view_import,
+  };
+
+  bool get _showsLocalLibrary => switch (_section) {
+    VideoLibrarySection.home ||
+    VideoLibrarySection.series ||
+    VideoLibrarySection.allVideos => true,
+    VideoLibrarySection.mediaServers ||
+    VideoLibrarySection.discover ||
+    VideoLibrarySection.onlineSources ||
+    VideoLibrarySection.extensions ||
+    VideoLibrarySection.sources => false,
+  };
 
   /// 分区页面页头的标题位：页签已在壳顶部的浮动工具栏里（整个壳只有这一份，
   /// 切分区时指示条在同一个 [TabController] 上从旧分区滑到新分区），页面页头只
@@ -203,11 +228,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   ///
   /// 同时给分区一份自己的主滚动控制器（[SectionPrimaryScrollScope]）：保活分区
   /// 同时挂在树上，共用外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
-  Widget _dropScoped(bool Function() visible, Widget child) =>
-      DropSurfaceScope(
-        isActive: visible,
-        child: SectionPrimaryScrollScope(child: child),
-      );
+  Widget _dropScoped(bool Function() visible, Widget child) => DropSurfaceScope(
+    isActive: visible,
+    child: SectionPrimaryScrollScope(child: child),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -217,46 +241,69 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     );
     final List<LibrarySectionTab<VideoLibrarySection>> tabs =
         <LibrarySectionTab<VideoLibrarySection>>[
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.home,
-          label: t.nav_home,
-        ),
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.series,
-          label: t.series,
-        ),
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.allVideos,
-          label: t.video_library_all_videos,
-        ),
-        // 发现紧跟本地库视图（2026-10-05 用户要求与媒体服务器对调）；媒体服务器
-        // 是用户自己的远端库，排在发现之后；随后是来源 / 扩展，最后是管理类分区。
-        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.discover,
-            label: t.library_view_discover,
+            value: VideoLibrarySection.home,
+            label: t.nav_home,
           ),
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.mediaServers,
-          label: t.video_library_media_servers,
-        ),
-        if (online)
           LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.onlineSources,
-            label: t.library_view_sources,
+            value: VideoLibrarySection.series,
+            label: t.series,
           ),
-        if (online)
           LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.extensions,
-            label: t.media_import_segment_extensions,
+            value: VideoLibrarySection.allVideos,
+            label: t.video_library_all_videos,
           ),
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.sources,
-          label: t.library_view_import,
-        ),
-      ];
+          // 发现紧跟本地库视图（2026-10-05 用户要求与媒体服务器对调）；媒体服务器
+          // 是用户自己的远端库，排在发现之后；随后是来源 / 扩展，最后是管理类分区。
+          if (StoreRestrictedCapability.externalDiscovery.isAvailable)
+            LibrarySectionTab<VideoLibrarySection>(
+              value: VideoLibrarySection.discover,
+              label: t.library_view_discover,
+            ),
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.mediaServers,
+            label: t.video_library_media_servers,
+          ),
+          if (online)
+            LibrarySectionTab<VideoLibrarySection>(
+              value: VideoLibrarySection.onlineSources,
+              label: t.library_view_sources,
+            ),
+          if (online)
+            LibrarySectionTab<VideoLibrarySection>(
+              value: VideoLibrarySection.extensions,
+              label: t.media_import_segment_extensions,
+            ),
+          LibrarySectionTab<VideoLibrarySection>(
+            value: VideoLibrarySection.sources,
+            label: t.library_view_import,
+          ),
+        ];
+    // 顶栏只放分组（2026-10-14 用户截图「视频库顶部过多，移动端体验很差」）：
+    // 八个平级分区压成五组，组内多个分区（媒体库 = 首页 / 系列 / 全部视频；
+    // 在线源 = 来源 / 扩展）由顶栏下方的二级胶囊切换。每组页签的值就是该组
+    // 「当前 / 上次停留」的分区，点组页签即回到组内上次的位置，选中判据仍是
+    // `_section`，横滑顺序仍是上面的扁平分区表。
+    final List<LibrarySectionTab<VideoLibrarySection>> groupTabs =
+        <LibrarySectionTab<VideoLibrarySection>>[
+          for (final _VideoSectionGroup group in _VideoSectionGroup.values)
+            if (tabs.any(
+              (LibrarySectionTab<VideoLibrarySection> tab) =>
+                  _groupOf(tab.value) == group,
+            ))
+              LibrarySectionTab<VideoLibrarySection>(
+                value: _activeSectionOf(group),
+                label: _groupLabel(group),
+              ),
+        ];
+    final _VideoSectionGroup currentGroup = _groupOf(_section);
+    final List<LibrarySectionTab<VideoLibrarySection>> subTabs =
+        <LibrarySectionTab<VideoLibrarySection>>[
+          for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+            if (_groupOf(tab.value) == currentGroup) tab,
+        ];
     final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
-      tabs: tabs,
+      tabs: groupTabs,
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
@@ -286,7 +333,38 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 ],
                 selected: _section,
                 onSelect: _select,
-                child: _buildSections(navigation),
+                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
+                // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
+                // 让位自动累加两行），收放不改页面视口。
+                child: FushiFloatingChromeOverlay(
+                  chrome: subTabs.length < 2
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          // 与顶栏胶囊、页面内容同一条页边；顶上 8 + 顶栏底边 4
+                          // = 两级页签之间 12（同浏览页二级内容域）。
+                          padding: EdgeInsets.fromLTRB(
+                            FushiDesignTokens.of(context).spacing.page,
+                            FushiDesignTokens.of(context).spacing.gap,
+                            FushiDesignTokens.of(context).spacing.page,
+                            FushiDesignTokens.of(context).spacing.gap,
+                          ),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: LibrarySectionTabs<VideoLibrarySection>(
+                              // 换组即换一份页签（段数与段值都变），不复用旧
+                              // controller。
+                              key: ValueKey<_VideoSectionGroup>(currentGroup),
+                              tabs: subTabs,
+                              selected: _section,
+                              onChanged: _select,
+                              focusIdPrefix: 'video-library-subview',
+                              secondary: true,
+                              floating: true,
+                            ),
+                          ),
+                        ),
+                  child: _buildSections(navigation),
+                ),
               ),
             ),
           ),
@@ -306,16 +384,20 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               enabled: _showsLocalLibrary,
               child: _dropScoped(
                 () => _showsLocalLibrary,
-                _insetPadded(widget.localLibraryPageBuilder?.call(
-                      context,
-                      _navigationFor(_showsLocalLibrary, navigation),
-                      _localSection,
-                    )) ??
+                _insetPadded(
+                      widget.localLibraryPageBuilder?.call(
+                        context,
+                        _navigationFor(_showsLocalLibrary, navigation),
+                        _localSection,
+                      ),
+                    ) ??
                     // 主滚动视图自己把工具栏高度加成顶部内边距（内容滚到工具栏底下）。
                     HomeVideoPage(
                       repo: widget.repository,
-                      navigation:
-                          _navigationFor(_showsLocalLibrary, navigation),
+                      navigation: _navigationFor(
+                        _showsLocalLibrary,
+                        navigation,
+                      ),
                       section: _localSection,
                       libraryRefreshSignal: widget.libraryRefreshSignal,
                       onOpenScrapeTasks: widget.onOpenScrapeTasks,
@@ -352,10 +434,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                           _section == VideoLibrarySection.mediaServers,
                           navigation,
                         ),
-                        systemBackActive: widget.systemBackActive &&
+                        systemBackActive:
+                            widget.systemBackActive &&
                             _section == VideoLibrarySection.mediaServers,
                         repo: widget.repository,
-                        loadServers: widget.mediaServerServersLoader ??
+                        loadServers:
+                            widget.mediaServerServersLoader ??
                             () async => const <MediaServerEntry>[],
                       ),
                 ),
@@ -386,8 +470,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       navigation,
                     ),
                     onScrapeAll: widget.onScrapeAll,
-                    onClearAllScrapeRecords:
-                        widget.onClearAllScrapeRecords,
+                    onClearAllScrapeRecords: widget.onClearAllScrapeRecords,
                     onScrapeSource: widget.onScrapeSource,
                     onVideoScanCompleted: widget.onVideoScanCompleted,
                     scrapeTaskController: widget.scrapeTaskController,
@@ -401,6 +484,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       ],
     );
   }
+
   /// 测试替身页面不会自己加顶部内边距：整体让开叠放的工具栏。
   Widget? _insetPadded(Widget? page) =>
       page == null ? null : FushiFloatingChromeInsetPadding(child: page);
@@ -431,26 +515,37 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
     );
   }
 
-  Widget _buildOnlineSection(
-    VideoLibrarySection section,
-    Widget navigation,
-  ) =>
+  Widget _buildOnlineSection(VideoLibrarySection section, Widget navigation) =>
       switch (section) {
         VideoLibrarySection.discover => VideoDiscoveryPage(
-            key: const ValueKey<String>('video-library-discovery'),
-            navigation: navigation,
-            controller: widget.discoveryController,
-            actions: widget.discoveryActions,
-          ),
+          key: const ValueKey<String>('video-library-discovery'),
+          navigation: navigation,
+          controller: widget.discoveryController,
+          actions: widget.discoveryActions,
+        ),
         VideoLibrarySection.extensions => LibraryOnlineSourcesView(
-            domain: OnlineSourcesDomain.video,
-            section: OnlineSourcesSection.extensions,
-            navigation: navigation,
-          ),
+          domain: OnlineSourcesDomain.video,
+          section: OnlineSourcesSection.extensions,
+          navigation: navigation,
+        ),
         _ => LibraryOnlineSourcesView(
-            domain: OnlineSourcesDomain.video,
-            section: OnlineSourcesSection.sources,
-            navigation: navigation,
-          ),
+          domain: OnlineSourcesDomain.video,
+          section: OnlineSourcesSection.sources,
+          navigation: navigation,
+        ),
       };
 }
+
+/// 视频库顶栏的分组（顺序即顶栏顺序）。
+enum _VideoSectionGroup { library, discover, mediaServers, online, import }
+
+_VideoSectionGroup _groupOf(VideoLibrarySection section) => switch (section) {
+  VideoLibrarySection.home ||
+  VideoLibrarySection.series ||
+  VideoLibrarySection.allVideos => _VideoSectionGroup.library,
+  VideoLibrarySection.discover => _VideoSectionGroup.discover,
+  VideoLibrarySection.mediaServers => _VideoSectionGroup.mediaServers,
+  VideoLibrarySection.onlineSources ||
+  VideoLibrarySection.extensions => _VideoSectionGroup.online,
+  VideoLibrarySection.sources => _VideoSectionGroup.import,
+};

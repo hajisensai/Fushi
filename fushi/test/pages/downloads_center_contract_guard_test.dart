@@ -34,9 +34,11 @@ void main() {
       compactCode(methodBody(source, 'List<BrowseTab> _visibleTabs(')),
       contains(
         '[if(discover)BrowseTab.discover,if(online)BrowseTab.sources,'
-        'if(online)BrowseTab.extensions,BrowseTab.downloads,]',
+        'BrowseTab.downloads,]',
       ),
-      reason: '浏览页签顺序：发现 → 来源 → 扩展 → 下载',
+      // 2026-10-14 用户：来源 / 扩展并成一个「在线源」页签（BrowseTab.sources
+      // 那一槽），二级行右侧切来源 / 扩展。
+      reason: '浏览页签顺序：发现 → 在线源 → 下载',
     );
     final String labels = compactCode(methodBody(source, 'String _tabLabel('));
     for (final String label in <String>[
@@ -104,10 +106,23 @@ void main() {
     expect(
       code,
       contains(
-        'lateBrowseTab?_selectedTab='
-        'widget.navigationRequest?.tab??widget.initialTab;',
+        'lateBrowseTab?_selectedTab=_onlineSlotOf('
+        'widget.navigationRequest?.tab??widget.initialTab,',
       ),
       reason: '外部入口参数不得再降级为 no-op 兼容参数',
+    );
+    // 来源 / 扩展并成「在线源」页签后（2026-10-14），跳到扩展 = 落在在线源那一槽
+    // 并把二级分区切到扩展，不能静默落回来源。
+    expect(
+      code,
+      contains(
+        'lateOnlineSourcesSection_onlineSection=_onlineSectionOf('
+        'widget.navigationRequest?.tab??widget.initialTab,',
+      ),
+    );
+    expect(
+      compactCode(methodBody(source, 'static BrowseTab? _onlineSlotOf(')),
+      contains('tab==BrowseTab.extensions?BrowseTab.sources:tab'),
     );
     final String sync = compactCode(
       methodBody(source, 'TabController _syncTabController('),
@@ -133,7 +148,9 @@ void main() {
       methodBody(source, 'void didUpdateWidget('),
     );
     expect(update, contains('_downloadsSection=request.downloadsSection;'));
-    expect(update, contains('_controllerTabs.indexOf(request.tab)'));
+    expect(update, contains('_selectedTab=_onlineSlotOf(request.tab);'));
+    expect(update, contains('_onlineSection=_onlineSectionOf(request.tab);'));
+    expect(update, contains('_controllerTabs.indexOf(_selectedTab!)'));
   });
 
   test('BUG-1905：返回键只看本页 ModalRoute，不被下拉框 PopupRoute 干扰', () {
