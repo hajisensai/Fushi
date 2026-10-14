@@ -373,11 +373,22 @@ OcrAccelerationPlan planOcrAcceleration({
     detectionProviders: chosen[OcrModelKind.detection]!,
     recognitionProviders: chosen[OcrModelKind.recognition]!,
     degradeReasons: List<String>.unmodifiable(reasons),
-    intraOpNumThreads: platform == OcrPlatform.windows
-        ? processorCount.clamp(1, 2)
-        : null,
+    intraOpNumThreads: ocrIntraOpNumThreads(
+      platform: platform,
+      processorCount: processorCount,
+    ),
   );
 }
+
+/// 一个 OCR 任务的 CPU 会话开几个线程；null = 交给 ORT 默认（吃满物理核）。
+///
+/// Windows 钉 2：2026-09-26 实测 N=2 与 N=4 在噪声内持平、N≥8 明显变慢
+/// （docs/reviews/2026-09-23-manga-ocr-options.md）。跨书并行任务的上限
+/// （`mangaOcrMaxParallelTasks`）由这个数推导，两处必须读同一个函数。
+int? ocrIntraOpNumThreads({
+  required OcrPlatform platform,
+  required int processorCount,
+}) => platform == OcrPlatform.windows ? processorCount.clamp(1, 2) : null;
 
 /// isolate 内已建好的一套推理对象（检测 + 块识别器（逐列 CTC / Baberu）+
 /// PP-OCRv6 行 det/rec + 路由识别器）。
