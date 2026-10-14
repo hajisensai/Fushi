@@ -89,6 +89,30 @@ String? ttsPromptTextFromFileName(String path) {
   return hasCjk ? stem : null;
 }
 
+/// 「选择文件」复制进来的参考音频所在目录名（app 数据目录下）。
+const String kTtsReferenceAudioDirName = 'tts_reference_audio';
+
+/// 删掉 [removed] 这份声音后，它的参考音频副本能不能一起删：只认 app 复制进
+/// [referenceDir] 的文件（用户手填的任意路径绝不碰），且 [remaining] 里没有别的
+/// 声音还在用。能删返回该路径，否则 null。
+String? ttsOrphanedReferenceAudio({
+  required TtsVoicePreset removed,
+  required Iterable<TtsVoicePreset> remaining,
+  required String referenceDir,
+}) {
+  if (removed.providerId != GptSovitsTtsDescriptor.providerId) return null;
+  final String path = removed.param(GptSovitsTtsDescriptor.refAudioKey).trim();
+  if (path.isEmpty || !p.isWithin(referenceDir, path)) return null;
+  final String normalized = p.normalize(path);
+  for (final TtsVoicePreset other in remaining) {
+    final String used = other.param(GptSovitsTtsDescriptor.refAudioKey).trim();
+    if (used.isNotEmpty && p.equals(p.normalize(used), normalized)) {
+      return null;
+    }
+  }
+  return path;
+}
+
 /// 新建 / 换引擎时的初始参数：引擎声明的非凭据默认值。
 Map<String, String> ttsDefaultParams(TtsProviderDescriptor descriptor) =>
     <String, String>{
@@ -231,6 +255,9 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
   }
 
   Future<void> _delete(String id) async {
+    final TtsVoicePreset? removed = _presets
+        .where((TtsVoicePreset p) => p.id == id)
+        .firstOrNull;
     setState(() {
       _presets.removeWhere((TtsVoicePreset p) => p.id == id);
       if (_activeId == id) {
@@ -240,6 +267,24 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     _saveDebounce?.cancel();
     await _store.savePresets(_presets);
     await _store.setActivePresetId(_activeId);
+    if (removed != null) await _deleteOrphanedReferenceAudio(removed);
+  }
+
+  /// 删声音时一并清掉它独占的参考音频副本（「选择文件」复制进数据目录的那份）。
+  Future<void> _deleteOrphanedReferenceAudio(TtsVoicePreset removed) async {
+    try {
+      final Directory support = await enginePaths.supportRootDirectory();
+      final String? orphan = ttsOrphanedReferenceAudio(
+        removed: removed,
+        remaining: _presets,
+        referenceDir: p.join(support.path, kTtsReferenceAudioDirName),
+      );
+      if (orphan == null) return;
+      final File file = File(orphan);
+      if (await file.exists()) await file.delete();
+    } on FileSystemException {
+      // 删不掉（被占用）只是留一个小文件，不影响删除声音本身。
+    }
   }
 
   /// 「添加声音」只按大类选（外部服务 / 在线服务 / 系统语音）；具体是哪个引擎在
@@ -771,7 +816,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     try {
       final Directory support = await enginePaths.supportRootDirectory();
       final Directory dir = Directory(
-        p.join(support.path, 'tts_reference_audio'),
+        p.join(support.path, kTtsReferenceAudioDirName),
       );
       await dir.create(recursive: true);
       // 同名不同文件互不覆盖：时间戳前缀。原名保留，方便用户认。

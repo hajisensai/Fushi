@@ -26,6 +26,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -167,7 +168,7 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
 
   Future<void> _remove() async {
     final GptSovitsLocalSettings settings = _engine.settings;
-    final bool deleteFiles = settings.owned;
+    final bool deleteFiles = _engine.canDeleteFiles;
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
       title: deleteFiles
@@ -197,7 +198,9 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
               lines.isEmpty
                   ? t.audiobook_tts_local_log_empty
                   : lines.join('\n'),
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: Theme.of(
+                dialogContext,
+              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
             ),
           ),
         ),
@@ -423,7 +426,6 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
     final GptSovitsLocalServer server = _engine.server;
     final bool running = server.isRunning;
     final bool starting = server.phase == GptSovitsServerPhase.starting;
-    final GptSovitsLocalSettings settings = _engine.settings;
     return <Widget>[
       AdaptiveSettingsSection(
         children: <Widget>[
@@ -491,7 +493,7 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
           onPressed: () => unawaited(_remove()),
           icon: const FushiIcon(FushiIcons.delete),
           label: Text(
-            settings.owned
+            _engine.canDeleteFiles
                 ? t.audiobook_tts_local_delete
                 : t.audiobook_tts_local_remove,
           ),
@@ -507,6 +509,10 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
         ? GlassSettingsRenderer.detailHorizontalInset(context)
         : tokens.spacing.page;
     final GptSovitsInstallLayout? layout = _engine.layout;
+    final bool installedView = layout != null && !_engine.installer.isBusy;
+    final List<Widget> sections = installedView
+        ? _installedSections(layout)
+        : _installSections();
     return SettingsKitScaffold(
       title: t.audiobook_tts_local_title,
       leadingIcon: FushiIcons.voice,
@@ -517,18 +523,29 @@ class _GptSovitsLocalPageState extends State<GptSovitsLocalPage> {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => ListView(
-            controller: controller,
-            key: const ValueKey<String>('gsv-local-list'),
-            padding: EdgeInsets.fromLTRB(
-              inset,
-              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-              inset,
-              tokens.spacing.page + bottomSafeInsetOf(context),
+          ) => FushiEntranceScope(
+            // 装好 ↔ 安装中两套分组互换时重开进场窗口。
+            replayKey: installedView,
+            child: ListView(
+              controller: controller,
+              key: const ValueKey<String>('gsv-local-list'),
+              padding: EdgeInsets.fromLTRB(
+                inset,
+                tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                inset,
+                tokens.spacing.page + bottomSafeInsetOf(context),
+              ),
+              children: <Widget>[
+                for (int i = 0; i < sections.length; i++)
+                  FushiStaggeredEntrance(
+                    key: ValueKey<String>(
+                      'gsv-local-entrance-${installedView ? 'installed' : 'install'}-$i',
+                    ),
+                    index: i,
+                    child: sections[i],
+                  ),
+              ],
             ),
-            children: layout == null || _engine.installer.isBusy
-                ? _installSections()
-                : _installedSections(layout),
           ),
     );
   }

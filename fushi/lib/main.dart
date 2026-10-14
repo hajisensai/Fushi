@@ -1284,11 +1284,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
       }),
-      // 本机 GPT-SoVITS 服务：Windows 不连坐子进程，exit(0) 后它会继续占着显存
-      // 和端口。没起过时 [TtsServices.existing] 为 null，零成本。
+      // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
+      // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。
+      // 没起过时 [TtsServices.existing] 为 null，零成本。
       _guardedExitStep('local tts server stop', () async {
         await TtsServices.existing?.localGptSovits
-            .stop()
+            .shutdown()
             .timeout(const Duration(seconds: 2));
       }),
     ]);

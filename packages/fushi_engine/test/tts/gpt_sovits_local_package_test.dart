@@ -6,6 +6,10 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -255,7 +259,12 @@ void main() {
         spawn: (String exe, List<String> args) async {
           tarArgs = args;
           return _FakeTar(
-            () => _makeLayout(p.join(dir.path, 'GPT-SoVITS-v2pro-20261006')),
+            () => _makeLayout(
+              p.join(
+                gptSovitsPackageDir(dir.path),
+                'GPT-SoVITS-v2pro-20261006',
+              ),
+            ),
           );
         },
       );
@@ -271,11 +280,15 @@ void main() {
       expect(layout, isNotNull);
       expect(File(layout!.appConfig).existsSync(), isTrue);
       expect(tarArgs!.first, '-xvf');
-      expect(tarArgs, contains(dir.path));
+      // 解到安装目录下的专属子目录，不直接解进用户选的目录。
+      expect(tarArgs, contains(gptSovitsPackageDir(dir.path)));
+      expect(tarArgs, isNot(contains(dir.path)));
       expect(installer.extractedEntries, 3);
       // 解完删包。
       expect(
-        File(p.join(dir.path, 'GPT-SoVITS-v9-20300101.7z')).existsSync(),
+        File(
+          p.join(gptSovitsPackageDir(dir.path), 'GPT-SoVITS-v9-20300101.7z'),
+        ).existsSync(),
         isFalse,
       );
       expect(requested.last.path, endsWith('GPT-SoVITS-v9-20300101.7z'));
@@ -302,6 +315,70 @@ void main() {
       expect(installer.failure, GptSovitsInstallFailure.noExtractor);
       expect(clients, 1);
       expect(dir.listSync(), isEmpty);
+    });
+
+    test('清单不给 sha256：不装清单里的包，退回钉死摘要的兜底包', () async {
+      final List<int> body = utf8.encode('tampered 7z bytes');
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      server.listen((HttpRequest request) async {
+        if (request.uri.path.startsWith('/api/')) {
+          request.response.write(
+            jsonEncode(<Object?>[
+              <String, Object?>{
+                'type': 'file',
+                'path': 'GPT-SoVITS-v9-20300101.7z',
+                'size': body.length,
+              },
+            ]),
+          );
+        } else {
+          request.response.add(body);
+        }
+        await request.response.close();
+      });
+      int tarRuns = 0;
+      final GptSovitsInstaller installer = GptSovitsInstaller(
+        httpClientFactory: () => _RedirectingClient(server.port),
+        run: tarOk(),
+        spawn: (String exe, List<String> args) async {
+          tarRuns++;
+          return _FakeTar(() {});
+        },
+      );
+      final GptSovitsInstallLayout? layout = await installer.install(
+        installDir: dir.path,
+        source: GptSovitsPackageSource.huggingFace,
+        variant: GptSovitsPackageVariant.standard,
+      );
+      await server.close(force: true);
+      expect(layout, isNull);
+      expect(installer.package!.name, kGptSovitsFallbackPackages.first.name);
+      expect(installer.package!.sha256, isNotNull);
+      // 假服务器回的是篡改内容：兜底包校验失败，一字节不解压。
+      expect(installer.failure, GptSovitsInstallFailure.corrupt);
+      expect(tarRuns, 0);
+    });
+
+    test('没有摘要的包只能借用同名同体积的钉死摘要', () {
+      final GptSovitsPackage pinned = kGptSovitsFallbackPackages.first;
+      GptSovitsPackage unsigned(int size) => GptSovitsPackage(
+        name: pinned.name,
+        sizeBytes: size,
+        sha256: null,
+        date: pinned.date,
+        variant: pinned.variant,
+      );
+      expect(
+        gptSovitsWithTrustedDigest(unsigned(pinned.sizeBytes))?.sha256,
+        pinned.sha256,
+      );
+      expect(
+        gptSovitsWithTrustedDigest(unsigned(pinned.sizeBytes + 1)),
+        isNull,
+      );
     });
   });
 
@@ -350,6 +427,129 @@ void main() {
       await engine.remove(deleteFiles: true);
       expect(engine.isInstalled, isFalse);
       expect(Directory(p.join(dir.path, 'pkg')).existsSync(), isTrue);
+    });
+
+    /// 预置一份已保存设置的偏好仓（模拟安装器已经装好、引擎已经记下）。
+    MemoryPrefStore prefsWith(GptSovitsLocalSettings settings) =>
+        MemoryPrefStore()
+          ..values[kGptSovitsLocalPrefKey] = jsonEncode(settings.toJson());
+
+    test('删除只删 app 专属子目录，用户选的安装目录与其中别的文件不动', () async {
+      final String installDir = p.join(dir.path, 'D_drive_root');
+      final File userFile = File(p.join(installDir, 'my_notes.txt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('keep me');
+      final String packageDir = gptSovitsPackageDir(installDir);
+      _makeLayout(p.join(packageDir, 'GPT-SoVITS-v2pro-20261006'));
+      File(
+        p.join(packageDir, 'GPT-SoVITS-v5-20261005.7z.part'),
+      ).writeAsStringSync('partial');
+      final GptSovitsLocalEngine engine = GptSovitsLocalEngine(
+        prefs: prefsWith(GptSovitsLocalSettings(dir: packageDir, owned: true)),
+        httpClientFactory: HttpClient.new,
+        supported: true,
+        server: GptSovitsLocalServer(probe: (int port) async => false),
+      );
+      expect(engine.isInstalled, isTrue);
+      expect(engine.canDeleteFiles, isTrue);
+
+      await engine.remove(deleteFiles: true);
+      expect(engine.isInstalled, isFalse);
+      expect(Directory(packageDir).existsSync(), isFalse);
+      expect(Directory(installDir).existsSync(), isTrue);
+      expect(userFile.readAsStringSync(), 'keep me');
+    });
+
+    test('记录指向的不是专属子目录：即使 owned 也绝不删', () async {
+      final String userDir = p.join(dir.path, 'user_dir');
+      _makeLayout(userDir);
+      final GptSovitsLocalEngine engine = GptSovitsLocalEngine(
+        prefs: prefsWith(GptSovitsLocalSettings(dir: userDir, owned: true)),
+        httpClientFactory: HttpClient.new,
+        supported: true,
+        server: GptSovitsLocalServer(probe: (int port) async => false),
+      );
+      expect(engine.canDeleteFiles, isFalse);
+      await engine.remove(deleteFiles: true);
+      expect(File(p.join(userDir, 'api_v2.py')).existsSync(), isTrue);
+    });
+
+    test('自动拉起失败一次后不再每句重拉，手动启动解除', () async {
+      _makeLayout(p.join(dir.path, 'pkg'));
+      int spawns = 0;
+      final GptSovitsLocalEngine engine = GptSovitsLocalEngine(
+        prefs: MemoryPrefStore(),
+        httpClientFactory: HttpClient.new,
+        supported: true,
+        server: GptSovitsLocalServer(
+          spawn:
+              (
+                String exe,
+                List<String> args, {
+                workingDirectory,
+                environment,
+              }) async {
+                spawns++;
+                throw const ProcessException('python.exe', <String>[], 'nope');
+              },
+          probe: (int port) async => false,
+          probeInterval: Duration.zero,
+        ),
+      );
+      expect(await engine.useExisting(dir.path), isTrue);
+      await engine.ensureRunningFor('http://127.0.0.1:9880');
+      expect(spawns, 1);
+      expect(engine.autoStartBlocked, isTrue);
+      await engine.ensureRunningFor('http://127.0.0.1:9880');
+      await engine.ensureRunningFor('http://127.0.0.1:9880');
+      expect(spawns, 1);
+      expect(await engine.start(), isFalse);
+      expect(spawns, 2);
+    });
+
+    test('等服务就绪期间取消合成：立刻报 cancelled，不干等启动', () async {
+      _makeLayout(p.join(dir.path, 'pkg'));
+      final Completer<bool> probeGate = Completer<bool>();
+      final GptSovitsLocalEngine engine = GptSovitsLocalEngine(
+        prefs: MemoryPrefStore(),
+        httpClientFactory: HttpClient.new,
+        supported: true,
+        // 首次探活一直不返回：模拟加载底模的漫长等待。
+        server: GptSovitsLocalServer(probe: (int port) => probeGate.future),
+      );
+      expect(await engine.useExisting(dir.path), isTrue);
+      final TtsProvider provider = AutoStartGptSovitsTtsDescriptor(engine)
+          .create(
+            const TtsVoicePreset(
+              id: 'v',
+              providerId: GptSovitsTtsDescriptor.providerId,
+              name: 'v',
+              params: <String, String>{
+                GptSovitsTtsDescriptor.endpointKey: 'http://127.0.0.1:9880',
+              },
+            ),
+            const TtsHost(),
+          );
+      final TtsCancelToken cancel = TtsCancelToken();
+      final Future<TtsResult> pending = provider.synthesize(
+        'テスト',
+        outputPath: p.join(dir.path, 'out.wav'),
+        cancel: cancel,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      cancel.cancel();
+      await expectLater(
+        pending.timeout(const Duration(seconds: 2)),
+        throwsA(
+          isA<TtsFailure>().having(
+            (TtsFailure f) => f.code,
+            'code',
+            TtsFailureCode.cancelled,
+          ),
+        ),
+      );
+      await engine.stop();
+      probeGate.complete(false);
     });
 
     test('设置的 JSON 往返，坏值回落默认', () {

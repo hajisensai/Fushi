@@ -43,7 +43,8 @@ class GptSovitsPackage {
   final String name;
   final int sizeBytes;
 
-  /// 小写十六进制；null = 清单里没给（不做摘要校验，只校验体积）。
+  /// 小写十六进制；null = 清单里没给。没有摘要的包**不安装**（整合包里是要直接执行
+  /// 的 python runtime，只校验体积等于不校验），见 [gptSovitsWithTrustedDigest]。
   final String? sha256;
 
   /// 文件名里的 `yyyymmdd`，用来挑最新。
@@ -93,8 +94,25 @@ const List<GptSovitsPackage> kGptSovitsFallbackPackages = <GptSovitsPackage>[
   ),
 ];
 
-/// 解压后大约占用（下载包另算；装完删包）。
-const int kGptSovitsExtractedBytes = 19 * 1024 * 1024 * 1024;
+/// 清单里的一包能不能装：自带 sha256 的原样返回；没带的只在名字与体积都和代码里钉死的
+/// [kGptSovitsFallbackPackages] 某一包一致时借用那份摘要；都不满足返回 null（不装）。
+GptSovitsPackage? gptSovitsWithTrustedDigest(GptSovitsPackage pkg) {
+  if (pkg.sha256 != null) return pkg;
+  for (final GptSovitsPackage pinned in kGptSovitsFallbackPackages) {
+    if (pinned.name == pkg.name && pinned.sizeBytes == pkg.sizeBytes) {
+      return pinned;
+    }
+  }
+  return null;
+}
+
+/// 安装目录下 app 专属的子目录：下载包、`.part` 与解压结果全在这里，「删除」也只删
+/// 它——用户选的安装目录本身（可能是 `D:\` 或装着别的东西）绝不碰。
+const String kGptSovitsInstallSubdir = 'fushi-gpt-sovits';
+
+/// [installDir] 对应的 app 专属子目录。
+String gptSovitsPackageDir(String installDir) =>
+    p.join(installDir, kGptSovitsInstallSubdir);
 
 final RegExp _packageName = RegExp(
   r'^GPT-SoVITS-[^/]*?(\d{8})([^/]*)\.7z$',
@@ -397,8 +415,9 @@ class GptSovitsInstaller extends EngineChangeNotifier {
     _tar?.kill();
   }
 
-  /// 装进 [installDir]。返回装好的布局；失败 / 取消返回 null（原因在 [failure]）。
-  /// 下到一半的包留在安装目录（`.part`），下次安装从断点续。
+  /// 装进 [installDir] 下的专属子目录（[gptSovitsPackageDir]）。返回装好的布局；
+  /// 失败 / 取消返回 null（原因在 [failure]）。下到一半的包留在专属子目录（`.part`），
+  /// 下次安装从断点续。
   Future<GptSovitsInstallLayout?> install({
     required String installDir,
     required GptSovitsPackageSource source,
@@ -424,15 +443,22 @@ class GptSovitsInstaller extends EngineChangeNotifier {
           pickLatestGptSovitsPackage(kGptSovitsFallbackPackages, variant)!;
       package = pkg;
       if (_cancelled) return _cancel();
+      if (pkg.sha256 == null) {
+        // _latest 只挑有可信摘要的包、兜底包全部钉了摘要；走到这里是逻辑被改坏了。
+        detail = 'no sha256 for ${pkg.name}';
+        _set(GptSovitsInstallStep.failed, GptSovitsInstallFailure.corrupt);
+        return null;
+      }
 
+      final String packageDir = gptSovitsPackageDir(installDir);
       try {
-        await Directory(installDir).create(recursive: true);
+        await Directory(packageDir).create(recursive: true);
       } on FileSystemException catch (e) {
         detail = e.message;
         _set(GptSovitsInstallStep.failed, GptSovitsInstallFailure.disk);
         return null;
       }
-      final File archive = File(p.join(installDir, pkg.name));
+      final File archive = File(p.join(packageDir, pkg.name));
       if (!await archive.exists() || await archive.length() != pkg.sizeBytes) {
         _set(GptSovitsInstallStep.downloading);
         try {
@@ -471,7 +497,7 @@ class GptSovitsInstaller extends EngineChangeNotifier {
       if (_cancelled) return _cancel();
 
       _set(GptSovitsInstallStep.extracting);
-      final bool extracted = await _extract(archive.path, installDir);
+      final bool extracted = await _extract(archive.path, packageDir);
       if (_cancelled) return _cancel();
       if (!extracted) {
         _set(
@@ -483,7 +509,7 @@ class GptSovitsInstaller extends EngineChangeNotifier {
 
       _set(GptSovitsInstallStep.configuring);
       final GptSovitsInstallLayout? layout = GptSovitsInstallLayout.find(
-        installDir,
+        packageDir,
       );
       if (layout == null) {
         _set(
@@ -531,12 +557,18 @@ class GptSovitsInstaller extends EngineChangeNotifier {
         response.stream.timeout(const Duration(seconds: 30)),
       );
       final Object? json = jsonDecode(body);
-      return pickLatestGptSovitsPackage(switch (source) {
+      final List<GptSovitsPackage> listed = switch (source) {
         GptSovitsPackageSource.huggingFace => parseHfGptSovitsListing(json),
         GptSovitsPackageSource.modelScope => parseModelScopeGptSovitsListing(
           json,
         ),
-      }, variant);
+      };
+      // 没有可信摘要的包不参与挑选（宁可装钉死的兜底包）。
+      return pickLatestGptSovitsPackage(<GptSovitsPackage>[
+        for (final GptSovitsPackage pkg in listed)
+          if (gptSovitsWithTrustedDigest(pkg) case final GptSovitsPackage ok)
+            ok,
+      ], variant);
     } on Object {
       // 清单只用来挑最新；取不到用内置兜底，不挡安装。
       return null;

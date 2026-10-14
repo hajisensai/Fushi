@@ -169,6 +169,150 @@ void main() {
     expect(process.kills, 1);
   });
 
+  test('启动前探活期间 stop：不再 spawn，也不会被置 running', () async {
+    int spawns = 0;
+    final Completer<bool> firstProbe = Completer<bool>();
+    final GptSovitsLocalServer server = GptSovitsLocalServer(
+      spawn:
+          (
+            String exe,
+            List<String> args, {
+            workingDirectory,
+            environment,
+          }) async {
+            spawns++;
+            return _FakeProcess();
+          },
+      probe: (int port) => firstProbe.future,
+      probeInterval: Duration.zero,
+    );
+    final Future<bool> started = server.start(spec);
+    await Future<void>.delayed(Duration.zero);
+    expect(server.phase, GptSovitsServerPhase.starting);
+    await server.stop();
+    firstProbe.complete(false);
+    expect(await started, isFalse);
+    expect(spawns, 0);
+    expect(server.phase, GptSovitsServerPhase.stopped);
+    expect(server.endpoint, isNull);
+  });
+
+  test('spawn 期间 stop：刚起的进程立即被杀，不留孤儿', () async {
+    final _FakeProcess process = _FakeProcess();
+    final Completer<Process> spawnGate = Completer<Process>();
+    final GptSovitsLocalServer server = GptSovitsLocalServer(
+      spawn: (String exe, List<String> args, {workingDirectory, environment}) =>
+          spawnGate.future,
+      probe: (int port) async => false,
+      probeInterval: Duration.zero,
+    );
+    final Future<bool> started = server.start(spec);
+    await Future<void>.delayed(Duration.zero);
+    await server.stop();
+    spawnGate.complete(process);
+    expect(await started, isFalse);
+    expect(process.kills, 1);
+    expect(server.phase, GptSovitsServerPhase.stopped);
+    // 被取消的进程不登记 pid（下次启动不会把它当成可认领的自家服务）。
+    expect(File('${dir.path}/$kGptSovitsPidFileName').existsSync(), isFalse);
+  });
+
+  test('上次崩溃留下的自家服务（pid 文件 + 映像匹配）：认领，可以停止', () async {
+    File('${dir.path}/$kGptSovitsPidFileName').writeAsStringSync(
+      jsonEncode(<String, Object?>{'pid': 777, 'port': 19880}),
+    );
+    final List<int> killed = <int>[];
+    final GptSovitsLocalServer server = GptSovitsLocalServer(
+      spawn:
+          (
+            String exe,
+            List<String> args, {
+            workingDirectory,
+            environment,
+          }) async => throw StateError('must not spawn'),
+      probe: (int port) async => true,
+      pidOwnerCheck: (int pid, String exe) async =>
+          pid == 777 && exe == spec.executable,
+      pidKill: (int pid) {
+        killed.add(pid);
+        return true;
+      },
+    );
+    expect(await server.start(spec), isTrue);
+    expect(server.isExternal, isFalse);
+    expect(server.endpoint, 'http://127.0.0.1:19880');
+    await server.stop();
+    expect(killed, <int>[777]);
+    expect(File('${dir.path}/$kGptSovitsPidFileName').existsSync(), isFalse);
+  });
+
+  test('pid 文件在但进程不是本整合包的：仍当外部服务借用，不杀', () async {
+    File('${dir.path}/$kGptSovitsPidFileName').writeAsStringSync(
+      jsonEncode(<String, Object?>{'pid': 777, 'port': 19880}),
+    );
+    final List<int> killed = <int>[];
+    final GptSovitsLocalServer server = GptSovitsLocalServer(
+      probe: (int port) async => true,
+      pidOwnerCheck: (int pid, String exe) async => false,
+      pidKill: (int pid) {
+        killed.add(pid);
+        return true;
+      },
+    );
+    expect(await server.start(spec), isTrue);
+    expect(server.isExternal, isTrue);
+    await server.stop();
+    expect(killed, isEmpty);
+  });
+
+  test('自起进程写 pid 文件、退出后删掉', () async {
+    final _FakeProcess process = _FakeProcess();
+    final GptSovitsLocalServer server = GptSovitsLocalServer(
+      spawn:
+          (
+            String exe,
+            List<String> args, {
+            workingDirectory,
+            environment,
+          }) async => process,
+      probe: _probeAfter(1),
+      probeInterval: Duration.zero,
+    );
+    expect(await server.start(spec), isTrue);
+    final File pidFile = File('${dir.path}/$kGptSovitsPidFileName');
+    expect(jsonDecode(pidFile.readAsStringSync()), <String, Object?>{
+      'pid': 4242,
+      'port': 19880,
+    });
+    await server.stop();
+    await Future<void>.delayed(Duration.zero);
+    expect(pidFile.existsSync(), isFalse);
+  });
+
+  test('探活只认 api_v2 的路由表', () {
+    expect(
+      gptSovitsOpenApiLooksLikeApiV2(
+        jsonEncode(<String, Object?>{
+          'paths': <String, Object?>{
+            '/tts': <String, Object?>{},
+            '/control': <String, Object?>{},
+            '/set_gpt_weights': <String, Object?>{},
+          },
+        }),
+      ),
+      isTrue,
+    );
+    expect(
+      gptSovitsOpenApiLooksLikeApiV2(
+        jsonEncode(<String, Object?>{
+          'paths': <String, Object?>{'/items': <String, Object?>{}},
+        }),
+      ),
+      isFalse,
+    );
+    expect(gptSovitsOpenApiLooksLikeApiV2('<html>'), isFalse);
+  });
+
   test('没装（可执行文件不存在）→ notInstalled，不起进程', () async {
     int spawns = 0;
     final GptSovitsLocalServer server = GptSovitsLocalServer(

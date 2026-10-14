@@ -39,6 +39,7 @@ class GptSovitsLocalSettings {
   final GptSovitsPackageSource source;
 
   /// 是不是 app 装的：只有 app 装的才提供「删除」（用户自己的整合包只「移除」）。
+  /// app 装的 [dir] 恒为安装目录下的专属子目录（[kGptSovitsInstallSubdir]）。
   final bool owned;
 
   GptSovitsLocalSettings copyWith({
@@ -126,7 +127,15 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
   Future<void> setSource(GptSovitsPackageSource source) =>
       _save(settings.copyWith(source: source));
 
+  /// 朗读时自动拉起失败过一次就不再自动重拉（否则每一句都要再等一轮 5 分钟超时、
+  /// 再起一次注定失败的进程），直到用户有所动作：手动启动、重装、换整合包、改端口。
+  bool _autoStartBlocked = false;
+
+  /// 自动拉起是否已因失败暂停（设置页 / 测试读）。
+  bool get autoStartBlocked => _autoStartBlocked;
+
   Future<void> setPort(int port) async {
+    _autoStartBlocked = false;
     if (server.phase != GptSovitsServerPhase.stopped) await server.stop();
     await _save(settings.copyWith(port: port));
   }
@@ -139,6 +148,15 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
 
   bool get isInstalled => layout != null;
 
+  /// 「删除」会不会真删文件：只有 app 装的、且记录的是专属子目录时才会。
+  bool get canDeleteFiles {
+    final GptSovitsLocalSettings current = settings;
+    final String? dir = current.dir;
+    return current.owned &&
+        dir != null &&
+        p.basename(dir) == kGptSovitsInstallSubdir;
+  }
+
   /// 服务地址（预设里填它）。
   String get endpoint => 'http://127.0.0.1:${settings.port}';
 
@@ -146,18 +164,22 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
   static String defaultInstallDir(Directory supportRoot) =>
       p.join(supportRoot.path, 'gpt_sovits');
 
-  /// 下载并安装到 [installDir]。
+  /// 下载并安装到 [installDir] 下的专属子目录（[gptSovitsPackageDir]）。记下的、
+  /// 将来「删除」会删的只有那个子目录。
   Future<bool> install({
     required String installDir,
     required GptSovitsPackageVariant variant,
   }) async {
+    _autoStartBlocked = false;
     final GptSovitsInstallLayout? installed = await installer.install(
       installDir: installDir,
       source: settings.source,
       variant: variant,
     );
     if (installed == null) return false;
-    await _save(settings.copyWith(dir: installDir, owned: true));
+    await _save(
+      settings.copyWith(dir: gptSovitsPackageDir(installDir), owned: true),
+    );
     return true;
   }
 
@@ -170,17 +192,22 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
     } on FileSystemException {
       return false;
     }
+    _autoStartBlocked = false;
     await _save(settings.copyWith(dir: dir, owned: false));
     return true;
   }
 
-  /// 停服务并忘掉整合包；[deleteFiles] 且是 app 装的才真删目录。
+  /// 停服务并忘掉整合包；[deleteFiles] 且是 app 装的才真删——只删 app 专属子目录
+  /// （名字不是 [kGptSovitsInstallSubdir] 的一律不删，防记录被改坏时误删用户目录）。
   Future<void> remove({required bool deleteFiles}) async {
+    installer.cancel();
     await server.stop();
+    _autoStartBlocked = false;
     final GptSovitsLocalSettings current = settings;
+    final bool deletable = canDeleteFiles;
     await _save(current.copyWith(clearDir: true, owned: false));
     final String? dir = current.dir;
-    if (deleteFiles && current.owned && dir != null) {
+    if (deleteFiles && deletable && dir != null) {
       try {
         await Directory(dir).delete(recursive: true);
       } on FileSystemException {
@@ -189,7 +216,13 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
     }
   }
 
-  Future<bool> start() async {
+  /// 用户手动启动（同时解除自动拉起的失败暂停）。
+  Future<bool> start() {
+    _autoStartBlocked = false;
+    return _launch();
+  }
+
+  Future<bool> _launch() async {
     final GptSovitsInstallLayout? found = layout;
     if (found == null) return false;
     try {
@@ -202,12 +235,24 @@ class GptSovitsLocalEngine extends EngineChangeNotifier {
 
   Future<void> stop() => server.stop();
 
+  /// 退出 app 时调用：停服务，并取消进行中的安装（解压中的 tar 子进程一并杀掉）。
+  Future<void> shutdown() async {
+    installer.cancel();
+    await server.stop();
+  }
+
   /// 朗读要用 [endpoint] 时调用：它指向本机托管的端口且已安装，就把服务拉起来并
-  /// 等就绪；与本机托管无关的地址什么都不做。
+  /// 等就绪；与本机托管无关的地址什么都不做。自动拉起失败过就不再重试（见
+  /// [autoStartBlocked]），照常让请求去连、报「无法连接语音服务」。
   Future<void> ensureRunningFor(String endpoint) async {
     if (!isSupported || !isInstalled || server.isRunning) return;
+    if (_autoStartBlocked) return;
     if (!gptSovitsEndpointIsManaged(endpoint, settings.port)) return;
-    await start();
+    final bool ok = await _launch();
+    // 被用户停止（stopped）不算失败；起不来才暂停自动拉起。
+    if (!ok && server.phase == GptSovitsServerPhase.failed) {
+      _autoStartBlocked = true;
+    }
   }
 
   @override
@@ -256,16 +301,42 @@ class _AutoStartTtsProvider extends TtsProvider {
     required String outputPath,
     required TtsCancelToken cancel,
   }) async {
-    // 拉不起来不在这里报：照常发请求，连不上就是「无法连接语音服务」。
-    await _ensure();
+    // 拉不起来不在这里报：照常发请求，连不上就是「无法连接语音服务」。等服务就绪
+    // 最长要几分钟，期间取消（翻页 / 停止朗读）必须立刻生效，不能干等。
+    await _awaitOrCancel(_ensure(), cancel);
     cancel.throwIfCancelled();
     return _inner.synthesize(text, outputPath: outputPath, cancel: cancel);
   }
 
   @override
   Future<List<TtsVoice>> listVoices({TtsCancelToken? cancel}) async {
-    await _ensure();
+    if (cancel == null) {
+      await _ensure();
+    } else {
+      await _awaitOrCancel(_ensure(), cancel);
+      cancel.throwIfCancelled();
+    }
     return _inner.listVoices(cancel: cancel);
+  }
+
+  /// 等 [work]，但 [cancel] 一触发就返回（work 继续在后台跑完——服务照样起来，
+  /// 下一句直接用）。
+  static Future<void> _awaitOrCancel(
+    Future<void> work,
+    TtsCancelToken cancel,
+  ) async {
+    final Completer<void> cancelled = Completer<void>();
+    final void Function() unregister = cancel.onCancel(() {
+      if (!cancelled.isCompleted) cancelled.complete();
+    });
+    try {
+      await Future.any(<Future<void>>[
+        work.catchError((Object _) {}),
+        cancelled.future,
+      ]);
+    } finally {
+      unregister();
+    }
   }
 
   @override

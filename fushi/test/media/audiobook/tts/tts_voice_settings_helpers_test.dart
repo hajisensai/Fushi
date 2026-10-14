@@ -1,5 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
+import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   group('ttsEndpointIsLoopback', () {
@@ -32,6 +35,56 @@ void main() {
       expect(ttsPromptTextFromFileName('/v/ref.wav'), isNull);
       expect(ttsPromptTextFromFileName('/v/001_.wav'), isNull);
       expect(ttsPromptTextFromFileName('/v/sample_02.wav'), isNull);
+    });
+  });
+
+  group('ttsOrphanedReferenceAudio', () {
+    final String refDir = p.join('data', kTtsReferenceAudioDirName);
+    TtsVoicePreset voice(String id, String refAudio) => TtsVoicePreset(
+      id: id,
+      providerId: GptSovitsTtsDescriptor.providerId,
+      name: id,
+      params: <String, String>{GptSovitsTtsDescriptor.refAudioKey: refAudio},
+    );
+
+    test('app 复制进来的、没人再用的副本随声音删除', () {
+      final String copied = p.join(refDir, '1_ref.wav');
+      expect(
+        ttsOrphanedReferenceAudio(
+          removed: voice('a', copied),
+          remaining: <TtsVoicePreset>[voice('b', p.join(refDir, '2_x.wav'))],
+          referenceDir: refDir,
+        ),
+        copied,
+      );
+    });
+
+    test('别的声音还在用、或是用户手填的外部路径：不删', () {
+      final String copied = p.join(refDir, '1_ref.wav');
+      expect(
+        ttsOrphanedReferenceAudio(
+          removed: voice('a', copied),
+          remaining: <TtsVoicePreset>[voice('b', copied)],
+          referenceDir: refDir,
+        ),
+        isNull,
+      );
+      expect(
+        ttsOrphanedReferenceAudio(
+          removed: voice('a', p.join('voices', 'mine.wav')),
+          remaining: const <TtsVoicePreset>[],
+          referenceDir: refDir,
+        ),
+        isNull,
+      );
+      expect(
+        ttsOrphanedReferenceAudio(
+          removed: voice('a', ''),
+          remaining: const <TtsVoicePreset>[],
+          referenceDir: refDir,
+        ),
+        isNull,
+      );
     });
   });
 }
