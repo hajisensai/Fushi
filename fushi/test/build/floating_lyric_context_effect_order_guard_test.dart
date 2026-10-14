@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3364：悬浮字幕多句时，上下文行的 per-range 降亮画刷（`SetDrawingEffect`）
+/// BUG-3388：悬浮字幕多句时，上下文行的 per-range 降亮画刷（`SetDrawingEffect`）
 /// 曾在描边 / 投影遍之前就挂在 layout 上——drawing effect 会盖掉 DrawTextLayout
 /// 传入的画刷，于是上下文行的描边被画成降亮的字色、与字形糊成一团。并且 layout
 /// 跨帧复用，上一帧挂的效果会一直留着。

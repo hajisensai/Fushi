@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3365：阅读器快捷设置改悬浮字幕字号时，原实现手拼一次
+/// BUG-3389：阅读器快捷设置改悬浮字幕字号时，原实现手拼一次
 /// `FloatingLyricChannel.updateStyle(...)` 只带字号与几种颜色，漏了圆角 / 窗宽
 /// （以及字体、排版、描边、工具条配色）。原生 `StyleFromArgs` 对缺字段回落结构体
 /// 默认值，于是改一次字号圆角就变直角、自设窗宽丢失。修法：与设置页走同一条
