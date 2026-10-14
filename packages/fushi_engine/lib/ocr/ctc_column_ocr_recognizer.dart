@@ -59,8 +59,11 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     required bool vertical,
     List<OcrRect>? lineHints,
   }) async {
-    final List<OcrRect> detected =
-        lineHints ?? await _lineDetector.detectInBlock(page, box);
+    // 调用方给了行框时倾角归调用方（路由层用同一次检测估好再挂回来）。
+    final ({List<OcrRect> lines, double tilt}) layout = lineHints != null
+        ? (lines: lineHints, tilt: 0.0)
+        : await _lineDetector.detectLayoutInBlock(page, box);
+    final List<OcrRect> detected = layout.lines;
     // 方向按检出行长度投票（宽扁的多列竖排常被外形或碎片带偏），没有明确的行时
     // 保持调用方的判断。
     final bool blockVertical = voteOcrLineOrientation(detected) ?? vertical;
@@ -113,6 +116,7 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
       vertical: blockVertical,
       lines: texts,
       lineBoxes: boxes,
+      lineTilt: layout.tilt,
       confidence: confidence,
     );
   }

@@ -399,7 +399,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         final list = await api.files.list(
           spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
           q: "'$qParent' in parents and trashed=false",
-          $fields: 'nextPageToken,files(id,name,mimeType,size)',
+          $fields: 'nextPageToken,files(id,name,mimeType,size,md5Checksum)',
           pageSize: 1000,
           pageToken: pageToken,
         );
@@ -410,6 +410,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
               name: f.name!,
               isFolder: f.mimeType == _folderMimeType,
               sizeBytes: f.size != null ? int.tryParse(f.size!) : null,
+              // 内容 MD5：只有二进制文件有，文件夹 / Google 文档为 null。
+              revision: f.md5Checksum,
             ));
           }
         }

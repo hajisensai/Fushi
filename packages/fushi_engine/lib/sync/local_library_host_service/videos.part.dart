@@ -417,11 +417,14 @@ mixin _LocalLibraryHostVideos
   }) async {
     final ({int positionMs, int updatedAtMs}) current =
         await getVideoPosition(id, episodeIndex: episodeIndex);
+    // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,
-      localUpdatedAtMs: current.updatedAtMs,
+      localUpdatedAtMs:
+          trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs),
       remotePositionMs: positionMs < 0 ? 0 : positionMs,
-      remoteUpdatedAtMs: updatedAtMs,
+      remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
     );
     if (winner.updatedAtMs == current.updatedAtMs &&
         winner.positionMs == current.positionMs) {
@@ -513,8 +516,8 @@ mixin _LocalLibraryHostVideos
       String id, VideoPlaybackSyncState incoming) async {
     if (incoming.isEmpty) return;
     if (await _db.getVideoBookByBookUid(id) == null) return;
-    final int nowCapMs = DateTime.now().millisecondsSinceEpoch + 5 * 60 * 1000;
-    int capAt(int at) => at > nowCapMs ? nowCapMs : at;
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    int capAt(int at) => capFutureSyncStamp(at, nowMs: nowMs);
     final VideoPlaybackSyncState capped = VideoPlaybackSyncState(
       delayMs: incoming.delayMs
           .clamp(-kVideoSubtitleDelayLimitMs, kVideoSubtitleDelayLimitMs),

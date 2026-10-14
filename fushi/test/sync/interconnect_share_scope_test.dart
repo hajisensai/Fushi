@@ -132,6 +132,13 @@ void main() {
     test('关掉共享收藏：上行 payload 无收藏族，且对端收藏不落本地库', () async {
       final FushiDatabase db = await _freshDb('agg_share_fav_off_');
       addTearDown(db.close);
+      // 本机先有一条 host 没有的统计（仍许可的族），保证合并结果与 host 不同、
+      // 上行照常发生——否则内容相同会跳过 PUT，裁剪断言就无从验证。
+      await db.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-06-02',
+        count: 4,
+      );
 
       Object? pushedJson;
       await AggregateSyncService(db).syncOverClient(
@@ -145,6 +152,9 @@ void main() {
       expect(outgoing.readingStats.map((ReadingStatRecord r) => r.title),
           contains('Peer Book'),
           reason: '统计仍许可，必须照常共享');
+      expect(outgoing.miningStats.map((MiningRecord r) => r.dateKey),
+          contains('2026-06-02'),
+          reason: '本机统计照常上行');
       expect(outgoing.favoriteWords, isEmpty);
       expect(outgoing.favoriteSentences, isEmpty);
 
@@ -155,6 +165,14 @@ void main() {
     test('关掉共享统计：上行 payload 无统计族，且对端统计不落本地库', () async {
       final FushiDatabase db = await _freshDb('agg_share_stats_off_');
       addTearDown(db.close);
+      // 本机先有一条 host 没有的收藏词（仍许可的族），保证上行照常发生。
+      await db.addFavoriteWord(
+        expression: 'localword',
+        reading: 'r',
+        glossary: 'g',
+        sourceType: 'book',
+        dateKey: '2026-06-02',
+      );
 
       Object? pushedJson;
       await AggregateSyncService(db).syncOverClient(
@@ -169,7 +187,7 @@ void main() {
       expect(outgoing.videoStats, isEmpty);
       expect(outgoing.lookupMiningCounters, isEmpty);
       expect(outgoing.favoriteWords.map((FavoriteWordRecord r) => r.expression),
-          contains('peerword'),
+          containsAll(<String>['peerword', 'localword']),
           reason: '收藏仍许可，必须照常共享');
 
       // 下行：对端的阅读统计不得被折进本地库。
