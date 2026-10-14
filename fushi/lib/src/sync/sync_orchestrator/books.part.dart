@@ -192,7 +192,7 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
   /// 两条 sweep 只差「哪种条目」与「host 位置从哪读」，读写与基线都在
   /// [InterconnectPlaybackPositionSync]。对 [localKeys] ∩ [hostKeys] 里的每个键：
   /// 读本地位置、[readHost] 取 host 位置、读位置基线，用
-  /// [resolvePlaybackPositionThreeWay] 判定（BUG-3364，此前是纯「取较新时间戳」
+  /// [resolvePlaybackPositionThreeWay] 判定（BUG-3366，此前是纯「取较新时间戳」
   /// LWW，两端各自看过时后同步的一端被静默盖掉）：
   /// - 只一端偏离基线 → 那端胜出并落到另一端；
   /// - 两端位置一致 → 只对齐时间戳、记基线；

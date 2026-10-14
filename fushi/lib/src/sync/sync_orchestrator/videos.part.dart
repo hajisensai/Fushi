@@ -39,7 +39,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 同键空间）；**仅当本地存在 VideoBooks 行时**才一并更新 `lastPositionMs`
   /// （流式视频绝不强建行污染书架）。
   ///
-  /// 三方判定（BUG-3364）、冲突上报与逐条错误处理见共享模板 [_syncPositionsLive]。
+  /// 三方判定（BUG-3366）、冲突上报与逐条错误处理见共享模板 [_syncPositionsLive]。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,

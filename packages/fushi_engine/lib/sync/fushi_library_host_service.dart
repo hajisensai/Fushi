@@ -1726,7 +1726,7 @@ class VideoPlaybackSyncState {
 
 /// host 接收对端时间戳时允许的「未来」余量：超过 host 当前时刻 + 本值的时间戳视为
 /// 设备时钟错误。不截断的话，一台时钟走快的设备写下的戳会在所有 LWW 比较里永远
-/// 胜出，之后任何端的正常写入都盖不过它（BUG-3364）。
+/// 胜出，之后任何端的正常写入都盖不过它（BUG-3366）。
 const int kSyncFutureStampToleranceMs = 5 * 60 * 1000;
 
 /// 把对端上报的时间戳 [atMs] 截到 `nowMs + kSyncFutureStampToleranceMs`。纯函数。
@@ -1741,7 +1741,7 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
-/// 互联播放位置（视频 / 有声书）的三方判定（BUG-3364）。纯函数。
+/// 互联播放位置（视频 / 有声书）的三方判定（BUG-3366）。纯函数。
 ///
 /// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
 /// 毫秒：此前这里是纯「取较新时间戳」（[resolvePositionLww]），两台设备在两次同步

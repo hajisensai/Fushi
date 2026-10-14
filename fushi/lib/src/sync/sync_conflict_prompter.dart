@@ -115,7 +115,7 @@ class SyncConflictPrompter with PromptQueue {
     }
     final BuildContext? ctx = navigatorKey.currentContext;
     if (ctx == null) return; // HBK-AUDIT-012：navigatorKey 未 attach 时 null 安全
-    // BUG-3364：播放位置（视频 / 有声书）冲突走自己的弹窗——书籍对比弹窗只认
+    // BUG-3366：播放位置（视频 / 有声书）冲突走自己的弹窗——书籍对比弹窗只认
     // 书，把它们交过去只会弹出一个空窗。两类各弹各的，书在前。
     final List<SyncConflict> positionConflicts = <SyncConflict>[
       for (final SyncConflict c in conflicts)

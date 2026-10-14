@@ -542,7 +542,7 @@ void main() {
       ));
       await localDb.setPrefTyped<int>(
           videoRemotePositionAtPrefKey('video/v2'), 2000);
-      // BUG-3364：上次两端对齐在本机这个位置，之后只有 host 动了。
+      // BUG-3366：上次两端对齐在本机这个位置，之后只有 host 动了。
       await localDb.setSyncBaseline(
           'video/v2', kInterconnectVideoPositionDimension, 100000);
 
@@ -905,7 +905,7 @@ void main() {
     });
   });
 
-  // BUG-3364：两端在上次同步后都看 / 听过同一条目 → 报冲突、两端都不动；此前是纯
+  // BUG-3366：两端在上次同步后都看 / 听过同一条目 → 报冲突、两端都不动；此前是纯
   // 「取较新时间戳」LWW，晚同步的一端被静默盖掉。
   group('playback position fork is a conflict, not a silent overwrite', () {
     test('video: both moved off the baseline -> conflict, neither side written',

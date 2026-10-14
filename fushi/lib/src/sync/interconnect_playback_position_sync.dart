@@ -5,15 +5,15 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 /// 一条播放位置：毫秒位置 + 最后更新时刻（epoch 毫秒，0 = 无记录 / 旧数据）。
 typedef PlaybackPosition = ({int positionMs, int updatedAtMs});
 
-/// 互联播放位置的两类条目（BUG-3364）。
+/// 互联播放位置的两类条目（BUG-3366）。
 enum PlaybackPositionKind { video, audiobook }
 
-/// 互联视频播放位置基线在 `sync_baselines` 里的 dimension（BUG-3364）。值 = 上次
+/// 互联视频播放位置基线在 `sync_baselines` 里的 dimension（BUG-3366）。值 = 上次
 /// 两端达成一致的位置（毫秒）；assetKey = 视频 uid。与书籍的 `progress_live`
 /// 同表不同维度。
 const String kInterconnectVideoPositionDimension = 'video_position_live';
 
-/// 互联有声书播放位置基线的 dimension（BUG-3364）。assetKey = 有声书 identity
+/// 互联有声书播放位置基线的 dimension（BUG-3366）。assetKey = 有声书 identity
 /// （srt-backed = bookKey；纯 SRT = uid，见 [RemoteAudiobookInfo.identity]）。
 const String kInterconnectAudiobookPositionDimension =
     'audiobook_position_live';
@@ -26,7 +26,7 @@ PlaybackPositionKind? playbackPositionKindOfDimension(String dimension) =>
       _ => null,
     };
 
-/// 互联播放位置（视频 / 有声书）的三方同步落地层（BUG-3364）：sweep
+/// 互联播放位置（视频 / 有声书）的三方同步落地层（BUG-3366）：sweep
 /// （`SyncOrchestrator`）与冲突弹窗（`PlaybackPositionConflictDialog`）共用同一份
 /// 读 / 写 / 记基线，两处口径不会漂移。判定本身是纯函数
 /// [resolvePlaybackPositionThreeWay]，这里只做 IO。形态照
