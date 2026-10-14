@@ -1,5 +1,7 @@
 """Probe the actual libmpv binary, without creating a window or changing files.
 
+The Lua check writes one throwaway script to a temporary directory.
+
 python tool/bluray/probe_libmpv.py /path/to/libmpv-2.dll [--disc /path/to/disc]
 The optional disc probe reports native logs, not an assertion of menu playback.
 """
@@ -9,6 +11,7 @@ import ctypes as C
 import json
 import os
 from pathlib import Path
+import tempfile
 import time
 
 
@@ -110,6 +113,33 @@ class Mpv:
         self.lib.mpv_terminate_destroy(self.handle)
 
 
+LUA_PROBE_MARKER = "fushi-lua-probe"
+
+
+def probe_lua(mpv, seconds=5):
+    """Run a real Lua script through load-script and wait for its log line.
+
+    `mpv-configuration` only states the build request, and `load-script`'s
+    return code is not proof either (BUG-2032: the Android build accepts the
+    command without any Lua backend). Only a log message emitted by the script
+    itself proves Lua scripts execute.
+    """
+    with tempfile.TemporaryDirectory() as temp:
+        script = Path(temp) / "fushi_lua_probe.lua"
+        script.write_text(f'mp.msg.info("{LUA_PROBE_MARKER} " .. _VERSION)\n', encoding="utf-8")
+        mpv.lib.mpv_request_log_messages(mpv.handle, b"info")
+        result = {"load_result": mpv.command("load-script", str(script)), "message": None}
+        deadline = time.monotonic() + seconds
+        while result["message"] is None and time.monotonic() < deadline:
+            event = mpv.lib.mpv_wait_event(mpv.handle, 0.1).contents
+            if event.event_id != 2:
+                continue
+            text = C.cast(event.data, C.POINTER(Log)).contents.text.decode("utf-8", "replace")
+            if LUA_PROBE_MARKER in text:
+                result["message"] = text.strip()
+        return result
+
+
 def probe(path, disc=None, seconds=5):
     mpv = Mpv(path)
     try:
@@ -127,6 +157,7 @@ def probe(path, disc=None, seconds=5):
         decoders = mpv.get("decoder-list")
         report = {
             "version": mpv.get("mpv-version"),
+            "configuration": mpv.get("mpv-configuration"),
             "disc_menu_option_result": menu_option,
             "discnav": [item for item in commands if item.get("name") == "discnav"],
             "disc_menu_active_property": "disc-menu-active" in properties,
@@ -136,6 +167,7 @@ def probe(path, disc=None, seconds=5):
             "render_api": all(hasattr(mpv.lib, name) for name in (
                 "mpv_render_context_create", "mpv_render_context_render",
                 "mpv_render_context_set_update_callback", "mpv_render_context_free")),
+            "lua_script": probe_lua(mpv),
         }
         if disc:
             mpv.lib.mpv_request_log_messages(mpv.handle, b"v")
@@ -170,7 +202,8 @@ def main():
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0 if all((report["disc_menu_option_result"] == 0, report["discnav"],
                      report["disc_menu_active_property"], report["bluray_protocol"],
-                     report["truehd_decoder"], report["render_api"])) else 1
+                     report["truehd_decoder"], report["render_api"],
+                     report["lua_script"]["message"])) else 1
 
 
 if __name__ == "__main__":

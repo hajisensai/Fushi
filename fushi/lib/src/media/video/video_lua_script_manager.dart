@@ -20,9 +20,10 @@ export 'package:fushi/src/media/video/video_lua_capability.dart';
 /// no-op。与 [applyShadersToPlayer]（video_shader_manager.dart）同一条
 /// `NativePlayer.command` 边界。**命令可达 ≠ 脚本能跑**：随包 libmpv 有没有编
 /// Lua 是按平台固定的二进制事实（[MpvLuaCapability]；Android 随包 jar 自 BUG-3325
-/// 起编入 Lua 5.2，Windows 随包的 `fushi-discnav1` 系 libmpv 由
-/// `tool/bluray/build_libmpv.ps1` 以 `-Dlua=disabled` 构建、仍然没有），没编时
-/// `load-script` 照样返回成功、然后什么都不发生。
+/// 起编入 Lua 5.2；Windows 随包 libmpv 自 `fushi-discnav1-hwcrop1-lua1` 起由
+/// `tool/bluray/build_libmpv.ps1` 以 `-Dlua=luajit` 构建、有（BUG-3325），此前的
+/// `fushi-discnav1` 系是 `-Dlua=disabled`），没编时 `load-script` 可能照样返回成功、
+/// 然后什么都不发生。
 /// 能力由 [VideoPlayerController] 建 Player 后读 `mpv-configuration` 探测并落
 /// pref，设置页据此如实说明；不按平台名硬编码。
 ///

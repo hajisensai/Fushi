@@ -1875,7 +1875,7 @@ SettingsDestination buildVideoDestination() {
           // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
           // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
           // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
-          // BUG-2032：随包 libmpv 没编 Lua 的平台（Windows 随包 `-Dlua=disabled`；Android 自 BUG-3325 起已编入）
+          // BUG-2032：随包 libmpv 没编 Lua 的平台（Windows / Android 随包自 BUG-3325 起均已编入；iOS / macOS 未验证）
           // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
           // （settings_schema_widgets.dart `_switch` 的既定约定）。
           SettingsSwitchItem(
