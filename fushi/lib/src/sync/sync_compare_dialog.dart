@@ -11,6 +11,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/paged_book_sync_position.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -50,6 +51,9 @@ class SyncCompareEntry {
     this.remoteAudioPosSec,
     this.base,
     this.liveAction,
+    this.localPage,
+    this.remotePage,
+    this.pageCount,
   });
 
   final String title;
@@ -84,6 +88,15 @@ class SyncCompareEntry {
   final int? remoteStatsCount;
   final int? localAudioPosMs;
   final double? remoteAudioPosSec;
+
+  /// 页式书（漫画 / PDF）两侧的 0-based 页码；EPUB / 该侧无记录为 null。
+  /// 页式书的分数只是页序 ÷ 总页数，用户要看的是「读到第几页」（见
+  /// paged_book_sync_position）。
+  final int? localPage;
+  final int? remotePage;
+
+  /// 页式书总页数；在线漫画（`sectionIndex` 是章内页码）与 EPUB 为 null。
+  final int? pageCount;
 
   /// 共同祖先基线（progress 维度时间戳）；用于把「时间戳不等」收紧为「真分叉」。
   final int? base;
@@ -294,6 +307,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final local = localByTitle[title];
 
     double? localProg;
+    int? localPage;
     int? localUpdatedAt;
     int? localStatsCount;
     int? localAudioMs;
@@ -302,14 +316,23 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       try {
         final pos = await db.getReaderPosition(local.uid);
         if (pos != null) {
-          final chapters = parseChaptersJson(local.chaptersJson);
-          final total = totalCharacterCount(chapters);
-          final explored = toExploredCharCount(
-            sectionIndex: pos.sectionIndex,
-            normCharOffset: pos.normCharOffset,
-            chapters: chapters,
-          );
-          localProg = total > 0 ? explored / total : 0;
+          if (isPagedSyncBook(local)) {
+            // 漫画 / PDF：sectionIndex 是页码，字符表为空（按字符折算恒 0%）。
+            localPage = pos.sectionIndex < 0 ? 0 : pos.sectionIndex;
+            localProg = pagedProgressFraction(
+              pageIndex: localPage,
+              pageCount: pagedSyncPageCount(local),
+            );
+          } else {
+            final chapters = parseChaptersJson(local.chaptersJson);
+            final total = totalCharacterCount(chapters);
+            final explored = toExploredCharCount(
+              sectionIndex: pos.sectionIndex,
+              normCharOffset: pos.normCharOffset,
+              chapters: chapters,
+            );
+            localProg = total > 0 ? explored / total : 0;
+          }
           localUpdatedAt = pos.updatedAt;
         }
         localStatsCount = statCountByTitle[title];
@@ -357,11 +380,29 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     // 互联 live 行：远端进度 / 时间戳换成 host DB 的（BUG-2506）；host 无记录时
     // 远端显示「无数据」而不是文件箱里 client 自己上次导出的旧值。
     final _LiveProgressRow? liveRow = liveProgressByTitle[title];
+    final bool paged = local != null && isPagedSyncBook(local);
+    final int? pageCount = local == null ? null : pagedSyncPageCount(local);
+    // 页式书远端页码：互联取 host 的 sectionIndex，云文件箱取 exploredCharCount
+    // （页式书里它就是页码，见 paged_book_sync_position）。
+    final int? remotePage = !paged
+        ? null
+        : liveRow != null
+            ? (liveRow.remote.updatedAtMs > 0
+                ? clampPagedSyncPageIndex(
+                    liveRow.remote.sectionIndex, pageCount)
+                : null)
+            : (remoteData?.exploredCharCount == null
+                ? null
+                : clampPagedSyncPageIndex(
+                    remoteData!.exploredCharCount!, pageCount));
     final double? remoteProg = liveRow != null
         ? (liveRow.remote.updatedAtMs > 0 && local != null
             ? _fractionOf(liveRow.remote, local)
             : null)
-        : remoteData?.progress;
+        : paged && remotePage != null
+            // 按本机总页数重算：修复前导出的旧文件 progress 恒 0。
+            ? pagedProgressFraction(pageIndex: remotePage, pageCount: pageCount)
+            : remoteData?.progress;
     final int? remoteUpdatedAt = liveRow != null
         ? (liveRow.remote.updatedAtMs > 0 ? liveRow.remote.updatedAtMs : null)
         : remoteData?.updatedAt;
@@ -383,6 +424,9 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
       remoteAudioPosSec: remoteData?.audioPosSec,
       base: base,
       liveAction: liveRow?.action,
+      localPage: localPage,
+      remotePage: remotePage,
+      pageCount: pageCount,
     ));
   }
 
@@ -452,6 +496,7 @@ Future<List<SyncDictEntry>> _fetchDictEntries(
 class _RemoteBookData {
   const _RemoteBookData({
     this.progress,
+    this.exploredCharCount,
     this.updatedAt,
     this.statsCount,
     this.audioPosSec,
@@ -459,6 +504,9 @@ class _RemoteBookData {
   });
 
   final double? progress;
+
+  /// 云文件箱 `TtuProgress.exploredCharCount`；页式书里它是 0-based 页码。
+  final int? exploredCharCount;
   final int? updatedAt;
   final int? statsCount;
   final double? audioPosSec;
@@ -510,7 +558,13 @@ Future<_LiveProgressRow?> _fetchLiveProgress(
 }
 
 /// host 进度 → 阅读分数（与本机列同一算法：按本机书的章节字符表折算）。
-double _fractionOf(RemoteBookProgress progress, EpubBookRow book) {
+double? _fractionOf(RemoteBookProgress progress, EpubBookRow book) {
+  if (isPagedSyncBook(book)) {
+    return pagedProgressFraction(
+      pageIndex: progress.sectionIndex,
+      pageCount: pagedSyncPageCount(book),
+    );
+  }
   final chapters = parseChaptersJson(book.chaptersJson);
   final int total = totalCharacterCount(chapters);
   if (total <= 0) return 0;
@@ -530,6 +584,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
     final syncFiles = await backend.listSyncFiles(folderId);
 
     double? progress;
+    int? exploredCharCount;
     int? updatedAt;
     int? statsCount;
     double? audioPosSec;
@@ -540,6 +595,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
     if (syncFiles.progress != null) {
       futures.add(backend.getProgressFile(syncFiles.progress!.id).then((p) {
         progress = p.progress;
+        exploredCharCount = p.exploredCharCount;
         updatedAt = p.lastBookmarkModified;
       }));
     }
@@ -559,6 +615,7 @@ Future<_RemoteBookData> _fetchRemoteBookData(
 
     return _RemoteBookData(
       progress: progress,
+      exploredCharCount: exploredCharCount,
       updatedAt: updatedAt,
       statsCount: statsCount,
       audioPosSec: audioPosSec,
@@ -1280,6 +1337,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         localAudioPosMs: e.localAudioPosMs,
         remoteAudioPosSec: e.remoteAudioPosSec,
         base: e.base,
+        localPage: e.localPage,
+        remotePage: e.remotePage,
+        pageCount: e.pageCount,
       );
 
   int get _actionableCount {
@@ -2018,6 +2078,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     bool stacked = false,
   }) {
     final progress = isLocal ? e.localProgress : e.remoteProgress;
+    final int? page = isLocal ? e.localPage : e.remotePage;
     final updatedAt = isLocal ? e.localUpdatedAt : e.remoteUpdatedAt;
     final statsCount = isLocal ? e.localStatsCount : e.remoteStatsCount;
     final hasAudio =
@@ -2121,8 +2182,22 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                   color: highlighted ? onContainer : cs.onSurface,
                 ),
               )
-            else
+            else if (page == null)
               Text(t.sync_compare_no_data),
+            // 页式书（漫画 / PDF）：百分比之外给出具体页码；在线漫画没有总页数时
+            // 只有页码，这时它就是主数字。
+            if (page != null)
+              Text(
+                e.pageCount != null
+                    ? t.sync_compare_page_of_total(
+                        page: page + 1, total: e.pageCount!)
+                    : t.sync_compare_page(page: page + 1),
+                style: progress == null
+                    ? type.titleLargeEmphasized.tabular.copyWith(
+                        color: highlighted ? onContainer : cs.onSurface,
+                      )
+                    : null,
+              ),
             if (updatedAt != null) Text(_formatTime(updatedAt)),
             if (statsCount != null && statsCount > 0)
               Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),

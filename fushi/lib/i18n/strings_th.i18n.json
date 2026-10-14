@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "อุปกรณ์นี้เป็นโฮสต์การเชื่อมต่อ อุปกรณ์ที่จับคู่ไว้จึงไม่ต้องใช้ตัวเลือกนี้ เปิด \"สร้างบัตรไปยังอุปกรณ์ที่จับคู่\" บนอุปกรณ์เหล่านั้น แล้วการ์ดจะถูกเพิ่มลงใน Anki ของอุปกรณ์นี้โดยตรง",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_compare_page_of_total": "Page $page / $total",
+  "sync_compare_page": "Page $page"
 }
