@@ -5,15 +5,15 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 /// 一条播放位置：毫秒位置 + 最后更新时刻（epoch 毫秒，0 = 无记录 / 旧数据）。
 typedef PlaybackPosition = ({int positionMs, int updatedAtMs});
 
-/// 互联播放位置的两类条目（BUG-3366）。
+/// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
-/// 互联视频播放位置基线在 `sync_baselines` 里的 dimension（BUG-3366）。值 = 上次
+/// 互联视频播放位置基线在 `sync_baselines` 里的 dimension（BUG-3367）。值 = 上次
 /// 两端达成一致的位置（毫秒）；assetKey = 视频 uid。与书籍的 `progress_live`
 /// 同表不同维度。
 const String kInterconnectVideoPositionDimension = 'video_position_live';
 
-/// 互联有声书播放位置基线的 dimension（BUG-3366）。assetKey = 有声书 identity
+/// 互联有声书播放位置基线的 dimension（BUG-3367）。assetKey = 有声书 identity
 /// （srt-backed = bookKey；纯 SRT = uid，见 [RemoteAudiobookInfo.identity]）。
 const String kInterconnectAudiobookPositionDimension =
     'audiobook_position_live';
@@ -26,7 +26,7 @@ PlaybackPositionKind? playbackPositionKindOfDimension(String dimension) =>
       _ => null,
     };
 
-/// 互联播放位置（视频 / 有声书）的三方同步落地层（BUG-3366）：sweep
+/// 互联播放位置（视频 / 有声书）的三方同步落地层（BUG-3367）：sweep
 /// （`SyncOrchestrator`）与冲突弹窗（`PlaybackPositionConflictDialog`）共用同一份
 /// 读 / 写 / 记基线，两处口径不会漂移。判定本身是纯函数
 /// [resolvePlaybackPositionThreeWay]，这里只做 IO。形态照
@@ -137,7 +137,7 @@ class InterconnectPlaybackPositionSync {
   /// 与 sweep 共用这一入口而不是播放页裸调 `putRemoteVideoPosition`：实时上报本身
   /// 就是「两端在这个位置达成一致」，不推进基线的话，A 串流到 600（host=600、基线
   /// 仍停在旧的 100）→ B 从 600 接着看到 900 → A 下轮 sweep 见 local=600 ≠ 基线、
-  /// remote=900 ≠ 基线，会把顺序接力误判成两端分叉而弹冲突（BUG-3366）。
+  /// remote=900 ≠ 基线，会把顺序接力误判成两端分叉而弹冲突（BUG-3367）。
   ///
   /// host 端 PUT 仍是 LWW：若 host 已存更新的戳而拒收，基线停在本端位置，下一轮
   /// sweep 判「只 host 动了」→ [applyRemote]，与 host 的 LWW 结论一致。

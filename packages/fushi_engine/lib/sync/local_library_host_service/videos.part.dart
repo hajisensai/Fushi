@@ -417,7 +417,7 @@ mixin _LocalLibraryHostVideos
   }) async {
     final ({int positionMs, int updatedAtMs}) current =
         await getVideoPosition(id, episodeIndex: episodeIndex);
-    // BUG-3366：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
+    // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
       localPositionMs: current.positionMs,

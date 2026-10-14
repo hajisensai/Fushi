@@ -4493,7 +4493,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
     try {
-      // BUG-3366：互联 host 的当前集 / 单视频（episodeIndex<=0，正是 sweep 用的
+      // BUG-3367：互联 host 的当前集 / 单视频（episodeIndex<=0，正是 sweep 用的
       // `video_remote_position_<uid>` 键）走与 sweep 同一入口，上报成功即推进位置
       // 基线——否则顺序接力（本机看完、另一台接着看）会被下轮 sweep 误判成冲突。
       // host-playlist 的非首集（`#ep<n>` 键）sweep 不同步，也就不记基线。

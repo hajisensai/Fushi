@@ -1,4 +1,4 @@
-## BUG-3366 · 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖
+## BUG-3367 · 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖
 - **报告**：2026-10-14（用户转述外部审查意见：「两台设备改同一个字段，晚写的会覆盖早写的，用户看不到提示」，要求同类问题一并修）
 - **真实性**：✅ 真 bug（结构性，与 BUG-2506 同类、修书籍进度时没覆盖到播放位置）。逐维度盘点后，只有书籍 / 已下载漫画的阅读进度有三方冲突门（云通道 `sync_progress_resolver.dart` + 互联 `resolveBookProgressThreeWay`）；互联通道的**视频与有声书播放位置**仍是纯「取较新时间戳」：
   - client sweep：`fushi/lib/src/sync/sync_orchestrator/books.part.dart` `_syncPositionsLive`（改前）用 `resolvePositionLww` 选胜者后直接 PUT / 写回，从不产生 `report.conflicts`；视频 `videos.part.dart` 与有声书 `audiobooks.part.dart` 共用它。

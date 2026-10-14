@@ -17,7 +17,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-3366：互联视频 / 有声书播放位置此前是纯「取较新时间戳」LWW——两台设备在
+/// BUG-3367：互联视频 / 有声书播放位置此前是纯「取较新时间戳」LWW——两台设备在
 /// 两次同步之间各自看过同一条目，后同步的一端被静默盖掉，用户毫无察觉。现在按
 /// 位置基线三方判定，真分叉进冲突弹窗；host 收位置时截断未来戳。
 FushiDatabase _memDb() =>

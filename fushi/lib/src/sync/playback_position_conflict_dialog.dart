@@ -12,7 +12,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
-/// 一条待用户裁决的播放位置冲突（BUG-3366）：弹窗展示用的两端**此刻**位置。
+/// 一条待用户裁决的播放位置冲突（BUG-3367）：弹窗展示用的两端**此刻**位置。
 class PlaybackPositionConflictView {
   const PlaybackPositionConflictView({
     required this.conflict,
@@ -30,7 +30,7 @@ class PlaybackPositionConflictView {
 }
 
 /// 从同步报告的冲突里挑出播放位置冲突、重新读取两端此刻位置并复核仍是分叉
-/// （BUG-3366）。报告产出到弹窗之间两端都可能又动过：复核后已不是冲突的条目
+/// （BUG-3367）。报告产出到弹窗之间两端都可能又动过：复核后已不是冲突的条目
 /// 不进弹窗，留给下一轮 sweep 按正常规则收敛，避免拿旧快照替用户做决定。
 ///
 /// [backend] 不是互联后端时返回空（播放位置冲突只产生于互联通道）。单条读取失败
@@ -104,7 +104,7 @@ Future<int> applyPlaybackPositionDecisions(
   return applied;
 }
 
-/// 「播放进度冲突」弹窗（BUG-3366）：本机与对端在上次同步后都有了新的播放进度，
+/// 「播放进度冲突」弹窗（BUG-3367）：本机与对端在上次同步后都有了新的播放进度，
 /// 逐条选保留哪一端。返回「行下标 → 裁决」（只含选了本机 / 对端的行）；取消返回
 /// null。纯展示，不做 IO。
 class PlaybackPositionConflictDialog extends StatefulWidget {
