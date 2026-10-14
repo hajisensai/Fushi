@@ -528,7 +528,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           browser: _browser,
           item: item,
           focusId: FushiFocusId('$storageKey-card-${item.id}'),
-          onTap: () => openMediaServerItem(
+          onTap: () => resumeMediaServerItem(
             context,
             widget.session,
             item,
@@ -573,8 +573,6 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
             siblings: items,
           ),
           onLongPress: () =>
-              openMediaServerItemDetail(context, widget.session, item),
-          onInfo: () =>
               openMediaServerItemDetail(context, widget.session, item),
         );
       },

@@ -549,7 +549,6 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         ),
         onLongPress: () =>
             openMediaServerItemDetail(context, widget.session, item),
-        onInfo: () => openMediaServerItemDetail(context, widget.session, item),
       );
     }),
     childCount: _items.length,

@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3329](bugs/BUG-3329-emby-movie-detail.md) | 🚧 | 🚧 | 媒体服务器电影点卡直接播放，没有详情页与版本选择 |
+| [BUG-3329](bugs/BUG-3329-emby-movie-detail.md) | ✅ | ✅ | 媒体服务器电影点卡直接播放，没有详情页与版本选择 |
 | [BUG-3328](bugs/BUG-3328-ext-scroll-follow.md) | ✅ | ✅ | 浏览器扩展查词后滚动页面，高亮与弹窗停在原位 |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
