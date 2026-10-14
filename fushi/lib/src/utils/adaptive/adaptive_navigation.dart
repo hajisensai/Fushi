@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:flutter/gestures.dart' show kPrimaryMouseButton, kTouchSlop;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -760,6 +761,8 @@ class _MaterialNavCluster extends StatelessWidget {
                 for (final int i in pinned) FushiFocusId('$idPrefix-$i'): i,
               },
         dragExcludedId: _NavLauncherCell.focusId,
+        // 从「+」上起手的拖动归「按住划过去」扇面手势，指示器不跟着走。
+        dragStartBlockedOnExcluded: true,
         onDragSelect: launcherDrag,
         hoverColor:
             launcherBarStyle?.content ??
@@ -1710,6 +1713,7 @@ class _SlidingIndicatorScope extends StatefulWidget {
     required this.child,
     this.dragTargets,
     this.dragExcludedId,
+    this.dragStartBlockedOnExcluded = false,
     this.onDragSelect,
     this.hoverColor,
   });
@@ -1728,6 +1732,10 @@ class _SlidingIndicatorScope extends StatefulWidget {
 
   /// 拖选时不参与的格（「更多」）：停在它上面松手按取消处理。
   final FushiFocusId? dragExcludedId;
+
+  /// 起手点落在 [dragExcludedId] 那一格上时整次拖选不启动（那一格有自己的
+  /// 拖动手势，如「中央展开」的「+」）。
+  final bool dragStartBlockedOnExcluded;
   final ValueChanged<int>? onDragSelect;
 
   /// 拖选经过目的地时悬停状态层的颜色（按 M3 状态层不透明度叠）。
@@ -1844,6 +1852,14 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   /// 「按住不动、想好了再拖」的路径，并给一下拎起触感）。
   void _beginDrag(Offset localPosition, {required bool lift}) {
     if (widget.dragTargets == null || _dragging) return;
+    if (widget.dragStartBlockedOnExcluded) {
+      final Rect? excluded = _rectOfCell(widget.dragExcludedId);
+      if (excluded != null &&
+          localPosition.dx >= excluded.left &&
+          localPosition.dx <= excluded.right) {
+        return;
+      }
+    }
     _dragFollows = fushiExpressiveMotionEnabled(context);
     if (lift) fushiLiftHaptic(context);
     _lift.animateTo(1, animate: _dragFollows);
@@ -2349,7 +2365,61 @@ class _NavLauncherCell extends StatefulWidget {
 class _NavLauncherCellState extends State<_NavLauncherCell> {
   bool _open = false;
 
-  Future<void> _launch() async {
+  /// 「按住『+』直接划过去」：按下即弹出，手指位置喂给它；抬手由它决定选中 /
+  /// 收回 / 当点按。null = 这次不是从指针按下打开的（键盘 / 读屏 / 无拖动）。
+  NavLauncherDragController? _drag;
+  int? _dragPointer;
+  Offset? _dragDown;
+  bool _dragMoved = false;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_open || _dragPointer != null) return;
+    if (event.kind == PointerDeviceKind.mouse &&
+        event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    _dragPointer = event.pointer;
+    _dragDown = event.position;
+    _dragMoved = false;
+    final NavLauncherDragController drag = NavLauncherDragController();
+    _drag = drag;
+    unawaited(_launch(drag: drag));
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _dragPointer) return;
+    final Offset? down = _dragDown;
+    if (!_dragMoved &&
+        down != null &&
+        (event.position - down).distance > kTouchSlop) {
+      _dragMoved = true;
+    }
+    final Offset? local = _overlayLocal(event.position);
+    if (local != null) _drag?.move(local);
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _dragPointer) return;
+    _drag?.release(moved: _dragMoved);
+    _dragPointer = null;
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _dragPointer) return;
+    // 被系统收走（来电、手势导航）：拖过就收回，没拖过当点按留着。
+    if (_dragMoved) _drag?.release(moved: true);
+    _dragPointer = null;
+  }
+
+  Offset? _overlayLocal(Offset global) {
+    final RenderObject? overlay = Overlay.of(
+      context,
+      rootOverlay: true,
+    ).context.findRenderObject();
+    return overlay is RenderBox ? overlay.globalToLocal(global) : null;
+  }
+
+  Future<void> _launch({NavLauncherDragController? drag}) async {
     if (_open) return;
     final RenderObject? cell = context.findRenderObject();
     final RenderObject? overlay = Overlay.of(
@@ -2389,6 +2459,8 @@ class _NavLauncherCellState extends State<_NavLauncherCell> {
       context: context,
       anchor: rect,
       style: style,
+      drag: drag,
+      overlayWidth: overlay.size.width,
       entries: <NavLauncherEntry>[
         for (final int i in widget.hidden)
           NavLauncherEntry(
@@ -2399,6 +2471,8 @@ class _NavLauncherCellState extends State<_NavLauncherCell> {
           ),
       ],
     );
+    drag?.dispose();
+    if (identical(_drag, drag)) _drag = null;
     if (!mounted) return;
     setState(() => _open = false);
     if (picked == null) return;
@@ -2412,21 +2486,30 @@ class _NavLauncherCellState extends State<_NavLauncherCell> {
     final bool selected = widget.hidden.contains(widget.currentIndex);
     // 弹出层打开时它自己的「×」盖在这一格正上方，这里把底下的「+」藏起来，
     // 免得旋转中的「×」与静止的「+」叠成米字。
-    return Opacity(
-      opacity: _open ? 0 : 1,
-      child: _NavFocusCell(
-        id: _NavLauncherCell.focusId,
-        item: AdaptiveNavItem(
-          icon: FushiIcons.add,
-          label: t.home_nav_more,
-          experimentalBadge: widget.hidden.any(
-            (int i) => widget.items[i].experimentalBadge,
+    // 按下即弹出：Listener 不进手势竞技场，按下后推出的扇面路由也不会抢走这根
+    // 指针，后续移动 / 抬起照样送到这里。没移动就抬起时 InkWell 的点按照常触发，
+    // [_launch] 见已打开直接返回，等同普通点按。
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: Opacity(
+        opacity: _open ? 0 : 1,
+        child: _NavFocusCell(
+          id: _NavLauncherCell.focusId,
+          item: AdaptiveNavItem(
+            icon: FushiIcons.add,
+            label: t.home_nav_more,
+            experimentalBadge: widget.hidden.any(
+              (int i) => widget.items[i].experimentalBadge,
+            ),
           ),
+          selected: selected,
+          horizontal: true,
+          cellWidth: widget.cellWidth,
+          onSelect: () => unawaited(_launch()),
         ),
-        selected: selected,
-        horizontal: true,
-        cellWidth: widget.cellWidth,
-        onSelect: () => unawaited(_launch()),
       ),
     );
   }

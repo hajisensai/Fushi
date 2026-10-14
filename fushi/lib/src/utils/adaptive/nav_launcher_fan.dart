@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -78,40 +80,130 @@ const double _kArcLift = 64;
 /// 每圈最多放几个：越外圈弧长越长、放得越多。
 const List<int> _kRingCapacity = <int>[5, 6, 7, 8];
 
+/// 「按住『+』直接划过去」手势（像手机图案解锁）：「+」格按下即弹出扇面，
+/// 手指不抬起划到某一项上（那一项放大高亮、轻震），抬手即选中；划到空处抬手
+/// = 收回；没移动就抬手 = 普通点按，扇面留着。
+///
+/// 指针事件始终送回按下时命中的「+」格（新推的路由不会抢走进行中的指针），
+/// 所以由「+」格的 Listener 把位置喂给本控制器，命中判定按与扇面布局同一份
+/// 几何（[navLauncherSlotCenters]）算，不依赖扇面里控件的命中测试。
+class NavLauncherDragController {
+  NavLauncherDragController();
+
+  /// 手指当前罩着的那一项（[entries] 里的序号）；null = 不在任何一项上。
+  final ValueNotifier<int?> hovered = ValueNotifier<int?>(null);
+
+  List<Offset> _centers = const <Offset>[];
+  Route<int>? _route;
+
+  /// 手指离圆心多近算罩住（圆钮半径 28 + 标签与手指遮挡的余量）。
+  static const double hitRadius = 48;
+
+  void _attach(Route<int> route, List<Offset> centers) {
+    _route = route;
+    _centers = centers;
+  }
+
+  /// [position] 是根 Overlay 坐标系里的手指位置。
+  void move(Offset position) {
+    int? best;
+    double bestDistance = hitRadius;
+    for (int i = 0; i < _centers.length; i++) {
+      final double d = (_centers[i] - position).distance;
+      if (d <= bestDistance) {
+        best = i;
+        bestDistance = d;
+      }
+    }
+    if (best != hovered.value) {
+      hovered.value = best;
+      if (best != null) unawaited(HapticFeedback.selectionClick());
+    }
+  }
+
+  /// 抬手：罩着某一项 → 选中它；否则 [moved] 为真（划过但落在空处）→ 收回；
+  /// 都不是（按住不动就抬手）→ 当普通点按，扇面留着。
+  void release({required bool moved}) {
+    final Route<int>? route = _route;
+    if (route == null || !route.isActive) return;
+    final int? index = hovered.value;
+    if (index != null) {
+      route.navigator?.pop<int>(index);
+    } else if (moved) {
+      route.navigator?.pop<int>();
+    }
+  }
+
+  void dispose() => hovered.dispose();
+}
+
+/// 各目的地圆钮圆心在根 Overlay 坐标系里的位置：「+」圆心 [center] 加
+/// [navLauncherSlotOffset]，横向夹进 [width] 宽的屏幕（留出半个格宽 + 8 边距）。
+/// 扇面布局与拖选命中共用这一份。
+List<Offset> navLauncherSlotCenters({
+  required Offset center,
+  required int count,
+  required double width,
+}) {
+  const double half = _kSlotWidth / 2;
+  const double minX = half + 8;
+  final double maxX = math.max(minX, width - half - 8);
+  return <Offset>[
+    for (int i = 0; i < count; i++)
+      () {
+        final Offset target = center + navLauncherSlotOffset(i, count);
+        return Offset(target.dx.clamp(minX, maxX), target.dy);
+      }(),
+  ];
+}
+
 /// 打开「中央展开」弹出层：[anchor] 是底栏中央「+」格在根 Overlay 坐标系里
 /// 的矩形，[entries] 从它的圆心沿上半圆弧逐个弹簧飞出（错峰），中央的「+」
 /// 转 45° 变成「×」；点遮罩 / 「×」/ 返回键 / Esc 收回（逆向飞回圆心）。
 /// 返回选中项在 [entries] 里的序号；收回 = null。减弱动态效果 / 墨水屏下
-/// 时长归零、瞬间出现。
+/// 时长归零、瞬间出现。[drag] 非空时接上「按住直接划过去」手势，
+/// [overlayWidth] 是根 Overlay 的宽（命中几何要与布局一致）。
 Future<int?> showNavLauncherFan({
   required BuildContext context,
   required Rect anchor,
   required List<NavLauncherEntry> entries,
   required NavLauncherStyle style,
+  NavLauncherDragController? drag,
+  double? overlayWidth,
 }) {
   final Duration enter = fushiMotionDuration(context, FushiMotion.long);
   final Duration exit = fushiMotionDuration(context, FushiMotion.longReverse);
-  return Navigator.of(context, rootNavigator: true).push<int>(
-    PageRouteBuilder<int>(
-      opaque: false,
-      barrierDismissible: true,
-      barrierColor: style.scrim,
-      barrierLabel: style.closeLabel,
-      transitionDuration: enter,
-      reverseTransitionDuration: exit,
-      pageBuilder:
-          (
-            BuildContext context,
-            Animation<double> animation,
-            Animation<double> secondaryAnimation,
-          ) => _NavLauncherFan(
-            anchor: anchor,
-            entries: entries,
-            style: style,
-            animation: animation,
-          ),
-    ),
+  final PageRouteBuilder<int> route = PageRouteBuilder<int>(
+    opaque: false,
+    barrierDismissible: true,
+    barrierColor: style.scrim,
+    barrierLabel: style.closeLabel,
+    transitionDuration: enter,
+    reverseTransitionDuration: exit,
+    pageBuilder:
+        (
+          BuildContext context,
+          Animation<double> animation,
+          Animation<double> secondaryAnimation,
+        ) => _NavLauncherFan(
+          anchor: anchor,
+          entries: entries,
+          style: style,
+          animation: animation,
+          hovered: drag?.hovered,
+        ),
   );
+  if (drag != null && overlayWidth != null) {
+    drag._attach(
+      route,
+      navLauncherSlotCenters(
+        center: anchor.center,
+        count: entries.length,
+        width: overlayWidth,
+      ),
+    );
+  }
+  return Navigator.of(context, rootNavigator: true).push<int>(route);
 }
 
 /// 第 [index] 个目的地（共 [count] 个）在弧上的圆心相对中央钮圆心的偏移。
@@ -148,12 +240,16 @@ class _NavLauncherFan extends StatelessWidget {
     required this.entries,
     required this.style,
     required this.animation,
+    this.hovered,
   });
 
   final Rect anchor;
   final List<NavLauncherEntry> entries;
   final NavLauncherStyle style;
   final Animation<double> animation;
+
+  /// 「按住划过去」时手指罩着的那一项；null = 没在拖。
+  final ValueListenable<int?>? hovered;
 
   void _close(BuildContext context) => Navigator.of(context).pop();
 
@@ -184,9 +280,11 @@ class _NavLauncherFan extends StatelessWidget {
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints box) {
             final Offset center = anchor.center;
-            const double half = _kSlotWidth / 2;
-            const double minX = half + 8;
-            final double maxX = math.max(minX, box.maxWidth - half - 8);
+            final List<Offset> centers = navLauncherSlotCenters(
+              center: center,
+              count: count,
+              width: box.maxWidth,
+            );
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -200,13 +298,11 @@ class _NavLauncherFan extends StatelessWidget {
                       ),
                     ),
                     from: center,
-                    to: () {
-                      final Offset target =
-                          center + navLauncherSlotOffset(i, count);
-                      return Offset(target.dx.clamp(minX, maxX), target.dy);
-                    }(),
+                    to: centers[i],
                     child: _LauncherButton(
                       entry: entries[i],
+                      index: i,
+                      hovered: hovered,
                       style: style,
                       autofocus: i == autofocusIndex,
                       focusId: FushiFocusId('nav-launcher-$i'),
@@ -311,6 +407,8 @@ class _FlyingSlot extends StatelessWidget {
 class _LauncherButton extends StatelessWidget {
   const _LauncherButton({
     required this.entry,
+    required this.index,
+    required this.hovered,
     required this.style,
     required this.autofocus,
     required this.focusId,
@@ -318,6 +416,10 @@ class _LauncherButton extends StatelessWidget {
   });
 
   final NavLauncherEntry entry;
+  final int index;
+
+  /// 拖选中手指罩着的项：罩着这一项时放大并画成指示色。
+  final ValueListenable<int?>? hovered;
   final NavLauncherStyle style;
   final bool autofocus;
   final FushiFocusId focusId;
@@ -325,7 +427,17 @@ class _LauncherButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool selected = entry.selected;
+    final ValueListenable<int?>? source = hovered;
+    if (source == null) return _build(context, false);
+    return ValueListenableBuilder<int?>(
+      valueListenable: source,
+      builder: (BuildContext context, int? value, Widget? _) =>
+          _build(context, value == index),
+    );
+  }
+
+  Widget _build(BuildContext context, bool hot) {
+    final bool selected = entry.selected || hot;
     final TextStyle label =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
           fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
@@ -354,27 +466,32 @@ class _LauncherButton extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              SizedBox.square(
-                dimension: kNavLauncherButtonSize,
-                child: FushiPressScale(
-                  child: Material(
-                    color: selected ? style.indicator : style.container,
-                    shape: CircleBorder(
-                      side: style.outline == null
-                          ? BorderSide.none
-                          : BorderSide(color: style.outline!),
-                    ),
-                    elevation: style.outline == null ? 3 : 0,
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: onPressed,
-                      canRequestFocus: false,
-                      child: Center(
-                        child: FushiIcon(
-                          selected
-                              ? (entry.selectedIcon ?? entry.icon)
-                              : entry.icon,
-                          color: selected ? style.onIndicator : style.content,
+              AnimatedScale(
+                scale: hot ? 1.18 : 1,
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.release,
+                child: SizedBox.square(
+                  dimension: kNavLauncherButtonSize,
+                  child: FushiPressScale(
+                    child: Material(
+                      color: selected ? style.indicator : style.container,
+                      shape: CircleBorder(
+                        side: style.outline == null
+                            ? BorderSide.none
+                            : BorderSide(color: style.outline!),
+                      ),
+                      elevation: style.outline == null ? 3 : 0,
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: onPressed,
+                        canRequestFocus: false,
+                        child: Center(
+                          child: FushiIcon(
+                            selected
+                                ? (entry.selectedIcon ?? entry.icon)
+                                : entry.icon,
+                            color: selected ? style.onIndicator : style.content,
+                          ),
                         ),
                       ),
                     ),

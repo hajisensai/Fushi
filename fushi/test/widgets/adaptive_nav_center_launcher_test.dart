@@ -98,6 +98,72 @@ void main() {
     expect(taps, isEmpty);
   });
 
+  // 「按住『+』直接划过去」（像手机图案解锁）：按下即弹出，不抬手划到某项上
+  // 松开即选中；底栏的长按 / 横拖拖选同时开着，从「+」起手不能被它抢走。
+  Future<(List<int>, List<int>)> pumpDragBar(WidgetTester tester) async {
+    final List<int> taps = <int>[];
+    final List<int> dragSelects = <int>[];
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: 0,
+                onTap: taps.add,
+                onDragSelect: dragSelects.add,
+                items: itemsOf(9),
+                centerLauncher: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return (taps, dragSelects);
+  }
+
+  testWidgets('按住「+」划到某项上松手：直接切过去', (WidgetTester tester) async {
+    final (List<int> taps, List<int> dragSelects) = await pumpDragBar(tester);
+    // 弹出后「+」被扇面的「×」盖住、自身透明，起手点先记下。
+    final Offset plus = tester.getCenter(shown(t.home_nav_more));
+    final TestGesture gesture = await tester.startGesture(plus);
+    await tester.pumpAndSettle();
+    expect(shown('Tab4'), findsOneWidget, reason: '按下即弹出，不必先抬手');
+    // 圆钮圆心在标签上方约 40。
+    final Offset target = tester.getCenter(shown('Tab4')) - const Offset(0, 40);
+    await gesture.moveTo(Offset.lerp(plus, target, 0.5)!);
+    await tester.pump();
+    await gesture.moveTo(target);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(taps, <int>[4]);
+    expect(dragSelects, isEmpty, reason: '从「+」起手的拖动不归底栏拖选');
+    expect(shown('Tab4'), findsNothing);
+  });
+
+  testWidgets('按住「+」划到空处松手：收回、不切换', (WidgetTester tester) async {
+    final (List<int> taps, List<int> dragSelects) = await pumpDragBar(tester);
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(shown(t.home_nav_more)),
+    );
+    await tester.pumpAndSettle();
+    await gesture.moveTo(const Offset(30, 120));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(shown('Tab4'), findsNothing);
+    expect(taps, isEmpty);
+    expect(dragSelects, isEmpty);
+  });
+
   testWidgets('不多于 5 个入口时照常平铺，没有「+」', (WidgetTester tester) async {
     await pumpBar(tester, count: 5);
     for (int i = 0; i < 5; i++) {
