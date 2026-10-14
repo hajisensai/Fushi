@@ -296,6 +296,29 @@ test('词典字体：媒体配置晚到时补取；用户停用字体后撤掉�
   assert.deepStrictEqual(env.deleted, env.added);
 });
 
+test('词典字体：同一家族的常规 + 粗体文件各带真实字重注册，非法字重值不进描述符', async () => {
+  const env = fontEnv();
+  env.ctx.applyFushiPopupCss({
+    dictionaryFontCss: '',
+    dictionaryFontFaces: [
+      { family: 'Klee One', src: '/api/extension/fonts/dictionary?path=R&v=1', format: 'truetype', weight: '400' },
+      { family: 'Klee One', src: '/api/extension/fonts/dictionary?path=SB&v=1', format: 'truetype', weight: '600' },
+      { family: 'Var', src: '/api/extension/fonts/dictionary?path=V&v=1', format: 'truetype', weight: '100 900' },
+      { family: 'Old', src: '/api/extension/fonts/dictionary?path=O&v=1', format: 'truetype' },
+      { family: 'Evil', src: '/api/extension/fonts/dictionary?path=E&v=1', format: 'truetype', weight: 'bold; x' },
+    ],
+  });
+  await flush();
+  const weights = env.added.map((f) => [f.family, f.descriptors.weight]);
+  assert.deepStrictEqual(weights, [
+    ['Klee One', '400'],
+    ['Klee One', '600'],
+    ['Var', '100 900'],
+    ['Old', undefined],
+    ['Evil', undefined],
+  ]);
+});
+
 test('词典字体：只接受 app 词典字体端点的相对路径，拒绝外部 URL', () => {
   const env = fontEnv();
   env.ctx.applyFushiPopupCss({
