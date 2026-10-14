@@ -16,7 +16,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi_engine/epub/epub_importer.dart';
-import 'package:fushi_engine/media/manga/manga_series_grouper.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -1052,10 +1052,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// epub 导入时间，外加偏好里的排序方式。
   Future<void> _loadShelfMaps() async {
     _sortMode = ShelfSortMode.fromName(appModel.prefsRepo.shelfSortModeName);
-    // 漫画库：本地分卷按系列自动收进合集（「志乃と恋」1–4 卷叠成一张卡）。
+    // 书架 / 漫画库：本地分卷按系列自动收进合集（「志乃と恋」1–4 卷叠成一张卡）。
     // 每次导入 / 合集变化都会重载到这里，所以这一处覆盖全部导入入口；归组幂等，
     // 已在合集里的卷与用户删过 / 移出过的不动。
-    if (_mangaOnly) await MangaSeriesGrouper(appModel.database).groupAll();
+    await BookSeriesGrouper(appModel.database).groupAll();
     final List<MediaCollectionRow> collections =
         await appModel.database.getAllMediaCollections();
     final Map<String, int> primaryMap =
