@@ -8,33 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ daf034a. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.10.0-debug.19163-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19163-ios.ipa",
-      "releaseSequence": 19163,
-      "tag": "v2.10.0-debug.19163+be7741f",
-      "version": "2.10.0-debug.19163",
-      "size": 80692113,
-      "sha256": "767204e767d80ef566d73849828370049f08656787ac823d3cbd90944471d834"
-    },
-    {
-      "name": "fushi-2.10.0-debug.19163-macos-arm64.dmg",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19163-macos-arm64.dmg",
-      "releaseSequence": 19163,
-      "tag": "v2.10.0-debug.19163+be7741f",
-      "version": "2.10.0-debug.19163",
-      "size": 256405771,
-      "sha256": "769cadee8405ef76aedc9d96825c24fba77a886b8368aafb5c8e71a2c9f42ebd"
-    },
-    {
-      "name": "fushi-2.10.0-debug.19163-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19163-macos-arm64.zip",
-      "releaseSequence": 19163,
-      "tag": "v2.10.0-debug.19163+be7741f",
-      "version": "2.10.0-debug.19163",
-      "size": 244335176,
-      "sha256": "0ccc763351e7b206ff04be99be6932503435c5f8ee46a50175409bed6360a0c0"
-    },
-    {
       "name": "fushi-2.10.0-debug.19181-daf034a-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19181-daf034a-debug.apk",
       "releaseSequence": 19181,
@@ -42,6 +15,33 @@
       "version": "2.10.0-debug.19181",
       "size": 377654172,
       "sha256": "8c811fb06e14c8f3fd2cb60cbf4a88f8db2c335daacd2ccb2457ac45c9df9d68"
+    },
+    {
+      "name": "fushi-2.10.0-debug.19181-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19181-ios.ipa",
+      "releaseSequence": 19181,
+      "tag": "v2.10.0-debug.19181+daf034a",
+      "version": "2.10.0-debug.19181",
+      "size": 80685801,
+      "sha256": "36ab9a9f66c2c4ffffa2b471932cd23b9d2a096a52ddf07fc06b84928cece502"
+    },
+    {
+      "name": "fushi-2.10.0-debug.19181-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19181-macos-arm64.dmg",
+      "releaseSequence": 19181,
+      "tag": "v2.10.0-debug.19181+daf034a",
+      "version": "2.10.0-debug.19181",
+      "size": 256474218,
+      "sha256": "9f9b8f3d39768e075875e87bbbf40e789c1c9caf836c27a58283f2b7a4f20945"
+    },
+    {
+      "name": "fushi-2.10.0-debug.19181-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19181-macos-arm64.zip",
+      "releaseSequence": 19181,
+      "tag": "v2.10.0-debug.19181+daf034a",
+      "version": "2.10.0-debug.19181",
+      "size": 244328960,
+      "sha256": "caa1c02aafd67bf266ca5b2c75e364b16380385e5d58e032a5aef927693b252f"
     },
     {
       "name": "fushi-2.10.0-debug.19181-windows-setup.exe",
