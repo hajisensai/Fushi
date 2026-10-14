@@ -7481,5 +7481,7 @@
   "anki_pending_mine_landing_host_note": "Dieses Gerät ist ein Interconnect-Host, gekoppelte Geräte brauchen diese Option daher nicht. Schalte auf diesen Geräten „An gekoppeltes Gerät senden“ ein, dann landen ihre Karten direkt im Anki dieses Geräts.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
 }
