@@ -33,18 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3055 条。点号进各自文件。
+> 共 3056 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3369](bugs/BUG-3369-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3368](bugs/BUG-3368-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
-| [BUG-3367](bugs/BUG-3367-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
-| [BUG-3366](bugs/BUG-3366-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |
-> 共 3053 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
+| [BUG-3366](bugs/BUG-3366-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |
 | [BUG-3365](bugs/BUG-3365-floating-ball-media-defaults.md) | ✅ | ✅ | 漫画等媒体页悬浮球出厂带一长列应用外按钮 |
 | [BUG-3364](bugs/BUG-3364-mihon-speedbinb-grandparent-ctor.md) | ✅ | ✅ | Mihon 桌面 sidecar：SpeedBinb 系日漫源搜索报 VerifyError（R8 内联两层构造器） |
 | [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
