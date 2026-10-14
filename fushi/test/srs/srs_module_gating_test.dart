@@ -221,11 +221,7 @@ void main() {
         () => appModel.setModuleEnabled(ModuleId.srs, true),
       );
       await _settle(tester);
-      expect(
-        find.text(t.nav_srs),
-        findsWidgets,
-        reason: '打开模块后底栏 / 侧栏出现「复习」',
-      );
+      expect(find.text(t.nav_srs), findsWidgets, reason: '打开模块后底栏 / 侧栏出现「复习」');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 10));

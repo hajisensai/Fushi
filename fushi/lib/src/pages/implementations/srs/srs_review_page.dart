@@ -824,7 +824,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           horizontal: tokens.spacing.gap,
         ),
         onTap: _busy ? null : () => _rate(rating),
-        child: Tooltip(
+        child: FushiTooltip(
           message: '$label ($rating)',
           child: Column(
             mainAxisSize: MainAxisSize.min,

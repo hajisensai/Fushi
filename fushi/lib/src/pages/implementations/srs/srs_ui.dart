@@ -56,7 +56,7 @@ class SrsCountTriple extends StatelessWidget {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             );
     final Color muted = Theme.of(context).disabledColor;
-    Widget cell(int value, Color color, String label) => Tooltip(
+    Widget cell(int value, Color color, String label) => FushiTooltip(
       message: label,
       child: ConstrainedBox(
         constraints: BoxConstraints(minWidth: dense ? 24 : 32),

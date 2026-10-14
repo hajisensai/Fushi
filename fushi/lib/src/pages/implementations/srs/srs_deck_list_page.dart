@@ -437,7 +437,10 @@ class _DeckRow extends StatelessWidget {
                   : FushiCardTone.neutral,
             ),
           ),
-          title: Tooltip(message: deck.fullName, child: Text(deck.deck.name)),
+          title: FushiTooltip(
+            message: deck.fullName,
+            child: Text(deck.deck.name),
+          ),
           subtitle: note == null ? null : Text(note),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
