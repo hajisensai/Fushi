@@ -421,9 +421,6 @@ TextStyle homeCoverTitleStyle(BuildContext context) {
 /// 封面与下方标题之间的间距。
 const double kHomeCoverTitleGap = 6;
 
-/// 「继续」横卡的宽度是同排竖卡的几倍（用户 2026-10-14：横卡约 1.5 倍竖卡宽）。
-const double kHomeLandscapeCoverWidthFactor = 1.5;
-
 /// 「继续」横卡的封面宽高比：完整显示每集截图 / 横版画面。
 const double kHomeLandscapeCoverAspect = 16 / 9;
 
@@ -431,15 +428,15 @@ const double kHomeLandscapeCoverAspect = 16 / 9;
 /// 真实宽高比 > 1 是横图，其余（含正方形、尺寸未知）按竖卡。
 bool homeCoverIsLandscape(double? aspect) => aspect != null && aspect > 1;
 
-/// 「继续」卡封面槽尺寸：竖卡 2:3（宽 = [portraitWidth]）；横卡宽是竖卡的
-/// [kHomeLandscapeCoverWidthFactor] 倍、16:9。
+/// 「继续」卡封面槽尺寸：竖卡 2:3（宽 = [portraitWidth]）；横卡与竖卡**同高**
+///（用户 2026-10-14「应该同高」：一排封面顶边、底边都齐），宽按 16:9 推出。
 Size homeContinueCoverSize({
   required double portraitWidth,
   required bool landscape,
 }) {
-  if (!landscape) return Size(portraitWidth, portraitWidth * 3 / 2);
-  final double width = portraitWidth * kHomeLandscapeCoverWidthFactor;
-  return Size(width, width / kHomeLandscapeCoverAspect);
+  final double height = portraitWidth * 3 / 2;
+  if (!landscape) return Size(portraitWidth, height);
+  return Size(height * kHomeLandscapeCoverAspect, height);
 }
 
 /// 按封面图**真实宽高比**决定「继续」卡横竖（[homeCoverIsLandscape]）。
@@ -684,7 +681,7 @@ class HomeContinueHero extends StatelessWidget {
   final double coverHeight;
 
   /// 封面是横图（每集截图 / 横版画面）：封面槽改成 16:9、宽为竖槽的
-  /// [kHomeLandscapeCoverWidthFactor] 倍（不超过卡宽一半），完整显示截图。
+  /// 同高、16:9（不超过卡宽一半），完整显示截图。
   final bool landscapeCover;
 
   /// 标题上方的小字（最近一次的相对时间）；null = 不画。

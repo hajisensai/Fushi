@@ -6000,7 +6000,7 @@
   "anki_sync_client_ankiweb_confirm": "Use AnkiWeb anyway",
   "anki_sync_client_has_unsynced": "$count card(s) haven't synced yet. Sync them before switching account or signing out.",
   "anki_sync_client_sign_in_failed": "Sign-in failed: $error",
-  "anki_pending_mine_landing_hint": "Cards mined on devices without Anki reach this device through sync and are added to Anki here. Only one device receives them at a time.",
+  "anki_pending_mine_landing_hint": "Cards mined on devices without Anki are passed to this device through sync (such as Google Drive or WebDAV) and added to Anki here. Only one device receives them at a time.",
   "anki_sync_client_relogin": "Sign in again",
   "anki_sync_client_discard_confirm": "$count card(s) haven't synced to Anki yet. Discard them and sign out? They can't be recovered.",
   "anki_sync_client_discard_action": "Discard and sign out",
@@ -7478,9 +7478,11 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "This device is an interconnect host, so paired phones can't hand cards to it this way. On those phones, turn on Mine to Fushi Interconnect server instead.",
+  "anki_pending_mine_landing_host_note": "This device is an interconnect host, so paired devices don't need this. Turn on \"Mine to Fushi Interconnect server\" on those devices and their cards go straight to Anki here.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "lyrics_layout_swap_sides": "Swap sides"
 }

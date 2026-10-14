@@ -95,6 +95,50 @@ void main() {
       });
     }
 
+    // 弹窗 HTML 除了三份 popup.html，还有两份**内联拼装**的副本（桌面 about:blank
+    // 与 Android 弹窗 Activity）。BUG-2041 删 `.overlay` 时漏了这两份：那个「×」
+    // 成了弹窗底部的一行裸文字，一点就 `ReferenceError: closeOverlay is not defined`
+    // （用户本机错误日志 2026-10-13）。
+    const List<String> inlineHtmlSources = <String>[
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      'android/app/src/main/java/app/fushi/reader/PopupDictActivity.kt',
+    ];
+    for (final String path in inlineHtmlSources) {
+      test('[$path] 内联弹窗 HTML 没有旧 .overlay 节点', () {
+        final String source = File(path).readAsStringSync();
+        for (final String dead in <String>[
+          'class="overlay"',
+          'overlay-close',
+          'overlay-content',
+          'closeOverlay(',
+        ]) {
+          expect(
+            source.contains(dead),
+            isFalse,
+            reason: '$path 的内联弹窗 HTML 还留着 `$dead`（popup.html 早已删掉）',
+          );
+        }
+      });
+
+      test('[$path] 内联 HTML 的 on* 处理函数都在 popup.js 里定义', () {
+        final String source = File(path).readAsStringSync();
+        final String js = maskJsComments(read('assets/popup', 'popup.js'));
+        final Iterable<String> handlers = RegExp(
+          r'''\bon[a-z]+="([A-Za-z_$][\w$]*)\(''',
+        ).allMatches(source).map((RegExpMatch m) => m.group(1)!);
+        for (final String name in handlers) {
+          expect(
+            RegExp('function\\s+${RegExp.escape(name)}\\s*\\(').hasMatch(js) ||
+                RegExp(
+                  '(?:window\\.|\\b)${RegExp.escape(name)}\\s*=',
+                ).hasMatch(js),
+            isTrue,
+            reason: '$path 的内联 HTML 调用了 $name()，popup.js 里没有它',
+          );
+        }
+      });
+    }
+
     test('钉住态在 document dismiss 分支里被豁免（否则点说明就关窗）', () {
       final String js = maskJsComments(read('assets/popup', 'popup.js'));
       expect(

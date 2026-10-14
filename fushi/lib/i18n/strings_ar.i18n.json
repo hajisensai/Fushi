@@ -6000,7 +6000,7 @@
   "anki_sync_client_ankiweb_confirm": "استخدام AnkiWeb على أي حال",
   "anki_sync_client_has_unsynced": "$count بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.",
   "anki_sync_client_sign_in_failed": "فشل تسجيل الدخول: $error",
-  "anki_pending_mine_landing_hint": "تصل البطاقات المُنشأة على أجهزة بلا Anki إلى هذا الجهاز عبر المزامنة وتُضاف إلى Anki هنا. يستلمها جهاز واحد فقط في كل مرة.",
+  "anki_pending_mine_landing_hint": "تصل البطاقات المُنشأة على أجهزة بلا Anki إلى هذا الجهاز عبر المزامنة (مثل Google Drive أو WebDAV) وتُضاف إلى Anki هنا. يستلمها جهاز واحد فقط في كل مرة.",
   "anki_sync_client_relogin": "تسجيل الدخول مرة أخرى",
   "anki_sync_client_discard_confirm": "$count بطاقة لم تُزامَن مع Anki بعد. هل تتجاهلها وتسجل الخروج؟ لا يمكن استردادها.",
   "anki_sync_client_discard_action": "تجاهل وتسجيل الخروج",
@@ -7478,9 +7478,11 @@
   "feedback_filter_active": "Ongoing",
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
-  "anki_pending_mine_landing_host_note": "هذا الجهاز مضيف للربط البيني، لذا لا تستطيع الهواتف المقترنة تسليمه البطاقات بهذه الطريقة. فعّل بدلًا من ذلك «إرسال إلى الجهاز المقترن» على تلك الهواتف.",
+  "anki_pending_mine_landing_host_note": "هذا الجهاز مضيف للربط البيني، لذا لا تحتاج الأجهزة المقترنة إلى هذا الخيار. فعّل «إرسال إلى الجهاز المقترن» على تلك الأجهزة لتصل بطاقاتها مباشرة إلى Anki على هذا الجهاز.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "sync_position_conflict_title": "Playback position conflict",
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "lyrics_layout_swap_sides": "Swap sides"
 }
