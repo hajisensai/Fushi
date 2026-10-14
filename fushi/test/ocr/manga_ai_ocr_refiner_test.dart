@@ -305,6 +305,65 @@ void main() {
       }
     });
 
+    test('行数对不上、首列短到倾角被判可忽略：倾角取最长列，长列仍旋转', () {
+      const double tilt = 3 * math.pi / 180;
+      // 宽 [a]、高 [b] 的列绕 ([cx], [cy]) 斜 [tilt]（与 mangaTiltedLineQuad 同向）。
+      List<List<double>> column(double cx, double cy, double a, double b) {
+        final double ux = math.cos(tilt), uy = math.sin(tilt);
+        final double vx = -math.sin(tilt), vy = math.cos(tilt);
+        List<double> corner(double du, double dv) => <double>[
+          cx + du * ux + dv * vx,
+          cy + du * uy + dv * vy,
+        ];
+        return <List<double>>[
+          corner(-a / 2, -b / 2),
+          corner(a / 2, -b / 2),
+          corner(a / 2, b / 2),
+          corner(-a / 2, b / 2),
+        ];
+      }
+
+      // 竖排右起：首列 3 个字（30×90），次列 20 个字（30×600）。
+      final List<List<double>> shortColumn = column(200, 60, 30, 90);
+      final List<List<double>> longColumn = column(150, 315, 30, 600);
+      expect(
+        mokuroOrientedRectFromQuad(shortColumn)!.rotation,
+        0,
+        reason: '夹具前提：短列自身的 3° 被判可忽略、归 0',
+      );
+      expect(
+        mokuroOrientedRectFromQuad(longColumn)!.rotation,
+        closeTo(tilt, 1e-9),
+        reason: '夹具前提：长列的 3° 不可忽略',
+      );
+      final MokuroBlock source = block(
+        '',
+        lines: <String>['abc', 'd'],
+        linesCoords: <List<List<double>>>[shortColumn, longColumn],
+      );
+      // 一行 23 字，与原行数（2）对不上，走重排。
+      const String text = '一二三四五六七八九十一二三四五六七八九十一二三';
+      final MokuroBlock out = applyMangaAiOcrText(source, text);
+      expect(out.lines.join(), text);
+      expect(out.linesCoords, isNotNull);
+      for (final List<List<double>> quad in out.linesCoords!) {
+        // 直接看首边方向：短格即便会被拟合判可忽略，写回的四边形也该是转过的。
+        final double edgeAngle = math.atan2(
+          quad[1][1] - quad[0][1],
+          quad[1][0] - quad[0][0],
+        );
+        expect(edgeAngle, closeTo(tilt, 1e-6));
+      }
+      expect(
+        out.linesCoords!.any(
+          (List<List<double>> quad) =>
+              (mokuroOrientedRectFromQuad(quad)!.rotation - tilt).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: '长列重排出的行格必须仍是斜的（不能全退回轴对齐）',
+      );
+    });
+
     test('没有行几何：整块单行', () {
       final MokuroBlock out = applyMangaAiOcrText(block('x'), '機嫌の\n悪い');
       expect(out.lines, <String>['機嫌の悪い']);
@@ -391,11 +450,9 @@ void main() {
         applyMangaAiOcrText(horizontal('x'), '  sorry   I cannot  ').lines,
         <String>['sorry I cannot'],
       );
-      expect(
-        applyMangaAiOcrText(horizontal('HEY'), 'HEY\tYOU').lines,
-        <String>['HEY YOU'],
-        reason: '本地是单词块（无空白）也不能把模型给的词界删掉',
-      );
+      expect(applyMangaAiOcrText(horizontal('HEY'), 'HEY\tYOU').lines, <String>[
+        'HEY YOU',
+      ], reason: '本地是单词块（无空白）也不能把模型给的词界删掉');
       expect(
         applyMangaAiOcrText(horizontal('x'), 'sorry I\ncannot do it').lines,
         <String>['sorry I cannot do it'],
