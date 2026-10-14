@@ -22,6 +22,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi/src/media/source_library/sftp_stream_source.dart'
+    show sftpRemotePathOf;
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
@@ -1074,6 +1076,50 @@ void main() {
           <String>['sftp://nas.local:22/srv/video/Movie.mkv'],
           reason: '端口缺省 22；重扫按路径去重，不生成 X (2)');
       expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
+    });
+
+    // 相对根（登录目录下的 `Videos`）是书 / 漫画 SFTP 来源一直可用的写法；视频
+    // 条目地址必须能还原回同一个相对路径，而不是被往返成绝对路径 `/Videos/…`。
+    testWidgets(
+        'relative SFTP root round-trips to the same relative remote path',
+        (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'net_sftp_video_relative_',
+      );
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final String dummy = p.join(tmp.path, 'dummy.bin');
+      File(dummy).writeAsBytesSync(<int>[0]);
+      final _FakeVirtualNetworkFs fs = _FakeVirtualNetworkFs(<String, String>{
+        'Videos/Movie.mkv': dummy,
+        'Videos/Movie.srt': dummy,
+      });
+      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
+        label: 'NAS',
+        mediaKind: 'video',
+        rootPath: 'Videos',
+        transport: const Value('sftp'),
+        configJson: const Value('{"host":"nas.local","username":"u"}'),
+        createdAt: 1000,
+      ));
+      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+      await tester.runAsync(() async {
+        await SourceLibraryScanner(db).scan(source, fs: fs);
+      });
+
+      expect((await db.getMediaSourceById(sid))!.lastScanError, isNull);
+      final VideoBookRow movie =
+          (await VideoBookRepository(db).listAll()).single;
+      const String urlRoot = 'sftp://nas.local:22';
+      expect(movie.videoPath, '$urlRoot/~/Videos/Movie.mkv');
+      expect(sftpRemotePathOf(movie.videoPath, urlRoot), 'Videos/Movie.mkv',
+          reason: '起播按这个路径读字节，必须仍是相对路径');
+      final StreamVideoSpec spec =
+          StreamVideoSpec.fromStorageJson(movie.streamSpecJson);
+      expect(spec.subtitleUrl, '$urlRoot/~/Videos/Movie.srt');
+      expect(sftpRemotePathOf(spec.subtitleUrl!, urlRoot), 'Videos/Movie.srt');
     });
   });
 }

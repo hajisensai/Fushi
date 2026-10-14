@@ -36,17 +36,46 @@ String sftpSourceUrlRootForConfig(Map<String, Object?> config) =>
       port: (config['port'] as num?)?.toInt() ?? 22,
     );
 
-/// [url] 落在 [urlRoot] 之下时还原出远端绝对路径，否则 null。
+/// 相对远端路径在地址里的标记段：`<urlRoot>/~/<相对路径>`。
+///
+/// SFTP 的相对路径由服务端按登录目录解析（来源根填 `Videos` 即登录目录下的
+/// `Videos`），书 / 漫画来源一直把它原样交给 SFTP 客户端。地址里若直接拼成
+/// `<urlRoot>/Videos/a.mkv`，还原时就成了绝对路径 `/Videos/a.mkv`、起播读错文件，
+/// 所以相对路径必须带一个可区分的标记段。
+const String _sftpRelativeMarker = '/~';
+
+/// [url] 落在 [urlRoot] 之下时还原出远端路径，否则 null。与 [sftpSourceUrlOf]
+/// 互逆：相对路径还原成相对路径，绝对路径还原成绝对路径。
 ///
 /// 不经 [Uri] 解析：路径是解码态，真名里的 `%` / 空格经 [Uri] 往返会被改写。
 String? sftpRemotePathOf(String url, String urlRoot) {
   if (!url.startsWith('$urlRoot/')) return null;
-  return url.substring(urlRoot.length);
+  final String rest = url.substring(urlRoot.length);
+  if (rest == _sftpRelativeMarker) return '';
+  if (rest.startsWith('$_sftpRelativeMarker/')) {
+    return rest.substring(_sftpRelativeMarker.length + 1);
+  }
+  // 转义过的绝对路径（见 [sftpSourceUrlOf]）：去掉补上的那一道斜杠。
+  if (rest.startsWith('//')) return rest.substring(1);
+  return rest;
 }
 
-/// 把远端绝对路径（`/srv/video/a.mkv`）映射成 `<urlRoot>/srv/video/a.mkv`。
-String sftpSourceUrlOf(String remotePath, String urlRoot) =>
-    remotePath.startsWith('/') ? '$urlRoot$remotePath' : '$urlRoot/$remotePath';
+/// 把远端路径映射成条目地址，[sftpRemotePathOf] 可无损还原：
+/// - 绝对路径 `/srv/video/a.mkv` → `<urlRoot>/srv/video/a.mkv`；
+/// - 相对路径 `Videos/a.mkv` → `<urlRoot>/~/Videos/a.mkv`（空串 → `<urlRoot>/~`）；
+/// - 会与上面两种撞形的绝对路径（`/~`、`/~/…`、以 `//` 开头）前面再补一道
+///   斜杠，还原时去掉。
+String sftpSourceUrlOf(String remotePath, String urlRoot) {
+  if (!remotePath.startsWith('/')) {
+    return remotePath.isEmpty
+        ? '$urlRoot$_sftpRelativeMarker'
+        : '$urlRoot$_sftpRelativeMarker/$remotePath';
+  }
+  final bool collides = remotePath == _sftpRelativeMarker ||
+      remotePath.startsWith('$_sftpRelativeMarker/') ||
+      remotePath.startsWith('//');
+  return collides ? '$urlRoot/$remotePath' : '$urlRoot$remotePath';
+}
 
 /// 扫描期的命名空间换装：对外一律是 `sftp://` 地址，对内转回远端路径交给 [inner]。
 ///
@@ -99,12 +128,22 @@ class SftpSourceRangeReader implements SyncAssetRangeReader {
 
   final NetworkSourceFileSystem fs;
 
+  bool _revoked = false;
+
+  /// 拥有者（[SftpStreamUrlResolver]）已关闭：之后的区间读一律拒绝。中继登记项
+  /// 还挂着本 reader 时，若照常读就会经 [NetworkSourceFileSystem] 自动重连出一条
+  /// 再也没人关的 SSH 连接。
+  void revoke() => _revoked = true;
+
   @override
   Future<SyncAssetRange> openAssetRange(
     String assetId, {
     required int start,
     int? end,
   }) async {
+    if (_revoked) {
+      throw StateError('SFTP stream reader was closed');
+    }
     try {
       final ({
         int totalBytes,
@@ -140,11 +179,15 @@ class SftpStreamUrlResolver implements StreamUrlResolver {
   final NetworkSourceFileSystem _fs;
   final SftpSourceRangeReader _reader;
   final Future<CloudVideoStreamRelay> Function() _relay;
+  bool _closed = false;
 
   @override
   Future<String> resolve(String url) async {
     final String? remotePath = sftpRemotePathOf(url, urlRoot);
     if (remotePath == null) return url;
+    if (_closed) {
+      throw StateError('SftpStreamUrlResolver used after close');
+    }
     final CloudVideoStreamRelay relay = await _relay();
     return relay
         .register(
@@ -156,10 +199,13 @@ class SftpStreamUrlResolver implements StreamUrlResolver {
         .toString();
   }
 
-  /// 关掉 SSH 连接。中继里仍挂着本 reader 的登记项在下一次请求时会自动重连——
-  /// 播放页已关时内核不会再来要字节，所以不会留下常驻连接。
+  /// 关掉 SSH 连接，并作废本解析器登记进中继的 reader：之后指向它的请求直接
+  /// 失败，不会再经 [NetworkSourceFileSystem] 自动重连出一条无人关闭的连接。
+  /// 同一条目被新的解析器（播放页刷新）重新登记时，中继换用新 reader，不受影响。
   @override
   void close() {
+    _closed = true;
+    _reader.revoke();
     unawaited(_fs.close());
   }
 }
