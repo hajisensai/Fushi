@@ -116,6 +116,8 @@ class AdvancedMiningVideoImageSection {
     required this.defaultMode,
     this.frameAt,
     this.frameStepMs = 42,
+    this.lookupFrameMs,
+    this.subtitleStartMs,
   });
 
   /// 这个来源可选的图片方式（模板不支持视频片段时不含 [VideoMiningImageMode.videoClip]）。
@@ -132,6 +134,13 @@ class AdvancedMiningVideoImageSection {
 
   /// 逐帧挪动的步长（毫秒，来自 mpv `container-fps`，取不到按 24fps）。
   final int frameStepMs;
+
+  /// 「查词时画面」那一帧的时刻（播放器轴毫秒，查词瞬间记下）；null = 不可用。
+  /// 宿主在对话框打开时就已经把这一帧截下锁住，试听挪动播放头不影响它。
+  final int? lookupFrameMs;
+
+  /// 「字幕开头」那一帧的时刻（播放器轴毫秒，未留白的句首）；null = 不可用。
+  final int? subtitleStartMs;
 }
 
 /// 漫画裁切的预选建议（相对原页图的 0..1 归一化坐标）。
