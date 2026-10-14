@@ -320,16 +320,13 @@ double estimateMangaFontSize(OcrBlock block) {
 }
 
 /// 行框 → mokuro `lines_coords`（每行一个顺时针四点多边形，页面像素坐标）。
-List<List<List<double>>>? _linesCoords(List<OcrRect>? lineBoxes) {
+///
+/// [tilt] ≠ 0 时每个轴对齐外接框还原成按该角度旋转、内接于框的矩形
+/// （[mangaTiltedLineQuad]），覆盖层据此沿斜行切逐字命中格。
+List<List<List<double>>>? _linesCoords(List<OcrRect>? lineBoxes, double tilt) {
   if (lineBoxes == null) return null;
   return <List<List<double>>>[
-    for (final OcrRect r in lineBoxes)
-      <List<double>>[
-        <double>[r.left, r.top],
-        <double>[r.right, r.top],
-        <double>[r.right, r.bottom],
-        <double>[r.left, r.bottom],
-      ],
+    for (final OcrRect r in lineBoxes) mangaTiltedLineQuad(r, tilt),
   ];
 }
 
@@ -365,7 +362,7 @@ MokuroPayload buildMangaPayloadFromResults(
         fontSize: estimateMangaFontSize(block),
         zIndex: b,
         lines: block.lines,
-        linesCoords: _linesCoords(block.lineBoxes),
+        linesCoords: _linesCoords(block.lineBoxes, block.lineTilt),
         confidence: block.confidence,
       ));
     }

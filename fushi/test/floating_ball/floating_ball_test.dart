@@ -19,16 +19,28 @@ import 'package:fushi_core/fushi_core.dart';
 ReaderHeaderAction _action(String label, {IconData icon = Icons.add}) =>
     ReaderHeaderAction(icon: icon, label: label, onPressed: () {});
 
-/// 出厂勾上的全局按钮（「立即同步」可勾选但出厂不勾）。
-const List<String> _globals = <String>[
+/// 应用外球出厂勾上的全局按钮（「立即同步」可勾选但出厂不勾；反馈虽在目录里，
+/// 但按能力过滤掉（availableIn））。
+const List<String> _systemGlobals = <String>[
   'lookup',
   'popup_lookup',
   'clipboard',
   'screen_ocr',
   'camera_ocr',
-  // 反馈出厂勾上；应用外球虽在目录里，但按能力过滤掉（availableIn）。
   'feedback',
 ];
+
+/// 其它应用内页面：不带「应用外查词」（在 Fushi 里只是另开一个独立查词窗）。
+const List<String> _generalGlobals = <String>[
+  'lookup',
+  'clipboard',
+  'screen_ocr',
+  'camera_ocr',
+  'feedback',
+];
+
+/// 阅读器 / 漫画 / 视频：只带「查词」与「反馈」，其余全局按钮要用户自己勾。
+const List<String> _mediaGlobals = <String>['lookup', 'feedback'];
 
 void main() {
   group('FloatingBallScope', () {
@@ -104,24 +116,50 @@ void main() {
       );
     });
 
-    test('出厂按钮：阅读器计时开关 + 三颗有声书传输键，漫画 / 视频全部专属按钮，都带全局按钮', () {
+    test('出厂按钮：阅读器计时开关 + 三颗有声书传输键，漫画 / 视频全部专属按钮，媒体页只带「查词」与「反馈」', () {
       expect(FloatingBallScope.reader.defaultButtons, <String>[
         ReaderControlItem.studyTimer.storageValue,
         ReaderControlItem.audiobookPrev.storageValue,
         ReaderControlItem.audiobookPlayPause.storageValue,
         ReaderControlItem.audiobookNext.storageValue,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
       expect(FloatingBallScope.video.defaultButtons, <String>[
         ...kVideoFloatingBallButtons,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
       expect(FloatingBallScope.manga.defaultButtons, <String>[
         ...kMangaFloatingBallButtons,
-        ..._globals,
+        ..._mediaGlobals,
       ]);
-      expect(FloatingBallScope.general.defaultButtons, _globals);
-      expect(FloatingBallScope.system.defaultButtons, _globals);
+      expect(FloatingBallScope.general.defaultButtons, _generalGlobals);
+      expect(FloatingBallScope.system.defaultButtons, _systemGlobals);
+    });
+
+    test('媒体页出厂不带与当前媒体无关的应用外入口（截图反馈：漫画页一长列按钮）', () {
+      const Set<String> appExternal = <String>{
+        'popup_lookup',
+        'clipboard',
+        'screen_ocr',
+        'camera_ocr',
+        'sync',
+      };
+      for (final FloatingBallScope scope in <FloatingBallScope>[
+        FloatingBallScope.reader,
+        FloatingBallScope.manga,
+        FloatingBallScope.video,
+      ]) {
+        expect(scope.isMediaScene, isTrue);
+        expect(
+          scope.defaultButtons.toSet().intersection(appExternal),
+          isEmpty,
+          reason: scope.storageValue,
+        );
+        // 仍在目录里：用户可以自己勾回来。
+        expect(scope.catalog, containsAll(appExternal));
+      }
+      expect(FloatingBallScope.general.isMediaScene, isFalse);
+      expect(FloatingBallScope.system.isMediaScene, isFalse);
     });
 
     test('立即同步：每个场景都能勾选，出厂不勾，勾上后编解码往返不丢', () {
@@ -130,7 +168,9 @@ void main() {
         FloatingBallGlobalAction.fromStorage(sync),
         FloatingBallGlobalAction.sync,
       );
-      expect(FloatingBallGlobalAction.sync.onByDefault, isFalse);
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(FloatingBallGlobalAction.sync.onByDefaultIn(scope), isFalse);
+      }
       for (final FloatingBallScope scope in FloatingBallScope.values) {
         expect(scope.catalog, contains(sync), reason: scope.storageValue);
         expect(scope.defaultButtons, isNot(contains(sync)));
@@ -274,7 +314,8 @@ void main() {
       const FloatingBallGlobalAction feedback =
           FloatingBallGlobalAction.feedback;
       expect(FloatingBallGlobalAction.fromStorage('feedback'), feedback);
-      expect(feedback.onByDefault, isTrue);
+      expect(feedback.onByDefaultIn(FloatingBallScope.general), isTrue);
+      expect(feedback.onByDefaultIn(FloatingBallScope.manga), isTrue);
       for (final (bool android, bool ios, bool desktop) in <(bool, bool, bool)>[
         (true, false, false),
         (false, true, false),
@@ -295,6 +336,28 @@ void main() {
           );
         }
       }
+    });
+
+    test('漫画球的上一页 / 下一页图标跟文字走，不按右→左翻页镜像（BUG-3365）', () {
+      final String page = File(
+        'lib/src/media/manga/reader/manga_fushi_page.dart',
+      ).readAsStringSync();
+      final int start = page.indexOf('Widget _buildMangaFloatingBallScene()');
+      expect(start, isNonNegative);
+      final String body = page.substring(
+        start,
+        page.indexOf("'ocr_boxes': ReaderHeaderAction(", start),
+      );
+      String iconOf(String key) {
+        final int at = body.indexOf("ValueKey<String>('$key')");
+        expect(at, isNonNegative, reason: key);
+        return RegExp(
+          r'icon:\s*([^,]+),',
+        ).firstMatch(body.substring(at))!.group(1)!.trim();
+      }
+
+      expect(iconOf('manga_floating_ball_previous'), 'Icons.chevron_left');
+      expect(iconOf('manga_floating_ball_next'), 'Icons.chevron_right');
     });
 
     test('应用外查词（独立查词窗）只在 Android 提供', () {
@@ -359,8 +422,16 @@ void main() {
 
     test('旧版全局按钮勾选迁移到没单独设过的场景', () async {
       await prefs.setPref('floating_ball.actions', 'clipboard');
+      // 旧勾选是用户明确选的：即使媒体页出厂不带剪贴板，也照旧勾选保留。
       expect(prefs.floatingBallButtons(FloatingBallScope.video), <String>[
         ...kVideoFloatingBallButtons,
+        'clipboard',
+      ]);
+      expect(prefs.floatingBallButtons(FloatingBallScope.reader), <String>[
+        ReaderControlItem.studyTimer.storageValue,
+        ReaderControlItem.audiobookPrev.storageValue,
+        ReaderControlItem.audiobookPlayPause.storageValue,
+        ReaderControlItem.audiobookNext.storageValue,
         'clipboard',
       ]);
       await prefs.setPref('floating_ball.actions', '-');

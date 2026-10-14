@@ -477,8 +477,18 @@ class DropboxSyncBackend extends SyncBackend
               id: e['path_lower'] as String? ?? e['path_display'] as String,
               name: e['name'] as String,
               isFolder: e['.tag'] == 'folder',
+              revision: _contentRevisionOf(e),
             ))
         .toList();
+  }
+
+  /// 文件条目的内容版本标记：`content_hash`（内容哈希）优先，没有时退到 `rev`
+  /// （每次写入都换新）。文件夹两者都没有，返回 null。
+  static String? _contentRevisionOf(Map<String, dynamic> entry) {
+    final Object? hash = entry['content_hash'];
+    if (hash is String && hash.isNotEmpty) return 'content_hash:$hash';
+    final Object? rev = entry['rev'];
+    return rev is String && rev.isNotEmpty ? 'rev:$rev' : null;
   }
 
   @override

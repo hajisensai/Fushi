@@ -39,7 +39,7 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 同键空间）；**仅当本地存在 VideoBooks 行时**才一并更新 `lastPositionMs`
   /// （流式视频绝不强建行污染书架）。
   ///
-  /// LWW 比对与逐条错误处理见共享模板 [_syncPositionsLive]。
+  /// 三方判定（BUG-3367）、冲突上报与逐条错误处理见共享模板 [_syncPositionsLive]。
   Future<void> _syncVideoProgressLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -69,18 +69,17 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
 
     await _syncPositionsLive(
       report,
+      sync: InterconnectPlaybackPositionSync(
+        db: _db,
+        backend: backend,
+        kind: PlaybackPositionKind.video,
+      ),
       errorLabel: 'live video progress',
       localKeys: localUids,
       hostKeys: hostById.keys.toSet(),
-      readLocal: (String uid) async {
-        final int prefsPos =
-            await _db.getPrefTyped<int>(videoRemotePositionPrefKey(uid), 0);
-        final int prefsAt =
-            await _db.getPrefTyped<int>(videoRemotePositionAtPrefKey(uid), 0);
-        return (
-          positionMs: rowPositionByUid[uid] ?? prefsPos,
-          updatedAtMs: prefsAt,
-        );
+      titleOf: (String uid) {
+        final String? title = hostById[uid]?.title;
+        return title == null || title.isEmpty ? uid : title;
       },
       // host 清单条目已带 positionMs / positionUpdatedAtMs，无需逐视频 GET。
       readHost: (String uid) async {
@@ -89,21 +88,6 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
           positionMs: info.positionMs,
           updatedAtMs: info.positionUpdatedAtMs,
         );
-      },
-      pushToHost: (String uid, int positionMs, int updatedAtMs) =>
-          backend.putRemoteVideoPosition(uid, positionMs, updatedAtMs),
-      writeBackLocal: (String uid, int positionMs, int updatedAtMs) async {
-        await _db.setPrefTyped<int>(
-            videoRemotePositionPrefKey(uid), positionMs);
-        await _db.setPrefTyped<int>(
-            videoRemotePositionAtPrefKey(uid), updatedAtMs);
-        if (rowPositionByUid.containsKey(uid)) {
-          // 时刻用**对端的** updatedAtMs（不是 now）：这是「对方在那个时刻看到这
-          // 里」的事实。传 now 会把三天前的远端进度冒充成本机刚看的，直接把合集
-          // 续播锚点（BUG-1542）钉在一集用户根本没在看的集上。
-          await _db.updateVideoBookPosition(uid, positionMs,
-              playedAt: updatedAtMs);
-        }
       },
     );
 
