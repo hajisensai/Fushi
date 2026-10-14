@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Définition",
   "anki_lapis_visual_target_inside_definition": "À l'intérieur de la définition",
   "anki_mine_to_server": "Envoyer au périphérique apparié",
-  "anki_mine_to_server_hint": "Envoyer les cartes créées vers l'Anki de l'hôte apparié (ses paquets et paramètres) au lieu de cet appareil. Nécessite un appairage d'interconnexion.",
+  "anki_mine_to_server_hint": "Envoyer les cartes créées vers l'Anki de l'hôte apparié (ses paquets et paramètres) au lieu de cet appareil. Nécessite un appairage d'interconnexion. Si le serveur est hors ligne, les cartes restent sur cet appareil et sont envoyées dès son retour.",
   "anki_mined_action_add_duplicate": "Ajouter comme nouvelle carte",
   "anki_mined_action_overwrite": "Écraser cette carte",
   "anki_mined_action_view": "Voir / ouvrir dans Anki",
@@ -5984,7 +5984,7 @@
   "anki_pending_mines_ankimobile_hint": "Chaque carte ouvre brièvement AnkiMobile. Fushi envoie la suivante à votre retour, puis demande à AnkiMobile de se synchroniser.",
   "anki_pending_mines_status_failed": "Échec : $error",
   "anki_pending_mines_flush_result": "$delivered envoyées, $failed en échec, $remaining restantes",
-  "anki_pending_mine_landing_title": "Livrer les cartes d'autres appareils",
+  "anki_pending_mine_landing_title": "Recevoir les cartes des autres appareils",
   "anki_error_sync_signed_out": "Connectez-vous d'abord à votre serveur de synchronisation Anki (réglages Anki › Synchronisation Anki).",
   "anki_error_sync_unavailable": "Cet appareil n'a pas fushi-anki-sync, il ne peut donc pas se synchroniser directement avec Anki.",
   "anki_sync_client_section_title": "Synchronisation Anki (sans Anki)",
@@ -6010,7 +6010,7 @@
   "anki_sync_client_ankiweb_confirm": "Utiliser AnkiWeb quand même",
   "anki_sync_client_has_unsynced": "$count carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.",
   "anki_sync_client_sign_in_failed": "Échec de la connexion : $error",
-  "anki_pending_mine_landing_hint": "Les cartes enregistrées sur des appareils sans Anki transitent par votre service de synchronisation (stockage cloud, ou interconnexion quand cet appareil se synchronise avec un hôte) et sont ajoutées à Anki sur cet appareil. Un seul appareil joue ce rôle à la fois. Un ordinateur faisant office d'hôte d'interconnexion ne prend pas ce rôle : les téléphones appairés avec lui doivent plutôt activer Créer vers le serveur Fushi Interconnect (les cartes attendent sur le téléphone tant que l'ordinateur est éteint). Un serveur Fushi peut prendre ce rôle.",
+  "anki_pending_mine_landing_hint": "Les cartes créées sur des appareils sans Anki arrivent sur cet appareil via la synchronisation et sont ajoutées à Anki ici. Un seul appareil les reçoit à la fois.",
   "anki_sync_client_relogin": "Se reconnecter",
   "anki_sync_client_discard_confirm": "$count carte(s) pas encore synchronisée(s) avec Anki. Les abandonner et se déconnecter ? Elles ne pourront pas être récupérées.",
   "anki_sync_client_discard_action": "Abandonner et se déconnecter",
@@ -7416,5 +7416,6 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "anki_pending_mine_landing_host_note": "Cet appareil est un hôte d'interconnexion : les téléphones appairés ne peuvent pas lui transmettre de cartes par ce biais. Sur ces téléphones, activez plutôt « Envoyer au périphérique apparié »."
 }

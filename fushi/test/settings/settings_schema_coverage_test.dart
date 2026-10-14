@@ -639,7 +639,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 本机作为制卡落地设备：写同步域设备本地偏好（认领时刻），生效点在下一轮同步的
   // 跨设备中转（harness 里没有同步后端可探）；认领 / 上传 / 收卡 / 回执全流程由
   // 专项测试用内存资产层两台设备对跑咬死。
-  'cardCreation/Deliver cards from other devices':
+  'cardCreation/Receive cards from other devices':
       'test/anki/pending_mine_relay_test.dart',
   // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
   // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，

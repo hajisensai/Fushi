@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Definition",
   "anki_lapis_visual_target_inside_definition": "Innerhalb der Definition",
   "anki_mine_to_server": "An gekoppeltes Gerät senden",
-  "anki_mine_to_server_hint": "Erstellte Karten an das Anki des gekoppelten Hosts senden (dessen Decks und Einstellungen) statt an dieses Gerät. Erfordert eine Interconnect-Kopplung.",
+  "anki_mine_to_server_hint": "Erstellte Karten an das Anki des gekoppelten Hosts senden (dessen Decks und Einstellungen) statt an dieses Gerät. Erfordert eine Interconnect-Kopplung. Ist der Server offline, warten die Karten auf diesem Gerät und werden gesendet, sobald er wieder erreichbar ist.",
   "anki_mined_action_add_duplicate": "Als neue Karte hinzufügen",
   "anki_mined_action_overwrite": "Diese Karte überschreiben",
   "anki_mined_action_view": "In Anki anzeigen / öffnen",
@@ -5984,7 +5984,7 @@
   "anki_pending_mines_ankimobile_hint": "Jede Karte öffnet kurz AnkiMobile. Fushi sendet die nächste, wenn du zurückkehrst, und bittet dann AnkiMobile um eine Synchronisierung.",
   "anki_pending_mines_status_failed": "Fehlgeschlagen: $error",
   "anki_pending_mines_flush_result": "$delivered gesendet, $failed fehlgeschlagen, $remaining verbleibend",
-  "anki_pending_mine_landing_title": "Karten von anderen Geräten zustellen",
+  "anki_pending_mine_landing_title": "Karten anderer Geräte empfangen",
   "anki_error_sync_signed_out": "Melde dich zuerst bei deinem Anki-Sync-Server an (Anki-Einstellungen › Anki-Sync).",
   "anki_error_sync_unavailable": "Dieses Gerät hat kein fushi-anki-sync und kann daher nicht direkt mit Anki synchronisieren.",
   "anki_sync_client_section_title": "Anki-Sync (Anki nicht nötig)",
@@ -6010,7 +6010,7 @@
   "anki_sync_client_ankiweb_confirm": "AnkiWeb trotzdem verwenden",
   "anki_sync_client_has_unsynced": "$count Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.",
   "anki_sync_client_sign_in_failed": "Anmeldung fehlgeschlagen: $error",
-  "anki_pending_mine_landing_hint": "Karten, die auf Geräten ohne Anki gespeichert wurden, laufen über deinen Sync-Dienst (Cloud-Speicher oder Interconnect, wenn dieses Gerät mit einem Host synchronisiert) und werden auf diesem Gerät zu Anki hinzugefügt. Das macht immer nur ein Gerät. Ein Computer, der als Interconnect-Host fungiert, übernimmt diese Rolle nicht: Mit ihm gekoppelte Smartphones sollten stattdessen „Auf Fushi-Interconnect-Server minen“ aktivieren (Karten warten auf dem Smartphone, solange der Computer aus ist). Ein Fushi-Server kann diese Rolle übernehmen.",
+  "anki_pending_mine_landing_hint": "Karten, die auf Geräten ohne Anki erstellt wurden, gelangen per Sync auf dieses Gerät und werden hier zu Anki hinzugefügt. Es empfängt jeweils nur ein Gerät.",
   "anki_sync_client_relogin": "Erneut anmelden",
   "anki_sync_client_discard_confirm": "$count Karte(n) wurden noch nicht mit Anki synchronisiert. Verwerfen und abmelden? Sie können nicht wiederhergestellt werden.",
   "anki_sync_client_discard_action": "Verwerfen und abmelden",
@@ -7416,5 +7416,6 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "anki_pending_mine_landing_host_note": "Dieses Gerät ist ein Interconnect-Host, daher können gekoppelte Smartphones ihm auf diesem Weg keine Karten übergeben. Schalte auf diesen Smartphones stattdessen „An gekoppeltes Gerät senden“ ein."
 }

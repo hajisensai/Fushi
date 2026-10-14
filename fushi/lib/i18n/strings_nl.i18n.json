@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Definitie",
   "anki_lapis_visual_target_inside_definition": "Binnen definitie",
   "anki_mine_to_server": "Kaarten naar gekoppeld apparaat sturen",
-  "anki_mine_to_server_hint": "Stuur gedolven kaarten naar de Anki van het gekoppelde apparaat (diens dekken en instellingen) in plaats van dit apparaat. Vereist een interconnectkoppeling.",
+  "anki_mine_to_server_hint": "Stuur gedolven kaarten naar de Anki van het gekoppelde apparaat (diens dekken en instellingen) in plaats van dit apparaat. Vereist een interconnectkoppeling. Is de server offline, dan wachten kaarten op dit apparaat en worden ze verzonden zodra hij terug is.",
   "anki_mined_action_add_duplicate": "Als nieuwe kaart toevoegen",
   "anki_mined_action_overwrite": "Deze kaart overschrijven",
   "anki_mined_action_view": "Bekijken / openen in Anki",
@@ -5984,7 +5984,7 @@
   "anki_pending_mines_ankimobile_hint": "Elke kaart opent AnkiMobile kort. Fushi verstuurt de volgende wanneer je terugkomt en vraagt AnkiMobile daarna te synchroniseren.",
   "anki_pending_mines_status_failed": "Mislukt: $error",
   "anki_pending_mines_flush_result": "$delivered verzonden, $failed mislukt, $remaining resterend",
-  "anki_pending_mine_landing_title": "Kaarten van andere apparaten afleveren",
+  "anki_pending_mine_landing_title": "Kaarten van andere apparaten ontvangen",
   "anki_error_sync_signed_out": "Meld je eerst aan bij je Anki-synchronisatieserver (Anki-instellingen › Anki-synchronisatie).",
   "anki_error_sync_unavailable": "Dit apparaat heeft geen fushi-anki-sync, dus het kan niet rechtstreeks met Anki synchroniseren.",
   "anki_sync_client_section_title": "Anki-synchronisatie (Anki niet nodig)",
@@ -6010,7 +6010,7 @@
   "anki_sync_client_ankiweb_confirm": "Toch AnkiWeb gebruiken",
   "anki_sync_client_has_unsynced": "$count kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.",
   "anki_sync_client_sign_in_failed": "Aanmelden mislukt: $error",
-  "anki_pending_mine_landing_hint": "Kaarten die zijn opgeslagen op apparaten zonder Anki reizen via je synchronisatieservice (cloudopslag, of interconnect wanneer dit apparaat met een host synchroniseert) en worden op dit apparaat aan Anki toegevoegd. Slechts één apparaat doet dit tegelijk. Een computer die als interconnect-host fungeert, neemt deze rol niet op zich: telefoons die ermee zijn gekoppeld, moeten in plaats daarvan Minen naar Fushi Interconnect-server inschakelen (kaarten wachten op de telefoon terwijl de computer uit staat). Een Fushi-server kan deze rol wel op zich nemen.",
+  "anki_pending_mine_landing_hint": "Kaarten die op apparaten zonder Anki zijn gemaakt, komen via synchronisatie op dit apparaat aan en worden hier aan Anki toegevoegd. Er ontvangt steeds maar één apparaat.",
   "anki_sync_client_relogin": "Opnieuw aanmelden",
   "anki_sync_client_discard_confirm": "$count kaart(en) zijn nog niet met Anki gesynchroniseerd. Verwerpen en afmelden? Ze kunnen niet worden hersteld.",
   "anki_sync_client_discard_action": "Verwerpen en afmelden",
@@ -7416,5 +7416,6 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "anki_pending_mine_landing_host_note": "Dit apparaat is een interconnect-host, dus gekoppelde telefoons kunnen op deze manier geen kaarten afleveren. Zet op die telefoons in plaats daarvan 'Kaarten naar gekoppeld apparaat sturen' aan."
 }

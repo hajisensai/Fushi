@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "Định nghĩa",
   "anki_lapis_visual_target_inside_definition": "Bên trong định nghĩa",
   "anki_mine_to_server": "Gửi thẻ đến thiết bị đã ghép nối",
-  "anki_mine_to_server_hint": "Gửi thẻ đã khai thác đến Anki của thiết bị chủ đã ghép nối (bộ thẻ và cài đặt của nó) thay vì thiết bị này. Yêu cầu ghép nối kết nối.",
+  "anki_mine_to_server_hint": "Gửi thẻ đã khai thác đến Anki của thiết bị chủ đã ghép nối (bộ thẻ và cài đặt của nó) thay vì thiết bị này. Yêu cầu ghép nối kết nối. Nếu máy chủ ngoại tuyến, thẻ sẽ chờ trên thiết bị này và được gửi khi kết nối lại.",
   "anki_mined_action_add_duplicate": "Thêm như thẻ mới",
   "anki_mined_action_overwrite": "Ghi đè thẻ này",
   "anki_mined_action_view": "Xem / mở trong Anki",
@@ -5984,7 +5984,7 @@
   "anki_pending_mines_ankimobile_hint": "Mỗi thẻ sẽ mở AnkiMobile trong giây lát. Fushi gửi thẻ tiếp theo khi bạn quay lại, rồi yêu cầu AnkiMobile đồng bộ.",
   "anki_pending_mines_status_failed": "Thất bại: $error",
   "anki_pending_mines_flush_result": "Đã gửi $delivered, thất bại $failed, còn lại $remaining",
-  "anki_pending_mine_landing_title": "Chuyển thẻ từ thiết bị khác",
+  "anki_pending_mine_landing_title": "Nhận thẻ từ thiết bị khác",
   "anki_error_sync_signed_out": "Hãy đăng nhập máy chủ đồng bộ Anki trước (Cài đặt Anki › Đồng bộ Anki).",
   "anki_error_sync_unavailable": "Thiết bị này không có fushi-anki-sync nên không thể đồng bộ trực tiếp tới Anki.",
   "anki_sync_client_section_title": "Đồng bộ Anki (không cần Anki)",
@@ -6010,7 +6010,7 @@
   "anki_sync_client_ankiweb_confirm": "Vẫn dùng AnkiWeb",
   "anki_sync_client_has_unsynced": "$count thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.",
   "anki_sync_client_sign_in_failed": "Đăng nhập thất bại: $error",
-  "anki_pending_mine_landing_hint": "Các thẻ lưu trên thiết bị không có Anki sẽ đi qua dịch vụ đồng bộ của bạn (lưu trữ đám mây, hoặc interconnect khi thiết bị này đồng bộ tới máy chủ) và được thêm vào Anki trên thiết bị này. Mỗi lúc chỉ một thiết bị làm việc này. Máy tính đóng vai máy chủ interconnect không nhận vai trò này: điện thoại ghép nối với nó nên bật Tạo thẻ tới máy chủ Fushi Interconnect (thẻ chờ trên điện thoại khi máy tính tắt). Máy chủ Fushi có thể nhận vai trò này.",
+  "anki_pending_mine_landing_hint": "Thẻ tạo trên thiết bị không có Anki sẽ được chuyển đến thiết bị này qua đồng bộ và được thêm vào Anki tại đây. Mỗi lúc chỉ một thiết bị nhận.",
   "anki_sync_client_relogin": "Đăng nhập lại",
   "anki_sync_client_discard_confirm": "$count thẻ chưa được đồng bộ tới Anki. Bỏ chúng và đăng xuất? Không thể khôi phục.",
   "anki_sync_client_discard_action": "Bỏ và đăng xuất",
@@ -7416,5 +7416,6 @@
   "video_setting_pause_ocr_scope_hint": "OCR the paused frame so its text can be tapped for lookup. Text subtitles already shown by Fushi take priority.",
   "video_setting_pause_ocr_scope_all": "All videos",
   "video_setting_pause_ocr_scope_graphic": "Image subtitles only",
-  "video_setting_pause_ocr_scope_off": "Off"
+  "video_setting_pause_ocr_scope_off": "Off",
+  "anki_pending_mine_landing_host_note": "Thiết bị này là máy chủ kết nối, nên điện thoại đã ghép nối không thể chuyển thẻ theo cách này. Trên các điện thoại đó, hãy bật \"Gửi thẻ đến thiết bị đã ghép nối\" thay thế."
 }

@@ -259,7 +259,7 @@
   "anki_lapis_visual_target_definition": "釋義",
   "anki_lapis_visual_target_inside_definition": "釋義內部",
   "anki_mine_to_server": "製卡到 Fushi 互聯服務端",
-  "anki_mine_to_server_hint": "把製卡發送到 Fushi 互聯服務端的 Anki（用服務端的牌組與設定），而非本機。需先在互聯/同步裡完成配對。",
+  "anki_mine_to_server_hint": "把製卡發送到 Fushi 互聯服務端的 Anki（用服務端的牌組與設定），而非本機。需先在互聯/同步裡完成配對。服務端離線時卡片先存在本機，連上後自動發送。",
   "anki_mined_action_add_duplicate": "新增為重復卡",
   "anki_mined_action_overwrite": "覆寫這張卡",
   "anki_mined_action_view": "查看 / 在 Anki 中打開",
@@ -5984,7 +5984,7 @@
   "anki_pending_mines_ankimobile_hint": "每張卡會短暫開啟 AnkiMobile，回到 Fushi 後自動發送下一張，全部發完後讓 AnkiMobile 同步一次",
   "anki_pending_mines_status_failed": "失敗：$error",
   "anki_pending_mines_flush_result": "已發送 $delivered 張，失敗 $failed 張，剩餘 $remaining 張",
-  "anki_pending_mine_landing_title": "本機負責落地其他裝置的卡片",
+  "anki_pending_mine_landing_title": "接收其他裝置的卡片",
   "anki_error_sync_signed_out": "請先登入 Anki 同步伺服器（Anki 設定 › Anki 同步）。",
   "anki_error_sync_unavailable": "本機沒有 fushi-anki-sync，無法直接同步到 Anki。",
   "anki_sync_client_section_title": "Anki 同步（無需安裝 Anki）",
@@ -6010,7 +6010,7 @@
   "anki_sync_client_ankiweb_confirm": "仍然使用 AnkiWeb",
   "anki_sync_client_has_unsynced": "還有 $count 張卡沒有同步，請先同步再切換帳户或退出登入。",
   "anki_sync_client_sign_in_failed": "登入失敗：$error",
-  "anki_pending_mine_landing_hint": "沒裝 Anki 的裝置存下的卡片，經你配置的同步（雲盤，或本機作為互聯客户端時的互聯）送到這台裝置，由這裡的 Anki 加卡。同一時間只有一台裝置負責。作為互聯主機的電腦不擔任這個角色：與它配對的手機請改開「制卡到 Fushi 互聯服務端」（電腦關機時卡片先存在手機上）。Fushi 服務端可以擔任。",
+  "anki_pending_mine_landing_hint": "沒裝 Anki 的裝置製的卡，會經同步送到這台裝置，由這裡的 Anki 加入。同一時間只有一台裝置接收。",
   "anki_sync_client_relogin": "重新登入",
   "anki_sync_client_discard_confirm": "還有 $count 張卡沒有同步到 Anki。放棄這些卡並退出登入？放棄後無法找回。",
   "anki_sync_client_discard_action": "放棄並退出",
@@ -7416,5 +7416,6 @@
   "video_setting_pause_ocr_scope_hint": "暫停時對畫面做文字辨識，辨識出的字可直接點按查詞。畫面上已有 Fushi 顯示的文字字幕時以字幕為準。",
   "video_setting_pause_ocr_scope_all": "所有影片",
   "video_setting_pause_ocr_scope_graphic": "僅圖片字幕",
-  "video_setting_pause_ocr_scope_off": "關閉"
+  "video_setting_pause_ocr_scope_off": "關閉",
+  "anki_pending_mine_landing_host_note": "本機是互聯主機，配對的手機沒法經這條路把卡交過來：請在那些手機上改開「製卡到 Fushi 互聯服務端」。"
 }
