@@ -1528,8 +1528,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 长在 desktop_drop 回调的同步栈上：拖个大包进来 UI 线程直接卡死。先离线程一次
     // 性判完（[probeDroppedImageArchives]），再把结果当同步谓词喂回去，分类函数保持
     // 纯函数不变。
+    //
+    // 漫画库（[_mangaOnly]）落点偏好漫画：`.epub` 也开包，图片型 EPUB 直接归漫画，
+    // 不再先进书籍导入框、再被告知「这看起来是漫画」；`.pdf` 直接归漫画。
     final Map<String, bool> imageArchives =
-        await probeDroppedImageArchives(paths);
+        await probeDroppedImageArchives(paths, preferManga: _mangaOnly);
     if (!mounted) return;
 
     // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
@@ -1538,6 +1541,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       paths,
       isDirectory: (String pth) => Directory(pth).existsSync(),
       isImageArchive: (String pth) => imageArchives[pth] ?? false,
+      preferManga: _mangaOnly,
     );
     debugPrint(
       '[fushi-drop] [reader-shelf] classified '
@@ -1576,12 +1580,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         debugPrint('[fushi-drop] [reader-shelf] intent=addFolderAsSource '
             '(not produced on this surface)');
       case DropIntent.importNewBook:
-        _openBookImportPrefilled(
-          epubPath: files.books.first,
-          subtitlePath:
-              files.subtitles.isNotEmpty ? files.subtitles.first : null,
-          audioPaths: files.audios,
-        );
+        // 一本书：同批的字幕 / 音频一起预填（有声书）。多本：逐本弹导入框，不再只导
+        // 第一本、其余静默丢掉；此时字幕 / 音频没法确定归哪一本，不预填。
+        if (files.books.length == 1) {
+          _openBookImportPrefilled(
+            epubPath: files.books.single,
+            subtitlePath:
+                files.subtitles.isNotEmpty ? files.subtitles.first : null,
+            audioPaths: files.audios,
+          );
+        } else {
+          unawaited(_openBookImportsInSequence(files.books));
+        }
       case DropIntent.importNewManga:
         // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
         // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
@@ -1590,7 +1600,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           showModuleDisabled();
           return;
         }
-        _openMangaImportPrefilled(mangaPath: files.mangas.first);
+        _openMangaImportPrefilled(mangaPaths: files.mangas);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
           '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
@@ -1672,7 +1682,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
   /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
-  Future<void> _openBookImportPrefilled({
+  ///
+  /// 返回是否导入成功（[_openBookImportsInSequence] 据此决定是否继续下一本）。
+  Future<bool> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,
     List<String> audioPaths = const <String>[],
@@ -1692,17 +1704,34 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
+    return imported == true;
+  }
+
+  /// 多本书同时拖入：逐本打开 [BookImportDialog]（每本都要定标题 / 处理同名）。
+  /// 用户在某一本上取消 = 不要剩下的了，停止后续，不逐个追问。
+  Future<void> _openBookImportsInSequence(List<String> bookPaths) async {
+    for (final String bookPath in bookPaths) {
+      if (!mounted) return;
+      final bool imported = await _openBookImportPrefilled(
+        epubPath: bookPath,
+        subtitlePath: null,
+      );
+      if (!imported) return;
+    }
   }
 
   /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
-  /// 图片型 zip）。刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用
-  /// `EpubBooks` 表和同一块书架，故失效的 provider 也相同。
-  Future<void> _openMangaImportPrefilled({required String mangaPath}) async {
+  /// 图片型 zip / 漫画库里的图片型 epub 与 pdf）。多个路径时对话框进逐卷批量模式。
+  /// 刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用 `EpubBooks` 表和同一块
+  /// 书架，故失效的 provider 也相同。
+  Future<void> _openMangaImportPrefilled({
+    required List<String> mangaPaths,
+  }) async {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => MangaImportDialog(
         db: appModel.database,
-        initialPath: mangaPath,
+        initialPaths: mangaPaths,
       ),
     );
     if (imported == true && mounted) {

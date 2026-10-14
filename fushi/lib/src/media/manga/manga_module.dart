@@ -76,6 +76,18 @@ abstract final class MangaModule {
         onVolumeProgress: onVolumeProgress,
       );
 
+  /// 一组同时选中 / 拖入的漫画载体逐卷导入（见 [importMangaBatchPaths]）。
+  static Future<MangaBatchImportReport> importBatchPaths({
+    required FushiDatabase db,
+    required List<String> paths,
+    void Function(int done, int total)? onVolumeProgress,
+  }) =>
+      importMangaBatchPaths(
+        db: db,
+        paths: paths,
+        onVolumeProgress: onVolumeProgress,
+      );
+
   /// 整目录页图导入（拖入一个漫画文件夹的落地路径）。OCR blocks 留空，之后可由
   /// 任一整卷引擎补齐——故 OCR 失败绝不会导致这本书消失。
   static Future<String> importImageFolder({

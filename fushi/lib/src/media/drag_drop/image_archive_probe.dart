@@ -21,14 +21,20 @@ import 'package:fushi/src/media/manga/manga_module.dart';
 ///
 /// [probe] 是测试缝：默认走真实 isolate。注入后可在 widget 测试里同步返回，也可以
 /// 让它抛出，验证失败路径（拖放不再静默消失）。
+///
+/// [preferManga] 与 [classifyDroppedFiles] 的同名参数必须同值：漫画库落点连 `.epub`
+/// 也要开包（[kDragMangaSurfaceProbeExtensions]），两边扩展名集合同源。
 Future<Map<String, bool>> probeDroppedImageArchives(
   List<String> paths, {
   Future<bool> Function(String path)? probe,
+  bool preferManga = false,
 }) async {
   final Future<bool> Function(String path) run = probe ?? _probeInIsolate;
+  final Set<String> extensions =
+      dragImageArchiveProbeExtensionsFor(preferManga: preferManga);
   final Map<String, bool> results = <String, bool>{};
   for (final String path in paths) {
-    if (!_needsProbe(path)) continue;
+    if (!_needsProbe(path, extensions)) continue;
     if (results.containsKey(path)) continue;
     results[path] = await _neverThrows(path, run);
   }
@@ -54,11 +60,10 @@ Future<bool> _neverThrows(
 }
 
 /// 只有扩展名**确实二义**的才值得开包，与 [classifyDroppedFiles] 用同一份常量。
-bool _needsProbe(String path) {
+bool _needsProbe(String path, Set<String> extensions) {
   final String extension = p.extension(path);
   if (extension.isEmpty) return false;
-  return kDragImageArchiveProbeExtensions
-      .contains(extension.substring(1).toLowerCase());
+  return extensions.contains(extension.substring(1).toLowerCase());
 }
 
 /// 单个包的真读包判定，跑在后台 isolate 上。容错在 [_neverThrows]。

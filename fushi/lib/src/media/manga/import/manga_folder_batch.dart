@@ -123,21 +123,68 @@ Future<MangaBatchImportReport> importMangaBatchFolder({
   required String path,
   void Function(int done, int total)? onVolumeProgress,
   ImportCarrier Function(String path)? classify,
+}) =>
+    importMangaBatchPaths(
+      db: db,
+      paths: <String>[
+        for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
+      ],
+      onVolumeProgress: onVolumeProgress,
+      classify: classify ?? _classifyCarrierFile,
+    );
+
+/// 一组用户**同时选中 / 拖入**的漫画载体逐卷导入：每个路径各成一本。
+///
+/// 与 [importMangaBatchFolder] 是同一套编排（一卷失败不中断、标题取各自名字、
+/// 重复固定 skip、结局收进报告）——那个函数只是「先把目录展开成文件列表」再调这里。
+/// 多选拖入此前只导第一个、其余静默丢掉，这里让「拖 N 卷进来」与「选一个装着 N 卷的
+/// 文件夹」得到同一种结果。
+///
+/// 列表里的**目录**按它自己的载体身份处理（[classifyImportCarrier] 的目录分支）：
+/// 页图目录 = 一卷；只装一个 `.mokuro` 的目录 = 那一卷 `.mokuro`；装着整卷文件的
+/// 目录 = 展开成其中每一卷。[classify] 是测试缝，生产传 null 即走真实文件系统判据。
+Future<MangaBatchImportReport> importMangaBatchPaths({
+  required FushiDatabase db,
+  required List<String> paths,
+  void Function(int done, int total)? onVolumeProgress,
+  ImportCarrier Function(String path)? classify,
 }) async {
-  final List<File> files = mangaCarrierFilesIn(Directory(path));
   final ImportCarrier Function(String path) resolve =
-      classify ?? _classifyCarrierFile;
+      classify ?? _classifyCarrierPath;
+  final List<(String, ImportCarrier)> volumes = <(String, ImportCarrier)>[];
+  final Set<String> seen = <String>{};
+  void addVolume(String volumePath, ImportCarrier carrier) {
+    if (seen.add(p.normalize(volumePath))) volumes.add((volumePath, carrier));
+  }
+
+  for (final String path in paths) {
+    final ImportCarrier carrier = resolve(path);
+    if (carrier == ImportCarrier.mangaBatchFolder) {
+      for (final File file in mangaCarrierFilesIn(Directory(path))) {
+        addVolume(file.path, resolve(file.path));
+      }
+      continue;
+    }
+    if (carrier == ImportCarrier.mangaMokuro && Directory(path).existsSync()) {
+      final List<File> mokuro = mangaMokuroFilesIn(Directory(path));
+      if (mokuro.length == 1) {
+        addVolume(mokuro.single.path, carrier);
+        continue;
+      }
+    }
+    addVolume(path, carrier);
+  }
 
   final List<MangaBatchVolumeResult> results = <MangaBatchVolumeResult>[];
-  onVolumeProgress?.call(0, files.length);
-  for (int index = 0; index < files.length; index++) {
-    final String volumePath = files[index].path;
+  onVolumeProgress?.call(0, volumes.length);
+  for (int index = 0; index < volumes.length; index++) {
+    final (String volumePath, ImportCarrier carrier) = volumes[index];
     results.add(await _importOneVolume(
       db: db,
       volumePath: volumePath,
-      carrier: resolve(volumePath),
+      carrier: carrier,
     ));
-    onVolumeProgress?.call(index + 1, files.length);
+    onVolumeProgress?.call(index + 1, volumes.length);
   }
   return MangaBatchImportReport(results);
 }
@@ -147,9 +194,19 @@ Future<MangaBatchVolumeResult> _importOneVolume({
   required String volumePath,
   required ImportCarrier carrier,
 }) async {
-  final String title = p.basenameWithoutExtension(volumePath);
+  // 目录卷（页图文件夹）的名字里的点不是扩展名（`第01巻.v2`），不能去掉。
+  final String title = carrier == ImportCarrier.mangaFolder
+      ? p.basename(volumePath)
+      : p.basenameWithoutExtension(volumePath);
   try {
     switch (carrier) {
+      case ImportCarrier.mangaFolder:
+        await MangaImporter.importFromImageFolder(
+          db: db,
+          imageDirPath: volumePath,
+          title: title,
+          policy: const DuplicatePolicy.skip(),
+        );
       case ImportCarrier.mangaArchive:
         await MangaArchiveImporter.importArchive(
           db: db,
@@ -173,12 +230,12 @@ Future<MangaBatchVolumeResult> _importOneVolume({
           title: title,
           policy: const DuplicatePolicy.skip(),
         );
-      case ImportCarrier.mangaFolder:
       case ImportCarrier.mangaBatchFolder:
       case ImportCarrier.epub:
       case ImportCarrier.text:
         // 扩展名对得上但内容不是漫画：词典 `.zip`、文字 `.epub`。不静默吞，
-        // 计数后在汇总里如实报出来。（目录形态在这里不可达——候选只有文件。）
+        // 计数后在汇总里如实报出来。（整卷目录在这里不可达——
+        // [importMangaBatchPaths] 已把它展开成其中的每一卷。）
         return MangaBatchVolumeResult(
           path: volumePath,
           status: MangaBatchVolumeStatus.notManga,
@@ -221,4 +278,17 @@ ImportCarrier _classifyCarrierFile(String path) => classifyImportCarrier(
       directoryHasPageImages: (String _) => false,
       directoryCarrierFileCount: (String _) => 0,
       directoryMokuroFileCount: (String _) => 0,
+    );
+
+/// [importMangaBatchPaths] 的生产判据：路径可能是文件也可能是目录（拖入 / 多选），
+/// 目录判据与漫画导入框同源（[mangaDirectoryHasPageImages] / [mangaCarrierFilesIn]）。
+ImportCarrier _classifyCarrierPath(String path) => classifyImportCarrier(
+      path,
+      isDirectory: (String pth) => Directory(pth).existsSync(),
+      isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
+      directoryHasPageImages: mangaDirectoryHasPageImages,
+      directoryCarrierFileCount: (String pth) =>
+          mangaCarrierFilesIn(Directory(pth)).length,
+      directoryMokuroFileCount: (String pth) =>
+          mangaMokuroFilesIn(Directory(pth)).length,
     );
