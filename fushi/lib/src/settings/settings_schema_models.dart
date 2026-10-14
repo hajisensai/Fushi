@@ -1,7 +1,13 @@
 import 'dart:io';
 
+import 'package:material_ui/material_ui.dart' show BuildContext;
+
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
+import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
+import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -72,8 +78,15 @@ SettingsDestination buildModelsDestination() {
       SettingsSection(
         id: 'models.section.files',
         title: t.models_section_files,
-        visible: (_) => _isMangaOcrLocalSupported,
+        visible: (SettingsContext c) =>
+            _isMangaOcrLocalSupported || _isLocalTtsSupported(c),
         items: <SettingsItem>[
+          // 语音合成的「模型文件」：GPT-SoVITS 整合包（约 19 GB）与 OCR 模型并列管理，
+          // 点进去是同一个本机部署页（下载 / 删除 / 指向已有整合包）。
+          _localGptSovitsItem(
+            id: 'models.files.gpt_sovits',
+            title: t.audiobook_tts_local_package,
+          ),
           SettingsNavigationItem(
             id: 'storage.ocr_models',
             title: t.manga_ocr_local_model,
@@ -131,7 +144,48 @@ String? systemTtsEngineName() {
   return null;
 }
 
-/// 语音合成：目前只有系统引擎、不可选，先如实展示「用的是什么、用在哪」。
+/// 本机能不能一键部署 GPT-SoVITS（官方免安装整合包只有 Windows）。
+bool _isLocalTtsSupported(SettingsContext _) =>
+    GptSovitsLocalEngine.platformSupported;
+
+/// 本机 GPT-SoVITS 的一句话状态（运行期状态只能走 subtitleBuilder）。只读已建好的
+/// [TtsServices]：全局资源行求值时不为了一行副标题去碰偏好仓（搜索扁平化也会求值
+/// 副标题）；还没建过就回落静态说明。
+String? _localTtsStatus(SettingsContext _) {
+  final GptSovitsLocalEngine? engine = TtsServices.existing?.localGptSovits;
+  if (engine == null) return null;
+  if (!engine.isInstalled) return t.audiobook_tts_local_status_not_installed;
+  if (engine.server.isRunning) {
+    return t.audiobook_tts_local_server_running(endpoint: engine.endpoint);
+  }
+  return t.audiobook_tts_local_status_installed;
+}
+
+/// 「本机 GPT-SoVITS」入口（语音合成子页与模型文件分区共用一份）。在那边新建了
+/// 声音就直接带到朗读声音页去选参考音频、试听。
+SettingsActionItem _localGptSovitsItem({
+  required String id,
+  required String title,
+}) => SettingsActionItem(
+  id: id,
+  title: title,
+  subtitle: t.audiobook_tts_local_add_hint,
+  subtitleBuilder: _localTtsStatus,
+  icon: FushiIcons.download,
+  visible: _isLocalTtsSupported,
+  onTap: (SettingsContext settingsContext) async {
+    final TtsServices tts = TtsServices.of(settingsContext.appModel.prefsRepo);
+    final BuildContext context = settingsContext.context;
+    final String? created = await openGptSovitsLocalPage(context, tts);
+    if (created != null && context.mounted) {
+      await openTtsVoiceSettingsPage(context, tts, openPresetId: created);
+    }
+    settingsContext.refresh();
+  },
+);
+
+/// 语音合成：朗读声音（GPT-SoVITS / 在线 / 系统，含本机一键部署）是这里的主入口；
+/// 制卡发音的系统语音兜底只是如实展示「用的是什么、用在哪」。
 SettingsDestination _buildTtsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.models,
@@ -139,7 +193,32 @@ SettingsDestination _buildTtsDestination() {
     icon: FushiIcons.volumeUp,
     sections: <SettingsSection>[
       SettingsSection(
+        id: 'models.section.tts_voices',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          // 与「阅读 › 有声书」里的同一个入口（那里受听书模块门控，这里不受）。
+          SettingsActionItem(
+            id: 'models.tts_voices',
+            title: t.audiobook_tts_voice_settings,
+            subtitle: t.audiobook_tts_voice_settings_hint,
+            icon: FushiIcons.voice,
+            onTap: (SettingsContext settingsContext) async {
+              await openTtsVoiceSettingsPage(
+                settingsContext.context,
+                TtsServices.of(settingsContext.appModel.prefsRepo),
+              );
+              settingsContext.refresh();
+            },
+          ),
+          _localGptSovitsItem(
+            id: 'models.tts_local_gpt_sovits',
+            title: t.audiobook_tts_local_title,
+          ),
+        ],
+      ),
+      SettingsSection(
         id: 'models.section.tts',
+        title: t.models_tts_card_fallback_section,
         items: <SettingsItem>[
           SettingsStatusItem(
             id: 'models.tts_engine',

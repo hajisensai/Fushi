@@ -110,6 +110,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
@@ -1282,6 +1283,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+      }),
+      // 本机 GPT-SoVITS 服务：Windows 不连坐子进程，exit(0) 后它会继续占着显存
+      // 和端口。没起过时 [TtsServices.existing] 为 null，零成本。
+      _guardedExitStep('local tts server stop', () async {
+        await TtsServices.existing?.localGptSovits
+            .stop()
+            .timeout(const Duration(seconds: 2));
       }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope

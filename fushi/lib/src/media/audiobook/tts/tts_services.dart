@@ -7,12 +7,15 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_builtin_providers.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
@@ -20,25 +23,40 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 class TtsServices {
   TtsServices._(PrefStore prefs)
-      : store = TtsPresetStore(prefs),
-        pronunciation = TtsPronunciationStore(prefs);
+    : store = TtsPresetStore(prefs),
+      pronunciation = TtsPronunciationStore(prefs),
+      localGptSovits = GptSovitsLocalEngine(
+        prefs: prefs,
+        httpClientFactory: createAppHttpClient,
+      ) {
+    registry = TtsProviderRegistry(<TtsProviderDescriptor>[
+      for (final TtsProviderDescriptor d in kBuiltinTtsProviders)
+        // GPT-SoVITS 换成会自动拉起本机托管服务的版本（id / 参数 / 缓存键不变）。
+        if (d is GptSovitsTtsDescriptor)
+          AutoStartGptSovitsTtsDescriptor(localGptSovits)
+        else
+          d,
+      const SystemTtsDescriptor(),
+    ]);
+  }
 
   static TtsServices? _instance;
 
   /// [prefs] 只在首次调用时生效（app 只有一份偏好仓储）。
   static TtsServices of(PrefStore prefs) => _instance ??= TtsServices._(prefs);
 
+  /// 已创建的单例（退出清理用：没用过 TTS 就不必为了停服务而创建它）。
+  static TtsServices? get existing => _instance;
+
   final TtsPresetStore store;
 
   /// 发音词典（朗读与制作共用）。
   final TtsPronunciationStore pronunciation;
 
-  final TtsProviderRegistry registry = TtsProviderRegistry(
-    <TtsProviderDescriptor>[
-      ...kBuiltinTtsProviders,
-      const SystemTtsDescriptor(),
-    ],
-  );
+  /// 本机一键部署的 GPT-SoVITS（仅 Windows 可用；服务进程随 app 退出终止）。
+  final GptSovitsLocalEngine localGptSovits;
+
+  late final TtsProviderRegistry registry;
 
   final TtsHost host = TtsHost(
     log: (String message) =>

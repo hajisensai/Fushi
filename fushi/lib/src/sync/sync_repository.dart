@@ -1631,6 +1631,8 @@ class SyncRepository {
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
     'tts_voice_presets',
     'tts_active_preset_id',
+    // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
+    'tts_gpt_sovits_local',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────
