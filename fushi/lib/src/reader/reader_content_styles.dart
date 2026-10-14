@@ -134,15 +134,14 @@ class ReaderContentStyles {
     required double marginBottomPx,
     required double chromeTopInsetPx,
     required double chromeBottomInsetPx,
-  }) =>
-      math.max(
-        fontSizePx,
-        viewportHeightPx -
-            marginTopPx -
-            marginBottomPx -
-            chromeTopInsetPx -
-            chromeBottomInsetPx,
-      );
+  }) => math.max(
+    fontSizePx,
+    viewportHeightPx -
+        marginTopPx -
+        marginBottomPx -
+        chromeTopInsetPx -
+        chromeBottomInsetPx,
+  );
 
   static String styleTag({
     required ReaderSettings settings,
@@ -161,23 +160,7 @@ class ReaderContentStyles {
     bool einkDark = false,
     String? contentLanguage,
   }) {
-    return '<style>\n${css(
-      settings: settings,
-      contentLanguage: contentLanguage,
-      fontFaces: fontFaces,
-      fontFamily: fontFamily,
-      customBg: customBg,
-      customFg: customFg,
-      selectionColor: selectionColor,
-      sentenceAudioHighlightColor: sentenceAudioHighlightColor,
-      sentenceAudioTextColor: sentenceAudioTextColor,
-      linkColor: linkColor,
-      rubyColor: rubyColor,
-      nativeSelectionColor: nativeSelectionColor,
-      themeOverride: themeOverride,
-      einkMode: einkMode,
-      einkDark: einkDark,
-    )}\n</style>';
+    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark)}\n</style>';
   }
 
   /// 正文 `font-family` 的值：用户字体 -> 内容语言的明朝体/宋体链 -> `serif`。
@@ -237,10 +220,8 @@ class ReaderContentStyles {
   /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS ||
-        TargetPlatform.macOS ||
-        TargetPlatform.linux =>
-          '''
+    TargetPlatform.iOS || TargetPlatform.macOS || TargetPlatform.linux =>
+      '''
 /* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
 :root {
   --fushi-ruby-snap: 1;
@@ -250,8 +231,8 @@ ruby > rt, ruby > rtc {
   margin-block-end: calc(-1em * var(--fushi-ruby-pull, 0.1) - 0.1em) !important;
 }
 ''',
-        _ => '',
-      };
+    _ => '',
+  };
 
   /// BUG-2761：Mac / iOS 分页翻页时，**每页首行的振假名**被画到上一页底部，本页首行
   /// 只剩注音的下半截。根因是上面 BUG-2472 的负 `margin-block-start` 让注音不占行盒
@@ -372,14 +353,16 @@ body::after {
   /// 这里 iOS 只留 `-webkit-touch-callout: none`（链接/图片长按气泡，探针证明无害）。
   /// macOS 主指针是 fine，本块不生效，桌面原生选区/Ctrl+C/右键导出不受影响。
   static String _touchNativeSelectionCss() => switch (defaultTargetPlatform) {
-        TargetPlatform.iOS => '''
+    TargetPlatform.iOS =>
+      '''
 @media (pointer: coarse) {
   html, body, body * {
     -webkit-touch-callout: none !important;
   }
 }
 ''',
-        _ => '''
+    _ =>
+      '''
 @media (pointer: coarse) {
   html, body, body * {
     -webkit-user-select: none !important;
@@ -388,7 +371,7 @@ body::after {
   }
 }
 ''',
-      };
+  };
 
   static String _bodyFontFamily(String? customCssFamilies, String? language) {
     final String chain = contentFontFamilyCss(
@@ -432,9 +415,10 @@ body::after {
     String? contentLanguage,
   }) {
     final _ThemeColors themedColors = _themeColors(
-        themeOverride ?? settings.theme,
-        customBg: customBg,
-        customFg: customFg);
+      themeOverride ?? settings.theme,
+      customBg: customBg,
+      customFg: customFg,
+    );
     // E-ink 覆盖发生在配色解析之后：正文/滚动条/UA color-scheme 全部吃纯黑白，
     // 高亮的「线式化」由末尾的 _einkOverrideCss 用级联覆盖（同选择器后出现者胜）。
     final _ThemeColors colors = einkMode
@@ -453,8 +437,10 @@ body::after {
     // (BUG-125)。同时去掉旧的 <rt> 不透明遮罩(原 BUG-123)，那个遮罩会连基字右缘一起
     // 抹掉(竖排 jukugo ruby 的振假名盒压在基字右缘上)。
     final String selectionBase = selectionColor ?? colors.selectionColor;
-    final String selectionOpaque =
-        composeOpaqueColor(selectionBase, colors.backgroundColor);
+    final String selectionOpaque = composeOpaqueColor(
+      selectionBase,
+      colors.backgroundColor,
+    );
     final String themedRubyCss = !einkMode && rubyColor != null
         ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
         : '';
@@ -468,8 +454,8 @@ body::after {
       resolvedFontFaces = fontFaces;
       resolvedFontFamily = _bodyFontFamily(fontFamily, contentLanguage);
     } else {
-      final ({String fontFamily, String fontFaces}) custom =
-          settings.buildCustomFontCss();
+      final ({String fontFamily, String fontFaces}) custom = settings
+          .buildCustomFontCss();
       resolvedFontFaces = custom.fontFaces;
       resolvedFontFamily = _bodyFontFamily(
         custom.fontFamily.isNotEmpty ? custom.fontFamily : null,
@@ -555,8 +541,9 @@ body::after {
     // 与本功能引入前的渲染完全一致（零回归），与 `textIndentCss`/`gridCss` 的
     // 「默认值产出空串」同构。
     final int fontWeight = settings.fontWeight;
-    final String fontWeightCss =
-        fontWeight == 400 ? '' : 'font-weight: $fontWeight !important;';
+    final String fontWeightCss = fontWeight == 400
+        ? ''
+        : 'font-weight: $fontWeight !important;';
 
     // 行首禁则用 `normal` 而不是 `strict`（BUG-2929）：二者唯一的差别是 CJ 类（小假名 っゃゅょ…
     // 与长音 ー）在 `strict` 下也不许出现在行首，于是「たった」「コート」恰好落在列尾时，
@@ -583,12 +570,12 @@ p {
     final double paragraphSpacing = math.max(0, settings.paragraphSpacing);
     final String paragraphSpacingCss = paragraphSpacing > 0
         ? (isVertical
-            ? '''
+              ? '''
 p {
   margin-right: ${paragraphSpacing}em !important;
   margin-left: ${paragraphSpacing}em !important;
 }'''
-            : '''
+              : '''
 p {
   margin-top: ${paragraphSpacing}em !important;
   margin-bottom: ${paragraphSpacing}em !important;
@@ -616,8 +603,8 @@ svg.block-img.blurred {
 
     final String vertKerningCss =
         settings.enableVerticalFontKerning && isVertical
-            ? 'font-kerning: normal !important;'
-            : '';
+        ? 'font-kerning: normal !important;'
+        : '';
 
     final String vpalCss = settings.enableFontVPAL && isVertical
         ? "font-feature-settings: 'vpal' 1 !important;"
@@ -662,27 +649,28 @@ svg.block-img.blurred {
     final String layoutCss = settings.isVnMode
         ? _vnLayoutCss(layoutArgs)
         : settings.isContinuousMode
-            ? _continuousLayoutCss(layoutArgs)
-            : _paginatedLayoutCss(
-                layoutArgs,
-                columnGapCss: columnGapCss,
-                columnWidthCss: columnWidthCss,
-                columnsCss: columnsCss,
-                contentClipCss: contentClipCss,
-              );
+        ? _continuousLayoutCss(layoutArgs)
+        : _paginatedLayoutCss(
+            layoutArgs,
+            columnGapCss: columnGapCss,
+            columnWidthCss: columnWidthCss,
+            columnsCss: columnsCss,
+            contentClipCss: contentClipCss,
+          );
 
-    final String readerStylePriority =
-        settings.prioritizeReaderStyles ? '' : ' !important';
+    final String readerStylePriority = settings.prioritizeReaderStyles
+        ? ''
+        : ' !important';
     // BUG-2761：只有多列分页有跨列问题，连续滚动与 VN 不发。
     final String rubyPageTopReserveCss =
         settings.isVnMode || settings.isContinuousMode
-            ? ''
-            : _webKitPaginatedRubyReserveCss(settings.lineHeight);
+        ? ''
+        : _webKitPaginatedRubyReserveCss(settings.lineHeight);
     // BUG-2819：末页够不着也只发生在多列分页。
     final String paginatedScrollEndCss =
         settings.isVnMode || settings.isContinuousMode
-            ? ''
-            : _webKitPaginatedScrollEndCss();
+        ? ''
+        : _webKitPaginatedScrollEndCss();
 
     return '''
 $resolvedFontFaces
@@ -913,125 +901,99 @@ ${_touchNativeSelectionCss()}/* BUG-765 续：移动端选区起止手柄的强�
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
 :root { --fushi-sel-handle: ${linkColor ?? colors.linkColor}; }
-$themedRubyCss$nativeSelectionCss/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
-   priority=1，使其叠在音频(sentenceAudioHighlight, 默认 priority=0)之上 → 重叠处只显示这一层。 */
+$themedRubyCss$nativeSelectionCss/* 高亮条一律一个字高（用户 2026-10-15「所有字体都要一个字高」）。所有高亮的底色都由窄条层
+   window.__fushiLanes（reader_selection_scripts.dart）在正文下面统一画：沿块方向居中、厚
+   ${highlightLaneEm}em，同一行里同一层的片段并成一条；叠放自下而上 有声书当前句 → 收藏 → 搜索 → 查词
+   （BUG-125：查词压过当前句）。下面各路径（::highlight、ruby 分流 class、有声书 wrapper、旧 WebView
+   包裹 span）的底色一律透明，只留字色与收藏下划线——::highlight() 只能设 background-color、元素背景
+   按文字盒铺，盒厚 = 字体 ascent + descent（Hiragino 1.14em、Noto Sans JP 约 1.45em），都收不窄。
+   BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。 */
 ::highlight(fushi-selection) {
-  background-color: $selectionOpaque;
+  background-color: transparent;
   color: inherit;
 }
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
-   加 class，背景画在元素上只画一遍。移植自 Hoshi-Reader-Android。 */
+   加 class，由窄条层按基字画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.fushi-selection-ruby-active {
-  background-color: $selectionOpaque !important;
+  background-color: transparent !important;
   color: inherit;
 }
 /* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
-   三条路径共用背景 + underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。
-   BUG-716：ruby 高亮回到整句填充（不再走 1em 窄 lane），下同。 */
-::highlight(fushi-hl-yellow),
-.fushi-hl-yellow,
-ruby.fushi-hl-yellow-ruby-active {
-  background-color: var(--fushi-hl-yellow, rgba(255,220,0,0.35));
-  text-decoration-line: underline;
-  text-decoration-color: var(--fushi-hl-yellow-mark, rgb(184, 132, 0));
-  text-decoration-thickness: 0.12em;
-  text-underline-offset: 0.18em;
-}
-::highlight(fushi-hl-green),
-.fushi-hl-green,
-ruby.fushi-hl-green-ruby-active {
-  background-color: var(--fushi-hl-green, rgba(0,200,83,0.30));
-  text-decoration-line: underline;
-  text-decoration-color: var(--fushi-hl-green-mark, rgb(0, 126, 54));
-  text-decoration-thickness: 0.12em;
-  text-underline-offset: 0.18em;
-}
-::highlight(fushi-hl-blue),
-.fushi-hl-blue,
-ruby.fushi-hl-blue-ruby-active {
-  background-color: var(--fushi-hl-blue, rgba(68,138,255,0.30));
-  text-decoration-line: underline;
-  text-decoration-color: var(--fushi-hl-blue-mark, rgb(36, 92, 190));
-  text-decoration-thickness: 0.12em;
-  text-underline-offset: 0.18em;
-}
-::highlight(fushi-hl-pink),
-.fushi-hl-pink,
-ruby.fushi-hl-pink-ruby-active {
-  background-color: var(--fushi-hl-pink, rgba(255,64,129,0.30));
-  text-decoration-line: underline;
-  text-decoration-color: var(--fushi-hl-pink-mark, rgb(196, 38, 92));
-  text-decoration-thickness: 0.12em;
-  text-underline-offset: 0.18em;
-}
-::highlight(fushi-hl-purple),
-.fushi-hl-purple,
-ruby.fushi-hl-purple-ruby-active {
-  background-color: var(--fushi-hl-purple, rgba(170,0,255,0.25));
-  text-decoration-line: underline;
-  text-decoration-color: var(--fushi-hl-purple-mark, rgb(126, 0, 190));
-  text-decoration-thickness: 0.12em;
-  text-underline-offset: 0.18em;
-}
+   三条路径共用 underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。 */
+${_favoriteHighlightCss('yellow', 'rgb(184, 132, 0)')}
+${_favoriteHighlightCss('green', 'rgb(0, 126, 54)')}
+${_favoriteHighlightCss('blue', 'rgb(36, 92, 190)')}
+${_favoriteHighlightCss('pink', 'rgb(196, 38, 92)')}
+${_favoriteHighlightCss('purple', 'rgb(126, 0, 190)')}
 .fushi-dict-highlight {
-  background-color: $selectionOpaque !important;
+  background-color: transparent !important;
   color: inherit;
 }
 ::highlight(fushi-sentence-audio) {
   color: var(--fushi-sentence-audio-text-color);
-  background-color: var(--fushi-sentence-audio-background-color);
+  background-color: transparent;
 }
 /* BUG-110：sentenceAudioHighlight 跟随高亮里 <ruby> 元素用 class（不走 ::highlight，避免竖排双绘）。 */
 ruby.fushi-sentence-audio-ruby-active {
   color: var(--fushi-sentence-audio-text-color) !important;
-  background-color: var(--fushi-sentence-audio-background-color) !important;
-  border-radius: 0.2em;
+  background-color: transparent !important;
 }
-/* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时（元素只渲染一个背景），用双类
-   高于单类的特异性让查词不透明色胜出 → 重叠的振假名字也只显示查词层（查词优先）。 */
+/* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时，振假名字也只显示查词层（查词优先）。 */
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
-  background-color: $selectionOpaque !important;
   color: inherit !important;
 }
 ::highlight(fushi-search) {
-  background-color: rgba(255, 200, 0, 0.45);
+  background-color: transparent;
 }
 .fushi-sentence-audio-cue {
   background-color: transparent;
 }
-/* BUG-716：sentenceAudioHighlight 逐句跟随高亮回到整句 background-color 填充。narrow-lane
-   (旧 _highlightLaneCss 的 1em 窄条 + background-position:left) 在书籍行距≠字号
-   或 <ruby> 盒含注音轨时把条画偏（竖排下往基字左侧偏移、有无振假名两种宽度不一），
-   用户实机确认有声书与查词的注音高亮都错位。整句填充按元素 class 只刷一遍背景，
-   注音轨天然在 ruby 元素背景盒外（BUG-110/643 不回归），横竖排、有无振假名一致。 */
+/* 有声书当前句：wrapper 只管字色，底色由窄条层画（整句同一行的片段并成一条圆角窄条，
+   被振假名拆开的 wrapper 之间不留缝、不叠色，BUG-2780 / 2806 / 3326 的缝与接头一并消失）。 */
 .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   color: var(--fushi-sentence-audio-text-color) !important;
-  background-color: var(--fushi-sentence-audio-background-color) !important;
-  /* 用户 10-09：高亮条做圆角。clone 让折行 / 跨栏的每一段各自带圆角端（slice 只有整句
-     首尾两端圆），半径随字号走；只是背景形状，不改任何几何。 */
-  border-radius: 0.2em;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+  background-color: transparent !important;
 }
-/* BUG-3326：一句被振假名 / 书的行内元素拆成多个 wrapper 时，同一行里与相邻 wrapper
-   相接的一侧由脚本（paintSentenceAudioRubyGaps）打上 join class，这一侧改直角——整句
-   在每一行只留两端圆角，接缝处不再被两个圆角头切出缺口。逻辑属性：横竖排通吃。 */
-.fushi-sentence-audio-cue.fushi-sentence-audio-join-start {
-  border-start-start-radius: 0;
-  border-end-start-radius: 0;
-}
-.fushi-sentence-audio-cue.fushi-sentence-audio-join-end {
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-}
-/* BUG-2806 起基字 wrapper 在 <ruby> 里面：子元素背景画在 ruby 的查词背景之上，
-   BUG-125 的「查词优先」要由 wrapper 让位（连同内联的补缝 box-shadow）。 */
+/* BUG-2806 起基字 wrapper 在 <ruby> 里面：查词 ruby 里的 wrapper 让出字色（BUG-125 查词优先）。 */
 ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-active {
   color: inherit !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
 }
+/* 窄条层：body 里一个 z-index:-1 的绝对定位层，跟正文一起滚动，画在正文之下、body 背景之上
+   （body 是它的包含块与层叠上下文，见 body 规则）。 */
+fushi-hl-lanes {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  z-index: -1 !important;
+  display: block !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+}
+fushi-hl-lanes-group {
+  display: block !important;
+}
+fushi-hl-lane {
+  position: absolute !important;
+  display: block !important;
+  pointer-events: none !important;
+}
+/* 用户 10-09：有声书当前句的高亮条做圆角，每一行一条、两端圆。 */
+fushi-hl-lane[data-hl="fushi-sentence-audio"] {
+  background-color: var(--fushi-sentence-audio-background-color);
+  border-radius: 0.2em;
+}
+fushi-hl-lane[data-hl="fushi-search"] { background-color: rgba(255, 200, 0, 0.45); }
+fushi-hl-lane[data-hl="fushi-selection"] { background-color: $selectionOpaque; }
+fushi-hl-lane[data-hl="fushi-hl-yellow"] { background-color: var(--fushi-hl-yellow, rgba(255,220,0,0.35)); }
+fushi-hl-lane[data-hl="fushi-hl-green"] { background-color: var(--fushi-hl-green, rgba(0,200,83,0.30)); }
+fushi-hl-lane[data-hl="fushi-hl-blue"] { background-color: var(--fushi-hl-blue, rgba(68,138,255,0.30)); }
+fushi-hl-lane[data-hl="fushi-hl-pink"] { background-color: var(--fushi-hl-pink, rgba(255,64,129,0.30)); }
+fushi-hl-lane[data-hl="fushi-hl-purple"] { background-color: var(--fushi-hl-purple, rgba(170,0,255,0.25)); }
 ${einkMode ? '' : _plainCueActiveCss(customText: sentenceAudioTextColor != null)}
 /* 链接色**恒** !important，不跟随「优先书籍样式」。这是阅读器唯一强制链接色的地方：
    撤掉后书自带的 `a{color:#000}`（EPUB 里极常见）在深色主题（背景 #0A0A0A）下就是
@@ -1045,6 +1007,35 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
 ''';
   }
 
+  /// 阅读器所有高亮条的厚度（块方向，竖排是横向、横排是纵向），单位 em。
+  ///
+  /// 行内盒的块方向厚度是字体的 ascent + descent，与 line-height 无关：Hiragino 1.14em，
+  /// Noto Sans JP、Klee One 这类日文字体约 1.45em，背景整盒铺满就比字宽出一截、蹭到旁边的
+  /// 振假名（用户 10-13 反馈）。用户 2026-10-15 拍板「所有字体都要一个字高」：窄条固定 1em、
+  /// 居中，正好是基字 em 盒——Apple 的注音规则（`--fushi-ruby-pull`，见
+  /// reader_ruby_metrics_script.dart）把注音 em 盒拉到基字 em 盒边上，条再宽就会擦到振假名。
+  /// 字体本身比 1em 薄时按盒厚画，等于原样。窄条由 JS 窄条层 `__fushiLanes`
+  /// （reader_selection_scripts.dart）画，它的 `LANE_EM` 与本常量逐字相同（测试钉住）。
+  static const double highlightLaneEm = 1.0;
+
+  /// 一种收藏色：::highlight、旧 WebView 包裹 span、ruby 分流 class 三条路径都只留下划线，
+  /// 底色由窄条层画（颜色见 `fushi-hl-lane[data-hl="fushi-hl-<色>"]`）。
+  static String _favoriteHighlightCss(String color, String fallbackMark) =>
+      '''
+::highlight(fushi-hl-$color),
+.fushi-hl-$color,
+ruby.fushi-hl-$color-ruby-active {
+  background-color: transparent;
+  text-decoration-line: underline;
+  text-decoration-color: var(--fushi-hl-$color-mark, $fallbackMark);
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.18em;
+}
+.fushi-hl-$color,
+ruby.fushi-hl-$color-ruby-active {
+  background-color: transparent !important;
+}''';
+
   /// 非 sasayaki cue（SRT / VTT / LRC 合成书的 `[data-cue-id]`、`[data-fushi-sid]`）
   /// 的当前句由 `AudiobookBridge` 打 `.fushi-active`（分页 / 滚动 / VN 的
   /// `highlightSelectorCue` 都是它），底色原本只取 bridge 注入时的高亮色——「当前句
@@ -1052,7 +1043,8 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   /// 注入、改设置不会刷新。这里让它读与 sasayaki 路径同一组 CSS 变量（随正文 CSS
   /// 热更）。
   ///
-  /// - 底色恒读变量：默认值就是同一个高亮色，开着底色时观感不变。
+  /// - 底色透明：当前句的窄条由窄条层 `__fushiLanes` 读 `.fushi-active` 画，颜色读同一个变量
+  ///   （`fushi-hl-lane[data-hl="fushi-sentence-audio"]`），开着底色时观感不变、只是变成 1em 窄条。
   /// - 字色只在用户设了自定义字色 / 关了底色时才写：默认不改 `.fushi-active` 的字色
   ///   （历史行为，书自带的彩色字不被压成正文色）。
   /// - 墨水屏不输出：墨水屏把这组变量钉成透明 / inherit，套上去当前句就看不见了，
@@ -1063,8 +1055,7 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
         : '';
     return '.fushi-active {\n'
         '$color'
-        '  background-color: var(--fushi-sentence-audio-background-color) '
-        '!important;\n'
+        '  background-color: transparent !important;\n'
         '}';
   }
 
@@ -1104,8 +1095,13 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   text-decoration-thickness: 0.14em;
   text-underline-offset: 0.18em;
 }
+/* 墨水屏不画底色窄条：窄条层整层不显示，元素背景窄条清掉（各规则里的 background-image: none）。 */
+fushi-hl-lanes {
+  display: none !important;
+}
 ruby.fushi-selection-ruby-active {
   background-color: transparent !important;
+  background-image: none !important;
   color: inherit !important;
   text-decoration-line: underline !important;
   text-decoration-color: $fg !important;
@@ -1114,6 +1110,7 @@ ruby.fushi-selection-ruby-active {
 }
 .fushi-dict-highlight {
   background-color: transparent !important;
+  background-image: none !important;
   color: inherit !important;
   text-decoration-line: underline !important;
   text-decoration-color: $fg !important;
@@ -1131,6 +1128,7 @@ ruby.fushi-selection-ruby-active {
 }
 ruby.fushi-sentence-audio-ruby-active {
   background-color: transparent !important;
+  background-image: none !important;
   color: inherit !important;
   text-decoration-line: underline !important;
   text-decoration-style: solid !important;
@@ -1150,6 +1148,7 @@ ruby.fushi-sentence-audio-ruby-active {
 }
 /* 查词+有声书重叠：查词的粗实线优先（双类特异性高于单类，语义同 BUG-125）。 */
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
+  background-image: none !important;
   text-decoration-style: solid !important;
   text-decoration-thickness: 0.14em !important;
 }
@@ -1171,6 +1170,11 @@ ruby.fushi-selection-ruby-active .fushi-sentence-audio-cue.fushi-sentence-audio-
 ::highlight(fushi-hl-purple), .fushi-hl-purple, ruby.fushi-hl-purple-ruby-active {
   background-color: transparent;
   text-decoration-color: $fg;
+}
+.fushi-hl, .fushi-hl-yellow, .fushi-hl-green, .fushi-hl-blue, .fushi-hl-pink, .fushi-hl-purple,
+ruby.fushi-hl-yellow-ruby-active, ruby.fushi-hl-green-ruby-active, ruby.fushi-hl-blue-ruby-active,
+ruby.fushi-hl-pink-ruby-active, ruby.fushi-hl-purple-ruby-active {
+  background-image: none !important;
 }
 a {
   color: $fg !important;
@@ -1224,6 +1228,10 @@ body {
   font-size: ${settings.fontSize}px !important;
   $fontWeightCss
   -webkit-text-size-adjust: none !important;
+  /* 高亮窄条层（fushi-hl-lanes）的包含块与层叠上下文：层随正文滚动 / 翻页，z-index:-1 落在
+     body 背景之上、正文之下。body 尺寸 / 几何不变（VN 下 body 即视口，舞台位置不变）。 */
+  position: relative !important;
+  isolation: isolate !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
@@ -1340,6 +1348,10 @@ body {
   font-size: ${settings.fontSize}px !important;
   $fontWeightCss
   -webkit-text-size-adjust: none !important;
+  /* 高亮窄条层（fushi-hl-lanes）的包含块与层叠上下文：层随正文滚动 / 翻页，z-index:-1 落在
+     body 背景之上、正文之下。body 尺寸 / 几何不变（VN 下 body 即视口，舞台位置不变）。 */
+  position: relative !important;
+  isolation: isolate !important;
   overflow-wrap: anywhere !important;
   box-sizing: border-box !important;
   $textSpacingCss
@@ -1460,6 +1472,10 @@ body {
   font-size: ${settings.fontSize}px !important;
   $fontWeightCss
   -webkit-text-size-adjust: none !important;
+  /* 高亮窄条层（fushi-hl-lanes）的包含块与层叠上下文：层随正文滚动 / 翻页，z-index:-1 落在
+     body 背景之上、正文之下。body 尺寸 / 几何不变（VN 下 body 即视口，舞台位置不变）。 */
+  position: relative !important;
+  isolation: isolate !important;
   overflow-wrap: anywhere !important;
   $textSpacingCss
   box-sizing: border-box !important;
@@ -1571,8 +1587,11 @@ rtc > rt {
   font-size: 1em;
 }''';
 
-  static _ThemeColors _themeColors(String theme,
-      {String? customBg, String? customFg}) {
+  static _ThemeColors _themeColors(
+    String theme, {
+    String? customBg,
+    String? customFg,
+  }) {
     switch (theme) {
       case 'ecru-theme':
         return const _ThemeColors(
@@ -1671,9 +1690,9 @@ rtc > rt {
     if (s.startsWith('#')) {
       final String h = s.substring(1);
       int? hx(int start, int len) => int.tryParse(
-            len == 1 ? '${h[start]}${h[start]}' : h.substring(start, start + 2),
-            radix: 16,
-          );
+        len == 1 ? '${h[start]}${h[start]}' : h.substring(start, start + 2),
+        radix: 16,
+      );
       if (h.length == 3 || h.length == 4) {
         final int? r = hx(0, 1), g = hx(1, 1), b = hx(2, 1);
         if (r == null || g == null || b == null) return null;
@@ -1690,15 +1709,19 @@ rtc > rt {
     }
     final RegExpMatch? m = RegExp(r'^rgba?\(([^)]*)\)$').firstMatch(s);
     if (m == null) return null;
-    final List<String> parts =
-        m.group(1)!.split(',').map((String e) => e.trim()).toList();
+    final List<String> parts = m
+        .group(1)!
+        .split(',')
+        .map((String e) => e.trim())
+        .toList();
     if (parts.length < 3) return null;
     final int? r = int.tryParse(parts[0]);
     final int? g = int.tryParse(parts[1]);
     final int? b = int.tryParse(parts[2]);
     if (r == null || g == null || b == null) return null;
-    final double a =
-        parts.length >= 4 ? (double.tryParse(parts[3]) ?? 1.0) : 1.0;
+    final double a = parts.length >= 4
+        ? (double.tryParse(parts[3]) ?? 1.0)
+        : 1.0;
     return _Rgba(r, g, b, a);
   }
 
