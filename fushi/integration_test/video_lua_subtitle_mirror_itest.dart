@@ -5,13 +5,13 @@
 // （烘进调轴）写成 SRT，`sub-add <path> select fushi-lua-subtitle-mirror` 挂成隐藏轨
 // （`sub-visibility=no`）。单测只能锁纯函数与接线；本文件在真 app + 真 libmpv 上跑：
 //
-//   ① 外挂 SRT（同名 sidecar，走 Dart 侧解析成 cue 的那条路径）+ Lua 开关开 +
+//   ① 外挂 SRT（同名 sidecar，走 Dart 侧解析成 cue 的那条路径）+
 //      mpv_scripts 里放一个典型「字幕结束自动暂停」脚本 → 播放后在第一句结束处
 //      （±250ms）自动暂停；脚本记录的 sub-text 等于 cue 文本；overlay 照常有 cue；
 //      libmpv 不自绘（`sub-visibility=no`、`activeSubtitleTrackId=='no'`、
 //      `subtitleTracks` 不含镜像轨）。
 //   ② `setDelayMs(500)` 后从句首前播放 → 暂停点后移约 500ms（调轴烘进镜像 SRT）。
-//   ③ 负向：Lua 开关关 → `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
+//   ③ 负向：mpv_scripts 清空（目录即开关）→ `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
 //
 // 暂停由**真 Lua 脚本**执行：随包 libmpv 必须编入 Lua（BUG-3325，Windows `-lua1`
 // 起 `-Dlua=luajit`；此前 `-Dlua=disabled` 时 `load-script` 静默成功、脚本不跑）。
@@ -198,9 +198,10 @@ void main() {
       await scriptsDir.create(recursive: true);
       final File luaLog = File(p.join(fixtures.path, 'lua_log.txt'));
       if (luaLog.existsSync()) await luaLog.delete();
-      await File(
+      final File luaScript = File(
         p.join(scriptsDir.path, 'sub_end_autopause.lua'),
-      ).writeAsString(_autoPauseScript(luaLog.path), flush: true);
+      );
+      await luaScript.writeAsString(_autoPauseScript(luaLog.path), flush: true);
 
       final String bookUid = singleVideoBookUid(videoPath);
       final VideoBookRepository repo = VideoBookRepository(appModel.database);
@@ -322,11 +323,10 @@ void main() {
         return null;
       }
 
-      // ── 1) Lua 开：打开页面，等镜像轨挂上 ──────────────────────────────────
+      // ── 1) 装着脚本：打开页面，等镜像轨挂上 ──────────────────────────────────
       // 暂停 OCR（2026-10-13 起默认对所有视频识别暂停帧）与本测试无关：脚本一停，
       // 隔离根里首次识别就弹 Lens 上传同意框，压在视频页上吞掉后面的返回。
       await appModel.setVideoPauseOcrScope(VideoPauseOcrScope.off);
-      await appModel.setVideoMpvLuaScriptsEnabled(true);
       final VideoPlayerController c = await openPage();
       await c.pause();
       await c.seekMs(0);
@@ -341,7 +341,7 @@ void main() {
 
       final List<Map<String, String>> mirror1 = await waitMirror(c);
       debugPrint('[lua-mirror] sub tracks=${await subTracks(c)}');
-      expect(mirror1, hasLength(1), reason: 'Lua 开时应恰好挂一条镜像轨');
+      expect(mirror1, hasLength(1), reason: '装了脚本时应恰好挂一条镜像轨');
       final String mirrorId1 = mirror1.single['id']!;
       final String mirrorFile1 = mirror1.single['external-filename']!;
       expect(await prop(c, 'sid'), mirrorId1, reason: '镜像轨应被选中');
@@ -464,7 +464,7 @@ void main() {
       );
       c.setDelayMs(0);
 
-      // ── ③ 负向：Lua 关 → 不挂镜像 ─────────────────────────────────────────
+      // ── ③ 负向：脚本目录清空 → 不挂镜像 ─────────────────────────────────────────
       navigator.pop();
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 250));
@@ -477,13 +477,13 @@ void main() {
         reason: '退出视频页不应被 Lua 脚本拖住',
       );
       await tester.pump(const Duration(seconds: 1));
-      await appModel.setVideoMpvLuaScriptsEnabled(false);
+      await luaScript.delete();
       final VideoPlayerController c2 = await openPage();
       expect(identical(c2, c), isFalse, reason: '重开页面应是新的 controller');
       await tester.pump(const Duration(seconds: 2)); // 给可能的错挂留时间
       final List<Map<String, String>> tracksOff = await subTracks(c2);
       debugPrint(
-        '[lua-mirror] ③ Lua off sub tracks=$tracksOff '
+        '[lua-mirror] ③ no scripts sub tracks=$tracksOff '
         'sid=${await prop(c2, 'sid')}',
       );
       expect(
@@ -491,7 +491,7 @@ void main() {
           (Map<String, String> t) => t['title'] == kLuaSubtitleMirrorTrackTitle,
         ),
         isEmpty,
-        reason: 'Lua 关时不得挂镜像轨',
+        reason: '没装脚本时不得挂镜像轨',
       );
       expect(await prop(c2, 'sid'), 'no');
       expect(c2.cues, isNotEmpty, reason: 'overlay cue 照常加载');

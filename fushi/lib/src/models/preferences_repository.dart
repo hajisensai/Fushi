@@ -1497,18 +1497,6 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// mpv Lua 脚本装载开关（默认关）。开时视频播放器创建后把
-  /// `<documents>/mpv_scripts` 目录里的全部 `.lua` 经 `load-script` 装载
-  /// （见 video_lua_script_manager.dart）；mpv 无 unload-script，关闭只对
-  /// 之后新建的播放器生效。
-  bool get videoMpvLuaScriptsEnabled =>
-      getPref('video_mpv_lua_scripts_enabled', defaultValue: false) as bool;
-
-  Future<void> setVideoMpvLuaScriptsEnabled(bool value) async {
-    await setPref('video_mpv_lua_scripts_enabled', value);
-    notifyListeners();
-  }
-
   /// BUG-2032：随包 libmpv 是否编入 Lua（视频页建 Player 后读 `mpv-configuration`
   /// 探到的结果缓存，存 [MpvLuaCapability.name]）。全局设置页没有播放器，靠这份
   /// 缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。

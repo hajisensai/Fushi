@@ -473,7 +473,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 靠这份缓存如实说明脚本开关在本平台是否可用。默认 unknown = 从未播过视频。
   // 见 media/video/video_lua_capability.dart（BUG-2032）。
   'video_mpv_lua_capability',
-  'video_mpv_lua_scripts_enabled',
   'video_mpv_shader_dir',
   // String（[VideoOnlineMiningMode] 的 wireName）：在线视频点制卡后弹窗等不等——
   // `background` 后台（默认）/ `deferred` 看完再制卡 / `wait` 等整张卡落地。
