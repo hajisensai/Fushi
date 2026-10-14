@@ -386,7 +386,9 @@ class FontHorizontalRubySpecimen extends StatelessWidget {
                       left: -8,
                       right: -8,
                       top:
-                          (body.fontSize ?? 16) * ((body.height ?? 1) - 1) / 2 -
+                          (body.fontSize ?? 16) *
+                              ((body.height ?? 1) - 1) /
+                              2 -
                           (ruby.fontSize ?? 8),
                       // 不参与基线：否则 Stack 取最高基线 = 注音的。
                       child: IgnoreBaseline(
@@ -537,9 +539,9 @@ class _DictionaryPreview extends StatelessWidget {
                   ),
                   child: Text(
                     '名詞',
-                    style: content(theme.textTheme.labelSmall).copyWith(
-                      color: fushiNeutralTagColors(context).foreground,
-                    ),
+                    style: content(
+                      theme.textTheme.labelSmall,
+                    ).copyWith(color: fushiNeutralTagColors(context).foreground),
                   ),
                 ),
               ],

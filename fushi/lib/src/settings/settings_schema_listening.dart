@@ -126,7 +126,10 @@ List<SettingsSection> buildListeningSections() {
           icon: FushiIcons.skipNext,
           // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
           visible: (_) => Platform.isAndroid,
-          reader: const ReaderPlacement(group: ReaderGroup.behavior, order: 10),
+          reader: const ReaderPlacement(
+            group: ReaderGroup.behavior,
+            order: 10,
+          ),
           value: (SettingsContext settingsContext) =>
               settingsContext.readerSource.volumeKeySentenceNavEnabled,
           onChanged: (SettingsContext settingsContext, bool value) {

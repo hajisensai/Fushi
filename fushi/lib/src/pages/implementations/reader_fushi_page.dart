@@ -519,10 +519,8 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   // 经 M3E 阅读配色 [fushiReaderPaletteFor] 派生（纸色 neutral 98 / 6、正文
   // neutral 12 / 90、查词 = primaryContainer、当前句 = tertiaryContainer），
   // 编辑页「跟随主题」显示的值也走这里——单一真源。
-  final FushiReaderPalette palette = fushiReaderPaletteFor(
-    scheme,
-    scheme.brightness,
-  );
+  final FushiReaderPalette palette =
+      fushiReaderPaletteFor(scheme, scheme.brightness);
   final ReaderThemeColors fromScheme = readerThemeColorsFromPalette(palette);
   if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
     return fromScheme;
@@ -2600,24 +2598,24 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   double get popupBottomReserve => readerPopupBottomReserve(
-    // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
-    squeezeReserve: _bottomChromeReserve,
-    readerBottomReserve: _readerBottomReserve,
-    // BUG-3292：底栏不占位（「点空白隐藏控制栏」）但被点出来时，它画在弹层之上，
-    // 弹窗必须让开；收起时 0。门控看「不占位」而不是工具栏样式：悬浮样式
-    // （[_buildFloatingBottomChrome]）与贴边样式（[_buildBottomChrome] →
-    // [_wrapBottomChromeBar]）此刻都按 `!_lyricsMode && _bottomBarShouldPaint` 画。
-    floatingChromePainted:
-        _bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint,
-    // 贴边样式是一条缩放后的 [_readerChromeHeight]，悬浮样式是叠放高 + 外边距。
-    floatingChromeExtent: _bottomChromeExtent,
-    chromeBaseBand: readerBottomChromeBaseBand(
-      floatingToolbars: _floatingToolbars,
-      separatePlaybackStatus: _separatePlaybackStatus,
-      paintedFooterBand: _statusFooterPaintedBand,
-      bottomInset: _stableBottomInset,
-    ),
-  );
+        // 挤压底栏：_bottomChromeReserve 已含「占位 + 非悬浮」两道门控。
+        squeezeReserve: _bottomChromeReserve,
+        readerBottomReserve: _readerBottomReserve,
+        // BUG-3292：底栏不占位（「点空白隐藏控制栏」）但被点出来时，它画在弹层之上，
+        // 弹窗必须让开；收起时 0。门控看「不占位」而不是工具栏样式：悬浮样式
+        // （[_buildFloatingBottomChrome]）与贴边样式（[_buildBottomChrome] →
+        // [_wrapBottomChromeBar]）此刻都按 `!_lyricsMode && _bottomBarShouldPaint` 画。
+        floatingChromePainted:
+            _bottomBarFloating && !_lyricsMode && _bottomBarShouldPaint,
+        // 贴边样式是一条缩放后的 [_readerChromeHeight]，悬浮样式是叠放高 + 外边距。
+        floatingChromeExtent: _bottomChromeExtent,
+        chromeBaseBand: readerBottomChromeBaseBand(
+          floatingToolbars: _floatingToolbars,
+          separatePlaybackStatus: _separatePlaybackStatus,
+          paintedFooterBand: _statusFooterPaintedBand,
+          bottomInset: _stableBottomInset,
+        ),
+      );
 
   @override
   double get popupTopReserve => _stableTopInset;
@@ -3826,9 +3824,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   colors: _sourceReviewSession == null
                       ? (background: bgColor, foreground: _themeTextColor())
                       : (
-                          background: Theme.of(
-                            context,
-                          ).colorScheme.secondaryContainer,
+                          background:
+                              Theme.of(context).colorScheme.secondaryContainer,
                           foreground: Theme.of(
                             context,
                           ).colorScheme.onSecondaryContainer,
@@ -4087,9 +4084,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // CSS 的 `_themeColors` 对预设 key 用写死纸色、忽略 customBg：预设明暗与 app
       // 不符（[readerPresetFor] 返回 null）时不能再把预设 key 传进去，否则 Dart 侧
       // 已回落到派生深色、正文却仍是浅纸。走 default 分支吃 customBg/customFg。
-      themeOverride: _readerPresetApplies
-          ? appModel.readerThemeKey
-          : 'system-theme',
+      themeOverride: _readerPresetApplies ? appModel.readerThemeKey : 'system-theme',
       // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
       // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
       contentLanguage: _contentLanguage,
@@ -4111,9 +4106,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
       // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。
       rubyColor: palette == null ? null : _colorToCssRgba(palette.rubyText),
-      nativeSelectionColor: palette == null
-          ? null
-          : _colorToCssRgba(palette.nativeSelection),
+      nativeSelectionColor:
+          palette == null ? null : _colorToCssRgba(palette.nativeSelection),
       // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
       einkMode: appModel.einkMode,
@@ -4144,10 +4138,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final bool hostHover = hostOwnsWebViewHoverLookup;
     try {
       // 覆盖层架构：正文与歌词是两个 WebView，开关两份文档都要拿到。
-      for (final InAppWebViewController? web in <InAppWebViewController?>[
-        _controller,
-        _lyricsController,
-      ]) {
+      for (final InAppWebViewController? web
+          in <InAppWebViewController?>[_controller, _lyricsController]) {
         await web?.evaluateJavascript(
           source:
               'window.__hoverAutoLookup = $enabled;'
@@ -4899,8 +4891,8 @@ $liveConfigJs
     // 故不需要再乘 devicePixelRatio（DPR 换的是逻辑↔物理，不是逻辑↔CSS；多乘反而
     // 会重新引入这个偏移）。RenderBox 不可用时（不应发生：barrier 在屏说明 WebView
     // 也在树上）回退到 barrier-local，退化成旧行为而非崩溃。
-    final RenderObject? obj = _surfaceWebViewKey.currentContext
-        ?.findRenderObject();
+    final RenderObject? obj =
+        _surfaceWebViewKey.currentContext?.findRenderObject();
     final Offset local = (obj is RenderBox && obj.attached && obj.hasSize)
         ? obj.globalToLocal(event.position)
         : event.localPosition;
@@ -5064,8 +5056,8 @@ $liveConfigJs
   /// `onShiftHover` 的 `e.clientX/clientY` 同尺度。
   void _handleWebViewHostHover(PointerHoverEvent event) {
     final Offset local = event.localPosition;
-    final RenderObject? obj = _surfaceWebViewKey.currentContext
-        ?.findRenderObject();
+    final RenderObject? obj =
+        _surfaceWebViewKey.currentContext?.findRenderObject();
     if (obj is RenderBox &&
         obj.hasSize &&
         !readerHostHoverPointInside(local, obj.size)) {
@@ -5123,8 +5115,8 @@ $liveConfigJs
   /// RenderBox 不可用时（不应发生：barrier 在屏说明 WebView 也在树上）退回默认清栈。
   @override
   void onDismissBarrierTap(Offset globalPos) {
-    final RenderObject? obj = _surfaceWebViewKey.currentContext
-        ?.findRenderObject();
+    final RenderObject? obj =
+        _surfaceWebViewKey.currentContext?.findRenderObject();
     if (obj is! RenderBox || !obj.attached || !obj.hasSize) {
       // WebView 不可用：退回默认「点空白关栈」。
       clearDictionaryResult();
@@ -5177,9 +5169,7 @@ $liveConfigJs
         child: DictionaryPopupToolGroup(
           children: [
             FushiIconButton(
-              icon: _currentSentenceIsFavorited
-                  ? Icons.star
-                  : Icons.star_border,
+              icon: _currentSentenceIsFavorited ? Icons.star : Icons.star_border,
               size: 20,
               enabledColor: _currentSentenceIsFavorited
                   ? theme.colorScheme.primary

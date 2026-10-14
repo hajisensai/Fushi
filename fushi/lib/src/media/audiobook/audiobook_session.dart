@@ -515,9 +515,10 @@ class AudiobookSession extends ChangeNotifier {
   static Future<List<AudioCue>> _storedCuesFor(
     FushiDatabase db,
     SessionBookInfo book,
-  ) => book.isSrtBookSource
-      ? SrtBookRepository(db).cuesFor(book.bookKey)
-      : AudiobookRepository(db).cuesForBook(book.bookKey);
+  ) =>
+      book.isSrtBookSource
+          ? SrtBookRepository(db).cuesFor(book.bookKey)
+          : AudiobookRepository(db).cuesForBook(book.bookKey);
 
   /// BUG-3197：按库里当前那份全书 cue 给 [controller] 的 stop 位置换编码（仅当
   /// 两者推出的文件时长不同，即会话期间字幕被整组替换过）。cue 的命名空间与
@@ -799,13 +800,13 @@ class AudiobookSession extends ChangeNotifier {
   /// 而是「说明指向另一件事」。删 native 槽时必须同拍删掉这里对应的那条。
   /// 守卫：`test/build/gal_hook_toolbar_tooltip_guard_test.dart`。
   List<String> get _slotTooltips => <String>[
-    t.floating_lyric_previous,
-    t.floating_lyric_play_pause,
-    t.floating_lyric_next,
-    t.floating_lyric_lock,
-    t.floating_lyric_topmost,
-    t.floating_lyric_close,
-  ];
+        t.floating_lyric_previous,
+        t.floating_lyric_play_pause,
+        t.floating_lyric_next,
+        t.floating_lyric_lock,
+        t.floating_lyric_topmost,
+        t.floating_lyric_close,
+      ];
 
   Future<void> _applyFloatingLyricStyle(FloatingLyricStyle style) async {
     await FloatingLyricChannel.updateStyle(
@@ -821,8 +822,7 @@ class AudiobookSession extends ChangeNotifier {
       styleExtras: style.nativeStyleArgs,
     );
     await FloatingLyricChannel.setClickLookupEnabled(
-      _floatingLyricClickLookup(),
-    );
+        _floatingLyricClickLookup());
     await FloatingLyricChannel.updateLabels(
       previous: t.floating_lyric_previous,
       playPause: t.floating_lyric_play_pause,
@@ -834,8 +834,9 @@ class AudiobookSession extends ChangeNotifier {
   }
 
   /// 同步悬浮窗样式（reader 改主题 / 字号后调用）。无活动会话也允许（幂等）。
-  Future<void> applyFloatingLyricStyle() =>
-      _applyFloatingLyricStyle(_floatingLyricStyle());
+  Future<void> applyFloatingLyricStyle() => _applyFloatingLyricStyle(
+        _floatingLyricStyle(),
+      );
 
   void _setupFloatingLyricHandlers() {
     FloatingLyricChannel.setEventHandlers(
@@ -1173,11 +1174,12 @@ class FloatingLyricStyle {
 bool mediaPlayIntentNeedsToggle(
   MediaPlayIntent intent, {
   required bool isPlaying,
-}) => switch (intent) {
-  MediaPlayIntent.play => !isPlaying,
-  MediaPlayIntent.pause => isPlaying,
-  MediaPlayIntent.toggle => true,
-};
+}) =>
+    switch (intent) {
+      MediaPlayIntent.play => !isPlaying,
+      MediaPlayIntent.pause => isPlaying,
+      MediaPlayIntent.toggle => true,
+    };
 
 /// 把系统媒体控制意图落到控制器上。复用 [AudiobookPlayerController.togglePlayPause]
 /// 的完整语义（清单句试听终点等），不另开第二条播放入口。

@@ -293,33 +293,37 @@ export 'package:fushi/src/models/audio_source_config.dart'
     show AudioSourceConfig, AudioSourceKind;
 
 /// A list of fields that the app will support at runtime.
-final List<Field> globalFields = List<Field>.unmodifiable([
-  SentenceField.instance,
-  CueSentenceField.instance,
-  TermField.instance,
-  ReadingField.instance,
-  MeaningField.instance,
-  NotesField.instance,
-  ImageField.instance,
-  AudioField.instance,
-  AudioSentenceField.instance,
-  PitchAccentField.instance,
-  FuriganaField.instance,
-  FrequencyField.instance,
-  ContextField.instance,
-  ClozeBeforeField.instance,
-  ClozeInsideField.instance,
-  ClozeAfterField.instance,
-  ExpandedMeaningField.instance,
-  CollapsedMeaningField.instance,
-  HiddenMeaningField.instance,
-  TagsField.instance,
-]);
+final List<Field> globalFields = List<Field>.unmodifiable(
+  [
+    SentenceField.instance,
+    CueSentenceField.instance,
+    TermField.instance,
+    ReadingField.instance,
+    MeaningField.instance,
+    NotesField.instance,
+    ImageField.instance,
+    AudioField.instance,
+    AudioSentenceField.instance,
+    PitchAccentField.instance,
+    FuriganaField.instance,
+    FrequencyField.instance,
+    ContextField.instance,
+    ClozeBeforeField.instance,
+    ClozeInsideField.instance,
+    ClozeAfterField.instance,
+    ExpandedMeaningField.instance,
+    CollapsedMeaningField.instance,
+    HiddenMeaningField.instance,
+    TagsField.instance,
+  ],
+);
 
 /// A list of media types that the app will support at runtime.
 final Map<String, Field> fieldsByKey = Map.unmodifiable(
   Map<String, Field>.fromEntries(
-    globalFields.map((field) => MapEntry(field.uniqueKey, field)),
+    globalFields.map(
+      (field) => MapEntry(field.uniqueKey, field),
+    ),
   ),
 );
 
@@ -333,22 +337,19 @@ final appProvider = ChangeNotifierProvider<AppModel>((ref) {
 /// Provides color for all quick actions.
 final quickActionColorProvider = FutureProvider.autoDispose
     .family<Map<String, Color?>, DictionaryEntry>((ref, entry) async {
-      AppModel appModel = ref.watch(appProvider);
-      // Key each color to its action's uniqueKey in a single pass; a positional
-      // colors[i] join would silently mismap if iteration order ever diverged.
-      List<Future<MapEntry<String, Color?>>> futures = appModel
-          .quickActions
-          .values
-          .map((e) async {
-            return MapEntry(
-              e.uniqueKey,
-              await e.getIconColor(appModel: appModel, entry: entry),
-            );
-          })
-          .toList();
+  AppModel appModel = ref.watch(appProvider);
+  // Key each color to its action's uniqueKey in a single pass; a positional
+  // colors[i] join would silently mismap if iteration order ever diverged.
+  List<Future<MapEntry<String, Color?>>> futures =
+      appModel.quickActions.values.map((e) async {
+    return MapEntry(
+      e.uniqueKey,
+      await e.getIconColor(appModel: appModel, entry: entry),
+    );
+  }).toList();
 
-      return Map<String, Color?>.fromEntries(await Future.wait(futures));
-    });
+  return Map<String, Color?>.fromEntries(await Future.wait(futures));
+});
 
 /// A global [Provider] for maintaining visible once state.
 final visibleOnceProvider = StateProvider.autoDispose
@@ -373,18 +374,19 @@ ColorScheme buildFushiColorScheme({
   Color? surface,
   bool neutralDerived = false,
   bool pureBlack = false,
-}) => theme_notifier.buildFushiColorScheme(
-  seedColor: seedColor,
-  brightness: brightness,
-  variant: variant,
-  primary: primary,
-  secondary: secondary,
-  tertiary: tertiary,
-  primaryContainer: primaryContainer,
-  surface: surface,
-  neutralDerived: neutralDerived,
-  pureBlack: pureBlack,
-);
+}) =>
+    theme_notifier.buildFushiColorScheme(
+      seedColor: seedColor,
+      brightness: brightness,
+      variant: variant,
+      primary: primary,
+      secondary: secondary,
+      tertiary: tertiary,
+      primaryContainer: primaryContainer,
+      surface: surface,
+      neutralDerived: neutralDerived,
+      pureBlack: pureBlack,
+    );
 
 /// 书架长按「悬浮字幕」启动后台听书的结果（供 UI 决定提示）。
 enum BackgroundListenResult {
@@ -418,7 +420,7 @@ typedef DictPathEntry = ({
 /// 只差「怎么判目录存在」，分桶 switch 收口于此（之前两份逐字复制，改一处忘另一处即漂移）。
 @visibleForTesting
 ({List<String> term, List<String> freq, List<String> pitch, List<String> kanji})
-bucketDictPaths(List<DictPathEntry> entries) {
+    bucketDictPaths(List<DictPathEntry> entries) {
   final term = <String>[];
   final freq = <String>[];
   final pitch = <String>[];
@@ -510,7 +512,10 @@ String buildSearchCacheKey({
 /// maximumTerms」为新上限重查同一个词），若键里不含上限，load-more 就会命中上
 /// 一轮的短结果集、拿不到新条目，`allLoaded` 随即为 true —— load-more 永久失灵。
 @visibleForTesting
-String buildFfiLookupCacheKey({required String term, required int maxResults}) {
+String buildFfiLookupCacheKey({
+  required String term,
+  required int maxResults,
+}) {
   return '${term.length}:$term/$maxResults';
 }
 
@@ -567,10 +572,7 @@ enum BackupImportPhase { validating, running, done, failed }
 /// [AppModel.requestHomeDictionaryTab]。
 @immutable
 class HomeDictionaryTabRequest {
-  const HomeDictionaryTabRequest({
-    required this.seq,
-    required this.focusSearch,
-  });
+  const HomeDictionaryTabRequest({required this.seq, required this.focusSearch});
 
   final int seq;
   final bool focusSearch;
@@ -647,7 +649,7 @@ class AppModel with ChangeNotifier {
   /// host 不自造第二个协调器），HomePage 在 initState 登记、dispose 清除；未登记
   /// （弹窗词典 / 悬浮词典入口没有 HomePage）→ host 报「不支持远程刮削」。
   Future<VideoSourceScrapeTaskController?> Function()?
-  videoScrapeControllerResolver;
+      videoScrapeControllerResolver;
 
   /// 视频刮削运行时（协调器 + 任务控制器 + 补刮调度器）。归 HomePage 持有，
   /// initState 登记、dispose 清除——与 [videoScrapeControllerResolver] 同一生命周期；
@@ -659,12 +661,11 @@ class AppModel with ChangeNotifier {
   /// 经 [syncServerController] 把它注入为 `videoRemoteControlV1` 能力。
   late final VideoRemoteHost videoRemoteHost = VideoRemoteHost(
     favorites: () => FavoriteSentenceRepository(database),
-    favoriteChanges: () =>
-        (database.select(database.preferences)
-              ..where((row) => row.key.equals('favorite_sentences')))
-            .watchSingleOrNull()
-            .map((PreferenceRow? row) => row?.value)
-            .distinct(),
+    favoriteChanges: () => (database.select(database.preferences)
+          ..where((row) => row.key.equals('favorite_sentences')))
+        .watchSingleOrNull()
+        .map((PreferenceRow? row) => row?.value)
+        .distinct(),
   );
 
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
@@ -672,12 +673,11 @@ class AppModel with ChangeNotifier {
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
   /// 互联 host 的远程自更新实现（见 [createAppHostSelfUpdater]）。
-  late final AppHostSelfUpdater hostSelfUpdater = createAppHostSelfUpdater(
-    this,
-  );
+  late final AppHostSelfUpdater hostSelfUpdater =
+      createAppHostSelfUpdater(this);
 
-  late final FushiSyncServerController
-  syncServerController = FushiSyncServerController(
+  late final FushiSyncServerController syncServerController =
+      FushiSyncServerController(
     navigatorKey: navigatorKey,
     database: () => database,
     syncDataDir: () => databaseDirectory.path,
@@ -722,12 +722,12 @@ class AppModel with ChangeNotifier {
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
         backfillLibraryVideoSubtitle(
-          database: database,
-          service: _videoSubtitleBackfillService,
-          videoId: videoId,
-          language: language,
-          seriesLanguage: _seriesSubtitleLanguage,
-        ),
+      database: database,
+      service: _videoSubtitleBackfillService,
+      videoId: videoId,
+      language: language,
+      seriesLanguage: _seriesSubtitleLanguage,
+    ),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
@@ -806,19 +806,18 @@ class AppModel with ChangeNotifier {
       },
       // 推送方随书带来的显示名：走 ReaderFushiSource（写穿 MediaSource 内存缓存，
       // 只写 DB 的话 host 书架会一直显示旧名直到重启）。
-      adoptOverrideTitle:
-          ({
-            required String bookKey,
-            required String title,
-            required int updatedAt,
-          }) {
-            final ReaderFushiSource source = ReaderFushiSource.instance;
-            return source.adoptOverrideTitleIfNewer(
-              item: source.overrideTitleMediaItemForBookKey(bookKey),
-              title: title,
-              updatedAt: updatedAt,
-            );
-          },
+      adoptOverrideTitle: ({
+        required String bookKey,
+        required String title,
+        required int updatedAt,
+      }) {
+        final ReaderFushiSource source = ReaderFushiSource.instance;
+        return source.adoptOverrideTitleIfNewer(
+          item: source.overrideTitleMediaItemForBookKey(bookKey),
+          title: title,
+          updatedAt: updatedAt,
+        );
+      },
       importProfileJson: (String json) async {
         final ProfileRepository repo = interconnectProfileRepository();
         try {
@@ -837,15 +836,14 @@ class AppModel with ChangeNotifier {
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
       // 上传视频封面 best-effort 抽帧（桌面 ffmpeg；移动端无则留空占位）。
-      extractVideoCover:
-          ({required String videoPath, required String bookUid}) =>
-              extractVideoCover(videoPath: videoPath, bookUid: bookUid),
+      extractVideoCover: (
+              {required String videoPath, required String bookUid}) =>
+          extractVideoCover(videoPath: videoPath, bookUid: bookUid),
       removeLocalAudioEntry: (String displayName) async {
         // 按 displayName 在 LocalAudioManager 中找到对应 index 并删除。
         // LocalAudioManager.remove(int) 删除 DB 文件 + 从 prefs 移出 + 推 native。
-        final int idx = _localAudioManager.entries.indexWhere(
-          (LocalAudioDbEntry e) => e.displayName == displayName,
-        );
+        final int idx = _localAudioManager.entries
+            .indexWhere((LocalAudioDbEntry e) => e.displayName == displayName);
         if (idx < 0) return; // 不存在则幂等跳过
         await _localAudioManager.remove(idx);
         notifyListeners();
@@ -861,16 +859,16 @@ class AppModel with ChangeNotifier {
     if (report.conflicts.isEmpty) return;
     syncConflictPrompter
         .present(
-          navigatorKey: navigatorKey,
-          db: database,
-          backend: backend,
-          conflicts: report.conflicts,
-          source: ConflictSource.auto,
-          inBook: isMediaOpen,
-        )
+      navigatorKey: navigatorKey,
+      db: database,
+      backend: backend,
+      conflicts: report.conflicts,
+      source: ConflictSource.auto,
+      inBook: isMediaOpen,
+    )
         .catchError((Object e, StackTrace s) {
-          debugPrint('[sync] auto conflict prompt failed: $e');
-        });
+      debugPrint('[sync] auto conflict prompt failed: $e');
+    });
   }
 
   /// 同步报告产出后的统一 UI 回调（onReport）：并列触发**冲突弹窗**与**删除传播确认
@@ -886,10 +884,8 @@ class AppModel with ChangeNotifier {
   /// [DeletionPromptPrompter]。删除应用与基线推进在 prompter 内完成。
   void presentDeletionCandidates(SyncRunReport report, SyncBackend backend) {
     if (report.deletionCandidates.isEmpty) return;
-    _presentDeletionCandidatesAsync(report).catchError((
-      Object e,
-      StackTrace s,
-    ) {
+    _presentDeletionCandidatesAsync(report)
+        .catchError((Object e, StackTrace s) {
       debugPrint('[sync] deletion prompt failed: $e');
     });
   }
@@ -931,9 +927,8 @@ class AppModel with ChangeNotifier {
     // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
     // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
     final Map<String, String> favSentenceTexts = <String, String>{
-      for (final FavoriteSentence s in await FavoriteSentenceRepository(
-        database,
-      ).getAll())
+      for (final FavoriteSentence s
+          in await FavoriteSentenceRepository(database).getAll())
         FavoriteSentenceRepository.itemKeyOf(s): s.text,
     };
     return <DeletionCandidateView>[
@@ -945,7 +940,8 @@ class AppModel with ChangeNotifier {
           title: switch (SyncTombstoneKind.tryParse(c.mediaType)) {
             // 有声书与其 epub 共享 bookKey，借书名；查不到退回 itemKey。
             SyncTombstoneKind.book ||
-            SyncTombstoneKind.audiobook => bookTitles[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.audiobook =>
+              bookTitles[c.itemKey] ?? c.itemKey,
             SyncTombstoneKind.video => videoTitles[c.itemKey] ?? c.itemKey,
             SyncTombstoneKind.srtbook => srtTitles[c.itemKey] ?? c.itemKey,
             // 收藏词：itemKey 是 NUL 连接键，展示其中的 expression（词本身）。
@@ -982,15 +978,14 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.video:
             final bool deleted = await VideoBookRepository(database)
                 .deleteVideoBookAndReclaimAssets(
-                  c.itemKey,
-                  scope: DeleteScope.keepLocalOnly,
-                  compactDatabase: false,
-                );
+              c.itemKey,
+              scope: DeleteScope.keepLocalOnly,
+              compactDatabase: false,
+            );
             deletedVideoBook = deletedVideoBook || deleted;
           case SyncTombstoneKind.audiobook:
-            await AudiobookRepository(
-              database,
-            ).deleteAudiobook(c.itemKey, propagateDeletion: false);
+            await AudiobookRepository(database)
+                .deleteAudiobook(c.itemKey, propagateDeletion: false);
           case SyncTombstoneKind.srtbook:
             // 纯字幕书：itemKey = srt_books.uid。propagateDeletion 默认 false——
             // 消费远端删除标记时绝不回写墓碑，否则形成传播循环。
@@ -998,8 +993,7 @@ class AppModel with ChangeNotifier {
           case SyncTombstoneKind.localaudio:
             // 按 displayName 找到本地音频源并移除（不回写墓碑：keepLocalOnly 语义）。
             final int idx = _localAudioManager.entries.indexWhere(
-              (LocalAudioDbEntry e) => e.displayName == c.itemKey,
-            );
+                (LocalAudioDbEntry e) => e.displayName == c.itemKey);
             if (idx >= 0) await _localAudioManager.remove(idx);
           case SyncTombstoneKind.favoriteword:
             // 解析 itemKey → 取消收藏。removeFavoriteWord 默认 propagateDeletion=true：
@@ -1014,15 +1008,13 @@ class AppModel with ChangeNotifier {
             }
           case SyncTombstoneKind.favoritesentence:
             // 按内容键取消收藏。默认写墓碑（本设备也需抑制第三设备并集复活，与源墓碑同键）。
-            await FavoriteSentenceRepository(
-              database,
-            ).removeByItemKey(c.itemKey);
+            await FavoriteSentenceRepository(database)
+                .removeByItemKey(c.itemKey);
           case null:
             // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
             // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。
             debugPrint(
-              '[sync] skip deletion of unknown mediaType ${c.mediaType}/${c.itemKey}',
-            );
+                '[sync] skip deletion of unknown mediaType ${c.mediaType}/${c.itemKey}');
         }
       } catch (e) {
         debugPrint('[sync] apply deletion ${c.mediaType}/${c.itemKey}: $e');
@@ -1139,12 +1131,12 @@ class AppModel with ChangeNotifier {
   UpdateNotifier? _systemNotifier;
   UpdateNotifier get systemNotifier =>
       _systemNotifier ??= LocalUpdateNotifier.isSupportedPlatform
-      ? LocalUpdateNotifier(
-          appName: 'Fushi',
-          groupTitle: t.updates_notification_header,
-          onResponse: _onSystemNotificationResponse,
-        )
-      : const NoopUpdateNotifier();
+          ? LocalUpdateNotifier(
+              appName: 'Fushi',
+              groupTitle: t.updates_notification_header,
+              onResponse: _onSystemNotificationResponse,
+            )
+          : const NoopUpdateNotifier();
 
   /// 用户点了系统通知。先把窗口唤到前台——Windows 的 toast 激活只是回调进程，
   /// 不会替我们把主窗拉起来。反馈回复通知 → 那条反馈的详情；其余是更新提醒：
@@ -1156,19 +1148,17 @@ class AppModel with ChangeNotifier {
     await DesktopLookupService.instance.bringMainWindowToFront();
     final BuildContext? context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return;
-    final String? feedbackId = decodeFeedbackNotificationPayload(
-      response.payload,
-    );
+    final String? feedbackId =
+        decodeFeedbackNotificationPayload(response.payload);
     if (feedbackId != null) {
       await openFeedbackTicket(context, feedbackId);
       return;
     }
     if (!isDatabaseReady) return;
-    final UpdateNotificationPayload? payload = UpdateNotificationPayload.decode(
-      response.payload,
-    );
-    final UpdateFeedEntryRow? entry =
-        payload == null || response.actionId == kUpdateNotificationActionViewAll
+    final UpdateNotificationPayload? payload =
+        UpdateNotificationPayload.decode(response.payload);
+    final UpdateFeedEntryRow? entry = payload == null ||
+            response.actionId == kUpdateNotificationActionViewAll
         ? null
         : await database.getUpdateFeedEntry(payload.entryId);
     if (!context.mounted) return;
@@ -1184,12 +1174,14 @@ class AppModel with ChangeNotifier {
 
   /// 「打开落点」按钮的文案，按域。
   static String _openActionLabel(UpdateFeedKind kind) => switch (kind) {
-    UpdateFeedKind.videoEpisode => t.updates_notification_open_video_episode,
-    UpdateFeedKind.mangaChapter => t.updates_notification_open_manga_chapter,
-    UpdateFeedKind.mangaExtension =>
-      t.updates_notification_open_manga_extension,
-    UpdateFeedKind.appRelease => t.updates_notification_open_app_release,
-  };
+        UpdateFeedKind.videoEpisode =>
+          t.updates_notification_open_video_episode,
+        UpdateFeedKind.mangaChapter =>
+          t.updates_notification_open_manga_chapter,
+        UpdateFeedKind.mangaExtension =>
+          t.updates_notification_open_manga_extension,
+        UpdateFeedKind.appRelease => t.updates_notification_open_app_release,
+      };
 
   /// 通知文案的本地化外壳。服务层默认实现只组装结构（那一层要能在纯 Dart 单测里
   /// 跑，slang 的 `t` 需要 Flutter binding），这里补上句子与按钮。
@@ -1256,11 +1248,9 @@ class AppModel with ChangeNotifier {
     // 冷启动回放都要有可跳转的 context。
     // 反馈回复提醒共用同一个通知后端：更新提醒的系统通知关着、反馈回复开着时，
     // 点击回调与冷启动回放也得挂上，否则点反馈通知拉起的 app 不会跳到那条反馈。
-    unawaited(
-      feed.warmUpNotifier(
-        otherConsumers: feedbackReplyNotificationsEnabled(prefsRepo),
-      ),
-    );
+    unawaited(feed.warmUpNotifier(
+      otherConsumers: feedbackReplyNotificationsEnabled(prefsRepo),
+    ));
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
       isKindEnabled: feed.isKindEnabled,
@@ -1272,15 +1262,15 @@ class AppModel with ChangeNotifier {
             serviceFor: onlineMangaLibraryService,
             // 订阅且开了「新章自动下载」的条目：新章直接入队（设计稿 §5），
             // `auto_ocr` 取作品页 chip 的持久值。
-            autoDownload:
-                (
-                  OnlineMangaLibraryEntry entry,
-                  List<OnlineMangaChapter> chapters,
-                ) => mangaDownloadService.enqueueChapters(
-                  entry: entry,
-                  chapters: chapters,
-                  autoOcr: mangaDownloadAutoOcr,
-                ),
+            autoDownload: (
+              OnlineMangaLibraryEntry entry,
+              List<OnlineMangaChapter> chapters,
+            ) =>
+                mangaDownloadService.enqueueChapters(
+              entry: entry,
+              chapters: chapters,
+              autoOcr: mangaDownloadAutoOcr,
+            ),
           );
         },
         UpdateFeedKind.mangaExtension: () async {
@@ -1359,52 +1349,43 @@ class AppModel with ChangeNotifier {
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
   /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
   /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
-  late final AudiobookSession audiobookSession =
-      AudiobookSession(
-          audioHandler: () => audioCtrl.audioHandler,
-          showFloatingLyric: () => showFloatingLyric,
-          showMediaNotification: () => showMediaNotification,
-          floatingLyricStyle: _appLevelFloatingLyricStyle,
-          floatingLyricVisibleLines: () => floatingLyricVisibleLines,
-          floatingLyricClickLookup: () => floatingLyricClickLookup,
-          onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
-            // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
-            // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
-            // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
-            // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
-            // reader 的点词处理器。
-            unawaited(() async {
-              if (await tryFloatingLyricGlobalLookup(
-                appModel: this,
-                text: text,
-                index: index,
-                wordRect: wordRect,
-              )) {
-                return;
-              }
-              FloatingLyricLookupNotifier.instance.requestLookup(text, index);
-            }());
-          },
-          controlStreams: AudioControlStreams(
-            playIntentStream: audioCtrl.playIntentStream,
-            seekStream: audioCtrl.seekStream,
-            skipNextStream: audioCtrl.skipNextStream,
-            skipPreviousStream: audioCtrl.skipPreviousStream,
-            toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
-          ),
-          // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
-          // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
-          // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
-          database: () => isDatabaseReady ? database : null,
-          studyIdleTimeout: () => readingIdleTimeout,
-        )
-        ..skipActionSeconds = (() =>
-            ReaderFushiSource.instance.skipActionSeconds)
-        ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
-        ..floatingLyricWindowRect = _floatingLyricWindowRect
-        ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
-        ..onToggleFloatingLyricFromNotification =
-            toggleFloatingLyricFromControls;
+  late final AudiobookSession audiobookSession = AudiobookSession(
+      audioHandler: () => audioCtrl.audioHandler,
+      showFloatingLyric: () => showFloatingLyric,
+      showMediaNotification: () => showMediaNotification,
+      floatingLyricStyle: _appLevelFloatingLyricStyle,
+      floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+      floatingLyricClickLookup: () => floatingLyricClickLookup,
+      onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
+        // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
+        // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
+        // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
+        // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
+        // reader 的点词处理器。
+        unawaited(() async {
+          if (await tryFloatingLyricGlobalLookup(
+              appModel: this, text: text, index: index, wordRect: wordRect)) {
+            return;
+          }
+          FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+        }());
+      },
+      controlStreams: AudioControlStreams(
+          playIntentStream: audioCtrl.playIntentStream,
+          seekStream: audioCtrl.seekStream,
+          skipNextStream: audioCtrl.skipNextStream,
+          skipPreviousStream: audioCtrl.skipPreviousStream,
+          toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream),
+      // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
+      // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
+      // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
+      database: () => isDatabaseReady ? database : null,
+      studyIdleTimeout: () => readingIdleTimeout)
+    ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
+    ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
+    ..floatingLyricWindowRect = _floatingLyricWindowRect
+    ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
+    ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
 
   /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是
@@ -1441,7 +1422,7 @@ class AppModel with ChangeNotifier {
   /// 于是「点下载 → 走下一步 → 走完向导」就把下载静默掐断，而且没有任何地方还能
   /// 看到它。包目录惰性求值——本字段在 [appDirectory] 定下来之前就构造。
   late final RecommendedPackDownloadController
-  recommendedPackDownloadController = RecommendedPackDownloadController(
+      recommendedPackDownloadController = RecommendedPackDownloadController(
     packDirectory: () =>
         Directory(path.join(appDirectory.path, 'recommended_pack')),
   );
@@ -1496,8 +1477,8 @@ class AppModel with ChangeNotifier {
   /// underlying [GamepadService.resetHighlightForScreenSwitch] directly.
   late final HighlightResetNavigatorObserver focusHighlightObserver =
       HighlightResetNavigatorObserver(
-        gamepadService.resetHighlightForScreenSwitch,
-      );
+    gamepadService.resetHighlightForScreenSwitch,
+  );
 
   Color? get systemPrimaryColor => themeNotifier.systemPrimaryColor;
 
@@ -1587,11 +1568,7 @@ class AppModel with ChangeNotifier {
       } catch (e, stack) {
         // Keep the old connection/repository alive if flushing fails; opening
         // another DB instance would abandon the uncommitted state.
-        ErrorLogService.instance.log(
-          'AppModel.retryInitialise.flush',
-          e,
-          stack,
-        );
+        ErrorLogService.instance.log('AppModel.retryInitialise.flush', e, stack);
         _initError = '$e';
         notifyListeners();
         return;
@@ -1604,11 +1581,8 @@ class AppModel with ChangeNotifier {
       try {
         await _database.close();
       } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'AppModel.retryInitialise.close',
-          e,
-          stack,
-        );
+        ErrorLogService.instance
+            .log('AppModel.retryInitialise.close', e, stack);
       }
       _databaseOpened = false;
       if (_dictionaryRepoReady) {
@@ -1660,10 +1634,8 @@ class AppModel with ChangeNotifier {
   static RegExp get _emojiRegex =>
       _emojiRegexInstance ??= RegExp(RemoveEmoji().getRegexString());
 
-  static final RegExp _punctuationRegex = RegExp(
-    r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$',
-    unicode: true,
-  );
+  static final RegExp _punctuationRegex =
+      RegExp(r'^[\p{P}\p{S}]+|[\p{P}\p{S}]+$', unicode: true);
   static final RegExp _loneSurrogateRegex = RegExp(
     '[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]',
   );
@@ -1789,9 +1761,8 @@ class AppModel with ChangeNotifier {
   /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
   /// 分类裁剪行、枚举待打包文件）没有可分的量，UI 此时走不确定动画。与导入侧同理用
   /// [ValueNotifier]，让**只有进度条**随每个文件落盘重建，而不是整行重绘。
-  final ValueNotifier<double?> backupExportProgress = ValueNotifier<double?>(
-    null,
-  );
+  final ValueNotifier<double?> backupExportProgress =
+      ValueNotifier<double?>(null);
 
   void beginBackupExport() {
     if (_backupExportActive) return;
@@ -1893,8 +1864,8 @@ class AppModel with ChangeNotifier {
   /// 搜索框的意图（见 [requestHomeDictionaryTab]）。
   final ValueNotifier<HomeDictionaryTabRequest> homeDictionaryTabRequest =
       ValueNotifier<HomeDictionaryTabRequest>(
-        const HomeDictionaryTabRequest(seq: 0, focusSearch: false),
-      );
+    const HomeDictionaryTabRequest(seq: 0, focusSearch: false),
+  );
 
   /// 发一次「打开查词 tab」请求（桌面悬浮字幕点词等显式手势调）。
   ///
@@ -1947,9 +1918,9 @@ class AppModel with ChangeNotifier {
   /// 删除激活 profile 后回落），必在初始化之后。真要在初始化前被调到，`late` 抛
   /// 出来才是对的——静默返回 false =「判定成没装」= 不回插 = 正好重演本 bug 的
   /// 数据丢失，那是最不该选的失败模式。
-  bool isDictionaryInstalledOnDisk(String name) => Directory(
-    path.join(_dictionaryResourceDirectory.path, name),
-  ).existsSync();
+  bool isDictionaryInstalledOnDisk(String name) =>
+      Directory(path.join(_dictionaryResourceDirectory.path, name))
+          .existsSync();
 
   /// 互联「配置文件」搬运用的 [ProfileRepository]。
   ///
@@ -1957,10 +1928,10 @@ class AppModel with ChangeNotifier {
   /// 的磁盘判据）。host 侧回调是无 ref 的后台路径，拿不到 Riverpod 容器，故就地建一个
   /// —— [ProfileRepository] 本身不持状态、不持缓存，重复构造无副作用。
   ProfileRepository interconnectProfileRepository() => ProfileRepository(
-    database,
-    platformServices.createAnkiRepository(),
-    isDictionaryInstalled: isDictionaryInstalledOnDisk,
-  );
+        database,
+        platformServices.createAnkiRepository(),
+        isDictionaryInstalled: isDictionaryInstalledOnDisk,
+      );
 
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
   late Directory _dictionaryResourceDirectory;
@@ -2147,15 +2118,11 @@ class AppModel with ChangeNotifier {
           );
           if (mixed) {
             debugPrint(
-              '[Fushi] reclassified kanji→term (mixed dict): ${d.name}',
-            );
+                '[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
           }
         } catch (e, stack) {
-          ErrorLogService.instance.log(
-            'AppModel.dictKanjiReclassify',
-            e,
-            stack,
-          );
+          ErrorLogService.instance
+              .log('AppModel.dictKanjiReclassify', e, stack);
           debugPrint('[Fushi] kanji reclassify error for ${d.name}: $e');
         }
         continue;
@@ -2166,8 +2133,7 @@ class AppModel with ChangeNotifier {
       if (d.type != DictionaryType.term) continue;
 
       final blobsFile = File(
-        path.join(dictionaryResourceDirectory.path, d.name, 'blobs.bin'),
-      );
+          path.join(dictionaryResourceDirectory.path, d.name, 'blobs.bin'));
       if (!blobsFile.existsSync()) continue;
 
       final raf = blobsFile.openSync();
@@ -2233,14 +2199,12 @@ class AppModel with ChangeNotifier {
     for (final Dictionary d in dictRepo.dictionaries) {
       if (!needsSourceMetadataBackfill(d.metadata)) continue;
       final File indexFile = File(
-        path.join(dictionaryResourceDirectory.path, d.name, 'index.json'),
-      );
+          path.join(dictionaryResourceDirectory.path, d.name, 'index.json'));
       try {
         // 文件不在不打标记：可能只是还没落盘，下次启动再读。
         if (!await indexFile.exists()) continue;
-        fromIndex[d.name] = parseSourceMetadataFromIndexJson(
-          await indexFile.readAsString(),
-        );
+        fromIndex[d.name] =
+            parseSourceMetadataFromIndexJson(await indexFile.readAsString());
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
       }
@@ -2254,9 +2218,7 @@ class AppModel with ChangeNotifier {
           entry.key: (current) => needsSourceMetadataBackfill(current.metadata)
               ? current.copyWith(
                   metadata: mergeBackfilledSourceMetadata(
-                    current.metadata,
-                    entry.value,
-                  ),
+                    current.metadata, entry.value),
                 )
               : null,
       });
@@ -2350,10 +2312,8 @@ class AppModel with ChangeNotifier {
     try {
       // 首帧还没画时等它画完；已经画过则立即返回下一帧的结束点。
       await WidgetsBinding.instance.endOfFrame;
-      final String warmupChar = JapaneseLanguage.instance.helloWorld.substring(
-        0,
-        1,
-      );
+      final String warmupChar =
+          JapaneseLanguage.instance.helloWorld.substring(0, 1);
       final List<(String, bool)> warmups = <(String, bool)>[
         (JapaneseLanguage.instance.helloWorld, false),
         ('$warmupChar?', true),
@@ -2396,9 +2356,9 @@ class AppModel with ChangeNotifier {
       for (final d in dictList)
         path.join(dictionaryResourceDirectory.path, d.name),
     ];
-    final existsResults = await Future.wait([
-      for (final p in paths) Directory(p).exists(),
-    ]);
+    final existsResults = await Future.wait(
+      [for (final p in paths) Directory(p).exists()],
+    );
     // BUG-2504：不变式「同步 FFI 装载只碰已物化的字节」。对存在的目录逐文件在后台
     // isolate 触读 1 字节（File Provider / OneDrive 读任意字节就把整个文件拉回本地），
     // 预算内确认全部可读的才进本次装载；超时 / 读失败的本次跳过（它们的探测 isolate
@@ -2409,9 +2369,9 @@ class AppModel with ChangeNotifier {
     ];
     final DictResourceMaterializeResult materialized =
         await materializeDictResources(
-          existingDirs,
-          onLateReport: _onDictDirMaterializedLate,
-        );
+      existingDirs,
+      onLateReport: _onDictDirMaterializedLate,
+    );
     final Set<String> readyDirs = materialized.ready.toSet();
     // 同步路径（[_rebuildDictPathsCache]）复用这轮结论，见 [_dictDirMaterialized]。
     _probedDictDirs = existingDirs.toSet();
@@ -2430,10 +2390,8 @@ class AppModel with ChangeNotifier {
             '${materialized.pending.length + materialized.failed.length} 本 / '
             '${existingDirs.length} 本：\n$summary',
       );
-      debugPrint(
-        '[Fushi] dict resources not materialized, skipping this load:\n'
-        '$summary',
-      );
+      debugPrint('[Fushi] dict resources not materialized, skipping this load:\n'
+          '$summary');
     }
     final List<DictPathEntry> entries = <DictPathEntry>[
       for (var i = 0; i < dictList.length; i++)
@@ -2564,24 +2522,21 @@ class AppModel with ChangeNotifier {
     // TODO-049: 软件系统字体走独立的 appUiFonts 目标，与小说正文(customFonts)、
     // 词典字体相互独立。整张列表都进链（不再只取第一条），用户排第 2、3 位的字体
     // 才真正参与缺字回退。
-    final List<String> families = await AppFontLoader.resolveAndLoadAll(
-      settings.appUiFonts,
-    );
+    final List<String> families =
+        await AppFontLoader.resolveAndLoadAll(settings.appUiFonts);
     // TODO-864: 视频字幕字体走独立的 videoSubtitle 目标；复用同一次
     // refreshFromDb 一起解析。两个 target 都解析完再判是否 notify，否则
     // 只改字幕字体（appUi 未变）时 early-return 会吞掉刷新。
     // 字幕层自带 CJK 回退链（TODO-088）且与 mpv/libass 字号换算耦合（BUG-929），
     // 故仍取单个家族，不走链。
-    final String? subtitleFamily = await AppFontLoader.resolveAndLoad(
-      settings.videoSubtitleFonts,
-    );
+    final String? subtitleFamily =
+        await AppFontLoader.resolveAndLoad(settings.videoSubtitleFonts);
     // 游戏文本目标同样在这里解析：texthooker 页面（Flutter 层）此前只跟主题字体，
     // 用户在字体库里为「游戏」设的字体只作用于 native hook 浮窗，同一批台词在
     // app 内页面里不跟随——两个表面各说各话。整链解析，理由见
     // [_gameLookupFontFamilies]。
-    final List<String> gameFamilies = await AppFontLoader.resolveAndLoadAll(
-      settings.gameLookupFonts,
-    );
+    final List<String> gameFamilies =
+        await AppFontLoader.resolveAndLoadAll(settings.gameLookupFonts);
     if (listEquals(families, _appFontFamilies) &&
         subtitleFamily == _subtitleFontFamily &&
         listEquals(gameFamilies, _gameLookupFontFamilies)) {
@@ -2654,7 +2609,9 @@ class AppModel with ChangeNotifier {
     } else {
       MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
       if (mediaType is DictionaryMediaType) {
-        return FushiTextSelection(text: '');
+        return FushiTextSelection(
+          text: '',
+        );
       } else {
         return (_currentMediaSource ??
                 (getCurrentSourceForMediaType(mediaType: mediaType)))
@@ -2738,9 +2695,11 @@ class AppModel with ChangeNotifier {
   /// Populate maps for languages at startup to optimise performance.
   void populateLanguages() {
     /// A list of languages that the app will support at runtime.
-    final List<Language> availableLanguages = List<Language>.unmodifiable([
-      JapaneseLanguage.instance,
-    ]);
+    final List<Language> availableLanguages = List<Language>.unmodifiable(
+      [
+        JapaneseLanguage.instance,
+      ],
+    );
 
     languages = Map<String, Language>.unmodifiable(
       Map<String, Language>.fromEntries(
@@ -2755,25 +2714,27 @@ class AppModel with ChangeNotifier {
   void populateLocales() {
     /// A list of locales that the app will support at runtime. This is not
     /// related to supported target languages.
-    final List<Locale> availableLocales = List<Locale>.unmodifiable([
-      const Locale('en', 'US'),
-      const Locale('zh', 'CN'),
-      const Locale('zh', 'HK'),
-      const Locale('ja'),
-      const Locale('ko'),
-      const Locale('es'),
-      const Locale('fr'),
-      const Locale('de'),
-      const Locale('pt', 'BR'),
-      const Locale('ru'),
-      const Locale('vi'),
-      const Locale('th'),
-      const Locale('id'),
-      const Locale('ar'),
-      const Locale('nl'),
-      const Locale('it'),
-      const Locale('tr'),
-    ]);
+    final List<Locale> availableLocales = List<Locale>.unmodifiable(
+      [
+        const Locale('en', 'US'),
+        const Locale('zh', 'CN'),
+        const Locale('zh', 'HK'),
+        const Locale('ja'),
+        const Locale('ko'),
+        const Locale('es'),
+        const Locale('fr'),
+        const Locale('de'),
+        const Locale('pt', 'BR'),
+        const Locale('ru'),
+        const Locale('vi'),
+        const Locale('th'),
+        const Locale('id'),
+        const Locale('ar'),
+        const Locale('nl'),
+        const Locale('it'),
+        const Locale('tr'),
+      ],
+    );
 
     locales = Map<String, Locale>.unmodifiable(
       Map<String, Locale>.fromEntries(
@@ -2787,10 +2748,12 @@ class AppModel with ChangeNotifier {
   /// Populate maps for media types at startup to optimise performance.
   void populateMediaTypes() {
     /// A list of media types that the app will support at runtime.
-    final List<MediaType> availableMediaTypes = List<MediaType>.unmodifiable([
-      ReaderMediaType.instance,
-      DictionaryMediaType.instance,
-    ]);
+    final List<MediaType> availableMediaTypes = List<MediaType>.unmodifiable(
+      [
+        ReaderMediaType.instance,
+        DictionaryMediaType.instance,
+      ],
+    );
 
     mediaTypes = Map<String, MediaType>.unmodifiable(
       Map<String, MediaType>.fromEntries(
@@ -2824,7 +2787,9 @@ class AppModel with ChangeNotifier {
           type,
           Map<String, MediaSource>.unmodifiable(
             Map<String, MediaSource>.fromEntries(
-              sources.map((source) => MapEntry(source.uniqueKey, source)),
+              sources.map(
+                (source) => MapEntry(source.uniqueKey, source),
+              ),
             ),
           ),
         ),
@@ -2836,18 +2801,22 @@ class AppModel with ChangeNotifier {
   void populateDictionaryFormats() {
     /// A list of dictionary formats that the app will support at runtime.
     final List<DictionaryFormat> availableDictionaryFormats =
-        List<DictionaryFormat>.unmodifiable([
-          YomichanFormat.instance,
-          MigakuFormat.instance,
-          AbbyyLingvoFormat.instance,
-          MdictFormat.instance,
-        ]);
+        List<DictionaryFormat>.unmodifiable(
+      [
+        YomichanFormat.instance,
+        MigakuFormat.instance,
+        AbbyyLingvoFormat.instance,
+        MdictFormat.instance,
+      ],
+    );
 
     dictionaryFormats = Map<String, DictionaryFormat>.unmodifiable(
       Map<String, DictionaryFormat>.fromEntries(
         availableDictionaryFormats.map(
-          (dictionaryFormat) =>
-              MapEntry(dictionaryFormat.uniqueKey, dictionaryFormat),
+          (dictionaryFormat) => MapEntry(
+            dictionaryFormat.uniqueKey,
+            dictionaryFormat,
+          ),
         ),
       ),
     );
@@ -2857,7 +2826,9 @@ class AppModel with ChangeNotifier {
   void populateFields() {
     fields = Map<String, Field>.unmodifiable(
       Map<String, Field>.fromEntries(
-        globalFields.map((field) => MapEntry(field.uniqueKey, field)),
+        globalFields.map(
+          (field) => MapEntry(field.uniqueKey, field),
+        ),
       ),
     );
   }
@@ -3005,15 +2976,16 @@ class AppModel with ChangeNotifier {
       onMigrationError: (Object e, StackTrace stack) => ErrorLogService.instance
           .log('AppModel.prepareExportDirectory.renameLegacy', e, stack),
     );
-    await platformServices.directory.excludeFromMediaScanner(
-      exportDirectory.path,
-    );
+    await platformServices.directory
+        .excludeFromMediaScanner(exportDirectory.path);
 
     return exportDirectory;
   }
 
   /// Preloads the app icon so that there is no pop-in.
-  final Image appIcon = Image.asset('assets/meta/icon.png');
+  final Image appIcon = Image.asset(
+    'assets/meta/icon.png',
+  );
 
   /// Injects licenses to be displayed in the licenses page that aren't
   /// pre-included by Flutter upon compilation but are included as assets.
@@ -3033,9 +3005,8 @@ class AppModel with ChangeNotifier {
     ];
 
     for (String packageName in packageNames) {
-      String licenseText = await rootBundle.loadString(
-        'assets/licenses/$packageName.txt',
-      );
+      String licenseText =
+          await rootBundle.loadString('assets/licenses/$packageName.txt');
       LicenseRegistry.addLicense(
         () => Stream<LicenseEntry>.value(
           LicenseEntryWithLineBreaks(<String>[packageName], licenseText),
@@ -3055,13 +3026,13 @@ class AppModel with ChangeNotifier {
   /// 给启动关键 IO 的 [Future] 叠一层超时：超时抛带**步骤名**的 [TimeoutException]，
   /// 让错误屏文案能指出卡在哪一步。
   Future<T> _guardInitIo<T>(String step, Future<T> future) => future.timeout(
-    _initIoTimeout,
-    onTimeout: () => throw TimeoutException(
-      'AppModel.initialise 卡在「$step」超过 ${_initIoTimeout.inSeconds}s 未返回'
-      '（多半是自定义数据根所在磁盘掉线 / 卡死）',
-      _initIoTimeout,
-    ),
-  );
+        _initIoTimeout,
+        onTimeout: () => throw TimeoutException(
+          'AppModel.initialise 卡在「$step」超过 ${_initIoTimeout.inSeconds}s 未返回'
+          '（多半是自定义数据根所在磁盘掉线 / 卡死）',
+          _initIoTimeout,
+        ),
+      );
 
   /// Prepare application data and state to be ready of use upon starting up
   /// the application. [AppModel] is initialised in the main function before
@@ -3116,9 +3087,8 @@ class AppModel with ChangeNotifier {
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
       // 故写启动面包屑 + 叠超时（超时→错误屏 Retry，不再无限加载）。
-      ErrorLogService.instance.markInitStep(
-        'resolve-data-roots（AppPaths.resolve / 数据根 stat）',
-      );
+      ErrorLogService.instance
+          .markInitStep('resolve-data-roots（AppPaths.resolve / 数据根 stat）');
       await _guardInitIo('resolve-data-roots', _prepareRuntimeDirectories());
 
       // W2-7：存量书库目录 hoshi_books → fushi_books 就地改名。必须在 DB 打开
@@ -3161,11 +3131,8 @@ class AppModel with ChangeNotifier {
         db: _database,
         documentsRoot: _appDirectory.path,
         supportRoot: _databaseDirectory.path,
-        onError: (Object e, StackTrace stack) => ErrorLogService.instance.log(
-          'AppModel.sandboxRelocation',
-          e,
-          stack,
-        ),
+        onError: (Object e, StackTrace stack) => ErrorLogService.instance
+            .log('AppModel.sandboxRelocation', e, stack),
       );
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
@@ -3181,8 +3148,8 @@ class AppModel with ChangeNotifier {
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
-      final BaseAnkiRepository ankiRepo = platformServices
-          .createAnkiRepository();
+      final BaseAnkiRepository ankiRepo =
+          platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(
         _database,
         ankiRepo,
@@ -3190,11 +3157,9 @@ class AppModel with ChangeNotifier {
         // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
         isDictionaryInstalled: isDictionaryInstalledOnDisk,
       );
-      dictRepo = DictionaryRepository(
-        _database,
-        onCacheRebuild: _rebuildDictPathsCache,
-        isLowMemory: () => prefsRepo.lowMemoryMode,
-      );
+      dictRepo = DictionaryRepository(_database,
+          onCacheRebuild: _rebuildDictPathsCache,
+          isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
@@ -3246,36 +3211,27 @@ class AppModel with ChangeNotifier {
 
       debugPrint('[Fushi] init: directories + system palette (parallel)');
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
-      _thumbnailsDirectory = Directory(
-        path.join(appDirectory.path, 'thumbnails'),
-      );
+      _thumbnailsDirectory =
+          Directory(path.join(appDirectory.path, 'thumbnails'));
 
-      _dictionaryResourceDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryResources'),
-      );
+      _dictionaryResourceDirectory =
+          Directory(path.join(appDirectory.path, 'dictionaryResources'));
 
       _dictionaryImportWorkingDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'),
-      );
-      _webArchiveDirectory = Directory(
-        path.join(appDirectory.path, 'webArchive'),
-      );
+          path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
+      _webArchiveDirectory =
+          Directory(path.join(appDirectory.path, 'webArchive'));
 
       // TODO-1260：这些目录都派生自数据根（documentsRoot）；盘掉线时 create() 会 hang。
       ErrorLogService.instance.markInitStep(
-        'create-runtime-dirs（thumbnails / dictionaryResources 等目录创建）',
-      );
+          'create-runtime-dirs（thumbnails / dictionaryResources 等目录创建）');
       await _guardInitIo(
         'create-runtime-dirs',
         Future.wait(<Future<void>>[
           thumbnailsDirectory.create(recursive: true),
           dictionaryImportWorkingDirectory.create(recursive: true),
-          dictionaryResourceDirectory
-              .create(recursive: true)
-              .then(
-                (_) =>
-                    purgePendingDictionaryDeletes(dictionaryResourceDirectory),
-              ),
+          dictionaryResourceDirectory.create(recursive: true).then((_) =>
+              purgePendingDictionaryDeletes(dictionaryResourceDirectory)),
           refreshSystemPalette(),
           () async {
             _exportDirectory = await prepareExportDirectory();
@@ -3295,9 +3251,7 @@ class AppModel with ChangeNotifier {
         );
         if (clean) {
           await prefsRepo.setPref(
-            kOverrideThumbnailPrefixMigratedPrefKey,
-            true,
-          );
+              kOverrideThumbnailPrefixMigratedPrefKey, true);
         }
       }
 
@@ -3305,9 +3259,8 @@ class AppModel with ChangeNotifier {
       await refreshCompiledDictStyleCssCache();
 
       // TODO-1260：内部对每本词典的资源目录做 exists() 探测（数据根派生），同样叠超时。
-      ErrorLogService.instance.markInitStep(
-        'rebuild-dict-paths（词典资源目录 exists + 物化探测）',
-      );
+      ErrorLogService.instance
+          .markInitStep('rebuild-dict-paths（词典资源目录 exists + 物化探测）');
       await _guardInitIo('rebuild-dict-paths', _rebuildDictPathsCacheAsync());
 
       _localAudioManager = LocalAudioManager(
@@ -3345,8 +3298,7 @@ class AppModel with ChangeNotifier {
       ]);
 
       debugPrint(
-        '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)',
-      );
+          '[Fushi] init: reader settings + enhancements + quick actions + media sources (parallel)');
       MediaSource.setDatabase(_database);
       final readerSettings = ReaderSettings(_database);
       await readerSettings.loadFromPrefsSnapshot(prefsSnapshot);
@@ -3363,8 +3315,7 @@ class AppModel with ChangeNotifier {
         );
         if (relocated > 0) {
           debugPrint(
-            '[Fushi] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir',
-          );
+              '[Fushi] init: relocated $relocated stale custom-font path(s) to current custom_fonts dir');
         }
       } catch (e, stack) {
         ErrorLogService.instance.log('AppModel.healFontPaths', e, stack);
@@ -3375,23 +3326,17 @@ class AppModel with ChangeNotifier {
       // settings just loaded above to avoid a second prefs read.
       // 三个字体目标互不依赖，并发解析（同名家族由 AppFontLoader 的在途表去重，
       // 只装一次）；串行三条链 = 首帧前三段可见等待。
-      final Future<List<String>> appFontsF = AppFontLoader.resolveAndLoadAll(
-        readerSettings.appUiFonts,
-      );
+      final Future<List<String>> appFontsF =
+          AppFontLoader.resolveAndLoadAll(readerSettings.appUiFonts);
       // TODO-864: 视频字幕字体同样在首帧前从 videoSubtitle 目标解析。
-      final Future<String?> subtitleFontF = AppFontLoader.resolveAndLoad(
-        readerSettings.videoSubtitleFonts,
-      );
+      final Future<String?> subtitleFontF =
+          AppFontLoader.resolveAndLoad(readerSettings.videoSubtitleFonts);
       // 游戏文本字体链也在首帧前解析：否则 texthooker 页面首次打开会先用主题字体
       // 画一帧再跳变（refreshAppFont 要等到用户改设置才跑）。
-      final Future<List<String>> gameFontsF = AppFontLoader.resolveAndLoadAll(
-        readerSettings.gameLookupFonts,
-      );
-      await Future.wait<Object?>(<Future<Object?>>[
-        appFontsF,
-        subtitleFontF,
-        gameFontsF,
-      ]);
+      final Future<List<String>> gameFontsF =
+          AppFontLoader.resolveAndLoadAll(readerSettings.gameLookupFonts);
+      await Future.wait<Object?>(
+          <Future<Object?>>[appFontsF, subtitleFontF, gameFontsF]);
       _appFontFamilies = await appFontsF;
       _subtitleFontFamily = await subtitleFontF;
       _gameLookupFontFamilies = await gameFontsF;
@@ -3432,8 +3377,7 @@ class AppModel with ChangeNotifier {
       );
 
       debugPrint(
-        '[Fushi] init: search preload (deferred to after first frame)',
-      );
+          '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
@@ -3480,28 +3424,25 @@ class AppModel with ChangeNotifier {
       // 代价是本机不再作为互联 host 被别的设备发现/连接，合集增删也不再自动推送。
       if (modules.isEnabled(ModuleId.sync)) {
         if (modules.isEnabled(ModuleId.games)) _configureGameStreamLibrary();
-        unawaited(
-          syncServerController
-              .startIfEnabled()
-              .then((FushiServerStartOutcome outcome) {
-                if (outcome is FushiServerPortInUse) {
-                  ErrorLogService.instance.log(
-                    'AppModel.startSyncServer',
-                    'port ${outcome.port} in use',
-                    StackTrace.current,
-                  );
-                } else if (outcome is FushiServerStartError) {
-                  ErrorLogService.instance.log(
-                    'AppModel.startSyncServer',
-                    outcome.message,
-                    StackTrace.current,
-                  );
-                }
-              })
-              .catchError((Object e, StackTrace s) {
-                ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
-              }),
-        );
+        unawaited(syncServerController.startIfEnabled().then((
+          FushiServerStartOutcome outcome,
+        ) {
+          if (outcome is FushiServerPortInUse) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              'port ${outcome.port} in use',
+              StackTrace.current,
+            );
+          } else if (outcome is FushiServerStartError) {
+            ErrorLogService.instance.log(
+              'AppModel.startSyncServer',
+              outcome.message,
+              StackTrace.current,
+            );
+          }
+        }).catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('AppModel.startSyncServer', e, s);
+        }));
         // 合集变更 → 防抖轻量同步（根修「合集经常没同步」：合集维度原本只搭载在
         // 低频全量 sweep 上，增删合集后长时间不推送）。任何合集表写入都会在防抖
         // 后跑一轮只含合集维度的双通道同步，见 installCollectionsSyncWatcher 文档。
@@ -3514,19 +3455,14 @@ class AppModel with ChangeNotifier {
       if (yomitanApiServerEnabled) {
         // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
         // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。
-        unawaited(
-          startYomitanApiServer().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'AppModel.startYomitanApiServer.autostart',
-              e,
-              s,
-            );
-            // 端口被占：开关已被复位，用户却毫不知情——交给启动提醒弹出说明。
-            if (e is SyncServerPortInUseException) {
-              fushiApiStartupPortConflict.value = e.port;
-            }
-          }),
-        );
+        unawaited(startYomitanApiServer().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.startYomitanApiServer.autostart', e, s);
+          // 端口被占：开关已被复位，用户却毫不知情——交给启动提醒弹出说明。
+          if (e is SyncServerPortInUseException) {
+            fushiApiStartupPortConflict.value = e.port;
+          }
+        }));
       }
       // BUG-726：桌面端启动时把 <appSupport> 下已解压的浏览器扩展副本刷新到当前内置版本
       // （只在用户装过扩展、指纹不一致时重解压；没装过不落盘）。此前该副本只在手动跑
@@ -3538,14 +3474,10 @@ class AppModel with ChangeNotifier {
       // 平台判据走 modules（browserExtension 仅桌面），与函数内既有的桌面早退同向。
       if (modules.isEnabled(ModuleId.browserExtension)) {
         unawaited(
-          refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'AppModel.refreshBrowserExtensionCopy',
-              e,
-              s,
-            );
-          }),
-        );
+            refreshBrowserExtensionCopy().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.refreshBrowserExtensionCopy', e, s);
+        }));
       }
       // 刻意**不加模块门**：texthooker 是「连 Textractor / mpv / agent，把收到的
       // 文本拿去查词」的查词能力（不只 galgame），开关同样落在恒在的「设置 → 查词」
@@ -3557,14 +3489,10 @@ class AppModel with ChangeNotifier {
       // TODO-861③：启动 check-due 词典自动更新（前台、静默、不弹错）。fire-and-forget，
       // 失败自吞 + 记日志，绝不阻塞 / 中断 app init（守卫见 maybeAutoUpdateDictionaries）。
       unawaited(
-        maybeAutoUpdateDictionaries().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log(
-            'AppModel.maybeAutoUpdateDictionaries',
-            e,
-            s,
-          );
-        }),
-      );
+          maybeAutoUpdateDictionaries().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.maybeAutoUpdateDictionaries', e, s);
+      }));
       // 番剧下载：启动 qb 完成监听 + 自动入库（fire-and-forget；未配置 qb 时每
       // tick 直接返回，无网络开销，绝不阻塞/中断 init）。
       // 模块门（downloads）：番剧下载完成监听是「下载中心」专属后台（计划仓储 +
@@ -3575,14 +3503,10 @@ class AppModel with ChangeNotifier {
       // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
       if (modules.isEnabled(ModuleId.browse)) {
         unawaited(
-          startAnimeDownloadService().catchError((Object e, StackTrace s) {
-            ErrorLogService.instance.log(
-              'AppModel.startAnimeDownloadService',
-              e,
-              s,
-            );
-          }),
-        );
+            startAnimeDownloadService().catchError((Object e, StackTrace s) {
+          ErrorLogService.instance
+              .log('AppModel.startAnimeDownloadService', e, s);
+        }));
       }
       // 推荐包（9.5 GB zip）的包目录进场收尾：删掉「已导入」的残包、搬改名前的旧
       // 半截文件，再把下载阶段对齐磁盘。
@@ -3600,18 +3524,12 @@ class AppModel with ChangeNotifier {
       // BUG-2109：同时这也是 `stage` 在新进程里唯一的对盘点。不跑它，stage 永远
       // 停在 idle，设置 → 系统里那行（判据是 `isActive`）就不渲染：下完没导入就
       // 关 app 的用户，重开后磁盘上躺着的 9.5 GB 既看不见也导不了。
-      unawaited(
-        recommendedPackDownloadController.prepareDiskState().catchError((
-          Object e,
-          StackTrace s,
-        ) {
-          ErrorLogService.instance.log(
-            'AppModel.recommendedPackPrepareDiskState',
-            e,
-            s,
-          );
-        }),
-      );
+      unawaited(recommendedPackDownloadController
+          .prepareDiskState()
+          .catchError((Object e, StackTrace s) {
+        ErrorLogService.instance
+            .log('AppModel.recommendedPackPrepareDiskState', e, s);
+      }));
       notifyListeners();
     } on DataRootUnavailableException catch (e, stack) {
       // BUG-815: a custom data root IS configured but is currently unreachable
@@ -3622,11 +3540,8 @@ class AppModel with ChangeNotifier {
       // opt-in-to-default); do NOT set _initError so the generic error screen
       // doesn't shadow it. The real data is untouched on e.configuredPath.
       debugPrint('[Fushi] init PAUSED (data root unavailable): $e\n$stack');
-      ErrorLogService.instance.log(
-        'AppModel.initialise.dataRootUnavailable',
-        e,
-        stack,
-      );
+      ErrorLogService.instance
+          .log('AppModel.initialise.dataRootUnavailable', e, stack);
       _dataRootUnavailable = e;
       notifyListeners();
     } on FushiDatabaseDowngradeException catch (e, stack) {
@@ -3645,11 +3560,8 @@ class AppModel with ChangeNotifier {
       // actionable notice (restore backup / clear data) instead of looping the
       // generic Retry button forever against the same un-openable file.
       debugPrint('[Fushi] init FAILED (DB unrecoverable): $e\n$stack');
-      ErrorLogService.instance.log(
-        'AppModel.initialise.unrecoverableDb',
-        e,
-        stack,
-      );
+      ErrorLogService.instance
+          .log('AppModel.initialise.unrecoverableDb', e, stack);
       _unrecoverableDbError = e;
       _initError = '$e';
       notifyListeners();
@@ -3663,10 +3575,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> initialiseForDictionaryPopup() async {
     if (_isInitialised) {
-      debugPrint(
-        '[Fushi-popup] init: already initialised, '
-        'refreshing prefs if changed',
-      );
+      debugPrint('[Fushi-popup] init: already initialised, '
+          'refreshing prefs if changed');
       // TODO-855: only do the expensive full reload when the main app actually
       // mutated a preference / switched profile since the last lookup; a cheap
       // single-row DB version read gates it.
@@ -3702,11 +3612,9 @@ class AppModel with ChangeNotifier {
         userAgent: _mediaTrackingUserAgent,
       );
 
-      dictRepo = DictionaryRepository(
-        _database,
-        onCacheRebuild: _rebuildDictPathsCache,
-        isLowMemory: () => prefsRepo.lowMemoryMode,
-      );
+      dictRepo = DictionaryRepository(_database,
+          onCacheRebuild: _rebuildDictPathsCache,
+          isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
       await dictRepo.loadFromDb();
 
@@ -3724,20 +3632,16 @@ class AppModel with ChangeNotifier {
       _themeListenerAdded = true;
 
       _browserDirectory = Directory(path.join(appDirectory.path, 'browser'));
-      _thumbnailsDirectory = Directory(
-        path.join(appDirectory.path, 'thumbnails'),
-      );
-      _dictionaryResourceDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryResources'),
-      );
+      _thumbnailsDirectory =
+          Directory(path.join(appDirectory.path, 'thumbnails'));
+      _dictionaryResourceDirectory =
+          Directory(path.join(appDirectory.path, 'dictionaryResources'));
       _dictionaryImportWorkingDirectory = Directory(
-        path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'),
-      );
+          path.join(appDirectory.path, 'dictionaryImportWorkingDirectory'));
       _exportDirectory = await prepareExportDirectory();
       _alternateExportDirectory = _exportDirectory;
-      _webArchiveDirectory = Directory(
-        path.join(appDirectory.path, 'webArchive'),
-      );
+      _webArchiveDirectory =
+          Directory(path.join(appDirectory.path, 'webArchive'));
 
       await Future.wait(<Future<void>>[
         thumbnailsDirectory.create(recursive: true),
@@ -3869,11 +3773,12 @@ class AppModel with ChangeNotifier {
     ThemePreset preset,
     Brightness brightness, {
     bool pureBlack = false,
-  }) => ThemeNotifier.buildPresetColorScheme(
-    preset,
-    brightness,
-    pureBlack: pureBlack,
-  );
+  }) =>
+      ThemeNotifier.buildPresetColorScheme(
+        preset,
+        brightness,
+        pureBlack: pureBlack,
+      );
 
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
@@ -3912,13 +3817,14 @@ class AppModel with ChangeNotifier {
   ColorScheme buildCustomThemeColorScheme(
     CustomThemeEntry entry,
     Brightness brightness,
-  ) => theme_notifier.buildCustomThemeEntryColorScheme(
-    entry,
-    brightness,
-    einkMode: einkMode,
-    pureBlack: pureBlackDark,
-    systemPrimaryColor: systemPrimaryColor,
-  );
+  ) =>
+      theme_notifier.buildCustomThemeEntryColorScheme(
+        entry,
+        brightness,
+        einkMode: einkMode,
+        pureBlack: pureBlackDark,
+        systemPrimaryColor: systemPrimaryColor,
+      );
 
   String get brightnessMode => themeNotifier.brightnessMode;
   Future<void> setBrightnessMode(String mode) =>
@@ -3998,18 +3904,14 @@ class AppModel with ChangeNotifier {
   /// 当前明暗。用户覆盖色（[_overrideDictionaryColor]）不随它变，与 in-app 弹窗同律。
   Map<String, String> browserExtensionThemeColors(String? colorScheme) {
     // 显式 'dark' / 'light' 优先；其它（null）跟随 app 当前明暗。
-    final bool dark =
-        colorScheme == 'dark' ||
+    final bool dark = colorScheme == 'dark' ||
         (colorScheme != 'light' && themeNotifier.isDarkMode);
-    final ColorScheme s = themeNotifier.buildColorScheme(
-      dark ? Brightness.dark : Brightness.light,
-    );
+    final ColorScheme s = themeNotifier
+        .buildColorScheme(dark ? Brightness.dark : Brightness.light);
     // 卡面底色跟随主题 scheme.surface（popupCardSurface 单一真源），
     // override 优先级不变。
-    final Color bgColor = popupCardSurface(
-      scheme: s,
-      override: _overrideDictionaryColor,
-    );
+    final Color bgColor =
+        popupCardSurface(scheme: s, override: _overrideDictionaryColor);
     // BUG-736：核心色/圆角/列数变量的取值统一来自 buildPopupThemeCssVars——与 in-app
     // 弹窗注入器（popup_settings_injection / dictionary_popup_webview）同一真源，
     // 根除「扩展漏抄一处、退化成灰高亮/白字/直角」的手抄漂移。
@@ -4025,9 +3927,8 @@ class AppModel with ChangeNotifier {
     // 嵌套容器时触发 Blink「CSS zoom + 振假名(rt)绝对定位错位」→ 假名与正文重叠（app 内缩放的
     // 是页面根 documentElement，无此问题；扩展只能缩放浮层嵌套容器）。要更大在词典字号设置里调。
     final double rawZoom = dictionaryFontSize / 16.0;
-    final double zoom = (rawZoom.isFinite && rawZoom > 0)
-        ? rawZoom.clamp(0.3, 8.0)
-        : 1.0;
+    final double zoom =
+        (rawZoom.isFinite && rawZoom > 0) ? rawZoom.clamp(0.3, 8.0) : 1.0;
     return <String, String>{
       // BUG-688：content.css/popup.css 的正文色/底色直接读 --text-color / --background-color
       // （见 content.css `color: var(--text-color)` / `background-color: var(--background-color)`）。
@@ -4083,16 +3984,14 @@ class AppModel with ChangeNotifier {
         '--fushi-theme-seed': cssRgb(themeNotifier.activeSeedColor!),
       '--fushi-theme-variant': themeNotifier.activeSchemeVariant.name,
       // 系统取色：方案直接由强调色 fromSeed 生成，不走自定义 / 预设的无彩度中性派生。
-      '--fushi-theme-system': themeNotifier.appThemeKey == 'system-theme'
-          ? '1'
-          : '0',
+      '--fushi-theme-system':
+          themeNotifier.appThemeKey == 'system-theme' ? '1' : '0',
       // Android 完整壁纸调色板不能从单一主色派生另一明暗；只按同源 identity
       // 复用已下发的准确镜像，换壁纸后淘汰另一明暗的旧缓存（HBK-AUDIT-030）。
       if (themeNotifier.activeSystemPaletteIdentity != null)
         '--fushi-theme-palette-id': themeNotifier.activeSystemPaletteIdentity!,
-      '--fushi-theme-neutral': themeNotifier.activeCustomThemeNeutralDerived
-          ? '1'
-          : '0',
+      '--fushi-theme-neutral':
+          themeNotifier.activeCustomThemeNeutralDerived ? '1' : '0',
       '--fushi-pure-black': themeNotifier.pureBlackDark ? '1' : '0',
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
@@ -4108,9 +4007,8 @@ class AppModel with ChangeNotifier {
       // 「滑动关闭查词弹窗」偏好（enableSwipeToClose）下发给扩展 content.js：非 CSS 变量、
       // 仅 JS 消费（content.js 据此决定是否给浮动弹窗启用水平拖关手势）。走 theme 传输通道
       // 与 --fushi-color-scheme 同法（那个也被当 data-theme 而非 CSS 值消费）。值 '1'/'0'。
-      '--fushi-swipe-close': ReaderFushiSource.instance.enableSwipeToClose
-          ? '1'
-          : '0',
+      '--fushi-swipe-close':
+          ReaderFushiSource.instance.enableSwipeToClose ? '1' : '0',
       // BUG-1026：查词弹窗滚轮速度倍率下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。
       // content.js fushiRender 读它设 window.__fushiPopupWheelSpeed（与 in-app 注入同名
       // 全局），popup.js 的 wheel factor 乘它。走 theme 通道与 --fushi-swipe-close 同法。
@@ -4121,8 +4019,8 @@ class AppModel with ChangeNotifier {
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
       // 瞬时滚动的滚轮步长（占视口比例）同通道下发；content.js 设
       // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
-      '--fushi-instant-scroll-wheel-step': popupInstantScrollWheelStep
-          .toStringAsFixed(3),
+      '--fushi-instant-scroll-wheel-step':
+          popupInstantScrollWheelStep.toStringAsFixed(3),
       // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
       // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
@@ -4143,10 +4041,11 @@ class AppModel with ChangeNotifier {
   double resolveAppUiScaleForViewport({
     required Size viewport,
     required TargetPlatform platform,
-  }) => themeNotifier.resolveAppUiScaleForViewport(
-    viewport: viewport,
-    platform: platform,
-  );
+  }) =>
+      themeNotifier.resolveAppUiScaleForViewport(
+        viewport: viewport,
+        platform: platform,
+      );
 
   bool get isDarkMode => themeNotifier.isDarkMode;
 
@@ -4232,18 +4131,19 @@ class AppModel with ChangeNotifier {
     Color? containerColor,
     Color? sentenceAudioHighlightColor,
     Color? linkColor,
-  }) => themeNotifier.applyCustomTheme(
-    seed: seed,
-    fontColor: fontColor,
-    backgroundColor: backgroundColor,
-    selectionColor: selectionColor,
-    primaryColor: primaryColor,
-    secondaryColor: secondaryColor,
-    tertiaryColor: tertiaryColor,
-    containerColor: containerColor,
-    sentenceAudioHighlightColor: sentenceAudioHighlightColor,
-    linkColor: linkColor,
-  );
+  }) =>
+      themeNotifier.applyCustomTheme(
+        seed: seed,
+        fontColor: fontColor,
+        backgroundColor: backgroundColor,
+        selectionColor: selectionColor,
+        primaryColor: primaryColor,
+        secondaryColor: secondaryColor,
+        tertiaryColor: tertiaryColor,
+        containerColor: containerColor,
+        sentenceAudioHighlightColor: sentenceAudioHighlightColor,
+        linkColor: linkColor,
+      );
 
   // targetLanguage getter 已删（2026-07-26，用户指令）：它恒返回
   // JapaneseLanguage.instance，是个假装可配置的间接层（语言选择从未有 UI，
@@ -4333,8 +4233,7 @@ class AppModel with ChangeNotifier {
   /// Persist a new last selected dictionary format. This is called when the
   /// user changes the import format in the dictionary menu.
   Future<void> setLastSelectedDictionaryFormat(
-    DictionaryFormat dictionaryFormat,
-  ) async {
+      DictionaryFormat dictionaryFormat) async {
     String lastDictionaryFormatName = dictionaryFormat.uniqueKey;
     await _setPref('last_selected_dictionary_format', lastDictionaryFormatName);
   }
@@ -4396,7 +4295,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSecondarySubtitleObscureMode(
     VideoSubtitleObscureMode mode,
-  ) => prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
+  ) =>
+      prefsRepo.setVideoSecondarySubtitleObscureMode(mode);
 
   /// 遮蔽态「悬停 / 点击临时显形」总闸（默认开）：关掉后模糊 / 隐藏不再被悬停或点击
   /// 临时揭开。见 [PreferencesRepository.videoSubtitleObscureReveal]。
@@ -4469,8 +4369,8 @@ class AppModel with ChangeNotifier {
   /// [gatedAutomaticSubtitleAligner]）。
   late final AutomaticSubtitleAligner alignDownloadedSubtitle =
       gatedAutomaticSubtitleAligner(
-        () => isPreferencesReady && prefsRepo.subtitleReferenceSyncEnabled,
-      );
+    () => isPreferencesReady && prefsRepo.subtitleReferenceSyncEnabled,
+  );
 
   /// 视频条目自动刮削开关（落 Drift preferences，默认开）。
   bool get videoAutoScrape => prefsRepo.videoAutoScrape;
@@ -4595,7 +4495,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoCustomActionBindings(
     VideoCustomActionBindings bindings,
-  ) => prefsRepo.setVideoCustomActionBindings(bindings);
+  ) =>
+      prefsRepo.setVideoCustomActionBindings(bindings);
 
   /// 视频字幕外观（JSON；见 VideoSubtitleStyle）。
   String get videoSubtitleStyle => prefsRepo.videoSubtitleStyle;
@@ -4625,8 +4526,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.videoScreenshotDestination;
 
   Future<void> setVideoScreenshotDestination(
-    VideoScreenshotDestination destination,
-  ) => prefsRepo.setVideoScreenshotDestination(destination);
+          VideoScreenshotDestination destination) =>
+      prefsRepo.setVideoScreenshotDestination(destination);
 
   String get videoScreenshotDirectory => prefsRepo.videoScreenshotDirectory;
 
@@ -4666,7 +4567,8 @@ class AppModel with ChangeNotifier {
 
   /// 默认内容语言（`''` = 未设置）。见 [PreferencesRepository.defaultContentLanguage]；
   /// 与 [jimakuDefaultLanguage] 同理走 `_prefsRepo?`，偏好未就绪时不表态。
-  String get defaultContentLanguage => _prefsRepo?.defaultContentLanguage ?? '';
+  String get defaultContentLanguage =>
+      _prefsRepo?.defaultContentLanguage ?? '';
 
   Future<void> setJimakuDefaultLanguage(String langCode) async {
     await prefsRepo.setJimakuDefaultLanguage(langCode);
@@ -4952,16 +4854,19 @@ class AppModel with ChangeNotifier {
     return runtime;
   }
 
-  Future<void> _shutdownMihonRuntime() => _mihonRuntimeShutdown ??=
-      _mihonRuntime?.dispose() ?? Future<void>.value();
+  Future<void> _shutdownMihonRuntime() =>
+      _mihonRuntimeShutdown ??= _mihonRuntime?.dispose() ?? Future<void>.value();
 
   MihonManager _createMihonManager(MihonMediaKind kind) {
     final MihonRuntime runtime = _sharedMihonRuntime;
     final Directory root = Directory(
-      path.join(databaseDirectory.path, switch (kind) {
-        MihonMediaKind.manga => 'mihon',
-        MihonMediaKind.anime => 'mihon_anime',
-      }),
+      path.join(
+        databaseDirectory.path,
+        switch (kind) {
+          MihonMediaKind.manga => 'mihon',
+          MihonMediaKind.anime => 'mihon_anime',
+        },
+      ),
     );
     final MihonManager manager = MihonManager(
       database: database,
@@ -5126,10 +5031,10 @@ class AppModel with ChangeNotifier {
     if (cached != null) return cached;
     final List<VideoSubtitleProvider> providers =
         await createConfiguredVideoSubtitleProviders(
-          prefs: prefsRepo,
-          httpClientFactory: createDownloadHttpClient,
-          supportRootProvider: AppPaths.supportRootDirectory,
-        );
+      prefs: prefsRepo,
+      httpClientFactory: createDownloadHttpClient,
+      supportRootProvider: AppPaths.supportRootDirectory,
+    );
     if (providers.isEmpty) return null;
     return _onDemandSubtitleRegistry = VideoSubtitleRegistry(providers);
   }
@@ -5164,16 +5069,17 @@ class AppModel with ChangeNotifier {
       ValueNotifier<TorrentNetworkIssue>(TorrentNetworkIssue.none);
 
   TrackerSubscriptionService? _trackerSubscriptionService;
-  TrackerSubscriptionService get _trackers => _trackerSubscriptionService ??=
-      TrackerSubscriptionService(httpClientFactory: createDownloadHttpClient);
+  TrackerSubscriptionService get _trackers =>
+      _trackerSubscriptionService ??= TrackerSubscriptionService(
+        httpClientFactory: createDownloadHttpClient,
+      );
 
   Future<List<String>> refreshTrackerSubscription({
     String? sourceUrl,
     bool forceRefresh = true,
   }) {
-    final QbConnectionConfig config = effectiveTorrentConfig(
-      prefsRepo.qbConnectionConfig,
-    );
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
     return _trackers.fetch(
       sourceUrl ?? config.trackerSubscriptionUrl,
       forceRefresh: forceRefresh,
@@ -5295,9 +5201,8 @@ class AppModel with ChangeNotifier {
     torrentNetworkIssue.value = diagnoseTorrentNetwork(
       dhtEnabled: status.dhtRunning,
       dhtNodes: status.dhtNodes,
-      sessionAge: since == null
-          ? Duration.zero
-          : DateTime.now().difference(since),
+      sessionAge:
+          since == null ? Duration.zero : DateTime.now().difference(since),
       fakeIpDetected: _torrentFakeIpDetected,
     );
   }
@@ -5385,16 +5290,13 @@ class AppModel with ChangeNotifier {
         _embeddedTorrentSaveRoots?.active ?? prefsRepo.downloadSaveRoot.trim();
     await prefsRepo.setDownloadSaveRoot(newRoot);
     if (previousActive.isNotEmpty) {
-      await prefsRepo.setDownloadSaveRootHistory(
-        encodeSaveRootHistory(<String>[
-          previousActive,
-          ...decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
-        ]),
-      );
+      await prefsRepo.setDownloadSaveRootHistory(encodeSaveRootHistory(<String>[
+        previousActive,
+        ...decodeSaveRootHistory(prefsRepo.downloadSaveRootHistory),
+      ]));
     }
-    final String active = newRoot.trim().isEmpty
-        ? downloadDefaultSaveRoot
-        : newRoot.trim();
+    final String active =
+        newRoot.trim().isEmpty ? downloadDefaultSaveRoot : newRoot.trim();
     final TorrentSaveRoots? existing = _embeddedTorrentSaveRoots;
     if (existing != null) {
       _embeddedTorrentSaveRoots = existing.withActive(active);
@@ -5418,12 +5320,10 @@ class AppModel with ChangeNotifier {
   /// 启动番剧下载完成监听。幂等（重复调用不重建）；失败由调用方记日志，不破坏 init。
   Future<void> startAnimeDownloadService() async {
     if (_animeDownloadService != null) return;
-    final Directory baseDir = await AppPaths.documentsSubdirectory(
-      'anime_downloads',
-    );
-    final AnimeDownloadPlanStore store = AnimeDownloadPlanStore(
-      baseDir: baseDir,
-    );
+    final Directory baseDir =
+        await AppPaths.documentsSubdirectory('anime_downloads');
+    final AnimeDownloadPlanStore store =
+        AnimeDownloadPlanStore(baseDir: baseDir);
     _animeDownloadPlanStore = store;
 
     // 内置引擎宿主：桌面 + Android（iOS 无内置引擎）。默认下载根就在计划目录旁的
@@ -5441,9 +5341,8 @@ class AppModel with ChangeNotifier {
     _downloadDefaultSaveRoot = defaultSaveRoot;
     String configuredRoot = prefsRepo.downloadSaveRoot.trim();
     if (configuredRoot.isNotEmpty) {
-      final DownloadSaveRootIssue? issue = await checkDownloadSaveRoot(
-        configuredRoot,
-      );
+      final DownloadSaveRootIssue? issue =
+          await checkDownloadSaveRoot(configuredRoot);
       if (issue != null) {
         _downloadSaveRootIssue = issue;
         _downloadSaveRootRejectedPath = configuredRoot;
@@ -5519,9 +5418,8 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> _importLegacyVideoDownloads(Directory baseDir) async {
-    final QbConnectionConfig config = effectiveTorrentConfig(
-      prefsRepo.qbConnectionConfig,
-    );
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
     VideoDownloadBackendIdentity? identity;
     try {
       identity = await _currentVideoDownloadBackendIdentity(config);
@@ -5536,45 +5434,45 @@ class AppModel with ChangeNotifier {
     }
     final LegacyVideoDownloadImportReport report =
         await VideoDownloadLegacyImporter(
-          database: database,
-          baseDirectory: baseDir,
-          torrentMatcher: (LegacyTorrentProbe probe) async {
-            final VideoDownloadBackendIdentity? confirmedIdentity = identity;
-            if (confirmedIdentity == null) return null;
-            // 旧记录自己的分类就是它的事实：拿它去后端核对 hash+title 即可。
-            // 不能再要求它等于**当前配置**的分类——用户改一次分类（或升级后默认
-            // 分类漂移）会让全部旧任务无法被认领（BUG-1879）。
-            final TorrentBackend? backend = _createExactTorrentBackend(config);
-            if (backend == null) return null;
-            try {
-              final List<TorrentSnapshot> snapshots = await backend
-                  .listTorrents(category: probe.category);
-              for (final TorrentSnapshot snapshot in snapshots) {
-                if (snapshot.hash.toLowerCase() ==
-                        probe.torrentHash.toLowerCase() &&
-                    snapshot.name.trim() == probe.title.trim()) {
-                  return LegacyTorrentBinding(
-                    torrentHash: snapshot.hash.toLowerCase(),
-                    title: snapshot.name,
-                    category: probe.category,
-                    backendKind: confirmedIdentity.kind,
-                    backendProfileId: confirmedIdentity.profileId,
-                    fingerprint: confirmedIdentity.fingerprint,
-                    backendTaskId: snapshot.hash.toLowerCase(),
-                    observedSavePath: snapshot.savePath,
-                  );
-                }
-              }
-              return null;
-            } finally {
-              backend.close();
+      database: database,
+      baseDirectory: baseDir,
+      torrentMatcher: (LegacyTorrentProbe probe) async {
+        final VideoDownloadBackendIdentity? confirmedIdentity = identity;
+        if (confirmedIdentity == null) return null;
+        // 旧记录自己的分类就是它的事实：拿它去后端核对 hash+title 即可。
+        // 不能再要求它等于**当前配置**的分类——用户改一次分类（或升级后默认
+        // 分类漂移）会让全部旧任务无法被认领（BUG-1879）。
+        final TorrentBackend? backend = _createExactTorrentBackend(config);
+        if (backend == null) return null;
+        try {
+          final List<TorrentSnapshot> snapshots =
+              await backend.listTorrents(category: probe.category);
+          for (final TorrentSnapshot snapshot in snapshots) {
+            if (snapshot.hash.toLowerCase() ==
+                    probe.torrentHash.toLowerCase() &&
+                snapshot.name.trim() == probe.title.trim()) {
+              return LegacyTorrentBinding(
+                torrentHash: snapshot.hash.toLowerCase(),
+                title: snapshot.name,
+                category: probe.category,
+                backendKind: confirmedIdentity.kind,
+                backendProfileId: confirmedIdentity.profileId,
+                fingerprint: confirmedIdentity.fingerprint,
+                backendTaskId: snapshot.hash.toLowerCase(),
+                observedSavePath: snapshot.savePath,
+              );
             }
-          },
-          // 旧订阅 JSON 没有可同时核对的 torrent hash/title/category，不能仅因
-          // “当前恰好配置了一个后端”就把它接管。Importer 会保留记录、禁用并标成
-          // needsAttention，等待用户明确重新确认实例与严格版本规则。
-          subscriptionBackendResolver: null,
-        ).importAll();
+          }
+          return null;
+        } finally {
+          backend.close();
+        }
+      },
+      // 旧订阅 JSON 没有可同时核对的 torrent hash/title/category，不能仅因
+      // “当前恰好配置了一个后端”就把它接管。Importer 会保留记录、禁用并标成
+      // needsAttention，等待用户明确重新确认实例与严格版本规则。
+      subscriptionBackendResolver: null,
+    ).importAll();
     for (final LegacyImportIssue issue in report.issues) {
       ErrorLogService.instance.log(
         'AppModel.videoDownloadLegacyImport.${issue.kind.name}',
@@ -5587,17 +5485,15 @@ class AppModel with ChangeNotifier {
   Future<VideoDownloadBackendIdentity> _currentVideoDownloadBackendIdentity(
     QbConnectionConfig config,
   ) async {
-    final String resolved = config.resolveBackend(
-      embeddedSupported: _supportsEmbeddedTorrent(),
-    );
-    final String installationId = await prefsRepo
-        .ensureVideoDownloadEmbeddedInstallationId();
+    final String resolved =
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
+    final String installationId =
+        await prefsRepo.ensureVideoDownloadEmbeddedInstallationId();
     return buildVideoDownloadBackendIdentity(
       config: config,
       resolvedBackend: resolved,
       embeddedInstallationId: installationId,
-      embeddedAvailable:
-          resolved != QbConnectionConfig.backendEmbedded ||
+      embeddedAvailable: resolved != QbConnectionConfig.backendEmbedded ||
           isEmbeddedTorrentReady,
     );
   }
@@ -5611,9 +5507,8 @@ class AppModel with ChangeNotifier {
   /// `currentVideoDownloadBackendIdentity()` 让调用方能拿到一个缺分类的落点，
   /// 已随 BUG-1879 一并删除，别再加回来。
   Future<VideoDownloadBackendTarget> currentVideoDownloadBackendTarget() async {
-    final QbConnectionConfig config = effectiveTorrentConfig(
-      prefsRepo.qbConnectionConfig,
-    );
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
     return VideoDownloadBackendTarget(
       identity: await _currentVideoDownloadBackendIdentity(config),
       category: config.category,
@@ -5629,9 +5524,7 @@ class AppModel with ChangeNotifier {
   /// `127.0.0.1:8080`；两套判据一松一严时「非空」会放行 → 落库 → 身份解析抛
   /// ArgumentError → 调用方当「未配置」再弹一次配置引导，用户出不去。
   String? get readyVideoDownloadBackend {
-    final QbConnectionConfig config = effectiveTorrentConfig(
-      qbConnectionConfig,
-    );
+    final QbConnectionConfig config = effectiveTorrentConfig(qbConnectionConfig);
     if (isEmbeddedTorrentReady &&
         config.backend != QbConnectionConfig.backendQbittorrent) {
       return QbConnectionConfig.backendEmbedded;
@@ -5667,9 +5560,8 @@ class AppModel with ChangeNotifier {
 
   /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
   Future<String?> _resolveHostVideoPath(String videoId) async {
-    final VideoBookRow? row = await VideoBookRepository(
-      database,
-    ).getByBookUid(videoId);
+    final VideoBookRow? row =
+        await VideoBookRepository(database).getByBookUid(videoId);
     if (row == null) return null;
     final File file = File(row.videoPath);
     return await file.exists() ? file.path : null;
@@ -5677,9 +5569,8 @@ class AppModel with ChangeNotifier {
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
   Future<List<MediaSourceRow>> getManagedVideoDownloadSources() async {
-    final List<MediaSourceRow> sources = await database.getMediaSourcesByKind(
-      'video',
-    );
+    final List<MediaSourceRow> sources =
+        await database.getMediaSourcesByKind('video');
     return sources
         .where(
           (MediaSourceRow source) =>
@@ -5691,9 +5582,8 @@ class AppModel with ChangeNotifier {
   }
 
   TorrentBackend? _createExactTorrentBackend(QbConnectionConfig config) {
-    final String resolved = config.resolveBackend(
-      embeddedSupported: _supportsEmbeddedTorrent(),
-    );
+    final String resolved =
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
       final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
       return host?.backendView(
@@ -5725,34 +5615,34 @@ class AppModel with ChangeNotifier {
     // 运行时），判据见 [torznabHasEnabledIndexer]（BUG-2818）。
     final List<VideoResourceProvider> resourceProviders =
         <VideoResourceProvider>[
-          for (final BuiltinVideoResourceSource source
-              in kBuiltinVideoResourceSources)
-            source.create(await createDownloadHttpClient()),
-          if (torznabHasEnabledIndexer(torznabIndexers))
-            TorznabClient(
-              indexers: torznabIndexers,
-              client: await createDownloadHttpClient(),
-              closesClient: true,
-            ),
-        ];
+      for (final BuiltinVideoResourceSource source
+          in kBuiltinVideoResourceSources)
+        source.create(await createDownloadHttpClient()),
+      if (torznabHasEnabledIndexer(torznabIndexers))
+        TorznabClient(
+          indexers: torznabIndexers,
+          client: await createDownloadHttpClient(),
+          closesClient: true,
+        ),
+    ];
     // 字幕来源的装配判据在 [createConfiguredVideoSubtitleProviders] 一处（浏览器
     // 扩展的查字幕桥用的是同一份工厂，不再自己判「哪家算配好了」）。
     final List<VideoSubtitleProvider> subtitleProviders =
         await createConfiguredVideoSubtitleProviders(
-          prefs: prefsRepo,
-          httpClientFactory: createDownloadHttpClient,
-          supportRootProvider: AppPaths.supportRootDirectory,
-        );
+      prefs: prefsRepo,
+      httpClientFactory: createDownloadHttpClient,
+      supportRootProvider: AppPaths.supportRootDirectory,
+    );
     final VideoResourceRegistry resources = VideoResourceRegistry(
       resourceProviders,
       disabledProviderIds: videoResourceDisabledSourceIds,
     );
-    final VideoSubtitleRegistry subtitles = VideoSubtitleRegistry(
-      subtitleProviders,
-    );
-    final String configuredTmdbKey =
-        prefsRepo.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '')
-            as String;
+    final VideoSubtitleRegistry subtitles =
+        VideoSubtitleRegistry(subtitleProviders);
+    final String configuredTmdbKey = prefsRepo.getPref(
+      kVideoScraperTmdbApiKeyPref,
+      defaultValue: '',
+    ) as String;
     final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
     _videoSubtitleBackfillService = VideoSubtitleBackfillService(
       registry: subtitles,
@@ -5764,8 +5654,9 @@ class AppModel with ChangeNotifier {
       // 真下载前由 AI 在候选里挑先下哪几条；提供商每次调用时现解析，未指派 / 失败
       // 都退回本地顺序（见 aiSubtitleBackfillReorder）。
       aiReorder: aiSubtitleBackfillReorder(
-        resolveProvider: () =>
-            isPreferencesReady ? resolveVideoSearchAiProvider(prefsRepo) : null,
+        resolveProvider: () => isPreferencesReady
+            ? resolveVideoSearchAiProvider(prefsRepo)
+            : null,
       ),
     );
     final VideoSourceScrapeCoordinator scrape = VideoSourceScrapeCoordinator(
@@ -5813,9 +5704,8 @@ class AppModel with ChangeNotifier {
       // 只有音频 → 转录后入库队列（开关关 / 本机无 ASR 时什么也不做，任务
       // 面板的「配对」入口照旧）。
       onDownloadOnlyCompleted: _onDownloadOnlyCompleted,
-      manualTorrentDirectory: Directory(
-        path.join(appDirectory.path, 'manual_torrents'),
-      ),
+      manualTorrentDirectory:
+          Directory(path.join(appDirectory.path, 'manual_torrents')),
       updateFeed: updateFeedService,
       // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
@@ -5824,9 +5714,8 @@ class AppModel with ChangeNotifier {
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
     // 任务目录里）。没有 ASR 的平台不建队列。
     if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
-    _videoDownloadKeepAlive = VideoDownloadJobsKeepAliveBinding(
-      database.watchVideoDownloadJobs(),
-    );
+    _videoDownloadKeepAlive =
+        VideoDownloadJobsKeepAliveBinding(database.watchVideoDownloadJobs());
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
       database: database,
       resourceRegistry: resources,
@@ -5893,10 +5782,8 @@ class AppModel with ChangeNotifier {
     for (final SubtitleBackfillTarget target in targets) {
       final SubtitleBackfillResult result = await service.backfill(target);
       if (result.installed) {
-        debugPrint(
-          '[subtitle-backfill] installed ${result.language} for '
-          '${target.bookUid}: ${result.installedPath}',
-        );
+        debugPrint('[subtitle-backfill] installed ${result.language} for '
+            '${target.bookUid}: ${result.installedPath}');
       }
     }
   }
@@ -5920,11 +5807,8 @@ class AppModel with ChangeNotifier {
     try {
       await _startVideoDownloadPipeline();
     } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'AppModel.reloadVideoDownloadPipelineRuntime',
-        e,
-        stack,
-      );
+      ErrorLogService.instance
+          .log('AppModel.reloadVideoDownloadPipelineRuntime', e, stack);
     }
     notifyListeners();
   }
@@ -5932,17 +5816,15 @@ class AppModel with ChangeNotifier {
   Future<VideoDownloadBackendBinding?> _resolveVideoDownloadBackend(
     VideoDownloadJobRow job,
   ) async {
-    final QbConnectionConfig config = effectiveTorrentConfig(
-      prefsRepo.qbConnectionConfig,
-    );
+    final QbConnectionConfig config =
+        effectiveTorrentConfig(prefsRepo.qbConnectionConfig);
     final VideoDownloadBackendIdentity identity;
     try {
       identity = await _currentVideoDownloadBackendIdentity(config);
     } on VideoDownloadBackendUnavailable catch (error) {
       throw VideoDownloadPipelineActionRequired(error.message);
     }
-    final String cacheKey =
-        '${encodeQbConnectionConfig(config)}\u0000'
+    final String cacheKey = '${encodeQbConnectionConfig(config)}\u0000'
         '${identity.fingerprint}';
     if (_videoDownloadBackend == null ||
         _videoDownloadBackendCacheKey != cacheKey) {
@@ -6003,20 +5885,19 @@ class AppModel with ChangeNotifier {
   DownloadRelocateService get downloadRelocateService =>
       DownloadRelocateService(
         backendFactory: () => _torrentBackendFor(
-          effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
-        ),
-        migrateLibraryPaths:
-            ({required String fromPath, required String toPath}) =>
-                VideoBookRepository(
-                  database,
-                ).migrateMediaPaths(fromPath: fromPath, toPath: toPath),
+            effectiveTorrentConfig(prefsRepo.qbConnectionConfig)),
+        migrateLibraryPaths: ({
+          required String fromPath,
+          required String toPath,
+        }) =>
+            VideoBookRepository(database)
+                .migrateMediaPaths(fromPath: fromPath, toPath: toPath),
       );
 
   /// 刷新 [_animeDownloadPlanIds]（resume 剪枝的真相源）并返回它。
   /// 返回值非空：调用过一次之后哨兵就不再是 null。
   Future<Set<String>> _refreshAnimeDownloadPlanIds(
-    AnimeDownloadPlanStore store,
-  ) async {
+      AnimeDownloadPlanStore store) async {
     final List<AnimeDownloadPlan> plans = await store.loadAll();
     final Set<String> ids = <String>{
       for (final AnimeDownloadPlan plan in plans) plan.id.toLowerCase(),
@@ -6073,14 +5954,14 @@ class AppModel with ChangeNotifier {
         ),
         importer: (AudiobookTranscribeJob job, String subtitlePath) =>
             importTranscribedAudiobook(
-              db: database,
-              srtBookRepo: SrtBookRepository(database),
-              audiobookRepo: AudiobookRepository(database),
-              subtitlePath: subtitlePath,
-              audioPaths: job.audioPaths,
-              contentPath: job.contentPath,
-              title: job.title,
-            ),
+          db: database,
+          srtBookRepo: SrtBookRepository(database),
+          audiobookRepo: AudiobookRepository(database),
+          subtitlePath: subtitlePath,
+          audioPaths: job.audioPaths,
+          contentPath: job.contentPath,
+          title: job.title,
+        ),
       );
   AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;
 
@@ -6096,34 +5977,34 @@ class AppModel with ChangeNotifier {
           isDuplicateDiscoveryAudiobookContent(database, contentPath),
       matchMaterials: (List<String> audioPaths, String title) =>
           matchAudiobookMaterialsForAudio(
-            audiobookMaterialService,
-            audioPaths,
-            title,
-          ),
+        audiobookMaterialService,
+        audioPaths,
+        title,
+      ),
       importNow: (DiscoveryImportPlan matched) => switch (matched) {
         AlignAudiobookPlan() => importDiscoveryAudiobook(
-          db: database,
-          srtBookRepo: srtBookRepo,
-          audiobookRepo: AudiobookRepository(database),
-          plan: matched,
-        ),
+            db: database,
+            srtBookRepo: srtBookRepo,
+            audiobookRepo: AudiobookRepository(database),
+            plan: matched,
+          ),
         SubtitleAudiobookPlan() => importDiscoverySubtitleAudiobook(
-          db: database,
-          srtBookRepo: srtBookRepo,
-          plan: matched,
-        ),
+            db: database,
+            srtBookRepo: srtBookRepo,
+            plan: matched,
+          ),
         _ => throw ArgumentError.value(matched, 'matched'),
       },
-      enqueue:
-          ({
-            required List<String> audioPaths,
-            String? contentPath,
-            required String title,
-          }) => audiobookTranscribeImportQueue.enqueue(
-            audioPaths: audioPaths,
-            contentPath: contentPath,
-            title: title,
-          ),
+      enqueue: ({
+        required List<String> audioPaths,
+        String? contentPath,
+        required String title,
+      }) =>
+          audiobookTranscribeImportQueue.enqueue(
+        audioPaths: audioPaths,
+        contentPath: contentPath,
+        title: title,
+      ),
     );
   }
 
@@ -6137,10 +6018,8 @@ class AppModel with ChangeNotifier {
     } on DiscoveryImportBlockedException catch (blocked) {
       // 预期结果而非故障：不自动转录（开关关 / 无 ASR）且素材库也配不到字幕。
       // 任务已正常完成，面板对这类任务给「配对」入口，与改前一致。
-      debugPrint(
-        '[audiobook-auto] download-only job left for pairing: '
-        '${blocked.blocker.name}',
-      );
+      debugPrint('[audiobook-auto] download-only job left for pairing: '
+          '${blocked.blocker.name}');
     }
   }
 
@@ -6182,67 +6061,68 @@ class AppModel with ChangeNotifier {
         sources: const <MediaDiscoverySource>[],
       );
     }
-    return _mediaDiscoveryService = MediaDiscoveryService(
-      sources: <MediaDiscoverySource>[
-        CoreAudioDiscoverySource(httpClientFactory: createDownloadHttpClient),
-        NyaaDiscoverySource(
-          id: 'nyaa',
-          displayName: 'Nyaa',
-          priority: 10,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // nyaa.si 分类：Literature=3_0 / Audio=2_0。
-            DiscoveryMediaKind.novel: '3_0',
-            DiscoveryMediaKind.audiobook: '2_0',
-          },
-          client: NyaaClient(),
-          // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
-          // （早一帧打开发现页）时用默认「全部」。
-          qualityFilter: () => NyaaQualityFilter.fromIndex(
-            isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
-          ),
+    return _mediaDiscoveryService =
+        MediaDiscoveryService(sources: <MediaDiscoverySource>[
+      CoreAudioDiscoverySource(
+        httpClientFactory: createDownloadHttpClient,
+      ),
+      NyaaDiscoverySource(
+        id: 'nyaa',
+        displayName: 'Nyaa',
+        priority: 10,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // nyaa.si 分类：Literature=3_0 / Audio=2_0。
+          DiscoveryMediaKind.novel: '3_0',
+          DiscoveryMediaKind.audiobook: '2_0',
+        },
+        client: NyaaClient(),
+        // 每次请求按当前偏好取：源实例常驻，偏好可随时改。偏好未就绪
+        // （早一帧打开发现页）时用默认「全部」。
+        qualityFilter: () => NyaaQualityFilter.fromIndex(
+          isPreferencesReady ? prefsRepo.discoveryNyaaQualityFilter : 0,
         ),
-        NyaaDiscoverySource(
-          id: 'sukebei',
-          displayName: 'Sukebei',
-          priority: 15,
-          categoryByKind: const <DiscoveryMediaKind, String>{
-            // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
-            DiscoveryMediaKind.game: '1_3',
-          },
-          client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
-        ),
-        AListDiscoverySource(
-          id: 'alist-erogame',
-          displayName: 'erogame.space',
-          priority: 20,
-          baseUrl: 'https://alist.erogame.space',
-          kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
-        ),
-        ShinnkuDiscoverySource(),
-        // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
-        // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
-        // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
-        // 出现一个既在清单里又被排除的幽灵条目。
-        if (isPreferencesReady)
-          for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
-            if (server.enabled) OpdsDiscoverySource(config: server),
-        // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
-        if (isPreferencesReady)
-          for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
-            if (site.enabled) AListDiscoverySource.fromConfig(site),
-        // 用户自配的 Audiobookshelf 服务器：同上。未登录的不登记——那样的源每次
-        // 浏览都必然以「未登录」失败，挂在来源下拉里只是一个必红的徽标。
-        if (isPreferencesReady)
-          for (final AudiobookshelfServerConfig server
-              in prefsRepo.discoveryAudiobookshelfServers)
-            if (server.enabled && server.isSignedIn)
-              AudiobookshelfDiscoverySource(
-                config: server,
-                onTokensChanged: (AudiobookshelfTokens tokens) =>
-                    persistAudiobookshelfTokens(server.id, tokens),
-              ),
-      ],
-    );
+      ),
+      NyaaDiscoverySource(
+        id: 'sukebei',
+        displayName: 'Sukebei',
+        priority: 15,
+        categoryByKind: const <DiscoveryMediaKind, String>{
+          // sukebei 分类：Art - Games=1_3（galgame 种子主阵地）。
+          DiscoveryMediaKind.game: '1_3',
+        },
+        client: NyaaClient(baseUrl: 'https://sukebei.nyaa.si'),
+      ),
+      AListDiscoverySource(
+        id: 'alist-erogame',
+        displayName: 'erogame.space',
+        priority: 20,
+        baseUrl: 'https://alist.erogame.space',
+        kinds: const <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+      ),
+      ShinnkuDiscoverySource(),
+      // 用户自配的 OPDS 服务器：**运行期**由偏好展开，一条配置 = 一个源
+      // 实例。停用的条目直接不进注册表（而不是进了再靠停用清单挡）——
+      // 源开关列表遍历的就是本注册表，两套「关掉」的语义并存只会让设置页
+      // 出现一个既在清单里又被排除的幽灵条目。
+      if (isPreferencesReady)
+        for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
+          if (server.enabled) OpdsDiscoverySource(config: server),
+      // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
+      if (isPreferencesReady)
+        for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
+          if (site.enabled) AListDiscoverySource.fromConfig(site),
+      // 用户自配的 Audiobookshelf 服务器：同上。未登录的不登记——那样的源每次
+      // 浏览都必然以「未登录」失败，挂在来源下拉里只是一个必红的徽标。
+      if (isPreferencesReady)
+        for (final AudiobookshelfServerConfig server
+            in prefsRepo.discoveryAudiobookshelfServers)
+          if (server.enabled && server.isSignedIn)
+            AudiobookshelfDiscoverySource(
+              config: server,
+              onTokensChanged: (AudiobookshelfTokens tokens) =>
+                  persistAudiobookshelfTokens(server.id, tokens),
+            ),
+    ]);
   }
 
   MediaDiscoveryService? _mediaDiscoveryService;
@@ -6297,19 +6177,20 @@ class AppModel with ChangeNotifier {
   Future<void> persistAudiobookshelfTokens(
     String configId,
     AudiobookshelfTokens tokens,
-  ) => prefsRepo.setDiscoveryAudiobookshelfServers(
-    replaceAudiobookshelfTokens(
-      prefsRepo.discoveryAudiobookshelfServers,
-      configId,
-      tokens,
-    ),
-  );
+  ) =>
+      prefsRepo.setDiscoveryAudiobookshelfServers(
+        replaceAudiobookshelfTokens(
+          prefsRepo.discoveryAudiobookshelfServers,
+          configId,
+          tokens,
+        ),
+      );
 
   /// 「全部源」聚合排除的源 id（用户显式单选某源时不受限）。
   Set<String> get discoveryDisabledSourceIds => <String>{
-    for (final String id in prefsRepo.discoveryDisabledSources.split(','))
-      if (id.trim().isNotEmpty) id.trim(),
-  };
+        for (final String id in prefsRepo.discoveryDisabledSources.split(','))
+          if (id.trim().isNotEmpty) id.trim(),
+      };
 
   /// 设置里停用的**内置**视频资源索引器 id（Nyaa / apibay / Knaben）。
   Set<String> get videoResourceDisabledSourceIds =>
@@ -6362,9 +6243,8 @@ class AppModel with ChangeNotifier {
         // 直链条目（控制通道 `dl add <url>`）没有发现源，payload 入队时已物化。
         final DiscoveryHttpPayload? direct = directLinkPayloadOf(item);
         if (direct != null) return Future<DiscoveryPayload>.value(direct);
-        final MediaDiscoverySource? source = mediaDiscoveryService.sourceById(
-          item.sourceId,
-        );
+        final MediaDiscoverySource? source =
+            mediaDiscoveryService.sourceById(item.sourceId);
         if (source == null) {
           throw StateError('unknown discovery source: ${item.sourceId}');
         }
@@ -6395,7 +6275,9 @@ class AppModel with ChangeNotifier {
   /// The pipeline persists `stage=download` only after this checkpoint. This
   /// closes the one-minute periodic-save gap where an unclean app exit could
   /// leave Drift tracking a torrent that the embedded engine cannot restore.
-  Future<void> _checkpointEmbeddedVideoDownload(VideoDownloadJobRow job) async {
+  Future<void> _checkpointEmbeddedVideoDownload(
+    VideoDownloadJobRow job,
+  ) async {
     if (job.backendKind != QbConnectionConfig.backendEmbedded) return;
     final EmbeddedTorrentHost? host = _embeddedTorrentHost;
     if (host == null) return;
@@ -6413,8 +6295,7 @@ class AppModel with ChangeNotifier {
   /// TODO-1961-a：启动时按需恢复上次的内置引擎会话。
   /// 没有可恢复的种子就**不建 session**（见 BUG-1053）。
   Future<void> _restoreEmbeddedTorrentSession(
-    AnimeDownloadPlanStore store,
-  ) async {
+      AnimeDownloadPlanStore store) async {
     final String? resumeDir = _embeddedTorrentResumeDir;
     if (resumeDir == null || !_supportsEmbeddedTorrent()) return;
     final Set<String> planIds = await _refreshAnimeDownloadPlanIds(store);
@@ -6425,9 +6306,8 @@ class AppModel with ChangeNotifier {
       if (!await dir.exists()) return;
       await for (final FileSystemEntity entity in dir.list()) {
         if (entity is! File || !entity.path.endsWith('.resume')) continue;
-        final String id = path
-            .basenameWithoutExtension(entity.path)
-            .toLowerCase();
+        final String id =
+            path.basenameWithoutExtension(entity.path).toLowerCase();
         if (planIds.contains(id)) {
           hasRestorable = true;
           break;
@@ -6467,9 +6347,7 @@ class AppModel with ChangeNotifier {
   /// 下载完成的书籍（epub）入库回调：逐个走 [EpubImporter] 进阅读库
   /// （DuplicatePolicy.skip()，重复导入不报错），返回成功入库的书本数。单本失败跳过。
   Future<int?> _importDownloadedBooks(
-    AnimeDownloadPlan plan,
-    List<String> bookAbsolutePaths,
-  ) async {
+      AnimeDownloadPlan plan, List<String> bookAbsolutePaths) async {
     int imported = 0;
     for (final String filePath in bookAbsolutePaths) {
       try {
@@ -6509,14 +6387,13 @@ class AppModel with ChangeNotifier {
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
-    final String backend = config.resolveBackend(
-      embeddedSupported: _supportsEmbeddedTorrent(),
-    );
+    final String backend =
+        config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     // BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
     final EmbeddedTorrentHost? host =
         backend == QbConnectionConfig.backendEmbedded
-        ? _ensureEmbeddedTorrentHost()
-        : _embeddedTorrentHost;
+            ? _ensureEmbeddedTorrentHost()
+            : _embeddedTorrentHost;
     if (backend == QbConnectionConfig.backendEmbedded && host != null) {
       return host.backendView(
         trackerSubscriptionService: _trackers,
@@ -6564,7 +6441,8 @@ class AppModel with ChangeNotifier {
     String bookUid,
     int episodeIndex,
     String? source,
-  ) => prefsRepo.setRemoteSubtitleSource(bookUid, episodeIndex, source);
+  ) =>
+      prefsRepo.setRemoteSubtitleSource(bookUid, episodeIndex, source);
 
   // 注：远端视频播放偏好（调轴/音轨/副字幕源/副字幕调轴）不再走本层门面——统一
   // 落 `video_remote_*_` prefs 键对（播放偏好同步泛化批，键定义在
@@ -6593,8 +6471,9 @@ class AppModel with ChangeNotifier {
       ctx,
       adaptivePageRoute(
         context: ctx,
-        builder: (context) =>
-            DictionaryDialogPage(initialImportPaths: initialImportPaths),
+        builder: (context) => DictionaryDialogPage(
+          initialImportPaths: initialImportPaths,
+        ),
       ),
     );
 
@@ -6625,15 +6504,16 @@ class AppModel with ChangeNotifier {
     required ValueNotifier<int?> totalNotifier,
     required Function() onImportSuccess,
     VoidCallback? onMemoryError,
-  }) => _dictImportManager.importFromDirectory(
-    directory: directory,
-    progressNotifier: progressNotifier,
-    countNotifier: countNotifier,
-    totalNotifier: totalNotifier,
-    onImportSuccess: onImportSuccess,
-    lowMemoryMode: lowMemoryMode,
-    onMemoryError: onMemoryError,
-  );
+  }) =>
+      _dictImportManager.importFromDirectory(
+        directory: directory,
+        progressNotifier: progressNotifier,
+        countNotifier: countNotifier,
+        totalNotifier: totalNotifier,
+        onImportSuccess: onImportSuccess,
+        lowMemoryMode: lowMemoryMode,
+        onMemoryError: onMemoryError,
+      );
 
   Future<void> importDictionary({
     required File file,
@@ -6702,9 +6582,8 @@ class AppModel with ChangeNotifier {
   /// 跳过一轮下次启动重来，零损失）。
   Future<void> maybeAutoUpdateDictionaries() async {
     if (!autoUpdateDictionaries) return;
-    final List<Dictionary> updatable = dictionaries
-        .where((Dictionary d) => d.isUpdatable)
-        .toList();
+    final List<Dictionary> updatable =
+        dictionaries.where((Dictionary d) => d.isUpdatable).toList();
     if (!shouldAutoUpdateDictionaries(
       now: DateTime.now(),
       lastUpdate: lastDictionaryUpdateAt,
@@ -6726,19 +6605,15 @@ class AppModel with ChangeNotifier {
             job.message.value = t.dict_update_checking;
             final DictionaryRemoteIndexResult remote =
                 await DictionaryUpdateService.fetchRemoteIndexResult(
-                  dictionary.indexUrl,
-                );
+              dictionary.indexUrl,
+            );
             if (!remote.succeeded) {
-              debugPrint(
-                '[Fushi] auto dict update could not check '
-                '${dictionary.name}',
-              );
+              debugPrint('[Fushi] auto dict update could not check '
+                  '${dictionary.name}');
               continue;
             }
             if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision,
-              remote.revision,
-            )) {
+                dictionary.revision, remote.revision)) {
               completedCount++;
               continue;
             }
@@ -6747,15 +6622,10 @@ class AppModel with ChangeNotifier {
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
             // 单本失败不中断其余（移植 Hoshi 的 failures-collect 语义）。
-            ErrorLogService.instance.log(
-              'AppModel.autoUpdateDictionary',
-              e,
-              stack,
-            );
-            debugPrint(
-              '[Fushi] auto dict update failed for '
-              '${dictionary.name}: $e',
-            );
+            ErrorLogService.instance
+                .log('AppModel.autoUpdateDictionary', e, stack);
+            debugPrint('[Fushi] auto dict update failed for '
+                '${dictionary.name}: $e');
           }
         }
         // BUG-1281：检查成功且无需更新也是完整成功；旧逻辑只在真正重导过词典时写
@@ -6821,44 +6691,31 @@ class AppModel with ChangeNotifier {
 
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
   Future<void> setDictionaryLanguageOverride(
-    Dictionary dictionary,
-    String? language,
-  ) => dictRepo.setDictionaryLanguageOverride(dictionary, language);
+      Dictionary dictionary, String? language) =>
+      dictRepo.setDictionaryLanguageOverride(dictionary, language);
 
   Future<void> setDictionaryDisplayName(
-    Dictionary dictionary,
-    String? displayName,
-  ) => dictRepo.setDictionaryDisplayName(dictionary, displayName);
+      Dictionary dictionary, String? displayName) =>
+      dictRepo.setDictionaryDisplayName(dictionary, displayName);
 
   /// BUG-2158：折叠三态循环（继承 → 显式展开 → 显式折叠 → 继承）。
   /// 旧的 `toggleDictionaryCollapsed` 双态入口已删除，不与本方法并存。
   Future<void> cycleDictionaryCollapseState(Dictionary dictionary) =>
       dictRepo.cycleDictionaryCollapseState(
-        dictionary,
-        JapaneseLanguage.instance.languageCode,
-      );
+          dictionary, JapaneseLanguage.instance.languageCode);
 
   Future<void> setDictionaryCollapseState(
-    Dictionary dictionary,
-    DictionaryCollapseState state,
-  ) => dictRepo.setDictionaryCollapseState(
-    dictionary,
-    JapaneseLanguage.instance.languageCode,
-    state,
-  );
+          Dictionary dictionary, DictionaryCollapseState state) =>
+      dictRepo.setDictionaryCollapseState(
+          dictionary, JapaneseLanguage.instance.languageCode, state);
 
   Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) =>
       dictRepo.setDictionaryHidden(
-        dictionary,
-        JapaneseLanguage.instance.languageCode,
-        hidden,
-      );
+          dictionary, JapaneseLanguage.instance.languageCode, hidden);
 
   Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     await dictRepo.toggleDictionaryHidden(
-      dictionary,
-      JapaneseLanguage.instance.languageCode,
-    );
+        dictionary, JapaneseLanguage.instance.languageCode);
     // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
     // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
     // freq/pitch dictionary. But a popupJson cached while the dict was still
@@ -6882,19 +6739,14 @@ class AppModel with ChangeNotifier {
         for (final FileSystemEntity entity
             in dictionaryResourceDirectory.listSync()) {
           if (entity is Directory) {
-            await deleteDictionaryDirectory(
-              entity,
-              reloadEngine: _rebuildDictPathsCache,
-            );
+            await deleteDictionaryDirectory(entity,
+                reloadEngine: _rebuildDictPathsCache);
           } else {
             try {
               entity.deleteSync();
             } catch (e, stack) {
-              ErrorLogService.instance.log(
-                'deleteDictionaries.entry',
-                e,
-                stack,
-              );
+              ErrorLogService.instance
+                  .log('deleteDictionaries.entry', e, stack);
             }
           }
         }
@@ -7012,10 +6864,10 @@ class AppModel with ChangeNotifier {
     if (tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =
           await _searchRemoteDictionary(
-            searchTerm: searchTerm,
-            searchWithWildcards: searchWithWildcards,
-            maximumTerms: effectiveMaxTerms,
-          );
+        searchTerm: searchTerm,
+        searchWithWildcards: searchWithWildcards,
+        maximumTerms: effectiveMaxTerms,
+      );
       if (remoteResult != null) {
         return remoteResult;
       }
@@ -7049,9 +6901,8 @@ class AppModel with ChangeNotifier {
     // here so all local FFI return paths below carry the same kanji payload.
     final List<FushiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
 
-    List<FushiLookupResult>? ffiResults = dictRepo.getCachedFfiLookup(
-      ffiCacheKey,
-    );
+    List<FushiLookupResult>? ffiResults =
+        dictRepo.getCachedFfiLookup(ffiCacheKey);
     DictionarySearchResult? result;
 
     if (ffiResults != null) {
@@ -7134,10 +6985,10 @@ class AppModel with ChangeNotifier {
     if (allowRemoteLookup && !tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =
           await _searchRemoteDictionary(
-            searchTerm: searchTerm,
-            searchWithWildcards: searchWithWildcards,
-            maximumTerms: effectiveMaxTerms,
-          );
+        searchTerm: searchTerm,
+        searchWithWildcards: searchWithWildcards,
+        maximumTerms: effectiveMaxTerms,
+      );
       if (remoteResult != null) {
         return remoteResult;
       }
@@ -7174,22 +7025,20 @@ class AppModel with ChangeNotifier {
       // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓
       // 同步 throw，异步错误全部漏出成 uncaught（音频路径 lookupRemoteAudio 已
       // 修过同一处写法，词典路径此前遗留）。
-      final DictionarySearchResult? result =
-          await FushiRemoteLookupClient(
-            repo: SyncRepository(_database),
-            httpClient: _remoteLookupClient,
-          ).searchDictionary(
-            term: searchTerm,
-            wildcards: searchWithWildcards,
-            maximumTerms: maximumTerms,
-          );
+      final DictionarySearchResult? result = await FushiRemoteLookupClient(
+        repo: SyncRepository(_database),
+        httpClient: _remoteLookupClient,
+      ).searchDictionary(
+        term: searchTerm,
+        wildcards: searchWithWildcards,
+        maximumTerms: maximumTerms,
+      );
       // 拿到任何 HTTP 响应即证明设备活着（含「可达但无结果」的 null），清冷却。
       _remoteDictionaryUnreachableUntil = null;
       return result;
     } on RemoteLookupUnreachableError catch (e, stack) {
-      _remoteDictionaryUnreachableUntil = DateTime.now().add(
-        kRemoteDictionaryFailureCooldown,
-      );
+      _remoteDictionaryUnreachableUntil =
+          DateTime.now().add(kRemoteDictionaryFailureCooldown);
       ErrorLogService.instance.log('remoteDictionaryLookup', e, stack);
       return null;
     } catch (e, stack) {
@@ -7395,7 +7244,10 @@ class AppModel with ChangeNotifier {
     // WebView2 usurped it, so drag-import works again after any media was
     // opened. No-op off Windows / when desktop_drop lacks the reinitialize patch.
     await DesktopDropReinitializer.reinitialize();
-    await mediaSource.onSourceExit(appModel: this, ref: ref);
+    await mediaSource.onSourceExit(
+      appModel: this,
+      ref: ref,
+    );
 
     await audioCtrl.audioHandler?.stop();
 
@@ -7417,12 +7269,16 @@ class AppModel with ChangeNotifier {
     if (ctx == null) return;
     await showAppDialog(
       context: ctx,
-      builder: (context) =>
-          OpenStashDialogPage(onSelect: onSelect, onSearch: onSearch),
+      builder: (context) => OpenStashDialogPage(
+        onSelect: onSelect,
+        onSearch: onSearch,
+      ),
     );
   }
 
-  Future<void> openPopupDictionaryLookup({required String searchTerm}) async {
+  Future<void> openPopupDictionaryLookup({
+    required String searchTerm,
+  }) async {
     final String trimmed = searchTerm.trim();
     if (trimmed.isEmpty) return;
     if (!isAndroidPlatform) {
@@ -7502,18 +7358,16 @@ class AppModel with ChangeNotifier {
   void addToSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) => mediaHistoryRepo.addToSearchHistory(
-    historyKey: historyKey,
-    searchTerm: searchTerm,
-  );
+  }) =>
+      mediaHistoryRepo.addToSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
   Future<void> removeFromSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) => mediaHistoryRepo.removeFromSearchHistory(
-    historyKey: historyKey,
-    searchTerm: searchTerm,
-  );
+  }) =>
+      mediaHistoryRepo.removeFromSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
   void clearSearchHistory({required String historyKey}) =>
       mediaHistoryRepo.clearSearchHistory(historyKey: historyKey);
@@ -7524,10 +7378,9 @@ class AppModel with ChangeNotifier {
   bool isTermInSearchHistory({
     required String historyKey,
     required String searchTerm,
-  }) => mediaHistoryRepo.isTermInSearchHistory(
-    historyKey: historyKey,
-    searchTerm: searchTerm,
-  );
+  }) =>
+      mediaHistoryRepo.isTermInSearchHistory(
+          historyKey: historyKey, searchTerm: searchTerm);
 
   void addToStash({required List<String> terms}) {
     if (terms.isEmpty) return;
@@ -7581,10 +7434,9 @@ class AppModel with ChangeNotifier {
   void updateDictionaryResultScrollIndex({
     required DictionarySearchResult result,
     required int newIndex,
-  }) => dictRepo.updateDictionaryResultScrollIndex(
-    result: result,
-    newIndex: newIndex,
-  );
+  }) =>
+      dictRepo.updateDictionaryResultScrollIndex(
+          result: result, newIndex: newIndex);
 
   /// 从查词历史里移除一条（首页查词左栏行尾「⋯」菜单）。
   void removeFromDictionaryHistory({required String searchTerm}) {
@@ -7631,12 +7483,12 @@ class AppModel with ChangeNotifier {
 
   /// For a given [MediaType], return the selected media source. If there is
   /// no persisted media source, use the first source in the list.
-  MediaSource getCurrentSourceForMediaType({required MediaType mediaType}) {
+  MediaSource getCurrentSourceForMediaType({
+    required MediaType mediaType,
+  }) {
     MediaSource fallbackSource = mediaSources[mediaType]!.values.first;
-    String uniqueKey = _getPref(
-      'current_source/${mediaType.uniqueKey}',
-      defaultValue: fallbackSource.uniqueKey,
-    );
+    String uniqueKey = _getPref('current_source/${mediaType.uniqueKey}',
+        defaultValue: fallbackSource.uniqueKey);
 
     return mediaSources[mediaType]![uniqueKey] ?? fallbackSource;
   }
@@ -7654,16 +7506,13 @@ class AppModel with ChangeNotifier {
 
   List<MediaItem> getMediaSourceHistory({required MediaSource mediaSource}) =>
       mediaHistoryRepo.getMediaSourceHistory(
-        mediaSourceKey: mediaSource.uniqueKey,
-      );
+          mediaSourceKey: mediaSource.uniqueKey);
 
   /// Returns the last navigated directory the user used for picking a file for a
   /// certain media type.
   Directory? getLastPickedDirectory(MediaType type) {
-    String path = _getPref(
-      '${type.uniqueKey}/last_picked_file',
-      defaultValue: '',
-    );
+    String path =
+        _getPref('${type.uniqueKey}/last_picked_file', defaultValue: '');
     if (path.isEmpty) {
       return null;
     }
@@ -7688,16 +7537,15 @@ class AppModel with ChangeNotifier {
   /// a media type, this will be included as first on the list. Otherwise, external
   /// root directories will be included.
   Future<List<Directory>> getFilePickerDirectoriesForMediaType(
-    MediaType type,
-  ) async {
+      MediaType type) async {
     List<Directory> directories = [];
     Directory? lastPickedDirectory = getLastPickedDirectory(type);
     if (lastPickedDirectory != null) {
       directories.add(lastPickedDirectory);
     }
 
-    final List<String> defaultPaths = await platformServices.directory
-        .getDefaultPickerDirectories();
+    final List<String> defaultPaths =
+        await platformServices.directory.getDefaultPickerDirectories();
     for (final String dirPath in defaultPaths) {
       final Directory directory = Directory(dirPath);
       if (!directories.contains(directory)) {
@@ -7725,7 +7573,8 @@ class AppModel with ChangeNotifier {
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
-  Stream<MediaPlayIntent> get playIntentStream => audioCtrl.playIntentStream;
+  Stream<MediaPlayIntent> get playIntentStream =>
+      audioCtrl.playIntentStream;
   Stream<Duration> get seekStream => audioCtrl.seekStream;
   Stream<void> get rewindStream => audioCtrl.rewindStream;
   Stream<void> get fastForwardStream => audioCtrl.fastForwardStream;
@@ -7743,22 +7592,17 @@ class AppModel with ChangeNotifier {
   /// app 级（无 reader）悬浮窗样式：M3E 配色取当前 app 明暗下的配色方案。reader
   /// attach 时会用 reader 明暗的同一套构造覆盖（`_readerFloatingLyricStyle`）。
   FloatingLyricStyle _appLevelFloatingLyricStyle() {
-    final Brightness brightness = themeMode == ThemeMode.dark
-        ? Brightness.dark
-        : Brightness.light;
+    final Brightness brightness =
+        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
     return buildFloatingLyricStyle(
-      scheme: buildColorScheme(brightness),
-      settings: floatingLyricStyleSettings(),
-    );
+        scheme: buildColorScheme(brightness),
+        settings: floatingLyricStyleSettings());
   }
 
   /// 悬浮字幕设置快照（两个样式构造点共用；[fontSize] 供快捷设置即时预览覆盖）。
   FloatingLyricStyleSettings floatingLyricStyleSettings({double? fontSize}) =>
-      FloatingLyricStyleSettings.fromPreferences(
-        prefsRepo,
-        fontSize: fontSize,
-        font: _floatingLyricNativeFont(),
-      );
+      FloatingLyricStyleSettings.fromPreferences(prefsRepo,
+          fontSize: fontSize, font: _floatingLyricNativeFont());
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
   /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
@@ -7766,12 +7610,10 @@ class AppModel with ChangeNotifier {
     if (!Platform.isWindows) return null;
     final ReaderSettings? settings = ReaderFushiSource.readerSettings;
     if (settings == null) return null;
-    return AppFontLoader.resolveForNativeOverlay(
-      settings.floatingLyricFonts,
-      allowedDirectories: <String>[
-        path.join(appDirectory.path, 'custom_fonts'),
-      ],
-    );
+    return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,
+        allowedDirectories: <String>[
+          path.join(appDirectory.path, 'custom_fonts')
+        ]);
   }
 
   FloatingLyricWindowRect? _floatingLyricWindowRect() {
@@ -7789,8 +7631,7 @@ class AppModel with ChangeNotifier {
   /// 用户拖动 / 拖角缩放后记住矩形。拖出来的宽度就是用户要的宽度，所以「宽度」
   /// 偏好回到 0（= 不再强制改窗宽），否则下一次样式推送会把窗宽弹回旧值。
   Future<void> _persistFloatingLyricWindowRect(
-    FloatingLyricWindowRect rect,
-  ) async {
+      FloatingLyricWindowRect rect) async {
     await prefsRepo.setFloatingLyricWindowRect(jsonEncode(rect.toMap()));
     if (prefsRepo.floatingLyricWidth != 0) {
       await prefsRepo.setFloatingLyricWidth(0);
@@ -7801,9 +7642,8 @@ class AppModel with ChangeNotifier {
   /// 表示开启失败（如缺 overlay 权限）。
   Future<bool> toggleFloatingLyricFromControls() async {
     final bool currentlyOn = showFloatingLyric;
-    final bool ok = await audiobookSession.toggleFloatingLyric(
-      currentlyOn: currentlyOn,
-    );
+    final bool ok =
+        await audiobookSession.toggleFloatingLyric(currentlyOn: currentlyOn);
     if (!ok) return false;
     await setShowFloatingLyric(!currentlyOn);
     notifyListeners();
@@ -7813,12 +7653,10 @@ class AppModel with ChangeNotifier {
   /// 书架长按「悬浮字幕」入口：启动该书的后台听书会话（无正在播则用该书启动；已有
   /// 别的书在播则顶掉切到该书）。同时打开悬浮窗偏好并拉起悬浮窗。返回结果供 UI 提示。
   Future<BackgroundListenResult> startBackgroundListening(
-    String bookKey,
-  ) async {
+      String bookKey) async {
     await initialiseAudioHandler();
-    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(
-      database,
-    );
+    final AudiobookSessionLauncher launcher =
+        AudiobookSessionLauncher(database);
     final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
     if (req == null) {
       return BackgroundListenResult.noAudio;
@@ -7838,11 +7676,8 @@ class AppModel with ChangeNotifier {
       );
       if (controller == null) return BackgroundListenResult.loadFailed;
     } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'AppModel.startBackgroundListening',
-        e,
-        stack,
-      );
+      ErrorLogService.instance
+          .log('AppModel.startBackgroundListening', e, stack);
       return BackgroundListenResult.loadFailed;
     }
     // 无正在播则用该书开播（用户决策④：无正在播 → 用该书启动）。
@@ -7869,8 +7704,8 @@ class AppModel with ChangeNotifier {
   Future<void> openBackgroundListeningBook(WidgetRef ref) async {
     final SessionBookInfo? info = audiobookSession.book;
     if (info == null) return;
-    final MediaItem? item = await ReaderFushiSource.instance
-        .mediaItemForBookKey(info.bookKey);
+    final MediaItem? item =
+        await ReaderFushiSource.instance.mediaItemForBookKey(info.bookKey);
     if (item == null) return;
     // 源必须跟着 item 自己的 mediaSourceIdentifier 走（它已按当前 format 现算）：
     // 写死 ReaderFushiSource 会让漫画 / PDF 书用 EPUB 阅读器打开。
@@ -7947,32 +7782,32 @@ class AppModel with ChangeNotifier {
   /// 与 [overlayLookupEffectiveSize] 分开：卡片贴在游戏客户区里，合适尺寸与浮在整块
   /// 桌面上的覆盖窗本就不同，共用一个值必然一大一小。
   LookupSize get galCardLookupEffectiveSize => effectiveLookupSize(
-    independent: galCardLookupIndependentSize,
-    sceneWidth: galCardLookupMaxWidth,
-    sceneHeight: galCardLookupMaxHeight,
-    sharedWidth: popupMaxWidth,
-    sharedHeight: popupMaxHeight,
-  );
+        independent: galCardLookupIndependentSize,
+        sceneWidth: galCardLookupMaxWidth,
+        sceneHeight: galCardLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
 
   /// app 外覆盖查词卡的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
   /// controller 的窗口尺寸测算读它，而不是直接读 [popupMaxWidth]/[popupMaxHeight]。
   LookupSize get overlayLookupEffectiveSize => effectiveLookupSize(
-    independent: overlayLookupIndependentSize,
-    sceneWidth: overlayLookupMaxWidth,
-    sceneHeight: overlayLookupMaxHeight,
-    sharedWidth: popupMaxWidth,
-    sharedHeight: popupMaxHeight,
-  );
+        independent: overlayLookupIndependentSize,
+        sceneWidth: overlayLookupMaxWidth,
+        sceneHeight: overlayLookupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
 
   /// 浏览器扩展弹窗的「有效最大宽高」（跟随 app 内 / 解锁后独立）。
   /// [browserExtensionThemeColors] 下发的 `--fushi-popup-max-*` 读它。
   LookupSize get extensionPopupEffectiveSize => effectiveLookupSize(
-    independent: extensionPopupIndependentSize,
-    sceneWidth: extensionPopupMaxWidth,
-    sceneHeight: extensionPopupMaxHeight,
-    sharedWidth: popupMaxWidth,
-    sharedHeight: popupMaxHeight,
-  );
+        independent: extensionPopupIndependentSize,
+        sceneWidth: extensionPopupMaxWidth,
+        sceneHeight: extensionPopupMaxHeight,
+        sharedWidth: popupMaxWidth,
+        sharedHeight: popupMaxHeight,
+      );
 
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
   /// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写最终基准最大宽高，由
@@ -8063,12 +7898,12 @@ class AppModel with ChangeNotifier {
   /// 不再直读 `dart:io` —— 直读会让 widget 测试无缝可注，Windows 独有的模块
   /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
-    prefOf: moduleEnabled,
-    isWindows: platformServices.isWindows,
-    isDesktop: platformServices.isDesktop,
-    isIOS: platformServices.isIOS,
-    isAndroid: platformServices.isAndroid,
-  );
+        prefOf: moduleEnabled,
+        isWindows: platformServices.isWindows,
+        isDesktop: platformServices.isDesktop,
+        isIOS: platformServices.isIOS,
+        isAndroid: platformServices.isAndroid,
+      );
 
   /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端）。平台判据同样
   /// 取自 [PlatformServices]，理由同上。
@@ -8086,7 +7921,8 @@ class AppModel with ChangeNotifier {
       prefsRepo.setP2pDownloadNoticeDismissed();
 
   /// 第三方游戏资源站下载前的风险说明是否已勾「不再提示」。
-  bool get gameResourceNoticeDismissed => prefsRepo.gameResourceNoticeDismissed;
+  bool get gameResourceNoticeDismissed =>
+      prefsRepo.gameResourceNoticeDismissed;
   Future<void> setGameResourceNoticeDismissed() =>
       prefsRepo.setGameResourceNoticeDismissed();
 
@@ -8452,7 +8288,8 @@ class AppModel with ChangeNotifier {
     required bool isDesktop,
     int desktopDefault = 2,
     int mobileDefault = 1,
-  }) => hasExplicit ? stored : (isDesktop ? desktopDefault : mobileDefault);
+  }) =>
+      hasExplicit ? stored : (isDesktop ? desktopDefault : mobileDefault);
 
   /// TODO-1357: 查词弹窗默认「最多列数」（桌面 / 移动均未设 3 / 显式遵从）。列数是
   /// 「自动填充、封顶用户值」——真实生效列数由 popup.js 的视口收敛（每列 ≥170px）算出，
@@ -8460,12 +8297,12 @@ class AppModel with ChangeNotifier {
   /// `--dict-columns` 注入点（app_model / dictionary_popup_webview /
   /// popup_settings_injection）都读本 getter，平台默认在此单点收口。
   int get popupDictionaryColumns => resolvePopupDesktopDefault(
-    hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
-    stored: prefsRepo.popupDictionaryColumns,
-    isDesktop: isDesktopPlatform,
-    desktopDefault: 3,
-    mobileDefault: 3,
-  );
+        hasExplicit: prefsRepo.hasExplicitPopupDictionaryColumns,
+        stored: prefsRepo.popupDictionaryColumns,
+        isDesktop: isDesktopPlatform,
+        desktopDefault: 3,
+        mobileDefault: 3,
+      );
   Future<void> setPopupDictionaryColumns(int columns) =>
       prefsRepo.setPopupDictionaryColumns(columns);
 
@@ -8483,8 +8320,8 @@ class AppModel with ChangeNotifier {
   /// 读，见 BUG-1271 备注；滑块可见可自调，故不做静默数据迁移）。
   int get popupAutoExpandDictionaries =>
       prefsRepo.hasExplicitPopupAutoExpandDictionaries
-      ? prefsRepo.popupAutoExpandDictionaries
-      : 1;
+          ? prefsRepo.popupAutoExpandDictionaries
+          : 1;
   Future<void> setPopupAutoExpandDictionaries(int count) =>
       prefsRepo.setPopupAutoExpandDictionaries(count);
 
@@ -8562,16 +8399,19 @@ class AppModel with ChangeNotifier {
   /// 懒建：绑的是 [database]，只有真正用到游戏库的路径才会碰它，冷启动不多跑查询。
   /// 库页/详情页直接用这个仓储做增删改与会话查询。
   GalgameRepository get galgameRepo => _galgameRepo ??= GalgameRepository(
-    database,
-    // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
-    // 本地状态照常生效，事件留在 outbox 由后续同步重试。
-    onPlayStatusChanged: (String id, GalgamePlayStatus status) {
-      if (!kMediaTrackingEnabled) return;
-      unawaited(
-        mediaTrackingService.recordGameStatus(gameId: id, status: status.value),
+        database,
+        // 游玩状态改动上报媒体记录（Bangumi 收藏 type）。fail-open：同步不可用时
+        // 本地状态照常生效，事件留在 outbox 由后续同步重试。
+        onPlayStatusChanged: (String id, GalgamePlayStatus status) {
+          if (!kMediaTrackingEnabled) return;
+          unawaited(
+            mediaTrackingService.recordGameStatus(
+              gameId: id,
+              status: status.value,
+            ),
+          );
+        },
       );
-    },
-  );
   GalgameRepository? _galgameRepo;
 
   /// 当前缓存的游戏库列表（同步读，供 widget 首帧渲染）。首次进页面为空表，
@@ -8651,9 +8491,9 @@ class AppModel with ChangeNotifier {
   /// 覆写的公开面，测试里的假 AppModel 正是靠覆写它来喂值的；直接穿透到
   /// prefsRepo 会把覆写全部绕过去（且在偏好未就绪时空指针）。
   String get effectiveGlobalDictCSS => mergeGeneratedAndAuthoredCss(
-    buildGlobalDictStyleCss(dictStyleRules),
-    globalDictCSS,
-  );
+        buildGlobalDictStyleCss(dictStyleRules),
+        globalDictCSS,
+      );
 
   /// 注入弹窗的单典 CSS：可视化产物 + 用户手写，逐本合并。
   ///
@@ -8691,14 +8531,12 @@ class AppModel with ChangeNotifier {
     final List<AudioSourceConfig> saved = prefsRepo.audioSourceConfigs;
     final Map<String, LocalAudioDbEntry> localByPath =
         <String, LocalAudioDbEntry>{
-          for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
-        };
+      for (final LocalAudioDbEntry db in localAudioDbs) db.path: db,
+    };
     final Set<String> savedLocalPaths = saved
-        .where(
-          (AudioSourceConfig source) =>
-              source.kind == AudioSourceKind.localAudio &&
-              localByPath.containsKey(source.path),
-        )
+        .where((AudioSourceConfig source) =>
+            source.kind == AudioSourceKind.localAudio &&
+            localByPath.containsKey(source.path))
         .map((AudioSourceConfig source) => source.path ?? '')
         .where((String value) => value.isNotEmpty)
         .toSet();
@@ -8750,7 +8588,10 @@ class AppModel with ChangeNotifier {
     // 由「是否存在已启用的本地库」决定（与 typed-config 路径语义一致）。
     if (!localAudioDbs.any((LocalAudioDbEntry e) => e.enabled)) return sources;
 
-    return <String>[WordAudioResolver.localAudioUrl, ...sources];
+    return <String>[
+      WordAudioResolver.localAudioUrl,
+      ...sources,
+    ];
   }
 
   void setAudioSources(List<String> sources) =>
@@ -8784,10 +8625,9 @@ class AppModel with ChangeNotifier {
         if (scope == DeleteScope.syncEverywhere) {
           try {
             await database.writeSyncDeletionTombstone(
-              SyncTombstoneKind.localaudio.dbValue,
-              e.value.displayName,
-              DateTime.now().millisecondsSinceEpoch,
-            );
+                SyncTombstoneKind.localaudio.dbValue,
+                e.value.displayName,
+                DateTime.now().millisecondsSinceEpoch);
           } catch (_) {
             // best-effort。
           }
@@ -8799,9 +8639,7 @@ class AppModel with ChangeNotifier {
       if (s.kind == AudioSourceKind.localAudio) {
         try {
           await database.clearSyncDeletionTombstone(
-            SyncTombstoneKind.localaudio.dbValue,
-            s.displayLabel,
-          );
+              SyncTombstoneKind.localaudio.dbValue, s.displayLabel);
         } catch (_) {
           // best-effort。
         }
@@ -8816,14 +8654,13 @@ class AppModel with ChangeNotifier {
                     path: source.path!,
                     displayName: source.displayLabel,
                     enabled: source.enabled,
-                    sources:
-                        sourcesByPath[source.path] ??
+                    sources: sourcesByPath[source.path] ??
                         const <LocalAudioSourcePref>[],
                   ))
               .copyWith(
-                displayName: source.displayLabel,
-                enabled: source.enabled,
-              ),
+            displayName: source.displayLabel,
+            enabled: source.enabled,
+          ),
     ];
     await _localAudioManager.setEntries(nextDbs);
     // 回收所有不再被引用的本地音频副本（含曾持久化已移除 + 拷贝但从未持久化的孤儿）。
@@ -8840,7 +8677,10 @@ class AppModel with ChangeNotifier {
     HttpClient()..connectionTimeout = kInterconnectConnectTimeout,
   );
 
-  Future<String?> lookupRemoteAudio(String expression, String reading) async {
+  Future<String?> lookupRemoteAudio(
+    String expression,
+    String reading,
+  ) async {
     // 远端音频是否查询由「管理音频来源」对话框里的 fushiRemote 源 enabled 决定
     // （resolveConfigured 只在该源 enabled 时才调用这里）；与词典远端开关 remoteLookupEnabled 无关。
     // await 必须收进 try：原实现直接 return 未 await 的 Future，catch 只能抓同步
@@ -8958,9 +8798,8 @@ class AppModel with ChangeNotifier {
   /// 启动时自启 Fushi API 服务器（yomitan-api server）撞上的端口；没冲突为 null。
   /// 自启在 `runApp` 之前、且 fire-and-forget，失败时还没有 UI——冲突留在这里，
   /// 由 `installFushiApiPortConflictNotice` 等 Navigator 就绪后弹窗并清回 null。
-  final ValueNotifier<int?> fushiApiStartupPortConflict = ValueNotifier<int?>(
-    null,
-  );
+  final ValueNotifier<int?> fushiApiStartupPortConflict =
+      ValueNotifier<int?>(null);
 
   /// 浏览器扩展网页视频沉浸时间 → 学习统计的桥（POST `/api/extension/study` 的
   /// sink）。与 server manager 同寿命：懒建于 [_ensureYomitanManager]，
@@ -8968,9 +8807,8 @@ class AppModel with ChangeNotifier {
   BrowserVideoStudyBridge? _browserVideoStudyBridge;
 
   BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
-      _browserVideoStudyBridge ??= BrowserVideoStudyBridge(
-        database: () => database,
-      );
+      _browserVideoStudyBridge ??=
+          BrowserVideoStudyBridge(database: () => database);
 
   YomitanApiServerManager _ensureYomitanManager() {
     return _yomitanServerManager ??= YomitanApiServerManager(
@@ -9039,10 +8877,8 @@ class AppModel with ChangeNotifier {
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
-        final List<FushiLookupResult> r = FushiDicts.instance.lookup(
-          w,
-          maxResults: 1,
-        );
+        final List<FushiLookupResult> r =
+            FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
     );
@@ -9139,10 +8975,8 @@ class AppModel with ChangeNotifier {
 
   Future<void> startYomitanApiServer() async {
     try {
-      await _ensureYomitanManager().start(
-        port: yomitanApiPort,
-        apiKey: yomitanApiKey,
-      );
+      await _ensureYomitanManager()
+          .start(port: yomitanApiPort, apiKey: yomitanApiKey);
       // 用户在提醒弹出前已从别处把服务器开起来：过时的冲突不再弹。
       fushiApiStartupPortConflict.value = null;
     } on SyncServerPortInUseException {
@@ -9202,11 +9036,9 @@ class AppModel with ChangeNotifier {
     String sourcePath, {
     required String displayName,
     bool reference = false,
-  }) => _localAudioManager.importFile(
-    sourcePath,
-    displayName: displayName,
-    reference: reference,
-  );
+  }) =>
+      _localAudioManager.importFile(sourcePath,
+          displayName: displayName, reference: reference);
 
   Future<void> setLocalAudioDbs(List<LocalAudioDbEntry> dbs) =>
       _localAudioManager.setEntries(dbs);
@@ -9224,9 +9056,7 @@ class AppModel with ChangeNotifier {
 
   Future<bool> isLocalAudioDbAvailable(String storedPath) async {
     final String resolved = LocalAudioManager.resolveInternalPath(
-      storedPath,
-      databaseDirectory.path,
-    );
+        storedPath, databaseDirectory.path);
     return File(resolved).exists();
   }
 
@@ -9244,9 +9074,7 @@ class AppModel with ChangeNotifier {
 
   /// 设置某库的子来源偏好，立即持久化并重推 native。
   Future<void> setLocalAudioDbSources(
-    String path,
-    List<LocalAudioSourcePref> prefs,
-  ) async {
+      String path, List<LocalAudioSourcePref> prefs) async {
     await _localAudioManager.setSourcesFor(path, prefs);
     notifyListeners();
   }
@@ -9259,17 +9087,13 @@ class AppModel with ChangeNotifier {
   /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
   /// LocalAudioManager 的 AppModel），保持双真相源一致。
   Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
-    final bool exists = audioSourceConfigs.any(
-      (AudioSourceConfig s) =>
-          s.kind == AudioSourceKind.localAudio &&
-          s.displayLabel == c.displayName,
-    );
+    final bool exists = audioSourceConfigs.any((AudioSourceConfig s) =>
+        s.kind == AudioSourceKind.localAudio &&
+        s.displayLabel == c.displayName);
     if (exists) return;
     if (!await c.dbFile.exists()) return;
-    final LocalAudioDbEntry entry = await importLocalAudioDbFile(
-      c.dbFile.path,
-      displayName: c.displayName,
-    );
+    final LocalAudioDbEntry entry =
+        await importLocalAudioDbFile(c.dbFile.path, displayName: c.displayName);
     final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
       label: c.displayName,
       path: entry.path,
@@ -9484,9 +9308,8 @@ class AppModel with ChangeNotifier {
             String message,
             bool success,
             bool record,
-            MineToastStatus status,
-          })
-          described = describeMineOutcome(outcome);
+            MineToastStatus status
+          }) described = describeMineOutcome(outcome);
           FushiToast.show(
             msg: described.message,
             severity: mineToastSeverity(described.status),
@@ -9633,12 +9456,10 @@ class AppModel with ChangeNotifier {
   int get mangaCoverCacheMaxAgeDays => prefsRepo.mangaCoverCacheMaxAgeDays;
   Future<void> setMangaCoverCacheMaxAgeDays(int value) async {
     await prefsRepo.setMangaCoverCacheMaxAgeDays(value);
-    _mihonManager?.coverCache.maxAge = Duration(
-      days: prefsRepo.mangaCoverCacheMaxAgeDays,
-    );
-    _animeMihonManager?.coverCache.maxAge = Duration(
-      days: prefsRepo.mangaCoverCacheMaxAgeDays,
-    );
+    _mihonManager?.coverCache.maxAge =
+        Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays);
+    _animeMihonManager?.coverCache.maxAge =
+        Duration(days: prefsRepo.mangaCoverCacheMaxAgeDays);
   }
 
   int get mangaZoomSensitivity => prefsRepo.mangaZoomSensitivity;
@@ -9851,8 +9672,8 @@ class _AppModelRemoteLookupService
     // overlay_bridge_handlers）制卡前都先把字节落进 Anki 媒体缓存，远程这条路此前漏了
     // 这一步 → repo 读不到缓存 → 外字永远退化成 alt 文本。与本地入口同一步骤。
     await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
@@ -9921,8 +9742,8 @@ class _AppModelRemoteLookupService
     )
     action,
   ) {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     return withMaterializedMiningContext<T>(
       payload,
       (String raw, AnkiMiningContext context) => action(repo, raw, context),
@@ -9935,18 +9756,17 @@ class _AppModelRemoteLookupService
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-    String modelName,
-  ) async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+      String modelName) async {
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     if (!repo.supportsNoteTypeEditing) return null;
     return repo.readNoteTypeDefinition(modelName);
   }
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     if (!repo.supportsNoteTypeEditing) return false;
     return repo.updateNoteTypeStyling(modelName, css);
   }
@@ -9956,8 +9776,8 @@ class _AppModelRemoteLookupService
     String modelName,
     List<AnkiCardTemplate> templates,
   ) async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     if (!repo.supportsNoteTypeEditing) return false;
     return repo.updateNoteTypeTemplates(modelName, templates);
   }
@@ -9968,15 +9788,15 @@ class _AppModelRemoteLookupService
 
   @override
   Future<bool> probeMediaMaintenance() async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     return repo.probeMediaMaintenance();
   }
 
   @override
   Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async {
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     if (!repo.supportsMediaMaintenance) return null;
     // 走本机 runner 而不是裸 repo：改写与删除真实发生在**这台机器**上，
     // 审计 journal 与「上次去重时刻」就该落在这里。客户端只发起、只看结果。
@@ -9990,8 +9810,8 @@ class _AppModelRemoteLookupService
   }) async {
     // TODO-1176：与 app 内 dictionary_page_mixin.checkDuplicate 走同一 repo.isDuplicate
     // 路径（AnkiConnect findNotes / AnkiDroid findDuplicateNotes），repo 内部已 fail-soft。
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     return repo.isDuplicate(expression, reading);
   }
 
@@ -10003,8 +9823,8 @@ class _AppModelRemoteLookupService
     // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
     // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
     try {
-      final BaseAnkiRepository repo = _appModel.platformServices
-          .createAnkiRepository();
+      final BaseAnkiRepository repo =
+          _appModel.platformServices.createAnkiRepository();
       return await repo.openWordInAnki(expression, reading);
     } catch (e, st) {
       ErrorLogService.instance.log('Anki.openWordInAnki.extension', e, st);
@@ -10016,8 +9836,8 @@ class _AppModelRemoteLookupService
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     // BUG-2190：同 [mineEntry]——外字字节先落缓存，三条沉浸分支最终都走 repo 渲染。
     await writeDictionaryMediaCache(payload.fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo = _appModel.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo =
+        _appModel.platformServices.createAnkiRepository();
     // 远端制卡（浏览器扩展的 YouTube / Netflix）语义上就是视频制卡，读同一条动图格式
     // 偏好。BUG-1330：这里过去既不传 format 给 resolve、也不传 animatedFormat 给引擎，
     // 用户拍板的 AVIF 默认在扩展这条链路上完全没落地（恒出 GIF）。
@@ -10042,8 +9862,7 @@ class _AppModelRemoteLookupService
         return remoteMineError(
           'Anki.mineImmersion.youtube',
           'YouTube 字幕时间窗无效（零/负长度），未制卡',
-          detail:
-              'clip window <= 0 '
+          detail: 'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
         );
       }
@@ -10103,17 +9922,13 @@ class _AppModelRemoteLookupService
         repo: repo,
         // GIF/音频抽取失败摘要写日志，便于排查「没 gif / 只有图片」。
         // TODO-1303：GIF/音频抽取摘要进诊断日志（可导出、不计入用户错误计数）。
-        onFailure: (String s) => ErrorLogService.instance.logDiagnostic(
-          'Anki.mineImmersion.youtube.extract',
-          s,
-        ),
+        onFailure: (String s) => ErrorLogService.instance
+            .logDiagnostic('Anki.mineImmersion.youtube.extract', s),
       );
       if (ytRes.aborted) {
-        return remoteMineError(
-          'Anki.mineImmersion.youtube',
-          'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
-          detail: ytRes.abortReason,
-        );
+        return remoteMineError('Anki.mineImmersion.youtube',
+            'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
+            detail: ytRes.abortReason);
       }
       return remoteMineResultFromOutcome(ytRes.outcome! as MineOutcome);
     }
@@ -10129,8 +9944,7 @@ class _AppModelRemoteLookupService
     // 解析**后随请求回传：番剧的 `pgc/player/web/playurl` 大会员内容必须带 SESSDATA，服务端是
     // 匿名请求拿不到（扩展侧 `fushiResolveBilibiliPgcPlayurl` 有 CORS 实测）。解析不到时扩展连
     // kind 都不发 → 根本进不到这个分支，行为与改动前逐字一致（照常出卡，无句子音频）。
-    final bool isBilibiliPgc =
-        payload.clipSourceKind == 'bilibili-pgc' &&
+    final bool isBilibiliPgc = payload.clipSourceKind == 'bilibili-pgc' &&
         payload.clipSourcePlayurlBody != null;
     if ((payload.clipSourceKind == 'bilibili' || isBilibiliPgc) &&
         payload.clipSourceId != null &&
@@ -10145,8 +9959,7 @@ class _AppModelRemoteLookupService
         return remoteMineError(
           'Anki.mineImmersion.bilibili',
           'bilibili 字幕时间窗无效（零/负长度），未制卡',
-          detail:
-              'clip window <= 0 '
+          detail: 'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
         );
       }
@@ -10203,9 +10016,8 @@ class _AppModelRemoteLookupService
           providedCoverBytes: payload.screenshotBytes,
           // 与 buildImmersionRequest 的非 Netflix 来源同名：媒体库里一眼看得出这张图
           // 是网页解码帧那条路来的。字节由扩展直接给、不经我们编码，恒 JPEG。
-          providedCoverName: payload.screenshotBytes == null
-              ? null
-              : 'web_shot.jpg',
+          providedCoverName:
+              payload.screenshotBytes == null ? null : 'web_shot.jpg',
           // 有真实音频源 → 缺音频即失败（与 YouTube、app 内一致），不出无声卡。
           requireAudio: true,
           // 这里**不**下发动图格式与「动图 vs 静态帧」偏好，不是漏了：这条路
@@ -10225,17 +10037,13 @@ class _AppModelRemoteLookupService
         compression: compression,
         tempDir: Directory.systemTemp.path,
         repo: repo,
-        onFailure: (String s) => ErrorLogService.instance.logDiagnostic(
-          'Anki.mineImmersion.bilibili.extract',
-          s,
-        ),
+        onFailure: (String s) => ErrorLogService.instance
+            .logDiagnostic('Anki.mineImmersion.bilibili.extract', s),
       );
       if (biRes.aborted) {
-        return remoteMineError(
-          'Anki.mineImmersion.bilibili',
-          'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
-          detail: biRes.abortReason,
-        );
+        return remoteMineError('Anki.mineImmersion.bilibili',
+            'bilibili 制卡失败：${biRes.abortReason ?? '媒体抽取失败'}',
+            detail: biRes.abortReason);
       }
       return remoteMineResultFromOutcome(biRes.outcome! as MineOutcome);
     }
@@ -10340,11 +10148,10 @@ class _AppModelRemoteLookupService
       // 是错的事实。
       final bool fromNetflix = immersionPayloadFromNetflix(payload);
       return remoteMineError(
-        fromNetflix ? 'Anki.mineImmersion.netflix' : 'Anki.mineImmersion.web',
-        '${fromNetflix ? 'Netflix' : '网页视频'} 制卡失败：'
-        '${res.abortReason ?? '媒体抽取失败'}',
-        detail: res.abortReason,
-      );
+          fromNetflix ? 'Anki.mineImmersion.netflix' : 'Anki.mineImmersion.web',
+          '${fromNetflix ? 'Netflix' : '网页视频'} 制卡失败：'
+          '${res.abortReason ?? '媒体抽取失败'}',
+          detail: res.abortReason);
     }
     return remoteMineResultFromOutcome(res.outcome! as MineOutcome);
   }
@@ -10398,11 +10205,12 @@ class _AppModelRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) => _searchDictionaryPopup(
-    term: term,
-    wildcards: wildcards,
-    maximumTerms: maximumTerms,
-  );
+  }) =>
+      _searchDictionaryPopup(
+        term: term,
+        wildcards: wildcards,
+        maximumTerms: maximumTerms,
+      );
 
   @override
   Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupWithTiming({
@@ -10410,12 +10218,13 @@ class _AppModelRemoteLookupService
     required bool wildcards,
     required int maximumTerms,
     required RemoteDictionaryPopupTiming timing,
-  }) => _searchDictionaryPopup(
-    term: term,
-    wildcards: wildcards,
-    maximumTerms: maximumTerms,
-    timing: timing,
-  );
+  }) =>
+      _searchDictionaryPopup(
+        term: term,
+        wildcards: wildcards,
+        maximumTerms: maximumTerms,
+        timing: timing,
+      );
 
   Future<RemoteDictionaryPopupLookup?> _searchDictionaryPopup({
     required String term,
@@ -10424,9 +10233,8 @@ class _AppModelRemoteLookupService
     RemoteDictionaryPopupTiming? timing,
   }) async {
     timing?.reset();
-    final Stopwatch? serviceWatch = timing == null
-        ? null
-        : (Stopwatch()..start());
+    final Stopwatch? serviceWatch =
+        timing == null ? null : (Stopwatch()..start());
     Stopwatch? startPhase() => timing == null ? null : (Stopwatch()..start());
     int finishPhase(Stopwatch? watch) {
       watch?.stop();
@@ -10454,8 +10262,8 @@ class _AppModelRemoteLookupService
         maxResults: maximumTerms,
       );
       final Stopwatch? popupCacheWatch = startPhase();
-      final DictionaryPopupCacheEntry? cachedPopup = _appModel.dictRepo
-          .getCachedPopupSearch(searchCacheKey);
+      final DictionaryPopupCacheEntry? cachedPopup =
+          _appModel.dictRepo.getCachedPopupSearch(searchCacheKey);
       if (timing != null) {
         timing.popupCacheMicros = finishPhase(popupCacheWatch);
       }
@@ -10470,8 +10278,8 @@ class _AppModelRemoteLookupService
       // App 内刚查过同一个词时直接复用完整结果；这里不复制 entries，也不触碰唯一可变的
       // scrollPosition。把紧凑快照写入专用 LRU，后续扩展请求不再依赖完整结果常驻。
       final Stopwatch? fullCacheWatch = startPhase();
-      final DictionarySearchResult? cachedFull = _appModel.dictRepo
-          .getCachedSearch(searchCacheKey);
+      final DictionarySearchResult? cachedFull =
+          _appModel.dictRepo.getCachedSearch(searchCacheKey);
       if (timing != null) {
         timing.fullCacheMicros = finishPhase(fullCacheWatch);
       }
@@ -10496,8 +10304,8 @@ class _AppModelRemoteLookupService
         maxResults: maximumTerms,
       );
       final Stopwatch? ffiCacheWatch = startPhase();
-      List<FushiLookupResult>? ffiResults = _appModel.dictRepo
-          .getCachedFfiLookup(ffiCacheKey);
+      List<FushiLookupResult>? ffiResults =
+          _appModel.dictRepo.getCachedFfiLookup(ffiCacheKey);
       if (timing != null) {
         timing.ffiCacheMicros = finishPhase(ffiCacheWatch);
       }
@@ -10587,24 +10395,22 @@ class _AppModelRemoteLookupService
     required String reading,
   }) async {
     final List<WordAudioCandidate> candidates =
-        (await listLookupAudioCandidates(
-          _appModel,
-          expression,
-          reading,
-        )).take(12).toList(growable: false);
+        (await listLookupAudioCandidates(_appModel, expression, reading))
+            .take(12)
+            .toList(growable: false);
     final List<RemoteAudioLookup?> audios =
         await Future.wait(<Future<RemoteAudioLookup?>>[
-          for (final WordAudioCandidate c in candidates)
-            remoteAudioLookupFromResolvedUrl(
-              c.ref,
-              downloadRemote: _downloadRemoteAudioBytes,
-              loadLocalFile: (String filePath) async {
-                final File audioFile = File(filePath);
-                if (!audioFile.existsSync()) return null;
-                return audioFile.readAsBytes();
-              },
-            ),
-        ]);
+      for (final WordAudioCandidate c in candidates)
+        remoteAudioLookupFromResolvedUrl(
+          c.ref,
+          downloadRemote: _downloadRemoteAudioBytes,
+          loadLocalFile: (String filePath) async {
+            final File audioFile = File(filePath);
+            if (!audioFile.existsSync()) return null;
+            return audioFile.readAsBytes();
+          },
+        ),
+    ]);
     return <RemoteAudioChoice>[
       for (int i = 0; i < candidates.length; i++)
         if (audios[i] != null)

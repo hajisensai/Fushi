@@ -36,11 +36,7 @@ void main() {
       methodBody(chrome, 'Future<void> _handleSelectionMenu('),
     );
     expect(body, contains('ModalRoute.of(context)'));
-    // dart format 会把这串 || 条件拆成一行一个，比对时去空白。
-    expect(
-      body.replaceAll(RegExp(r'\s+'), ''),
-      contains('_sideSheetOpen||_appearanceSheetOpen||'),
-    );
+    expect(body, contains('_sideSheetOpen || _appearanceSheetOpen ||'));
     expect(body, contains('_studyClockModalDepth > 0'));
     final int guard = body.indexOf('!owner.isCurrent');
     final int insert = body.indexOf('overlay.insert(entry)');
@@ -201,9 +197,7 @@ void main() {
       greaterThanOrEqualTo(0),
       reason: 'onSelectionMenu payload 必须带出两球各自的盒',
     );
-    final int dev = scripts.indexOf(
-      'payload.handlesRect = this.selectionHandlesRect();',
-    );
+    final int dev = scripts.indexOf('payload.handlesRect = this.selectionHandlesRect();');
     expect(dev, greaterThanOrEqualTo(0));
     expect(
       scripts.indexOf('handlesBoxes', dev),
