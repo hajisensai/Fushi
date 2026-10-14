@@ -93,6 +93,9 @@ import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dar
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/media/import/external_book.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
 import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
@@ -130,7 +133,14 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart'
     show Value;
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabaseFailureKind, ProfileMediaKind, VideoBookRow, VideoBooksCompanion;
+    show
+        BookFormat,
+        EpubBookRow,
+        FushiDatabaseFailureKind,
+        ProfileMediaKind,
+        VideoBookRow,
+        VideoBooksCompanion;
+import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
@@ -145,6 +155,10 @@ Color? _savedSplashColor;
 /// 把视频路径传进 `main(List<String> args)`；这里暂存，待 app 初始化完成后由
 /// [_FushiReaderAppState] 打开播放页并加入书架。null 表示本次启动不是外部打开视频。
 String? _pendingExternalVideoPath;
+
+/// 同上，「从 app 外用 Fushi 打开书 / 漫画」（`.epub` / `.pdf` / `.txt` / `.cbz` …，
+/// 见 [kExternalBookOpenExtensions]）。与视频互斥：同一个 argv 只落一边。
+String? _pendingExternalBookPath;
 bool _deferStartupFrame = false;
 
 /// BUG-1666：桌面端 `fushi://lookup?word=<词>` 深链（Anki 卡片上的词典交叉引用）
@@ -220,6 +234,11 @@ void main([List<String> args = const <String>[]]) {
     final String? videoArg = firstExternalVideoArg(args);
     if (videoArg != null && File(videoArg).existsSync()) {
       _pendingExternalVideoPath = videoArg;
+    } else {
+      final String? bookArg = firstExternalBookArg(args);
+      if (bookArg != null && File(bookArg).existsSync()) {
+        _pendingExternalBookPath = bookArg;
+      }
     }
     // BUG-1666：系统协议注册把 `fushi://lookup?word=<词>` 交给 `fushi.exe "%1"`，
     // 冷启动时该 URL 就在 argv 里；与视频路径互斥判定（URL 不会命中视频白名单）。
@@ -787,6 +806,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// 守卫：确保外部打开的视频只被打开一次（[build] 可能多次重建）。
   bool _externalVideoHandled = false;
+  bool _externalBookHandled = false;
 
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
@@ -1705,17 +1725,91 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       DesktopLookupService.instance.triggerLookup(lookupWord);
       return null;
     }
-    if (!isSupportedVideoFile(videoPath)) return null;
+    // 原生层（Windows WM_COPYDATA / Linux D-Bus）转交的是任意候选路径、不看扩展名：
+    // 视频之外，书 / 漫画文件也从这里进来（文件关联「打开方式」）。
+    final bool isVideo = isSupportedVideoFile(videoPath);
+    final bool isBook = !isVideo && isSupportedExternalBookFile(videoPath);
+    if (!isVideo && !isBook) return null;
     if (!File(videoPath).existsSync()) return null;
 
     if (!appModel.isInitialised || appModel.navigatorKey.currentState == null) {
       // 首实例尚未就绪：交还首启路径，build 完成后接手打开。
-      _pendingExternalVideoPath = videoPath;
-      _externalVideoHandled = false;
+      if (isBook) {
+        _pendingExternalBookPath = videoPath;
+        _externalBookHandled = false;
+      } else {
+        _pendingExternalVideoPath = videoPath;
+        _externalVideoHandled = false;
+      }
       if (mounted) setState(() {});
       return null;
     }
-    await _openExternalVideo(videoPath);
+    if (isBook) {
+      await _openExternalBook(videoPath);
+    } else {
+      await _openExternalVideo(videoPath);
+    }
+    return null;
+  }
+
+  /// 「从 app 外用 Fushi 打开书 / 漫画」：入库（已在库则复用那一本）→ 打开阅读器。
+  ///
+  /// 入库复用 `fushi_cli library import` 的 [LibraryCtlImporter]，不另写第二套分派：
+  /// 载体判定（书 / PDF / 文本 / 漫画、图片型 EPUB 归漫画）与导入对话框同一判据，
+  /// 模块门同一口径（书 / 漫画模块关着就不入库、给提示）。重复按 skip：同名书已在库
+  /// 时导入层抛取消、结果带回已有那本的 key，于是双击同一本书两次打开的是同一条
+  /// 记录、保留阅读进度，而不是在书架上多出 `X (2)`。
+  ///
+  /// 文件被**复制**进书库（与导入对话框一致），不像外部视频那样引用原路径——阅读器
+  /// 读的是解压后的书目录。
+  Future<void> _openExternalBook(String bookPath) async {
+    if (appModel.navigatorKey.currentState == null) return;
+    final LibraryCtlImportResult result = (await LibraryCtlImporter(
+      db: appModel.database,
+      galgameRepo: appModel.galgameRepo,
+      isKindEnabled: (LibraryCtlKind kind) =>
+          appModel.moduleVisibility.isEnabled(kind.module),
+      keepDuplicates: false,
+    ).importAll(<String>[bookPath]))
+        .single;
+    final String? bookKey = _externalBookKeyOf(result);
+    if (bookKey == null) {
+      debugPrint('[Fushi] external book open failed: '
+          '${result.status.name} ${result.message}');
+      final LibraryCtlKind? kind = result.kind;
+      FushiToast.show(
+        msg: kind != null && !appModel.moduleVisibility.isEnabled(kind.module)
+            ? t.module_disabled_hint
+            : t.external_book_open_failed(name: p.basename(bookPath)),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    final EpubBookRow? book = await appModel.database.getEpubBook(bookKey);
+    if (book == null || !mounted) return;
+    final MediaItem item = buildCollectionReaderMediaItem(
+      bookKey: bookKey,
+      title: book.title,
+      format: BookFormat.parseOrEpub(book.format),
+    );
+    await appModel.openMedia(
+      ref: ref,
+      mediaSource: item.getMediaSource(appModel: appModel),
+      item: item,
+      waitUntilClosed: false,
+    );
+  }
+
+  /// 导入结果里的书库 key（新入库或已在库），其余情况 null。
+  static String? _externalBookKeyOf(LibraryCtlImportResult result) {
+    if (result.status != LibraryCtlImportStatus.imported &&
+        result.status != LibraryCtlImportStatus.skipped) {
+      return null;
+    }
+    for (final String wire in result.keys) {
+      final LibraryCtlKey? key = LibraryCtlKey.tryParse(wire);
+      if (key != null && key.store == LibraryCtlStore.book) return key.id;
+    }
     return null;
   }
 
@@ -2491,6 +2585,15 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _pendingExternalVideoPath = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_openExternalVideo(videoPath));
+      });
+    }
+    // 同上，外部打开书 / 漫画。
+    if (!_externalBookHandled && _pendingExternalBookPath != null) {
+      _externalBookHandled = true;
+      final String bookPath = _pendingExternalBookPath!;
+      _pendingExternalBookPath = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_openExternalBook(bookPath));
       });
     }
 

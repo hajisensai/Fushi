@@ -7417,5 +7417,6 @@
   "video_setting_pause_ocr_scope_all": "所有视频",
   "video_setting_pause_ocr_scope_graphic": "仅图片字幕",
   "video_setting_pause_ocr_scope_off": "关闭",
-  "manga_import_selection_batch_hint": "已选中 $n 卷，将逐卷各导入为一本，书名取各自的文件名或文件夹名。"
+  "manga_import_selection_batch_hint": "已选中 $n 卷，将逐卷各导入为一本，书名取各自的文件名或文件夹名。",
+  "external_book_open_failed": "无法打开 $name，请改从书架导入。"
 }

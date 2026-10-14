@@ -30,6 +30,7 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/import/external_book.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
@@ -110,12 +111,19 @@ class LibraryCtlImporter {
     for (final String path in paths) {
       try {
         results.add(await _importOne(path, kind));
-      } on DuplicateImportCancelledException {
+      } on DuplicateImportCancelledException catch (e) {
+        // 带回已在库那一本的 key：外部打开（文件关联）据此直接打开它，CLI 也能拿它
+        // 接着 `library open`。书 / 漫画导入器才抛它，故只按书库反查。
+        final String? existing = await existingBookKeyForTitle(_db, e.title);
         results.add(
           LibraryCtlImportResult(
             path: path,
             status: LibraryCtlImportStatus.skipped,
             message: '同名条目已在库',
+            keys: <String>[
+              if (existing != null)
+                LibraryCtlKey(LibraryCtlStore.book, existing).wire,
+            ],
           ),
         );
       } catch (e) {

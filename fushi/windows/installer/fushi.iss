@@ -112,6 +112,9 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 ; 可选：把 Fushi 注册为视频文件的「打开方式」候选（不抢占系统默认播放器，
 ; 只在资源管理器右键「打开方式」里出现 Fushi，并支持拖视频到 fushi.exe）。
 Name: "videoassoc"; Description: "将 Fushi 加入视频文件的「打开方式」（mkv / mp4 等）"; GroupDescription: "文件关联："
+; 同上，书 / 漫画文件（扩展名与 lib/src/media/import/external_book.dart 的
+; kExternalBookOpenExtensions 逐一对应，守卫 test/media/import/external_book_test.dart）。
+Name: "bookassoc"; Description: "将 Fushi 加入书和漫画文件的「打开方式」（epub / pdf / txt / cbz 等）"; GroupDescription: "文件关联："
 
 [InstallDelete]
 ; BUG-1449：galgame helper 现在以**普通文件**随包发在 {app}\voice_hook\<arch>\，
@@ -159,8 +162,9 @@ Root: HKCU; Subkey: "Software\Classes\Fushi.Video"; ValueType: string; ValueData
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Fushi.Video\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: videoassoc
 
-; 让 fushi.exe 出现在「打开方式」应用列表，并声明它支持的视频扩展名。
-Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: videoassoc
+; 让 fushi.exe 出现在「打开方式」应用列表，并声明它支持的视频 / 书扩展名。
+; 这个键两个关联任务共用：只勾其中一个也必须注册它。
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Flags: uninsdeletekey; Tasks: videoassoc or bookassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mkv"; ValueData: ""; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mp4"; ValueData: ""; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".m4v"; ValueData: ""; Tasks: videoassoc
@@ -177,6 +181,25 @@ Root: HKCU; Subkey: "Software\Classes\.avi\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.webm\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\.mov\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
 Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Video"; ValueData: ""; Flags: uninsdeletevalue; Tasks: videoassoc
+
+; 书 / 漫画：ProgId Fushi.Book + SupportedTypes + 各扩展名 OpenWithProgids 追加候选（不改默认关联）。
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book"; ValueType: string; ValueData: "Fushi 书籍"; Flags: uninsdeletekey; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book\DefaultIcon"; ValueType: string; ValueData: "{app}\fushi.exe,0"; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Fushi.Book\shell\open\command"; ValueType: string; ValueData: """{app}\fushi.exe"" ""%1"""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".epub"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".txt"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cbz"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cbr"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".cb7"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\Applications\fushi.exe\SupportedTypes"; ValueType: string; ValueName: ".mokuro"; ValueData: ""; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.epub\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.txt\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cbz\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cbr\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.cb7\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
+Root: HKCU; Subkey: "Software\Classes\.mokuro\OpenWithProgids"; ValueType: string; ValueName: "Fushi.Book"; ValueData: ""; Flags: uninsdeletevalue; Tasks: bookassoc
 
 ; ── 旧 Hibiki 注册表迁移清理（无条件执行，不挂 videoassoc：用户这次没勾关联
 ;    也要把指向已删除 hibiki.exe 的死键清掉，否则「打开方式」里留一个坏条目）──
