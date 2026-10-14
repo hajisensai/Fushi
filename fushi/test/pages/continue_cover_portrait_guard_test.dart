@@ -22,20 +22,20 @@ void main() {
   const String collectionDetailPath =
       'lib/src/pages/implementations/media_collection_detail_page.dart';
 
-  test('首页「继续」卡：视频/游戏/远端封面走 PortraitCoverImage，无 16:9 宽度特例', () {
+  test('首页「继续」卡：视频/游戏/远端封面走 PortraitCoverImage，横竖跟着图走', () {
     final String source = File(dashboardPath).readAsStringSync();
     expect(
       source,
       isNot(contains('_kContinueVideoCoverWidth')),
-      reason: '「继续」卡的视频专属 16:9 宽度特例已消灭（三类条目统一竖版槽），'
-          '不得回退（BUG-1299）',
+      reason: '不得回退成按媒体类型写死的视频 16:9 宽度常量：横竖只看实际用到的那张图'
+          '（用户 2026-10-14「卡片比例跟着实际用到的图走」，BUG-3330）',
     );
-    // 本机封面（视频/游戏）的来源解析与渲染都收在 `_localCover` 一处
-    // （`resolveMediaCoverImage` + `PortraitCoverImage`）；远端封面来源不同（走
-    // `RemoteCoverImage`）故仍是独立渲染点。守卫因此分两段：渲染点必须接组件，
-    // 委托点必须真的委托过去——否则「_videoCover 自己又写一个裸 Image」会绕过守卫。
+    // 本机 / 远端视频封面与游戏封面的渲染都收在 `_coverImage` 一处
+    // （`PortraitCoverImage`，横槽 / 竖槽由探测出的真实宽高比决定）；远端书封面仍是
+    // 独立渲染点 `_remoteCover`。守卫分两段：渲染点必须接组件，委托点必须真的委托
+    // 过去——否则「某处自己又写一个裸 Image」会绕过守卫。
     for (final String fn in <String>[
-      'Widget _localCover(',
+      'Widget _coverImage(',
       'Widget _remoteCover(',
     ]) {
       final String body = _stripLineComments(_functionSource(source, fn));
@@ -50,15 +50,15 @@ void main() {
         reason: '$fn 不得再用 BoxFit.cover 硬裁——竖版海报会被裁成中间一条',
       );
     }
-    for (final String fn in <String>[
-      'Widget _videoCover(',
-      'Widget _gameCover(',
+    for (final (String fn, String delegate) in <(String, String)>[
+      ('Widget _localCover(', '_coverImage('),
+      ('Widget _gameCover(', '_localCover('),
     ]) {
       final String body = _stripLineComments(_functionSource(source, fn));
       expect(
         body,
-        contains('_localCover('),
-        reason: '$fn 必须委托给 _localCover（统一来源解析 + 槽向自适应渲染），'
+        contains(delegate),
+        reason: '$fn 必须委托给 $delegate（统一来源解析 + 槽向自适应渲染），'
             '不得自己另写一套封面渲染（BUG-1299）',
       );
       // 判据必须用带标识符边界的匹配，不能用裸子串 'Image('：
@@ -70,10 +70,17 @@ void main() {
       expect(
         containsIdentifierCall(body, 'Image'),
         isFalse,
-        reason: '$fn 不得绕过 _localCover 直接构造 Image'
+        reason: '$fn 不得绕过 _coverImage 直接构造 Image'
             '（含 Image.file / Image.memory / Image.network / Image.asset）',
       );
     }
+    // 视频分支：封面走 `_coverImage`，横竖由同一 provider 的真实宽高比探测决定。
+    final String cover = _stripLineComments(
+      _functionSource(source, 'Widget _continueCover('),
+    );
+    expect(cover, contains('_coverImage('));
+    expect(containsIdentifierCall(cover, 'Image'), isFalse);
+    expect(source, contains('HomeCoverOrientationProbe('));
   });
 
   test('视频首页横滚行/hero：封面都走槽向自适应组件（BUG-1299 血缘）', () {
