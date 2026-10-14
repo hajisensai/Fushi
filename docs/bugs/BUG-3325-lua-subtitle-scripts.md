@@ -25,3 +25,4 @@
   - mpv CLI 实测（mpv 0.41，`--sid=no --sub-visibility=no` 起播后 `sub-add … select` 挂镜像）：`sub-visibility=no` 下 `sub-text` 照常推送，典型字幕结束暂停脚本暂停在 3.00 s / 5.48 s，对应句尾 3.00 / 5.50。
   - 能力边界：写本条时 Windows 与 Android 随包 libmpv 都没编 Lua（`-Dlua=disabled`，见上方「范围缺口」与 BUG-2032；Windows 已由 `-lua1` 归档补上）；上面的 mpv CLI 实测用的是独立 mpv，不是随包 libmpv。依赖按键绑定的脚本仍无处触发。
   - 用户真正要的「字幕结束自动暂停」Fushi 早已内置：视频设置 › 字幕 ›「字幕暂停播放模式」（`video.playback.pause_at_subtitle_end`），不需要脚本，全平台可用。
+  - 2026-10-15 所有者要求删除「字幕暂停播放模式」（设置项、`VideoAsbplayerConfig.pauseAtSubtitleEnd`、controller 全局开关一并移除；查词浮层「重播本句」的一次性句尾停保留）。此后字幕结束自动暂停只能靠用户自挂 Lua 脚本（即本条的镜像字幕轨路径）。

@@ -2,8 +2,7 @@
 //
 // 与「重播本句」（video_player_replay_cue_test.dart）同一套生命周期：用户主动 seek /
 // 换片即作废；但终点是任意毫秒（含首尾留白、起止微调），不是 cue 边界。另两条易回归的
-// 线：刚 seek 回起点时滞后的旧位置不能被当成「已到终点」；试听期间全局「字幕结束暂停」
-// 不得在第一句句尾把试听截断。
+// 线：刚 seek 回起点时滞后的旧位置不能被当成「已到终点」；区间内跨过的 cue 句尾不停。
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
@@ -32,8 +31,7 @@ void main() {
         _cue(1, 2100, 3000),
         _cue(2, 3100, 4000),
       ]);
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: false,
+      c.debugSetSubtitleEndHoldHooksForTesting(
         isPlaying: () => true,
         onPause: () async => actions.add('pause'),
         onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
@@ -75,26 +73,6 @@ void main() {
 
       c.debugUpdateCueForPosition(1010);
       c.debugUpdateCueForPosition(2510);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>['play', 'pause']);
-    });
-
-    test('试听期间全局「字幕结束暂停」不在句尾截断试听', () async {
-      c.debugSetPauseAtSubtitleEndForTesting(
-        enabled: true,
-        isPlaying: () => true,
-        onPause: () async => actions.add('pause'),
-        onSeek: (int positionMs) async => actions.add('seek:$positionMs'),
-        onPlay: () async => actions.add('play'),
-      );
-      await c.playRangeMs(950, 3200);
-      c.debugUpdateCueForPosition(1500);
-      c.debugUpdateCueForPosition(2050);
-      c.debugUpdateCueForPosition(2500);
-      await Future<void>.delayed(Duration.zero);
-      expect(actions, <String>['play'], reason: '第一句句尾不该停');
-
-      c.debugUpdateCueForPosition(3210);
       await Future<void>.delayed(Duration.zero);
       expect(actions, <String>['play', 'pause']);
     });
