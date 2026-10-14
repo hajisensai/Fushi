@@ -89,6 +89,29 @@ void main() {
     );
   });
 
+  testWidgets('phone manga crop 360 en', (WidgetTester tester) async {
+    LocaleSettings.setLocale(AppLocale.en);
+    addTearDown(() => LocaleSettings.setLocale(AppLocale.zhCn));
+    final Uint8List page = (await tester.runAsync(_mangaPagePng))!;
+    final FakeAdvancedMiningHost host = FakeAdvancedMiningHost();
+    await _capture(
+      tester,
+      File('${out.path}/advanced_mining_phone_crop_360_en.png'),
+      size: const Size(360, 780),
+      platform: TargetPlatform.android,
+      brightness: Brightness.dark,
+      caps: host.capabilities(
+        deck: host.deck(),
+        sentence: host.sentence(),
+        manga: host.manga(pageBytes: page, modelAvailable: false),
+      ),
+      settle: () async {
+        await tester.tap(find.text(t.popup_advanced_mining_image_section));
+        await tester.pumpAndSettle();
+      },
+    );
+  });
+
   testWidgets('phone manga crop', (WidgetTester tester) async {
     final Uint8List page = (await tester.runAsync(_mangaPagePng))!;
     final FakeAdvancedMiningHost host = FakeAdvancedMiningHost();

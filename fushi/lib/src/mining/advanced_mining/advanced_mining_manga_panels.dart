@@ -7,7 +7,11 @@ import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_geometry.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
-import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
+import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart'
+    show
+        FushiPillSegmentedButton,
+        fushiPillSegmentSelectedFill,
+        fushiPillSegmentSelectedForeground;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -466,7 +470,11 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
               onPressed: () => _close(keep: false),
               icon: const FushiIcon(FushiIcons.close),
             ),
-            title: Text(t.popup_advanced_mining_crop_page_title),
+            // 窄屏英文「Select image area」放不下时缩小而不是省略号。
+            title: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(t.popup_advanced_mining_crop_page_title),
+            ),
             actions: <Widget>[
               Padding(
                 padding: const EdgeInsetsDirectional.only(end: 12),
@@ -493,21 +501,10 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  FushiPillSegmentedButton<MangaCropChoice>(
-                    segments: <ButtonSegment<MangaCropChoice>>[
-                      for (final MangaCropChoice choice in segments)
-                        ButtonSegment<MangaCropChoice>(
-                          value: choice,
-                          label: Text(mangaCropChoiceLabel(choice)),
-                        ),
-                    ],
-                    selected: <MangaCropChoice>{
-                      if (segments.contains(c.cropChoice)) c.cropChoice,
-                    },
-                    emptySelectionAllowed: true,
-                    onSelectionChanged: (Set<MangaCropChoice> picked) {
-                      if (picked.isNotEmpty) c.selectCropChoice(picked.first);
-                    },
+                  MangaCropChoiceSegments(
+                    choices: segments,
+                    selected: c.cropChoice,
+                    onSelected: c.locked ? null : c.selectCropChoice,
                   ),
                 ],
               ),
@@ -517,4 +514,112 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
       },
     ),
   );
+}
+
+/// 手机全屏框选页底部的取景分段（交互稿 ④）。
+///
+/// 不直接用 [FushiPillSegmentedButton]：它的段按最宽一段等宽、左右各留 16 内边距，
+/// 文字放不下就省略号——四段中文在 390 宽已截成「文字周…」，英文在 360 宽更紧。
+/// 这里轨道撑满整行、段内边距收到 6，标签放不下时整体等比缩小（FittedBox
+/// scaleDown），任何一段都不出现省略号。外观（轨道色、选中 primary 胶囊、按压
+/// 状态层与切换动画）与共享分段同源。
+class MangaCropChoiceSegments extends StatelessWidget {
+  const MangaCropChoiceSegments({
+    super.key,
+    required this.choices,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  /// 段高与轨道内边距：与共享胶囊分段同一几何。
+  static const double segmentHeight = FushiPillSegmentedButton.segmentHeight;
+  static const double trackPadding = FushiPillSegmentedButton.trackPadding;
+
+  /// 段内左右留白（共享分段是 16）。
+  static const double labelPadding = 6;
+
+  final List<MangaCropChoice> choices;
+  final MangaCropChoice selected;
+
+  /// null = 锁住（与宿主往返中）。
+  final ValueChanged<MangaCropChoice>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final TextStyle base = (theme.textTheme.labelLarge ?? const TextStyle())
+        .copyWith(height: 1.2);
+    Widget segment(MangaCropChoice choice) {
+      final bool on = choice == selected;
+      final bool enabled = onSelected != null;
+      final Color fg = !enabled
+          ? cs.onSurface.withValues(alpha: 0.38)
+          : on
+          ? fushiPillSegmentSelectedForeground(cs, eink: eink)
+          : cs.onSurfaceVariant;
+      const ShapeBorder pill = StadiumBorder();
+      return Semantics(
+        button: true,
+        selected: on,
+        enabled: enabled,
+        inMutuallyExclusiveGroup: true,
+        child: Material(
+          type: MaterialType.transparency,
+          shape: pill,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            customBorder: pill,
+            onTap: enabled ? () => onSelected!(choice) : null,
+            child: AnimatedContainer(
+              duration: duration,
+              curve: FushiMotion.standard,
+              height: segmentHeight,
+              padding: const EdgeInsets.symmetric(horizontal: labelPadding),
+              alignment: Alignment.center,
+              decoration: ShapeDecoration(
+                color: fushiPillSegmentSelectedFill(
+                  cs,
+                  eink: eink,
+                ).withValues(alpha: on ? 1 : 0),
+                shape: pill,
+              ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  mangaCropChoiceLabel(choice),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: base.copyWith(
+                    color: fg,
+                    fontWeight: on ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: FushiDesignTokens.of(context).surfaces.search,
+        shape: StadiumBorder(
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(trackPadding),
+        child: Row(
+          children: <Widget>[
+            for (final MangaCropChoice choice in choices)
+              Expanded(child: segment(choice)),
+          ],
+        ),
+      ),
+    );
+  }
 }

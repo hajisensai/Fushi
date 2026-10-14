@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -195,6 +197,52 @@ void main() {
       await confirm(tester);
       expect(host.confirms.single.crop!.isWholePage, isTrue);
     });
+
+    for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
+      testWidgets('360 宽全屏框选：取景分段文字完整、不溢出（${locale.name}）', (
+        WidgetTester tester,
+      ) async {
+        LocaleSettings.setLocale(locale);
+        addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+        await open(
+          tester,
+          host.mangaPage(modelAvailable: false),
+          size: const Size(360, 780),
+        );
+        await tester.tap(find.text(t.popup_advanced_mining_image_section));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '不许有 RenderFlex 溢出');
+        final Finder bar = find.byType(MangaCropChoiceSegments);
+        expect(bar, findsOneWidget);
+        for (final String label in <String>[
+          t.popup_advanced_mining_crop_whole_page,
+          t.popup_advanced_mining_crop_text_area,
+          t.popup_advanced_mining_crop_custom,
+          t.popup_advanced_mining_image_none,
+        ]) {
+          final Finder text = find.descendant(
+            of: bar,
+            matching: find.text(label),
+          );
+          expect(text, findsOneWidget, reason: '「$label」整段文字原样渲染');
+          final RenderParagraph p = tester.renderObject<RenderParagraph>(text);
+          expect(p.didExceedMaxLines, isFalse, reason: '「$label」不得被截断');
+          // FittedBox 缩小后，文字画出来的范围必须落在自己那一段里。
+          final Rect drawn = tester.getRect(text);
+          final Rect seg = tester.getRect(
+            find
+                .ancestor(of: text, matching: find.byType(AnimatedContainer))
+                .first,
+          );
+          expect(drawn.left, greaterThanOrEqualTo(seg.left - 0.5));
+          expect(drawn.right, lessThanOrEqualTo(seg.right + 0.5));
+        }
+        expect(
+          find.descendant(of: bar, matching: find.textContaining('…')),
+          findsNothing,
+        );
+      });
+    }
 
     testWidgets('BUG-922：矮窗里句子卡仍有真实高度（整块滚动，不塌）', (WidgetTester tester) async {
       host.prevCount = 3;
