@@ -500,7 +500,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_download'),
-          enabled: remoteKeys.isNotEmpty,
+          // BUG-3328：勾中的合集里有云端成员也可下载（合集一键全部下载）。
+          enabled: remoteKeys.isNotEmpty ||
+              _selectedCollectionRemoteMembers.isNotEmpty,
           onTap: _batchDownloadSelectedRemote,
           icon: Icons.download_outlined,
           tooltip: t.remote_book_download,

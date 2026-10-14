@@ -118,6 +118,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
+import 'package:fushi/src/sync/remote_download_temp_file.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
@@ -294,6 +295,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 当前渲染成合集格子的合集 id 列表（[_buildBodyWithSrtBooks] 每帧写入），供
   /// 全选 / 反选把可见合集纳入整选集。
   List<int> _visibleCollectionIds = const <int>[];
+
+  /// 合集格子里折进去的远端占位成员（合集 id → 成员槽，组内序），与
+  /// [_visibleCollectionIds] 同帧、同一份 shelfGroups 推出（BUG-3328）：多选里勾了
+  /// 合集再点「下载」，下的就是这个合集格子里画着的那些云端成员——此前批量下载只认
+  /// 散卡远端键，只勾合集时按钮恒灰。
+  Map<int, List<_ShelfBookSlot>> _remoteMembersByCollection =
+      const <int, List<_ShelfBookSlot>>{};
   List<MediaItem> _visibleEpubBooks = const [];
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
@@ -768,6 +776,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         setState(() => _selection.updateRangeDrag(slot)),
                     onDragEnd: () => setState(_selection.endRangeDrag),
                     child: books.when(
+                      // BUG-3328：书集合一变（下载 / 导入落库）fushiBooksProvider
+                      // 就因依赖变化重算，AsyncValue 进 reload 态。默认
+                      // skipLoadingOnReload=false 会把整个网格换成转圈再换回来——
+                      // CustomScrollView 被卸掉重建，滚动位置归零跳回顶部，卡片
+                      // 错峰进场再放一遍（用户：「整个书架刷新回流重排、回到顶部」）。
+                      // 重算期间留着旧数据，新数据到了原地替换对应条目。
+                      skipLoadingOnReload: true,
                       data: (bookList) {
                         _batchAudiobookInfoFuture ??= _mangaOnly
                             ? Future<Map<String, _AudiobookInfo>>.value(
@@ -1811,6 +1826,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
         if (g.collection != null) g.collection!.id,
     ];
+    _remoteMembersByCollection = <int, List<_ShelfBookSlot>>{
+      for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
+        if (g.collection != null)
+          g.collection!.id: <_ShelfBookSlot>[
+            for (final CollectionOrderingItem<_ShelfBookSlot> it in g.items)
+              if (it.payload.remote != null || it.payload.remoteSrt != null)
+                it.payload,
+          ],
+    };
     // Shift 区间选 / 长按扫选的顺序真值：与上面的合集顺序取自同一份 shelfGroups，
     // 故与用户屏幕上的排列逐项一致（排序 / 搜索 / 标签筛选都已作用其上）。散卡组
     // `collection == null` 且 items 长度恒 1；远端占位卡自 BUG-2458 起同样入序
