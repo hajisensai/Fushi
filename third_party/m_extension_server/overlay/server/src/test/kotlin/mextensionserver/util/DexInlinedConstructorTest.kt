@@ -1,11 +1,14 @@
 package mextensionserver.util
 
+import com.googlecode.d2j.DexConstants
 import com.googlecode.d2j.DexLabel
 import com.googlecode.d2j.Field
 import com.googlecode.d2j.Method
 import com.googlecode.d2j.dex.Dex2jar
 import com.googlecode.d2j.dex.writer.DexFileWriter
 import com.googlecode.d2j.node.DexCodeNode
+import com.googlecode.d2j.node.DexFileNode
+import com.googlecode.d2j.node.insn.MethodStmtNode
 import com.googlecode.d2j.reader.MultiDexFileReader
 import com.googlecode.d2j.reader.Op
 import eu.kanade.tachiyomi.source.model.Filter
@@ -199,6 +202,112 @@ class DexInlinedConstructorTest {
         val code = allocationCode { visitLabel(handler) }
         code.visitTryCatch(start, end, arrayOf(handler), arrayOf("Ljava/lang/Throwable;"))
         assertTrue(DexAllocationRepair.readConstructorEvidence(code).isEmpty())
+    }
+
+    /**
+     * BUG-3364 (SpeedBinb `u0.intercept`): `a0 extends t0`, `y extends t0`, neither
+     * declares a constructor, and R8 inlined both `a0.<init>` and `t0.<init>`, so the
+     * DEX allocates each subclass and invokes `Object.<init>()` on it. dex2jar used to
+     * emit `NEW Object` twice and `putfield a0.a` then failed verification.
+     */
+    @Test
+    fun `two erased constructor layers are rebuilt for sibling subclasses of one grandparent`() {
+        val dex = Files.createTempFile("grandparent-constructor", ".dex")
+        val jar = Files.createTempFile("grandparent-constructor", ".jar")
+        try {
+            Files.write(dex, grandparentDex(baseConstructorSetsField = false))
+            PackageTools.dex2jar(dex.toFile(), jar.toFile())
+            URLClassLoader(arrayOf(jar.toUri().toURL()), javaClass.classLoader).use { loader ->
+                // initialize = true links Factory, i.e. runs the bytecode verifier on create.
+                val factory = Class.forName("Factory", true, loader)
+                val create = factory.getMethod("create", Boolean::class.javaPrimitiveType)
+                val first = create.invoke(null, true)
+                assertEquals("DescramblerA", first.javaClass.name)
+                assertEquals(5, first.javaClass.getField("a").getInt(first))
+                assertEquals("DescramblerB", create.invoke(null, false).javaClass.name)
+                assertEquals("Base", first.javaClass.superclass.name)
+                assertEquals(1, loader.loadClass("Base").declaredConstructors.size)
+            }
+        } finally {
+            Files.deleteIfExists(dex)
+            Files.deleteIfExists(jar)
+        }
+    }
+
+    @Test
+    fun `intermediate constructor with its own work is never chained into`() {
+        val fileNode = DexFileNode()
+        MultiDexFileReader.open(grandparentDex(baseConstructorSetsField = true)).accept(fileNode)
+        DexAllocationRepair.restoreConstructorOwners(fileNode)
+        val classes = fileNode.clzs.associateBy { it.className }
+        listOf("LDescramblerA;", "LDescramblerB;").forEach { name ->
+            assertTrue(classes.getValue(name).methods.isNullOrEmpty(), "$name gained a constructor")
+        }
+        val invokes =
+            classes
+                .getValue("LFactory;")
+                .methods
+                .single { it.method.name == "create" }
+                .codeNode.stmts
+                .filterIsInstance<MethodStmtNode>()
+        assertEquals(listOf("Ljava/lang/Object;", "Ljava/lang/Object;"), invokes.map { it.method.owner })
+    }
+
+    /**
+     * `abstract Base` with `Base.<init>() { super(); [this.marker = 7] }`, two
+     * constructor-less final subclasses, and `Factory.create(Z)Base` allocating
+     * either one with `Object.<init>()` invoked directly on the new register.
+     */
+    private fun grandparentDex(baseConstructorSetsField: Boolean): ByteArray {
+        val base = "LBase;"
+        val objectInit = Method("Ljava/lang/Object;", "<init>", emptyArray(), "V")
+        val marker = Field(base, "marker", "I")
+        val writer = DexFileWriter()
+        writer.visit(Opcodes.ACC_PUBLIC or Opcodes.ACC_ABSTRACT, base, "Ljava/lang/Object;", null).apply {
+            visitField(Opcodes.ACC_PUBLIC, marker, null)?.visitEnd()
+            visitMethod(Opcodes.ACC_PUBLIC or DexConstants.ACC_CONSTRUCTOR, Method(base, "<init>", emptyArray(), "V")).apply {
+                visitCode().apply {
+                    visitRegister(2)
+                    visitMethodStmt(Op.INVOKE_DIRECT, intArrayOf(1), objectInit)
+                    if (baseConstructorSetsField) {
+                        visitConstStmt(Op.CONST_4, 0, 7)
+                        visitFieldStmt(Op.IPUT, 0, 1, marker)
+                    }
+                    visitStmt0R(Op.RETURN_VOID)
+                    visitEnd()
+                }
+                visitEnd()
+            }
+            visitEnd()
+        }
+        val fieldA = Field("LDescramblerA;", "a", "I")
+        writer.visit(Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL, "LDescramblerA;", base, null).apply {
+            visitField(Opcodes.ACC_PUBLIC, fieldA, null)?.visitEnd()
+            visitEnd()
+        }
+        writer.visit(Opcodes.ACC_PUBLIC or Opcodes.ACC_FINAL, "LDescramblerB;", base, null).visitEnd()
+        val factory = writer.visit(Opcodes.ACC_PUBLIC, "LFactory;", "Ljava/lang/Object;", null)
+        factory.visitMethod(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, Method("LFactory;", "create", arrayOf("Z"), base)).apply {
+            visitCode().apply {
+                visitRegister(3)
+                val other = DexLabel()
+                visitTypeStmt(Op.NEW_INSTANCE, 0, -1, "LDescramblerA;")
+                visitMethodStmt(Op.INVOKE_DIRECT, intArrayOf(0), objectInit)
+                visitConstStmt(Op.CONST_4, 1, 5)
+                visitFieldStmt(Op.IPUT, 1, 0, fieldA)
+                visitJumpStmt(Op.IF_EQZ, 2, -1, other)
+                visitStmt1R(Op.RETURN_OBJECT, 0)
+                visitLabel(other)
+                visitTypeStmt(Op.NEW_INSTANCE, 0, -1, "LDescramblerB;")
+                visitMethodStmt(Op.INVOKE_DIRECT, intArrayOf(0), objectInit)
+                visitStmt1R(Op.RETURN_OBJECT, 0)
+                visitEnd()
+            }
+            visitEnd()
+        }
+        factory.visitEnd()
+        writer.visitEnd()
+        return writer.toByteArray()
     }
 
     private fun allocationCode(intervening: DexCodeNode.() -> Unit): DexCodeNode =
