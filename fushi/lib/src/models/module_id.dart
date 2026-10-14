@@ -151,6 +151,49 @@ enum ModuleId {
   /// 全部模块的持久化键集合。备份/Profile 的排除名单按它构造，避免再手抄一份。
   static Set<String> get allPrefKeys =>
       ModuleId.values.map((ModuleId id) => id.prefKey).toSet();
+
+  /// 用户排过的模块顺序（设置 → 外观 → 功能模块 里拖拽排序；底栏 / 侧栏 tab
+  /// 按它排）。值是逗号分隔的 [prefKey]——用冻结的持久化键而不是 `.name`，枚举
+  /// 改名（如 downloads → browse）不会把用户排好的顺序打乱。
+  static const String orderPrefKey = 'module_nav_order';
+
+  /// 「功能模块」全部设备本地键：开关 + 顺序。与开关同理，顺序描述的是**这台
+  /// 设备**的入口布局，不随 Profile 走、不进备份（见 `profile_keys.dart` 与
+  /// `backup_service.dart` 的排除名单）。
+  static Set<String> get devicePrefKeys => <String>{
+    ...allPrefKeys,
+    orderPrefKey,
+  };
+
+  /// 解析 [orderPrefKey] 的存储值。未知键（对端新模块 / 已删模块）与重复项直接
+  /// 跳过，**绝不抛异常**；结果只是用户意愿，补全见 [orderModules]。
+  static List<ModuleId> parseOrder(String? stored) {
+    if (stored == null || stored.isEmpty) return const <ModuleId>[];
+    final List<ModuleId> out = <ModuleId>[];
+    for (final String key in stored.split(',')) {
+      final ModuleId? id = tryParsePrefKey(key.trim());
+      if (id != null && !out.contains(id)) out.add(id);
+    }
+    return out;
+  }
+
+  /// [parseOrder] 的逆。
+  static String encodeOrder(Iterable<ModuleId> order) =>
+      order.map((ModuleId id) => id.prefKey).join(',');
+}
+
+/// 把用户排过的顺序补全成**覆盖全部 [ModuleId] 的完整序列**：[preferred] 去重后
+/// 打头，没排过的模块（新加的模块、旧版从没排过）按枚举顺序接在后面。空列表 =
+/// 纯枚举顺序，即排序功能上线前的底栏顺序。
+List<ModuleId> orderModules(Iterable<ModuleId> preferred) {
+  final List<ModuleId> out = <ModuleId>[];
+  for (final ModuleId id in preferred) {
+    if (!out.contains(id)) out.add(id);
+  }
+  for (final ModuleId id in ModuleId.values) {
+    if (!out.contains(id)) out.add(id);
+  }
+  return out;
 }
 
 /// [ModuleId.games] 在当前平台上的形态。
@@ -177,10 +220,18 @@ enum GamesModuleForm {
 /// 全 app 的门控一律读它，不再各自组合 pref + 平台。
 @immutable
 class ModuleVisibility {
-  const ModuleVisibility(this.enabled);
+  const ModuleVisibility(this.enabled, {this.order = const <ModuleId>[]});
 
   /// 当前可见的模块集合。
   final Set<ModuleId> enabled;
+
+  /// 用户排过的模块顺序（只是意愿：可含平台上不存在或被关掉的模块，也可不全）。
+  /// 消费端读补全后的 [ordered]，不直接读本字段。
+  final List<ModuleId> order;
+
+  /// 全部模块的展示顺序（[order] 打头，余下按枚举顺序），底栏 / 侧栏 tab 顺序由
+  /// 它导出（`homeActiveTabs`）。
+  List<ModuleId> get ordered => orderModules(order);
 
   /// 全部模块都可见（平台可用的那些）。仅供测试与默认值使用。
   factory ModuleVisibility.all({
@@ -208,6 +259,7 @@ class ModuleVisibility {
     required bool isDesktop,
     required bool isIOS,
     required bool isAndroid,
+    List<ModuleId> order = const <ModuleId>[],
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
@@ -222,7 +274,7 @@ class ModuleVisibility {
       if (!prefOf(id)) continue;
       enabled.add(id);
     }
-    return ModuleVisibility(enabled);
+    return ModuleVisibility(enabled, order: order);
   }
 
   bool isEnabled(ModuleId id) => enabled.contains(id);
@@ -233,10 +285,13 @@ class ModuleVisibility {
 
   @override
   bool operator ==(Object other) =>
-      other is ModuleVisibility && setEquals(other.enabled, enabled);
+      other is ModuleVisibility &&
+      setEquals(other.enabled, enabled) &&
+      listEquals(other.ordered, ordered);
 
   @override
-  int get hashCode => Object.hashAllUnordered(enabled);
+  int get hashCode =>
+      Object.hash(Object.hashAllUnordered(enabled), Object.hashAll(ordered));
 
   @override
   String toString() =>

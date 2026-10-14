@@ -1541,7 +1541,7 @@ class BackupService {
   /// `_applyPreservedConfig` 在导入后写回，两侧绝不各写一份清单。
   static bool _isDeviceLocalPrefKey(String key) =>
       PrefRedactionPolicy.isDeviceLocalOrCredential(key) ||
-      ModuleId.allPrefKeys.contains(key);
+      ModuleId.devicePrefKeys.contains(key);
 
   /// Strips device-local config and credentials from the standalone DB copy in
   /// [dbDirectory] before it leaves the device. Opened via [FushiDatabase]

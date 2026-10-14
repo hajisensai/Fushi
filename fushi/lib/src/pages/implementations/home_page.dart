@@ -146,35 +146,25 @@ import 'package:fushi_core/fushi_core.dart'
 
 export 'package:fushi/src/models/home_tab.dart';
 
-/// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
-/// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
-/// 位置固定紧跟 video 之后（用户要求「底栏里把游戏移动到视频后面」，与书/漫画/视频/游戏
-/// 四类媒体入口连成一段）。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
-/// [HomePage]。底栏/侧栏的位置索引由此列表导出。
+/// 纯函数：给定模块可见性快照，返回可见顶层 tab 的**视觉顺序**。底栏/侧栏的位置
+/// 索引由此列表导出，提取成顶层函数便于单测，不必实例化整个 [HomePage]。
+///
+/// 顺序是**用户自己排的**（设置 → 外观 → 功能模块 拖拽排序，存在
+/// [ModuleVisibility.order]）；没排过时按 [ModuleId] 枚举顺序，即首页 → 书架 →
+/// 漫画 → 视频 → 游戏 → 浏览 → 查词 → 浏览器扩展（与排序功能上线前写死的顺序
+/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在
+/// 且恒在最后，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它，也不参与排序）。
 ///
 /// 形参是**一个** [ModuleVisibility] 而不是一串 bool：此前这里收七个具名 bool，
 /// 调用方（`_activeTabs()` 与 main.dart 的 macOS 根侧栏）各手抄一份实参表，两份
 /// 已经漂移——macOS 那份漏传 `gamesEnabled`，靠缺省 false 恰好蒙对，注释还把漏写
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
-/// 一次，两个调用点各减七行，也不可能再漏配。
+/// 一次，顺序也随快照一起走，所有调用点不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  // 首页 2026-10-09 起可关（[ModuleId.home]，用户反馈「首页没用但偏偏不给关」）。
-  if (visibility.isEnabled(ModuleId.home)) HomeTab.home,
-  // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
-  // 设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它）。
-  if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
-  if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
-  if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
-  if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
-  // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
-  // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
-  // 视频/游戏之后。
-  if (visibility.isEnabled(ModuleId.browse)) HomeTab.browse,
-  if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
-  // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
-  // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
-  // [ModuleId.availableOn]），位置紧邻设置之前。
-  if (visibility.isEnabled(ModuleId.browserExtension)) HomeTab.browserExtension,
+  for (final ModuleId module in visibility.ordered)
+    if (homeTabOfModule(module) case final HomeTab tab
+        when visibility.isEnabled(module))
+      tab,
   HomeTab.settings,
 ];
 
@@ -735,8 +725,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed =
-        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    final bool confirmed = await showAnkiMediaDedupPlanDialog(
+      context,
+      plan,
+      offerDelete: true,
+    );
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -2043,8 +2036,7 @@ class _HomePageState extends BasePageState<HomePage>
               final bool towardEnd = index > visualIndex;
               _selectTabFromNav(tab);
               _moduleSwipe.playEnter(
-                fromScreenRight:
-                    Directionality.of(context) == TextDirection.ltr
+                fromScreenRight: Directionality.of(context) == TextDirection.ltr
                     ? towardEnd
                     : !towardEnd,
               );

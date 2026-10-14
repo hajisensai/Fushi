@@ -7877,6 +7877,16 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序，见 [ModuleVisibility.order]）。
+  /// 偏好仓库没装配好时按枚举顺序，理由同 [moduleEnabled]。
+  List<ModuleId> get moduleOrder =>
+      isPreferencesReady ? prefsRepo.moduleOrder : const <ModuleId>[];
+
+  Future<void> setModuleOrder(List<ModuleId> order) async {
+    await prefsRepo.setModuleOrder(order);
+    notifyListeners();
+  }
+
   /// 「此刻哪些模块可见」——pref 真值与平台判据的**唯一合成**。
   ///
   /// 全 app 的门控一律读它。此前底栏与 macOS 侧栏各手抄一份七参表，`games` 的
@@ -7887,6 +7897,7 @@ class AppModel with ChangeNotifier {
   /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
         prefOf: moduleEnabled,
+        order: moduleOrder,
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
         isIOS: platformServices.isIOS,

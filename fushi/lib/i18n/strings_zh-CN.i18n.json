@@ -7481,5 +7481,6 @@
   "anki_pending_mine_landing_host_note": "本机是互联主机，配对设备不需要这一项：在那些设备上打开「制卡到 Fushi 互联服务端」，它们制的卡就会直接交给本机的 Anki。",
   "manga_series_manage_volume": "管理本卷",
   "video_setting_mpv_lua_scripts_import_hint": "播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。",
-  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）"
+  "video_setting_mpv_lua_scripts_status_pending": "本次播放未装载（重新打开视频后生效）",
+  "settings_module_nav_order": "导航栏顺序"
 }

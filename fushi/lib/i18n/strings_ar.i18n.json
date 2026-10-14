@@ -7481,5 +7481,6 @@
   "anki_pending_mine_landing_host_note": "هذا الجهاز مضيف للربط البيني، لذا لا تحتاج الأجهزة المقترنة إلى هذا الخيار. فعّل «إرسال إلى الجهاز المقترن» على تلك الأجهزة لتصل بطاقاتها مباشرة إلى Anki على هذا الجهاز.",
   "manga_series_manage_volume": "Manage volume",
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
-  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
+  "settings_module_nav_order": "Navigation bar order"
 }
