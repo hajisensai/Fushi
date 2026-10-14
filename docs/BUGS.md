@@ -39,6 +39,11 @@
 |---|:--:|:--:|---|
 | [BUG-3367](bugs/BUG-3367-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
+> 共 3053 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3365](bugs/BUG-3365-floating-ball-media-defaults.md) | ✅ | ✅ | 漫画等媒体页悬浮球出厂带一长列应用外按钮 |
 | [BUG-3364](bugs/BUG-3364-mihon-speedbinb-grandparent-ctor.md) | ✅ | ✅ | Mihon 桌面 sidecar：SpeedBinb 系日漫源搜索报 VerifyError（R8 内联两层构造器） |
 | [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
