@@ -34,7 +34,7 @@
 | 13 | 生成门在查询层渲染模板太慢、PR2 用不上 | 卡片缓存表 `srs_cards_cache.hidden`（本机、可重建、不同步）在笔记 / 笔记类型变化时算好，查询只读这一列 | `tables.dart`、`srs_db_store.dart` 的 `_refreshNote` |
 | 14 | 多设备按需生成卡片，初始 deckId 不确定 | 笔记有「首选牌组」字段（`SrsFieldKeys.noteDeck`）；卡片没有自己的 deck 修改记录时取它，再没有取默认牌组。生成本身不写任何记录 | `entities.dart` 的 `SrsCardFlags.materialize` |
 | 15 | 铁律 E 改 uid 会把已同步的 profile 和其它设备断开 | 采用对方 uid 的条件加上「**从未发布过批次**」（`SrsSyncLocalState.everPublished`） | `sync_engine.dart`、`srs_db_store.dart`、备份合并步骤 |
-| 16 | 日界统一不完整：谁覆盖谁没定 | profile 设置行里的 `dayRolloverHour`（同步值）是 SRS 的真相；没有时回退本机统计页的 `stats_day_reset_hour`。**不改统计页对所有用户的默认值**（SRS 默认关闭，不能因一个隐藏功能改变全体用户的统计口径）；SRS 内的默认翻日仍是 4 点 | `srs_db_store.dart` 的 `dayContext` |
+| 16 | 日界统一不完整：谁覆盖谁没定 | SRS 与统计页共用一个本机值 `stats_day_reset_hour`；profile 设置行里的 `dayRolloverHour`（同步值）存在时以它为准。默认 4 点只在**用户第一次打开 SRS 模块、且从没自己设过日界**时写入（`AppModel.setModuleEnabled`）：SRS 默认关闭，没开 SRS 的用户统计口径不变 | `srs_db_store.dart` 的 `dayContext`、`app_model.dart` |
 | 17–18 | StatSourceKind.book 含漫画；漫画 / 在线小说 / 在线视频的定位形状 | SourceRef 新增 `manga`（作品 + 章节 + 页码 + 可选 OCR 框）、`onlineNovel`（源 + 小说 URL + 章节 URL + 偏移）、`onlineVideo`（源 + 作品 URL + 剧集 URL + 时间区间） | `source_ref.dart` |
 | 19 | PR7 安全：text/plain 跨站 POST、path 读任意文件、url SSRF、服务端无当前 profile | 核对后更严重：Fushi API 实际监听所有网卡（`yomitan_api_server_manager.dart` 传 `allowLan: true`）。兼容层加 Origin 白名单、无 key 时只收回环、storeMediaFile 的 path / url 默认禁用、url 打开时拒绝回环 / 私网；profile 由宿主传入 | `fushi_engine/lib/srs/ankiconnect/` |
 | 20 | termKey 只按词形，同形异读合并 | termKey 拆成词形 + 读音两段，查询有读音就两段都比；`SrsTermStatus` 带 `cardCount` | `term_status.dart`、`srs_notes_cache.reading_key` |
@@ -57,24 +57,26 @@
 
 | 计划项 | 位置 | 状态 |
 |---|---|---|
-| PR1 内核：fushi_fsrs C ABI | `native/fushi_fsrs/`（JSON C ABI，FSRS-6/7，可取消的优化器，外样本评估，纯 Rust zstd 解码） | 完成；Windows x64 / Android arm64 本机构建，其余平台脚本 + CI |
-| PR1 内核：fushi_srs | `packages/fushi_srs/`（ID、HLC、DVV、修改记录合并、sortKey / S(e)、有效日志、S/D 输入、排程策略、新卡预算、同步引擎、模拟器、Anki 搜索子集、FFI 绑定） | 完成 |
-| PR2 数据层 | schema v117（`profiles.uid` + 8 张 srs_* 表）、`fushi_engine/lib/srs/srs_db_store.dart` | 完成 |
-| PR3a 添卡 | 编辑页、AnkiConnect 兼容层；挖词目标「Fushi SRS」 | 见 UI / PR7 提交 |
-| PR3b Anki 导入（新旧格式）与导出 | `fushi_engine/lib/srs/apkg/` | 见对应提交 |
-| PR4 复习页 | `fushi/lib/src/pages/implementations/srs/` | 见 UI 提交 |
-| PR5 接线 | 模块（默认关闭）、新手引导、冲突页、词状态 | 见 UI 提交 |
-| PR6 自动优化 | `fushi_engine/lib/srs/srs_optimizer.dart` | 完成（触发与写回）；后台调度见 UI 提交 |
-| PR7 AnkiConnect 兼容层 | `fushi_engine/lib/srs/ankiconnect/` | 见对应提交 |
-| 第三期同步 | `fushi_srs/lib/src/sync/`（协议）、`fushi_engine/lib/srs/srs_asset_store_directory.dart`（后端适配） | 协议完成；后端 modifiedAt 映射见对应提交 |
+| PR1 fushi_fsrs | `native/fushi_fsrs/`：JSON C ABI，FSRS-6/7，小数 elapsed，可取消优化器，外样本评估，纯 Rust zstd | 完成。Windows x64 / Android arm64 本机构建；五平台脚本；`native-fsrs-gate.yml`；`build-multiplatform.yml`、`release.yml`、`release-desktop.yml`（Windows/macOS）、`release-server.yml` 编译并核对随包 |
+| PR1 fushi_srs | `packages/fushi_srs/`：ID、HLC、DVV、修改记录合并、sortKey/S(e)、有效日志、S/D 输入、排程策略、新卡预算、同步协议、Anki 搜索子集、FFI | 完成；确定性模拟器 120 种子 + 全部历史反例为固定用例 |
+| PR2 数据层 | schema v117（`profiles.uid` + 8 张 srs_* 表），`fushi_engine/lib/srs/srs_db_store.dart` | 完成；恢复备份自动换新化身 |
+| PR3a 添卡 | 编辑页；挖词目标「Fushi 复习」（`fushi/lib/src/srs/srs_mining.dart`，Anki / 复习 / 两者）；制卡历史批量导入；AnkiConnect 兼容层 | 完成 |
+| PR3b Anki 导入（新旧格式）与导出 | `fushi_engine/lib/srs/apkg/` | 完成（导出为旧格式 + fushi-ext） |
+| PR4 复习页 | `fushi/lib/src/pages/implementations/srs/` | 完成；MD3 / Apple；空格 / 1–4 / Ctrl+Z / 手柄；连续撤销 |
+| PR5 接线 | 默认关闭的模块（首页「复习」tab）、新手引导、同步冲突页、查词弹窗复习标记（app 内 / app 外 / 浏览器扩展） | 完成 |
+| PR6 自动优化 | `srs_optimizer.dart` + `fushi/lib/src/srs/srs_optimization_scheduler.dart`（空闲时后台 isolate） | 完成 |
+| PR7 AnkiConnect | `fushi_engine/lib/srs/ankiconnect/`，挂在 Fushi API 根路径 | 完成；仅 SRS 开启时可用 |
+| 第三期同步 | 协议 + `srs_asset_store_directory.dart`；七个后端的服务器时间；媒体按内容哈希同步（`srs_media_sync.dart`）；备份合并（铁律 E） | 完成 |
 
 ### 已知缺口（需要真机 / 外部条件，或留到下一期）
 
 - 第 0 步里只能在真机 / 真实 Anki 上做的项：Anki 导出 → 导入 → 回导的 mod 实测、真实 revlog 与 Anki 的 S/D 对拍、iOS 伞形静态库真机链接、移动端优化器耗时与内存、Lapis JS 宿主依赖、bookKey 跨设备身份结论。
+- 复习页卡面媒体（虚拟域拦截、`[sound:]` 播放）只在测试替身下验证过，没有在真机 WebView 上跑过。
 - 「含睡眠的开机单调时钟」：纯 Dart 拿不到，退到本进程 Stopwatch（同一进程内改系统时间不影响，进程重启后重新校时）。
-- iOS：伞形 crate `native/fushi_ios_umbrella/` 已就绪，Runner 还没切换（无法本机验证）。
-- 发布 workflow（`release.yml` / `release-desktop.yml`）还没编进 fushi_fsrs，正式包里排程内核不可用时 SRS 只能浏览不能复习。
-- 第三方许可声明（fsrs-rs BSD-3、ruzstd MIT）需加进 app 的开源许可页。
+- iOS：伞形 crate `native/fushi_ios_umbrella/` 已就绪，Runner 还没切换，iOS 包里暂无排程内核（SRS 只能浏览、不能复习）。
+- 发布 workflow 的 fushi_fsrs 步骤还没在 Actions 上真跑过。
+- 无头服务端还没有 SRS 装配（AnkiConnect 兼容层只在 app 侧挂；`fushi_server/lib/src/host_bindings.dart` 留了 TODO）。
+- 媒体：删除不跨设备传播；无引用文件的本机回收（30 天宽限）未做。
 - 学习统计 `StatSourceKind.srs`、到期提醒、阅读器着色与「标为已知」属第二期。
 
 ---
