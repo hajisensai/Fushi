@@ -144,33 +144,35 @@ void main() {
     });
   });
 
-  group('BUG-3280 WebKit 竖排长句扫过不消失', () {
-    test('识别不了无前缀 slice 的引擎改用 clone', () {
+  group('BUG-3280 / BUG-3328 WebKit 竖排长句扫过不消失', () {
+    // BUG-3328：iOS 模拟器实测 clone 与 slice 一样整句消失，只有把 .tx 变成
+    // inline-block（原子盒）长句才看得见。CI 没有 WebKit，这里钉住规则形态。
+    test('识别不了无前缀 slice 的引擎把 .tx 变成 inline-block', () {
       final String html = _html();
       final int at = html.indexOf(
         '@supports not (box-decoration-break: slice)',
       );
       expect(at, isNonNegative);
       final String block = html.substring(at, html.indexOf('}\n}', at) + 3);
-      // 回退只限竖排：WebKit 上这条 @supports 恒成立，不带 .ly-vertical 的话横排
-      // （默认）多行长句也会被改成 clone，每行各自扫光、不再跨行接续。
+      // 回退只限竖排：WebKit 上这条 @supports 恒成立；横排多行长句在 WebKit 上
+      // slice 扫过正常（实测），改成 inline-block 反而丢掉跨行接续。
       final Map<String, String> fallbackRules = _rules(block);
       expect(fallbackRules.keys, <String>[
         'body.ly-sweep.ly-vertical:not(.ly-paused) '
             '.cue.current:not(.ly-nosweep) .tx',
       ]);
-      expect(
-        fallbackRules.values.single,
-        contains('-webkit-box-decoration-break: clone;'),
-      );
-      // 全页只有竖排选择器下出现 clone：横排扫过规则保持 slice。
-      final Iterable<MapEntry<String, String>> cloneRules = _rules(html).entries
+      expect(fallbackRules.values.single, contains('display: inline-block;'));
+      // clone 在 WebKit 上照样消失，不能再作为回退出现。
+      expect(html, isNot(contains('box-decoration-break: clone')));
+      // .tx 只在竖排选择器下变 inline-block：横排扫过保持行内盒 + slice。
+      final Iterable<MapEntry<String, String>> blockTx = _rules(html).entries
           .where(
             (MapEntry<String, String> e) =>
-                e.value.contains('box-decoration-break: clone'),
+                e.key.contains('.tx') &&
+                e.value.contains('display: inline-block'),
           );
-      expect(cloneRules, isNotEmpty);
-      for (final MapEntry<String, String> e in cloneRules) {
+      expect(blockTx, isNotEmpty);
+      for (final MapEntry<String, String> e in blockTx) {
         expect(e.key, contains('.ly-vertical'), reason: e.key);
       }
       // 回退规则在扫过规则之后，同特异性下后者胜。
