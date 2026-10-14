@@ -90,6 +90,19 @@ class SmoothWheelScrollScope extends StatefulWidget {
     }
   }
 
+  /// 把一条**不再冒泡到根部**的滚动更新交给本层补间。
+  ///
+  /// 菜单浮层的滚动通知会被 `MenuOverlayScrollBoundary` 截在锚点处（不让页面
+  /// 把它当正文滚动，BUG-3330），截下的更新经这里补报，菜单滚轮照旧平滑。
+  static void observeIsolatedScrollUpdate(
+    BuildContext context,
+    ScrollUpdateNotification notification,
+  ) {
+    context
+        .findAncestorStateOfType<_SmoothWheelScrollScopeState>()
+        ?._onScrollUpdate(notification);
+  }
+
   @override
   State<SmoothWheelScrollScope> createState() => _SmoothWheelScrollScopeState();
 }

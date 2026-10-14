@@ -396,6 +396,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       database: appModel.database,
       mediaType: MediaKind.srt,
       entryKey: book.uid,
+      isMemberVisible: _isCollectionMemberVisible,
       // P4：用户看到的默认合集名用改名后的显示名（身份 entryKey 仍是 raw uid）。
       defaultNewName: deriveSeriesDefaultName(
         <String>[_srtDisplayTitle(book)],
@@ -524,6 +525,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
         ),
+        // BUG-3328：漫画库多选补「识别文字」——与卡菜单同一条排队路径
+        // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
+        if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
+          FushiIconButton(
+            key: const ValueKey<String>('reader_shelf_batch_ocr'),
+            enabled: hasLocalSelection,
+            onTap: _batchOcrSelectedManga,
+            icon: Icons.document_scanner_outlined,
+            tooltip: t.manga_library_ocr_action,
+          ),
         FushiIconButton(
           // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
           key: const ValueKey<String>('reader_shelf_batch_reset_progress'),
@@ -542,6 +553,51 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         ),
       ],
     );
+  }
+
+  /// 卡菜单 / 多选「识别文字」（BUG-3328）：[bookKeys] 里每本漫画还没识别的部分
+  /// （在线作品 = 已下载未识别的章，本地卷 = 未识别的卷）排进 OCR 队列。
+  /// [dialog] 为真时先收起卡片长按菜单。
+  Future<void> _ocrMangaBooks(Iterable<String> bookKeys,
+      {bool dialog = false}) async {
+    if (dialog) Navigator.pop(context);
+    await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+  }
+
+  /// 多选「识别文字」：散卡漫画 + 选中合集里的每一本。目标在剪枝后一次定死。
+  Future<void> _batchOcrSelectedManga() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final Set<String> bookKeys = <String>{
+      for (final String key in _selectedLocalKeys)
+        if (_parseBookKey(key) case final String bookKey) bookKey,
+    };
+    // 合集成员行 epub entryKey = uid（v83）；透传 / 旧行仍是 bookKey。剪枝刚刷新过
+    // bookKey→uid 换算表，这里反查回 bookKey。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final MapEntry<String, String> e in _epubUidByKey.entries)
+        e.value: e.key,
+    };
+    for (final int id in _selectedCollectionIds) {
+      final List<MediaCollectionItemRow> items =
+          await appModel.database.getCollectionItems(id);
+      for (final MediaCollectionItemRow item in items) {
+        if (MediaKind.tryParse(item.mediaType) != MediaKind.epub) continue;
+        bookKeys.add(bookKeyByUid[item.entryKey] ?? item.entryKey);
+      }
+    }
+    if (!mounted || bookKeys.isEmpty) return;
+    final int queued = await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+    if (queued > 0 && mounted) _exitSelectionMode();
   }
 
   /// 批量「重置阅读状态」：与单卡同一确认框、同一落地函数 [resetBookReadingState]。

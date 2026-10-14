@@ -513,6 +513,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     );
   }
 
+  /// BUG-3331：合集成员数与合集详情页（[buildGameCollectionMemberCard]）同一判据。
+  bool _isGameCollectionMemberVisible(String mediaType, String entryKey) =>
+      MediaKind.tryParse(mediaType) == MediaKind.game &&
+      _games.any((GalgameEntry g) => g.id == entryKey);
+
   /// 单卡「加入合集」：与书/视频同走 [showAddToCollectionDialog]（同一条
   /// createMediaCollection / addToCollection DAO 路径）；成功后重取分组映射刷新。
   Future<void> _addGameToCollection(GalgameEntry game) async {
@@ -522,6 +527,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
+      isMemberVisible: _isGameCollectionMemberVisible,
     );
     if (!added || !mounted) return;
     await _loadCollectionMaps();
@@ -585,6 +591,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             mediaType: mediaType,
             entryKey: entryKey,
           ),
+          isMemberVisible: _isGameCollectionMemberVisible,
           onOpenMember: _openCollectionMember,
           onChanged: () {
             unawaited(_reload());

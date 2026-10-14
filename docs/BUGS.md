@@ -59,6 +59,14 @@
 | [BUG-3329](bugs/BUG-3329-swipe-seek-hud-resets-on-release.md) | ✅ | ✅ | 横滑跳转松手瞬间 HUD 显示回滑动起始进度 |
 | [BUG-3328](bugs/BUG-3328-gamepad-prev-subtitle-degrades.md) | ✅ | ✅ | 手柄「上一句字幕」退化成固定秒数回退 |
 | [BUG-3328](bugs/BUG-3328-pill-equal-height.md) | ✅ | ✅ | 库页工具行按钮组胶囊比搜索框高 |
+> 共 3018 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3331](bugs/BUG-3331-collection-picker-count.md) | ✅ | ✅ | 「加入合集」弹窗的合集成员数与合集里实际显示的数量不一致 |
+| [BUG-3330](bugs/BUG-3330-dropdown-menu-scroll-leak.md) | ✅ | ✅ | 下拉选择框（漫画源等）滚轮滚不动、页面顶栏反而跟着收起 |
+| [BUG-3329](bugs/BUG-3329-detail-backdrop-contained.md) | ✅ | ✅ | 两栏详情页模糊背景只画成窗口中间一块竖条（像莫名的毛玻璃） |
+| [BUG-3328](bugs/BUG-3328-manga-card-menu-ocr.md) | ✅ | ✅ | 漫画卡菜单显示「导入有声书」而没有 OCR，多选也没有批量 OCR |
 | [BUG-3327](bugs/BUG-3327-plex-paused-heartbeat.md) | ✅ | ✅ | Plex心跳把已暂停条目重新标成播放中 |
 | [BUG-3326](bugs/BUG-3326-ruby-sentence-highlight-joints.md) | ✅ | ✅ | 有声书当前句高亮在振假名处断开、长注音处叠色 |
 | [BUG-3325](bugs/BUG-3325-lua-subtitle-scripts.md) | ✅ | ✅ | Lua 脚本读不到字幕：字幕结束自动暂停脚本在 Fushi 无效 |

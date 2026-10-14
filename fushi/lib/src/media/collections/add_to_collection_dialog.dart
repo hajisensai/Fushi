@@ -5,6 +5,29 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/utils.dart';
 
+/// 合集成员行在库页上是否画得出来（[mediaType] 是成员表的 `media_type` 原值）。
+typedef CollectionMemberVisibility = bool Function(
+  String mediaType,
+  String entryKey,
+);
+
+/// 各合集的成员数：只数 [isMemberVisible] 认可的行（null = 全数），与合集详情页
+/// 显示的成员同一口径（BUG-3331）。
+Map<int, int> countVisibleCollectionMembers(
+  Iterable<MediaCollectionItemRow> items,
+  CollectionMemberVisibility? isMemberVisible,
+) {
+  final Map<int, int> counts = <int, int>{};
+  for (final MediaCollectionItemRow item in items) {
+    if (isMemberVisible != null &&
+        !isMemberVisible(item.mediaType, item.entryKey)) {
+      continue;
+    }
+    counts[item.collectionId] = (counts[item.collectionId] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /// 单卡「加入合集」的共享弹窗（书架 / 视频库 / 游戏库共用）。
 ///
 /// 列出与条目同一库页域的现有合集（名称 + 成员数，已含本条目的合集置灰打勾），首项「新建
@@ -14,12 +37,19 @@ import 'package:fushi/utils.dart';
 /// 多选批量「组合成合集」三档共用同一条 DAO 路径。
 ///
 /// 返回是否真的加入了合集（调用方据此刷新分组/网格）。
+///
+/// [isMemberVisible]：成员行在调用方库页上是否真的画得出来（与合集详情页
+/// `memberCardBuilder` 同一判据）。成员表没有指向媒体的外键，删掉的书、配对
+/// 有声书的伴生行、别的库页的条目都会留下画不出来的行；按原始行数计数，弹窗
+/// 写「10 项」、点进合集只有 6 本（BUG-3331）。null = 按原始行数（调用方没有
+/// 可见性判据时的旧行为）。
 Future<bool> showAddToCollectionDialog({
   required BuildContext context,
   required FushiDatabase database,
   required MediaKind mediaType,
   required String entryKey,
   String defaultNewName = '',
+  CollectionMemberVisibility? isMemberVisible,
 }) async {
   // BUG-2974：只列与本条目同一库页域的合集（书不见视频合集、漫画不见书合集），
   // 域判据收口在数据层 [FushiDatabase.getMediaCollectionsForEntryDomain]。
@@ -27,15 +57,13 @@ Future<bool> showAddToCollectionDialog({
       await database.getMediaCollectionsForEntryDomain(mediaType, entryKey);
   final List<MediaCollectionItemRow> allItems =
       await database.getAllCollectionItems();
-  final Map<int, int> memberCounts = <int, int>{};
-  final Set<int> alreadyIn = <int>{};
-  for (final MediaCollectionItemRow item in allItems) {
-    memberCounts[item.collectionId] =
-        (memberCounts[item.collectionId] ?? 0) + 1;
-    if (item.mediaType == mediaType.dbValue && item.entryKey == entryKey) {
-      alreadyIn.add(item.collectionId);
-    }
-  }
+  final Map<int, int> memberCounts =
+      countVisibleCollectionMembers(allItems, isMemberVisible);
+  final Set<int> alreadyIn = <int>{
+    for (final MediaCollectionItemRow item in allItems)
+      if (item.mediaType == mediaType.dbValue && item.entryKey == entryKey)
+        item.collectionId,
+  };
   collections.sort(
     (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
   );
@@ -97,6 +125,7 @@ Future<int?> pickTargetCollectionForMembers({
   required String domainEntryKey,
   required int currentCollectionId,
   String defaultNewName = '',
+  CollectionMemberVisibility? isMemberVisible,
 }) async {
   final List<MediaCollectionRow> collections =
       await database.getMediaCollectionsForEntryDomain(
@@ -105,11 +134,8 @@ Future<int?> pickTargetCollectionForMembers({
   );
   final List<MediaCollectionItemRow> allItems =
       await database.getAllCollectionItems();
-  final Map<int, int> memberCounts = <int, int>{};
-  for (final MediaCollectionItemRow item in allItems) {
-    memberCounts[item.collectionId] =
-        (memberCounts[item.collectionId] ?? 0) + 1;
-  }
+  final Map<int, int> memberCounts =
+      countVisibleCollectionMembers(allItems, isMemberVisible);
   collections.sort(
     (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
   );
