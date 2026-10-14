@@ -38,7 +38,7 @@ void main() {
 
     test('server /api/extension/status 回带 extensionBuild', () {
       final String src =
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
       // 状态端点回带当前内置扩展指纹（供启动检查比对）；null 时省略字段（向后兼容）。
       expect(
           src,

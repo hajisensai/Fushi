@@ -1,5 +1,5 @@
-// BUG-530：浏览器扩展（Netflix 等）查词/制卡端点必须在 YomitanApiServer 上可用——扩展被
-// 安装助手自动配置指向该 server（port 19633 + yomitanApiKey），用 `Basic base64('hibiki:'+key)`
+// BUG-530：浏览器扩展（Netflix 等）查词/制卡端点必须在 FushiApiServer 上可用——扩展被
+// 安装助手自动配置指向该 server（port 19633 + fushiApiKey），用 `Basic base64('hibiki:'+key)`
 // 鉴权，POST `/api/lookup/dictionary` + `/api/mine`。历史 bug：这两个端点当时只在
 // FushiSyncServer 实现 → Netflix 查词/制卡全断。本测在真实 HTTP 层复现扩展请求验证修复。
 import 'dart:convert';
@@ -15,7 +15,7 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -191,10 +191,10 @@ void main() {
   const Tokenizer tok = _noopTokenize;
   const ReadingResolver rr = _noopReading;
 
-  group('YomitanApiServer browser-extension endpoints (BUG-530)', () {
+  group('FushiApiServer browser-extension endpoints (BUG-530)', () {
     late _FakeLookup lookup;
     late _FakeMining mining;
-    late YomitanApiServer server;
+    late FushiApiServer server;
 
     Future<void> startServer({
       String? apiKey,
@@ -208,7 +208,7 @@ void main() {
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
-      server = YomitanApiServer(
+      server = FushiApiServer(
         port: 0, // ephemeral
         lookupService: lookup,
         miningService: mining,
@@ -859,7 +859,7 @@ void main() {
       int seen = 0;
       lookup = _FakeLookup();
       mining = _FakeMining();
-      server = YomitanApiServer(
+      server = FushiApiServer(
         port: 0,
         lookupService: lookup,
         miningService: mining,

@@ -32,13 +32,16 @@ import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
 /// yomitan-api 默认端口（Kuuuube/yomitan-api）。
-const int kYomitanApiDefaultPort = 19633;
+const int kFushiApiDefaultPort = 19633;
 
 const List<String> _apiKeyParameterNames = <String>[
   'apiKey',
   'api_key',
   'key',
   'token',
+  'fushiApiKey',
+  'fushi_api_key',
+  // 旧名：yomitan-api 时代的客户端仍在发，保留兼容。新代码与文档用上面两个。
   'yomitanApiKey',
   'yomitan_api_key',
 ];
@@ -114,12 +117,12 @@ class ExtensionFavoriteRequest {
 typedef ExtensionFavoriteHandler =
     Future<bool> Function(ExtensionFavoriteRequest request);
 
-class YomitanApiServer {
+class FushiApiServer {
   static final RegExp _lookupTraceIdPattern = RegExp(
     r'^[A-Za-z0-9._:-]{1,64}$',
   );
 
-  YomitanApiServer({
+  FushiApiServer({
     required int port,
     required FushiRemoteLookupService lookupService,
     required Tokenizer tokenizer,

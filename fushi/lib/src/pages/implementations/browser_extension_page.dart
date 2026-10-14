@@ -10,8 +10,8 @@ import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart'
-    show kYomitanApiDefaultPort;
+import 'package:fushi/src/sync/fushi_api_server.dart'
+    show kFushiApiDefaultPort;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -58,7 +58,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   // 准备时的一次性快照，驱动引导横幅文案（成功 / 先开 server / 端口冲突）。
   bool _serverEnabled = false;
   bool _hasToken = false;
-  int _serverPort = kYomitanApiDefaultPort;
+  int _serverPort = kFushiApiDefaultPort;
   bool _portConflict = false;
 
   // 连接检测（验证插件已正常启用）状态。
@@ -117,13 +117,13 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     setState(() => _preparing = true);
     // TODO-1266：装扩展即默认开启 yomitan-api server（省得装完 401 连不上）。
     final bool serverReady =
-        await appModel.ensureYomitanApiServerForBrowserExtension();
+        await appModel.ensureFushiApiServerForBrowserExtension();
     // TODO-1087：解压时注入当前 server 真值，扩展默认即连本机 app，无需手填。
     final String dir = await prepareBundledBrowserExtension(
       serverConfig: BrowserExtensionServerConfig(
         host: '127.0.0.1',
-        port: appModel.yomitanApiPort,
-        token: appModel.yomitanApiKey,
+        port: appModel.fushiApiPort,
+        token: appModel.fushiApiKey,
       ),
     );
     await Clipboard.setData(ClipboardData(text: dir));
@@ -131,9 +131,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     setState(() {
       _preparing = false;
       _extensionDir = dir;
-      _serverEnabled = serverReady && appModel.yomitanApiServerEnabled;
-      _hasToken = appModel.yomitanApiKey.isNotEmpty;
-      _serverPort = appModel.yomitanApiPort;
+      _serverEnabled = serverReady && appModel.fushiApiServerEnabled;
+      _hasToken = appModel.fushiApiKey.isNotEmpty;
+      _serverPort = appModel.fushiApiPort;
       _portConflict = !serverReady;
       _verifyConnected = null;
     });
@@ -199,7 +199,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   }
 
   Widget _buildBody(ThemeData theme, AppModel appModel) {
-    final bool serverOn = appModel.yomitanApiServerEnabled;
+    final bool serverOn = appModel.fushiApiServerEnabled;
     final bool connected = _isRecentlySeen(appModel);
     final String? build = appModel.browserExtensionBuild;
     final bool guideExpanded = _guideExpanded ?? !connected;
@@ -211,7 +211,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
         return _StatusHero(
           connected: connected,
           serverOn: serverOn,
-          port: appModel.yomitanApiPort,
+          port: appModel.fushiApiPort,
           reportedBuild: reported,
           detectedBrowser: _detectedBrowser,
           verifying: _verifying,
@@ -989,7 +989,7 @@ class _BrowserExtensionInstallStepsState
   }
 
   String _portInUseMessage() {
-    return widget.serverPort == kYomitanApiDefaultPort
+    return widget.serverPort == kFushiApiDefaultPort
         ? t.browser_extension_yomitan_port_conflict(port: widget.serverPort)
         : t.sync_server_port_in_use(port: widget.serverPort);
   }
@@ -1534,7 +1534,7 @@ Widget buildBrowserExtensionInstallStepsForTest({
   required String path,
   required bool serverEnabled,
   required bool hasToken,
-  int serverPort = kYomitanApiDefaultPort,
+  int serverPort = kFushiApiDefaultPort,
   bool portConflict = false,
   BrowserKind? detectedBrowser,
 }) {

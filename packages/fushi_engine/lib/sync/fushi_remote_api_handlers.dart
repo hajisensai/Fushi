@@ -10,8 +10,8 @@ import 'package:fushi_engine/sync/remote_source_note.dart';
 
 /// TODO-1000（BUG-530）：浏览器扩展 / 外部工具的两个远端 API（查词 `/api/lookup/dictionary`
 /// + 制卡 `/api/mine`）的**共享 handler 逻辑**。FushiSyncServer（互联/同步 host）与
-/// YomitanApiServer（外部工具 API surface）都复用这里，保证扩展契约是**单一真相源**——
-/// 历史 bug 正是两个 server 契约分裂：扩展被自动配置指向 YomitanApiServer（19633），但
+/// FushiApiServer（外部工具 API surface）都复用这里，保证扩展契约是**单一真相源**——
+/// 历史 bug 正是两个 server 契约分裂：扩展被自动配置指向 FushiApiServer（19633），但
 /// 这两个端点当时只在 FushiSyncServer 实现，导致 Netflix 查词/制卡全断。
 ///
 /// 纯逻辑（已解析的 body Map → 调注入的窄接口 service → 返回响应 Map），不碰 shelf/HTTP，

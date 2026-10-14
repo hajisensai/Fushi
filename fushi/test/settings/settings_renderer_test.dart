@@ -812,7 +812,7 @@ void main() {
     final _YomitanRendererTestAppModel appModel =
         _YomitanRendererTestAppModel();
     await _prefsBackedAppModel(db, instance: appModel);
-    await appModel.setYomitanApiServerEnabled(true);
+    await appModel.setFushiApiServerEnabled(true);
 
     await tester.pumpWidget(
       _harness(
@@ -834,7 +834,7 @@ void main() {
     );
 
     final Finder field = find.descendant(
-      of: find.widgetWithText(AdaptiveSettingsRow, t.yomitan_api_key),
+      of: find.widgetWithText(AdaptiveSettingsRow, t.fushi_api_key),
       matching: find.byType(TextFormField),
     );
     expect(field, findsOneWidget);
@@ -847,10 +847,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
 
-    expect(appModel.yomitanApiKey, 'mpv-token');
+    expect(appModel.fushiApiKey, 'mpv-token');
     final PreferencesRepository reloaded = PreferencesRepository(db);
     await reloaded.loadFromDb();
-    expect(reloaded.yomitanApiKey, 'mpv-token');
+    expect(reloaded.fushiApiKey, 'mpv-token');
     expect(appModel.serverStops, 1);
     expect(appModel.serverStarts, 1);
   });
@@ -1537,12 +1537,12 @@ class _YomitanRendererTestAppModel extends _RendererTestAppModel {
   int serverStops = 0;
 
   @override
-  Future<void> startYomitanApiServer() async {
+  Future<void> startFushiApiServer() async {
     serverStarts++;
   }
 
   @override
-  Future<void> stopYomitanApiServer() async {
+  Future<void> stopFushiApiServer() async {
     serverStops++;
   }
 }

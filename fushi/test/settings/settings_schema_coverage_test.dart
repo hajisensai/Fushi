@@ -1026,7 +1026,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
   'lookup/Fushi API server':
-      'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
+      'INTEGRATION: yomitan-api server lifecycle (test/sync/fushi_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
   // 阶段 E：防截屏开关。效果是 native SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)
@@ -1588,13 +1588,13 @@ void main() {
       // pref，不会停服 → 该 Timer 残留，触发测试结束的「A Timer is still pending」
       // 断言（原 develop 基线红）。必须在**测试 body 内**（FakeAsync 区、pending-
       // timer 校验之前）停服；放 addTearDown 太晚（teardown 在 timer 校验之后跑）。
-      // stopYomitanApiServer() 是 async，但调用它会**同步**求值到 HttpServer.close()
+      // stopFushiApiServer() 是 async，但调用它会**同步**求值到 HttpServer.close()
       // ——close() 在第一个 await 挂起前就同步取消了 idleTimeout Timer。故只需触发调
       // 用、不能 await 它（await 真 socket-close 的 I/O Future 在 FakeAsync 区会死锁；
       // 用 tester.runAsync 又会冲掉无关的 image-cache 真异步引出 path_provider
       // MissingPluginException）。socket 真关闭随后在真实事件循环兑现，与本断言无关。
       // 仅 Yomitan 留 Timer（texthooker/clipboard 切 ON 不留 fake Timer），故只停它。
-      unawaited(appModel.stopYomitanApiServer());
+      unawaited(appModel.stopFushiApiServer());
 
       for (final ItemVerdict v in verdicts) {
         debugPrint('[schema-coverage] ${_describe(v)}');

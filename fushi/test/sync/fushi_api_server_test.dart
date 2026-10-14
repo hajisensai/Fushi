@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -54,12 +54,12 @@ Future<HttpClientResponse> _post(
 }
 
 void main() {
-  late YomitanApiServer server;
+  late FushiApiServer server;
 
   tearDown(() async => server.stop());
 
   test('termEntries returns Yomitan shape', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],
@@ -76,7 +76,7 @@ void main() {
   });
 
   test('termEntries with array term returns array', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],
@@ -94,7 +94,7 @@ void main() {
   });
 
   test('serverVersion is constant', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],
@@ -107,7 +107,7 @@ void main() {
   });
 
   test('GET method rejected with 405', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],
@@ -121,7 +121,7 @@ void main() {
   });
 
   test('api key enforced when set', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         apiKey: 'secret',
@@ -139,7 +139,7 @@ void main() {
   });
 
   test('api key accepts compatible token locations', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         apiKey: 'secret',
@@ -182,8 +182,48 @@ void main() {
     expect(wrongToken.statusCode, 401);
   });
 
+  // 改名为 Fushi API 后：新别名 fushiApiKey / fushi_api_key 可用，
+  // yomitan-api 时代的旧别名 yomitanApiKey / yomitan_api_key 继续可用。
+  test('api key accepts new fushi aliases and legacy yomitan aliases',
+      () async {
+    server = FushiApiServer(
+        port: 0,
+        lookupService: _FakeLookup(),
+        apiKey: 'secret',
+        tokenizer: (t) => [t],
+        readingResolver: (w) => '');
+    await server.start();
+    final int port = server.port;
+
+    for (final String name in <String>[
+      'fushiApiKey',
+      'fushi_api_key',
+      'yomitanApiKey',
+      'yomitan_api_key',
+    ]) {
+      final body = await _post(port, '/termEntries', {
+        'term': 'わかる',
+        name: 'secret',
+      });
+      expect(body.statusCode, 200, reason: 'body field $name');
+
+      final query = await _post(
+        port,
+        '/termEntries?$name=secret',
+        {'term': 'わかる'},
+      );
+      expect(query.statusCode, 200, reason: 'query param $name');
+
+      final wrong = await _post(port, '/termEntries', {
+        'term': 'わかる',
+        name: 'wrong',
+      });
+      expect(wrong.statusCode, 401, reason: 'wrong value via $name');
+    }
+  });
+
   test('yomitanVersion is constant', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],
@@ -196,7 +236,7 @@ void main() {
   });
 
   test('tokenize returns 2D content with readings', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => ['日本語', 'は', '難しい'],
@@ -215,7 +255,7 @@ void main() {
   });
 
   test('tokenize with array text returns array of results', () async {
-    server = YomitanApiServer(
+    server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: (t) => [t],

@@ -825,26 +825,26 @@ class PreferencesRepository extends ChangeNotifier
 
   // ── yomitan-api server ───────────────────────────────────────────────
 
-  bool get yomitanApiServerEnabled =>
+  bool get fushiApiServerEnabled =>
       getPref('yomitan_api_server_enabled', defaultValue: false) as bool;
 
-  Future<void> setYomitanApiServerEnabled(bool value) async {
+  Future<void> setFushiApiServerEnabled(bool value) async {
     await setPref('yomitan_api_server_enabled', value);
     notifyListeners();
   }
 
-  int get yomitanApiPort =>
+  int get fushiApiPort =>
       getPref('yomitan_api_port', defaultValue: 19633) as int;
 
-  Future<void> setYomitanApiPort(int value) async {
+  Future<void> setFushiApiPort(int value) async {
     await setPref('yomitan_api_port', value);
     notifyListeners();
   }
 
-  String get yomitanApiKey =>
+  String get fushiApiKey =>
       getPref('yomitan_api_key', defaultValue: '') as String;
 
-  Future<void> setYomitanApiKey(String value) async {
+  Future<void> setFushiApiKey(String value) async {
     await setPref('yomitan_api_key', value);
     notifyListeners();
   }

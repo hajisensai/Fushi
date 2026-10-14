@@ -40,7 +40,7 @@ extension _FushiSyncServerLookup on FushiSyncServer {
     if (service == null) return shelf.Response.notFound('Remote lookup off');
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    // 契约与 YomitanApiServer 共享（BUG-530，单一真相源）。
+    // 契约与 FushiApiServer 共享（BUG-530，单一真相源）。
     return jsonResponse(await buildRemoteDictionaryLookupResponse(
       body,
       lookup: service,
@@ -186,7 +186,7 @@ extension _FushiSyncServerLookup on FushiSyncServer {
 
   // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
   // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
-  // YomitanApiServer 共用）；本文件只留互联独有的端点。
+  // FushiApiServer 共用）；本文件只留互联独有的端点。
 
   /// 互联媒体存储优化：客户端（手机）经互联对**主机端** collection.media 做字节级
   /// 去重——卡片落在主机的 Anki 上，重复媒体也堆在主机，客户端本机根本没有那个

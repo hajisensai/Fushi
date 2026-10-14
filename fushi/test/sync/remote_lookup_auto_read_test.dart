@@ -72,17 +72,17 @@ void main() {
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
       expect(appModel, contains('autoReadOnLookupProvider:'),
-          reason: 'app_model 没把 autoReadOnLookupProvider 交给 YomitanApiServerManager');
+          reason: 'app_model 没把 autoReadOnLookupProvider 交给 FushiApiServerManager');
       expect(appModel, contains('ReaderFushiSource.instance.autoReadOnLookup'),
           reason: '必须读 app 内自动朗读的同一个真相源，不得在扩展这条线上另存一份');
       final String manager =
-          File('lib/src/sync/yomitan_api_server_manager.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server_manager.dart').readAsStringSync();
       expect(manager, contains('autoReadOnLookupProvider'),
-          reason: 'manager 没把供给器透传给 YomitanApiServer');
+          reason: 'manager 没把供给器透传给 FushiApiServer');
       final String server =
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
       expect(server, contains('autoReadOnLookupProvider: _autoReadOnLookupProvider'),
-          reason: 'YomitanApiServer 没把供给器交给共享 handler');
+          reason: 'FushiApiServer 没把供给器交给共享 handler');
     });
 
     test('扩展两镜像都按这个字段接了自动朗读（页面弹窗与侧边栏共用一份实现）', () {

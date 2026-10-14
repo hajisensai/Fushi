@@ -162,7 +162,7 @@ void main() {
   });
 
   // TODO-1087：扩展默认端口/主机守卫。打包扩展的 fushi-defaults.js 与 background.js
-  // 的默认必须指向本机环回 + kYomitanApiDefaultPort(19633)，否则「加载已解压」后默认连不上。
+  // 的默认必须指向本机环回 + kFushiApiDefaultPort(19633)，否则「加载已解压」后默认连不上。
   group('bundled extension default connection', () {
     test('fushi-defaults.js defaults to 127.0.0.1:19633', () {
       final File defaults = File('assets/browser_extension/fushi-defaults.js');

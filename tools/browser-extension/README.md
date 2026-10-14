@@ -88,7 +88,7 @@ app 升级
 查词 `/api/lookup/dictionary` · 单词音频 `/api/lookup/audio` · 制卡 `/api/mine` · 查重
 `/api/duplicate` · 收藏 `/api/extension/favorite` · 状态/心跳 `/api/extension/status` · 弹窗尺寸 `/api/extension/popup-size` ·
 YouTube 整集字幕 `/api/youtube/captions` · 外挂字幕解析 `/api/subtitle/parse`。
-服务端实现：`fushi/lib/src/sync/yomitan_api_server.dart`。
+服务端实现：`fushi/lib/src/sync/fushi_api_server.dart`。
 
 ## 侧边栏查词跨出面板
 
