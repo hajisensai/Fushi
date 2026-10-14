@@ -274,8 +274,8 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemotePopupDictionaryCss;
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
-import 'package:fushi/src/sync/yomitan_api_server_manager.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -3454,12 +3454,12 @@ class AppModel with ChangeNotifier {
       // 能力（端口 19633），开关落在恒在的「设置 → 查词」分类里，且移动端同样可用
       // （browserExtension 模块仅桌面存在）。挂 browserExtension 门会一次犯两个错：
       // 移动端直接失去该服务，桌面端则开关显示「开」而服务不跑。
-      if (yomitanApiServerEnabled) {
+      if (fushiApiServerEnabled) {
         // fail-open：自启动失败绝不阻塞 init、不改开关语义，但必须留痕（BUG-911），
         // 与邻居 startSyncServer / refreshBrowserExtensionCopy 一致记日志，避免静默吞异常。
-        unawaited(startYomitanApiServer().catchError((Object e, StackTrace s) {
+        unawaited(startFushiApiServer().catchError((Object e, StackTrace s) {
           ErrorLogService.instance
-              .log('AppModel.startYomitanApiServer.autostart', e, s);
+              .log('AppModel.startFushiApiServer.autostart', e, s);
           // 端口被占：开关已被复位，用户却毫不知情——交给启动提醒弹出说明。
           if (e is SyncServerPortInUseException) {
             fushiApiStartupPortConflict.value = e.port;
@@ -7799,7 +7799,7 @@ class AppModel with ChangeNotifier {
 
   /// 弹窗尺寸精细化 Phase D：浏览器扩展弹窗被拖右下角把手调整尺寸后，content.js 经
   /// 扩展 ↔ app bridge（POST `/api/extension/popup-size`）回写最终基准最大宽高，由
-  /// [YomitanApiServer] 的 `onExtensionPopupSize` sink 调到这里。先 clamp 到与设置页两滑杆
+  /// [FushiApiServer] 的 `onExtensionPopupSize` sink 调到这里。先 clamp 到与设置页两滑杆
   /// 同一 250-2000/200-1600（[resolveExtensionPopupSize]，任何异常/越界客户端都写不穿），
   /// 再按「拖即解锁」好品味写真值：一动手定制扩展尺寸就脱钩「跟随 app 内」——置
   /// [setExtensionPopupIndependentSize]`(true)` + 写 extension 宽/高键。滑杆与拖拽写同一真
@@ -7990,7 +7990,7 @@ class AppModel with ChangeNotifier {
     await transcribeQueue?.close();
     // 扩展视频沉浸时间桥持 StudyClock 写链：关库前封段并等写完，否则最后一段丢、
     // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
-    // stopYomitanApiServer 重复调。
+    // stopFushiApiServer 重复调。
     await _browserVideoStudyBridge?.stopAll();
   }
 
@@ -8068,7 +8068,7 @@ class AppModel with ChangeNotifier {
     uninstallCollectionsSyncWatcher();
     // 其余三个 stop 都 null 安全 / 单例安全，未启动也可调，无需 _isInitialised 守卫。
     unawaited(TexthookerWsClientManager.instance.stop());
-    unawaited(stopYomitanApiServer());
+    unawaited(stopFushiApiServer());
     _animeDownloadService?.stop();
     _animeDownloadSubscriptionService?.stop();
     _videoDownloadPipelineRuntimeWanted = false;
@@ -8355,17 +8355,17 @@ class AppModel with ChangeNotifier {
   Future<void> setRemoteLookupEnabled(bool value) =>
       prefsRepo.setRemoteLookupEnabled(value);
 
-  bool get yomitanApiServerEnabled => prefsRepo.yomitanApiServerEnabled;
-  Future<void> setYomitanApiServerEnabled(bool value) =>
-      prefsRepo.setYomitanApiServerEnabled(value);
+  bool get fushiApiServerEnabled => prefsRepo.fushiApiServerEnabled;
+  Future<void> setFushiApiServerEnabled(bool value) =>
+      prefsRepo.setFushiApiServerEnabled(value);
 
-  int get yomitanApiPort => prefsRepo.yomitanApiPort;
-  Future<void> setYomitanApiPort(int value) =>
-      prefsRepo.setYomitanApiPort(value);
+  int get fushiApiPort => prefsRepo.fushiApiPort;
+  Future<void> setFushiApiPort(int value) =>
+      prefsRepo.setFushiApiPort(value);
 
-  String get yomitanApiKey => prefsRepo.yomitanApiKey;
-  Future<void> setYomitanApiKey(String value) =>
-      prefsRepo.setYomitanApiKey(value);
+  String get fushiApiKey => prefsRepo.fushiApiKey;
+  Future<void> setFushiApiKey(String value) =>
+      prefsRepo.setFushiApiKey(value);
 
   /// 实验性：整套键盘/手柄焦点导航是否启用（默认 false）。关闭时 main.dart 不安装
   /// FushiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。
@@ -8750,7 +8750,7 @@ class AppModel with ChangeNotifier {
   /// 默认不给扩展权限，证明不了任何事），由本机 yomitan-api server 提供，所以 app 在跑
   /// 就一定打得开。
   String get browserExtensionTestPageUrl =>
-      'http://127.0.0.1:$yomitanApiPort$kBrowserExtensionTestPagePath';
+      'http://127.0.0.1:$fushiApiPort$kBrowserExtensionTestPagePath';
 
   /// 试用页 HTML：请求到达时才生成——例句按用户**已装词典**的词头语言挑（与引导内查词
   /// 教程同一真相源 [onboardingSampleLanguage]），文案随当前 app 语言。
@@ -8781,7 +8781,7 @@ class AppModel with ChangeNotifier {
   }
 
   // ── yomitan-api server (lifecycle) ──────────────────────────────────
-  YomitanApiServerManager? _yomitanServerManager;
+  FushiApiServerManager? _yomitanServerManager;
 
   /// 启动时自启 Fushi API 服务器（yomitan-api server）撞上的端口；没冲突为 null。
   /// 自启在 `runApp` 之前、且 fire-and-forget，失败时还没有 UI——冲突留在这里，
@@ -8791,15 +8791,15 @@ class AppModel with ChangeNotifier {
 
   /// 浏览器扩展网页视频沉浸时间 → 学习统计的桥（POST `/api/extension/study` 的
   /// sink）。与 server manager 同寿命：懒建于 [_ensureYomitanManager]，
-  /// [stopYomitanApiServer] / [quiesceBackgroundDatabaseWriters] 时封段等落库。
+  /// [stopFushiApiServer] / [quiesceBackgroundDatabaseWriters] 时封段等落库。
   BrowserVideoStudyBridge? _browserVideoStudyBridge;
 
   BrowserVideoStudyBridge _ensureBrowserVideoStudyBridge() =>
       _browserVideoStudyBridge ??=
           BrowserVideoStudyBridge(database: () => database);
 
-  YomitanApiServerManager _ensureYomitanManager() {
-    return _yomitanServerManager ??= YomitanApiServerManager(
+  FushiApiServerManager _ensureYomitanManager() {
+    return _yomitanServerManager ??= FushiApiServerManager(
       lookupService: createRemoteLookupService(),
       // BUG-530：注入挖词/历史，让浏览器扩展在 yomitan-api server 上查词+制卡真正可用
       // （扩展被安装助手自动配置指向本 server 的 port/token）。
@@ -8955,25 +8955,25 @@ class AppModel with ChangeNotifier {
     await refreshBundledBrowserExtensionIfStale(
       serverConfig: BrowserExtensionServerConfig(
         host: '127.0.0.1',
-        port: yomitanApiPort,
-        token: yomitanApiKey,
+        port: fushiApiPort,
+        token: fushiApiKey,
       ),
     );
   }
 
-  Future<void> startYomitanApiServer() async {
+  Future<void> startFushiApiServer() async {
     try {
       await _ensureYomitanManager()
-          .start(port: yomitanApiPort, apiKey: yomitanApiKey);
+          .start(port: fushiApiPort, apiKey: fushiApiKey);
       // 用户在提醒弹出前已从别处把服务器开起来：过时的冲突不再弹。
       fushiApiStartupPortConflict.value = null;
     } on SyncServerPortInUseException {
-      await setYomitanApiServerEnabled(false);
+      await setFushiApiServerEnabled(false);
       rethrow;
     }
   }
 
-  Future<void> stopYomitanApiServer() async {
+  Future<void> stopFushiApiServer() async {
     await _yomitanServerManager?.stop();
     // server 停了就不会再来样本：把扩展视频正在统计的段封掉、等最后一笔落库。
     await _browserVideoStudyBridge?.stopAll();
@@ -8983,29 +8983,29 @@ class AppModel with ChangeNotifier {
   /// 让扩展装完即可连上本机 app，不必用户再手动去设置里开 server（省掉装完 401 连不上）。
   ///
   /// 幂等 + 不覆盖既有真值（安全 + 向后兼容）：
-  /// - token：仅当 [yomitanApiKey] 为空时才生成一枚随机 token 并落盘；**绝不覆盖**用户手填
+  /// - token：仅当 [fushiApiKey] 为空时才生成一枚随机 token 并落盘；**绝不覆盖**用户手填
   ///   或此前已配对的非空 token（覆盖会踢掉扩展已保存的 token 造成 401）。播种在启动/注入前
   ///   完成，保证 server 实际使用的 token 与随后注入扩展 `fushi-defaults.js` 的 token 一致。
   /// - server：仅当当前未启用时才置位并启动；已启用则**跳过不重启**（不打断在跑的 server、
-  ///   不干扰活动连接）。[startYomitanApiServer] 本身也幂等（管理器 `if (_server != null)`）。
+  ///   不干扰活动连接）。[startFushiApiServer] 本身也幂等（管理器 `if (_server != null)`）。
   ///
   /// 返回 true 表示 server 现在已启用（且预期在运行）；false 表示因端口占用启动失败
-  /// （此时 [startYomitanApiServer] 已把 [yomitanApiServerEnabled] 复位为 false，
+  /// （此时 [startFushiApiServer] 已把 [fushiApiServerEnabled] 复位为 false，
   /// 调用方据此提示用户端口冲突）。
-  Future<bool> ensureYomitanApiServerForBrowserExtension() async {
+  Future<bool> ensureFushiApiServerForBrowserExtension() async {
     // token 就绪：空才播种，非空保留（不覆盖）。用与 sync server 同款的密码学安全随机源。
-    if (yomitanApiKey.isEmpty) {
-      await setYomitanApiKey(FushiSyncServer.generateToken());
+    if (fushiApiKey.isEmpty) {
+      await setFushiApiKey(FushiSyncServer.generateToken());
     }
     // 已启用：按「跳过不重启」要求直接返回；token 已就绪且与注入值一致。
-    if (yomitanApiServerEnabled) {
+    if (fushiApiServerEnabled) {
       return true;
     }
-    await setYomitanApiServerEnabled(true);
+    await setFushiApiServerEnabled(true);
     try {
-      await startYomitanApiServer();
+      await startFushiApiServer();
     } on SyncServerPortInUseException {
-      // startYomitanApiServer 已在抛前把开关复位为 false。
+      // startFushiApiServer 已在抛前把开关复位为 false。
       return false;
     }
     return true;

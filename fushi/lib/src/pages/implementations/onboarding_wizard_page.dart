@@ -972,11 +972,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             OnboardingAction(
               icon: FushiIcons.globe,
               label: t.browser_extension_test_page_action,
-              description: appModel.yomitanApiServerEnabled
+              description: appModel.fushiApiServerEnabled
                   ? t.browser_extension_test_page_action_desc
                   : t.browser_extension_test_page_server_off,
               necessity: OnboardingActionNecessity.recommended,
-              onPressed: appModel.yomitanApiServerEnabled
+              onPressed: appModel.fushiApiServerEnabled
                   ? () => launchUrl(
                         Uri.parse(appModel.browserExtensionTestPageUrl),
                         mode: LaunchMode.externalApplication,

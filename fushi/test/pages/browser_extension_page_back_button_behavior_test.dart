@@ -17,13 +17,13 @@ class _FakeAppModel extends AppModel {
   _FakeAppModel() : super(testPlatformServices());
 
   @override
-  bool get yomitanApiServerEnabled => false;
+  bool get fushiApiServerEnabled => false;
 
   @override
-  int get yomitanApiPort => 19323;
+  int get fushiApiPort => 19323;
 
   @override
-  String get yomitanApiKey => '';
+  String get fushiApiKey => '';
 }
 
 /// 不在测试里真起 `reg` / `defaults` 探测默认浏览器。

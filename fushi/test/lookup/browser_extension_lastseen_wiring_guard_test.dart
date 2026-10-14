@@ -9,7 +9,7 @@ void main() {
   group('extension last-seen wiring', () {
     test('yomitan server 在扩展端点命中时回调 onExtensionSeen', () {
       final String src =
-          File('lib/src/sync/yomitan_api_server.dart').readAsStringSync();
+          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
       // 探活端点集合含状态与查词（扩展启动打状态、使用时打查词，都应刷新 last-seen）。
       expect(src, contains("'/api/extension/status',"));
       expect(src, contains("'/api/lookup/dictionary',"));
@@ -20,7 +20,7 @@ void main() {
     });
 
     test('manager 把 onExtensionSeen 透传给 server', () {
-      final String src = File('lib/src/sync/yomitan_api_server_manager.dart')
+      final String src = File('lib/src/sync/fushi_api_server_manager.dart')
           .readAsStringSync();
       expect(src, contains('void Function()? onExtensionSeen'));
       expect(src, contains('onExtensionSeen: _onExtensionSeen'));

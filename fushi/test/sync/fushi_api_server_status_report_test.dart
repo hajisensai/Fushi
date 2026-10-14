@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart';
+import 'package:fushi/src/sync/fushi_api_server.dart';
 
 class _FakeLookup implements FushiRemoteLookupService {
   @override
@@ -55,14 +55,14 @@ Future<Map<String, dynamic>> _json(HttpClientResponse resp) async {
 
 void main() {
   group('BUG-1079 /api/extension/status body report', () {
-    late YomitanApiServer server;
+    late FushiApiServer server;
     late List<(String, String?)> reports;
     late int seenCount;
 
     Future<void> startServer() async {
       reports = <(String, String?)>[];
       seenCount = 0;
-      server = YomitanApiServer(
+      server = FushiApiServer(
         port: 0, // ephemeral
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
@@ -98,7 +98,7 @@ void main() {
     test('注入 appLocaleProvider → 响应含 locale；未注入省略（向后兼容）', () async {
       // 扩展读 status 的 `locale` 选文案（缺失时回落浏览器语言）。
       await server.stop();
-      server = YomitanApiServer(
+      server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,
@@ -158,7 +158,7 @@ void main() {
 
     test('未注入 onExtensionReport（旧 app 装配）→ 带 build 也不炸', () async {
       await server.stop();
-      server = YomitanApiServer(
+      server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
         tokenizer: _noopTokenize,

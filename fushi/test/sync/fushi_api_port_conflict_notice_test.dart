@@ -60,6 +60,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.sync_server_port_in_use(port: 20000)), findsOneWidget);
-    expect(find.text(t.yomitan_api_server), findsOneWidget);
+    expect(find.text(t.fushi_api_server), findsOneWidget);
   });
 }

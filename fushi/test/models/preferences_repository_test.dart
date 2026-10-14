@@ -587,23 +587,23 @@ void main() {
     });
 
     test('yomitan api server prefs round-trip', () async {
-      expect(repo.yomitanApiServerEnabled, false);
-      expect(repo.yomitanApiPort, 19633);
-      expect(repo.yomitanApiKey, '');
+      expect(repo.fushiApiServerEnabled, false);
+      expect(repo.fushiApiPort, 19633);
+      expect(repo.fushiApiKey, '');
 
-      await repo.setYomitanApiServerEnabled(true);
-      await repo.setYomitanApiPort(19999);
-      await repo.setYomitanApiKey('k');
+      await repo.setFushiApiServerEnabled(true);
+      await repo.setFushiApiPort(19999);
+      await repo.setFushiApiKey('k');
 
-      expect(repo.yomitanApiServerEnabled, true);
-      expect(repo.yomitanApiPort, 19999);
-      expect(repo.yomitanApiKey, 'k');
+      expect(repo.fushiApiServerEnabled, true);
+      expect(repo.fushiApiPort, 19999);
+      expect(repo.fushiApiKey, 'k');
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.yomitanApiServerEnabled, true);
-      expect(repo2.yomitanApiPort, 19999);
-      expect(repo2.yomitanApiKey, 'k');
+      expect(repo2.fushiApiServerEnabled, true);
+      expect(repo2.fushiApiPort, 19999);
+      expect(repo2.fushiApiKey, 'k');
       repo2.dispose();
     });
 

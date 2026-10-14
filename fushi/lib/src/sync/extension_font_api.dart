@@ -1,5 +1,5 @@
 /// 浏览器扩展字体端点（`/api/extension/fonts*`）向 app 侧要的能力，以及双方共用的
-/// wire 形状。接口放在 sync 层是为了让 [YomitanApiServer] 不依赖字体页；实现在
+/// wire 形状。接口放在 sync 层是为了让 [FushiApiServer] 不依赖字体页；实现在
 /// `BrowserExtensionFontCatalog`（models 层，持有 AppModel）。
 library;
 
@@ -110,7 +110,7 @@ class ExtensionFontDownloadOutcome {
   final String? detail;
 }
 
-/// app 侧注入给 [YomitanApiServer] 的字体能力。未注入时三个端点一律 404。
+/// app 侧注入给 [FushiApiServer] 的字体能力。未注入时三个端点一律 404。
 abstract class ExtensionFontApi {
   /// 目录里所有 `path` 非空且文件真实存在的字体，按目录顺序。
   Future<List<ExtensionFontEntry>> listFonts();

@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart'
-    show kYomitanApiDefaultPort;
+import 'package:fushi/src/sync/fushi_api_server.dart'
+    show kFushiApiDefaultPort;
 
 /// Fushi API 服务器（内部名 Yomitan API server）端口被占用时给用户看的说明。
 /// 默认端口的占用者几乎总是浏览器拉起的 yomitan-api Python 进程，给专项修复路径；
 /// 自定义端口只能泛泛说「被占用」。设置页开关与启动提醒共用这一处。
 String fushiApiPortInUseMessage(int port) {
-  return port == kYomitanApiDefaultPort
+  return port == kFushiApiDefaultPort
       ? t.browser_extension_yomitan_port_conflict(port: port)
       : t.sync_server_port_in_use(port: port);
 }
@@ -50,7 +50,7 @@ Future<void> _showConflictDialog(BuildContext context, int port) {
   return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-      title: Text(t.yomitan_api_server),
+      title: Text(t.fushi_api_server),
       content: Text(fushiApiPortInUseMessage(port)),
       actions: <Widget>[
         adaptiveDialogAction(

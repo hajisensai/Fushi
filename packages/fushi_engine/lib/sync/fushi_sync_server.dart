@@ -183,6 +183,9 @@ const List<String> _kDictionaryMediaTokenParams = <String>[
   'apiKey',
   'api_key',
   'key',
+  'fushiApiKey',
+  'fushi_api_key',
+  // 旧名保留兼容（见 fushi_api_server.dart 的 _apiKeyParameterNames）。
   'yomitanApiKey',
   'yomitan_api_key',
 ];
@@ -348,7 +351,7 @@ class FushiSyncServer {
   final DateTime Function() _now;
 
   /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
-  /// 正文都收在 [RemoteLookupRoutes]，与 YomitanApiServer 共用一份。
+  /// 正文都收在 [RemoteLookupRoutes]，与 FushiApiServer 共用一份。
   late final RemoteAudioTokenStore _audioTokens = RemoteAudioTokenStore(
     now: _now,
   );
