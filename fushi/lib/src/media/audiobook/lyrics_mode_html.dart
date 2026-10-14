@@ -442,16 +442,17 @@ body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
   background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
       var(--ly-upcoming) calc(var(--ly-p) + 4%));
 }
-/* BUG-3280：WebKit（iOS / macOS WKWebView）只认前缀 -webkit-box-decoration-break，
-   且在 slice 下给 background-clip: text 的多行（竖排 = 多列）行内盒只在第一段铺
-   背景——后面几段文字是透明填充又没有背景可透，长句在播放（扫过生效）时只剩开头
-   一截、其余整列消失。识别不了无前缀 slice 的引擎改用 clone：每段各铺一份渐变，
-   字一定看得见（各段同步扫过，代价是失去跨行接续）。
-   只限竖排：WebKit 上这条 @supports 恒成立，横排（默认）多行长句若也改 clone，
-   每行各自扫光、不再按阅读顺序跨行接续。与 BUG-3105 竖排规则同门同特异性。 */
+/* BUG-3280 / BUG-3328：WebKit（iOS / macOS WKWebView）画不出折成多列的竖排行内盒
+   上的 background-clip: text——文字是透明填充、背景又没画上，长句在播放（扫过生效）
+   时整列消失或只剩一截；暂停时扫过规则不生效，所以又完整了。iOS 模拟器实测：
+   box-decoration-break 取 slice 或 clone 都一样消失（BUG-3280 的 clone 回退
+   无效），单列短句正常；.tx 改成 inline-block（一个原子盒，渐变铺在整块上）后整句
+   可见、扫过照常。代价是各列同步自上而下扫过、不按阅读顺序跨列接续。
+   按能力判：只有不认识无前缀 slice 的引擎（WebKit）走这里，Blink 保持跨列接续。
+   只限竖排，与 BUG-3105 竖排规则同门同特异性。 */
 @supports not (box-decoration-break: slice) {
   body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
-    -webkit-box-decoration-break: clone;
+    display: inline-block;
   }
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
