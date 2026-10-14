@@ -180,6 +180,11 @@ void main() {
       // 原生库：进哪个包就开哪个。
       'native/fushi_p2p/src/lib.rs': all,
       'packages/fushi_p2p/lib/src/ffi/fushi_p2p_bindings.dart': all,
+      // SRS 排程内核（fsrs-rs）：三个 app 随包 + 服务端随包；verify_abi.sh 读 Dart 绑定。
+      'native/fushi_fsrs/src/lib.rs': all,
+      'packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart': all,
+      // iOS 伞形静态库（fushi_p2p + fushi_fsrs 合一）只有 iOS job 编。
+      'native/fushi_ios_umbrella/src/lib.rs': <String>{'ios'},
       // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
       'native/fushidicts/src/fushidicts.cpp': all,
       'native/fushidicts/build_linux_so.sh': all,
