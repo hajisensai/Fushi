@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -273,6 +274,35 @@ void main() {
       expect(out.lines.join(), '一二三四');
       expect(out.linesCoords, isNotNull);
       expect(out.linesCoords!.length, out.lines.length);
+    });
+
+    test('行数对不上且原行框是斜的：重排后的行框保留原倾角', () {
+      const double tilt = -20 * math.pi / 180;
+      // 30×180 的列斜 20° 后外接框约 90×180（宽 = 30cos + 180sin）。
+      final MokuroBlock source = block(
+        '',
+        lines: <String>['ab', 'cd'],
+        linesCoords: <List<List<double>>>[
+          mangaTiltedLineQuad(
+            const OcrRect(left: 70, top: 10, right: 160, bottom: 190),
+            tilt,
+          ),
+          mangaTiltedLineQuad(
+            const OcrRect(left: 0, top: 10, right: 90, bottom: 190),
+            tilt,
+          ),
+        ],
+      );
+      expect(
+        mokuroOrientedRectFromQuad(source.linesCoords!.first)!.rotation,
+        closeTo(tilt, 1e-6),
+        reason: '夹具本身必须是合法的斜行',
+      );
+      final MokuroBlock out = applyMangaAiOcrText(source, '一二三四');
+      expect(out.lines.join(), '一二三四');
+      for (final List<List<double>> quad in out.linesCoords!) {
+        expect(mokuroOrientedRectFromQuad(quad)!.rotation, closeTo(tilt, 1e-6));
+      }
     });
 
     test('没有行几何：整块单行', () {
