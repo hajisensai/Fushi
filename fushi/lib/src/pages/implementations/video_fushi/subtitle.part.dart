@@ -3156,7 +3156,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   void _showSubtitleLoadingOverlay() {
     if (_subtitleLoadingShown || !mounted) return;
     _rebuild(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.settings) {
+    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitle) {
       _showPlayerSettings(initialCategory: 'subtitle');
     }
   }

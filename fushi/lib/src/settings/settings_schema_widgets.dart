@@ -54,11 +54,20 @@ class SettingsSchemaSection extends StatelessWidget {
     // 本分组并重算行级可见性，不再由宿主页整页 setState（见
     // SettingsSection.liveListenable）。
     final Listenable? live = section.liveListenable?.call(settingsContext);
-    if (live == null) return _buildSection(section);
-    return ListenableBuilder(
-      listenable: live,
-      builder: (BuildContext context, Widget? _) =>
-          _buildSection(section.visibleCopy(settingsContext)),
+    final Widget body = live == null
+        ? _buildSection(section)
+        : ListenableBuilder(
+            listenable: live,
+            builder: (BuildContext context, Widget? _) =>
+                _buildSection(section.visibleCopy(settingsContext)),
+          );
+    // 着色面板：本分组的行首图标同一色调，相邻分组按 id 错开。
+    if (SettingsTonalIconsScope.maybeOf(context) == null) return body;
+    return SettingsTonalIconsScope(
+      tone: SettingsTonalIconsScope.toneForSection(
+        section.id ?? section.title ?? section.items.firstOrNull?.id ?? '',
+      ),
+      child: body,
     );
   }
 
@@ -272,7 +281,8 @@ class SettingsSchemaItem extends StatefulWidget
       settingsContext.refresh();
     }
 
-    final bool glassDesktop = isGlassDesign(context) &&
+    final bool glassDesktop =
+        isGlassDesign(context) &&
         !isCupertinoPlatform(context) &&
         FushiAppleMetrics.of(context).desktop;
 
@@ -285,7 +295,8 @@ class SettingsSchemaItem extends StatefulWidget
       // 「Apple」桌面（macOS 系统设置）与 MD3（Android 16 设置）：动作按钮是
       // 行右侧的胶囊，不换到标题下方；窄到放不下时行自己会堆叠。Cupertino 与
       // Apple 触屏维持按钮在下。
-      controlBelow: onAction != null &&
+      controlBelow:
+          onAction != null &&
           (isCupertinoPlatform(context) ||
               (isGlassDesign(context) && !glassDesktop)),
       onTap: onAction == null ? null : runAction,
@@ -664,10 +675,7 @@ class SettingsSectionFooter extends StatelessWidget {
         tokens.spacing.gap + tokens.spacing.gap / 2,
         tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
-      child: Text(
-        text,
-        style: (style ?? settingsFootnoteStyle)(context),
-      ),
+      child: Text(text, style: (style ?? settingsFootnoteStyle)(context)),
     );
   }
 }

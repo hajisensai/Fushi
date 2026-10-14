@@ -1,9 +1,15 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show kReaderPanelBottomSheetMaxWidth, kReaderPanelCompactWidth;
+    show
+        kReaderPanelBottomSheetMaxWidth,
+        kReaderPanelCompactWidth,
+        ReaderPanelSwitcher,
+        ReaderPanelSwitcherRail;
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -130,11 +136,10 @@ class VideoFloatingPanelSurface extends StatelessWidget {
       data: videoM3ePanelTheme(Theme.of(context)),
       child: Material(
         key: surfaceKey,
-        color: opaque
-            ? videoM3eFloatingColor(
-                Theme.of(context).colorScheme,
-              ).withValues(alpha: 1)
-            : videoM3eFloatingColor(Theme.of(context).colorScheme),
+        color: videoM3ePanelSurfaceColor(
+          Theme.of(context).colorScheme,
+          opaque: opaque,
+        ),
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black,
         elevation: kFushiFloatingElevation,
@@ -378,8 +383,14 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     this.icon,
     this.bottomSheetWhenCompact = false,
     this.opaque = false,
+    this.switcher,
     super.key,
   });
+
+  /// 面板切换条（字幕 / 音频 / 章节 / 画质 / 设置原地互换，与阅读器侧板同一个
+  /// 组件）：侧板时纵向挂在朝画面的一侧，贴底面板时横向一排放在把手下面。
+  /// null 或只有一项时不画。
+  final ReaderPanelSwitcher? switcher;
 
   /// 表面不透明（见 [VideoFloatingPanelSurface.opaque]）。
   final bool opaque;
@@ -402,6 +413,9 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   /// 贴底面板占屏高的比例：半屏。竖屏画面居中，面板只压到画面下半截，上半截
   /// 照常可见（要看字幕实时效果的调轴走浮条，见 `VideoSubtitleSyncRow.floatBar`）。
   static const double bottomSheetHeightFraction = 0.5;
+
+  /// 贴底面板上拉后的展开档（与阅读器底部 sheet 的满高档同为 86%）。
+  static const double bottomSheetExpandedFraction = 0.86;
 
   /// 本次是否以贴底面板呈现（页面与测试共用的判据）。
   static bool presentsAsBottomSheet(
@@ -487,6 +501,28 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     // BUG-254：不渲染 X 关闭按钮，点面板外的空白区域关闭（页面层的全屏透明
     // barrier，见 video_fushi_page 的 [_buildVideoSidePanelOverlay]）。
     final bool fromLeft = alignment.x < 0;
+    final ReaderPanelSwitcher? sw = switcher;
+    final bool withRail = sw != null && sw.items.length > 1;
+    Widget framed(Widget panel) {
+      if (!withRail) return panel;
+      // 切换条挂在面板朝画面的一侧、与面板顶对齐（同阅读器侧板）。
+      final Widget rail = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ReaderPanelSwitcherRail(
+            switcher: sw,
+            keyPrefix: 'video_panel',
+          ),
+        ),
+      );
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: fromLeft ? <Widget>[panel, rail] : <Widget>[rail, panel],
+      );
+    }
+
     return Align(
       alignment: alignment,
       child: SafeArea(
@@ -497,20 +533,27 @@ class VideoTranslucentSidePanel extends StatelessWidget {
           ),
           child: _VideoPanelEntrance(
             from: Offset(fromLeft ? -0.12 : 0.12, 0),
-            child: SizedBox(
-              width: panelWidth,
-              child: VideoFloatingPanelSurface(
-                opaque: opaque,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (header != null) header,
-                    // 标题与内容之间：Apple / MD3 都不压线（留白分区）；墨水屏
-                    // 保留细线。
-                    if (header != null && isEinkTheme(context))
-                      const FushiDividerControl(height: 1),
-                    Expanded(child: child),
-                  ],
+            child: framed(
+              SizedBox(
+                width: panelWidth,
+                child: VideoFloatingPanelSurface(
+                  opaque: opaque,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (header != null) header,
+                      // 标题与内容之间：Apple / MD3 都不压线（留白分区）；墨水屏
+                      // 保留细线。
+                      if (header != null && isEinkTheme(context))
+                        const FushiDividerControl(height: 1),
+                      Expanded(
+                        child: VideoPanelSwipeSwitch(
+                          switcher: switcher,
+                          child: child,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -521,40 +564,145 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   }
 
   Widget _buildBottomSheet(BuildContext context, Size screen) {
+    return _VideoBottomSheetFrame(
+      opaque: opaque,
+      onClose: onClose,
+      header: _buildHeader(context, compact: true),
+      switcher: switcher,
+      child: child,
+    );
+  }
+}
+
+/// 贴底面板（手机竖屏）：两档停靠高度——半屏（画面上半截照常可见，边调边看）
+/// 与 [VideoTranslucentSidePanel.bottomSheetExpandedFraction]（长时间改设置）。
+/// 拖把手在两档间切换，向下甩 / 拖到很低关闭；点把手关闭。切换条在把手下面
+/// 横向一排（纯图标，文案进 tooltip 与语义），代替页头标题。
+class _VideoBottomSheetFrame extends StatefulWidget {
+  const _VideoBottomSheetFrame({
+    required this.opaque,
+    required this.onClose,
+    required this.header,
+    required this.switcher,
+    required this.child,
+  });
+
+  final bool opaque;
+  final VoidCallback? onClose;
+  final Widget? header;
+  final ReaderPanelSwitcher? switcher;
+  final Widget child;
+
+  @override
+  State<_VideoBottomSheetFrame> createState() => _VideoBottomSheetFrameState();
+}
+
+class _VideoBottomSheetFrameState extends State<_VideoBottomSheetFrame> {
+  double _fraction = VideoTranslucentSidePanel.bottomSheetHeightFraction;
+
+  /// 拖动中的实时高度比例（null = 停在某一档，变化走动画）。
+  double? _dragFraction;
+
+  void _onDragUpdate(DragUpdateDetails details, double screenHeight) {
+    if (screenHeight <= 0) return;
+    final double base = _dragFraction ?? _fraction;
+    setState(() {
+      _dragFraction = (base - details.delta.dy / screenHeight).clamp(
+        0.15,
+        VideoTranslucentSidePanel.bottomSheetExpandedFraction,
+      );
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    final double current = _dragFraction ?? _fraction;
+    const double half = VideoTranslucentSidePanel.bottomSheetHeightFraction;
+    const double full = VideoTranslucentSidePanel.bottomSheetExpandedFraction;
+    // 半屏档向下甩、或拖到半屏以下一大截：关闭。
+    if ((velocity > 700 && current <= half) || current < half * 0.6) {
+      widget.onClose?.call();
+      return;
+    }
+    final double next;
+    if (velocity < -300) {
+      next = full;
+    } else if (velocity > 300) {
+      next = half;
+    } else {
+      next = (current - half).abs() < (current - full).abs() ? half : full;
+    }
+    setState(() {
+      _fraction = next;
+      _dragFraction = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Size screen = MediaQuery.sizeOf(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
     final double maxHeight = (screen.height - padding.top - 24).clamp(
       0.0,
       double.infinity,
     );
-    final double height = (screen.height * bottomSheetHeightFraction)
+    final double height = (screen.height * (_dragFraction ?? _fraction))
         .clamp(0.0, maxHeight)
         .toDouble();
     final double sheetWidth = screen.width < kReaderPanelBottomSheetMaxWidth
         ? screen.width
         : kReaderPanelBottomSheetMaxWidth;
     final double radius = VideoFloatingPanelSurface.radiusOf(context);
-    final Widget? header = _buildHeader(context, compact: true);
+    final ReaderPanelSwitcher? sw = widget.switcher;
+    final bool withSwitcher = sw != null && sw.items.length > 1;
+    final Widget? header = widget.header;
     return Align(
       alignment: Alignment.bottomCenter,
       child: _VideoPanelEntrance(
         from: const Offset(0, 1),
-        child: SizedBox(
+        child: AnimatedContainer(
           key: const ValueKey<String>('video-side-panel-bottom-sheet'),
+          duration: _dragFraction != null
+              ? Duration.zero
+              : fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.standard,
           width: sheetWidth,
           height: height,
           child: VideoFloatingPanelSurface(
-            opaque: opaque,
+            opaque: widget.opaque,
             borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
             child: SafeArea(
               top: false,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _VideoPanelDragHandle(onClose: onClose),
-                  if (header != null) header,
-                  if (header != null && isEinkTheme(context))
+                  _VideoPanelDragHandle(
+                    onClose: widget.onClose,
+                    onDragUpdate: (DragUpdateDetails d) =>
+                        _onDragUpdate(d, screen.height),
+                    onDragEnd: _onDragEnd,
+                  ),
+                  if (withSwitcher)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: Center(
+                        child: ReaderPanelSwitcherRail(
+                          switcher: sw,
+                          axis: Axis.horizontal,
+                          keyPrefix: 'video_panel',
+                        ),
+                      ),
+                    )
+                  else if (header != null)
+                    header,
+                  if (!withSwitcher && header != null && isEinkTheme(context))
                     const FushiDividerControl(height: 1),
-                  Expanded(child: child),
+                  Expanded(
+                    child: VideoPanelSwipeSwitch(
+                      switcher: widget.switcher,
+                      child: widget.child,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -565,12 +713,73 @@ class VideoTranslucentSidePanel extends StatelessWidget {
   }
 }
 
+/// 触屏左右滑动切换面板（切换条的手势版）：左滑到切换条上的下一个面板、右滑到
+/// 上一个，到头不循环。只认触摸 / 触控笔——桌面鼠标拖动不误切。
+///
+/// 滑条、横向滚动的页签等子控件自己也认横向拖动，手势竞技场里它们在命中链更深处、
+/// 先过触发阈值，按在它们上面横拖仍是调值 / 滚动；只有在空白处与普通行上横滑才
+/// 切面板。判据按松手速度（甩动），慢慢拖不切，避免读文字时手指微移误触。
+class VideoPanelSwipeSwitch extends StatelessWidget {
+  const VideoPanelSwipeSwitch({
+    required this.switcher,
+    required this.child,
+    super.key,
+  });
+
+  /// 松手横向速度超过它（逻辑像素 / 秒）才算一次切换甩动。
+  static const double flingVelocity = 400;
+
+  final ReaderPanelSwitcher? switcher;
+  final Widget child;
+
+  /// 甩动后应切到的面板 id；null = 不切（到头 / 速度不够 / 找不到当前项）。
+  static String? targetFor(ReaderPanelSwitcher switcher, double velocity) {
+    if (velocity.abs() < flingVelocity) return null;
+    final List<String> ids = <String>[
+      for (final ({String id, IconData icon, String label}) item
+          in switcher.items)
+        item.id,
+    ];
+    final int index = ids.indexOf(switcher.current.value);
+    if (index < 0) return null;
+    final int next = velocity < 0 ? index + 1 : index - 1;
+    if (next < 0 || next >= ids.length) return null;
+    return ids[next];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ReaderPanelSwitcher? sw = switcher;
+    if (sw == null || sw.items.length < 2) return child;
+    return GestureDetector(
+      key: const ValueKey<String>('video-panel-swipe-switch'),
+      // 只占用横向拖动；纵向滚动照常交给内容。
+      behavior: HitTestBehavior.translucent,
+      supportedDevices: const <PointerDeviceKind>{
+        PointerDeviceKind.touch,
+        PointerDeviceKind.stylus,
+      },
+      onHorizontalDragEnd: (DragEndDetails details) {
+        final String? target = targetFor(sw, details.primaryVelocity ?? 0);
+        if (target != null) sw.onSelect(target);
+      },
+      child: child,
+    );
+  }
+}
+
 /// 贴底面板顶端的拖动把手（MD3 drag handle 32×4）：向下甩 / 点按关闭面板（语义
 /// 按钮，键盘焦点不停在这里）。
 class _VideoPanelDragHandle extends StatelessWidget {
-  const _VideoPanelDragHandle({required this.onClose});
+  const _VideoPanelDragHandle({
+    required this.onClose,
+    this.onDragUpdate,
+    this.onDragEnd,
+  });
 
   final VoidCallback? onClose;
+  final GestureDragUpdateCallback? onDragUpdate;
+  final GestureDragEndCallback? onDragEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -586,9 +795,12 @@ class _VideoPanelDragHandle extends StatelessWidget {
           key: const ValueKey<String>('video-side-panel-drag-handle'),
           behavior: HitTestBehavior.opaque,
           onTap: onClose,
-          onVerticalDragEnd: (DragEndDetails details) {
-            if ((details.primaryVelocity ?? 0) > 300) onClose?.call();
-          },
+          onVerticalDragUpdate: onDragUpdate,
+          onVerticalDragEnd:
+              onDragEnd ??
+              (DragEndDetails details) {
+                if ((details.primaryVelocity ?? 0) > 300) onClose?.call();
+              },
           child: SizedBox(
             height: 22,
             child: Center(
