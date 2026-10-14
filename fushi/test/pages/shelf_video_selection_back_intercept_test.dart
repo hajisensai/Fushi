@@ -12,11 +12,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
-import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-250 (TODO-306): 书架/视频 tab 的批量选择模式（`_selectionMode`）活在 tab
 /// 内容里、不是独立 route。修复前返回键冒泡到 HomePage 顶层 PopScope 直接退出
@@ -56,8 +54,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_sel_back_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'hibiki_sel_back_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -68,38 +67,37 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              // #792 分区化后墙卡/多选入口只在 allVideos 分区渲染。
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.allVideos,
-              ),
-            ),
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          // #792 分区化后墙卡/多选入口只在 allVideos 分区渲染。
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.allVideos,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> seedVideo() async {
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('My Episode'),
-      videoPath: Value('/abs/ep1.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/1'),
+        title: Value('My Episode'),
+        videoPath: Value('/abs/ep1.mp4'),
+      ),
+    );
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    // 标签栏旁的「批量选择」按钮：FushiIconButton 用 Semantics(label) 而非
-    // Tooltip，故按 checklist 图标定位（与 home_video_page_menu_test 一致）。
-    final Finder selectBtn = find.descendant(
-      of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(FushiIcons.checklist),
+    // 单行页头（2026-10-14）：「批量选择」从标签栏旁并进页头动作，key 沿用
+    // `library_select_toggle`。
+    final Finder selectBtn = find.byKey(
+      const ValueKey<String>('library_select_toggle'),
     );
-    expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮');
+    expect(selectBtn, findsOneWidget, reason: '视频页头应有「批量选择」按钮');
     await tester.tap(selectBtn);
     await tester.pumpAndSettle();
   }
@@ -114,16 +112,22 @@ void main() {
 
     // 进入多选态：filter bar 选择切换可见、批量动作栏出现（含「全选」）。
     await enterSelectionMode(tester);
-    expect(find.text(t.batch_select_all), findsOneWidget,
-        reason: '进入多选态后底部批量动作栏应出现');
+    expect(
+      find.text(t.batch_select_all),
+      findsOneWidget,
+      reason: '进入多选态后底部批量动作栏应出现',
+    );
 
     // 系统返回：被本页 PopScope(canPop:false) 消费（返回 true = 不退 App）。
     final bool handled = await systemBack();
     await tester.pumpAndSettle();
 
     expect(handled, isTrue, reason: '多选态下返回必须被嵌套 PopScope 消费，否则会冒泡到顶层退出 App');
-    expect(find.text(t.batch_select_all), findsNothing,
-        reason: '返回应退出多选态，批量动作栏消失');
+    expect(
+      find.text(t.batch_select_all),
+      findsNothing,
+      reason: '返回应退出多选态，批量动作栏消失',
+    );
     // 仍停在视频页（页面没被弹掉）。
     expect(find.text('My Episode'), findsOneWidget);
   });
@@ -145,10 +149,12 @@ void main() {
   test('视频/书架 build 根都包了 SectionPopScope 拦截多选态返回（源码守卫）', () {
     String read(String path) => File(path).readAsStringSync();
 
-    final String videoSrc =
-        read('lib/src/pages/implementations/home_video_page.dart');
-    final String shelfSrc =
-        read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+    final String videoSrc = read(
+      'lib/src/pages/implementations/home_video_page.dart',
+    );
+    final String shelfSrc = read(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    );
 
     for (final MapEntry<String, String> e in <String, String>{
       'home_video_page': videoSrc,
@@ -158,19 +164,36 @@ void main() {
       expect(buildStart, isNonNegative, reason: '${e.key} 应有 build 方法');
       // build 根第一个返回的 widget 必须是 SectionPopScope（在 FushiFileDropTarget
       // 外）：只在所在库页分区可见时拦返回（HBK-AUDIT-017）。
-      final int popScope = e.value.indexOf('return SectionPopScope(', buildStart);
-      final int dropTarget =
-          e.value.indexOf('FushiFileDropTarget(', buildStart);
-      expect(popScope, isNonNegative,
-          reason: '${e.key} build 根应包一层 PopScope 拦截多选态返回');
-      expect(popScope, lessThan(dropTarget),
-          reason: '${e.key} 的 PopScope 必须包在 FushiFileDropTarget 外层');
+      final int popScope = e.value.indexOf(
+        'return SectionPopScope(',
+        buildStart,
+      );
+      final int dropTarget = e.value.indexOf(
+        'FushiFileDropTarget(',
+        buildStart,
+      );
+      expect(
+        popScope,
+        isNonNegative,
+        reason: '${e.key} build 根应包一层 PopScope 拦截多选态返回',
+      );
+      expect(
+        popScope,
+        lessThan(dropTarget),
+        reason: '${e.key} 的 PopScope 必须包在 FushiFileDropTarget 外层',
+      );
 
       final String region = e.value.substring(popScope, dropTarget);
-      expect(region, contains('intercepting: _selectionMode'),
-          reason: '${e.key} 多选态拦返回，普通态不变');
-      expect(region, contains('onIntercept: _exitSelectionMode'),
-          reason: '${e.key} 返回被拦时应退出多选态');
+      expect(
+        region,
+        contains('intercepting: _selectionMode'),
+        reason: '${e.key} 多选态拦返回，普通态不变',
+      );
+      expect(
+        region,
+        contains('onIntercept: _exitSelectionMode'),
+        reason: '${e.key} 返回被拦时应退出多选态',
+      );
     }
   });
 }

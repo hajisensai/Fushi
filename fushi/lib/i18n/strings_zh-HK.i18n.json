@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "向下捲動一頁",
   "shortcut_action_global_scroll_page_up": "向上捲動一頁",
   "shortcut_action_global_toggle_fullscreen": "全屏切換",
-  "shortcut_action_home_focus_search": "聚焦搜尋",
+  "shortcut_action_home_focus_search": "跳到查詞搜尋",
   "shortcut_action_home_tab_books": "書架分頁",
   "shortcut_action_home_tab_dict": "詞典分頁",
   "shortcut_action_home_tab_next": "下一個分頁",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "在書架 / 媒體庫中搜尋"
 }

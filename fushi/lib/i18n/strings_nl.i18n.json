@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "Eén scherm omlaag scrollen",
   "shortcut_action_global_scroll_page_up": "Eén scherm omhoog scrollen",
   "shortcut_action_global_toggle_fullscreen": "Volledig scherm wisselen",
-  "shortcut_action_home_focus_search": "Zoeken focussen",
+  "shortcut_action_home_focus_search": "Naar woordenboek zoeken springen",
   "shortcut_action_home_tab_books": "Tabblad Boeken",
   "shortcut_action_home_tab_dict": "Tabblad Woordenboek",
   "shortcut_action_home_tab_next": "Volgend tabblad",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "Zoeken in bibliotheek"
 }

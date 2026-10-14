@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "向下翻一屏",
   "shortcut_action_global_scroll_page_up": "向上翻一屏",
   "shortcut_action_global_toggle_fullscreen": "全屏切换",
-  "shortcut_action_home_focus_search": "聚焦搜索",
+  "shortcut_action_home_focus_search": "跳到查词搜索",
   "shortcut_action_home_tab_books": "书架标签",
   "shortcut_action_home_tab_dict": "词典标签",
   "shortcut_action_home_tab_next": "下一个标签页",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "框选图片",
   "popup_advanced_mining_crop_done": "完成",
   "popup_advanced_mining_crop_download_failed": "分镜模型下载失败",
-  "popup_advanced_mining_sentence_shortcut_hint": "快捷键 [ ] 增减前文 · Shift+[ ] 增减后文"
+  "popup_advanced_mining_sentence_shortcut_hint": "快捷键 [ ] 增减前文 · Shift+[ ] 增减后文",
+  "shortcut_action_library_search": "在书架 / 媒体库中搜索"
 }

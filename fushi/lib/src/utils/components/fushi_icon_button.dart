@@ -14,6 +14,39 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
+/// 正在派发的动作的「触发控件」：[FushiIconButton] 点击（鼠标 / 触摸 / 键盘 /
+/// 手柄确认同一条 `_handleTap`）时是按钮自己；收进页头「⋯」溢出菜单的动作由
+/// 「⋯」代为派发，这时是「⋯」按钮（2026-10-14：库页筛选面板据此锚定弹出位置，
+/// 关闭后把焦点还给它）。
+///
+/// 只在动作回调**同步执行的那一段**里有值——要用就在回调里第一个 `await` 之前
+/// 读 [current]；派发结束（或回调挂起）后即复位，不会串到下一个动作。
+abstract final class FushiActionOrigin {
+  static BuildContext? _current;
+
+  /// 当前派发中的触发控件（已卸载的不算）。
+  static BuildContext? get current {
+    final BuildContext? origin = _current;
+    return origin != null && origin.mounted ? origin : null;
+  }
+
+  /// 以 [origin] 为触发控件执行 [action]：同步段内 [current] 指向它。
+  static Future<void> dispatch(
+    BuildContext origin,
+    FutureOr<void> Function() action,
+  ) async {
+    final BuildContext? previous = _current;
+    _current = origin;
+    final FutureOr<void> result;
+    try {
+      result = action();
+    } finally {
+      _current = previous;
+    }
+    await result;
+  }
+}
+
 /// 页头动作按钮「展开文字标签」的作用域开关。
 ///
 /// BUG：`_labelExpanded` 原本只按**整窗**宽（[MediaQuery.sizeOf]）判定，与页头
@@ -99,8 +132,13 @@ class FushiIconButton extends StatefulWidget {
     this.selected = false,
     this.overflowPriority = 0,
     this.alwaysVisible = false,
+    this.badge = false,
     super.key,
   });
+
+  /// 右上角亮一枚主色小圆点（筛选生效 / 后台任务进行中 / 收起的搜索仍有过滤词）。
+  /// 只是提示，不改按钮的命中区与尺寸；收进「⋯」后菜单项不带圆点。
+  final bool badge;
 
   /// 在页头 / 顶栏动作行里的重要程度（越大越晚被收进「⋯」溢出菜单）。
   ///
@@ -202,8 +240,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
   /// default (no explicit [focusId] needed). Derived from this State's identity
   /// so it survives rebuilds and stays unique per instance — mirrors FushiCard
   /// / FushiListItem.
-  late final FushiFocusId _fallbackFocusId =
-      FushiFocusId('hibiki-icon-button-${identityHashCode(this)}');
+  late final FushiFocusId _fallbackFocusId = FushiFocusId(
+    'hibiki-icon-button-${identityHashCode(this)}',
+  );
 
   /// HBK-AUDIT-151: true while a busy [onTap] action is awaiting completion.
   /// Used so [didUpdateWidget] does not re-enable the button mid-action when
@@ -243,8 +282,10 @@ class _FushiIconButtonState extends State<FushiIconButton>
     if (value && _tapHandler == null) return;
     // Apple 路径不挂 [_trackPress]；防御性地不让弹簧在 Apple 下跑。
     if (isGlassDesign(context)) return;
-    _press.animateTo(value ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context));
+    _press.animateTo(
+      value ? 1 : 0,
+      animate: fushiExpressiveMotionEnabled(context),
+    );
   }
 
   /// 包一层指针监听，把按下 / 抬起喂给 [_press]。用 [Listener] 而不是手势
@@ -287,7 +328,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
           setState(() {});
         }
         try {
-          await widget.onTap?.call();
+          await _dispatchTap();
         } finally {
           enabled = true;
           _busyInFlight = false;
@@ -297,8 +338,15 @@ class _FushiIconButtonState extends State<FushiIconButton>
         }
       }
     } else {
-      await widget.onTap?.call();
+      await _dispatchTap();
     }
+  }
+
+  /// 以本按钮为 [FushiActionOrigin] 派发 [FushiIconButton.onTap]。
+  Future<void> _dispatchTap() async {
+    final FutureOr<void> Function()? onTap = widget.onTap;
+    if (onTap == null) return;
+    await FushiActionOrigin.dispatch(context, onTap);
   }
 
   /// MD3 默认图标色：M3 标准图标按钮的 onSurfaceVariant。墨水屏沿用主题
@@ -333,6 +381,35 @@ class _FushiIconButtonState extends State<FushiIconButton>
 
   @override
   Widget build(BuildContext context) {
+    final Widget button = _buildButton(context);
+    if (!widget.badge) return button;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 墨水屏：primary 塌成前景色，圆点照样可见（实心黑点）。
+    final Color dot = isEinkTheme(context) ? colors.onSurface : colors.primary;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        button,
+        PositionedDirectional(
+          top: 4,
+          end: 4,
+          child: IgnorePointer(
+            child: DecoratedBox(
+              key: const ValueKey<String>('fushi_icon_button_badge'),
+              decoration: BoxDecoration(
+                color: dot,
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.surface, width: 1.5),
+              ),
+              child: const SizedBox.square(dimension: 9),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildButton(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
     final String? label = widget.label;
@@ -346,8 +423,10 @@ class _FushiIconButtonState extends State<FushiIconButton>
     }
     if (widget.isWideTapArea && glass) {
       final double extent = fushiAppleCompact(context) ? 36 : 44;
-      return _focusable(context,
-          _withTooltip(_buildAppleIcon(context, tokens, minTapExtent: extent)));
+      return _focusable(
+        context,
+        _withTooltip(_buildAppleIcon(context, tokens, minTapExtent: extent)),
+      );
     }
     if (widget.isWideTapArea) {
       final Semantics button = Semantics(
@@ -371,10 +450,14 @@ class _FushiIconButtonState extends State<FushiIconButton>
 
     if (glass) {
       return _focusable(
-          context, _withTooltip(_buildAppleIcon(context, tokens)));
+        context,
+        _withTooltip(_buildAppleIcon(context, tokens)),
+      );
     }
     return _focusable(
-        context, _withTooltip(_buildMaterialIcon(context, tokens)));
+      context,
+      _withTooltip(_buildMaterialIcon(context, tokens)),
+    );
   }
 
   /// MD3（M3 Expressive）标准图标按钮：默认 40 的圆形命中区（8 内边距 + 24
@@ -396,9 +479,10 @@ class _FushiIconButtonState extends State<FushiIconButton>
     final Color iconColor = !enabled
         ? disabledColor
         : (widget.enabledColor ??
-            (tonalSelected ? cs.onSecondaryContainer : enabledColor));
-    final Color stateLayer =
-        tonalSelected ? cs.onSecondaryContainer : cs.onSurface;
+              (tonalSelected ? cs.onSecondaryContainer : enabledColor));
+    final Color stateLayer = tonalSelected
+        ? cs.onSecondaryContainer
+        : cs.onSurface;
 
     Widget buildAt(double press, double select) {
       final ShapeBorder shape;
@@ -413,14 +497,17 @@ class _FushiIconButtonState extends State<FushiIconButton>
         shape = slot.shape;
       } else if (widget.selected && round) {
         shape = const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(14)));
+          borderRadius: BorderRadius.all(Radius.circular(14)),
+        );
       } else {
         shape = widget.shapeBorder;
       }
-      final Color fill = widget.backgroundColor ??
+      final Color fill =
+          widget.backgroundColor ??
           (tonalSelected
               ? cs.secondaryContainer.withValues(
-                  alpha: cs.secondaryContainer.a * (morph ? select : 1))
+                  alpha: cs.secondaryContainer.a * (morph ? select : 1),
+                )
               : Colors.transparent);
       // 底色跟随形状画（默认圆），不再用矩形 ColoredBox 露出方角。
       Widget glyph = Padding(
@@ -428,8 +515,10 @@ class _FushiIconButtonState extends State<FushiIconButton>
         child: FushiIcon(widget.icon, size: widget.size, color: iconColor),
       );
       if (slot != null) {
-        glyph =
-            SizedBox.fromSize(size: slot.extent, child: Center(child: glyph));
+        glyph = SizedBox.fromSize(
+          size: slot.extent,
+          child: Center(child: glyph),
+        );
       }
       Widget touchTarget = DecoratedBox(
         decoration: ShapeDecoration(color: fill, shape: shape),
@@ -488,12 +577,14 @@ class _FushiIconButtonState extends State<FushiIconButton>
     final bool morph = fushiExpressiveMotionEnabled(context);
     final Color contentColor = enabled
         ? (widget.enabledColor ??
-            (eink ? enabledColor : cs.onSecondaryContainer))
+              (eink ? enabledColor : cs.onSecondaryContainer))
         : disabledColor;
-    final Color fill = widget.backgroundColor ??
+    final Color fill =
+        widget.backgroundColor ??
         (eink ? Colors.transparent : cs.secondaryContainer);
-    final BorderSide side =
-        eink ? BorderSide(color: tokens.surfaces.outline) : BorderSide.none;
+    final BorderSide side = eink
+        ? BorderSide(color: tokens.surfaces.outline)
+        : BorderSide.none;
     final Color stateLayer = eink ? cs.onSurface : cs.onSecondaryContainer;
 
     Widget buildAt(double press) {
@@ -532,13 +623,17 @@ class _FushiIconButtonState extends State<FushiIconButton>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    FushiIcon(widget.icon,
-                        size: widget.size ?? 20, color: contentColor),
+                    FushiIcon(
+                      widget.icon,
+                      size: widget.size ?? 20,
+                      color: contentColor,
+                    ),
                     SizedBox(width: tokens.spacing.gap),
                     Text(
                       label,
-                      style: tokens.type.controlLabel
-                          .copyWith(color: contentColor),
+                      style: tokens.type.controlLabel.copyWith(
+                        color: contentColor,
+                      ),
                     ),
                   ],
                 ),
@@ -588,19 +683,22 @@ class _FushiIconButtonState extends State<FushiIconButton>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(widget.icon,
-                  size: widget.size ?? (compact ? 15 : 17),
-                  color: contentColor),
+              FushiIcon(
+                widget.icon,
+                size: widget.size ?? (compact ? 15 : 17),
+                color: contentColor,
+              ),
               const SizedBox(width: 6),
               Text(
                 label,
-                style: (Theme.of(context).textTheme.labelLarge ??
-                        const TextStyle())
-                    .copyWith(
-                  color: contentColor,
-                  fontSize: compact ? 13 : 15,
-                  fontWeight: FontWeight.w500,
-                ),
+                style:
+                    (Theme.of(context).textTheme.labelLarge ??
+                            const TextStyle())
+                        .copyWith(
+                          color: contentColor,
+                          fontSize: compact ? 13 : 15,
+                          fontWeight: FontWeight.w500,
+                        ),
               ),
             ],
           ),
@@ -781,8 +879,8 @@ class _AppleIconPressableState extends State<_AppleIconPressable> {
     final Color color = !highlight
         ? (fill ?? Colors.transparent)
         : (fill == null
-            ? widget.hoverFill
-            : Color.alphaBlend(widget.hoverFill, fill));
+              ? widget.hoverFill
+              : Color.alphaBlend(widget.hoverFill, fill));
     final Widget body = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       decoration: ShapeDecoration(color: color, shape: widget.shape),

@@ -22,7 +22,7 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
   },
   'nl': <String>{'updates_center_title'},
   'pt-BR': <String>{'leaderboard_title'},
-  // 法语「$n sessions」与英文同形；「Collections」（收藏夹）法语本就同形。
+  // 法语「$n sessions」「Collections」与英文同形（收藏夹入口 2026-10-14 移到首页）。
   'fr': <String>{'home_session_count', 'collections'},
 };
 

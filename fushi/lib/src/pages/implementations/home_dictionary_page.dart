@@ -836,30 +836,13 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             icon: CupertinoIcons.book,
             onTap: appModel.showDictionaryMenu,
           ),
-        // 收藏夹入口：查词页里收藏的词 / 句（含视频、有声书来源）在这里集中看、
-        // 批量制卡。此前只能从书架 / 视频库进收藏夹，查词页没有入口。
-        FushiIconButton(
-          key: const ValueKey<String>('home-dictionary-collections'),
-          tooltip: t.collections,
-          icon: FushiIcons.collection,
-          onTap: _openCollections,
-        ),
+        // 收藏夹入口已收敛到首页 dashboard（用户定案 2026-10-14）。
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
           icon: FushiIcons.deleteSweep,
           onTap: _showDeleteDictionaryHistoryPrompt,
         ),
       ],
-    );
-  }
-
-  void _openCollections() {
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const CollectionsPage(),
-      ),
     );
   }
 

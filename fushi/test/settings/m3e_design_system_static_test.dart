@@ -293,7 +293,9 @@ void main() {
     'lib/src/pages/implementations/games_library_page.dart': <String>[
       'showAppDialog<GalgamePlayStatus>(',
       'showAppDialog<String>(',
-      'adaptiveModalSheet<void>(',
+      // 筛选面板 2026-10-14 收进库页共用的 showLibraryFilterPanel（其窄窗形态
+      // 仍是 adaptiveModalSheet + FushiModalSheetFrame，见下一条）。
+      'showLibraryFilterPanel(',
       'FushiDialogFrame',
       'FushiModalSheetFrame',
       'FushiTextField',
@@ -304,6 +306,11 @@ void main() {
       'showGalgameScrapeDialog(',
       'FushiDestructiveConfirmDialog(',
       'showCollectionContextDialog(',
+    ],
+    // 库页筛选面板（游戏库 / 视频库共用）：窄窗 / Apple 走共享弹层骨架。
+    'lib/src/pages/implementations/library_filter_panel.dart': <String>[
+      'adaptiveModalSheet<void>(',
+      'FushiModalSheetFrame',
     ],
     'lib/src/pages/implementations/texthooker_page.dart': <String>[
       'showAppDialog<int>(',

@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "1画面分下にスクロール",
   "shortcut_action_global_scroll_page_up": "1画面分上にスクロール",
   "shortcut_action_global_toggle_fullscreen": "全画面表示の切り替え",
-  "shortcut_action_home_focus_search": "検索にフォーカス",
+  "shortcut_action_home_focus_search": "辞書検索へ移動",
   "shortcut_action_home_tab_books": "書籍タブ",
   "shortcut_action_home_tab_dict": "辞書タブ",
   "shortcut_action_home_tab_next": "次のタブ",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "ライブラリ内を検索"
 }

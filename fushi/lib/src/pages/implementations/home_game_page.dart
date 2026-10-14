@@ -23,6 +23,8 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart'
+    show FushiHeaderSearchKeys, fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
@@ -305,17 +307,22 @@ class _HomeGamePageState extends State<HomeGamePage> {
       child: FushiShellTitleScope(
         title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
         actionsSlot: _actionsSlot,
-        child: FushiFloatingChromeScope(
-          controller: _chrome,
-          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
-          child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(
-              tabs: navigation,
-              slot: _actionsSlot,
-            ),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScroll,
-              child: GameSectionTabsHostScope(child: body),
+        child: FushiHeaderSearchKeys(
+          // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
+          // （焦点在页签、动作或内容上都认）。
+          resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
+            child: FushiFloatingChromeOverlay(
+              chrome: FushiFloatingChromeBar(
+                tabs: navigation,
+                slot: _actionsSlot,
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: GameSectionTabsHostScope(child: body),
+              ),
             ),
           ),
         ),
@@ -541,8 +548,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
             // 网格 / 列表切换（与视频库「全部视频」同位：页头动作）。只在真库页
             // 时出现——注入 libraryBuilder 的测试宿主没有 ProviderScope。
+            // 真库页（非 Cupertino）的网格 / 列表切换已并进游戏库自己的单行页头
+            // （与搜索 / 刮削 / 排序同一组动作，2026-10-14），这里只给 Cupertino
+            // 旧版面保留。
             actions: <Widget>[
-              if (widget.libraryBuilder == null)
+              if (widget.libraryBuilder == null && isCupertinoPlatform(context))
                 const GamesLibraryLayoutToggle(),
             ],
           ),

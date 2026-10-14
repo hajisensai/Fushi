@@ -107,7 +107,9 @@ import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
@@ -465,6 +467,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  /// 单行页头的可展开搜索（2026-10-14）：平时是页头里的 🔍，点开整行换成搜索
+  /// 栏；搜索词仍是上面的 [_searchQuery]（不落库）。视频首页分区不出搜索。
+  late final FushiHeaderSearchController _headerSearch =
+      FushiHeaderSearchController(
+        textController: _searchController,
+        buttonFocusId: const FushiFocusId('video-library-search'),
+        hintText: t.library_search,
+        fieldKey: const ValueKey<String>('video_search_field'),
+        onQueryChanged: (String value) => setState(() => _searchQuery = value),
+      );
+
+  /// 页头「排序」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
+  final MenuController _sortMenu = MenuController();
+
   /// 层次 C：`'video|<uid>' → 该条目在其主折叠合集里的 sortIndex`（组内序真相源，
   /// 与详情页/播放器 `getCollectionItems` 同源——详情页拖完库页行立即同序）。
   Map<String, int> _memberSortIndex = const <String, int>{};
@@ -542,7 +558,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `video_all_series_filter`）——合集成员已在系列页折成卡，平铺视图默认再铺一遍
   /// 只会把散片淹掉。与年份 / 看完状态「不持久化」的理由不冲突：那两个的默认是
   /// 「全部」，挂着上次的值会让人以为库空了；这一档本身就是常驻默认。
-  VideoSeriesFilter _seriesFilter = VideoSeriesFilter.standalone;
+  VideoSeriesFilter _seriesFilter = kDefaultVideoSeriesFilter;
 
   /// BUG-2835：「全部视频」的媒体类型 / 正片特典 / 来源筛选（本地即筛，与年份 /
   /// 看完状态同样不持久化）。来源 null = 不限。
@@ -718,6 +734,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _headerSearch.dispose();
     _searchController.dispose();
     _continueRowController.dispose();
     _nextRowController.dispose();
@@ -4206,12 +4223,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                        // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
-                        // 标签 chip 只在有标签时另起一行。
-                        if (widget.section != VideoLibrarySection.home)
-                          _buildVideoSearchBar(allTags),
-                        if (widget.section != VideoLibrarySection.home)
-                          _buildTagFilterBar(allTags),
+                        // 单行页头（2026-10-14）：搜索 / 筛选 / 多选 / 排序 /
+                        // 管理标签并进页头动作，搜索点开整行换成搜索栏；筛选
+                        // 维度收进「筛选」面板。下面只剩一行 chip：生效中的
+                        // 筛选条件（带 ✕）在前、标签在后，两者都没有时零高度。
+                        // Cupertino 旧版面保留常驻搜索行（筛选胶囊仍在行内）。
+                        if (widget.section !=
+                            VideoLibrarySection.home) ...<Widget>[
+                          if (isCupertinoPlatform(context)) ...<Widget>[
+                            _buildVideoSearchBar(allTags),
+                            _buildTagFilterBar(allTags),
+                          ] else ...<Widget>[
+                            _buildSortMenuAnchor(allTags),
+                            _buildTagFilterBar(
+                              allTags,
+                              leadingChips: _activeFilterChips(),
+                            ),
+                          ],
+                        ],
                         // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                         const SyncProgressBanner(),
                         VideoOnlineServicesBanner(
@@ -6874,6 +6903,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (widget.section == VideoLibrarySection.allVideos)
         FushiIconButton(
           key: const ValueKey<String>('video-all-videos-layout-toggle'),
+          overflowPriority: 25,
           tooltip: _allVideosLayout == _AllVideosLayout.grid
               ? t.video_all_videos_list_view
               : t.video_all_videos_grid_view,
@@ -6889,19 +6919,51 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 : _AllVideosLayout.grid;
           }),
         ),
+      // 刮削是视频库页头里仅次于搜索的动作（单行页头 2026-10-14：🔍 > 刮削 >
+      // 其余），后台刮削进行中右上角亮圆点。直接就是 [FushiIconButton]（不再
+      // 外包 badge 组件），放不下时才能按优先级收进 ⋯。
       if (widget.onOpenScrapeTasks != null)
-        FushiBadgeControl(
-          isLabelVisible: widget.scrapeTaskController?.isBusy == true,
-          child: FushiIconButton(
-            tooltip: t.video_source_scrape_tasks_open,
-            label: t.video_source_scrape_tasks_open,
-            icon: widget.scrapeTaskController?.pendingConfirmation == null
-                // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
-                // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
-                ? Icons.manage_search_outlined
-                : Icons.rule_folder_outlined,
-            onTap: widget.onOpenScrapeTasks!,
-          ),
+        FushiIconButton(
+          tooltip: t.video_source_scrape_tasks_open,
+          label: t.video_source_scrape_tasks_open,
+          icon: widget.scrapeTaskController?.pendingConfirmation == null
+              // 与游戏库页头的「全部刮削」入口同一个图标（manage_search）；
+              // 旧的 sync 图标长得像刷新按钮（反馈 #7m1x-R3yOn）。
+              ? Icons.manage_search_outlined
+              : Icons.rule_folder_outlined,
+          badge: widget.scrapeTaskController?.isBusy == true,
+          overflowPriority: 50,
+          onTap: widget.onOpenScrapeTasks!,
+        ),
+      // 筛选面板（2026-10-14）：年份 / 看完状态（「全部视频」另有系列 / 类型 /
+      // 特典 / 来源）不再在页头下方铺一行胶囊，收进这颗按钮打开的面板；有条件
+      // 生效时亮圆点。优先级介于刮削与多选之间。
+      if (widget.section != VideoLibrarySection.home &&
+          !isCupertinoPlatform(context))
+        FushiIconButton(
+          key: const ValueKey<String>('video-library-filter-button'),
+          tooltip: _hasActivePanelFilter
+              ? '${t.shelf_toolbar_filters} · ${t.library_filter_active}'
+              : t.shelf_toolbar_filters,
+          label: t.shelf_toolbar_filters,
+          icon: _hasActivePanelFilter
+              ? FushiIcons.filled(FushiIcons.filter)
+              : FushiIcons.filter,
+          badge: _hasActivePanelFilter,
+          overflowPriority: 40,
+          onTap: () => unawaited(_showFilterPanel()),
+        ),
+      // 原工具行行尾的「批量选择 / 排序 / 管理标签」（首页分区没有工具行，
+      // 同样不出）。
+      if (widget.section != VideoLibrarySection.home &&
+          !isCupertinoPlatform(context))
+        ...libraryHeaderTagActions(
+          context,
+          ref: ref,
+          sortMenu: _sortMenu,
+          selectionMode: _selectionMode,
+          onToggleSelectionMode: _toggleSelectionMode,
+          onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
         ),
       // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
       // （browse_page）里有完整入口，视频库页头只留库管理动作。
@@ -6920,6 +6982,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (_videoRemoteTargets.isNotEmpty)
         FushiIconButton(
           key: const ValueKey<String>('video-library-remote-control'),
+          overflowPriority: 15,
           tooltip: t.video_remote_title,
           label: t.video_remote_title,
           icon: FushiIcons.remoteControl,
@@ -6940,6 +7003,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform))
         FushiIconButton(
           key: const ValueKey<String>('video-library-refresh'),
+          overflowPriority: 5,
           tooltip: t.refresh,
           label: t.refresh,
           icon: Icons.refresh_outlined,
@@ -6955,9 +7019,249 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return FushiPageHeader.customTitle(
         title: navigation,
         actions: _selectionMode ? _selectionHeaderActions() : actions,
+        search: _headerSearchForSection,
       );
     }
-    return FushiPageHeader(title: t.nav_video, actions: actions);
+    return FushiPageHeader(
+      title: t.nav_video,
+      actions: actions,
+      search: _headerSearchForSection,
+    );
+  }
+
+  /// 页头搜索：首页分区没有可搜的网格、多选态页头是「已选 N · 退出」，都不出 🔍；
+  /// Cupertino 旧版面用常驻搜索行。
+  FushiHeaderSearchController? get _headerSearchForSection =>
+      widget.section == VideoLibrarySection.home ||
+          _selectionMode ||
+          isCupertinoPlatform(context)
+      ? null
+      : _headerSearch;
+
+  /// 「排序」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序按钮可能
+  /// 被收进「⋯」，菜单挂在这里才总能打开。
+  Widget _buildSortMenuAnchor(List<BookTagRow> tags) {
+    return Align(
+      alignment: AlignmentDirectional.topEnd,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          end: FushiDesignTokens.of(context).spacing.page,
+        ),
+        child: FushiTagFilterBar(
+          tags: tags,
+          part: FushiTagFilterBarPart.sortMenuAnchor,
+          sortMenuController: _sortMenu,
+          onToggleFilter: _toggleFilter,
+          onReorder: _reorderTags,
+          sortMode: _sortMode,
+          sortModeLabel: _sortModeLabel,
+          onSortModeChanged: _setSortMode,
+        ),
+      ),
+    );
+  }
+
+  /// 筛选面板里的维度当前有没有任何一档偏离**分区默认值**（页头「筛选」按钮亮
+  /// 圆点）。默认值不算「用户主动生效的筛选」（2026-10-14 用户拍板）：多数维度
+  /// 默认是「全部」，「全部视频」的系列归属默认是「非系列」
+  /// （[kDefaultVideoSeriesFilter]）。口径与 [_activeFilterChips] 一致：只算当前
+  /// 分区真露出、真生效的维度。
+  bool get _hasActivePanelFilter =>
+      !_yearFilter.isAll ||
+      _watchStatusFilter != VideoWatchStatusFilter.all ||
+      _seriesFilterIsNonDefault ||
+      _effectiveMediaTypeFilter != VideoMediaTypeFilter.all ||
+      _effectiveExtrasFilter != VideoExtrasFilter.all ||
+      _effectiveSourceFilter != null;
+
+  /// 系列归属偏离分区默认档（只在「全部视频」露出）。
+  bool get _seriesFilterIsNonDefault =>
+      _isAllVideosSection && _seriesFilter != kDefaultVideoSeriesFilter;
+
+  void _setSeriesFilter(VideoSeriesFilter value) {
+    setState(() => _seriesFilter = value);
+    // BUG-2835：记住上次选择（用户拍板）。
+    unawaited(
+      ref.read(appProvider).prefsRepo.setVideoAllSeriesFilterName(value.name),
+    );
+  }
+
+  /// 页头下方 chip 行行首：每个偏离分区默认值的筛选条件一枚带 ✕ 的 chip，点 ✕
+  /// 把该维度复位成**分区默认值**（多数是「全部」，系列归属是「非系列」），点
+  /// chip 本身打开筛选面板。默认档不出 chip。数字 / 名称类的值（年份、
+  /// 类型、来源）前缀维度名，免得一枚「2023」「视频」看不出是什么条件。
+  List<Widget> _activeFilterChips() {
+    void openPanel() => unawaited(_showFilterPanel());
+    final int? source = _effectiveSourceFilter;
+    return <Widget>[
+      if (!_yearFilter.isAll)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_year'),
+          label: _yearFilter.unknownOnly
+              ? t.video_filter_year_unknown
+              : '${t.video_filter_year} · ${_yearFilter.year}',
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _yearFilter = const VideoYearFilter.all()),
+        ),
+      if (_watchStatusFilter != VideoWatchStatusFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_watch_status'),
+          label: _watchStatusFilterLabel(_watchStatusFilter),
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _watchStatusFilter = VideoWatchStatusFilter.all),
+        ),
+      if (_seriesFilterIsNonDefault)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_series'),
+          // 「全部」档要带维度名，单一枚「全部」看不出是哪个条件。
+          label: _seriesFilter == VideoSeriesFilter.all
+              ? '${t.video_filter_series} · ${t.home_filter_all}'
+              : _seriesFilterLabel(_seriesFilter),
+          onTap: openPanel,
+          onRemove: () => _setSeriesFilter(kDefaultVideoSeriesFilter),
+        ),
+      if (_effectiveMediaTypeFilter != VideoMediaTypeFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_media_type'),
+          label:
+              '${t.video_filter_media_type} · '
+              '${_mediaTypeFilterLabel(_effectiveMediaTypeFilter)}',
+          onTap: openPanel,
+          onRemove: () =>
+              setState(() => _mediaTypeFilter = VideoMediaTypeFilter.all),
+        ),
+      if (_effectiveExtrasFilter != VideoExtrasFilter.all)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_extras'),
+          label: _extrasFilterLabel(_effectiveExtrasFilter),
+          onTap: openPanel,
+          onRemove: () => setState(() => _extrasFilter = VideoExtrasFilter.all),
+        ),
+      if (source != null)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_source'),
+          label:
+              '${t.video_filter_source} · '
+              '${_videoSourcesById[source]?.label ?? ''}',
+          onTap: openPanel,
+          onRemove: () => setState(() => _sourceFilter = null),
+        ),
+    ];
+  }
+
+  /// 「筛选」面板（与游戏库同一个 [showLibraryFilterPanel]）：年份 / 看完状态，
+  /// 「全部视频」另有系列归属 / 媒体类型 / 正片特典 / 来源（≥2 个来源才出）。
+  /// 改动即时生效；过滤语义与持久化（只有系列归属落偏好）都与原下拉一致。
+  Future<void> _showFilterPanel() {
+    return showLibraryFilterPanel(
+      context: context,
+      title: t.shelf_toolbar_filters,
+      clearLabel: t.library_filters_clear,
+      clearKey: const ValueKey<String>('video_filter_panel_clear'),
+      onClearAll: _clearPanelFilters,
+      sections: (BuildContext context, LibraryFilterPanelUpdate update) {
+        final List<int> years = _airYearByUid.values.toSet().toList()
+          ..sort((int a, int b) => b.compareTo(a));
+        final List<MediaSourceRow> sources = _videoSourcesById.values.toList()
+          ..sort((MediaSourceRow a, MediaSourceRow b) => a.id.compareTo(b.id));
+        return <Widget>[
+          LibraryFilterChoiceSection<VideoYearFilter>(
+            key: const ValueKey<String>('video_filter_panel_year'),
+            title: t.video_filter_year,
+            values: <VideoYearFilter>[
+              const VideoYearFilter.all(),
+              for (final int year in years) VideoYearFilter.year(year),
+              const VideoYearFilter.unknown(),
+            ],
+            selected: _yearFilter,
+            allValue: const VideoYearFilter.all(),
+            allLabel: t.home_filter_all,
+            labelOf: (VideoYearFilter value) => value.unknownOnly
+                ? t.video_filter_year_unknown
+                : '${value.year}',
+            onSelected: (VideoYearFilter value) =>
+                update(() => setState(() => _yearFilter = value)),
+          ),
+          LibraryFilterChoiceSection<VideoWatchStatusFilter>(
+            key: const ValueKey<String>('video_filter_panel_watch_status'),
+            title: t.video_filter_watch_status,
+            values: VideoWatchStatusFilter.values,
+            selected: _watchStatusFilter,
+            allValue: VideoWatchStatusFilter.all,
+            allLabel: t.home_filter_all,
+            labelOf: _watchStatusFilterLabel,
+            onSelected: (VideoWatchStatusFilter value) =>
+                update(() => setState(() => _watchStatusFilter = value)),
+          ),
+          if (_isAllVideosSection) ...<Widget>[
+            LibraryFilterChoiceSection<VideoSeriesFilter>(
+              key: const ValueKey<String>('video_filter_panel_series'),
+              title: t.video_filter_series,
+              values: VideoSeriesFilter.values,
+              selected: _seriesFilter,
+              allValue: VideoSeriesFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _seriesFilterLabel,
+              onSelected: (VideoSeriesFilter value) =>
+                  update(() => _setSeriesFilter(value)),
+            ),
+            LibraryFilterChoiceSection<VideoMediaTypeFilter>(
+              key: const ValueKey<String>('video_filter_panel_media_type'),
+              title: t.video_filter_media_type,
+              values: VideoMediaTypeFilter.values,
+              selected: _mediaTypeFilter,
+              allValue: VideoMediaTypeFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _mediaTypeFilterLabel,
+              onSelected: (VideoMediaTypeFilter value) =>
+                  update(() => setState(() => _mediaTypeFilter = value)),
+            ),
+            LibraryFilterChoiceSection<VideoExtrasFilter>(
+              key: const ValueKey<String>('video_filter_panel_extras'),
+              title: t.video_filter_extras,
+              values: VideoExtrasFilter.values,
+              selected: _extrasFilter,
+              allValue: VideoExtrasFilter.all,
+              allLabel: t.home_filter_all,
+              labelOf: _extrasFilterLabel,
+              onSelected: (VideoExtrasFilter value) =>
+                  update(() => setState(() => _extrasFilter = value)),
+            ),
+            if (sources.length >= 2)
+              LibraryFilterChoiceSection<int>(
+                key: const ValueKey<String>('video_filter_panel_source'),
+                title: t.video_filter_source,
+                values: <int>[-1, for (final MediaSourceRow s in sources) s.id],
+                selected: _effectiveSourceFilter ?? -1,
+                allValue: -1,
+                allLabel: t.home_filter_all,
+                labelOf: (int id) => _videoSourcesById[id]?.label ?? '',
+                onSelected: (int value) => update(
+                  () =>
+                      setState(() => _sourceFilter = value < 0 ? null : value),
+                ),
+              ),
+          ],
+        ];
+      },
+    );
+  }
+
+  /// 面板「清除全部」：只复位面板里的维度（搜索词与标签各有自己的入口，不动），
+  /// 一律回到**分区默认值**——系列归属回「非系列」并写回偏好，清完筛选按钮的
+  /// 圆点与 chip 一起消失。筛空态的 [_clearAllFilters] 同一口径，另外还清搜索词
+  /// 与标签。
+  void _clearPanelFilters() {
+    setState(() {
+      _yearFilter = const VideoYearFilter.all();
+      _watchStatusFilter = VideoWatchStatusFilter.all;
+      _mediaTypeFilter = VideoMediaTypeFilter.all;
+      _extrasFilter = VideoExtrasFilter.all;
+      _sourceFilter = null;
+    });
+    _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
@@ -7316,16 +7620,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         values: VideoSeriesFilter.values,
         allValue: VideoSeriesFilter.all,
         labelOf: _seriesFilterLabel,
-        onSelected: (VideoSeriesFilter value) {
-          setState(() => _seriesFilter = value);
-          // BUG-2835：记住上次选择（用户拍板）。
-          unawaited(
-            ref
-                .read(appProvider)
-                .prefsRepo
-                .setVideoAllSeriesFilterName(value.name),
-          );
-        },
+        onSelected: _setSeriesFilter,
       );
 
   /// BUG-2835：媒体类型下拉（全部 / 视频 / 音频）。
@@ -7336,11 +7631,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         value: _mediaTypeFilter,
         values: VideoMediaTypeFilter.values,
         allValue: VideoMediaTypeFilter.all,
-        labelOf: (VideoMediaTypeFilter filter) => switch (filter) {
-          VideoMediaTypeFilter.all => t.video_filter_media_type,
-          VideoMediaTypeFilter.video => t.video_filter_media_type_video,
-          VideoMediaTypeFilter.audio => t.video_filter_media_type_audio,
-        },
+        labelOf: _mediaTypeFilterLabel,
         onSelected: (VideoMediaTypeFilter value) =>
             setState(() => _mediaTypeFilter = value),
       );
@@ -7353,11 +7644,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         value: _extrasFilter,
         values: VideoExtrasFilter.values,
         allValue: VideoExtrasFilter.all,
-        labelOf: (VideoExtrasFilter filter) => switch (filter) {
-          VideoExtrasFilter.all => t.video_filter_extras,
-          VideoExtrasFilter.main => t.video_filter_extras_main,
-          VideoExtrasFilter.extras => t.video_filter_extras_only,
-        },
+        labelOf: _extrasFilterLabel,
         onSelected: (VideoExtrasFilter value) =>
             setState(() => _extrasFilter = value),
       );
@@ -7422,6 +7709,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     VideoSeriesFilter.standalone => t.video_filter_series_standalone,
   };
 
+  String _mediaTypeFilterLabel(VideoMediaTypeFilter filter) => switch (filter) {
+    VideoMediaTypeFilter.all => t.video_filter_media_type,
+    VideoMediaTypeFilter.video => t.video_filter_media_type_video,
+    VideoMediaTypeFilter.audio => t.video_filter_media_type_audio,
+  };
+
+  String _extrasFilterLabel(VideoExtrasFilter filter) => switch (filter) {
+    VideoExtrasFilter.all => t.video_filter_extras,
+    VideoExtrasFilter.main => t.video_filter_extras_main,
+    VideoExtrasFilter.extras => t.video_filter_extras_only,
+  };
+
   String _watchStatusFilterLabel(
     VideoWatchStatusFilter filter,
   ) => switch (filter) {
@@ -7437,10 +7736,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildTagFilterBar(
     List<BookTagRow> tags, {
     FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+    List<Widget> leadingChips = const <Widget>[],
   }) {
     return FushiTagFilterBar(
       tags: tags,
       part: part,
+      leadingChips: leadingChips,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -7512,26 +7813,38 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       key: const ValueKey<String>('home_video_filtered_empty'),
       icon: Icons.filter_list_off,
       message: hint ?? t.video_library_filter_empty,
-      action: FushiOutlinedButton.icon(
-        key: const ValueKey<String>('home_video_filters_clear'),
-        onPressed: _clearAllFilters,
-        icon: const FushiIcon(Icons.filter_alt_off_outlined),
-        label: Text(t.library_filters_clear),
-      ),
+      // 清除 = 复位到分区默认值；已经全在默认值（如「全部视频」默认「非系列」
+      // 档筛空，hint 已指向系列页）时按钮按下去什么都不变，干脆不出。
+      action: _hasAnyClearableFilter
+          ? FushiOutlinedButton.icon(
+              key: const ValueKey<String>('home_video_filters_clear'),
+              onPressed: _clearAllFilters,
+              icon: const FushiIcon(Icons.filter_alt_off_outlined),
+              label: Text(t.library_filters_clear),
+            )
+          : null,
     );
   }
 
+  /// 筛空态「清除筛选」有没有可清的东西：搜索词、偏离分区默认值的面板维度、
+  /// 标签筛选三者任一。
+  bool get _hasAnyClearableFilter =>
+      _searchQuery.trim().isNotEmpty ||
+      _hasActivePanelFilter ||
+      ref.read(selectedTagIdsProvider).isNotEmpty;
+
   /// 一次性清空搜索词与全部筛选（年份 / 看完状态 / 系列归属 / 媒体类型 /
-  /// 特典 / 来源 / 标签）。系列归属是唯一持久化的档位（BUG-2835），清空时
-  /// 同步写回偏好，否则下次进库又被旧档位筛空。标签筛选与书架共享
-  /// [selectedTagIdsProvider]，库页语义上同属「当前筛选」，一并清空。
+  /// 特典 / 来源 / 标签）。与 chip ✕、面板「清除全部」同一口径：每个维度回到
+  /// **分区默认值**——系列归属回 [kDefaultVideoSeriesFilter]（「非系列」）而不是
+  /// 「全部」（2026-10-14 用户拍板）。系列归属是唯一持久化的档位（BUG-2835），
+  /// 经 [_setSeriesFilter] 同步写回偏好，否则下次进库又被旧档位筛空。标签筛选与
+  /// 书架共享 [selectedTagIdsProvider]，库页语义上同属「当前筛选」，一并清空。
   void _clearAllFilters() {
     _searchController.clear();
     setState(() {
       _searchQuery = '';
       _yearFilter = const VideoYearFilter.all();
       _watchStatusFilter = VideoWatchStatusFilter.all;
-      _seriesFilter = VideoSeriesFilter.all;
       _mediaTypeFilter = VideoMediaTypeFilter.all;
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
@@ -7539,12 +7852,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     if (ref.read(selectedTagIdsProvider).isNotEmpty) {
       ref.read(selectedTagIdsProvider.notifier).state = <int>{};
     }
-    unawaited(
-      ref
-          .read(appProvider)
-          .prefsRepo
-          .setVideoAllSeriesFilterName(VideoSeriesFilter.all.name),
-    );
+    _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
   /// 封面下方文字块的实际高度：两行标题 + 一行观看进度 + 上下内边距，随文字缩放走。

@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "Scorri giù di una schermata",
   "shortcut_action_global_scroll_page_up": "Scorri su di una schermata",
   "shortcut_action_global_toggle_fullscreen": "Attiva/disattiva schermo intero",
-  "shortcut_action_home_focus_search": "Vai alla ricerca",
+  "shortcut_action_home_focus_search": "Vai alla ricerca nel dizionario",
   "shortcut_action_home_tab_books": "Scheda Libri",
   "shortcut_action_home_tab_dict": "Scheda Dizionario",
   "shortcut_action_home_tab_next": "Scheda successiva",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "Cerca nella libreria"
 }

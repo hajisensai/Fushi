@@ -59,6 +59,7 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInset,
@@ -333,6 +334,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
+
+  /// 单行页头的可展开搜索（2026-10-14）：平时是页头里的 🔍，点开整行换成搜索
+  /// 栏；搜索词仍是上面的 [_searchQuery]（不落库）。书架 / 漫画库各一份焦点 id。
+  late final FushiHeaderSearchController _headerSearch =
+      FushiHeaderSearchController(
+    textController: _searchController,
+    buttonFocusId: FushiFocusId(
+      _mangaOnly ? 'manga-library-search' : 'book-library-search',
+    ),
+    hintText: t.library_search,
+    fieldKey: const ValueKey<String>('shelf_search_field'),
+    onQueryChanged: (String value) => setState(() => _searchQuery = value),
+  );
+
+  /// 页头「排序与筛选」按钮打开的菜单（常驻锚点见 [_buildSortMenuAnchor]）。
+  final MenuController _sortMenu = MenuController();
 
   /// BUG-2327：书架搜索命中判据，**四路**卡源（本地 EPUB / 本地 SRT / 远端 EPUB
   /// 占位 / 远端 SRT 占位）共用同一口径 [matchesMediaSearch]（空查询恒命中）。
@@ -643,6 +660,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   void dispose() {
     _memberInfoRevision.dispose();
+    _headerSearch.dispose();
     _searchController.dispose();
     _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
@@ -754,12 +772,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                        // 搜索 + 多选 / 排序收成一条库页工具行（2026-10-04）；
-                        // 阅读状态与（窄屏的）标签筛选并进排序菜单、宽屏标签
-                        // chip 嵌进这一行（2026-10-10「顶部只留两行」），不再
-                        // 另起行。
-                        _buildSearchBar(allTags.valueOrNull ?? const []),
+                        // 单行页头（2026-10-14）：页签 + 右侧 🔍 / 多选 / 排序 /
+                        // 管理标签，搜索点开整行换成搜索栏；标签 chip 只在有
+                        // 标签时在下面占一行。Cupertino 旧版面保留常驻搜索行。
+                        if (!isCupertinoPlatform(context)) ...<Widget>[
+                          _buildPageHeader(),
+                          _buildSortMenuAnchor(allTags.valueOrNull ?? const []),
+                          _buildTagBar(allTags.valueOrNull ?? const []),
+                        ] else
+                          _buildSearchBar(allTags.valueOrNull ?? const []),
                         // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时
                         // 零高度。
                         SyncProgressBanner(compact: _compactLibraryToolbar),
@@ -952,8 +973,63 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
+  /// 「排序与筛选」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序
+  /// 按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
+    return Align(
+      alignment: AlignmentDirectional.topEnd,
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(
+          end: FushiDesignTokens.of(context).spacing.page,
+        ),
+        child: FushiTagFilterBar(
+          tags: allTags,
+          part: FushiTagFilterBarPart.sortMenuAnchor,
+          sortMenuController: _sortMenu,
+          onToggleFilter: _toggleFilter,
+          onReorder: _reorderTags,
+          sortMode: _sortMode,
+          sortModeLabel: _sortModeLabel,
+          onSortModeChanged: _setSortMode,
+          filterOptionsTitle: t.shelf_filter_read_status,
+          filterActive: _readStatusFilter != null,
+          filterOptions: _readStatusFilterOptions(),
+        ),
+      ),
+    );
+  }
+
+  List<LibraryViewOption> _readStatusFilterOptions() => <LibraryViewOption>[
+        for (final ShelfReadStatus? status in <ShelfReadStatus?>[
+          null,
+          ...ShelfReadStatus.values,
+        ])
+          LibraryViewOption(
+            key: ValueKey<String>(
+              'shelf_filter_read_status_${status?.name ?? 'all'}',
+            ),
+            label: status == null
+                ? t.home_filter_all
+                : _readStatusLabel(status),
+            selected: status == _readStatusFilter,
+            onSelected: () => _setReadStatusFilter(status),
+          ),
+      ];
+
   Widget _buildPageHeader() {
     final List<Widget> actions = <Widget>[
+      // 原工具行行尾的「批量选择 / 排序与筛选 / 管理标签」并进页头（单行页头，
+      // 2026-10-14），放不下时按优先级逐颗收进 ⋯：多选 > 排序 > 管理标签。
+      ...libraryHeaderTagActions(
+        context,
+        ref: ref,
+        sortMenu: _sortMenu,
+        sortGrouped: true,
+        sortFilterActive: _readStatusFilter != null,
+        selectionMode: _selectionMode,
+        onToggleSelectionMode: _toggleSelectionMode,
+        onTagsChanged: () => ref.invalidate(bookTagMapProvider),
+      ),
       // 单件导入入口已统一收敛到库页「导入」视图的快速导入区（书 / 漫画 / 视频 /
       // 游戏四域同位，2026-08-13 定案）；页头只在书架被**独立使用**（无导航壳、
       // 够不到「导入」视图）时保留导入按钮兜底。漫画和书籍载体不同，兜底按钮
@@ -1007,11 +1083,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       return FushiPageHeader.customTitle(
         title: navigation,
         actions: actions,
+        search: _headerSearch,
       );
     }
     return FushiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
       actions: actions,
+      search: _headerSearch,
     );
   }
 

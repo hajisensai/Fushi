@@ -17,36 +17,47 @@ void main() {
       expect(ShortcutAction.readerOpenNavigation.scope, ShortcutScope.reader);
     });
 
-    test('default-binds keyboard Ctrl+F on every desktop platform, no gamepad',
-        () {
-      for (final TargetPlatform p in const <TargetPlatform>[
-        TargetPlatform.windows,
-        TargetPlatform.linux,
-      ]) {
-        final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-            p)[ShortcutAction.readerOpenNavigation]!;
-        expect(
-          set.keyboardBindings,
-          contains(const InputBinding(
-            key: LogicalKeyboardKey.keyF,
-            modifiers: <ModifierKey>{ModifierKey.ctrl},
-          )),
-          reason: 'Ctrl+F on $p',
-        );
-        expect(set.gamepadBindings, isEmpty,
-            reason: 'no gamepad default on $p');
-      }
-    });
+    test(
+      'default-binds keyboard Ctrl+F on every desktop platform, no gamepad',
+      () {
+        for (final TargetPlatform p in const <TargetPlatform>[
+          TargetPlatform.windows,
+          TargetPlatform.linux,
+        ]) {
+          final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
+            p,
+          )[ShortcutAction.readerOpenNavigation]!;
+          expect(
+            set.keyboardBindings,
+            contains(
+              const InputBinding(
+                key: LogicalKeyboardKey.keyF,
+                modifiers: <ModifierKey>{ModifierKey.ctrl},
+              ),
+            ),
+            reason: 'Ctrl+F on $p',
+          );
+          expect(
+            set.gamepadBindings,
+            isEmpty,
+            reason: 'no gamepad default on $p',
+          );
+        }
+      },
+    );
 
     test('macOS default swaps Ctrl for Meta (Cmd+F)', () {
       final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-          TargetPlatform.macOS)[ShortcutAction.readerOpenNavigation]!;
+        TargetPlatform.macOS,
+      )[ShortcutAction.readerOpenNavigation]!;
       expect(
         set.keyboardBindings,
-        contains(const InputBinding(
-          key: LogicalKeyboardKey.keyF,
-          modifiers: <ModifierKey>{ModifierKey.meta},
-        )),
+        contains(
+          const InputBinding(
+            key: LogicalKeyboardKey.keyF,
+            modifiers: <ModifierKey>{ModifierKey.meta},
+          ),
+        ),
       );
       expect(
         set.keyboardBindings.any((b) => b.modifiers.contains(ModifierKey.ctrl)),
@@ -62,7 +73,8 @@ void main() {
         TargetPlatform.iOS,
       ]) {
         final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
-            p)[ShortcutAction.readerOpenNavigation]!;
+          p,
+        )[ShortcutAction.readerOpenNavigation]!;
         expect(
           set.keyboardBindings.map((b) => b.key),
           contains(LogicalKeyboardKey.keyF),
@@ -71,42 +83,45 @@ void main() {
       }
     });
 
-    test('registry resolves Ctrl+F to readerOpenNavigation in the reader scope',
-        () {
-      final FushiShortcutRegistry registry = FushiShortcutRegistry();
-      registry.loadDefaults(TargetPlatform.windows);
-      expect(
-        registry.resolveKeyboard(
-          LogicalKeyboardKey.keyF,
-          modifiers: const <ModifierKey>{ModifierKey.ctrl},
-          scope: ShortcutScope.reader,
-        ),
-        ShortcutAction.readerOpenNavigation,
-      );
-    });
-
     test(
-        'Ctrl+F stays home-scope search too: the two live in DISJOINT co-active '
-        'groups so there is no real conflict', () {
+      'registry resolves Ctrl+F to readerOpenNavigation in the reader scope',
+      () {
+        final FushiShortcutRegistry registry = FushiShortcutRegistry();
+        registry.loadDefaults(TargetPlatform.windows);
+        expect(
+          registry.resolveKeyboard(
+            LogicalKeyboardKey.keyF,
+            modifiers: const <ModifierKey>{ModifierKey.ctrl},
+            scope: ShortcutScope.reader,
+          ),
+          ShortcutAction.readerOpenNavigation,
+        );
+      },
+    );
+
+    test('Ctrl+F stays home-scope library search too: the two live in DISJOINT '
+        'co-active groups so there is no real conflict', () {
       final FushiShortcutRegistry registry = FushiShortcutRegistry();
       registry.loadDefaults(TargetPlatform.windows);
       // Same physical chord, different co-active group → resolves to the
       // scope-appropriate action on each page (the reader page never resolves
-      // the home group, and vice versa).
+      // the home group, and vice versa). Since 2026-10-14 the home-group Ctrl+F
+      // is the library page search (librarySearch); homeFocusSearch moved to
+      // Ctrl+K.
       expect(
         registry.resolveKeyboard(
           LogicalKeyboardKey.keyF,
           modifiers: const <ModifierKey>{ModifierKey.ctrl},
           scope: ShortcutScope.home,
         ),
-        ShortcutAction.homeFocusSearch,
+        ShortcutAction.librarySearch,
       );
       // The reader co-active group and the home co-active group must not
       // overlap, which is exactly why Ctrl+F can be reused across them.
-      final Set<ShortcutScope> readerGroup =
-          ShortcutScope.reader.coactiveScopes.toSet();
-      final Set<ShortcutScope> homeGroup =
-          ShortcutScope.home.coactiveScopes.toSet();
+      final Set<ShortcutScope> readerGroup = ShortcutScope.reader.coactiveScopes
+          .toSet();
+      final Set<ShortcutScope> homeGroup = ShortcutScope.home.coactiveScopes
+          .toSet();
       expect(readerGroup.intersection(homeGroup), isEmpty);
     });
 
@@ -118,13 +133,15 @@ void main() {
         modifiers: <ModifierKey>{ModifierKey.ctrl},
       );
       for (final ShortcutScope scope in ShortcutScope.reader.coactiveScopes) {
-        for (final ShortcutAction action
-            in ShortcutAction.actionsForScope(scope)) {
+        for (final ShortcutAction action in ShortcutAction.actionsForScope(
+          scope,
+        )) {
           if (action == ShortcutAction.readerOpenNavigation) continue;
           expect(
             defaults[action]!.keyboardBindings.map((b) => b.serialize()),
             isNot(contains(ctrlF.serialize())),
-            reason: '${action.key} also binds Ctrl+F — would shadow '
+            reason:
+                '${action.key} also binds Ctrl+F — would shadow '
                 'readerOpenNavigation',
           );
         }

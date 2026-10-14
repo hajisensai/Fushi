@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "Прокрутить вниз на экран",
   "shortcut_action_global_scroll_page_up": "Прокрутить вверх на экран",
   "shortcut_action_global_toggle_fullscreen": "Переключить полноэкранный режим",
-  "shortcut_action_home_focus_search": "Фокус на поиск",
+  "shortcut_action_home_focus_search": "Перейти к поиску по словарю",
   "shortcut_action_home_tab_books": "Вкладка «Книги»",
   "shortcut_action_home_tab_dict": "Вкладка «Словарь»",
   "shortcut_action_home_tab_next": "Следующая вкладка",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "Поиск в библиотеке"
 }

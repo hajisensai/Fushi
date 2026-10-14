@@ -2887,7 +2887,7 @@
   "shortcut_action_global_scroll_page_down": "เลื่อนลงหนึ่งหน้าจอ",
   "shortcut_action_global_scroll_page_up": "เลื่อนขึ้นหนึ่งหน้าจอ",
   "shortcut_action_global_toggle_fullscreen": "สลับเต็มหน้าจอ",
-  "shortcut_action_home_focus_search": "โฟกัสช่องค้นหา",
+  "shortcut_action_home_focus_search": "ไปที่การค้นหาพจนานุกรม",
   "shortcut_action_home_tab_books": "แท็บหนังสือ",
   "shortcut_action_home_tab_dict": "แท็บพจนานุกรม",
   "shortcut_action_home_tab_next": "แท็บถัดไป",
@@ -7476,5 +7476,6 @@
   "popup_advanced_mining_crop_page_title": "Select image area",
   "popup_advanced_mining_crop_done": "Done",
   "popup_advanced_mining_crop_download_failed": "Couldn't download the panel model",
-  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next"
+  "popup_advanced_mining_sentence_shortcut_hint": "Shortcuts: [ / ] add or remove previous · Shift+[ / ] add or remove next",
+  "shortcut_action_library_search": "ค้นหาในคลัง"
 }
