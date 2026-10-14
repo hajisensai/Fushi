@@ -127,11 +127,15 @@ class DavEntry {
     required this.href,
     required this.displayName,
     required this.isCollection,
+    this.etag,
   });
 
   final String href;
   final String displayName;
   final bool isCollection;
+
+  /// `DAV:getetag`（RFC 4918 §15.6：资源内容一变就必须变）；服务端不报时为 null。
+  final String? etag;
 }
 
 class WebDavOps {
@@ -367,6 +371,10 @@ class WebDavOps {
     final displayNamePattern = RegExp(
       r'<(?:[a-zA-Z0-9]+:)?displayname>(.*?)</(?:[a-zA-Z0-9]+:)?displayname>',
     );
+    final etagPattern = RegExp(
+      r'<(?:[a-zA-Z0-9]+:)?getetag>(.*?)</(?:[a-zA-Z0-9]+:)?getetag>',
+      dotAll: true,
+    );
 
     for (final match in responsePattern.allMatches(xml)) {
       final block = match.group(1)!;
@@ -388,12 +396,15 @@ class WebDavOps {
         displayName = Uri.decodeFull(cleaned.split('/').last);
       }
 
+      final String? etag = etagPattern.firstMatch(block)?.group(1)?.trim();
+
       final resolvedHref = resolveHref(href, basePath);
       entries.add(
         DavEntry(
           href: resolvedHref,
           displayName: displayName,
           isCollection: isCollection,
+          etag: etag == null || etag.isEmpty ? null : etag,
         ),
       );
     }
@@ -522,6 +533,7 @@ class WebDavOps {
       '<d:prop>'
       '<d:resourcetype/>'
       '<d:displayname/>'
+      '<d:getetag/>'
       '</d:prop>'
       '</d:propfind>';
 
