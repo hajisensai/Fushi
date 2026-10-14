@@ -1153,13 +1153,27 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 镜像（BUG-777：旧的 -历史序名次实为 SRT 表序+EPUB 导入序，假 recency）；
   /// importedAt 用 [CollectionOrderingItem.importedAt]（epub 走
   /// [_epubImportedAtByKey]，srt 自带）。
+  ///
+  /// title 必须是卡片上**显示**的名字（改名覆盖层 ?? 原名），与
+  /// [_buildSrtBookCard] / EPUB 卡同源：读 DB 原始列会让改过名的条目按看不见的
+  /// 旧名（常是导入文件名）参与「名称」排序，同系列各卷被拆散（BUG-3328）。
   ShelfSortKey _shelfGroupSortKey(CollectionGroup<_ShelfBookSlot> group) {
-    String titleOf(_ShelfBookSlot s) =>
-        s.srt?.title ??
-        s.epub?.title ??
-        s.remote?.title ??
-        s.remoteSrt?.title ??
-        '';
+    String titleOf(_ShelfBookSlot s) {
+      final SrtBook? srt = s.srt;
+      if (srt != null) {
+        return displayTitleForBook(
+          bookKey: srt.bookKey.isNotEmpty ? srt.bookKey : null,
+          srtUid: srt.uid,
+          rawTitle: srt.title,
+        );
+      }
+      final MediaItem? epub = s.epub;
+      if (epub != null) {
+        return displayTitleForBook(item: epub, rawTitle: epub.title);
+      }
+      return s.remote?.title ?? s.remoteSrt?.title ?? '';
+    }
+
     int recentOf(CollectionOrderingItem<_ShelfBookSlot> it) {
       // 远端占位卡（EPUB 或纯 SRT）没有本地阅读记录，但 host 清单**自带**它那边的
       // 「最近阅读 / 最近听」时刻——用它才能和本地条目排在同一把尺子上（视频页
@@ -1771,13 +1785,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       collectionsById: _collectionsById,
       memberSortIndex: memberSortIndex,
     );
+    // 每组的键只算一次：键要聚合成员并解析显示名，放进比较器会被重算 O(n log n) 次。
+    final Map<CollectionGroup<_ShelfBookSlot>, ShelfSortKey> sortKeys =
+        <CollectionGroup<_ShelfBookSlot>, ShelfSortKey>{
+      for (final CollectionGroup<_ShelfBookSlot> g in shelfGroups)
+        g: _shelfGroupSortKey(g),
+    };
     shelfGroups.sort(
       (CollectionGroup<_ShelfBookSlot> a, CollectionGroup<_ShelfBookSlot> b) =>
-          compareShelfSortKeys(
-        _shelfGroupSortKey(a),
-        _shelfGroupSortKey(b),
-        _sortMode,
-      ),
+          compareShelfSortKeys(sortKeys[a]!, sortKeys[b]!, _sortMode),
     );
     // 合集标签过滤：含【全部】选中标签的合集 id（null = 无选中标签，不过滤）。被标签
     // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐

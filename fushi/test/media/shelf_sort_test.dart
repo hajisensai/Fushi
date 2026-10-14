@@ -49,6 +49,44 @@ void main() {
       expect(naturalCompare('abc', 'abcd'), lessThan(0));
       expect(naturalCompare('第2卷·特典', '第2卷'), greaterThan(0));
     });
+
+    test('BUG-3328：全角数字与半角数字同一把数值尺（用户漫画库实际书名）', () {
+      // 「志乃と恋 ２」「志乃と恋 ４」是全角数字，「志乃と恋 3」是半角——旧实现按
+      // 码元比，'3'(0x33) < '２'(0xFF12)，排成 3 < ２ < ４。
+      final List<String> titles = <String>[
+        '志乃と恋 ４',
+        '志乃と恋 3',
+        '志乃と恋',
+        '志乃と恋 ２',
+        '志乃と恋　10',
+      ]..sort(naturalCompare);
+      expect(titles, <String>[
+        '志乃と恋',
+        '志乃と恋 ２',
+        '志乃と恋 3',
+        '志乃と恋 ４',
+        '志乃と恋　10',
+      ]);
+      expect(naturalCompare('第２卷', '第10卷'), lessThan(0));
+      expect(naturalCompare('ＡＢＣ', 'abd'), lessThan(0), reason: '全角字母同样折半角');
+    });
+  });
+
+  test('BUG-3328：书架排序键的名称取卡片显示名（改名覆盖层），不读 DB 原始列', () {
+    // 用户改名「志乃と恋 [3574f94a]」→「志乃と恋」后，按原名排序会把它排到
+    // 「志乃と恋 3」之后（'3' < '['），卡片上看就是乱序。
+    final String source = File(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ).readAsStringSync();
+    final int start = source.indexOf('ShelfSortKey _shelfGroupSortKey(');
+    expect(start, isNonNegative);
+    final String titleOf = source.substring(
+      source.indexOf('String titleOf(', start),
+      source.indexOf('int recentOf(', start),
+    );
+    expect(titleOf, contains('displayTitleForBook('));
+    expect(titleOf, isNot(contains('s.epub?.title')));
+    expect(titleOf, isNot(contains('s.srt?.title')));
   });
 
   group('compareShelfSortKeys', () {
