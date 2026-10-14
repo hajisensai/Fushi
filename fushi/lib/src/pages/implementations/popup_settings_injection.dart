@@ -332,7 +332,7 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
     String fontFamily,
     String fontFaces,
     List<String> families,
-    List<({String family, String src, String format})> faceSources,
+    List<DictionaryFontFaceSource> faceSources,
   }) css = DictionaryFontCss.build(
     inputs.fonts,
     allowedDirectories: inputs.allowedDirectories,
@@ -340,12 +340,13 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
   );
   final ExtensionDictionaryFont value = (
     faces: <Map<String, String>>[
-      for (final ({String family, String src, String format}) face
+      for (final DictionaryFontFaceSource face
           in css.faceSources)
         <String, String>{
           'family': face.family,
           'src': face.src,
           'format': face.format,
+          if (face.weight != null) 'weight': face.weight!,
         },
     ],
     css: dictionaryLanguageFontCss(
@@ -354,6 +355,7 @@ ExtensionDictionaryFont browserExtensionDictionaryFont(AppModel appModel) {
       platform: defaultTargetPlatform,
       defaultLanguage: inputs.defaultContentLanguage,
       rootSelector: '#entries-container',
+      suppressWeightSynthesis: css.faceSources.isNotEmpty,
     ),
     languages: <String, String>{
       for (final DictionaryLanguageEntry e in inputs.dictionaryLanguages)
@@ -446,7 +448,7 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
     String fontFamily,
     String fontFaces,
     List<String> families,
-    List<({String family, String src, String format})> faceSources,
+    List<DictionaryFontFaceSource> faceSources,
   }) css = DictionaryFontCss.build(
     fonts,
     allowedDirectories: allowedDirectories,
@@ -462,6 +464,7 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
     dictionaries: dictionaryLanguages,
     platform: defaultTargetPlatform,
     defaultLanguage: defaultContentLanguage,
+    suppressWeightSynthesis: css.faceSources.isNotEmpty,
   );
   if (languageCss.isNotEmpty || css.fontFaces.isNotEmpty) {
     final String styleCss = '${css.fontFaces}\n$languageCss';

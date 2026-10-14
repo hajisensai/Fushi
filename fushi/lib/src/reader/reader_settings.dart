@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
+import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
+    show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -1101,17 +1103,82 @@ class ReaderCustomFontCss {
       if (safePath == null) {
         continue;
       }
-      families.add(cssFontFamilyName(normalizedName));
+      final String family = cssFontFamilyName(normalizedName);
+      // 同名条目 = 同一家族的不同字重文件：家族名只进链一次，每个文件各出一条
+      // 声明了真实字重的 @font-face。
+      if (!families.contains(family)) families.add(family);
       final String uri = fontUrlBuilder(safePath);
       faces.add(
-        '@font-face { font-family: ${cssFontFamilyName(normalizedName)}; '
-        'src: url("$uri"); font-display: swap; }',
+        '@font-face { font-family: $family; '
+        'src: url("$uri"); ${fontWeightDescriptor(safePath)}'
+        'font-display: swap; }',
       );
     }
     return (
       fontFamily: families.join(', '),
       fontFaces: faces.join('\n'),
     );
+  }
+
+  /// 关闭字重合成的声明：**只**给查词弹窗用（它的粗体是纯装饰性的词头 / 标签强调，
+  /// 没有用户可调的字重设置）。导入字体只有常规字重时，WebView 会把粗体请求
+  /// 合成加粗，而合成加粗对轮廓自相交的字形（Klee One 的「費」）会描成中空——
+  /// 关掉后没有粗体文件就按常规字重显示，有粗体文件则按 [fontWeightDescriptor]
+  /// 声明的真实字重选中它，本来就不需要合成。
+  ///
+  /// 阅读器正文 / 歌词**不**套用：正文有用户可调的字重设置，导入字体只有常规字面时
+  /// 那个设置正是靠合成加粗生效的，关掉就是把用户的设置静默作废。
+  ///
+  /// 先写简写 `font-synthesis: style`（iOS 15 WKWebView 只认简写），再写长写。
+  static const String noWeightSynthesisDeclarations =
+      'font-synthesis: style; font-synthesis-weight: none;';
+
+  /// 导入字体文件的 `@font-face` 字重描述符（带尾随空格），读不出字重时为空串
+  /// （= CSS 默认 `normal`，与改动前逐字节相同）。
+  ///
+  /// 静态字体声明 `OS/2.usWeightClass`（如 SemiBold 文件声明 600，浏览器才会在粗体
+  /// 请求时选中它）；可变字体声明 `wght` 轴范围（否则描述符默认只覆盖 400，粗体
+  /// 请求会被夹回 400 再叠一层合成加粗）。
+  static String fontWeightDescriptor(String safePath) {
+    final String? value = fontWeightValue(safePath);
+    return value == null ? '' : 'font-weight: $value; ';
+  }
+
+  /// [fontWeightDescriptor] 的值部分（`400` / `100 900`），读不出为 null。浏览器扩展
+  /// 用 `new FontFace(family, buffer, {weight})` 注册时要的就是这个串。
+  static String? fontWeightValue(String safePath) {
+    final FontFaceWeight? weight = _cachedFaceWeight(safePath);
+    if (weight == null) return null;
+    return weight.min == weight.max
+        ? '${weight.min}'
+        : '${weight.min} ${weight.max}';
+  }
+
+  /// (mtime, size) 内容键的进程内缓存：阅读器每次重建样式都会走 [build]，
+  /// 同一文件只读一次表头。文件原地覆盖时 mtime/size 变，自动失效。
+  static final Map<String, ({int mtimeUs, int size, FontFaceWeight? weight})>
+      _faceWeightCache =
+      <String, ({int mtimeUs, int size, FontFaceWeight? weight})>{};
+
+  static FontFaceWeight? _cachedFaceWeight(String path) {
+    final FileStat stat;
+    try {
+      stat = FileStat.statSync(path);
+    } catch (_) {
+      return null;
+    }
+    if (stat.type == FileSystemEntityType.notFound) return null;
+    final int mtimeUs = stat.modified.microsecondsSinceEpoch;
+    final ({int mtimeUs, int size, FontFaceWeight? weight})? cached =
+        _faceWeightCache[path];
+    if (cached != null &&
+        cached.mtimeUs == mtimeUs &&
+        cached.size == stat.size) {
+      return cached.weight;
+    }
+    final FontFaceWeight? weight = readFontFaceWeightSync(path);
+    _faceWeightCache[path] = (mtimeUs: mtimeUs, size: stat.size, weight: weight);
+    return weight;
   }
 
   static String normalizedFontFamilyName(String name) {
