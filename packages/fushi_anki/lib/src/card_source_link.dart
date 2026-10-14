@@ -158,12 +158,20 @@ class CardSourceLink {
     }
     // Existing video identities contain a relative namespace and the original
     // sanitized title (for example video/夏目友人帳 第1話 (2)). Treat them as
-    // opaque database keys; never turn them into filenames or URI destinations.
+    // opaque database keys; never turn them into filenames or URI destinations
+    // (the only consumer is a `bookUid` equality lookup).
+    //
+    // BUG-3331: a `scheme:` prefix is NOT rejected. Online-video-source episodes
+    // keep their row identity when downloaded, and that identity is
+    // `anime-source:<package>:<source>:<episode url>` — rejecting URI-shaped
+    // UIDs made every card mined from a downloaded extension episode abort with
+    // "Invalid library UID". Rejecting a shape the library itself mints is a
+    // wrong model of the identity space, not a safety boundary: the UID is
+    // never resolved as a URI.
     if (uid.trim().isEmpty ||
         uid.length > 1024 ||
         uid.startsWith('/') ||
         RegExp(r'[\x00-\x1f\x7f\\]').hasMatch(uid) ||
-        RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*:').hasMatch(uid) ||
         uid
             .split('/')
             .any((String segment) => segment == '.' || segment == '..')) {

@@ -570,7 +570,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
   // 测的是已删死契约 TagsField.onCreatorOpenAction，已随该契约删除。
-  'cardCreation/Auto-add book title to tags':
+  'cardCreation/Auto-add work title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
       'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
   // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo

@@ -438,7 +438,7 @@
   "audiobook_transcribe_title": "On-device transcription",
   "audiobook_transcribe_unavailable": "On-device transcription is not available on this platform",
   "audiobook_transcribe_use_result": "Use subtitles",
-  "auto_add_book_name_to_tags": "Auto-add book title to tags",
+  "auto_add_book_name_to_tags": "Auto-add work title to tags",
   "auto_chapter": "Chapter $n",
   "auto_read_on_lookup": "Auto read word on lookup",
   "auto_search": "Auto search",

@@ -700,6 +700,15 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   Duration swipeDuration = Duration.zero; // Duration to seek in video
   bool showSwipeDuration = false; // Whether to show the seek duration overlay
 
+  /// Hibiki patch (BUG-3329): what the seek indicator displays. The indicator
+  /// fades out (AnimatedOpacity) after release, and it keeps rebuilding during
+  /// that fade. [swipeDuration] is the *pending commit* and must be zeroed on
+  /// release (BUG-1485), so an indicator reading it showed "base + 0:00" — the
+  /// drag's starting position — for the whole fade, although the seek itself
+  /// went to the right place. The displayed delta is separate state: written
+  /// on every drag update, never cleared on release.
+  Duration _swipeIndicatorDuration = Duration.zero;
+
   bool _speedUpIndicator = false;
   late /* private */ var playlist = controller(context).player.state.playlist;
   late bool buffering = controller(context).player.state.buffering;
@@ -974,6 +983,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       );
       setState(() {
         swipeDuration = delta;
+        _swipeIndicatorDuration = delta;
         showSwipeDuration = true;
         _seekBarDeltaValueNotifier.value = delta;
       });
@@ -992,6 +1002,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     if (relativePosition <= duration && relativePosition >= 0) {
       setState(() {
         swipeDuration = Duration(seconds: seconds);
+        _swipeIndicatorDuration = swipeDuration;
         showSwipeDuration = true;
         _seekBarDeltaValueNotifier.value = Duration(seconds: seconds);
       });
@@ -1663,9 +1674,11 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                   child: AnimatedOpacity(
                     duration: _theme(context).controlsTransitionDuration,
                     opacity: showSwipeDuration ? 1 : 0,
+                    // Hibiki patch (BUG-3329): the displayed delta, not the
+                    // pending commit (which release zeroes mid-fade).
                     child: _theme(context)
                             .seekIndicatorBuilder
-                            ?.call(context, swipeDuration) ??
+                            ?.call(context, _swipeIndicatorDuration) ??
                         Container(
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
@@ -1675,9 +1688,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                           height: 52.0,
                           width: 108.0,
                           child: Text(
-                            swipeDuration > Duration.zero
-                                ? "+ ${swipeDuration.label()}"
-                                : "- ${swipeDuration.label()}",
+                            _swipeIndicatorDuration > Duration.zero
+                                ? "+ ${_swipeIndicatorDuration.label()}"
+                                : "- ${_swipeIndicatorDuration.label()}",
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 14.0,

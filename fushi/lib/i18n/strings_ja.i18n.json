@@ -438,7 +438,7 @@
   "audiobook_transcribe_title": "デバイス上の文字起こし",
   "audiobook_transcribe_unavailable": "このプラットフォームではデバイス上の文字起こしは利用できません",
   "audiobook_transcribe_use_result": "字幕を使用",
-  "auto_add_book_name_to_tags": "タグに本のタイトルを自動追加",
+  "auto_add_book_name_to_tags": "タグに作品名を自動追加",
   "auto_chapter": "第 $n 章",
   "auto_read_on_lookup": "検索時に自動で単語を読み上げ",
   "auto_search": "自動検索",

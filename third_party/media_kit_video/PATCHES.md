@@ -799,3 +799,24 @@ desktop).
 
 Test: `fushi/test/pages/video_desktop_touch_swipe_test.dart` (real touch /
 stylus / mouse drags).
+
+## BUG-3329: swipe seek indicator keeps the committed delta while it fades out
+
+`lib/media_kit_video_controls/src/controls/material.dart` — new State field
+`_swipeIndicatorDuration`, written next to `swipeDuration` in
+`onHorizontalDragUpdate`, read by the seek indicator (`seekIndicatorBuilder`
+and the built-in fallback HUD text).
+
+The indicator sits in an `AnimatedOpacity` that fades out after release and keeps
+rebuilding during the fade. `onHorizontalDragEnd` zeroes `swipeDuration` (the
+pending commit, BUG-1485), so an indicator reading it showed "base + 0:00" — the
+drag's starting position — for the whole fade, although the seek itself landed
+correctly (user report: the progress shown at release jumps back to where the
+swipe started). The displayed delta is now separate state that release never
+clears; the commit path still reads and clears `swipeDuration` as before.
+
+The desktop touch layer (`touch_swipe_gesture_layer.dart`) removes its indicator
+from the tree on release instead of fading it, so it never showed the reset value.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-3329: swipe seek indicator keeps the committed delta while fading`).

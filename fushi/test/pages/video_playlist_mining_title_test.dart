@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteCollectionMembership, RemoteVideoInfo;
 
 import '../helpers/source_guard.dart';
 import 'video_fushi_page_source_corpus.dart';
@@ -160,6 +162,60 @@ void main() {
       expect(src.contains('isPlaylist: _isPlaylist'), isTrue);
       expect(src.contains('playlistTitle: _playlistTitle'), isTrue);
       expect(src.contains('episodeTitle: _title'), isTrue);
+    });
+  });
+
+  // BUG-3332（反馈 #Q0gvMa_jyr）：扩展在线看的集制卡只有「Episode 2」标签——远端路径
+  // 从不填 _playlistTitle。作品名来自集的合集归属（在线视频源每集都带作品名）。
+  group('remoteVideoWorkTitle（远端 / 在线视频的作品名）', () {
+    RemoteVideoInfo episode(RemoteCollectionMembership? collection) =>
+        RemoteVideoInfo(
+          id: 'anime-source:pkg:1:/ep/2',
+          title: 'Episode 2',
+          collection: collection,
+        );
+
+    test('有合集归属 → 合集名（作品名）', () {
+      expect(
+        remoteVideoWorkTitle(
+          episode(
+            const RemoteCollectionMembership(
+              collectionName: '  葬送のフリーレン ',
+              collectionType: 'playlist',
+              sortIndex: 1,
+            ),
+          ),
+        ),
+        '葬送のフリーレン',
+      );
+    });
+
+    test('散卡 / 空名 → null（不产生空标签）', () {
+      expect(remoteVideoWorkTitle(episode(null)), isNull);
+      expect(
+        remoteVideoWorkTitle(
+          episode(
+            const RemoteCollectionMembership(
+              collectionName: '  ',
+              collectionType: 'playlist',
+              sortIndex: 0,
+            ),
+          ),
+        ),
+        isNull,
+      );
+    });
+
+    test('远端初始化把作品名填进制卡用的系列名槽位', () {
+      final String body = methodBody(
+        maskComments(readVideoFushiSource()),
+        'Future<void> _initRemote(',
+      );
+      expect(
+        body.contains('_playlistTitle = remoteVideoWorkTitle(info);'),
+        isTrue,
+        reason: '远端 / 在线视频不填 _playlistTitle，制卡标签与 documentTitle 就没有作品名',
+      );
     });
   });
 }
