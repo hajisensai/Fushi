@@ -80,6 +80,8 @@ dependencies:
     path: ../packages/fushi_engine
   fushi_anki:
     path: ../packages/fushi_anki
+  fushi_srs:
+    path: ../packages/fushi_srs
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:
