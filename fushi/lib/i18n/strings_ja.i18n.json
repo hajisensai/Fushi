@@ -7425,5 +7425,8 @@
   "video_subtitle_frame_ocr_status_recognizing": "Reading on-screen text…",
   "video_subtitle_frame_ocr_status_ready": "Text recognized · tap a word",
   "feedback_compose_title_missing": "タイトルを入力してください。",
-  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet."
+  "online_source_error_webview_unavailable": "This source needs a built-in browser (WebView), which the desktop app doesn't support yet.",
+  "lyrics_sentence_replay": "Replay current sentence",
+  "lookup_popup_close_after_mining": "Close lookup popup after creating a card",
+  "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text"
 }

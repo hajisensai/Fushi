@@ -1163,7 +1163,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 说明为什么没反应——[DictionaryPopupLayer.onMineEntry] 是必填参数，
         // popup.js 也无条件渲染这颗 + 按钮，所以此处只能落到「可点 + 反馈」这一档。
         onMineEntry: cardCreationEnabled
-            ? onMineFromPopup
+            ? closePopupAfterAcceptedMine(
+                onMineFromPopup,
+                enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
+                closeAll: () {
+                  if (mounted) clearDictionaryResult();
+                },
+              )
             : _mineBlockedByModuleGate,
         onUpdateEntry: cardCreationEnabled ? onUpdateFromPopup : null,
         // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。

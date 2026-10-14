@@ -508,6 +508,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       // 与底栏 / 快捷键同一语义——歌词层自己不碰统计。
       onPreviousCue: () => unawaited(ctrl.skipToPrevCue()),
       onNextCue: () => unawaited(ctrl.skipToNextCue()),
+      // 重播当前句同样经 skipToCue 漏斗（playCueAndContinue），统计口径一致。
+      onReplayCue: () => unawaited(ctrl.replayCurrentCue()),
       onSeek: (Duration target) =>
           unawaited(ctrl.seekGlobalMs(target.inMilliseconds)),
       onToggleMask: () => unawaited(_toggleLyricsMask()),

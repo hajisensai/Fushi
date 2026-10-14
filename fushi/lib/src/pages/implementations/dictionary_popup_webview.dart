@@ -149,7 +149,30 @@ class MinePopupResult {
         if (duplicate) 'duplicate': true,
         if (queued) 'queued': true,
       };
+
+  /// 这次制卡被收下了：成功落卡（[MinePopupResult.mined] 恒带 `ankiConnect: true`，
+  /// AnkiDroid 也一样），或进了待发队列（[queued]）。失败 / 重复 / 未知结局都不算。
+  bool get accepted => ankiConnect || queued;
 }
+
+/// 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（偏好 `close_popup_after_mining`）。
+///
+/// 包住宿主的制卡回调：制卡**落地之后**（[MinePopupResult.accepted]）且开关打开时关掉
+/// 整个弹窗栈。必须等结果回来再关，不能提前：阅读器车道经制卡串行队列入队，草稿 /
+/// 句子上下文要等排到才被读走，提前关栈会把它们清掉（BUG-2627 第二轮）。包装是 async
+/// 函数，首个 await 之前会同步跑完 [mine] 的同步前缀，BUG-2634 依赖的「宿主在首个
+/// await 前读完 payload」时序不变。[enabled] 每次现读，设置改了立即生效。
+Future<MinePopupResult> Function(Map<String, String> fields)
+    closePopupAfterAcceptedMine(
+  Future<MinePopupResult> Function(Map<String, String> fields) mine, {
+  required bool Function() enabled,
+  required VoidCallback closeAll,
+}) =>
+        (Map<String, String> fields) async {
+          final MinePopupResult result = await mine(fields);
+          if (result.accepted && enabled()) closeAll();
+          return result;
+        };
 
 /// TODO-896 症状②：Windows 桌面右键 Flutter 上下文菜单的动作枚举（替代被禁用的
 /// WebView2 原生菜单）。两项：查词（平移自原 WebView2 自定义项）+ 复制（自补，BUG-402）。

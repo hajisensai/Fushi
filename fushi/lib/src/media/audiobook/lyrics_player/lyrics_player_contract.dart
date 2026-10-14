@@ -196,6 +196,7 @@ class LyricsPlayerCallbacks {
     this.onSeekRelative,
     this.onSleepTimer,
     this.onOpenIllustration,
+    this.onReplayCue,
   });
 
   /// 打开插图大图浏览，从第 [index] 张看起。`returnToCover` = 关掉后插图位回到
@@ -221,6 +222,10 @@ class LyricsPlayerCallbacks {
   /// 上一句 / 下一句（有声书 cue）。
   final VoidCallback onPreviousCue;
   final VoidCallback onNextCue;
+
+  /// 重播当前句：回到正在高亮的那句起点接着播（用户反馈 yAS98O7PlZ：歌词模式只有
+  /// 上一句 / 下一句，听漏了只能先退一句再进一句）。null = 不显示该键。
+  final VoidCallback? onReplayCue;
 
   /// 拖动进度条松手：跳到全书时间轴上的这一位置。
   final ValueChanged<Duration> onSeek;

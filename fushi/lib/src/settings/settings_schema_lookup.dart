@@ -1095,6 +1095,24 @@ SettingsDestination buildLookupDestination() {
             },
             defaultValue: true,
           ),
+          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
+          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
+          SettingsSwitchItem(
+            id: 'reading_controls.close_popup_after_mining',
+            title: t.lookup_popup_close_after_mining,
+            subtitle: t.lookup_popup_close_after_mining_hint,
+            icon: Icons.playlist_add_check_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.closePopupAfterMining,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setClosePopupAfterMining(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
+          ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。
