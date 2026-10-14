@@ -68,7 +68,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 像素：宽屏上四成足够放下任何译文，窄屏上才真正起到保护作用。
 ///
 /// [rowWidth] 故意做成必填、且不提供「取不到就退回某个保守常数」的默认值——与
-/// [narrowAwareAppBarActions] 的 `availableWidth` 同一口径：有默认值就等于给这个
+/// [fushiAppBarActionsBudget] 的 `barWidth` 同一口径：有默认值就等于给这个
 /// bug 留了一条随时能走回去的路，而这个 bug 的历史恰恰是「换一个更大的常数」。
 /// 调用点把这一行包进 [LayoutBuilder] 后传 `constraints.maxWidth` 即可。
 ///

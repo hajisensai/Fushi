@@ -106,6 +106,20 @@ class GamepadButtonIntent extends Intent {
   final GamepadButton button;
 }
 
+/// Intent dispatched when a polled controller [button] goes back UP (BUG-3330).
+///
+/// Most pages only care about the press edge ([GamepadButtonIntent]); a page with a
+/// HOLD action (the video page's 按住临时倍速) also needs the release edge, which the
+/// desktop poller otherwise never surfaced — Android gets it for free as a
+/// `KeyUpEvent` on the native key path. Unhandled releases are simply dropped: no
+/// global fallback acts on a release.
+@immutable
+class GamepadButtonReleaseIntent extends Intent {
+  const GamepadButtonReleaseIntent(this.button);
+
+  final GamepadButton button;
+}
+
 /// Intent dispatched when [button] (currently only A) is HELD past the
 /// long-press threshold — the gamepad equivalent of a mouse long-press. A
 /// focused widget that supports long-press maps this to the SAME callback its
@@ -425,6 +439,7 @@ class GamepadService {
     _poller = _PluginGamepadPoller(
       processor: GamepadFrameProcessor(
         onButton: _dispatchButton,
+        onButtonRelease: _dispatchButtonRelease,
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
         onRightStickScroll: _dispatchRightStickScroll,
@@ -535,6 +550,20 @@ class GamepadService {
       default:
         return;
     }
+  }
+
+  /// BUG-3330: a polled button went back up. Only the focused page's
+  /// [GamepadButtonReleaseIntent] handler sees it (hold actions); there is no
+  /// global fallback for a release. While the in-game lookup card owns the pad,
+  /// releases are swallowed like presses.
+  void _dispatchButtonRelease(GamepadButton button) {
+    if (GalIngameLookupGamepadRoute.current != null) return;
+    final BuildContext? ctx = _dispatchContext;
+    if (ctx == null) return;
+    Actions.maybeInvoke<GamepadButtonReleaseIntent>(
+      ctx,
+      GamepadButtonReleaseIntent(button),
+    );
   }
 
   /// TODO-700 T6: the focus direction a D-pad press should move, resolved through
@@ -972,6 +1001,7 @@ bool _movePrimaryFocusInDirection(
 class GamepadFrameProcessor {
   GamepadFrameProcessor({
     required this.onButton,
+    this.onButtonRelease,
     this.onLongPress,
     this.onStickMove,
     this.onRightStickScroll,
@@ -993,6 +1023,15 @@ class GamepadFrameProcessor {
   /// instead, so a controller has TWO independent directional channels (stick =
   /// focus-only navigation, d-pad = bindable).
   final void Function(GamepadButton button) onButton;
+
+  /// BUG-3330: emits the RELEASE edge of a discrete button, a trigger, or the
+  /// held D-pad direction, so a page can implement hold-to-act (the video page's
+  /// 按住临时倍速). Always follows the matching [onButton] press. For A in
+  /// long-press mode the tap is itself decided on release, so its release edge is
+  /// emitted right after that tap (a hold-to-act on A therefore cannot hold on
+  /// desktop — A's hold is the long-press). D-pad auto-repeat presses in between
+  /// are ordinary [onButton] presses. Null = releases are not reported.
+  final void Function(GamepadButton button)? onButtonRelease;
 
   /// TODO-700 T6: the LEFT STICK's directional channel — fixed, generic FOCUS
   /// movement only (never the dictionary lookup / caret entry / registry). Null
@@ -1060,6 +1099,18 @@ class GamepadFrameProcessor {
   /// Clears all transient state — call when the controller disconnects or the
   /// active controller changes, so a stale bitmask can't fire spurious edges.
   void reset() {
+    // BUG-3330: a controller that vanishes mid-hold never sends its up edges;
+    // release whatever was held so a hold-to-act cannot get stuck engaged.
+    final void Function(GamepadButton button)? release = onButtonRelease;
+    if (release != null) {
+      for (final MapEntry<int, GamepadButton> entry in buttonBits.entries) {
+        if ((_prevButtons & entry.key) != 0) release(entry.value);
+      }
+      if (_prevLeftTrigger) release(GamepadButton.lt);
+      if (_prevRightTrigger) release(GamepadButton.rt);
+      final TraversalDirection? held = _heldDir;
+      if (held != null) release(dpadButtonFor(held));
+    }
     _prevButtons = 0;
     _prevLeftTrigger = false;
     _prevRightTrigger = false;
@@ -1089,6 +1140,7 @@ class GamepadFrameProcessor {
       final bool down = (buttons & mask) != 0;
       final bool wasDown = (_prevButtons & mask) != 0;
       if (down && !wasDown) onButton(entry.value);
+      if (!down && wasDown) onButtonRelease?.call(entry.value);
     }
 
     // A: mirror a mouse's tap-vs-long-press. Decide on RELEASE — a release
@@ -1109,6 +1161,7 @@ class GamepadFrameProcessor {
         }
       } else if (!aDown && aWas) {
         if (!_aLongFired) onButton(GamepadButton.a);
+        onButtonRelease?.call(GamepadButton.a);
         _aDownMs = 0;
       }
     }
@@ -1116,9 +1169,11 @@ class GamepadFrameProcessor {
     // Triggers behave as digital buttons past the standard threshold.
     final bool lt = leftTrigger > GamepadFrameBits.triggerThreshold;
     if (lt && !_prevLeftTrigger) onButton(GamepadButton.lt);
+    if (!lt && _prevLeftTrigger) onButtonRelease?.call(GamepadButton.lt);
     _prevLeftTrigger = lt;
     final bool rt = rightTrigger > GamepadFrameBits.triggerThreshold;
     if (rt && !_prevRightTrigger) onButton(GamepadButton.rt);
+    if (!rt && _prevRightTrigger) onButtonRelease?.call(GamepadButton.rt);
     _prevRightTrigger = rt;
 
     _prevButtons = buttons;
@@ -1131,6 +1186,12 @@ class GamepadFrameProcessor {
     //    keeps moving focus even while no D-pad is held. Both carry the SAME
     //    hysteresis + held-direction auto-repeat (TODO-699 feel preserved).
     final TraversalDirection? dpadDir = _dpadDirection(buttons);
+    final TraversalDirection? previousDpadDir = _heldDir;
+    if (previousDpadDir != null && previousDpadDir != dpadDir) {
+      // The held direction ended (released, or switched to another direction):
+      // report its release before the new direction's press.
+      onButtonRelease?.call(dpadButtonFor(previousDpadDir));
+    }
     if (dpadDir != null) {
       _updateHeldDirection(dpadDir, nowMs: nowMs);
     } else {

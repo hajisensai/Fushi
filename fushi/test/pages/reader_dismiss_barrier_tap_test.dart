@@ -11,6 +11,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
 import 'reader_fushi_page_source_corpus.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 class _BarrierTapAppModel extends AppModel {
   _BarrierTapAppModel() : super(testPlatformServices());
@@ -122,7 +123,10 @@ class _DefaultHostPageState extends BaseSourcePageState<_DefaultHostPage> {
 
 Widget _wrap({required AppModel appModel, required Widget child}) {
   return ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, c) => c ?? const SizedBox.shrink(),

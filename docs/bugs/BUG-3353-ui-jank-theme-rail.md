@@ -1,0 +1,13 @@
+## BUG-3353 · 设置开关与侧栏收展掉帧
+- **报告**：2026-10-14（用户：设置 › 外观与交互 › 功能模块的开关打开关闭掉帧、左侧导航栏展开收起掉帧，「其他地方好像也有」；疑为限帧率）
+- **真实性**：✅ 真 bug，但**不是限帧率**（无 `timeDilation` / 自定义帧调度 / 节流；runner 只钉 Skia；HDR 引擎补丁不改默认交换链与 vsync）。三条根因：
+  - **任何偏好写入都播一遍 280ms 全 app 主题过渡**：`fushi/lib/src/models/theme_notifier.dart` 的 `theme` / `darkTheme` getter 每次现建 `ThemeData`，工厂 `buildFushiThemeData` 里 14 处 `WidgetStateProperty.resolveWith` 每次都是新闭包，ThemeData 永远判不等；根 build（`fushi/lib/main.dart` 的 `MaterialApp(theme:, darkTheme:, themeAnimationStyle: fushiThemeAnimationStyle)`）随每次 AppModel 通知拿到「新」主题，AnimatedTheme 便 280ms 逐帧 lerp + 重建所有依赖 `Theme.of` 的组件。偏好仓库的通知经 `prefsRepo.addListener(notifyListeners)` 全部转成 AppModel 通知，所以「其他地方」的设置开关同样卡。
+  - **设置开关等 DB 落盘才开始动**：`fushi/lib/src/settings/settings_schema_widgets.dart` 的 `_switch` 先 `await toggle.onChanged` 再 `refresh()`；新值其实在 `setPref` 首个 await 之前已进内存缓存。
+  - **侧栏收展每帧重排整个内容区**：`fushi/lib/src/utils/adaptive/adaptive_navigation.dart` 的 `_AnimatedRailWidth` 逐帧改 rail 宽，`fushi/lib/src/pages/implementations/home_page.dart` 里与之同 `Row` 的 `Expanded` 内容宽度约束逐帧变化；Offstage 保活的各 tab 页仍参与布局，全部每帧重排 + 整块重绘。
+- **[x] ① 修复** —
+  - `ThemeNotifier` 按 `buildFushiThemeData` 的全部输入（ColorScheme / TextTheme / 墨水屏 / 设计系统 / 材质 / 玻璃设计 / 单色强调 + `defaultTargetPlatform`）做明暗两槽记忆，输入不变返回同一实例，MaterialApp 不再播过渡。
+  - 设置开关先发起写入、立刻 `refresh()` 一次让滑块即刻动画，写完再刷一次。
+  - 新增 `NavRailContentSync` / `NavRailSyncedContent`：rail 过渡中把内容区钉在两态里较宽的内容宽、随 rail 边缘平移并裁掉右侧溢出，外包 `RepaintBoundary`；一次切换至多重排一次（收起在开始、展开在结束）。
+  - 未改：模块开关的两次同步通知会被合并成一帧重建，删掉无收益且 AppModel 那次在 `resetSettingsSchemaCache` 之后、承担顺序语义，保留。
+- **[x] ② 加自动化测试** — `fushi/test/models/theme_data_memo_test.dart`（输入不变复用同一实例；改墨水屏后重建并生效；平台覆盖是缓存键的一部分）；`fushi/test/widgets/nav_rail_content_sync_test.dart`（展开 / 收起过渡中内容区 `LayoutBuilder` 探针至多重排一次；不包同步组件的反向对照逐帧重排 >5 次；静止后宽度与未同步版一致）。
+- **备注**：用户在 Windows debug 开发实例上试用确认后拍板（release / profile 手感未单独测）。全量 `flutter analyze` 0 问题；定向测试（新增两份 + 主题 / rail / 设置相关 7 份）50 通过 / 2 跳过 / 0 失败（Mac 分流）。

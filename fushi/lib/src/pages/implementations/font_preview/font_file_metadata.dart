@@ -75,16 +75,19 @@ List<int> fontVariableWeightSteps((int, int) range) {
 }
 
 /// 读 [path] 的字体元数据；文件不存在 / 解析失败时只返回格式与大小（或 null）。
+///
+/// 表读取本身是同步的（只读表头与三张小表，几百字节），与 CSS 生成器读字重
+/// （[readFontFaceWeightSync]）共用同一套解析；对外保持 Future 签名不变。
 Future<FontFileMetadata?> readFontFileMetadata(String path) async {
   final File file = File(path);
   RandomAccessFile? raf;
   try {
-    if (!await file.exists()) return null;
-    final int size = await file.length();
+    if (!file.existsSync()) return null;
+    final int size = file.lengthSync();
     final String ext = p.extension(path).replaceFirst('.', '').toUpperCase();
-    raf = await file.open();
+    raf = file.openSync();
     final _FontReader reader = _FontReader(raf, size);
-    final Uint8List head = await reader.read(0, 12);
+    final Uint8List head = reader.read(0, 12);
     if (head.length < 12) {
       return FontFileMetadata(format: ext, sizeBytes: size);
     }
@@ -93,16 +96,15 @@ Future<FontFileMetadata?> readFontFileMetadata(String path) async {
     if (tag == _tagTtcf) {
       final int numFonts = h.getUint32(8);
       final int faces = numFonts.clamp(1, 64);
-      final Uint8List offsetsBytes = await reader.read(12, faces * 4);
+      final Uint8List offsetsBytes = reader.read(12, faces * 4);
       final ByteData offsets = ByteData.sublistView(offsetsBytes);
       final Set<int> weights = <int>{};
       _SfntFacts? first;
       for (int i = 0; i < faces && (i + 1) * 4 <= offsetsBytes.length; i++) {
         // 只细读前 16 个子字体的字重；大集合（如 Noto CJK 全家 TTC）够用了。
         if (i >= 16) break;
-        final _SfntFacts? facts = await _readSfnt(
-          reader,
-          offsets.getUint32(i * 4),
+        final _SfntFacts? facts = _factsOf(
+          _openSfnt(reader, offsets.getUint32(i * 4)),
         );
         if (facts == null) continue;
         first ??= facts;
@@ -117,7 +119,7 @@ Future<FontFileMetadata?> readFontFileMetadata(String path) async {
       );
     }
     if (tag == _tagWoff) {
-      final _SfntFacts? facts = await _readWoff(reader);
+      final _SfntFacts? facts = _factsOf(_openWoff(reader));
       return _compose(
         format: 'WOFF',
         size: size,
@@ -128,7 +130,7 @@ Future<FontFileMetadata?> readFontFileMetadata(String path) async {
     if (tag == _tagWoff2) {
       return FontFileMetadata(format: 'WOFF2', sizeBytes: size);
     }
-    final _SfntFacts? facts = await _readSfnt(reader, 0);
+    final _SfntFacts? facts = _factsOf(_openSfnt(reader, 0));
     return _compose(
       format: ext.isEmpty ? 'TTF' : ext,
       size: size,
@@ -140,13 +142,76 @@ Future<FontFileMetadata?> readFontFileMetadata(String path) async {
     try {
       return FontFileMetadata(
         format: p.extension(path).replaceFirst('.', '').toUpperCase(),
-        sizeBytes: await file.length(),
+        sizeBytes: file.lengthSync(),
       );
     } catch (_) {
       return null;
     }
   } finally {
-    await raf?.close();
+    raf?.closeSync();
+  }
+}
+
+/// 一个字体文件**被 `@font-face` 加载的那张字面**声明的字重：静态字体 `min == max`
+/// （`OS/2.usWeightClass`），可变字体是 `wght` 轴范围。
+typedef FontFaceWeight = ({int min, int max});
+
+/// 读 [path] 被 `@font-face` 实际加载的字面（TTF/OTF/WOFF 整个文件；TTC 是第 0 个
+/// 子字体——`@font-face src` 指向集合时浏览器只取它）的字重。
+///
+/// 读不出（WOFF2 的表是 Brotli 压缩、文件坏、没有 OS/2 表）返回 null，调用方此时
+/// 不声明字重（等价于 CSS 默认 `normal`，与改动前一致）。同步：只读表头与两张小表。
+FontFaceWeight? readFontFaceWeightSync(String path) {
+  return _withFirstFace(path, (_TableReader? tables) {
+    final _SfntFacts? facts = _factsOf(tables);
+    if (facts == null) return null;
+    final (int, int)? variable = facts.variableWeightRange;
+    if (variable != null) return (min: variable.$1, max: variable.$2);
+    final int? weight = facts.weight;
+    return weight == null ? null : (min: weight, max: weight);
+  });
+}
+
+/// 读 [path] 第一张字面在 `name` 表里声明的**家族名**：Typographic Family
+/// （nameID 16）优先，没有再取 Family（nameID 1）；记录按 Windows 英语 →
+/// 其余 Windows → Unicode → Mac 的顺序取第一条可解码的。
+///
+/// 为什么要 16 优先：同一家族的非 RIBBI 字重（Klee One SemiBold）把字重写进了
+/// nameID 1（`Klee One SemiBold`），只有 nameID 16 才是两份文件共同的 `Klee One`。
+/// 导入时用它当目录名，同一家族的多个字重文件才会落成同名条目、合进同一个
+/// CSS 家族（各自 `@font-face` 声明真实字重）。读不出时返回 null。
+String? readFontFamilyNameSync(String path) {
+  return _withFirstFace(path, (_TableReader? tables) {
+    final ByteData? name = tables?.call(_tagName, 1 << 18);
+    return name == null ? null : _preferredFamilyName(name);
+  });
+}
+
+T? _withFirstFace<T>(String path, T? Function(_TableReader? tables) body) {
+  RandomAccessFile? raf;
+  try {
+    final File file = File(path);
+    if (!file.existsSync()) return null;
+    raf = file.openSync();
+    final _FontReader reader = _FontReader(raf, raf.lengthSync());
+    final Uint8List head = reader.read(0, 12);
+    if (head.length < 12) return null;
+    final ByteData h = ByteData.sublistView(head);
+    final int tag = h.getUint32(0);
+    if (tag == _tagWoff2) return null;
+    if (tag == _tagWoff) return body(_openWoff(reader));
+    if (tag == _tagTtcf) {
+      // TTC 头：'ttcf' major minor numFonts，第 0 个子字体的偏移紧随其后（@12）。
+      final Uint8List first = reader.read(12, 4);
+      if (first.length < 4) return null;
+      return body(_openSfnt(reader, ByteData.sublistView(first).getUint32(0)));
+    }
+    return body(_openSfnt(reader, 0));
+  } catch (e) {
+    debugPrint('[fushi-fonts] face read failed for $path: $e');
+    return null;
+  } finally {
+    raf?.closeSync();
   }
 }
 
@@ -178,6 +243,7 @@ const int _tagOs2 = 0x4F532F32; // 'OS/2'
 const int _tagPost = 0x706F7374; // 'post'
 const int _tagFvar = 0x66766172; // 'fvar'
 const int _tagWght = 0x77676874; // 'wght'
+const int _tagName = 0x6E616D65; // 'name'
 
 class _FontReader {
   _FontReader(this._raf, this.length);
@@ -185,12 +251,24 @@ class _FontReader {
   final RandomAccessFile _raf;
   final int length;
 
-  Future<Uint8List> read(int offset, int count) async {
+  Uint8List read(int offset, int count) {
     if (offset < 0 || offset >= length || count <= 0) return Uint8List(0);
     final int safe = count.clamp(0, length - offset);
-    await _raf.setPosition(offset);
-    return _raf.read(safe);
+    _raf.setPositionSync(offset);
+    return _raf.readSync(safe);
   }
+}
+
+/// 一张字面的表访问器：按 tag 取表（最多 [maxLength] 字节），没有该表返回 null。
+typedef _TableReader = ByteData? Function(int tag, int maxLength);
+
+_SfntFacts? _factsOf(_TableReader? tables) {
+  if (tables == null) return null;
+  return _factsFromTables(
+    os2: tables(_tagOs2, 100),
+    post: tables(_tagPost, 32),
+    fvar: tables(_tagFvar, 4096),
+  );
 }
 
 class _SfntFacts {
@@ -212,45 +290,40 @@ class _SfntFacts {
 }
 
 /// 未压缩 sfnt（TTF/OTF 或 TTC 子字体）：表目录在 [offset] 处。
-Future<_SfntFacts?> _readSfnt(_FontReader reader, int offset) async {
-  final Uint8List header = await reader.read(offset, 12);
+_TableReader? _openSfnt(_FontReader reader, int offset) {
+  final Uint8List header = reader.read(offset, 12);
   if (header.length < 12) return null;
   final int numTables = ByteData.sublistView(header).getUint16(4);
   if (numTables == 0 || numTables > 512) return null;
-  final Uint8List dirBytes = await reader.read(offset + 12, numTables * 16);
+  final Uint8List dirBytes = reader.read(offset + 12, numTables * 16);
   final ByteData dir = ByteData.sublistView(dirBytes);
   final Map<int, (int, int)> tables = <int, (int, int)>{};
   for (int i = 0; i < numTables && (i + 1) * 16 <= dirBytes.length; i++) {
     final int base = i * 16;
-    final int tag = dir.getUint32(base);
-    if (tag == _tagOs2 || tag == _tagPost || tag == _tagFvar) {
-      tables[tag] = (dir.getUint32(base + 8), dir.getUint32(base + 12));
-    }
+    tables[dir.getUint32(base)] = (
+      dir.getUint32(base + 8),
+      dir.getUint32(base + 12),
+    );
   }
-  Future<ByteData?> table(int tag, int maxLength) async {
+  return (int tag, int maxLength) {
     final (int, int)? entry = tables[tag];
     if (entry == null) return null;
     final (int at, int len) = entry;
-    final Uint8List bytes = await reader.read(at, len.clamp(0, maxLength));
+    final Uint8List bytes = reader.read(at, len.clamp(0, maxLength));
     return bytes.isEmpty ? null : ByteData.sublistView(bytes);
-  }
-
-  return _factsFromTables(
-    os2: await table(_tagOs2, 100),
-    post: await table(_tagPost, 32),
-    fvar: await table(_tagFvar, 4096),
-  );
+  };
 }
 
-/// WOFF 1.0：表按 zlib 压缩（compLength < origLength 时）。
-Future<_SfntFacts?> _readWoff(_FontReader reader) async {
-  final Uint8List header = await reader.read(0, 44);
+/// WOFF 1.0：表按 zlib 压缩（compLength < origLength 时）。压缩表只能整张解，
+/// 这里的上限是压缩长度 1 MiB，`maxLength` 不再截断（与改动前同语义）。
+_TableReader? _openWoff(_FontReader reader) {
+  final Uint8List header = reader.read(0, 44);
   if (header.length < 44) return null;
   final int numTables = ByteData.sublistView(header).getUint16(12);
   if (numTables == 0 || numTables > 512) return null;
-  final Uint8List dirBytes = await reader.read(44, numTables * 20);
+  final Uint8List dirBytes = reader.read(44, numTables * 20);
   final ByteData dir = ByteData.sublistView(dirBytes);
-  Future<ByteData?> table(int wanted) async {
+  return (int wanted, int _) {
     for (int i = 0; i < numTables && (i + 1) * 20 <= dirBytes.length; i++) {
       final int base = i * 20;
       if (dir.getUint32(base) != wanted) continue;
@@ -258,20 +331,67 @@ Future<_SfntFacts?> _readWoff(_FontReader reader) async {
       final int compLength = dir.getUint32(base + 8);
       final int origLength = dir.getUint32(base + 12);
       if (compLength > 1 << 20) return null;
-      final Uint8List raw = await reader.read(at, compLength);
+      final Uint8List raw = reader.read(at, compLength);
       final List<int> bytes = compLength < origLength ? zlib.decode(raw) : raw;
       return bytes.isEmpty
           ? null
           : ByteData.sublistView(Uint8List.fromList(bytes));
     }
     return null;
-  }
+  };
+}
 
-  return _factsFromTables(
-    os2: await table(_tagOs2),
-    post: await table(_tagPost),
-    fvar: await table(_tagFvar),
-  );
+/// `name` 表里家族名的首选记录：nameID 16 优先于 1；同一 nameID 内按
+/// Windows 英语(3/0x409) → 其余 Windows(3) → Unicode(0) → Mac(1) 排序。
+String? _preferredFamilyName(ByteData name) {
+  if (name.lengthInBytes < 6) return null;
+  final int count = name.getUint16(2);
+  final int storage = name.getUint16(4);
+  String? best;
+  int bestRank = 1 << 30;
+  for (int i = 0; i < count; i++) {
+    final int rec = 6 + i * 12;
+    if (rec + 12 > name.lengthInBytes) break;
+    final int platformId = name.getUint16(rec);
+    final int languageId = name.getUint16(rec + 4);
+    final int nameId = name.getUint16(rec + 6);
+    if (nameId != 16 && nameId != 1) continue;
+    final int platformRank = switch (platformId) {
+      3 when languageId == 0x409 => 0,
+      3 => 1,
+      0 => 2,
+      1 => 3,
+      _ => -1,
+    };
+    if (platformRank < 0) continue;
+    final int rank = (nameId == 16 ? 0 : 10) + platformRank;
+    if (rank >= bestRank) continue;
+    final int length = name.getUint16(rec + 8);
+    final int start = storage + name.getUint16(rec + 10);
+    if (length <= 0 || start + length > name.lengthInBytes) continue;
+    final String? decoded = _decodeNameRecord(
+      platformId,
+      Uint8List.sublistView(name, start, start + length),
+    );
+    final String? trimmed = decoded?.trim();
+    if (trimmed == null || trimmed.isEmpty) continue;
+    best = trimmed;
+    bestRank = rank;
+  }
+  return best;
+}
+
+/// Windows / Unicode 平台是 UTF-16BE；Mac 记录按 Latin-1 兜底（ASCII 安全）。
+String? _decodeNameRecord(int platformId, Uint8List raw) {
+  if (platformId == 3 || platformId == 0) {
+    if (raw.length.isOdd) return null;
+    final StringBuffer sb = StringBuffer();
+    for (int i = 0; i + 1 < raw.length; i += 2) {
+      sb.writeCharCode((raw[i] << 8) | raw[i + 1]);
+    }
+    return sb.toString();
+  }
+  return String.fromCharCodes(raw);
 }
 
 _SfntFacts _factsFromTables({

@@ -989,6 +989,7 @@ class _SecondaryActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final ValueChanged<LyricsMenuAnchor>? onSleep = callbacks.onSleepTimer;
     final ValueChanged<LyricsMenuAnchor>? onTypography = callbacks.onTypography;
+    final VoidCallback? onReplay = callbacks.onReplayCue;
     return DecoratedBox(
       decoration: ShapeDecoration(
         color: FushiDesignTokens.of(context).surfaces.overlay,
@@ -1008,6 +1009,8 @@ class _SecondaryActions extends StatelessWidget {
                 minutes: data.sleepTimerMinutes,
                 onSleepTimer: onSleep,
               ),
+            // 重播当前句是播放动作，窄屏卡片的精简工具条里也留着（与倍速同排）。
+            if (onReplay != null) _ReplayCueButton(onPressed: onReplay),
             if (full) ...<Widget>[
               _MaskButton(
                 masked: data.lyricsMasked,
@@ -1060,6 +1063,23 @@ class _SleepButton extends StatelessWidget {
         icon: const FushiIcon(FushiIcons.timer),
         selectedIcon: FushiIcon(FushiIcons.filled(FushiIcons.timer)),
       ),
+    );
+  }
+}
+
+/// 重播当前句（回到高亮那句的起点接着播）。
+class _ReplayCueButton extends StatelessWidget {
+  const _ReplayCueButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiIconButtonControl(
+      key: const ValueKey<String>('lyrics_replay_cue_button'),
+      tooltip: t.lyrics_sentence_replay,
+      onPressed: onPressed,
+      icon: const FushiIcon(FushiIcons.replay),
     );
   }
 }

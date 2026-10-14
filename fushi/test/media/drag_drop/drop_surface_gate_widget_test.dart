@@ -83,10 +83,10 @@ void _pinViewport(WidgetTester tester) {
 }
 
 Widget _leaf(String label, List<String> sink) => FushiFileDropTarget(
-      debugLabel: label,
-      onDrop: (List<String> paths, Offset position) => sink.add(label),
-      child: const SizedBox.expand(),
-    );
+  debugLabel: label,
+  onDrop: (List<String> paths, Offset position) => sink.add(label),
+  child: const SizedBox.expand(),
+);
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -109,32 +109,36 @@ void main() {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
       Widget shell({required bool videoVisible}) => MaterialApp(
-            home: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                Offstage(
-                  offstage: !videoVisible,
-                  child: DropSurfaceScope(
-                    isActive: () => videoVisible,
-                    child: _leaf('video', dropped),
-                  ),
-                ),
-                Offstage(
-                  offstage: videoVisible,
-                  child: DropSurfaceScope(
-                    isActive: () => !videoVisible,
-                    child: _leaf('books', dropped),
-                  ),
-                ),
-              ],
+        home: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Offstage(
+              offstage: !videoVisible,
+              child: DropSurfaceScope(
+                isActive: () => videoVisible,
+                child: _leaf('video', dropped),
+              ),
             ),
-          );
+            Offstage(
+              offstage: videoVisible,
+              child: DropSurfaceScope(
+                isActive: () => !videoVisible,
+                child: _leaf('books', dropped),
+              ),
+            ),
+          ],
+        ),
+      );
 
       await tester.pumpWidget(shell(videoVisible: true));
       await _performOsDrop(tester);
-      expect(dropped, <String>['video'],
-          reason: '隐藏的书架必须一声不吭 —— Offstage 只关 Flutter 的 hitTest，'
-              'desktop_drop 照样全局广播且隐藏子树仍是全屏 paintBounds');
+      expect(
+        dropped,
+        <String>['video'],
+        reason:
+            '隐藏的书架必须一声不吭 —— Offstage 只关 Flutter 的 hitTest，'
+            'desktop_drop 照样全局广播且隐藏子树仍是全屏 paintBounds',
+      );
 
       dropped.clear();
       await tester.pumpWidget(shell(videoVisible: false));
@@ -146,12 +150,14 @@ void main() {
     testWidgets('没有作用域的落点照旧接（对话框 / 播放页行为不变）', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(MaterialApp(
-        home: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[_leaf('dialog', dropped)],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[_leaf('dialog', dropped)],
+          ),
         ),
-      ));
+      );
       await _performOsDrop(tester);
       expect(dropped, <String>['dialog']);
     });
@@ -159,20 +165,22 @@ void main() {
     testWidgets('enabled:false 的落点不接', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(MaterialApp(
-        home: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            FushiFileDropTarget(
-              enabled: false,
-              debugLabel: 'off',
-              onDrop: (List<String> paths, Offset position) =>
-                  dropped.add('off'),
-              child: const SizedBox.expand(),
-            ),
-          ],
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              FushiFileDropTarget(
+                enabled: false,
+                debugLabel: 'off',
+                onDrop: (List<String> paths, Offset position) =>
+                    dropped.add('off'),
+                child: const SizedBox.expand(),
+              ),
+            ],
+          ),
         ),
-      ));
+      );
       await _performOsDrop(tester);
       expect(dropped, isEmpty);
     });
@@ -196,19 +204,21 @@ void main() {
             ),
           );
 
-      await tester.pumpWidget(TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: MediaLibraryShell(
-              focusIdPrefix: 'drop-gate-shell',
-              views: <MediaLibraryViewSpec>[
-                spec(MediaLibraryViewKind.library, 'library'),
-                spec(MediaLibraryViewKind.discover, 'discover'),
-              ],
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: MediaLibraryShell(
+                focusIdPrefix: 'drop-gate-shell',
+                views: <MediaLibraryViewSpec>[
+                  spec(MediaLibraryViewKind.library, 'library'),
+                  spec(MediaLibraryViewKind.discover, 'discover'),
+                ],
+              ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -223,8 +233,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
-      expect(dropped, <String>['discover'],
-          reason: '被保活的书架仍在树里、仍是全屏 paintBounds，只有内层作用域挡得住它');
+      expect(dropped, <String>[
+        'discover',
+      ], reason: '被保活的书架仍在树里、仍是全屏 paintBounds，只有内层作用域挡得住它');
     });
   }, skip: !_desktopHost);
 
@@ -249,35 +260,37 @@ void main() {
     testWidgets('切到媒体服务器分区后拖入文件夹，本地库不得登记扫描根', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
-      await tester.pumpWidget(TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: VideoLibraryShell(
-              repository: VideoBookRepository(database),
-              libraryRefreshSignal: refreshSignal,
-              scrapeTaskController: scrapeController,
-              onScrapeAll: () async {},
-              onClearAllScrapeRecords: () async {},
-              onScrapeSource: (_) async {},
-              onVideoScanCompleted: (_, __) async {},
-              onOpenScrapeTasks: () {},
-              onLibraryChanged: () {},
-              localLibraryPageBuilder: (_, Widget navigation, __) => Column(
-                children: <Widget>[
-                  navigation,
-                  Expanded(child: _leaf('local', dropped)),
-                ],
-              ),
-              mediaServerPageBuilder: (_, Widget navigation) => Column(
-                children: <Widget>[
-                  navigation,
-                  Expanded(child: _leaf('media-servers', dropped)),
-                ],
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: VideoLibraryShell(
+                repository: VideoBookRepository(database),
+                libraryRefreshSignal: refreshSignal,
+                scrapeTaskController: scrapeController,
+                onScrapeAll: () async {},
+                onClearAllScrapeRecords: () async {},
+                onScrapeSource: (_) async {},
+                onVideoScanCompleted: (_, __) async {},
+                onOpenScrapeTasks: () {},
+                onLibraryChanged: () {},
+                localLibraryPageBuilder: (_, Widget navigation, __) => Column(
+                  children: <Widget>[
+                    navigation,
+                    Expanded(child: _leaf('local', dropped)),
+                  ],
+                ),
+                mediaServerPageBuilder: (_, Widget navigation) => Column(
+                  children: <Widget>[
+                    navigation,
+                    Expanded(child: _leaf('media-servers', dropped)),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -286,14 +299,15 @@ void main() {
       dropped.clear();
       tester
           .widget<FushiSectionTabBar<VideoLibrarySection>>(
-            find.byType(FushiSectionTabBar<VideoLibrarySection>),
+            find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
           )
           .onChanged!(VideoLibrarySection.mediaServers);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
-      expect(dropped, <String>['media-servers'],
-          reason: '用户停在媒体服务器子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
+      expect(dropped, <String>[
+        'media-servers',
+      ], reason: '用户停在媒体服务器子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
     });
   }, skip: !_desktopHost);
 

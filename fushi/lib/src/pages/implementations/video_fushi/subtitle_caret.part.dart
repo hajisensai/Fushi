@@ -184,8 +184,12 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
             action == ShortcutAction.videoReplayCurrentSubtitle)) {
       final VideoPlayerController? controller = _controller;
       if (controller != null) {
-        videoActionCallbacks(_buildVideoShortcutActions(controller))[action]
-            ?.call();
+        videoActionCallbacks(
+          _buildVideoShortcutActions(
+            controller,
+            input: VideoActionInput.button,
+          ),
+        )[action]?.call();
       }
       return true;
     }

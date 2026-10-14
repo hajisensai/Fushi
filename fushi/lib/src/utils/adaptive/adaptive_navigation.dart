@@ -1607,10 +1607,11 @@ class _SlidingIndicatorScope extends StatefulWidget {
     this.hoverColor,
   });
 
-  /// 长按拖选的目标：目的地焦点 id → 序号。null = 不启用长按拖选。
+  /// 拖选的目标：目的地焦点 id → 序号。null = 不启用拖选。
   ///
-  /// 交互（2026-10-10 用户「底部栏长按拖动、松手到达对应模块」）：长按胶囊
-  /// 任意处，选中指示器被拎起（放大 + 投影，手机上轻触感）；左右拖动时它跟着
+  /// 交互（2026-10-10 用户「底部栏长按拖动、松手到达对应模块」；2026-10-14
+  /// 改为 iOS 26 标签栏式「按下直接横拖」，长按后再拖仍可）：在胶囊任意处按下
+  /// 横拖（或长按），选中指示器被拎起（放大 + 投影）；左右拖动时它跟着
   /// 手指走，经过的目的地亮一层悬停状态层；松手吸附到离手指最近的目的地
   /// （弹簧滑过去，复用切换时的滑动），并经 [onDragSelect] 切过去。拖回原位、
   /// 拖出胶囊或停在「更多」上松手 = 取消，指示器弹回原位。最近目的地按真实
@@ -1731,21 +1732,24 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     return best;
   }
 
-  void _onDragStart(LongPressStartDetails details) {
-    if (widget.dragTargets == null) return;
+  /// 拖选开始。两个入口共用：按下后直接横向拖过触摸判定距离（[kTouchSlop]，
+  /// iOS 26 标签栏式，[lift] = false）；或长按后再拖（[lift] = true，保留
+  /// 「按住不动、想好了再拖」的路径，并给一下拎起触感）。
+  void _beginDrag(Offset localPosition, {required bool lift}) {
+    if (widget.dragTargets == null || _dragging) return;
     _dragFollows = fushiExpressiveMotionEnabled(context);
-    fushiLiftHaptic(context);
+    if (lift) fushiLiftHaptic(context);
     _lift.animateTo(1, animate: _dragFollows);
     setState(() {
-      _dragPoint = details.localPosition;
-      _hoverId = _nearestTarget(details.localPosition);
+      _dragPoint = localPosition;
+      _hoverId = _nearestTarget(localPosition);
     });
   }
 
-  void _onDragMove(LongPressMoveUpdateDetails details) {
+  void _moveDrag(Offset localPosition) {
     if (!_dragging) return;
-    _dragPoint = details.localPosition;
-    final FushiFocusId? hover = _nearestTarget(details.localPosition);
+    _dragPoint = localPosition;
+    final FushiFocusId? hover = _nearestTarget(localPosition);
     if (hover != _hoverId) {
       fushiSelectionHaptic(context);
       setState(() => _hoverId = hover);
@@ -1754,10 +1758,11 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   }
 
   /// 松手：落在胶囊里、不在「更多」上、且最近的目的地不是当前项 → 切过去；
-  /// 否则取消、指示器弹回原位。
-  void _onDragEnd(LongPressEndDetails details) {
-    if (!_dragging) return;
-    final Offset point = details.localPosition;
+  /// 否则取消、指示器弹回原位。落点取最后一次移动的位置（两种识别器的结束
+  /// 回调都不再带新位置）。
+  void _endDrag() {
+    final Offset? point = _dragPoint;
+    if (point == null) return;
     final RenderObject? box = context.findRenderObject();
     final bool inside =
         box is RenderBox &&
@@ -1927,23 +1932,35 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
       child: widget.child,
     );
     if (dragSelect) {
-      // 长按阈值沿用系统长按（kLongPressTimeout）；短按仍由各目的地自己的
-      // InkWell 拿走（长按识别器在超时前不接受）。只认触摸 / 触笔：鼠标在
-      // 桌面窄窗里长按拖动没有这个语义。
+      // 短按仍由各目的地自己的 InkWell 拿走（横拖识别器过线前、长按识别器
+      // 超时前都不接受）。只认触摸 / 触笔：鼠标在桌面窄窗里拖动没有这个语义。
       child = GestureDetector(
         behavior: HitTestBehavior.translucent,
         // 拖选是纯指针手势，不进语义树：长按识别器默认挂的 longPress 语义动作
         // 会以 Offset.zero 回放 start/end，读屏用户「双击按住」就被静默切到
-        // 胶囊最左那一项。读屏切模块走各目的地自己的点击语义。
+        // 胶囊最左那一项；横向拖动识别器同理会挂 scrollLeft / scrollRight。
+        // 读屏切模块走各目的地自己的点击语义。
         excludeFromSemantics: true,
         supportedDevices: const <PointerDeviceKind>{
           PointerDeviceKind.touch,
           PointerDeviceKind.stylus,
           PointerDeviceKind.invertedStylus,
         },
-        onLongPressStart: _onDragStart,
-        onLongPressMoveUpdate: _onDragMove,
-        onLongPressEnd: _onDragEnd,
+        // 按下即可横拖（2026-10-14 用户「像 iOS 26 标签栏一样按住直接拖过去」）：
+        // 横向位移超过触摸判定距离才接受，没过线抬手 = 点按，仍归目的地自己的
+        // InkWell；纵向手势横向分量不过线不会被吃。
+        onHorizontalDragStart: (DragStartDetails d) =>
+            _beginDrag(d.localPosition, lift: false),
+        onHorizontalDragUpdate: (DragUpdateDetails d) =>
+            _moveDrag(d.localPosition),
+        onHorizontalDragEnd: (DragEndDetails _) => _endDrag(),
+        onHorizontalDragCancel: _cancelDrag,
+        // 按住不动超过系统长按时长后再拖，同样拎起指示器（长按只服务拖选）。
+        onLongPressStart: (LongPressStartDetails d) =>
+            _beginDrag(d.localPosition, lift: true),
+        onLongPressMoveUpdate: (LongPressMoveUpdateDetails d) =>
+            _moveDrag(d.localPosition),
+        onLongPressEnd: (LongPressEndDetails _) => _endDrag(),
         onLongPressCancel: _cancelDrag,
         child: child,
       );
@@ -2296,6 +2313,79 @@ class _NavMoreCellState extends State<_NavMoreCell> {
   }
 }
 
+/// rail 与其右侧内容区的宽度同步：包住 `Row(rail, Expanded(内容))`，内容区用
+/// [NavRailSyncedContent] 包一层。
+///
+/// rail 展开 / 收起时宽度逐帧变化，`Expanded` 内容的宽度约束随之逐帧变化，整棵
+/// 内容树（含 Offstage 保活的各 tab 页——Offstage 仍参与布局）每帧重排、重绘，
+/// 侧栏动画随之掉帧。过渡期间内容区改按**两态里较宽的内容宽**排版、随 rail
+/// 边缘平移并裁掉右侧溢出：约束不变即跳过子树布局，加上 [RepaintBoundary]
+/// 连重绘也省掉；一次切换至多重排一次（收起在开始时、展开在结束时）。
+class NavRailContentSync extends StatefulWidget {
+  const NavRailContentSync({super.key, required this.child});
+
+  final Widget child;
+
+  static _NavRailContentLag? _of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_NavRailContentSyncScope>()?.lag;
+
+  @override
+  State<NavRailContentSync> createState() => _NavRailContentSyncState();
+}
+
+class _NavRailContentSyncState extends State<NavRailContentSync> {
+  final _NavRailContentLag _lag = _NavRailContentLag();
+
+  @override
+  Widget build(BuildContext context) =>
+      _NavRailContentSyncScope(lag: _lag, child: widget.child);
+}
+
+/// rail 当前宽比本次过渡较窄一端多出的宽度（静止时 0）。可变对象而非 Listenable：
+/// rail 在 build 阶段写，内容区在同一帧随后的 layout 阶段读。
+class _NavRailContentLag {
+  double _railExcess = 0;
+}
+
+class _NavRailContentSyncScope extends InheritedWidget {
+  const _NavRailContentSyncScope({required this.lag, required super.child});
+
+  final _NavRailContentLag lag;
+
+  @override
+  bool updateShouldNotify(_NavRailContentSyncScope oldWidget) =>
+      lag != oldWidget.lag;
+}
+
+/// [NavRailContentSync] 的内容侧：静止时与直接放 [child] 几何一致；rail 过渡中
+/// 把 [child] 钉在恒定宽度上。树结构恒定（不随动画增删层级），子树状态不重挂。
+class NavRailSyncedContent extends StatelessWidget {
+  const NavRailSyncedContent({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double excess = constraints.hasBoundedWidth
+            ? NavRailContentSync._of(context)?._railExcess ?? 0
+            : 0;
+        final double width = math.max(0.0, constraints.maxWidth + excess);
+        return ClipRect(
+          clipBehavior: excess == 0 ? Clip.none : Clip.hardEdge,
+          child: OverflowBox(
+            alignment: AlignmentDirectional.centerStart,
+            minWidth: excess == 0 ? constraints.minWidth : width,
+            maxWidth: excess == 0 ? constraints.maxWidth : width,
+            child: RepaintBoundary(child: child),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// rail 宽度在展开 / 收起两态之间按 M3E default spatial 弹簧过渡。
 ///
 /// 结构恒定（SizedBox → ClipRect → OverflowBox）：内容始终按**目标宽**排版、
@@ -2321,10 +2411,15 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
     spring: fushiExpressiveDefaultSpatial,
   );
 
+  /// 本次过渡两端里较窄的一端（静止时 = 当前宽）；[NavRailContentSync] 据此让
+  /// 内容区在整个过渡里保持同一宽度。
+  late double _narrowEnd = widget.width;
+
   @override
   void didUpdateWidget(covariant _AnimatedRailWidth oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.width != widget.width) {
+      _narrowEnd = math.min(_width.value, widget.width);
       _width.animateTo(
         widget.width,
         animate: fushiExpressiveMotionEnabled(context),
@@ -2347,6 +2442,11 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
         final double target = widget.width;
         final double raw = _width.value;
         final bool settled = (raw - target).abs() < 0.5;
+        // build 阶段写、内容区在随后的 layout 阶段读：同一帧内 rail 宽与内容
+        // 可用宽同步变化，二者之和恒定。
+        NavRailContentSync._of(context)?._railExcess = settled
+            ? 0
+            : math.max(0.0, raw) - _narrowEnd;
         return SizedBox(
           width: settled ? target : math.max(0.0, raw),
           child: ClipRect(

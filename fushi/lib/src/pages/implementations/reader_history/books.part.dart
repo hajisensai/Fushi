@@ -396,6 +396,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       database: appModel.database,
       mediaType: MediaKind.srt,
       entryKey: book.uid,
+      isMemberVisible: _isCollectionMemberVisible,
       // P4：用户看到的默认合集名用改名后的显示名（身份 entryKey 仍是 raw uid）。
       defaultNewName: deriveSeriesDefaultName(
         <String>[_srtDisplayTitle(book)],
@@ -500,7 +501,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       actions: <Widget>[
         FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_download'),
-          enabled: remoteKeys.isNotEmpty,
+          // BUG-3337：勾中的合集里有云端成员也可下载（合集一键全部下载）。
+          enabled: remoteKeys.isNotEmpty ||
+              _selectedCollectionRemoteMembers.isNotEmpty,
           onTap: _batchDownloadSelectedRemote,
           icon: Icons.download_outlined,
           tooltip: t.remote_book_download,
@@ -522,6 +525,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
         ),
+        // BUG-3337：漫画库多选补「识别文字」——与卡菜单同一条排队路径
+        // （[enqueuePendingMangaOcrForBooks]），选中合集时识别合集里的每一本。
+        if (_mangaOnly && _moduleVisibility.isEnabled(ModuleId.manga))
+          FushiIconButton(
+            key: const ValueKey<String>('reader_shelf_batch_ocr'),
+            enabled: hasLocalSelection,
+            onTap: _batchOcrSelectedManga,
+            icon: FushiIcons.ocr,
+            tooltip: t.manga_library_ocr_action,
+          ),
         FushiIconButton(
           // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
           key: const ValueKey<String>('reader_shelf_batch_reset_progress'),
@@ -540,6 +553,51 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         ),
       ],
     );
+  }
+
+  /// 卡菜单 / 多选「识别文字」（BUG-3337）：[bookKeys] 里每本漫画还没识别的部分
+  /// （在线作品 = 已下载未识别的章，本地卷 = 未识别的卷）排进 OCR 队列。
+  /// [dialog] 为真时先收起卡片长按菜单。
+  Future<void> _ocrMangaBooks(Iterable<String> bookKeys,
+      {bool dialog = false}) async {
+    if (dialog) Navigator.pop(context);
+    await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+  }
+
+  /// 多选「识别文字」：散卡漫画 + 选中合集里的每一本。目标在剪枝后一次定死。
+  Future<void> _batchOcrSelectedManga() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final Set<String> bookKeys = <String>{
+      for (final String key in _selectedLocalKeys)
+        if (_parseBookKey(key) case final String bookKey) bookKey,
+    };
+    // 合集成员行 epub entryKey = uid（v83）；透传 / 旧行仍是 bookKey。剪枝刚刷新过
+    // bookKey→uid 换算表，这里反查回 bookKey。
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final MapEntry<String, String> e in _epubUidByKey.entries)
+        e.value: e.key,
+    };
+    for (final int id in _selectedCollectionIds) {
+      final List<MediaCollectionItemRow> items =
+          await appModel.database.getCollectionItems(id);
+      for (final MediaCollectionItemRow item in items) {
+        if (MediaKind.tryParse(item.mediaType) != MediaKind.epub) continue;
+        bookKeys.add(bookKeyByUid[item.entryKey] ?? item.entryKey);
+      }
+    }
+    if (!mounted || bookKeys.isEmpty) return;
+    final int queued = await enqueuePendingMangaOcrForBooks(
+      context: context,
+      appModel: appModel,
+      registry: ref.read(mangaOcrJobRegistryProvider),
+      bookKeys: bookKeys,
+    );
+    if (queued > 0 && mounted) _exitSelectionMode();
   }
 
   /// 批量「重置阅读状态」：与单卡同一确认框、同一落地函数 [resetBookReadingState]。
@@ -1501,6 +1559,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,
@@ -1528,8 +1587,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 长在 desktop_drop 回调的同步栈上：拖个大包进来 UI 线程直接卡死。先离线程一次
     // 性判完（[probeDroppedImageArchives]），再把结果当同步谓词喂回去，分类函数保持
     // 纯函数不变。
+    //
+    // 漫画库（[_mangaOnly]）落点偏好漫画：`.epub` 也开包，图片型 EPUB 直接归漫画，
+    // 不再先进书籍导入框、再被告知「这看起来是漫画」；`.pdf` 直接归漫画。
     final Map<String, bool> imageArchives =
-        await probeDroppedImageArchives(paths);
+        await probeDroppedImageArchives(paths, preferManga: _mangaOnly);
     if (!mounted) return;
 
     // 目录（漫画页图文件夹）没有扩展名，纯分类函数分不出来——把真实文件系统判据
@@ -1538,6 +1600,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       paths,
       isDirectory: (String pth) => Directory(pth).existsSync(),
       isImageArchive: (String pth) => imageArchives[pth] ?? false,
+      preferManga: _mangaOnly,
     );
     debugPrint(
       '[fushi-drop] [reader-shelf] classified '
@@ -1576,12 +1639,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         debugPrint('[fushi-drop] [reader-shelf] intent=addFolderAsSource '
             '(not produced on this surface)');
       case DropIntent.importNewBook:
-        _openBookImportPrefilled(
-          epubPath: files.books.first,
-          subtitlePath:
-              files.subtitles.isNotEmpty ? files.subtitles.first : null,
-          audioPaths: files.audios,
-        );
+        // 一本书：同批的字幕 / 音频一起预填（有声书）。多本：逐本弹导入框，不再只导
+        // 第一本、其余静默丢掉；此时字幕 / 音频没法确定归哪一本，不预填。
+        if (files.books.length == 1) {
+          _openBookImportPrefilled(
+            epubPath: files.books.single,
+            subtitlePath:
+                files.subtitles.isNotEmpty ? files.subtitles.first : null,
+            audioPaths: files.audios,
+          );
+        } else {
+          unawaited(_openBookImportsInSequence(files.books));
+        }
       case DropIntent.importNewManga:
         // 漫画（.mokuro / .cbz / 页图目录 / 图片型 zip）走漫画自己的导入对话框。
         // 决策层本来就把漫画和书分成了两个 intent，此前两个 intent 却落到同一个
@@ -1590,7 +1659,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           showModuleDisabled();
           return;
         }
-        _openMangaImportPrefilled(mangaPath: files.mangas.first);
+        _openMangaImportPrefilled(mangaPaths: files.mangas);
       case DropIntent.unsupportedMangaArchive:
         debugPrint(
           '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
@@ -1672,7 +1741,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
 
   /// 拖入书文件 → 打开 [BookImportDialog]，预填 EPUB（及可选字幕）路径。
   /// 复用 [ReaderFushiSource.buildBookImportButton] 的 repo/打开/刷新范式。
-  Future<void> _openBookImportPrefilled({
+  ///
+  /// 返回对话框结果：true 已导入、false 这一本没导（同名取消 / 转交漫画未导）、
+  /// null 用户关掉了对话框（[_openBookImportsInSequence] 据此停止后续）。
+  Future<bool?> _openBookImportPrefilled({
     required String epubPath,
     required String? subtitlePath,
     List<String> audioPaths = const <String>[],
@@ -1680,6 +1752,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
         repo: SrtBookRepository(appModel.database),
         audiobookRepo: AudiobookRepository(appModel.database),
         db: appModel.database,
@@ -1692,17 +1765,37 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       _refreshSrtBooks();
       ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     }
+    return imported;
+  }
+
+  /// 多本书同时拖入：逐本打开 [BookImportDialog]（每本都要定标题 / 处理同名）。
+  ///
+  /// 只有用户**关掉对话框**（取消 / 返回键 / 点遮罩，结果 null）才停止后续：那是
+  /// 「剩下的都不要了」。同名询问里选「否」只是这一本不导（对话框回 false），继续下一本
+  /// ——否则一本重名就把后面所有书静默丢掉，正是这里要消灭的行为。
+  Future<void> _openBookImportsInSequence(List<String> bookPaths) async {
+    for (final String bookPath in bookPaths) {
+      if (!mounted) return;
+      final bool? imported = await _openBookImportPrefilled(
+        epubPath: bookPath,
+        subtitlePath: null,
+      );
+      if (imported == null) return;
+    }
   }
 
   /// 拖入漫画 → 打开 [MangaImportDialog]，预填漫画路径（目录 / .cbz / .mokuro /
-  /// 图片型 zip）。刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用
-  /// `EpubBooks` 表和同一块书架，故失效的 provider 也相同。
-  Future<void> _openMangaImportPrefilled({required String mangaPath}) async {
+  /// 图片型 zip / 漫画库里的图片型 epub 与 pdf）。多个路径时对话框进逐卷批量模式。
+  /// 刷新范式与 [_openBookImportPrefilled] 一致：漫画与书共用 `EpubBooks` 表和同一块
+  /// 书架，故失效的 provider 也相同。
+  Future<void> _openMangaImportPrefilled({
+    required List<String> mangaPaths,
+  }) async {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => MangaImportDialog(
         db: appModel.database,
-        initialPath: mangaPath,
+        initialPaths: mangaPaths,
       ),
     );
     if (imported == true && mounted) {
@@ -1723,6 +1816,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     await showAppDialog<bool>(
       context: context,
       builder: (_) => AudiobookImportDialog(
+        prefs: appModel.prefsRepo,
         bookKey: bookKey,
         repo: AudiobookRepository(appModel.database),
         extractDir: row?.extractDir,

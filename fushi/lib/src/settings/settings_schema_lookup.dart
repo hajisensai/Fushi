@@ -24,20 +24,14 @@ import 'package:fushi/src/settings/port_kill_confirm.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/fushi_api_port_conflict_notice.dart'
+    show fushiApiPortInUseMessage;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
-import 'package:fushi/src/sync/yomitan_api_server.dart'
-    show kYomitanApiDefaultPort;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
-
-String _yomitanApiPortInUseMessage(int port) {
-  return port == kYomitanApiDefaultPort
-      ? t.browser_extension_yomitan_port_conflict(port: port)
-      : t.sync_server_port_in_use(port: port);
-}
 
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
@@ -54,7 +48,7 @@ void _showYomitanPortConflictSnackBar(SettingsContext settingsContext) {
   final int port = settingsContext.appModel.yomitanApiPort;
   ScaffoldMessenger.of(ctx).showSnackBar(
     FushiSnackBar(
-      content: Text(_yomitanApiPortInUseMessage(port)),
+      content: Text(fushiApiPortInUseMessage(port)),
       duration: const Duration(seconds: 10),
       action: PortProcessTerminator.isSupported
           ? SnackBarAction(
@@ -118,7 +112,7 @@ Future<void> _terminatePortOwnerAndRetry(
       if (attempt >= 1) {
         _showSettingsSnackBar(
           settingsContext,
-          _yomitanApiPortInUseMessage(port),
+          fushiApiPortInUseMessage(port),
         );
         settingsContext.refresh();
         return;
@@ -1094,6 +1088,24 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
             defaultValue: true,
+          ),
+          // 用户建议 q16Apecgbg（2026-10-13）：制卡后查词弹窗直接消失，不再挡住正文。
+          // 默认关 = 制卡后弹窗照旧留着（既有行为）。
+          SettingsSwitchItem(
+            id: 'reading_controls.close_popup_after_mining',
+            title: t.lookup_popup_close_after_mining,
+            subtitle: t.lookup_popup_close_after_mining_hint,
+            icon: Icons.playlist_add_check_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 25),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.closePopupAfterMining,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setClosePopupAfterMining(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中

@@ -5,19 +5,18 @@
 // （烘进调轴）写成 SRT，`sub-add <path> select fushi-lua-subtitle-mirror` 挂成隐藏轨
 // （`sub-visibility=no`）。单测只能锁纯函数与接线；本文件在真 app + 真 libmpv 上跑：
 //
-//   ① 外挂 SRT（同名 sidecar，走 Dart 侧解析成 cue 的那条路径）+ Lua 开关开 +
+//   ① 外挂 SRT（同名 sidecar，走 Dart 侧解析成 cue 的那条路径）+
 //      mpv_scripts 里放一个典型「字幕结束自动暂停」脚本 → 播放后在第一句结束处
 //      （±250ms）自动暂停；脚本记录的 sub-text 等于 cue 文本；overlay 照常有 cue；
 //      libmpv 不自绘（`sub-visibility=no`、`activeSubtitleTrackId=='no'`、
 //      `subtitleTracks` 不含镜像轨）。
 //   ② `setDelayMs(500)` 后从句首前播放 → 暂停点后移约 500ms（调轴烘进镜像 SRT）。
-//   ③ 负向：Lua 开关关 → `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
+//   ③ 负向：mpv_scripts 清空（目录即开关）→ `track-list` 里没有 title=fushi-lua-subtitle-mirror 的轨。
 //
-// **随包 libmpv 没编 Lua 时**（`mpv-configuration` 含 `-Dlua=disabled`；2026-10-13 实测
-// Windows 随包 `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1` 就是这样），
-// `load-script` 静默成功但脚本不跑：此时测试改由 Dart 侧照搬脚本逻辑（只读 mpv 的
-// `sub-end` / `time-pos` / `sub-text` 属性 → `pause`），验证的仍是镜像轨让 mpv
-// 属性层看得到字幕这一修复，但**不能**证明用户的 Lua 脚本能跑——日志里有 WARNING。
+// 暂停由**真 Lua 脚本**执行：随包 libmpv 必须编入 Lua（BUG-3325，Windows `-lua1`
+// 起 `-Dlua=luajit`；此前 `-Dlua=disabled` 时 `load-script` 静默成功、脚本不跑）。
+// 随包 libmpv 退回无 Lua 的构建会让本测试直接失败，而不是悄悄换成别的验证。
+// 同时断言 mpv 内置脚本（console / select 等）没有被加载（media_kit overlay 关掉）。
 //
 // 输入全部走 controller 公开 API / 页面 test hook（无坐标点击）。mpv 属性经
 // `controller.videoController.player.platform.getProperty` 读（公开 API，未改 lib/）。
@@ -32,6 +31,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart'
     show isLuaSubtitleMirrorTrack, kLuaSubtitleMirrorTrackTitle;
 import 'package:fushi/src/media/video/video_player_controller.dart'
@@ -56,8 +56,9 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const String _kTestRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
-const String _kFfmpeg =
-    'D:/ffmpeg/ffmpeg-2025-06-11-git-f019dd69f0-full_build/bin/ffmpeg.exe';
+// 素材生成用的 ffmpeg：`FUSHI_FFMPEG` 显式指定，否则走 PATH（不写死某台机器的
+// 绝对路径——旧值在别的机器上不存在，测试在造素材这一步就 ProcessException）。
+final String _kFfmpeg = Platform.environment['FUSHI_FFMPEG'] ?? 'ffmpeg';
 
 // 第一句 1.5s–3.5s；第二句远在后面，保证暂停判定只看第一句。
 const int _kCue1StartMs = 1500;
@@ -77,12 +78,19 @@ const String _kSrt =
     '\n';
 
 /// 典型「字幕结束自动暂停」脚本（无按键绑定）。记录写到 [logPath]。
+///
+/// `sub-end` 变成 nil（句子消失）时**保留**上一句的句尾：25 fps 素材一帧 40 ms，
+/// 比 30 ms 的提前窗口宽；句尾正好落在帧边界时（调轴 +500 ms 后第一句尾 = 4.000 s），
+/// 3.960 s 那帧还没进窗口，4.000 s 那帧句子已消失、`sub-end` 已是 nil——丢掉句尾
+/// 就会整句漏停（2026-10-13 随包 libmpv 编入 Lua 后真跑出来的）。同理，暂停记录里的
+/// 句子用最后一次非空的 `sub-text`，不在暂停那一刻现读（那帧句子可能已消失）。
 String _autoPauseScript(String logPath) {
   final String path = logPath.replaceAll(r'\', '/');
   return '''
 local out = "$path"
 local sub_end = nil
 local paused_for = nil
+local sub_text = ""
 local function log(s)
   local f = io.open(out, "a")
   if f then f:write(s .. "\\n"); f:close() end
@@ -90,11 +98,16 @@ local function log(s)
 end
 log("LOADED")
 mp.observe_property("sub-end", "number", function(_, v)
-  sub_end = v
-  if v then log(string.format("SUBEND %.3f", v)) end
+  if v then
+    sub_end = v
+    log(string.format("SUBEND %.3f", v))
+  end
 end)
 mp.observe_property("sub-text", "string", function(_, v)
-  if v and v ~= "" then log("SUBTEXT " .. v) end
+  if v and v ~= "" then
+    sub_text = v
+    log("SUBTEXT " .. v)
+  end
 end)
 mp.add_periodic_timer(0.01, function()
   if not sub_end or paused_for == sub_end then return end
@@ -102,8 +115,7 @@ mp.add_periodic_timer(0.01, function()
   if pos and pos >= sub_end - 0.03 then
     paused_for = sub_end
     mp.set_property_bool("pause", true)
-    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end,
-      mp.get_property("sub-text") or ""))
+    log(string.format("PAUSE pos=%.3f end=%.3f text=%s", pos, sub_end, sub_text))
   end
 end)
 ''';
@@ -186,9 +198,10 @@ void main() {
       await scriptsDir.create(recursive: true);
       final File luaLog = File(p.join(fixtures.path, 'lua_log.txt'));
       if (luaLog.existsSync()) await luaLog.delete();
-      await File(
+      final File luaScript = File(
         p.join(scriptsDir.path, 'sub_end_autopause.lua'),
-      ).writeAsString(_autoPauseScript(luaLog.path), flush: true);
+      );
+      await luaScript.writeAsString(_autoPauseScript(luaLog.path), flush: true);
 
       final String bookUid = singleVideoBookUid(videoPath);
       final VideoBookRepository repo = VideoBookRepository(appModel.database);
@@ -288,38 +301,7 @@ void main() {
         return mirrorTracks(c);
       }
 
-      // 随包 libmpv 没编 Lua（`-Dlua=disabled`）时，Lua 脚本根本不会跑：此时用
-      // Dart 侧逐字照搬脚本逻辑（同样只读 mpv 的 `sub-end` / `time-pos` / `sub-text`
-      // 属性），验证的仍是「镜像轨让 mpv 属性层看得到字幕」这一修复本身。
-      bool luaAvailable = true;
-      final List<_PauseRecord> emulated = <_PauseRecord>[];
-      int? emulatedPausedFor;
-      // Dart 轮询比 mpv 内 10ms 定时器慢：记住最近一次读到的 sub-end / sub-text
-      // （句尾后 mpv 把它们清空），用缓存值判句尾，与常见脚本「observe 存值」同形。
-      double? emulatedEnd;
-      String emulatedText = '';
-      int emulatedTicks = 0;
-
-      Future<void> emulateScriptTick(VideoPlayerController c) async {
-        emulatedTicks++;
-        final double? end = double.tryParse(await prop(c, 'sub-end'));
-        if (end != null) {
-          emulatedEnd = end;
-          emulatedText = await prop(c, 'sub-text');
-        }
-        final double? cached = emulatedEnd;
-        if (cached == null) return;
-        final int endMs = (cached * 1000).round();
-        if (emulatedPausedFor == endMs) return;
-        final double? pos = double.tryParse(await prop(c, 'time-pos'));
-        if (pos == null || pos < cached - 0.03) return;
-        emulatedPausedFor = endMs;
-        await c.pause();
-        emulated.add(_PauseRecord((pos * 1000).round(), endMs, emulatedText));
-      }
-
-      List<_PauseRecord> pauses(File luaLog) =>
-          luaAvailable ? _readPauses(luaLog) : List<_PauseRecord>.of(emulated);
+      List<_PauseRecord> pauses(File luaLog) => _readPauses(luaLog);
 
       /// 等 controller 从播放变暂停，返回暂停后稳定的位置。
       Future<int?> waitAutoPause(
@@ -332,7 +314,6 @@ void main() {
         while (sw.elapsedMilliseconds < timeoutMs) {
           await tester.pump(const Duration(milliseconds: 10));
           overlayProbe?.call();
-          if (!luaAvailable && c.isPlaying) await emulateScriptTick(c);
           if (c.isPlaying) sawPlaying = true;
           if (sawPlaying && !c.isPlaying) {
             await tester.pump(const Duration(milliseconds: 400));
@@ -342,8 +323,10 @@ void main() {
         return null;
       }
 
-      // ── 1) Lua 开：打开页面，等镜像轨挂上 ──────────────────────────────────
-      await appModel.setVideoMpvLuaScriptsEnabled(true);
+      // ── 1) 装着脚本：打开页面，等镜像轨挂上 ──────────────────────────────────
+      // 暂停 OCR（2026-10-13 起默认对所有视频识别暂停帧）与本测试无关：脚本一停，
+      // 隔离根里首次识别就弹 Lens 上传同意框，压在视频页上吞掉后面的返回。
+      await appModel.setVideoPauseOcrScope(VideoPauseOcrScope.off);
       final VideoPlayerController c = await openPage();
       await c.pause();
       await c.seekMs(0);
@@ -358,7 +341,7 @@ void main() {
 
       final List<Map<String, String>> mirror1 = await waitMirror(c);
       debugPrint('[lua-mirror] sub tracks=${await subTracks(c)}');
-      expect(mirror1, hasLength(1), reason: 'Lua 开时应恰好挂一条镜像轨');
+      expect(mirror1, hasLength(1), reason: '装了脚本时应恰好挂一条镜像轨');
       final String mirrorId1 = mirror1.single['id']!;
       final String mirrorFile1 = mirror1.single['external-filename']!;
       expect(await prop(c, 'sid'), mirrorId1, reason: '镜像轨应被选中');
@@ -370,23 +353,27 @@ void main() {
         reason: 'subtitleTracks 不应暴露镜像轨',
       );
       final String mpvConfiguration = await prop(c, 'mpv-configuration');
-      luaAvailable = !mpvConfiguration.contains('lua=disabled');
-      debugPrint(
-        '[lua-mirror] luaAvailable=$luaAvailable '
-        'mpv-configuration=$mpvConfiguration',
+      debugPrint('[lua-mirror] mpv-configuration=$mpvConfiguration');
+      expect(
+        mpvConfiguration,
+        isNot(contains('lua=disabled')),
+        reason: '随包 libmpv 必须编入 Lua，否则用户脚本静默不跑（BUG-3325）',
       );
-      if (luaAvailable) {
-        expect(
-          luaLog.existsSync() && luaLog.readAsStringSync().contains('LOADED'),
-          isTrue,
-          reason: 'Lua 脚本应已加载',
-        );
-      } else {
-        debugPrint(
-          '[lua-mirror] WARNING: bundled libmpv built with -Dlua=disabled; '
-          'Lua script cannot run, emulating its logic in Dart via mpv props',
-        );
+      expect(
+        luaLog.existsSync() && luaLog.readAsStringSync().contains('LOADED'),
+        isTrue,
+        reason: 'Lua 脚本应已加载',
+      );
+      // mpv 自带的 Lua 脚本不该跟着跑（media_kit overlay 在 mpv_initialize 前关掉）。
+      for (final String option in <String>[
+        'load-stats-overlay',
+        'load-console',
+        'load-select',
+        'load-commands',
+      ]) {
+        expect(await prop(c, option), 'no', reason: '$option 应在初始化前关掉');
       }
+      expect(await prop(c, 'ytdl'), 'no', reason: '每次 open 前的基线属性');
 
       // ── ① 从 0 播放 → 第一句结束处自动暂停 ──────────────────────────────
       String? overlayText;
@@ -405,7 +392,7 @@ void main() {
       final List<_PauseRecord> pauses1 = pauses(luaLog);
       debugPrint(
         '[lua-mirror] ① controllerPausedAt=$pausedAt1 '
-        'cueEnd=$_kCue1EndMs viaLua=$luaAvailable ticks=$emulatedTicks pauses=$pauses1 overlayText=$overlayText '
+        'cueEnd=$_kCue1EndMs pauses=$pauses1 overlayText=$overlayText '
         'sub-visibility=${await prop(c, 'sub-visibility')}',
       );
       expect(pausedAt1, isNotNull, reason: '8s 内应被 Lua 脚本自动暂停');
@@ -457,7 +444,7 @@ void main() {
       const int expected2 = _kCue1EndMs + _kDelayMs;
       debugPrint(
         '[lua-mirror] ② controllerPausedAt=$pausedAt2 '
-        'expected=$expected2 viaLua=$luaAvailable ticks=$emulatedTicks pauses=$pauses2 overlayText=$overlayText',
+        'expected=$expected2 pauses=$pauses2 overlayText=$overlayText',
       );
       expect(pausedAt2, isNotNull, reason: '调轴后应再次自动暂停');
       expect(pauses2.length, greaterThanOrEqualTo(2));
@@ -477,19 +464,26 @@ void main() {
       );
       c.setDelayMs(0);
 
-      // ── ③ 负向：Lua 关 → 不挂镜像 ─────────────────────────────────────────
+      // ── ③ 负向：脚本目录清空 → 不挂镜像 ─────────────────────────────────────────
       navigator.pop();
-      for (int i = 0; i < 40; i++) {
+      for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 250));
         if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
       }
+      // 装着真 Lua 脚本的播放器也必须能正常退出页面（mpv 关闭时要等脚本线程）。
+      expect(
+        find.byType(VideoFushiPage),
+        findsNothing,
+        reason: '退出视频页不应被 Lua 脚本拖住',
+      );
       await tester.pump(const Duration(seconds: 1));
-      await appModel.setVideoMpvLuaScriptsEnabled(false);
+      await luaScript.delete();
       final VideoPlayerController c2 = await openPage();
+      expect(identical(c2, c), isFalse, reason: '重开页面应是新的 controller');
       await tester.pump(const Duration(seconds: 2)); // 给可能的错挂留时间
       final List<Map<String, String>> tracksOff = await subTracks(c2);
       debugPrint(
-        '[lua-mirror] ③ Lua off sub tracks=$tracksOff '
+        '[lua-mirror] ③ no scripts sub tracks=$tracksOff '
         'sid=${await prop(c2, 'sid')}',
       );
       expect(
@@ -497,7 +491,7 @@ void main() {
           (Map<String, String> t) => t['title'] == kLuaSubtitleMirrorTrackTitle,
         ),
         isEmpty,
-        reason: 'Lua 关时不得挂镜像轨',
+        reason: '没装脚本时不得挂镜像轨',
       );
       expect(await prop(c2, 'sid'), 'no');
       expect(c2.cues, isNotEmpty, reason: 'overlay cue 照常加载');

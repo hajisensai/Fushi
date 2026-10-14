@@ -35,21 +35,35 @@ class TrackpadGestureOutput {
 ///
 /// 真浏览器（Chromium + DirectManipulation）的做法：捏合合成为带 Ctrl 的滚轮，
 /// 且捏合期间不再滚动。这里同口径：缩放偏离 1 超过 [pinchScaleThreshold]
-/// 即判为捏合，此后到手势结束只发缩放、不发平移；从未越过阈值的手势是纯滚动。
+/// 即判为捏合，此后到手势结束只发缩放、不发平移。
+///
+/// 反馈 SUsLYAlCJF（查词弹窗用触控板几乎滑不动、慢滑完全不动）：引擎报的 `scale`
+/// 是**自手势开始的累计值**，两指慢慢滑一段长距离时两指间距会缓慢漂移，累计 3%
+/// 只要零点几毫米。旧判据在手势的**任何时刻**越过阈值都改判捏合，于是一次本来
+/// 明明是滚动的慢滑中途被锁成捏合——此后平移全部丢弃（只剩 Ctrl+滚轮，弹窗
+/// popup.js 对它直接 return），表现就是「滑不动」。分类必须在手势开头一次定死：
+/// 平移先走过 [scrollLockPanDistance] 而缩放仍在阈值内 = 本次手势是滚动，之后
+/// 缩放怎么漂都不再改判；缩放先越过阈值 = 捏合（BUG-2758 的起手照旧不丢）。
 class TrackpadGestureRouter {
   /// 两指滚动时 DirectManipulation 报的 scale 恒在 1 附近，捏合一开始就
   /// 明显偏离；3% 足以滤掉滚动抖动，又不至于吃掉捏合的起手。
   static const double pinchScaleThreshold = 0.03;
 
-  double _pinchBaseScale = 1.0;
-  bool _pinching = false;
+  /// 尚未分类时，平移累计走过这么多逻辑像素（缩放仍在阈值内）就锁定为滚动。
+  /// 捏合时指尖中点基本不动，起手阶段平移远到不了这个量，缩放早已越过阈值。
+  static const double scrollLockPanDistance = 8.0;
 
-  bool get isPinching => _pinching;
+  _TrackpadGesturePhase _phase = _TrackpadGesturePhase.undecided;
+  Offset _undecidedPan = Offset.zero;
+  double _pinchBaseScale = 1.0;
+
+  bool get isPinching => _phase == _TrackpadGesturePhase.pinch;
 
   /// PointerPanZoomStart：新手势从未分类状态开始。
   void start() {
+    _phase = _TrackpadGesturePhase.undecided;
+    _undecidedPan = Offset.zero;
     _pinchBaseScale = 1.0;
-    _pinching = false;
   }
 
   /// PointerPanZoomUpdate。[scale] 是自手势开始的累计缩放。
@@ -57,10 +71,10 @@ class TrackpadGestureRouter {
     required Offset panDelta,
     required double scale,
   }) {
-    if (!_pinching && (scale - 1.0).abs() >= pinchScaleThreshold) {
-      _pinching = true;
+    if (_phase == _TrackpadGesturePhase.undecided) _classify(panDelta, scale);
+    if (_phase != _TrackpadGesturePhase.pinch) {
+      return TrackpadGestureOutput.scroll(panDelta);
     }
-    if (!_pinching) return TrackpadGestureOutput.scroll(panDelta);
     // 基准在判定前恒为 1，越过阈值那一下把已攒的缩放一次交出去，起手不丢。
     final double ratio = scale / _pinchBaseScale;
     _pinchBaseScale = scale;
@@ -69,4 +83,17 @@ class TrackpadGestureRouter {
     }
     return TrackpadGestureOutput.pinch(-100.0 * math.log(ratio));
   }
+
+  void _classify(Offset panDelta, double scale) {
+    if ((scale - 1.0).abs() >= pinchScaleThreshold) {
+      _phase = _TrackpadGesturePhase.pinch;
+      return;
+    }
+    _undecidedPan += panDelta;
+    if (_undecidedPan.distance >= scrollLockPanDistance) {
+      _phase = _TrackpadGesturePhase.scroll;
+    }
+  }
 }
+
+enum _TrackpadGesturePhase { undecided, scroll, pinch }

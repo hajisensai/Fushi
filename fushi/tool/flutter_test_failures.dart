@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
@@ -45,7 +46,7 @@ Future<void> main(List<String> args) async {
     if (options.fileShard != null) ..._shardTestFiles(options.fileShard!),
   ];
   final Process process = await Process.start(
-    _resolveFlutterExecutable(),
+    FlutterSdkExecutables.current().flutter(),
     flutterArgs,
     runInShell: Platform.isWindows,
   );
@@ -215,12 +216,4 @@ List<String> _shardTestFiles(TestFileShard shard) {
   stdout.writeln('File shard ${shard.index}/${shard.total}: '
       '${selected.length} of ${weights.length} test files');
   return selected;
-}
-
-String _resolveFlutterExecutable() {
-  if (!Platform.isWindows) return 'flutter';
-  const String flutter =
-      r'D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat';
-  if (File(flutter).existsSync()) return flutter;
-  return 'flutter';
 }

@@ -32,7 +32,7 @@ try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_
 finally { Pop-Location }
 $include = (Join-Path $angle 'include').Replace('\', '/')
 Run 'meson' @('setup', $build, $source, '--buildtype=release', '-Dlibmpv=true',
-  '-Dcplayer=false', '-Dlibbluray=enabled', '-Dlua=disabled', '-Djavascript=disabled',
+  '-Dcplayer=false', '-Dlibbluray=enabled', '-Dlua=luajit', '-Djavascript=disabled',
   '-Dtests=true', '-Degl-angle=enabled', "-Dc_args=-I$include")
 Push-Location (Join-Path $repoRoot 'fushi')
 try { Run 'dart' @('tool/heavy.dart', '--', 'ninja', '-C', $build, '-j', "$Jobs") }

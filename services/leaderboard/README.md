@@ -57,9 +57,12 @@ npx wrangler deploy
 > **以目录名新建一个 Worker 并把某个子目录（实测是 `docs/`）当公开静态资源上传**，还会顺手写
 > `wrangler.jsonc` / 改 `.gitignore`（2026-09-29 实际发生过一次，已删除，上传的只是公开仓库里已入库的文档）。
 
-当前线上部署（2026-09-29）：Worker `fushi-leaderboard`（`https://rank.fushi.moe`）、D1 `fushi-leaderboard`、
-R2 `fushi-leaderboard-media`；`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` 已设，本机副本在维护者机器
-`~/.fushi/leaderboard-secrets.json`（不入库；**`EMAIL_PEPPER` 丢了所有邮箱都对不上**）。发信渠道待定：
+当前线上部署（2026-10-13 更新）：Worker `fushi-leaderboard`（`https://rank.fushi.moe`）、D1 `fushi-leaderboard`、
+R2 `fushi-leaderboard-media`；D1 迁移已应用到 `0009_feedback_release.sql`，代码为 develop `8e9890a`（本机按
+`leaderboard-worker-deploy.yml` 同样的步骤先跑测试再部署——该 workflow 只在 develop 上、不在默认分支，GitHub
+不允许对它 `workflow_dispatch`）。`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` / `RESEND_API_KEY` /
+`FEEDBACK_CI_TOKEN` 已设（`FEEDBACK_CI_TOKEN` 同值也存进了 GitHub 仓库 secret），本机副本在维护者机器
+`~/.fushi/leaderboard-secrets.json`（不入库；**`EMAIL_PEPPER` 丢了所有邮箱都对不上**）。发信当前走 Resend；要换渠道时：
 Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[send_email]] name = "EMAIL"`，并在
 dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
 

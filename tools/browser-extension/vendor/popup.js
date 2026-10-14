@@ -597,11 +597,11 @@ function buildSentenceContextPicker() {
     return picker;
 }
 
-// BUG-763/766：「制卡·选择句子上下文」模态已改为 app 原生顶层 Flutter 对话框
-// （SentenceContextDialog，宿主经 openSentenceContextModal 桥接弹出），不再画在查词
-// 弹窗 WebView 内（那受弹窗表面尺寸/半透明限制，句子框重叠、显示不全）。
-// 这里只保留词条上「调整上下文」按钮 → callHandler('openSentenceContextModal',
-// {entryIndex, matched})，与确认制卡回点用的 fushiPopupMineEntryByIndex（见文件末尾）。
+// BUG-763/766：「制卡前调整」对话框是 app 原生顶层 Flutter 对话框（现为「高级制卡」，
+// 宿主经 openAdvancedMining 桥接弹出），不画在查词弹窗 WebView 内（那受弹窗表面
+// 尺寸/半透明限制，句子框重叠、显示不全）。这里只保留词条上的入口按钮 →
+// callHandler('openAdvancedMining', {entryIndex, matched, expression})，与确认制卡回点用的
+// fushiPopupMineEntryByIndex（见文件末尾）。
 
 
 function el(tag, props = {}, children = []) {
@@ -4837,12 +4837,19 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(clearButton);
     }
 
-    // Niratan「制卡前调整·选择句子上下文」：独立于上面被砍掉的内联步进器
-    // （kSentenceContextPickerEnabled 恒 false）。支持草稿且宿主接入了预览回调的表面
-    // （reader/有声书/视频，window.sentenceContextPreviewEnabled 为真）渲染一个「调整
-    // 上下文」按钮，点开模态在里面看前/当前/后真实句并增减上下文、确认制卡。一键「+」
-    // 制卡不受影响。
-    if (window.sentenceContextPreviewEnabled) {
+    // 「高级制卡」入口（原「调整上下文」按钮）：点开宿主的**原生**对话框，为这一张卡选
+    // 卡组 / 句子上下文 / 句子音频起止 / 图片方式 / 漫画裁切，确认后宿主经
+    // fushiPopupMineEntryByIndex 回点本词条的「+」并带上覆盖项。一键「+」不受影响。
+    //   · app 内：宿主接了 onOpenAdvancedMining（制卡模块开着）时注入
+    //     window.advancedMiningEnabled = true——所有挂 DictionaryPopupWebView 的表面都有，
+    //     不再只限支持句子草稿的表面（纯查词页的对话框只有卡组分区）。
+    //   · 浏览器扩展：没有「高级制卡」宿主，仍是它自己的「调整上下文」页内模态（content.js
+    //     注入 sentenceContextPreviewEnabled、bridge-shim 接 openSentenceContextModal）。
+    //     同一颗按钮、同一套 entryIndex，只是 handler 名与提示文案按宿主能力分流；app 内
+    //     不再注入 sentenceContextPreviewEnabled，所以 app 里只有一个入口。
+    // 「+」不渲染（制卡模块关）时它也不渲染：确认要回点的正是那颗按钮。
+    const advancedMining = window.advancedMiningEnabled === true;
+    if (miningEnabled && (advancedMining || window.sentenceContextPreviewEnabled)) {
         const adjustBtn = el('button', {
             className: 'inline-action-button ctx-adjust-button',
             // BUG-3210：确认制卡走 fushiPopupMineEntryByIndex 回点「+」，那条路没有
@@ -4854,7 +4861,6 @@ function createEntryHeader(entry, idx) {
                 snapshotSelection();
             },
             onclick: function() {
-                // BUG-763/766：改弹 app 原生顶层对话框（不再画在查词弹窗 WebView 内）。
                 // entryIndex 用点击时的稳定 DOM 序（:scope > .entry），与确认制卡回点的
                 // fushiPopupMineEntryByIndex 同一套索引。
                 var entryEl = adjustBtn.closest('.entry');
@@ -4865,13 +4871,18 @@ function createEntryHeader(entry, idx) {
                     if (idx < 0) idx = 0;
                 }
                 // BUG-1326：参数必须原样传**对象**（与本文件其余 callHandler 一致）。
-                // 之前这里独一份地 JSON.stringify 了，宿主 handler 只认 Map（args[0] is
+                // 曾经独一份地 JSON.stringify 过，宿主 handler 只认 Map（args[0] is
                 // Map），于是 entryIndex 恒退化成 0、matched 恒为空——「确认制卡」永远去
-                // 点第一个词条的按钮（用户在第 2+ 个词条上点，看到的就是「没反应」），
-                // 当前句里的词也不高亮。
-                window.flutter_inappwebview.callHandler(
-                    'openSentenceContextModal',
-                    { entryIndex: idx, matched: matched });
+                // 点第一个词条的按钮（用户在第 2+ 个词条上点，看到的就是「没反应」）。
+                if (advancedMining) {
+                    window.flutter_inappwebview.callHandler(
+                        'openAdvancedMining',
+                        { entryIndex: idx, matched: matched, expression: expression });
+                } else {
+                    window.flutter_inappwebview.callHandler(
+                        'openSentenceContextModal',
+                        { entryIndex: idx, matched: matched });
+                }
             },
         });
         setButtonIcon(adjustBtn, 'tune');
@@ -4879,7 +4890,9 @@ function createEntryHeader(entry, idx) {
         // @media，生成扩展 content.css 的脚本不处理嵌套 at-rule；同音频源菜单 .no-motion）。
         if (__fushiPopupReducedMotion()) adjustBtn.classList.add('no-motion');
         // BUG-842：DOM 提示替代原生 title（离屏 WebView2 上原生 title 会飞到窗口角落）。
-        setInlineButtonTip(adjustBtn, (window.i18nCtx && window.i18nCtx.adjust) || '');
+        const ctxI18n = window.i18nCtx || {};
+        setInlineButtonTip(adjustBtn,
+            (advancedMining ? ctxI18n.advancedMining : ctxI18n.adjust) || '');
         buttonsContainer.appendChild(adjustBtn);
     }
 

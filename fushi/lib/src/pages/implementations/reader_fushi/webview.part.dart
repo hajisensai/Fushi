@@ -1923,6 +1923,13 @@ updateLive: function(patch) {
         // CSS Custom Highlight）不受影响。上面的原生 ContextMenu 在触屏本就因 1279
         // 无原生选区而不可达，这里不改变其可达性。其它平台保持默认 true。
         isTextInteractionEnabled: !isIOSPlatform,
+        // BUG-3356：WKWebView 的 `allowsBackForwardNavigationGestures` 在 inappwebview
+        // 里默认 true——屏幕左 / 右缘横滑是 WebView **自己的历史前进 / 后退**。阅读器
+        // 每次跨章都 `loadUrl`，历史里堆着之前的章节 URL，于是用户习惯性的 iOS 侧滑返回
+        // 不是退出阅读器（页面 PopScope 已关掉路由侧滑），而是把 WebView 退回上一章 /
+        // 上一处 URL，正文位置被跳走（Ee6__I3uxJ 视频）。阅读器的章节导航完全由宿主
+        // 拥有，WebView 历史不对应任何阅读动作，关掉。只作用于 iOS / macOS。
+        allowsBackForwardNavigationGestures: false,
         mediaPlaybackRequiresUserGesture: false,
         verticalScrollBarEnabled: false,
         horizontalScrollBarEnabled: false,
@@ -2319,10 +2326,11 @@ updateLive: function(patch) {
           },
         );
 
-        // TODO-737: 分页滚轮翻页专用 handler。JS 已把滚轮方向归一成「语义意图」
-        // (forward/backward·deltaY>0=forward 对齐连续滚轮)，这里**不读
-        // invertSwipeDirection**（该开关从此只管触摸滑动 / 鼠标拖动，不管滚轮），
-        // 直接映射成 _paginate 的导航方向。横向触控板惯性先经跨 document 持久的
+        // TODO-737: 分页滚轮翻页专用 handler。JS 回传主轴 delta 的符号
+        // (forward = delta>0) 与轴、设备类型；方向由纯谓词 readerWheelTickIsForward
+        // 一处决定：纵向与鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死），
+        // 只有横向触控板（= 滑动翻页手势）按书写方向 + 该开关折算（反馈 794gISjvgV）。
+        // 横向触控板惯性先经跨 document 持久的
         // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(
           handlerName: 'onWheelPaginate',
@@ -2359,17 +2367,20 @@ updateLive: function(patch) {
               return;
             }
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
-            if (dir == 'forward') {
-              _paginate(
-                ReaderNavigationDirection.forward,
-                throttleMs: throttleMs,
-              );
-            } else if (dir == 'backward') {
-              _paginate(
-                ReaderNavigationDirection.backward,
-                throttleMs: throttleMs,
-              );
-            }
+            if (dir != 'forward' && dir != 'backward') return;
+            _paginate(
+              readerWheelTickIsForward(
+                    deltaPositive: dir == 'forward',
+                    horizontal: axis == 'horizontal',
+                    trackpad: pointerKind == 'trackpad',
+                    rtl: _isRtlReading,
+                    invertSwipe:
+                        ReaderFushiSource.instance.invertSwipeDirection,
+                  )
+                  ? ReaderNavigationDirection.forward
+                  : ReaderNavigationDirection.backward,
+              throttleMs: throttleMs,
+            );
           },
         );
 

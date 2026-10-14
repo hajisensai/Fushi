@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:collection/collection.dart';
+import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'anki_compact_glossaries.dart';
@@ -211,6 +212,36 @@ mixin AnkiNoteComposer {
               (AnkiDeck d) => d.name == settings.selectedDeckName,
             )
           : null);
+
+  /// 本次制卡**实际**写进的卡组：「高级制卡」的卡组覆盖（[AnkiMiningPayload.overrides]
+  /// 的 `deckName`）在 [AnkiSettings.availableDecks] 里按名精确命中就用它，否则退回
+  /// [resolveSelectedDeck]。
+  ///
+  /// 覆盖是单次请求的裁决，不改设置里的卡组；按名而不是按 id，因为请求可能来自另一台
+  /// 设备（互联转发），两边 Anki 的卡组 id 不同，但卡组名全库唯一。找不到时**不新建**
+  /// 卡组——那是用户没有确认过的副作用（多半是对端的卡组列表比本机新，或拼写改过），
+  /// 只留诊断说明请求了什么、实际落到哪，卡照常进设置卡组而不是整张失败。
+  @protected
+  AnkiDeck? resolveTargetDeck(
+    AnkiSettings settings,
+    AnkiMiningPayload payload,
+  ) {
+    final String? requested = payload.overrides?.deckName;
+    if (requested == null || requested.isEmpty) {
+      return resolveSelectedDeck(settings);
+    }
+    final AnkiDeck? hit = settings.availableDecks.firstWhereOrNull(
+      (AnkiDeck d) => d.name == requested,
+    );
+    if (hit != null) return hit;
+    final AnkiDeck? fallback = resolveSelectedDeck(settings);
+    fushiDebugPrint(
+      'resolveTargetDeck: requested deck "$requested" not in '
+      '${settings.availableDecks.length} available decks; '
+      'falling back to "${fallback?.name}"',
+    );
+    return fallback;
+  }
 
   @protected
   AnkiDeck selectDeckAfterFetch(List<AnkiDeck> decks, AnkiSettings current) =>

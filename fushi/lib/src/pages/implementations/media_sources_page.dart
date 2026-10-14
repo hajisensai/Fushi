@@ -282,6 +282,7 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     final bool? imported = await showAppDialog<bool>(
       context: context,
       builder: (_) => BookImportDialog(
+        prefs: _appModel.prefsRepo,
         repo: SrtBookRepository(_appModel.database),
         audiobookRepo: AudiobookRepository(_appModel.database),
         db: _appModel.database,

@@ -38,6 +38,7 @@ class MangaImportDialog extends StatefulWidget {
   const MangaImportDialog({
     required this.db,
     this.initialPath,
+    this.initialPaths = const <String>[],
     this.mangaOcrRemoteRunner,
     this.ocrEntryDesktopOverride,
     super.key,
@@ -47,6 +48,10 @@ class MangaImportDialog extends StatefulWidget {
 
   /// 拖放/书籍框转交时预填的漫画路径（目录 / `.cbz` / `.zip` 页图包 / `.mokuro`）。
   final String? initialPath;
+
+  /// 拖放多选时预填的一组漫画路径。≥2 个可导的卷时进「逐卷批量」模式（每卷各成
+  /// 一本、书名取各自名字），只有一个时与 [initialPath] 等价。
+  final List<String> initialPaths;
 
   /// 测试缝：注入远程 OCR runner（探测已配对 host 能力 + 代跑）。null = 生产路径，
   /// 由 [MangaOcrWizardEngines.resolve] 按 [db] 构造 [InterconnectMangaOcrClient]。
@@ -66,6 +71,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   String? _path;
   String? _pathName;
   ImportCarrier? _carrier;
+
+  /// 用户一次选中 / 拖入的多卷（≥2）。非空时本框是「逐卷批量」模式：[_path] /
+  /// [_carrier] 为 null，导入走 [MangaModule.importBatchPaths]。与 [_path] 互斥——
+  /// 收下单个路径时清空它，收下一批时清空单路径。
+  List<String> _batchPaths = const <String>[];
 
   /// [ImportCarrier.mangaBatchFolder] 时这批有几卷。选中那一刻数一次并记住——
   /// 目录枚举是 IO，不能长在 `build` 里。
@@ -102,7 +112,16 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   @override
   void initState() {
     super.initState();
-    final String? initial = widget.initialPath;
+    final List<String> initialAll = <String>[
+      if (widget.initialPath != null) widget.initialPath!,
+      ...widget.initialPaths,
+    ];
+    final List<String> batch = _batchCandidates(initialAll);
+    if (batch.length >= 2) {
+      _setBatch(batch);
+      return;
+    }
+    final String? initial = initialAll.isEmpty ? null : initialAll.first;
     if (initial != null) {
       // 预填路径来自已判定为漫画的上游（拖放决策层 / 书籍框转交），这里仍重跑一次
       // 分类以拿到细分载体；万一上游给了非漫画路径，宁可留空也不静默导错东西。
@@ -128,6 +147,26 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
+
+  /// 多选里**可能是一卷**的路径：目录或漫画载体扩展名。只看扩展名、不开包——
+  /// N 个包在 UI 线程逐个开会卡死；真定性推迟到逐卷导入（那时反正要解压），
+  /// 不是漫画的卷（文字 EPUB / 词典 zip）在汇总里如实计为跳过。
+  static List<String> _batchCandidates(List<String> paths) => <String>[
+        for (final String path in paths)
+          if (Directory(path).existsSync() ||
+              kMangaCarrierFileExtensions
+                  .contains(p.extension(path).toLowerCase()))
+            path,
+      ];
+
+  /// 进入逐卷批量模式（不含 setState，调用方决定是否包一层）。
+  void _setBatch(List<String> paths) {
+    _batchPaths = List<String>.unmodifiable(paths);
+    _path = null;
+    _carrier = null;
+    _batchVolumeCount = 0;
+    _pathName = paths.map(p.basename).join('、');
+  }
 
   /// 载体判成 `.mokuro` 的**目录**（直接子层恰好一个 `.mokuro`，BUG-2785）换成那个
   /// 文件——`importMokuro` 吃的是文件。其余原样返回。
@@ -189,7 +228,12 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         SizedBox(height: tokens.spacing.rowVertical),
         // 批量目录没有「一个标题」可填——每卷用自己的文件名。与其留一个填了也
         // 不生效的输入框，不如换成说明这批要导几卷。
-        if (_carrier == ImportCarrier.mangaBatchFolder)
+        if (_batchPaths.isNotEmpty)
+          Text(
+            t.manga_import_selection_batch_hint(n: _batchPaths.length),
+            style: tokens.type.metadata,
+          )
+        else if (_carrier == ImportCarrier.mangaBatchFolder)
           Text(
             t.manga_import_batch_hint(n: _batchVolumeCount),
             style: tokens.type.metadata,
@@ -324,6 +368,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   void _clearSelection() {
     setState(() {
+      _batchPaths = const <String>[];
       _path = null;
       _pathName = null;
       _carrier = null;
@@ -347,6 +392,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     }
     final String path = _importPathFor(candidate, carrier);
     setState(() {
+      _batchPaths = const <String>[];
       _path = path;
       _pathName = p.basename(path);
       _carrier = carrier;
@@ -362,7 +408,15 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   void _handleDialogDrop(List<String> paths, Offset _) {
     if (importing) return;
-    // 拖进本框的东西只有一种可能有意义：漫画。取第一个能定性成漫画的路径。
+    // 拖进本框的东西只有一种可能有意义：漫画。多选（≥2 个像卷的路径）→ 逐卷批量，
+    // 不再只收第一个、其余静默丢掉。
+    final List<String> batch = _batchCandidates(paths);
+    if (batch.length >= 2) {
+      setState(() => _setBatch(batch));
+      unawaited(_discardStaging());
+      return;
+    }
+    // 单个：取第一个能定性成漫画的路径。
     for (final String path in paths) {
       if (_classify(path).isMangaCapable) {
         if (_adoptPath(path)) unawaited(_discardStaging());
@@ -417,12 +471,39 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   ///
   /// 一卷都没进来时**抛异常**而不是返回「成功 0 卷」：那种情况下这次导入就是失败，
   /// 必须走 [runImport] 的错误路径（红 toast + 不关框），否则用户会以为导好了。
-  Future<String> _importBatchFolder(String path) async {
-    final MangaBatchImportReport report = await MangaModule.importBatchFolder(
-      db: widget.db,
-      path: path,
-      onVolumeProgress: _reportVolumeProgress,
+  Future<String> _importBatchFolder(String path) async =>
+      _summarizeBatch(await MangaModule.importBatchFolder(
+        db: widget.db,
+        path: path,
+        onVolumeProgress: _reportVolumeProgress,
+      ));
+
+  /// 多选 / 拖入的一组卷：逐卷导入后报汇总并关框；一卷都没进来走失败路径。
+  /// 重复固定跳过（批量不逐卷弹询问框），故不需要 [_askOnDuplicate]。
+  Future<void> _doImportSelectionBatch(List<String> paths) async {
+    await runImport(
+      logTag: 'MangaImportDialog.importBatch',
+      debugMessage: (Object e) => 'MangaImportDialog batch error: $e',
+      action: () async {
+        reportProgress(0, '');
+        debugPrint('[fushi-import] manga selection batch: ${paths.length}');
+        final String summary =
+            _summarizeBatch(await MangaModule.importBatchPaths(
+          db: widget.db,
+          paths: paths,
+          onVolumeProgress: _reportVolumeProgress,
+        ));
+        reportProgress(1, t.import_step_done);
+        if (mounted) {
+          FushiToast.show(msg: summary, severity: ToastSeverity.success);
+          Navigator.pop(context, true);
+        }
+      },
     );
+  }
+
+  /// 报告 → 给用户看的汇总文案；一卷都没进来时抛 [MangaImportException]。
+  String _summarizeBatch(MangaBatchImportReport report) {
     for (final MangaBatchVolumeResult volume in report.volumes) {
       debugPrint('[fushi-import] manga batch volume: '
           '${volume.status.name} ${volume.name}'
@@ -466,6 +547,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   Future<void> _doImport() async {
+    if (_batchPaths.isNotEmpty) {
+      await _doImportSelectionBatch(_batchPaths);
+      return;
+    }
     final String? path = _path;
     final ImportCarrier? carrier = _carrier;
     if (path == null || carrier == null) {

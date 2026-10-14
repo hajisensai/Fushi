@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('视频 legacy 在线入口已下线，canonical 全部刮削留在视频来源页', () {
+  test('视频 legacy 在线入口已下线，canonical 全部刮削留在视频来源页；书 / 漫画不再批量刮削', () {
     final String video = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
@@ -25,9 +25,11 @@ void main() {
     expect(sources.indexOf('tooltip: t.media_source_add'),
         lessThan(sources.indexOf('tooltip: t.scrape_all')));
 
+    // 用户定案 2026-10-14：书和漫画不需要「全部刮削」（只有视频和 galgame 需要），
+    // 书架页头的批量入口连同实现一起删；单本封面刮削（卡片菜单）保留。
     expect(books, contains('Future<void> _scrapeEpubCover('));
-    expect(books, contains('Future<void> _scrapeAllBooks('));
-    expect(books, contains('tooltip: t.scrape_all'));
+    expect(books, isNot(contains('Future<void> _scrapeAllBooks(')));
+    expect(books, isNot(contains('t.scrape_all')));
 
     expect(games, contains('Future<void> _scrapeGame('));
     expect(games, contains('Future<void> _scrapeAllGames('));
@@ -65,8 +67,9 @@ void main() {
     expect(service, contains('CoverOrigin.sidecar'));
     expect(service, contains('origin == CoverOrigin.autoFrame'));
 
-    // 书 / 漫画 / 游戏走共享纯函数判据，批量恒不覆盖已有封面。
-    expect(books, contains('uniqueExactScrapeTitleMatch<BookScrapeCandidate>'));
+    // 书 / 漫画只剩单本手动刮削，写封面不清用户 override 图。
+    expect(books, contains('clearOverrideImage: false'));
+    // 游戏批量刮削走共享纯函数判据，恒不覆盖已有封面（书 / 漫画已无批量刮削）。
     expect(games, contains('uniqueExactScrapeTitleMatch<SourceCandidate>'));
     expect(games, contains('replaceExistingCover: false'));
   });
