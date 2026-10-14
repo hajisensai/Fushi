@@ -195,6 +195,49 @@ assert.equal(page.style.clipPath,'${direction == 'rtl' ? 'inset(0 50% 0 0)' : 'i
     },
   );
 
+  test('取页失败的页可以重取：换带 retry 参数的新 URL，只认失败页', () async {
+    expect(
+      document,
+      contains("image.addEventListener('error'"),
+      reason: '失败要打标记，否则整章不重开这页就一直白着',
+    );
+    final String retry = section('  var RETRY_SERIAL = 0;', '  // 摆位是「重投影」');
+    await runJs('''
+function el(attrs){
+  return {
+    attrs: attrs,
+    getAttribute: function(k){ return k in this.attrs ? this.attrs[k] : null; },
+    setAttribute: function(k, v){ this.attrs[k] = String(v); },
+    removeAttribute: function(k){ delete this.attrs[k]; },
+  };
+}
+var img = el({src: 'https://fushi.local/img/a.png?v=3', loading: 'lazy'});
+Object.defineProperty(img, 'src', {
+  get: function(){ return this.attrs.src; },
+  set: function(v){ this.attrs.src = v; },
+});
+var page = el({'data-page': '0', 'data-spread': '0', 'data-load-failed': '1'});
+page.querySelector = function(){ return img; };
+page.getBoundingClientRect = function(){ return {left: 0, top: 0, right: 100, bottom: 100}; };
+var document = {
+  querySelectorAll: function(){
+    return page.getAttribute('data-load-failed') === '1' ? [page] : [];
+  },
+};
+$retry
+function check(cond, msg){ if (!cond) { console.error(msg); process.exit(1); } }
+check(!_retryFailedPageAt(200, 200), 'tap outside the failed page must not retry');
+check(_retryFailedPageAt(50, 50), 'tap on the failed page retries it');
+check(img.src === 'https://fushi.local/img/a.png?v=3&retry=1', 'retry url: ' + img.src);
+check(img.attrs.loading === 'eager', 'retry is requested now, not lazily');
+check(page.getAttribute('data-load-failed') === null, 'failure mark cleared');
+check(!_retryPageImage(page), 'a page that did not fail is never re-requested');
+page.setAttribute('data-load-failed', '1');
+_retryFailedPagesWhere(function(p){ return Number(p.getAttribute('data-spread')) === 0; });
+check(img.src === 'https://fushi.local/img/a.png?v=3&retry=2', 'second retry keeps base url: ' + img.src);
+''');
+  });
+
   test(
     'filter values preserve zero adjustment and isolate bitmap color effects',
     () {

@@ -907,6 +907,10 @@ String mangaWindowDocument(
       '.manga-page img{display:block;width:100%;height:100%;'
       'object-fit:contain;-webkit-user-drag:none;user-drag:none;}'
       '.manga-source img{filter:${mangaImageFilterCss(preferences)};}'
+      // 取页失败的页：中央一个重试符号（点它 / 翻到它会重新请求，见 _retryPageImage）。
+      '.manga-page[data-load-failed="1"] .manga-source::before{content:"\\21BB";'
+      'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
+      'font:600 56px/1 sans-serif;color:#8888;pointer-events:none;}'
       '.manga-source::after{content:"";position:absolute;inset:0;pointer-events:none;'
       'background:${_escapeAttr(preferences.colorFilterColor)};'
       'opacity:${preferences.customColorFilter ? preferences.colorFilterOpacity.clamp(0, 100) / 100 : 0};}'
@@ -1373,6 +1377,10 @@ String _mangaGestureJs({
   var TURN_SERIAL = 0;
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
+    // 翻到含失败页的跨页 = 读者要看它：重取一次。
+    _retryFailedPagesWhere(function(page){
+      return Number(page.getAttribute('data-spread')) === target;
+    });
     if(target !== CURRENT) _flashPageChange();
     if(target!==CURRENT) PAGE_HALF=target<CURRENT ? 1 : 0;
     CURRENT = target;
@@ -1537,8 +1545,47 @@ String _mangaGestureJs({
       );
     };
     image.addEventListener('load', apply);
+    // 取页失败（拦截器回 502 / 网络断）：浏览器不会再自己请求这张图，整章不重开
+    // 这页就一直白着。只打标记，重取由读者动作触发（_retryPageImage），不盲重试。
+    image.addEventListener('error', function(){
+      page.setAttribute('data-load-failed', '1');
+    });
     if (image.complete) apply();
   });
+  // 失败页重取：带一个新的 retry 查询参数换掉 src（拦截器只看 path，同一页照取；
+  // 换 URL 才能绕开浏览器对失败资源的缓存）。
+  var RETRY_SERIAL = 0;
+  function _retryPageImage(page){
+    if (!page || page.getAttribute('data-load-failed') !== '1') return false;
+    var image = page.querySelector('img');
+    if (!image) return false;
+    page.removeAttribute('data-load-failed');
+    var base = image.getAttribute('data-base-src');
+    if (!base) {
+      base = image.getAttribute('src') || '';
+      image.setAttribute('data-base-src', base);
+    }
+    RETRY_SERIAL++;
+    image.setAttribute('loading', 'eager');
+    image.src = base + (base.indexOf('?') < 0 ? '?' : '&') + 'retry=' + RETRY_SERIAL;
+    return true;
+  }
+  function _retryFailedPagesWhere(match){
+    var failed = document.querySelectorAll('.manga-page[data-load-failed="1"]');
+    for (var i = 0; i < failed.length; i++) {
+      if (match(failed[i])) _retryPageImage(failed[i]);
+    }
+  }
+  function _retryFailedPageAt(x, y){
+    var failed = document.querySelectorAll('.manga-page[data-load-failed="1"]');
+    for (var i = 0; i < failed.length; i++) {
+      var r = failed[i].getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+        return _retryPageImage(failed[i]);
+      }
+    }
+    return false;
+  }
   // 摆位是「重投影」，不是「翻页」：必须无过渡落位。首次定位与 viewport resize
   // 共用这一个函数——两者本质相同：把语义真值（CURRENT 跨页 + RESTORE_FRACTION
   // 页内偏移 + ZOOM/PAN）投影成当前视口下的 px。
@@ -1908,6 +1955,8 @@ String _mangaGestureJs({
   function _onTap(x, y){
     var b = _bridge();
     if (!b) return;
+    // 点在失败页上：重取它，这一击不再做别的（失败页没有 OCR 字可查）。
+    if (_retryFailedPageAt(x, y)) return;
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x, y);
     if (zone) {
@@ -2310,6 +2359,7 @@ String _mangaGestureJs({
   // fraction 与 topPage 同源（同一页）。
   if (IS_WEBTOON) {
     var _scrollTimer = null;
+    var LAST_VISIBLE_PAGES = [];
     window.addEventListener('scroll', function(){
       if (_scrollTimer) return;
       _scrollTimer = setTimeout(function(){
@@ -2343,7 +2393,15 @@ String _mangaGestureJs({
         CURRENT = topPage;
         _updateAutomaticBackground();
         RESTORE_FRACTION = fraction;
-        b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: window.__mangaVisiblePages() }));
+        var visiblePages = window.__mangaVisiblePages();
+        // 长条：失败页**新进入**视口时重取一次（一直停在视口里不反复打源）。
+        _retryFailedPagesWhere(function(page){
+          var index = Number(page.getAttribute('data-page'));
+          return visiblePages.indexOf(index) >= 0 &&
+              LAST_VISIBLE_PAGES.indexOf(index) < 0;
+        });
+        LAST_VISIBLE_PAGES = visiblePages;
+        b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: visiblePages }));
       }, 120);
     }, {passive: true});
   }

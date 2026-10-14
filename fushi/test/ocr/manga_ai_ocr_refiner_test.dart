@@ -275,6 +275,55 @@ void main() {
       expect(out.linesCoords!.length, out.lines.length);
     });
 
+    // Lens 块：没有 linesCoords，两列竖排的几何只在逐字 regions 里（右列「一二」、
+    // 左列「三四」）。
+    MokuroBlock lensTwoColumns() {
+      MangaOcrTextRegion char(int at, double l, double t) => MangaOcrTextRegion(
+        rectangle: MokuroRect.fromLTRB(l, t, l + 10, t + 40),
+        utf16Start: at,
+        utf16End: at + 1,
+      );
+      return MokuroBlock(
+        rectangle: MokuroRect.fromLTRB(10, 10, 40, 90),
+        isVertical: true,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['一二三四'],
+        regions: <MangaOcrTextRegion>[
+          char(0, 30, 10),
+          char(1, 30, 50),
+          char(2, 10, 10),
+          char(3, 10, 50),
+        ],
+      );
+    }
+
+    test('Lens 块模型读出同样的字：逐字热区原样保留', () {
+      final MokuroBlock source = lensTwoColumns();
+      final MokuroBlock out = applyMangaAiOcrText(source, '一二\n三四');
+      expect(out.lines, source.lines);
+      expect(out.regions, same(source.regions));
+      expect(out.aiRecognized, isTrue);
+    });
+
+    test('Lens 块文字变了：按逐字热区聚回列框排版，不退成横跨两列的单行', () {
+      final MokuroBlock out = applyMangaAiOcrText(lensTwoColumns(), '一二三四五');
+      expect(out.lines.join(), '一二三四五');
+      expect(out.regions, isNull, reason: '旧偏移量对新文字无效');
+      expect(out.linesCoords, isNotNull);
+      expect(out.linesCoords, hasLength(2));
+      expect(out.lines, hasLength(2));
+      // 阅读序：第一列落在右列（x 30–40），第二列落在左列（x 10–20）。
+      final List<double> firstXs = <double>[
+        for (final List<double> p in out.linesCoords![0]) p[0],
+      ];
+      final List<double> secondXs = <double>[
+        for (final List<double> p in out.linesCoords![1]) p[0],
+      ];
+      expect(firstXs.every((double x) => x >= 30 && x <= 40), isTrue);
+      expect(secondXs.every((double x) => x >= 10 && x <= 20), isTrue);
+    });
+
     test('没有行几何：整块单行', () {
       final MokuroBlock out = applyMangaAiOcrText(block('x'), '機嫌の\n悪い');
       expect(out.lines, <String>['機嫌の悪い']);
@@ -361,11 +410,9 @@ void main() {
         applyMangaAiOcrText(horizontal('x'), '  sorry   I cannot  ').lines,
         <String>['sorry I cannot'],
       );
-      expect(
-        applyMangaAiOcrText(horizontal('HEY'), 'HEY\tYOU').lines,
-        <String>['HEY YOU'],
-        reason: '本地是单词块（无空白）也不能把模型给的词界删掉',
-      );
+      expect(applyMangaAiOcrText(horizontal('HEY'), 'HEY\tYOU').lines, <String>[
+        'HEY YOU',
+      ], reason: '本地是单词块（无空白）也不能把模型给的词界删掉');
       expect(
         applyMangaAiOcrText(horizontal('x'), 'sorry I\ncannot do it').lines,
         <String>['sorry I cannot do it'],

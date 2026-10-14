@@ -932,8 +932,13 @@ String normalizeMangaAiOcrLine(String line) =>
     _joinMangaAiOcrSegments(line.trim().split(RegExp(r'\s+')));
 
 /// 把大模型的文字落进块：能按原行几何对上就逐行替换，对不上就按行框重新排版，
-/// 都不行就退成整块单行（覆盖层退回整块均铺）。字符级命中区（Lens 的
-/// `regions`）的偏移量对新文字无效，一律丢掉。
+/// 都不行就退成整块单行（覆盖层退回整块均铺）。
+///
+/// 字符级命中区（Lens 的 `regions`）：模型读出的字与原文一致时原样保留（文字没变，
+/// 偏移量仍然有效）；文字变了偏移量作废，但 Lens 块没有 `linesCoords`——行（竖排是
+/// 列）几何只活在 `regions` 里，所以先按 [_lineBoxesFromRegions] 把它聚回行框再排版。
+/// 直接丢掉会让多列气泡退成「整块单行」，每个字的热区横跨所有列，点第二列查到的是
+/// 第一列的字（在线直读时本地结果先出、几秒后大模型结果覆盖才错位）。
 ///
 /// 空白处理见 [normalizeMangaAiOcrLine]：中日文去掉、拉丁 / 韩文保留单个空格；
 /// 多行拼成一行时接缝也按同一规则（英文行尾与下一行行首之间补空格）。
@@ -944,7 +949,22 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
         normalizeMangaAiOcrLine(line),
   ];
   final String joined = _joinMangaAiOcrSegments(modelLines);
-  final List<List<List<double>>>? coords = block.linesCoords;
+  final List<MangaOcrTextRegion>? regions = block.regions;
+  if (regions != null && regions.isNotEmpty && joined == block.lines.join()) {
+    return MokuroBlock(
+      rectangle: block.rectangle,
+      isVertical: block.isVertical,
+      fontSize: block.fontSize,
+      zIndex: block.zIndex,
+      lines: block.lines,
+      linesCoords: block.linesCoords,
+      regions: regions,
+      confidence: block.confidence,
+      aiRecognized: true,
+    );
+  }
+  final List<List<List<double>>>? coords =
+      block.linesCoords ?? _lineBoxesFromRegions(block);
   List<String> lines = <String>[joined];
   List<List<List<double>>>? linesCoords;
   if (coords != null && coords.isNotEmpty) {
@@ -981,6 +1001,56 @@ MokuroBlock applyMangaAiOcrText(MokuroBlock block, String text) {
     confidence: block.confidence,
     aiRecognized: true,
   );
+}
+
+/// 把字符级命中区按阅读序聚成行框（竖排是列框）：相邻两个字在横轴（竖排看 x、
+/// 横排看 y）上的区间重叠不到较窄者的一半就算换行。没有命中区返回 null。
+List<List<List<double>>>? _lineBoxesFromRegions(MokuroBlock block) {
+  final List<MangaOcrTextRegion>? regions = block.regions;
+  if (regions == null || regions.isEmpty) return null;
+  final List<MangaOcrTextRegion> ordered = List<MangaOcrTextRegion>.of(regions)
+    ..sort(
+      (MangaOcrTextRegion a, MangaOcrTextRegion b) =>
+          a.utf16Start.compareTo(b.utf16Start),
+    );
+  final bool vertical = block.isVertical;
+  double crossStart(MokuroRect r) => vertical ? r.left : r.top;
+  double crossEnd(MokuroRect r) => vertical ? r.right : r.bottom;
+  final List<MokuroRect> lines = <MokuroRect>[];
+  for (final MangaOcrTextRegion region in ordered) {
+    final MokuroRect rect = region.rectangle;
+    if (rect.isEmpty) continue;
+    if (lines.isNotEmpty) {
+      final MokuroRect current = lines.last;
+      final double overlap =
+          math.min(crossEnd(current), crossEnd(rect)) -
+          math.max(crossStart(current), crossStart(rect));
+      final double narrower = math.min(
+        crossEnd(current) - crossStart(current),
+        crossEnd(rect) - crossStart(rect),
+      );
+      if (overlap >= narrower / 2) {
+        lines[lines.length - 1] = MokuroRect.fromLTRB(
+          math.min(current.left, rect.left),
+          math.min(current.top, rect.top),
+          math.max(current.right, rect.right),
+          math.max(current.bottom, rect.bottom),
+        );
+        continue;
+      }
+    }
+    lines.add(rect);
+  }
+  if (lines.isEmpty) return null;
+  return <List<List<double>>>[
+    for (final MokuroRect r in lines)
+      <List<double>>[
+        <double>[r.left, r.top],
+        <double>[r.right, r.top],
+        <double>[r.right, r.bottom],
+        <double>[r.left, r.bottom],
+      ],
+  ];
 }
 
 OcrRect _polygonBounds(List<List<double>> polygon) {

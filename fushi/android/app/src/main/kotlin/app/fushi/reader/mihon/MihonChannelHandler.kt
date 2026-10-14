@@ -40,6 +40,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 class MihonChannelHandler(private val app: Application) {
     private val executor: ExecutorService = Executors.newFixedThreadPool(2)
+    // 页图单独一个池：取图（OkHttp callTimeout 最长 2 分钟）与页表 / 搜索 / 详情共用
+    // 那两条线程时，两张慢图就能把下一章的页表也卡住。宽度不小于 Dart 侧在线直读
+    // 的并发上限（kOnlineMangaPageConcurrency = 3），再留一条给下载服务。
+    private val imageExecutor: ExecutorService = Executors.newFixedThreadPool(4)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val loader = MihonExtensionLoader(app)
     private val activeImageRequests = ConcurrentHashMap<String, Future<*>>()
@@ -91,7 +95,8 @@ class MihonChannelHandler(private val app: Application) {
             } else {
                 null
             }
-            val future = executor.submit {
+            val pool = if (call.method == "fetchImage") imageExecutor else executor
+            val future = pool.submit {
                 try {
                     val value = handle(call)
                     mainHandler.post { reply(result, value) }
@@ -139,6 +144,7 @@ class MihonChannelHandler(private val app: Application) {
         activeImageRequests.clear()
         loader.clear()
         executor.shutdownNow()
+        imageExecutor.shutdownNow()
     }
 
     /**
@@ -485,6 +491,12 @@ class MihonChannelHandler(private val app: Application) {
         val http = source as? HttpSource
             ?: throw MihonHostException("UNSUPPORTED_SOURCE", "Source cannot fetch HTTP images")
         return runBlocking {
+            // getPageList 只给出阅读页地址的源（imageUrl 为空）要先逐页解析出真实图片
+            // 地址：Mihon 的 imageRequest 读的是 imageUrl!!，跳过这一步每页都失败。
+            // 桌面 sidecar 的 MihonImageProxy.fetch 走的是同一步。
+            if (page.imageUrl.isNullOrEmpty()) {
+                page.imageUrl = http.getImageUrl(page)
+            }
             http.getImage(page).use { response ->
                 if (!response.isSuccessful) {
                     throw MihonHostException("IMAGE_HTTP", "Source image request failed")
