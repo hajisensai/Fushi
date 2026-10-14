@@ -233,7 +233,7 @@ void main() {
     late String src;
     setUpAll(() => src = code(schemaPath));
 
-    test('导入按钮走与开关同一条写穿并置 true（导入即启用）', () {
+    test('导入后把目录即时装进活播放器（导入即生效）', () {
       final int importIdx = src.indexOf(
         "id: 'video.player.mpv_lua_scripts_import'",
       );
@@ -243,23 +243,19 @@ void main() {
       final String between = src.substring(importIdx, dirIdx);
       expect(
         between,
-        contains('_setVideoLuaScriptsEnabled(settingsContext, true)'),
-        reason: '导入后不启用 = 用户播视频什么都不发生（BUG-2032 根因②）',
+        contains('?.onLuaScriptsChanged?.call()'),
+        reason: '导入后不装载 = 用户播视频什么都不发生（BUG-2032 根因②）',
       );
-    });
-
-    test('开关行 onChanged 也走同一条写穿（不允许两份实现分叉）', () {
-      final int switchIdx = src.indexOf("id: 'video.player.mpv_lua_scripts'");
-      final int importIdx = src.indexOf(
-        "id: 'video.player.mpv_lua_scripts_import'",
-      );
-      final String between = src.substring(switchIdx, importIdx);
-      expect(between, contains('onChanged: _setVideoLuaScriptsEnabled'));
       expect(
         between,
         contains('MpvLuaCapability.unavailable'),
         reason: '能力不可用要在副标题如实说明',
       );
+    });
+
+    test('没有单独的 Lua 启用开关：脚本目录即开关', () {
+      expect(src, isNot(contains("id: 'video.player.mpv_lua_scripts',")));
+      expect(src, isNot(contains('LuaScriptsEnabled')));
     });
 
     test('脚本状态列表项挂在 mpv 高级分区', () {
@@ -274,6 +270,21 @@ void main() {
 
     test('把 controller 的脚本状态表交给设置面板 host', () {
       expect(src, contains('luaScriptStates: _controller?.luaScriptStates'));
+    });
+
+    test('脚本目录即开关：每次进入都按目录装载，导入后即时补装', () {
+      expect(
+        src,
+        contains(
+          'final List<String> luaScriptPaths = await listLuaScriptPaths();',
+        ),
+      );
+      final int hook = src.indexOf('onLuaScriptsChanged: () async {');
+      expect(hook, greaterThan(0));
+      expect(
+        src.substring(hook, src.indexOf('},', hook)),
+        contains('_controller?.applyLuaScripts(await listLuaScriptPaths())'),
+      );
     });
 
     test('load 完成后把探到的 Lua 能力落 pref', () {

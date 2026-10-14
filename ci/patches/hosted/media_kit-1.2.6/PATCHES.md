@@ -52,3 +52,17 @@ Regression test: `fushi/test/third_party/media_kit_observe_changes_test.dart`
 callbacks for `frame-drop-count` under `vo=null`: the `FORMAT_NONE` control
 fires every frame, the value-compared subscription at most twice. Remove when
 upstream exposes a typed `observeProperty`.
+
+## BUG-3325: built-in Lua scripts stay off
+
+`lib/src/player/native/player/real.dart` passes
+`load-{stats-overlay,console,auto-profiles,select,positioning,commands,context-menu}=no`
+as pre-`mpv_initialize` options. The bundled libmpv is built with Lua on Windows
+(LuaJIT) and Android (Lua 5.2) so the user mpv script feature (`load-script`,
+BUG-2032) works; mpv's `libmpv` profile only disables the OSC, so without these
+options every player would also start mpv's own scripts. mpv reads them only
+during `mpv_initialize`, which is why they live here and not in Fushi's per-open
+properties (`ytdl=no` is set per open by `buildLuaHostBaselineProperties`).
+Builds without Lua reject the option names; `Initializer.create` ignores
+`mpv_set_option_string` results, so this is a no-op there. Remove only together
+with a decision to ship mpv's built-in scripts.

@@ -5102,11 +5102,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             decodeEnabledShaders(appModel.videoShadersEnabled),
           )
         : const <String>[];
-    // 开关开启时装载 mpv_scripts 目录全部 Lua 脚本（每 Player 实例幂等，
-    // 见 video_lua_script_manager.dart）。
-    final List<String> luaScriptPaths = appModel.videoMpvLuaScriptsEnabled
-        ? await listLuaScriptPaths()
-        : const <String>[];
+    // 装载 mpv_scripts 目录全部 Lua 脚本（目录即开关，对齐 mpv `scripts/`；每 Player
+    // 实例幂等，见 video_lua_script_manager.dart）。
+    final List<String> luaScriptPaths = await listLuaScriptPaths();
     controller.setOnCompleted(_handlePlaybackCompleted);
     // TODO-1119 / BUG-545：Windows 高显卡占用黑屏闪烁运行时提示。仅 Windows 挂回调
     // （其它平台 null＝控制器完全不采样，零开销）；判定持续迟帧后弹一次可关闭提示条。
@@ -5698,12 +5696,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
+    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
+    _frameProbe.stop();
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
-    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
-    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
-    _frameProbe.stop();
     _discBindingGeneration++;
     // 退页即停整轨转文字：强杀在途的抽轨 ffmpeg（否则它会在后台把整个文件读完）。
     _cancelGraphicSubtitleOcr();
@@ -10602,11 +10600,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             : const <String>[];
         await _controller?.applyShaders(paths);
       },
-      // mpv Lua 脚本开关：落 pref；开启时把脚本目录即时装载进活播放器（幂等，
-      // 已装载路径跳过）。关闭不可卸载（mpv 无 unload-script），下次进入生效。
-      onLuaScriptsEnabledChanged: (bool enabled) async {
-        await appModel.setVideoMpvLuaScriptsEnabled(enabled);
-        if (!enabled) return;
+      // 导入 Lua 脚本后把目录即时装载进活播放器（幂等，已装载路径跳过）。删除不可
+      // 卸载（mpv 无 unload-script），下次进入生效。
+      onLuaScriptsChanged: () async {
         await _controller?.applyLuaScripts(await listLuaScriptPaths());
       },
       luaScriptStates: _controller?.luaScriptStates,

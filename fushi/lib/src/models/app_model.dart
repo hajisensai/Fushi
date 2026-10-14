@@ -4262,13 +4262,6 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoShadersEnabled(String json) =>
       prefsRepo.setVideoShadersEnabled(json);
 
-  /// mpv Lua 脚本装载开关（见 video_lua_script_manager.dart；默认关，
-  /// 关闭只对之后新建的播放器生效）。
-  bool get videoMpvLuaScriptsEnabled => prefsRepo.videoMpvLuaScriptsEnabled;
-
-  Future<void> setVideoMpvLuaScriptsEnabled(bool value) =>
-      prefsRepo.setVideoMpvLuaScriptsEnabled(value);
-
   /// BUG-2032：随包 libmpv 是否编入 Lua（视频页探测后缓存；设置页据此说明）。
   MpvLuaCapability get videoMpvLuaCapability => prefsRepo.videoMpvLuaCapability;
 
