@@ -167,6 +167,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/manga/manga_panel_detection_offload_guard_test.dart'
       '（两个消费点都按开关 + isWebtoon 收口）'
       ' + packages/fushi_engine/test/panel_detection_test.dart（检测契约）',
+  // 一键制卡按分格裁图：写 appModel（changed=true），生效点是阅读器制卡时的
+  // 裁切决策（resolveMangaCardImagePlan 的 cropToPanelByDefault），harness 里
+  // 没有挂漫画阅读器。决策函数按开关取舍、阅读器把这个开关接进决策，两件事
+  // 都在同一个测试文件里咬住。
+  'manga/Crop one-click cards to the panel':
+      'test/media/manga/manga_mining_crop_test.dart'
+      '（cropToPanelByDefault 决策 + 阅读器接线守卫）',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
@@ -570,7 +577,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
   // 测的是已删死契约 TagsField.onCreatorOpenAction，已随该契约删除。
-  'cardCreation/Auto-add book title to tags':
+  'cardCreation/Auto-add work title to tags':
       'test/settings/settings_flatten_anki_profile_test.dart + live consume in '
       'reader_fushi/mining.part.dart & video_fushi/lookup_mining.part.dart (bookTitleTag)',
   // 「制卡所在字符数」标签（`chars_12345`）。与上面那条同构：写 prefsRepo
@@ -639,7 +646,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 本机作为制卡落地设备：写同步域设备本地偏好（认领时刻），生效点在下一轮同步的
   // 跨设备中转（harness 里没有同步后端可探）；认领 / 上传 / 收卡 / 回执全流程由
   // 专项测试用内存资产层两台设备对跑咬死。
-  'cardCreation/Deliver cards from other devices':
+  'cardCreation/Receive cards from other devices':
       'test/anki/pending_mine_relay_test.dart',
   // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
   // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，
@@ -678,6 +685,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Close popup when scrolling':
       'test/pages/lookup_dismiss_barrier_test.dart + '
       'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
+  // 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（默认关）。与上面两项同一条
+  // MediaSource 偏好通道，harness 里观测不到写穿；生效点是制卡回调落地后的关栈
+  // （closePopupAfterAcceptedMine），由专项行为测试 + 两条车道接线守卫覆盖。
+  'lookup/Close lookup popup after creating a card':
+      'test/pages/close_popup_after_mining_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
   // window.scanNonJapaneseText + reader_selection_scripts 的 `scanNonJapaneseText
@@ -1013,7 +1025,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
-  'lookup/Yomitan API server':
+  'lookup/Fushi API server':
       'INTEGRATION: yomitan-api server lifecycle (test/sync/yomitan_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
@@ -1571,7 +1583,7 @@ void main() {
       final List<String> restoreDiff = _mapDiff(initial, restored);
       final bool globallyRestored = restoreDiff.isEmpty;
 
-      // 「Yomitan API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
+      // 「Fushi API server」开关被焦点遍历真切到 ON 时会 shelf_io.serve 绑定一个
       // 真实 HttpServer，它带一个 2 分钟 idleTimeout 周期 Timer。全局还原只写回 DB
       // pref，不会停服 → 该 Timer 残留，触发测试结束的「A Timer is still pending」
       // 断言（原 develop 基线红）。必须在**测试 body 内**（FakeAsync 区、pending-

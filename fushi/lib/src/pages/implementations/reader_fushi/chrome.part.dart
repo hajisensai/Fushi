@@ -3343,6 +3343,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       () => showAppDialog<void>(
         context: context,
         builder: (ctx) => AudiobookImportDialog(
+          prefs: appModel.prefsRepo,
           bookKey: widget.bookKey,
           repo: repo,
           extractDir: _extractDir,

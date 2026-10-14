@@ -88,6 +88,21 @@ void main() {
       );
     });
 
+    test('load()：ytdl 基线不看有没有用户脚本、且在 open 之前下发', () {
+      // 编了 Lua 的 libmpv 自带 ytdl_hook（ytdl 默认 yes），钩子挂在 loadfile 上，
+      // open 之后再关已经太迟；放进 applyLuaScripts 又会在没装脚本时被跳过。
+      final int probe = src.indexOf('await _probeLuaCapability();');
+      final int baseline = src.indexOf(
+        'await _setMpvProperties(buildLuaHostBaselineProperties());',
+      );
+      final int open = src.indexOf('await player.open(', probe);
+      expect(baseline, greaterThan(probe));
+      expect(open, greaterThan(baseline));
+      final int fn = src.indexOf('Future<void> applyLuaScripts(');
+      final String applyBody = src.substring(fn, src.indexOf('\n  }\n', fn));
+      expect(applyBody, isNot(contains('buildLuaHostBaselineProperties')));
+    });
+
     // #2014：字幕由 overlay 画、libmpv sid 恒为 no，sub-text 类脚本（字幕结束暂停）
     // 永远收不到字幕。镜像轨的接线点任何一处断掉都是静默失效。
     group('Lua 字幕镜像', () {
@@ -218,7 +233,7 @@ void main() {
     late String src;
     setUpAll(() => src = code(schemaPath));
 
-    test('导入按钮走与开关同一条写穿并置 true（导入即启用）', () {
+    test('导入后把目录即时装进活播放器（导入即生效）', () {
       final int importIdx = src.indexOf(
         "id: 'video.player.mpv_lua_scripts_import'",
       );
@@ -228,23 +243,19 @@ void main() {
       final String between = src.substring(importIdx, dirIdx);
       expect(
         between,
-        contains('_setVideoLuaScriptsEnabled(settingsContext, true)'),
-        reason: '导入后不启用 = 用户播视频什么都不发生（BUG-2032 根因②）',
+        contains('?.onLuaScriptsChanged?.call()'),
+        reason: '导入后不装载 = 用户播视频什么都不发生（BUG-2032 根因②）',
       );
-    });
-
-    test('开关行 onChanged 也走同一条写穿（不允许两份实现分叉）', () {
-      final int switchIdx = src.indexOf("id: 'video.player.mpv_lua_scripts'");
-      final int importIdx = src.indexOf(
-        "id: 'video.player.mpv_lua_scripts_import'",
-      );
-      final String between = src.substring(switchIdx, importIdx);
-      expect(between, contains('onChanged: _setVideoLuaScriptsEnabled'));
       expect(
         between,
         contains('MpvLuaCapability.unavailable'),
         reason: '能力不可用要在副标题如实说明',
       );
+    });
+
+    test('没有单独的 Lua 启用开关：脚本目录即开关', () {
+      expect(src, isNot(contains("id: 'video.player.mpv_lua_scripts',")));
+      expect(src, isNot(contains('LuaScriptsEnabled')));
     });
 
     test('脚本状态列表项挂在 mpv 高级分区', () {
@@ -259,6 +270,21 @@ void main() {
 
     test('把 controller 的脚本状态表交给设置面板 host', () {
       expect(src, contains('luaScriptStates: _controller?.luaScriptStates'));
+    });
+
+    test('脚本目录即开关：每次进入都按目录装载，导入后即时补装', () {
+      expect(
+        src,
+        contains(
+          'final List<String> luaScriptPaths = await listLuaScriptPaths();',
+        ),
+      );
+      final int hook = src.indexOf('onLuaScriptsChanged: () async {');
+      expect(hook, greaterThan(0));
+      expect(
+        src.substring(hook, src.indexOf('},', hook)),
+        contains('_controller?.applyLuaScripts(await listLuaScriptPaths())'),
+      );
     });
 
     test('load 完成后把探到的 Lua 能力落 pref', () {

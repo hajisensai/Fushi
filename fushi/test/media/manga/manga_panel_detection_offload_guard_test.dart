@@ -49,8 +49,13 @@ void main() {
     );
     expect(
       'appModel.mangaPanelNavigation||_mode.isWebtoon'.allMatches(flat).length,
-      2,
-      reason: '_ensurePanelDetector 与 _tryPanelTurn 都要按 isWebtoon 收口',
+      1,
+      reason: '_tryPanelTurn 按导航开关与 isWebtoon 收口',
+    );
+    expect(
+      flat.contains('if(_mode.isWebtoon)returnconst<Rect>[];'),
+      isTrue,
+      reason: '制卡取分镜（_miningPanels）同样按 isWebtoon 跳过分镜一级',
     );
     expect(
       flat.contains('appModel.mangaPanelNavigation&&_mode.isPaged'),
@@ -63,6 +68,28 @@ void main() {
     expect(
       flat.contains('mangaPanelNavigation&&_mode==MangaReadingMode.spread'),
       isFalse,
+    );
+  });
+
+  test('制卡用分镜检测不跟「分镜导航」开关绑定', () {
+    // 高级制卡 / 一键裁到分镜只看模型是否已下载：检测器本身不能再看导航开关，
+    // 导航开关的门控只留在翻页调用方。
+    final String source = readerPage.readAsStringSync();
+    final int start = source.indexOf(
+      'Future<PanelDetector?> _ensurePanelDetector()',
+    );
+    expect(start, isNonNegative);
+    final int end = source.indexOf(
+      'Future<PanelDetectionResult> _detectPanels(',
+    );
+    final String body = source.substring(start, end);
+    expect(body.contains('mangaPanelNavigation'), isFalse);
+    // 「模型不可用」要缓存（工厂每次都对整份模型算 sha256），并随下载修订号失效。
+    expect(
+      body.contains(
+        '_panelModelUnavailableRevision == mangaPanelModelRevision',
+      ),
+      isTrue,
     );
   });
 

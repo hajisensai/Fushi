@@ -9,11 +9,13 @@
 - **[x] ① 已修复** — `944b75e34a`（分支 `worktree-lua-scripts-rootfix`）：
   - 能力门控（①）：新增 `video_lua_capability.dart`（`MpvLuaCapability` + `parseMpvLuaCapability`），controller 建 Player 后读 `mpv-configuration` 探测、页面落 pref `video_mpv_lua_capability`，开关副标题在 `unavailable` 时如实说明（按 `settings_schema_widgets.dart:168` 约定：能力只走副标题、不禁用开关）。不按 `Platform.isAndroid` 硬编码——jar 重编带 Lua 后自动翻绿。
   - 导入即启用（②）：`_setVideoLuaScriptsEnabled` 成为开关行与导入按钮的唯一写穿点，导入后置 true（host 在场即时把目录含新脚本装进活播放器，幂等）；提示改为"脚本已导入并启用"。
+    - 2026-10-14 后续（所有者要求删掉 Lua 启用开关）：开关行、pref `video_mpv_lua_scripts_enabled` 读写与 `_setVideoLuaScriptsEnabled` 均已删除，`mpv_scripts` 目录即开关（对齐 mpv `scripts/`：有就装、删文件即停）；导入后经 host 的 `onLuaScriptsChanged` 即时补装，能力不可用的说明挪到导入行副标题。守卫见 `video_lua_script_wiring_guard_test.dart`「settings schema」组。
   - 诊断面（③）：controller 订阅 `player.stream.log`，`matchLuaLogToScripts` 把 `cplayer` 装载失败（按完整路径）与脚本前缀 `Lua error`/`mp.msg.error`（按 mpv 客户端名 `luaScriptNameForPath`）归到脚本，`luaScriptStates` 经 `VideoQuickSettingsHost.luaScriptStates` 喂给新增设置项 `video.player.mpv_lua_scripts_list`（每脚本一行：未装载 / 已装载无报错 / 报错原文），列表底部原样说明输入边界。
   - OSD（④）：`applyLuaScripts` 首次真有脚本时先下发 `buildLuaOsdProperties()`（`osd-level=1` + `osd-on-seek=no`，后者防 Hibiki 自己的 seek 叠出原生进度条）再 `load-script`；没脚本的 Player 保持 media_kit 默认。
   - 状态收口：`_resetLuaScriptState()` 统一清去重集/状态表/日志订阅，dispose 与 `_releaseMediaHandles` 两处都走它。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/video_lua_script_diagnostics_test.dart`（能力解析含 Windows/Android 真实构建串、mpv 名字改写、日志归因五种形状、OSD 属性）+ `fushi/test/media/video/video_lua_script_wiring_guard_test.dart`（日志订阅 / 两处收口 / OSD 先于 load-script / 探测→装载→open 顺序 / 导入走同一写穿 / 状态表交 host / 能力落 pref，注释剥离后匹配，逐条变异实测红）。
 - **备注**：
+  - **已落地（2026-10-13，BUG-3325）**：随包 jar 已换成编入 Lua 5.2.4 的四 ABI 构建（fork 分支 `fushi/lua-enabled` / Actions run 38391453531，详见 BUG-3325「范围缺口」Android 条），同时 Fushi 每次 `open` 前下发 `ytdl=no`；能力探测会自动翻绿，真机复测仍待做。以下为当时的调研记录。
   - **Android 真根治 = 重编 jar 带 Lua**，这是 fork 构建仓 `hajisensai/libmpv-android-video-build` 的活，本 PR 做不到、只做诚实门控。子代理调研的最小改动清单（约 60 行）：`buildscripts/scripts/lua.sh` 新建（抄上游 mpv-android，Lua 5.2.4，三条 bionic 兼容 CFLAGS + 手工 `lua.pc`）；`include/depinfo.sh` 加 `v_lua=5.2.4`、`dep_mpv=(ffmpeg libass lua)`；`include/download-deps.sh` 加 lua 下载；`scripts/mpv.sh` `-Dlua=disabled`→`-Dlua=lua`。产 jar 的 CI 跑在该仓 `main`（`workflow_dispatch`），产物人工 `gh release upload vendor-libmpv`（建议新文件名 `-ffmpeg6.1.6-lua`，不覆盖旧资产），再改 `build.gradle` URL/MD5。体积估算 +0.4–0.5 MB/ABI；选 Lua 5.2 不选 LuaJIT（纯 C，四架构零特例）。Lua 一开 `ytdl=yes` 默认生效，Hibiki 侧应同时显式 `ytdl=no`。
   - iOS / macOS 随包 libmpv 未验证，门控同样靠运行时探测，不需要预判。
   - 本机正式版数据根 `Documents\Fushi\data` 下没有 `mpv_scripts`，拿不到用户实际导入的脚本；四条修复不依赖脚本内容。

@@ -89,6 +89,21 @@ void main() {
       expect(result, <String, bool>{'/a.zip': true, '/e.ZIP': true});
     });
 
+    test('漫画库落点（preferManga）连 .epub 也开包，其余照旧不问', () async {
+      final List<String> probed = <String>[];
+      await probeDroppedImageArchives(
+        <String>['/a.zip', '/b.epub', '/c.pdf', '/d.mkv'],
+        preferManga: true,
+        probe: (String path) async {
+          probed.add(path);
+          return true;
+        },
+      );
+
+      expect(probed, <String>['/a.zip', '/b.epub'],
+          reason: '漫画库里图片型 EPUB 要在落点就认出来；PDF 不开包（直接归漫画）');
+    });
+
     test('同一路径重复拖入只开一次包', () async {
       int calls = 0;
       await probeDroppedImageArchives(

@@ -247,7 +247,7 @@ void main() {
     );
     final Finder autoAddRow = find.widgetWithText(
       AdaptiveSettingsSwitchRow,
-      'Auto-add book title to tags',
+      'Auto-add work title to tags',
     );
     expect(
       autoAddRow,

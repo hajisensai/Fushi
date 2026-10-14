@@ -75,6 +75,12 @@ void main() {
     });
   });
 
+  group('buildLuaHostBaselineProperties', () {
+    test('关掉内置 ytdl_hook：网络流不许绕开 Dart 解析链路去拉 yt-dlp', () {
+      expect(buildLuaHostBaselineProperties(), <String, String>{'ytdl': 'no'});
+    });
+  });
+
   group('importLuaScriptFileTo', () {
     late Directory src;
     late Directory dst;

@@ -15,10 +15,24 @@ import 'dart:io';
 import 'package:fushi/utils.dart';
 
 /// HTTP 状态码：`HTTP 404`、`HTTP error 503`、`STORE_HTTP_404`、`HTTP: 500`。
+///
+/// 不认 `BRIDGE_HTTP_<code>`：那是桌面 Mihon sidecar 自己的信封状态，不是来源
+/// 站点的回应——站点 HTTP 错误在 sidecar 里已经单独归成 `SOURCE_HTTP_<code>`
+/// （`DalvikHandler` 的 `errorKind = sourceHttp`），`BRIDGE_HTTP_500` 后面跟的是
+/// 扩展自己抛出的说明（`Log in via WebView ...`、`Cef was not initialized`）。
+/// 把它映射成「HTTP 500」等于把唯一有用的信息抹掉（反馈 iFzLzVLYAd）。
 final RegExp _httpStatusPattern = RegExp(
-  r'HTTP(?:[\s_]+error)?[\s_:]*([1-5]\d\d)\b',
+  r'(?<!BRIDGE_)HTTP(?:[\s_]+error)?[\s_:]*([1-5]\d\d)\b',
   caseSensitive: false,
 );
+
+/// 桌面 Mihon sidecar 没有内置浏览器（KCEF 从未初始化），需要 WebView 的扩展
+/// 一调用就抛 `Cef was not initialized`——不是网络问题，也不是登录问题，用户重试
+/// 多少次都一样，得明说这个来源在桌面端用不了。
+const List<String> _webViewUnavailableMarkers = <String>[
+  'cef was not initialized',
+  'kcef',
+];
 
 /// 可剥掉的异常类型前缀（可能叠多层：`Exception: Exception: ...`）。
 ///
@@ -79,6 +93,9 @@ String describeOnlineSourceError(
 String describeOnlineSourceErrorText(String rawError) {
   final String raw = rawError.trim();
   final String lower = raw.toLowerCase();
+  if (_webViewUnavailableMarkers.any(lower.contains)) {
+    return t.online_source_error_webview_unavailable;
+  }
   if (_timeoutMarkers.any(lower.contains)) {
     return t.online_source_error_timeout;
   }

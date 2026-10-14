@@ -1009,8 +1009,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onAppendSentence,
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
-    this.onSentenceContextPreview,
-    this.onOpenSentenceContextModal,
+    this.onOpenAdvancedMining,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1133,14 +1132,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 与 [onAppendSentence] 同生命周期：支持草稿的表面非空，纯查词页 null（不渲染清空入口）。
   final Future<int> Function()? onClearSentenceDraft;
 
-  /// Niratan「制卡前调整·选择句子上下文」：弹窗拉取当前草稿真实上下文句 + 词偏移做
-  /// 预览的回调，透传给 webview。null 时弹窗不渲染「调整上下文」按钮（与 [onSetSentenceContext]
-  /// 同生命周期，仅支持草稿的表面非空）。
-  final Future<Map<String, Object?>> Function()? onSentenceContextPreview;
-
-  /// BUG-763/766：弹窗点某词条「调整上下文」→ 宿主弹 app 原生顶层对话框。透传给 webview。
-  final Future<void> Function(int entryIndex, String matched)?
-  onOpenSentenceContextModal;
+  /// 「高级制卡」：弹窗点某词条「高级制卡」→ 宿主弹 app 原生顶层对话框。透传给 webview；
+  /// null 时弹窗不渲染该按钮（宿主只在制卡模块开着时接线）。
+  final OpenAdvancedMiningCallback? onOpenAdvancedMining;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -1863,9 +1857,8 @@ class DictionaryPopupLayer extends StatelessWidget {
               onFavoriteCheck: onFavoriteCheck,
               onAppendSentence: onAppendSentence,
               onSetSentenceContext: onSetSentenceContext,
-              onOpenSentenceContextModal: onOpenSentenceContextModal,
+              onOpenAdvancedMining: onOpenAdvancedMining,
               onClearSentenceDraft: onClearSentenceDraft,
-              onSentenceContextPreview: onSentenceContextPreview,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>
                   _scrolledUnder.value = under,

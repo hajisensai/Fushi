@@ -43,8 +43,18 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.tagsInMenu = false,
     this.inlineTags = false,
     this.onTagsChanged,
+    this.sortMenuController,
+    this.leadingChips = const <Widget>[],
     super.key,
   });
+
+  /// [FushiTagFilterBarPart.tags] 行首的额外 chip（库页生效中的筛选条件，带 ✕；
+  /// 2026-10-14）。非空时即使没有标签也出这一行；与标签之间画一道竖分隔。
+  final List<Widget> leadingChips;
+
+  /// 外部持有的排序菜单控制器（[FushiTagFilterBarPart.sortMenuAnchor] 用：页头
+  /// 里的排序按钮经它打开本组件画的菜单）。null 时自建。
+  final MenuController? sortMenuController;
 
   /// 渲染整栏还是其中一段，见类注释。
   final FushiTagFilterBarPart part;
@@ -106,7 +116,9 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
 const double _inlineTagPad = 4;
 
 class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
-  final MenuController _sortMenu = MenuController();
+  final MenuController _ownSortMenu = MenuController();
+
+  MenuController get _sortMenu => widget.sortMenuController ?? _ownSortMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +126,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final t = Translations.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
+    if (widget.part == FushiTagFilterBarPart.sortMenuAnchor) {
+      return _sortMenuAnchor(tokens, selectedIds);
+    }
     final bool actionsOnly = widget.part == FushiTagFilterBarPart.actions;
     // 「管理标签」（新建 / 改名 / 删除标签的入口）。整栏 / 标签段形态下有标签才
     // 显示；拆进工具行（actions）后**常驻**——没有任何标签时这里就是唯一的
@@ -157,7 +172,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       );
     }
     final bool tagsOnly = widget.part == FushiTagFilterBarPart.tags;
-    if (tagsOnly && widget.tags.isEmpty) return const SizedBox.shrink();
+    if (tagsOnly && widget.tags.isEmpty && widget.leadingChips.isEmpty) {
+      return const SizedBox.shrink();
+    }
     // 标签段不再重复「管理标签」：它已常驻在工具行行尾。
     final List<Widget> trailing = tagsOnly
         ? const <Widget>[]
@@ -168,7 +185,20 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 拆段形态（库页标签栏）：不再有行首「管理标签」大 chip——它与工具行行尾常驻
     // 的「管理标签」齿轮（`library_tag_settings`）是同一个入口，重复（2026-10-09
     // 用户拍板砍掉大的）。有筛选时行尾一枚「清除」chip。
-    const List<Widget> leadingChips = <Widget>[];
+    // 行首可选的「生效中筛选条件」chip（库页筛选面板的结果），与标签之间一道
+    // 竖分隔把两类条件分开。
+    final List<Widget> leadingChips = <Widget>[
+      if (tagsOnly) ...widget.leadingChips,
+      if (tagsOnly && widget.leadingChips.isNotEmpty && widget.tags.isNotEmpty)
+        SizedBox(
+          height: 20,
+          child: VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: tokens.surfaces.outline,
+          ),
+        ),
+    ];
     final List<Widget> trailingChips = <Widget>[
       if (tagsOnly && selectedIds.isNotEmpty)
         FushiTagActionChip(
@@ -308,17 +338,11 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
 
   /// 打开标签管理页；返回后刷新标签池与调用方的标签映射。
   void _openTagManagement(BuildContext context) {
-    Navigator.push(
+    openLibraryTagManagement(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => const TagManagementPage(),
-      ),
-    ).then((_) {
-      if (!mounted) return;
-      ref.invalidate(allTagsProvider);
-      widget.onTagsChanged?.call();
-    });
+      ref: ref,
+      onTagsChanged: widget.onTagsChanged,
+    );
   }
 
   Widget _tagBarAction({
@@ -355,7 +379,6 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   /// polled 路径同款交互，样式走同一组 menu tokens）。
   Widget _sortMenuAction(FushiDesignTokens tokens, Set<int> selectedTagIds) {
     final t = Translations.of(context);
-    final ShelfSortMode selectedMode = widget.sortMode!;
     final String? filterTitle = widget.filterOptionsTitle;
     final bool hasFilter =
         filterTitle != null && widget.filterOptions.isNotEmpty;
@@ -368,58 +391,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 菜单面板），不再手拼 MenuStyle。有「筛选 / 标签」组时升级成「排序与筛选」菜单：各组带小标题、组间分隔。
     return FushiMenuAnchor(
       controller: _sortMenu,
-      menuChildren: <Widget>[
-        if (grouped) _menuSectionLabel(tokens, t.sort_by),
-        for (final ShelfSortMode mode in ShelfSortMode.values)
-          _choiceMenuItem(
-            tokens,
-            label: widget.sortModeLabel!(mode),
-            selected: mode == selectedMode,
-            onPressed: () => widget.onSortModeChanged!(mode),
-          ),
-        if (hasFilter) ...<Widget>[
-          const FushiDivider(),
-          _menuSectionLabel(tokens, filterTitle),
-          for (final LibraryViewOption option in widget.filterOptions)
-            _choiceMenuItem(
-              tokens,
-              key: option.key,
-              label: option.label,
-              icon: option.icon,
-              selected: option.selected,
-              // 排序组已有 autofocus 落点（选中的排序项），这组不抢。
-              autofocus: false,
-              onPressed: option.onSelected,
-            ),
-        ],
-        if (hasTags) ...<Widget>[
-          const FushiDivider(),
-          _menuSectionLabel(tokens, t.tag_label),
-          // 多选：点一个标签只切换它，菜单不关，可以连选几个。
-          for (final BookTagRow tag in widget.tags)
-            _choiceMenuItem(
-              tokens,
-              key: ValueKey<String>('library_menu_tag_${tag.id}'),
-              label: tag.name,
-              selected: selectedTagIds.contains(tag.id),
-              dotColor: Color(tag.colorValue),
-              autofocus: false,
-              keepOpen: true,
-              onPressed: () => widget.onToggleFilter(tag.id),
-            ),
-          if (selectedTagIds.isNotEmpty)
-            _choiceMenuItem(
-              tokens,
-              key: const ValueKey<String>('library_menu_tag_clear'),
-              label: t.tag_clear_filter,
-              icon: FushiIcons.filterOff,
-              selected: false,
-              autofocus: false,
-              onPressed: () =>
-                  ref.read(selectedTagIdsProvider.notifier).state = <int>{},
-            ),
-        ],
-      ],
+      menuChildren: _sortMenuChildren(tokens, selectedTagIds),
       builder: (BuildContext context, MenuController controller, Widget? _) {
         final String tooltip = hasFilter || hasTags
             ? t.library_sort_filter
@@ -438,6 +410,88 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         );
       },
     );
+  }
+
+  /// 排序菜单的零尺寸常驻锚点（[FushiTagFilterBarPart.sortMenuAnchor]）。排序
+  /// 参数不全时不画（页头也不会出排序按钮）。
+  Widget _sortMenuAnchor(FushiDesignTokens tokens, Set<int> selectedTagIds) {
+    if (widget.sortMode == null ||
+        widget.sortModeLabel == null ||
+        widget.onSortModeChanged == null) {
+      return const SizedBox.shrink();
+    }
+    return FushiMenuAnchor(
+      controller: _sortMenu,
+      menuChildren: _sortMenuChildren(tokens, selectedTagIds),
+      child: const SizedBox.shrink(),
+    );
+  }
+
+  /// 「排序方式」（+ 筛选 / 标签组）菜单项：工具行按钮上的菜单与单行页头的
+  /// 常驻锚点共用。
+  List<Widget> _sortMenuChildren(
+    FushiDesignTokens tokens,
+    Set<int> selectedTagIds,
+  ) {
+    final t = Translations.of(context);
+    final ShelfSortMode selectedMode = widget.sortMode!;
+    final String? filterTitle = widget.filterOptionsTitle;
+    final bool hasFilter =
+        filterTitle != null && widget.filterOptions.isNotEmpty;
+    final bool hasTags = widget.tagsInMenu && widget.tags.isNotEmpty;
+    final bool grouped = hasFilter || hasTags;
+    return <Widget>[
+      if (grouped) _menuSectionLabel(tokens, t.sort_by),
+      for (final ShelfSortMode mode in ShelfSortMode.values)
+        _choiceMenuItem(
+          tokens,
+          label: widget.sortModeLabel!(mode),
+          selected: mode == selectedMode,
+          onPressed: () => widget.onSortModeChanged!(mode),
+        ),
+      if (hasFilter) ...<Widget>[
+        const FushiDivider(),
+        _menuSectionLabel(tokens, filterTitle),
+        for (final LibraryViewOption option in widget.filterOptions)
+          _choiceMenuItem(
+            tokens,
+            key: option.key,
+            label: option.label,
+            icon: option.icon,
+            selected: option.selected,
+            // 排序组已有 autofocus 落点（选中的排序项），这组不抢。
+            autofocus: false,
+            onPressed: option.onSelected,
+          ),
+      ],
+      if (hasTags) ...<Widget>[
+        const FushiDivider(),
+        _menuSectionLabel(tokens, t.tag_label),
+        // 多选：点一个标签只切换它，菜单不关，可以连选几个。
+        for (final BookTagRow tag in widget.tags)
+          _choiceMenuItem(
+            tokens,
+            key: ValueKey<String>('library_menu_tag_${tag.id}'),
+            label: tag.name,
+            selected: selectedTagIds.contains(tag.id),
+            dotColor: Color(tag.colorValue),
+            autofocus: false,
+            keepOpen: true,
+            onPressed: () => widget.onToggleFilter(tag.id),
+          ),
+        if (selectedTagIds.isNotEmpty)
+          _choiceMenuItem(
+            tokens,
+            key: const ValueKey<String>('library_menu_tag_clear'),
+            label: t.tag_clear_filter,
+            icon: FushiIcons.filterOff,
+            selected: false,
+            autofocus: false,
+            onPressed: () =>
+                ref.read(selectedTagIdsProvider.notifier).state = <int>{},
+          ),
+      ],
+    ];
   }
 
   /// 菜单里一组单选项的小标题（不可聚焦，方向键直接跳过）。
@@ -600,6 +654,93 @@ enum FushiTagFilterBarPart {
 
   /// 只出「管理标签（常驻）+ 批量选择 + 排序」（放进库页工具行行尾）。
   actions,
+
+  /// 只出「排序（与筛选）」菜单的零尺寸常驻锚点（库页单行页头，2026-10-14）：
+  /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点常驻在
+  /// 页头下沿右侧，按钮（或 ⋯ 菜单里的那一项）经
+  /// [FushiTagFilterBar.sortMenuController] 打开它。按钮由
+  /// [libraryHeaderTagActions] 生成。
+  sortMenuAnchor,
+}
+
+/// 库页单行页头里的「批量选择 / 排序 / 管理标签」三颗动作（2026-10-14）。
+///
+/// 都是 [FushiIconButton]，由页头按 [FushiIconButton.overflowPriority] 放不下时
+/// 逐颗收进「⋯」；激活中的批量选择（[selectionMode]）是选中态、恒外露。排序
+/// 按钮只打开 [sortMenu]（菜单由 [FushiTagFilterBarPart.sortMenuAnchor] 的常驻
+/// 锚点画），[sortFilterActive] 时亮圆点。[sortMenu] 为 null / 批量选择中不出
+/// 排序。key 沿用旧工具行的 `library_tag_settings` / `library_sort_menu_button`。
+List<FushiIconButton> libraryHeaderTagActions(
+  BuildContext context, {
+  required WidgetRef ref,
+  MenuController? sortMenu,
+  bool sortGrouped = false,
+  bool sortFilterActive = false,
+  bool selectionMode = false,
+  VoidCallback? onToggleSelectionMode,
+  bool showTagManagement = true,
+  VoidCallback? onTagsChanged,
+  int selectionPriority = 30,
+  int sortPriority = 20,
+  int tagManagePriority = 10,
+}) {
+  final t = Translations.of(context);
+  final String sortTooltip = sortGrouped ? t.library_sort_filter : t.sort_by;
+  final MenuController? menu = sortMenu;
+  return <FushiIconButton>[
+    if (onToggleSelectionMode != null)
+      FushiIconButton(
+        key: const ValueKey<String>('library_select_toggle'),
+        icon: selectionMode ? FushiIcons.close : FushiIcons.checklist,
+        tooltip: selectionMode
+            ? MaterialLocalizations.of(context).closeButtonTooltip
+            : t.batch_select,
+        selected: selectionMode,
+        overflowPriority: selectionPriority,
+        onTap: onToggleSelectionMode,
+      ),
+    if (menu != null && !selectionMode)
+      FushiIconButton(
+        key: const ValueKey<String>('library_sort_menu_button'),
+        icon: sortGrouped ? FushiIcons.settings : FushiIcons.sort,
+        tooltip: sortFilterActive
+            ? '$sortTooltip · ${t.library_filter_active}'
+            : sortTooltip,
+        badge: sortFilterActive,
+        overflowPriority: sortPriority,
+        onTap: () => menu.isOpen ? menu.close() : menu.open(),
+      ),
+    if (showTagManagement)
+      FushiIconButton(
+        key: const ValueKey<String>('library_tag_settings'),
+        icon: FushiIcons.settingsGear,
+        tooltip: t.tag_manage,
+        overflowPriority: tagManagePriority,
+        onTap: () => openLibraryTagManagement(
+          context,
+          ref: ref,
+          onTagsChanged: onTagsChanged,
+        ),
+      ),
+  ];
+}
+
+/// 打开标签管理页；返回后刷新标签池与调用方的标签映射（[onTagsChanged]）。
+Future<void> openLibraryTagManagement(
+  BuildContext context, {
+  required WidgetRef ref,
+  VoidCallback? onTagsChanged,
+}) async {
+  await Navigator.push(
+    context,
+    adaptivePageRoute(
+      context: context,
+      builder: (_) => const TagManagementPage(),
+    ),
+  );
+  if (!context.mounted) return;
+  ref.invalidate(allTagsProvider);
+  onTagsChanged?.call();
 }
 
 /// 库页「排序」按钮右上角的筛选标记：[active] 时一枚主色小圆点弹簧放大出现，

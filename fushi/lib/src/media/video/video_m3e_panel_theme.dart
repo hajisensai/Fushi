@@ -23,19 +23,21 @@ bool videoM3ePanelNeutral(BuildContext context) =>
 
 final Map<int, ColorScheme> _panelSchemeCache = <int, ColorScheme>{};
 
-/// 面板内的中性配色：在 [videoM3eNeutralChromeScheme] 的基础上把容器族整体提
-/// 一档——面板底本身就是 #2D2D2D，分组卡 / 内卡 / 关态开关轨道要比它亮才分得出
-/// 层次（MD3 深色方案里容器色恒比表面亮）。
+/// 面板内的配色：以 app 主色为种子的深色方案（[videoM3eChromeScheme]），与阅读器
+/// 侧板同一套表面层级——面板底 surfaceContainerLow、分组卡 surfaceContainer 往上，
+/// 选中页签 / 行首图标块 / 开关都带主题色相（2026-10-14 用户：播放器设置「很多
+/// 地方都是灰色、没有着色」，要像阅读器设置那样）。浅色主题下面板仍是深色（压在
+/// 画面上）。播放器顶 / 底栏胶囊仍是中性表面，只有面板换成着色方案。
 ColorScheme videoM3ePanelScheme(ColorScheme cs) {
   final int key = cs.primary.toARGB32();
-  return _panelSchemeCache[key] ??= videoM3eNeutralChromeScheme(cs).copyWith(
-    surfaceContainerLowest: const Color(0xFF262626),
-    surfaceContainerLow: const Color(0xFF393939),
-    surfaceContainer: const Color(0xFF3E3E3E),
-    surfaceContainerHigh: const Color(0xFF444444),
-    surfaceContainerHighest: const Color(0xFF4E4E4E),
-    surfaceBright: const Color(0xFF575757),
-  );
+  return _panelSchemeCache[key] ??= videoM3eChromeScheme(cs);
+}
+
+/// 面板表面色：着色方案的 surfaceContainerLow（[opaque] 时不透明，否则与播放器
+/// 浮层同一不透明度，画面隐约透出）。
+Color videoM3ePanelSurfaceColor(ColorScheme cs, {required bool opaque}) {
+  final Color base = videoM3ePanelScheme(cs).surfaceContainerLow;
+  return opaque ? base : base.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
 }
 
 final Expando<ThemeData> _panelThemeCache = Expando<ThemeData>(

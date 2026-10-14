@@ -13,7 +13,8 @@ class HighlightBridge {
 (function() {
   if (window.__fushiHighlightsInstalled) return;
   window.__fushiHighlightsInstalled = true;
-  window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window.Highlight);
+  // BUG-3343：逐字副本，唯一出处 kReaderCssHighlightsSupportedJs（旧 Blink 竖排 ::highlight 画错位置）。
+  window.__fushiCssHighlightsSupported = (!!(window.CSS && CSS.highlights && window.Highlight) && !(function(){var ua=typeof navigator!=="undefined"&&navigator.userAgent||"";var m=/Chrome\\/(\\d+)\\./.exec(ua);return !!m && +m[1] < 120;})());
 
   var BASE_COLORS = {
     yellow: [255,220,0],
@@ -240,6 +241,23 @@ class HighlightBridge {
     return groups;
   }
 
+  // BUG-3343: removing a favourite on an engine without CSS Custom Highlights
+  // (iOS / macOS Safari before 17.2) unwraps its spans and merges the text nodes
+  // back. Both steps go through the reader's shared __fushiLiveRanges: the move
+  // keeps live Ranges and the native selection, and the merge lets the lookup
+  // selection's owner (fushiSelection.trackTextPoints) carry its "text node +
+  // offset" points onto the merged node. A bare parent.normalize() detached the
+  // nodes those points referred to, so deleting a highlight lost the lookup.
+  function _unwrapFallbackHighlights(selector) {
+    var guard = window.__fushiLiveRanges;
+    var parents = [];
+    document.querySelectorAll(selector).forEach(function(el) {
+      var parent = guard.unwrap(el);
+      if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+    });
+    parents.forEach(function(parent) { guard.normalize(parent); });
+  }
+
   var ALL_COLORS = ['yellow','green','blue','pink','purple'];
   var _rebuildPending = false;
 
@@ -341,13 +359,7 @@ class HighlightBridge {
       _rebuildCssHighlightsNow();
     } else {
       _clearFallbackRubyHighlights();
-      document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
-        var parent = el.parentNode;
-        while (el.firstChild) parent.insertBefore(el.firstChild, el);
-        parent.removeChild(el);
-      });
-      var root = _root();
-      root.normalize();
+      _unwrapFallbackHighlights('[data-highlight-id]');
       if (!highlightsJson || highlightsJson.length === 0) return;
       var map = _buildOffsetMap();
       var sorted = _resolveHighlights(map, highlightsJson).sort(function(a, b) {
@@ -368,9 +380,6 @@ class HighlightBridge {
             continue;
           }
           try {
-            var r = document.createRange();
-            r.setStart(groups[g].node, groups[g].start);
-            r.setEnd(groups[g].node, groups[g].end);
             var span = document.createElement('span');
             span.setAttribute('data-highlight-id', hl.id);
             span.className = 'fushi-hl fushi-hl-' + color;
@@ -380,7 +389,13 @@ class HighlightBridge {
             span.style.textDecorationColor = markColor;
             span.style.textDecorationThickness = '0.12em';
             span.style.textUnderlineOffset = '0.18em';
-            r.surroundContents(span);
+            // BUG-3343: split + move (node identity kept), never surroundContents --
+            // it copies the text into a new node and truncates the original, so the
+            // lookup selection's "node + offset" would point at other characters.
+            // Groups run in reverse document order, so a split only affects text
+            // after the groups still to be wrapped.
+            window.__fushiLiveRanges.wrapText(
+                groups[g].node, groups[g].start, groups[g].end, span);
           } catch (e) { console.warn('[fushi-hl] wrap error:', e); }
         }
         if (rubyElements.length) {
@@ -414,13 +429,7 @@ class HighlightBridge {
         delete window.__fushiFallbackHighlightRubyMap[id];
         _reapplyFallbackRubyHighlights();
       }
-      var els = document.querySelectorAll('[data-highlight-id="' + id + '"]');
-      els.forEach(function(el) {
-        var parent = el.parentNode;
-        while (el.firstChild) parent.insertBefore(el.firstChild, el);
-        parent.removeChild(el);
-        parent.normalize();
-      });
+      _unwrapFallbackHighlights('[data-highlight-id="' + id + '"]');
     }
   };
 })();
@@ -438,7 +447,8 @@ class HighlightBridge {
     InAppWebViewController controller,
   ) async {
     final Object? raw = await controller.evaluateJavascript(
-      source: '(function(){try{var r=window.__fushiGetSelectionNormRange();'
+      source:
+          '(function(){try{var r=window.__fushiGetSelectionNormRange();'
           'return r?JSON.stringify(r):"null";}catch(e){return "null";}})();',
     );
     if (raw is! String || raw.isEmpty || raw == 'null') return null;
@@ -474,7 +484,8 @@ class HighlightBridge {
       backgroundHex,
     );
     await controller.evaluateJavascript(
-      source: 'window.__fushiHighlightBgDark=$backgroundIsDark;'
+      source:
+          'window.__fushiHighlightBgDark=$backgroundIsDark;'
           'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',
     );
   }

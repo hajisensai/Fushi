@@ -26,6 +26,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 打开反馈中心。[captureScreen] 时先截下当前画面（打开前截，截到的是用户正在看的
@@ -512,6 +513,171 @@ List<FeedbackTicket> filterFeedbackTickets(
   query,
   (FeedbackTicket x) => <String>[x.id, x.title, x.body],
 );
+
+/// 反馈中心（反馈人）的状态筛选：比处理台少，只分「还在处理 / 已结案 / 有新回复」。
+enum FeedbackTicketFilter { all, active, closed, unread }
+
+String feedbackTicketFilterLabel(FeedbackTicketFilter filter) =>
+    switch (filter) {
+      FeedbackTicketFilter.all => t.feedback_filter_all,
+      FeedbackTicketFilter.active => t.feedback_filter_active,
+      FeedbackTicketFilter.closed => t.feedback_filter_closed,
+      FeedbackTicketFilter.unread => t.feedback_filter_unread,
+    };
+
+/// 服务端已查不到（[FeedbackTicket.missing]）的条目状态不可信，只出现在「全部」里。
+bool feedbackTicketMatchesFilter(
+  FeedbackTicket ticket,
+  FeedbackTicketFilter filter,
+) => switch (filter) {
+  FeedbackTicketFilter.all => true,
+  FeedbackTicketFilter.active => !ticket.missing && !ticket.status.isClosed,
+  FeedbackTicketFilter.closed => !ticket.missing && ticket.status.isClosed,
+  FeedbackTicketFilter.unread => ticket.hasUnseenReply,
+};
+
+/// 反馈中心与处理台共用的分栏判据：宽够放下两栏，且是横向的（桌面窗口 / 平板横置）。
+const double kFeedbackSplitMinWidth = 840;
+
+/// 分栏时左列表的宽度。
+const double kFeedbackSplitListWidth = 400;
+
+/// 不分栏时列表的最大内容宽度：宽窗口里列表居中，不拉满整屏。
+const double kFeedbackListMaxWidth = 720;
+
+bool useFeedbackSplit(BoxConstraints c) =>
+    c.maxWidth >= kFeedbackSplitMinWidth && c.maxWidth > c.maxHeight;
+
+/// 反馈列表的左右内边距：窄屏是卡片边距，宽而不分栏时把内容收到
+/// [kFeedbackListMaxWidth] 居中（滚动区仍是整宽，两侧空白也能拖动 / 下拉刷新）。
+double feedbackListHorizontalPadding(double width, double base) =>
+    math.max(base, (width - kFeedbackListMaxWidth) / 2);
+
+/// 左列表右详情。[detailBuilder] 按 [selectedId] 出右栏；没选中时给 [emptyMessage]。
+/// 窄屏 / 竖屏只出列表（点击由调用方 push 详情页）。分栏状态经 [listBuilder] 传回，
+/// 调用方据此决定点击是选中还是 push。
+class FeedbackSplitLayout extends StatelessWidget {
+  const FeedbackSplitLayout({
+    required this.keyPrefix,
+    required this.listBuilder,
+    required this.detailBuilder,
+    required this.selectedId,
+    required this.emptyMessage,
+    super.key,
+  });
+
+  /// 分栏行与空占位的 key 前缀（`<prefix>-split` / `<prefix>-split-empty`）。
+  final String keyPrefix;
+  final Widget Function(BuildContext context, bool split, double hPadding)
+  listBuilder;
+  final Widget Function(String id) detailBuilder;
+  final String? selectedId;
+  final String emptyMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final double base = FushiDesignTokens.of(context).spacing.card;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!useFeedbackSplit(constraints)) {
+          return listBuilder(
+            context,
+            false,
+            feedbackListHorizontalPadding(constraints.maxWidth, base),
+          );
+        }
+        final String? id = selectedId;
+        return Row(
+          key: ValueKey<String>('$keyPrefix-split'),
+          children: <Widget>[
+            SizedBox(
+              width: kFeedbackSplitListWidth,
+              child: listBuilder(context, true, base),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: id == null
+                  ? FushiPlaceholderMessage(
+                      key: ValueKey<String>('$keyPrefix-split-empty'),
+                      icon: FushiIcons.forum,
+                      message: emptyMessage,
+                    )
+                  : detailBuilder(id),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 反馈列表的紧凑行（反馈中心与处理台共用）：分类图标、标题、
+/// 「元信息 · #编号」一行，[details] 是各自的附加行，[badges] 排在状态徽标前。
+class FeedbackListTile extends StatelessWidget {
+  const FeedbackListTile({
+    required this.id,
+    required this.category,
+    required this.title,
+    required this.meta,
+    required this.status,
+    required this.onTap,
+    this.selected = false,
+    this.details = const <Widget>[],
+    this.badges = const <Widget>[],
+    super.key,
+  });
+
+  final String id;
+  final FeedbackCategory category;
+  final String title;
+  final String meta;
+  final FeedbackStatus status;
+  final VoidCallback onTap;
+  final bool selected;
+  final List<Widget> details;
+  final List<Widget> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
+      child: FushiCard(
+        onTap: onTap,
+        selected: selected,
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.gap,
+          vertical: tokens.spacing.gap / 2,
+        ),
+        child: FushiListItem(
+          density: FushiListDensity.compact,
+          leading: FushiIcon(feedbackCategoryIcon(category)),
+          title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: tokens.spacing.gap / 2,
+                children: <Widget>[Text(meta), FeedbackIdLabel(id)],
+              ),
+              ...details,
+            ],
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final Widget b in badges)
+                Padding(padding: const EdgeInsets.only(right: 8), child: b),
+              FeedbackStatusBadge(status),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class FeedbackTimeline extends StatelessWidget {
   const FeedbackTimeline({

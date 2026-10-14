@@ -152,7 +152,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>),
+      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
     );
     strip.onChanged!(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
@@ -200,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>),
+      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
     );
     strip.onChanged!(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();

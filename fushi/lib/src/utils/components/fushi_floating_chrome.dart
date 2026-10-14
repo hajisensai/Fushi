@@ -10,8 +10,13 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_header_search.dart'
+    show
+        FushiHeaderSearchBar,
+        FushiHeaderSearchController,
+        fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show FushiShellHeaderActions;
+    show FushiHeaderCrampScope, FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbar;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -20,11 +25,10 @@ import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
         FushiPageChromeTitle,
         fushiAppleChromeSpatial,
         fushiChromeRevealFadeSpring,
-        fushiChromeRevealSpring;
+        fushiChromeRevealSpring,
+        kFushiPageChromeExtent;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
-import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show HorizontalDragScrollable;
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
     show SmoothWheelScrollScope;
 
@@ -777,6 +781,22 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             // effects 弹簧临界阻尼不过冲；clamp 只吸收收敛容差。
             final double opacity = fade.value.clamp(0.0, 1.0);
             final bool hidden = opacity <= 0.001 && shown <= 0.001;
+            // BUG-3338：本层遮罩的起点 / 终点（本层坐标）。嵌套层从外层此刻的
+            // 可见下沿起画（BUG-3283），外层画到本层可见下沿；两者在接缝处必须
+            // **恰好拼接**——接缝 y 对齐到物理像素格（两层用同一个取整），不然
+            // 非整数 DPR / 小数高度下两块矩形的抗锯齿边各盖半个像素，叠出一条
+            // 比薄纱浅的亮缝。
+            final double dpr = MediaQuery.devicePixelRatioOf(context);
+            double snap(double y) => (y * dpr).roundToDouble() / dpr;
+            final double scrimTop = nested ? snap(outer * shown) : 0;
+            final double scrimSeam = snap(
+              (nested ? outer * shown : outer) + shown * _chromeHeight,
+            );
+            // 下面还接着嵌套工具行：本层在接缝处硬停在薄纱不透明度，由下一层
+            // 接着画。曾经在这里多画 1 px 渐隐（0.72 → 0），叠在下一层顶端的
+            // 0.72 薄纱上合成成一条比上下都深的横线（BUG-3338）。
+            final bool continuesBelow =
+                _nestedReach.value > outer + shown * _chromeHeight + 0.5;
             return Stack(
               children: <Widget>[
                 // 遮罩在内容之上、本层工具区之下，沿用 2026-10-06 定的「短渐隐、
@@ -799,7 +819,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 // 不透明的硬边亮带。完全收起时嵌套层没有可见工具行，不画；顶边那一条
                 // 渐隐由最外层负责。
                 Positioned(
-                  top: nested ? outer * shown : 0,
+                  top: scrimTop,
                   left: 0,
                   right: 0,
                   child: nested && shown <= 0.001
@@ -811,13 +831,9 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                             FushiMotion.short,
                           ),
                           child: FushiTopFadeScrim(
-                            solidHeight:
-                                (nested ? 0 : outer) + shown * _chromeHeight,
-                            // 下面还接着嵌套工具行：不在本层渐隐，由下一层接着画。
-                            fadeExtent:
-                                _nestedReach.value >
-                                    outer + shown * _chromeHeight + 0.5
-                                ? 1
+                            solidHeight: scrimSeam - scrimTop,
+                            fadeExtent: continuesBelow
+                                ? 0
                                 : kFushiTopFadeExtent,
                             topOpacity: nested
                                 ? kFushiTopScrimOverlayOpacity
@@ -864,7 +880,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 /// 不透明度曲线自顶向下**单调、连续、无平台**：
 /// - [solidHeight] 内是一段「肩」：从 [topOpacity] 二次缓降到 0.82 倍（顶端
 ///   斜率为 0，没有一刀切的实色矩形）；
-/// - 其后 [fadeExtent] 内按 smoothstep 降到 0（两端斜率都为 0）。
+/// - 其后 [fadeExtent] 内按 smoothstep 降到 0（两端斜率都为 0）。[fadeExtent]
+///   为 0 时在肩段末端硬停——只用于下面紧接着另一段遮罩的拼接处。
 ///
 /// 曾经的形态是「0.92 → 0.8 的实色段 + 20 px 线性降到 0」：线性渐变的起止点
 /// 斜率突变，在模糊 fanart 上看得见一道 Mach 带；而顶栏把它从栏下沿开始画（栏内
@@ -911,8 +928,12 @@ class FushiTopFadeScrim extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double solid = math.max(0.0, solidHeight);
-    final double fade = math.max(1.0, fadeExtent);
+    // 0 = 不渐隐，在肩段末端硬停（下面紧接着另一段遮罩，见
+    // [FushiFloatingChromeOverlay]）。不能偷偷钳成 1 px：多出的那一条会叠在
+    // 下一段的顶端上，合成出一条横线（BUG-3338）。
+    final double fade = math.max(0.0, fadeExtent);
     final double height = solid + fade;
+    if (height <= 0) return const SizedBox.shrink();
     final Color base = color ?? fushiTopFadeScrimColor(context);
     final double top = base.a * topOpacity.clamp(0.0, 1.0);
     final double floor = shoulderOpacity == null
@@ -941,7 +962,7 @@ class FushiTopFadeScrim extends StatelessWidget {
     } else {
       fadeStart = top;
     }
-    for (int i = solid > 0 ? 1 : 0; i <= _kFadeSamples; i++) {
+    for (int i = solid > 0 ? 1 : 0; fade > 0 && i <= _kFadeSamples; i++) {
       final double v = i / _kFadeSamples;
       final double eased = v * v * (3 - 2 * v);
       sample(solid + fade * v, fadeStart * (1 - eased));
@@ -1148,9 +1169,16 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
 ///
 /// - MD3：surfaceContainer 全胶囊 + Elevation 3 两层投影；[vibrant] 时
 ///   primaryContainer（上下文工具栏用）；
-/// - Apple：[FushiFloatingPill] 的无色液态玻璃胶囊 + 柔和投影，缺省最小高
+/// - Apple：[FushiFloatingPill] 的无色液态玻璃胶囊 + 柔和投影，缺省高
 ///   [fushiAppleFloatingExtent]（iOS 26 悬浮栏 44 / macOS 26 工具栏 36）；
 /// - 墨水屏：无阴影，一圈 outline。
+///
+/// 高度是**定值**而不是「至少」（与 `FushiPageChromeCapsule` 同一契约）：胶囊
+/// 总和别的控件并排（库页工具行里与搜索框、页头里与页签胶囊），只有定高才能
+/// 保证同一行等高。此前是 `minHeight`，里面的图标按钮命中盒（44 / 48）一比
+/// 胶囊内高大就把胶囊撑高——库页工具行的按钮组胶囊因此比 40 高的搜索框高一截
+/// （2026-10-14 用户截图「这里不等高」）。内容按 `高 − 竖向内边距` 的上限排，
+/// 按钮的命中盒随之收进胶囊，不再反过来撑它。
 class FushiFloatingToolbarSurface extends StatelessWidget {
   const FushiFloatingToolbarSurface({
     required this.child,
@@ -1162,8 +1190,8 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   final Widget child;
 
-  /// 胶囊最小高度；缺省 MD3 = M3E floating toolbar 紧凑档 56，Apple =
-  /// [fushiAppleFloatingExtent]。
+  /// 胶囊高度（定值，见类注释）；缺省 MD3 = M3E floating toolbar 紧凑档 56，
+  /// Apple = [fushiAppleFloatingExtent]。
   final double? height;
   final EdgeInsetsGeometry padding;
 
@@ -1181,19 +1209,17 @@ class FushiFloatingToolbarSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double minHeight =
+    final double extent =
         height ??
         (isGlassDesign(context)
             ? fushiAppleFloatingExtent(context)
             : kFushiFloatingToolbarCompactExtent);
-    return FushiFloatingPill(
-      color: colorOf(context, vibrant: vibrant),
-      padding: padding,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minHeight: math.max(0, minHeight - padding.vertical),
-        ),
-        child: Center(widthFactor: 1, heightFactor: 1, child: child),
+    return SizedBox(
+      height: extent,
+      child: FushiFloatingPill(
+        color: colorOf(context, vibrant: vibrant),
+        padding: padding,
+        child: Center(widthFactor: 1, child: child),
       ),
     );
   }
@@ -1318,17 +1344,11 @@ class _FloatingActionsBody extends StatelessWidget {
       // Apple：iOS 26 / macOS 26 工具栏按钮组——[FushiToolbar] 的悬浮形态就是
       // 一枚无色玻璃胶囊 + 柔和投影（高 [fushiAppleFloatingExtent]），按钮在组里
       // 不再各自带玻璃底。不再外套 56 高的悬浮面（玻璃叠玻璃两圈折射边、
-      // 比工具栏高一截）。放不下时横滑兜底；横滑视口不裁投影。
-      return HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const ClampingScrollPhysics(),
-          clipBehavior: Clip.none,
-          child: FushiToolbar(
-            floating: true,
-            children: (actions as FushiShellHeaderActions).actions,
-          ),
-        ),
+      // 比工具栏高一截）。放不下时与 MD3 同一套判据逐颗收进 ⋯，全收仍不够才
+      // 横滑兜底；横滑视口不裁投影。
+      return FushiShellHeaderActions(
+        actions: (actions as FushiShellHeaderActions).actions,
+        appleFloating: true,
       );
     } else if (actions is FushiShellHeaderActions) {
       // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊（与页签
@@ -1382,8 +1402,9 @@ const double kFushiFloatingChromeGap = 8;
 
 /// 浮动工具栏一行：左边分区页签胶囊（[tabs]），右边悬浮动作组（[slot]）。
 ///
-/// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右；窄屏上
-/// 动作组最多占一半行宽，再多由 [FushiShellHeaderActions] 收进 ⋯。整行跟随
+/// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右。动作组
+/// 可用宽 = 页签上报的自然宽（[FushiHeaderCrampScope]）之外的剩余宽，且至少
+/// 半行；放不下的由 [FushiShellHeaderActions] 按优先级逐颗收进 ⋯。整行跟随
 /// [FushiFloatingChromeOverlay] 显隐（由外壳把整行叠在内容上）。
 /// 首页外壳告诉本 tab 里的 [FushiFloatingChromeBar]：外壳**不**另画大标题行，
 /// 页面名由工具栏行自己在页签胶囊左边画一枚标题胶囊（宽窗 M3E 库页 / 浏览，
@@ -1409,7 +1430,7 @@ class FushiShellInlineTitle extends InheritedWidget {
       enabled != oldWidget.enabled;
 }
 
-class FushiFloatingChromeBar extends StatelessWidget {
+class FushiFloatingChromeBar extends StatefulWidget {
   const FushiFloatingChromeBar({
     required this.tabs,
     required this.slot,
@@ -1427,7 +1448,28 @@ class FushiFloatingChromeBar extends StatelessWidget {
   final Widget? leading;
 
   @override
+  State<FushiFloatingChromeBar> createState() => _FushiFloatingChromeBarState();
+}
+
+class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
+  /// 页签胶囊（经 [FushiHeaderCrampScope]）最近一次上报的自然宽；null = 未上报，
+  /// 动作组按半行封顶（旧口径）。
+  double? _tabsNaturalWidth;
+
+  void _onTabsWidthReported(double width) {
+    if (_tabsNaturalWidth == width) return;
+    // 上报发生在页签 build 期，不能同帧 setState；post-frame 再落。自然宽只依赖
+    // 文案 / 字号 / 缩放，与本行布局结果无关，不会形成反馈环。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _tabsNaturalWidth == width) return;
+      setState(() => _tabsNaturalWidth = width);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Widget? leading = widget.leading;
+    final EdgeInsetsGeometry? padding = widget.padding;
     // 首页外壳把页面名交给本行画（[FushiShellInlineTitle]，宽窗 M3E 库页）：
     // 标题胶囊排在页签胶囊左边，不再单独占页签上面那一行（2026-10-10「库页
     // 顶部只留两行」）。
@@ -1461,16 +1503,31 @@ class FushiFloatingChromeBar extends StatelessWidget {
           final double minActions = isGlassDesign(context)
               ? fushiAppleFloatingExtent(context)
               : kFushiFloatingToolbarCompactExtent;
-          final double maxActions = constraints.maxWidth.isFinite
-              ? math.max(minActions, constraints.maxWidth / 2)
-              : double.infinity;
           // 标题胶囊是 Row 里的非弹性子项，不限宽时长页面名会按自然宽把页签
           // 胶囊挤没（甚至整行溢出）。限到行宽的 1/3，超长名在胶囊里省略号
           // 截断；页签保有剩余宽度（2026-10-10 审查，BUG-3250）。
           final double maxTitle = constraints.maxWidth.isFinite
               ? constraints.maxWidth / 3
               : double.infinity;
-          return FocusTraversalGroup(
+          // 动作组至少拿半行（页签很宽时页签在胶囊里横滑）；页签自然宽放得下
+          // 时，剩下的宽度都归动作组——位置够就不收进 ⋯。
+          final double? tabsNatural = _tabsNaturalWidth;
+          final double leadReserve = lead == null
+              ? 0
+              : (inlineTitle ? maxTitle : kFushiPageChromeExtent) +
+                    kFushiFloatingChromeGap;
+          final double maxActions = constraints.maxWidth.isFinite
+              ? math.max(
+                  math.max(minActions, constraints.maxWidth / 2),
+                  tabsNatural == null
+                      ? 0
+                      : constraints.maxWidth -
+                            leadReserve -
+                            tabsNatural -
+                            kFushiFloatingChromeGap,
+                )
+              : double.infinity;
+          final Widget row = FocusTraversalGroup(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
@@ -1484,17 +1541,84 @@ class FushiFloatingChromeBar extends StatelessWidget {
                     lead,
                   const SizedBox(width: kFushiFloatingChromeGap),
                 ],
-                Expanded(child: tabs),
+                Expanded(
+                  child: FushiHeaderCrampScope(
+                    reportTitleNaturalWidth: _onTabsWidthReported,
+                    child: widget.tabs,
+                  ),
+                ),
                 const SizedBox(width: kFushiFloatingChromeGap),
                 ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxActions),
-                  child: FushiFloatingActionsPill(slot: slot),
+                  child: FushiFloatingActionsPill(slot: widget.slot),
                 ),
               ],
             ),
           );
+          return _withExpandableSearch(context, row, minActions);
         },
       ),
+    );
+  }
+
+  /// 当前视图没有可展开搜索时 [_withExpandableSearch] 监听的占位。
+  static final ChangeNotifier _noSearch = ChangeNotifier();
+
+  /// 当前视图页头带可展开搜索（[FushiHeaderSearchController]）时：展开后**整行**
+  /// （标题胶囊 + 页签 + 动作组）换成搜索栏，收起换回（2026-10-14 库页单行
+  /// 页头）。两态之间淡入淡出 + 轻微缩放（M3E，墨水屏 / 减弱动效归零）。
+  Widget _withExpandableSearch(
+    BuildContext context,
+    Widget row,
+    double rowExtent,
+  ) {
+    return ListenableBuilder(
+      listenable: widget.slot,
+      builder: (BuildContext context, Widget? _) {
+        final FushiHeaderSearchController? search = fushiVisibleHeaderSearch(
+          widget.slot,
+        );
+        // 树形恒定（没有搜索时也套同一个切换器）：在有 / 无搜索的视图之间切换
+        // 不重挂页签与动作组。
+        return ListenableBuilder(
+          listenable: search ?? _noSearch,
+          builder: (BuildContext context, Widget? _) {
+            final bool expanded = search?.expanded ?? false;
+            return AnimatedSwitcher(
+              duration: fushiMotionDuration(context, FushiMotion.medium),
+              switchInCurve: FushiMotion.standard,
+              switchOutCurve: FushiMotion.standard,
+              transitionBuilder: (Widget child, Animation<double> animation) =>
+                  FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.96,
+                        end: 1,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+              layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                alignment: Alignment.center,
+                children: <Widget>[...previous, if (current != null) current],
+              ),
+              child: expanded
+                  ? SizedBox(
+                      key: const ValueKey<String>('floating-chrome-search'),
+                      height: rowExtent,
+                      child: Center(
+                        child: FushiHeaderSearchBar(controller: search!),
+                      ),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey<String>('floating-chrome-row'),
+                      child: row,
+                    ),
+            );
+          },
+        );
+      },
     );
   }
 }
