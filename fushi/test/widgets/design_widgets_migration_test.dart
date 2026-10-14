@@ -336,7 +336,7 @@ void main() {
       'editableText=${foreground?.toARGB32()}, paintedMaterial=${background?.toARGB32()}, '
       'contrast=$contrast',
     );
-    // Production panel follows the app's light / dark mode (BUG-3368) through
+    // Production panel follows the app's light / dark mode (BUG-3413) through
     // its own tinted scheme. The actual editor must use that captured theme and
     // remain legible.
     final ColorScheme appScheme = Theme.of(

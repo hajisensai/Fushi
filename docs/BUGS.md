@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3052 条。点号进各自文件。
+> 共 3056 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3368](bugs/BUG-3368-video-chrome-brightness.md) | ✅ | ✅ | 视频播放器 chrome 与面板不跟随日间/深色模式 |
-> 共 3055 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3413](bugs/BUG-3413-video-chrome-brightness.md) | ✅ | ✅ | 视频播放器 chrome 与面板不跟随日间/深色模式 |
 | [BUG-3368](bugs/BUG-3368-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
