@@ -124,7 +124,12 @@ class SrsCardOps {
     }
     final SrsAnswerPreview p =
         preview ??
-        this.preview(cardId: cardId, history: history, config: config, ctx: ctx);
+        this.preview(
+          cardId: cardId,
+          history: history,
+          config: config,
+          ctx: ctx,
+        );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);
     return SrsReviewLog(
@@ -239,7 +244,11 @@ class SrsCardOps {
       kind: SrsLogKind.reschedule,
       reviewType: SrsReviewType.rescheduled,
       ctx: ctx,
-      result: cur.copyWith(dueDay: lastDay + ivl, scheduledDays: ivl, memory: memory),
+      result: cur.copyWith(
+        dueDay: lastDay + ivl,
+        scheduledDays: ivl,
+        memory: memory,
+      ),
     );
   }
 

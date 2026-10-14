@@ -81,7 +81,8 @@ SrsAnchorDecision srsDecideAnchor({
     if (last == null || r.id > last.id) last = r;
   }
   if (last == null) {
-    if (sourceIsNew) return const SrsAnchorDecision.skip('new card, no history');
+    if (sourceIsNew)
+      return const SrsAnchorDecision.skip('new card, no history');
     return SrsAnchorDecision.at(collectionCreatedMs);
   }
   if (equivalentToNative(last)) {

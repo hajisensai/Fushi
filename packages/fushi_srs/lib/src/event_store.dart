@@ -93,7 +93,9 @@ class SrsUnknownEvent extends SrsEvent {
   final Map<String, Object?> raw;
 
   @override
-  String get id => (raw['x'] is Map ? (raw['x'] as Map)['id'] : null) as String? ?? srsCanonicalJson(raw);
+  String get id =>
+      (raw['x'] is Map ? (raw['x'] as Map)['id'] : null) as String? ??
+      srsCanonicalJson(raw);
 
   @override
   Map<String, Object?> toJson() => raw;
@@ -148,8 +150,8 @@ class SrsEventStore {
       case SrsEditEvent(:final SrsFieldEdit edit):
         return _applyEdit(edit);
       case SrsLogEvent(:final SrsReviewLog log):
-        final Map<String, SrsReviewLog> m =
-            logs[log.cardId] ??= <String, SrsReviewLog>{};
+        final Map<String, SrsReviewLog> m = logs[log.cardId] ??=
+            <String, SrsReviewLog>{};
         final SrsReviewLog? old = m[log.id];
         if (old == null) {
           m[log.id] = log;
@@ -170,8 +172,8 @@ class SrsEventStore {
   }
 
   bool _applyEdit(SrsFieldEdit edit) {
-    final Map<String, SrsFieldEdit> reg =
-        _edits[edit.registerKey] ??= <String, SrsFieldEdit>{};
+    final Map<String, SrsFieldEdit> reg = _edits[edit.registerKey] ??=
+        <String, SrsFieldEdit>{};
     final SrsFieldEdit? same = reg[edit.id];
     if (same != null) {
       if (same.canonical() != edit.canonical()) {
@@ -196,14 +198,11 @@ class SrsEventStore {
   /// 某实体的寄存器。
   SrsEntityEdits editsOf(SrsEntityKind kind, String entityId) {
     final String prefix = '${kind.wire}/$entityId/';
-    return SrsEntityEdits.build(
-      <SrsFieldEdit>[
-        for (final MapEntry<String, Map<String, SrsFieldEdit>> e
-            in _edits.entries)
-          if (e.key.startsWith(prefix)) ...e.value.values,
-      ],
-      serverTimeOf: serverTimeOf,
-    );
+    return SrsEntityEdits.build(<SrsFieldEdit>[
+      for (final MapEntry<String, Map<String, SrsFieldEdit>> e
+          in _edits.entries)
+        if (e.key.startsWith(prefix)) ...e.value.values,
+    ], serverTimeOf: serverTimeOf);
   }
 
   SrsCardHistory historyOf(String cardId) => SrsCardHistory(

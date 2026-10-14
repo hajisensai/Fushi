@@ -72,7 +72,8 @@ class SrsMemoryReplica implements SrsSyncReplica {
     Object? value, {
     bool machine = false,
   }) {
-    final SrsRegister current = store.editsOf(kind, entityId)[key] ??
+    final SrsRegister current =
+        store.editsOf(kind, entityId)[key] ??
         srsResolveRegister('', const <SrsFieldEdit>[]);
     if (srsEditIsNoop(current, value)) return null;
     final (int now, SrsTimeSource src) = trustedNow();
@@ -107,7 +108,10 @@ class SrsMemoryReplica implements SrsSyncReplica {
   void restore(SrsBackup b) {
     _incarnation += 1;
     _state = SrsSyncLocalState(writerId: '$deviceId#$_incarnation');
-    clock = HlcClock(_state.writerId, last: Hlc(clock.last.physical, clock.last.counter, _state.writerId));
+    clock = HlcClock(
+      _state.writerId,
+      last: Hlc(clock.last.physical, clock.last.counter, _state.writerId),
+    );
     writer = SrsEditWriter(writerId: _state.writerId);
     _outbox.clear();
     _local.clear();
@@ -132,8 +136,14 @@ class SrsMemoryReplica implements SrsSyncReplica {
   Future<void> saveSyncState(SrsSyncLocalState state) async {
     _state = state;
     if (writer.writerId != state.writerId) {
-      writer = SrsEditWriter(writerId: state.writerId, applied: store.seenContext);
-      clock = HlcClock(state.writerId, last: Hlc(clock.last.physical, clock.last.counter, state.writerId));
+      writer = SrsEditWriter(
+        writerId: state.writerId,
+        applied: store.seenContext,
+      );
+      clock = HlcClock(
+        state.writerId,
+        last: Hlc(clock.last.physical, clock.last.counter, state.writerId),
+      );
     }
   }
 

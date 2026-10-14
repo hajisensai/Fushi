@@ -83,8 +83,10 @@ void main() {
       expect(newer.ctx.contains(old.dot), isTrue);
       await w.quiesce();
       for (final SimDevice dev in w.devices.values) {
-        final SrsRegister r = dev.replica.store
-            .editsOf(SrsEntityKind.note, 'n')['f/x']!;
+        final SrsRegister r = dev.replica.store.editsOf(
+          SrsEntityKind.note,
+          'n',
+        )['f/x']!;
         expect(r.live.map((SrsFieldEdit e) => e.value), <Object?>['new']);
       }
       expect(w.check(), isEmpty);
@@ -141,8 +143,10 @@ void main() {
       // ok 没读过 fast 的批次：两条修改并发，按排序键定生效值。
       ok.edit('n', 'f/x', 'ok');
       await w.quiesce();
-      final SrsRegister r = ok.replica.store
-          .editsOf(SrsEntityKind.note, 'n')['f/x']!;
+      final SrsRegister r = ok.replica.store.editsOf(
+        SrsEntityKind.note,
+        'n',
+      )['f/x']!;
       expect(r.conflicted, isTrue);
       expect(r.value, 'ok', reason: '超前事件在排序里被钳到 S + 10 分钟');
       expect(r.visibleLosers.single.value, 'fast', reason: '被覆盖的值进冲突记录');
@@ -231,8 +235,11 @@ void main() {
         c.edit('n', 'f/c', 'c$i');
         await w.quiesce();
       }
-      expect(w.dir.files.containsKey(a.replica.writerId), isFalse,
-          reason: '满足两个条件后退役目录被删');
+      expect(
+        w.dir.files.containsKey(a.replica.writerId),
+        isFalse,
+        reason: '满足两个条件后退役目录被删',
+      );
       final SimDevice fresh = w.add('fresh');
       await w.quiesce();
       expect(
@@ -257,8 +264,10 @@ void main() {
       b.replica.restore(oldBackup);
       await w.quiesce();
       for (final SimDevice d in w.devices.values) {
-        expect(d.replica.store.editsOf(SrsEntityKind.note, 'n').deletedAt,
-            isNotNull);
+        expect(
+          d.replica.store.editsOf(SrsEntityKind.note, 'n').deletedAt,
+          isNotNull,
+        );
       }
       expect(w.check(), isEmpty);
     });
@@ -294,7 +303,11 @@ void main() {
       await a.sync();
       final String aw = a.replica.writerId;
       final Uint8List full = w.dir.files[aw]![srsBatchName(1)]!;
-      w.dir.files[aw]![srsBatchName(1)] = Uint8List.sublistView(full, 0, full.length - 3);
+      w.dir.files[aw]![srsBatchName(1)] = Uint8List.sublistView(
+        full,
+        0,
+        full.length - 3,
+      );
       await b.sync();
       expect(b.replica.syncState.cursors[aw] ?? 0, 0);
       w.dir.files[aw]![srsBatchName(1)] = full;

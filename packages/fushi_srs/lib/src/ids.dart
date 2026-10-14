@@ -40,9 +40,10 @@ String _formatUuid(List<int> bytes) {
 
 /// RFC 9562 UUIDv5（SHA-1，名字按 UTF-8）。
 String uuidV5(String namespace, String name) {
-  final List<int> digest = sha1
-      .convert(<int>[..._uuidBytes(namespace), ...utf8.encode(name)])
-      .bytes;
+  final List<int> digest = sha1.convert(<int>[
+    ..._uuidBytes(namespace),
+    ...utf8.encode(name),
+  ]).bytes;
   final List<int> b = digest.sublist(0, 16);
   b[6] = (b[6] & 0x0f) | 0x50;
   b[8] = (b[8] & 0x3f) | 0x80;

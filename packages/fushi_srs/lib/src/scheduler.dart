@@ -110,7 +110,9 @@ double srsFuzzFactor(String cardId, int reps) {
   ];
   double delta = 1.0;
   for (final (double start, double end, double factor) in ranges) {
-    delta += factor * ((interval < end ? interval : end) - start).clamp(0, double.infinity);
+    delta +=
+        factor *
+        ((interval < end ? interval : end) - start).clamp(0, double.infinity);
   }
   int lo = (interval - delta).round();
   int hi = (interval + delta).round();
@@ -136,7 +138,8 @@ int srsConstrainInterval({
   }
   final ({int min, int max}) range = srsFuzzRange(raw, minimum, maximum);
   final double f = srsFuzzFactor(cardId, reps);
-  return range.min + (f * (range.max - range.min + 1)).floor().clamp(0, range.max - range.min);
+  return range.min +
+      (f * (range.max - range.min + 1)).floor().clamp(0, range.max - range.min);
 }
 
 /// 四个评分各自的结果（还没写成日志）。
@@ -224,7 +227,13 @@ SrsAnswerPlan srsPlanAnswer(SrsAnswerContext ctx, SrsNextStates next) {
       final (int _, int good, int easy) = passingIntervals(fromReview: false);
       out[1] = steps.isEmpty
           ? reviewAt(ivlOf(next.again.interval), next.again.memory, cur.lapses)
-          : learning(SrsQueue.learning, 0, steps.first, next.again.memory, cur.lapses);
+          : learning(
+              SrsQueue.learning,
+              0,
+              steps.first,
+              next.again.memory,
+              cur.lapses,
+            );
       out[2] = steps.isEmpty
           ? reviewAt(ivlOf(next.hard.interval), next.hard.memory, cur.lapses)
           : learning(
@@ -235,7 +244,13 @@ SrsAnswerPlan srsPlanAnswer(SrsAnswerContext ctx, SrsNextStates next) {
               cur.lapses,
             );
       out[3] = step + 1 < steps.length
-          ? learning(SrsQueue.learning, step + 1, steps[step + 1], next.good.memory, cur.lapses)
+          ? learning(
+              SrsQueue.learning,
+              step + 1,
+              steps[step + 1],
+              next.good.memory,
+              cur.lapses,
+            )
           : reviewAt(good, next.good.memory, cur.lapses);
       out[4] = reviewAt(easy, next.easy.memory, cur.lapses);
     case SrsQueue.review:
@@ -243,7 +258,13 @@ SrsAnswerPlan srsPlanAnswer(SrsAnswerContext ctx, SrsNextStates next) {
       final int lapses = cur.lapses + 1;
       out[1] = rsteps.isEmpty
           ? reviewAt(ivlOf(next.again.interval), next.again.memory, lapses)
-          : learning(SrsQueue.relearning, 0, rsteps.first, next.again.memory, lapses);
+          : learning(
+              SrsQueue.relearning,
+              0,
+              rsteps.first,
+              next.again.memory,
+              lapses,
+            );
       final (int hard, int good, int easy) = passingIntervals(fromReview: true);
       out[2] = reviewAt(hard, next.hard.memory, cur.lapses);
       out[3] = reviewAt(good, next.good.memory, cur.lapses);
@@ -254,7 +275,13 @@ SrsAnswerPlan srsPlanAnswer(SrsAnswerContext ctx, SrsNextStates next) {
       final (int _, int good, int easy) = passingIntervals(fromReview: false);
       out[1] = rsteps.isEmpty
           ? reviewAt(ivlOf(next.again.interval), next.again.memory, cur.lapses)
-          : learning(SrsQueue.relearning, 0, rsteps.first, next.again.memory, cur.lapses);
+          : learning(
+              SrsQueue.relearning,
+              0,
+              rsteps.first,
+              next.again.memory,
+              cur.lapses,
+            );
       out[2] = rsteps.isEmpty
           ? reviewAt(ivlOf(next.hard.interval), next.hard.memory, cur.lapses)
           : learning(
@@ -265,7 +292,13 @@ SrsAnswerPlan srsPlanAnswer(SrsAnswerContext ctx, SrsNextStates next) {
               cur.lapses,
             );
       out[3] = step + 1 < rsteps.length
-          ? learning(SrsQueue.relearning, step + 1, rsteps[step + 1], next.good.memory, cur.lapses)
+          ? learning(
+              SrsQueue.relearning,
+              step + 1,
+              rsteps[step + 1],
+              next.good.memory,
+              cur.lapses,
+            )
           : reviewAt(good, next.good.memory, cur.lapses);
       out[4] = reviewAt(easy, next.easy.memory, cur.lapses);
   }
@@ -289,8 +322,8 @@ bool srsIsDue(
   int learnAheadMs = 20 * _minuteMs,
 }) => switch (s.queue) {
   SrsQueue.newCard => false,
-  SrsQueue.learning || SrsQueue.relearning =>
-    (s.dueAt ?? 0) <= nowMs + learnAheadMs,
+  SrsQueue.learning ||
+  SrsQueue.relearning => (s.dueAt ?? 0) <= nowMs + learnAheadMs,
   SrsQueue.review => (s.dueDay ?? 0) <= today,
 };
 
@@ -321,7 +354,11 @@ SrsScheduleResult srsReclaim(SrsScheduleResult current) =>
     current.copyWith(scheduler: SrsScheduler.fushi);
 
 /// 人类可读的间隔（评分按钮预览用）：<1 天显示分钟 / 小时，否则天 / 月 / 年。
-String srsFormatInterval(SrsScheduleResult s, {required int nowMs, required int today}) {
+String srsFormatInterval(
+  SrsScheduleResult s, {
+  required int nowMs,
+  required int today,
+}) {
   if (s.queue == SrsQueue.learning || s.queue == SrsQueue.relearning) {
     final int mins = (((s.dueAt ?? nowMs) - nowMs) / _minuteMs).round();
     if (mins < 60) return '${mins < 1 ? 1 : mins}m';

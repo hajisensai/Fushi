@@ -75,12 +75,9 @@ class SimDevice {
     final SrsCardHistory h = replica.store.historyOf(cardId);
     final SrsReviewLog? last = h.lastEffective;
     if (last == null) return null;
-    final SrsReviewLog? u = const SrsCardOps(engine: _engine).undo(
-      cardId: cardId,
-      history: h,
-      targetLogId: last.id,
-      ctx: logContext(),
-    );
+    final SrsReviewLog? u = const SrsCardOps(
+      engine: _engine,
+    ).undo(cardId: cardId, history: h, targetLogId: last.id, ctx: logContext());
     if (u != null) replica.addLog(u);
     return u;
   }
@@ -140,14 +137,15 @@ class SimWorld {
         if (prev != c) problems.add('④ event ${e.id} differs');
       }
       if (d.replica.store.diagnostics.isNotEmpty) {
-        problems.add('④ diagnostics on ${d.id}: ${d.replica.store.diagnostics}');
+        problems.add(
+          '④ diagnostics on ${d.id}: ${d.replica.store.diagnostics}',
+        );
       }
     }
     // ⑤ 任何修改记录都不会在没有冲突记录的情况下消失：要么还在寄存器里，要么被看见过它的记录支配。
     final SrsEventStore s0 = ds.first.replica.store;
     for (final SrsFieldEdit e in ledger) {
-      final SrsRegister reg = s0
-          .editsOf(e.entityKind, e.entityId)[e.fieldKey]!;
+      final SrsRegister reg = s0.editsOf(e.entityKind, e.entityId)[e.fieldKey]!;
       final bool kept = reg.live.any(
         (SrsFieldEdit l) => l.id == e.id || l.ctx.contains(e.dot),
       );
@@ -293,7 +291,12 @@ Future<List<String>> runOps(
   for (final SimOp op in ops) {
     w.trueNow += 1000;
     switch (op) {
-      case OpEdit(:final String dev, :final int note, :final int key, :final String value):
+      case OpEdit(
+        :final String dev,
+        :final int note,
+        :final int key,
+        :final String value,
+      ):
         w.devices[dev]!.edit(noteId(note), 'f/fld$key', value);
       case OpDelete(:final String dev, :final int note, :final bool restore):
         w.devices[dev]!.edit(

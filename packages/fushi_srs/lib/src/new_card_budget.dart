@@ -64,7 +64,10 @@ SrsNewCardBudget srsComputeNewCardBudget({
   }
   // 预算到 2 倍预算之间线性减到 0。
   final double factor = 1 - (dueReviews - budget) / budget;
-  final int allowed = (newPerDayLimit * factor).floor().clamp(0, newPerDayLimit);
+  final int allowed = (newPerDayLimit * factor).floor().clamp(
+    0,
+    newPerDayLimit,
+  );
   return SrsNewCardBudget(
     limit: newPerDayLimit,
     allowed: allowed,

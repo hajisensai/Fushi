@@ -83,7 +83,10 @@ class SrsCausalContext {
 
   bool get isEmpty => _vv.isEmpty && _cloud.isEmpty;
 
-  static void _compactAll(Map<String, int> v, Map<String, SplayTreeSet<int>> c) {
+  static void _compactAll(
+    Map<String, int> v,
+    Map<String, SplayTreeSet<int>> c,
+  ) {
     for (final String w in c.keys.toList()) {
       final SplayTreeSet<int> set = c[w]!;
       int top = v[w] ?? 0;

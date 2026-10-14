@@ -90,7 +90,10 @@ class FakeFsrsEngine implements FsrsEngine {
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
     required List<List<SrsFsrsReview>> items,
-  }) => SrsEvaluation(logLoss: algorithm == SrsAlgorithm.fsrs7 ? 0.3 : 0.4, rmseBins: 0.1);
+  }) => SrsEvaluation(
+    logLoss: algorithm == SrsAlgorithm.fsrs7 ? 0.3 : 0.4,
+    rmseBins: 0.1,
+  );
 
   @override
   SrsEvaluation evaluate({

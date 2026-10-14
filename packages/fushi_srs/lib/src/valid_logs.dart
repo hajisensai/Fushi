@@ -22,7 +22,10 @@ class SrsCardHistory {
       for (final SrsReviewLog l in logs) l.id: l,
     };
     all = byId.values.toList()
-      ..sort((SrsReviewLog a, SrsReviewLog b) => sortKeyOf(a).compareTo(sortKeyOf(b)));
+      ..sort(
+        (SrsReviewLog a, SrsReviewLog b) =>
+            sortKeyOf(a).compareTo(sortKeyOf(b)),
+      );
     _computeEffective();
   }
 

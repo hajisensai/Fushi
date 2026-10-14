@@ -34,7 +34,9 @@ class SrsParamSet {
     if (v is! Map) return null;
     final Object? p = v['params'];
     return SrsParamSet(
-      params: p is List ? p.whereType<num>().map((num x) => x.toDouble()).toList() : const <double>[],
+      params: p is List
+          ? p.whereType<num>().map((num x) => x.toDouble()).toList()
+          : const <double>[],
       algorithmRev: v['rev'] as String?,
       optimizedAt: v['at'] as int?,
       trainCount: (v['n'] as int?) ?? 0,
@@ -101,7 +103,8 @@ class SrsDeckView {
   SrsAlgorithm get localAlgorithm => resolveLocalAlgorithm(algorithmWire);
 
   /// 本机不认识的算法（旧版 app 收到新算法）：设置里显示「此牌组的算法来自更新版本，本机暂用 X」。
-  bool get algorithmUnknownLocally => SrsAlgorithm.tryParse(algorithmWire) == null;
+  bool get algorithmUnknownLocally =>
+      SrsAlgorithm.tryParse(algorithmWire) == null;
 
   SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a) {
     SrsAlgorithm.fsrs6 => fsrs6,
@@ -128,7 +131,10 @@ class SrsDeckView {
           parent == null || edits.value(SrsFieldKeys.deckParamsMode) == 'own',
       newPerDay: limits is Map ? (limits['new'] as int?) ?? 20 : 20,
       reviewsPerDay: limits is Map ? (limits['review'] as int?) ?? 200 : 200,
-      learnSteps: listOf(steps is Map ? steps['learn'] : null, defaultLearnSteps),
+      learnSteps: listOf(
+        steps is Map ? steps['learn'] : null,
+        defaultLearnSteps,
+      ),
       relearnSteps: listOf(
         steps is Map ? steps['relearn'] : null,
         defaultRelearnSteps,

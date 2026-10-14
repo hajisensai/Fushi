@@ -203,7 +203,8 @@ class SrsEntityEdits {
     Iterable<SrsFieldEdit> edits, {
     int? Function(String eventId)? serverTimeOf,
   }) {
-    final Map<String, List<SrsFieldEdit>> byKey = <String, List<SrsFieldEdit>>{};
+    final Map<String, List<SrsFieldEdit>> byKey =
+        <String, List<SrsFieldEdit>>{};
     for (final SrsFieldEdit e in edits) {
       (byKey[e.fieldKey] ??= <SrsFieldEdit>[]).add(e);
     }
@@ -286,8 +287,7 @@ class SrsNoteTypeView {
       id: record.id,
       ankiNum: (record.payload['ankiNum'] as int?) ?? 0,
       kind: (record.payload['ntKind'] as String?) ?? SrsNoteTypeKind.standard,
-      name:
-          (edits.value(SrsFieldKeys.name) as String?) ?? builtin?.name ?? '',
+      name: (edits.value(SrsFieldKeys.name) as String?) ?? builtin?.name ?? '',
       fields: fields.values.where((SrsFieldDef f) => !f.deleted).toList()
         ..sort(byOrd),
       templates:

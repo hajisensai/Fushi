@@ -250,7 +250,9 @@ class SrsSyncEngine {
         writerId,
         srsSnapshotName(n),
       );
-      final SrsSnapshot? snap = bytes == null ? null : SrsSnapshot.decode(bytes);
+      final SrsSnapshot? snap = bytes == null
+          ? null
+          : SrsSnapshot.decode(bytes);
       if (snap != null) return snap;
     }
     return null;
@@ -292,12 +294,18 @@ class SrsSyncEngine {
       final Set<int> present = batches.toSet();
       // 严格按批次号顺序应用；b+1 还不可见（列表延迟、上传未完成）就停在 b，不跳过、不提前确认。
       while (present.contains(cursor + 1)) {
-        final Uint8List? bytes = await directory.read(w, srsBatchName(cursor + 1));
+        final Uint8List? bytes = await directory.read(
+          w,
+          srsBatchName(cursor + 1),
+        );
         final SrsBatch? batch = bytes == null ? null : SrsBatch.decode(bytes);
         if (batch == null || batch.writerId != w || batch.no != cursor + 1) {
           break;
         }
-        await replica.applyRemote(batch.events, serverTimeMs: batch.serverTimeMs);
+        await replica.applyRemote(
+          batch.events,
+          serverTimeMs: batch.serverTimeMs,
+        );
         report.applied += batch.events.length;
         st.lastBatchServerTime[w] = batch.serverTimeMs;
         cursor = batch.no;
@@ -306,7 +314,10 @@ class SrsSyncEngine {
     }
   }
 
-  Future<void> _maybeSnapshot(SrsSyncLocalState st, SrsSyncReport report) async {
+  Future<void> _maybeSnapshot(
+    SrsSyncLocalState st,
+    SrsSyncReport report,
+  ) async {
     final int own = st.nextBatchNo - 1;
     if (own <= 0 || own - st.lastSnapshotBatch < options.snapshotEveryBatches) {
       return;
@@ -319,9 +330,7 @@ class SrsSyncEngine {
   Future<void> writeSnapshot(SrsSyncLocalState st) async {
     final int own = st.nextBatchNo - 1;
     final SrsSnapshot? previous = await _latestSnapshot(st.writerId);
-    final Map<String, int> vv = <String, int>{
-      ...?previous?.vv,
-    };
+    final Map<String, int> vv = <String, int>{...?previous?.vv};
     for (final MapEntry<String, int> e in st.cursors.entries) {
       if ((vv[e.key] ?? 0) < e.value) vv[e.key] = e.value;
     }
@@ -342,13 +351,19 @@ class SrsSyncEngine {
     for (final String w in await directory.listWriters()) {
       if (w == self) continue;
       final Uint8List? bytes = await directory.read(w, srsCursorName);
-      final SrsCursorFile? c = bytes == null ? null : SrsCursorFile.decode(bytes);
+      final SrsCursorFile? c = bytes == null
+          ? null
+          : SrsCursorFile.decode(bytes);
       if (c != null) out[w] = c;
     }
     return out;
   }
 
-  Future<void> _cleanup(SrsSyncLocalState st, int now, SrsSyncReport report) async {
+  Future<void> _cleanup(
+    SrsSyncLocalState st,
+    int now,
+    SrsSyncReport report,
+  ) async {
     final Map<String, SrsCursorFile> peers = await _peerCursors(st.writerId);
     bool active(SrsCursorFile c) => now - c.updatedAtMs < options.retireAfterMs;
     final Iterable<SrsCursorFile> activePeers = peers.values.where(active);
@@ -358,7 +373,9 @@ class SrsSyncEngine {
     for (final String f in own ?? const <String>[]) {
       final int? n = srsParseBatchName(f);
       if (n == null || n > st.lastSnapshotBatch) continue;
-      if (activePeers.every((SrsCursorFile c) => (c.cursors[st.writerId] ?? 0) >= n)) {
+      if (activePeers.every(
+        (SrsCursorFile c) => (c.cursors[st.writerId] ?? 0) >= n,
+      )) {
         await directory.delete(st.writerId, f);
         report.batchesDeleted++;
       }
@@ -382,7 +399,9 @@ class SrsSyncEngine {
       if (last == 0) continue;
       final bool allRead =
           (st.cursors[w] ?? 0) >= last &&
-          activePeers.every((SrsCursorFile c) => c.writerId == w || (c.cursors[w] ?? 0) >= last);
+          activePeers.every(
+            (SrsCursorFile c) => c.writerId == w || (c.cursors[w] ?? 0) >= last,
+          );
       if (!allRead) continue;
       bool covered = false;
       for (final String holder in <String>[

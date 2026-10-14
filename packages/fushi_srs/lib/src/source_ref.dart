@@ -99,11 +99,10 @@ class SrsSourceRef {
     if (title != null) 'title': title,
   });
 
-  factory SrsSourceRef.web(String url, {String? title}) =>
-      SrsSourceRef(SrsSourceKind.web, <String, Object?>{
-        'url': url,
-        if (title != null) 'title': title,
-      });
+  factory SrsSourceRef.web(String url, {String? title}) => SrsSourceRef(
+    SrsSourceKind.web,
+    <String, Object?>{'url': url, if (title != null) 'title': title},
+  );
 
   final String kind;
   final Map<String, Object?> data;
