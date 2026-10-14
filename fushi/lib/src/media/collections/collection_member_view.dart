@@ -164,20 +164,35 @@ bool _keep(
 /// 「继续」按钮的目标（按合集手动序 [entries]）：最近读过且未读完的那本；没有就是
 /// 第一本没读完的；全读完 / 没有任何进度信息时是第一本。空合集 null。
 CollectionMemberEntry? pickContinueMember(List<CollectionMemberEntry> entries) {
-  if (entries.isEmpty) return null;
-  CollectionMemberEntry? recent;
-  for (final CollectionMemberEntry e in entries) {
-    final CollectionMemberInfo? info = e.info;
-    if (info == null || info.completed || info.lastReadAt == null) continue;
-    if (recent == null || info.lastReadAt! > recent.info!.lastReadAt!) {
-      recent = e;
+  final int? index = pickContinueIndex<CollectionMemberEntry>(
+    entries,
+    (CollectionMemberEntry e) => e.info,
+  );
+  return index == null ? null : entries[index];
+}
+
+/// [pickContinueMember] 的判据本体，按下标给出（书架合集卡的封面也用它：系列
+/// 封面显示「继续」会打开的那本，而不是恒为首本）。[infoOf] 返回 null 的成员
+/// 视为没有进度信息。空列表 null。
+int? pickContinueIndex<T>(
+  List<T> items,
+  CollectionMemberInfo? Function(T item) infoOf,
+) {
+  if (items.isEmpty) return null;
+  int? recent;
+  int recentAt = 0;
+  int? firstUnfinished;
+  for (int i = 0; i < items.length; i++) {
+    final CollectionMemberInfo? info = infoOf(items[i]);
+    if (info == null || info.completed) continue;
+    firstUnfinished ??= i;
+    final int? at = info.lastReadAt;
+    if (at != null && (recent == null || at > recentAt)) {
+      recent = i;
+      recentAt = at;
     }
   }
-  if (recent != null) return recent;
-  for (final CollectionMemberEntry e in entries) {
-    if (e.info != null && !e.info!.completed) return e;
-  }
-  return entries.first;
+  return recent ?? firstUnfinished ?? 0;
 }
 
 /// hero 的整体进度：读完数 / 有信息的成员数，与平均进度（读完按满格）。没有任何

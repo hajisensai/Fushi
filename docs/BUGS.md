@@ -39,6 +39,8 @@
 |---|:--:|:--:|---|
 | [BUG-3366](bugs/BUG-3366-ios-landscape-subtitle-list-safe-area.md) | ✅ | ✅ | iOS 横屏视频字幕列表侧栏右侧整条安全区空着 |
 | [BUG-3365](bugs/BUG-3365-manga-crop-done-capsule.md) | ✅ | ✅ | 手机漫画高级制卡全屏框选页右上角「完成」在动作胶囊里偏左 |
+| [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
+| [BUG-3365](bugs/BUG-3365-floating-ball-media-defaults.md) | ✅ | ✅ | 漫画等媒体页悬浮球出厂带一长列应用外按钮 |
 | [BUG-3364](bugs/BUG-3364-mihon-speedbinb-grandparent-ctor.md) | ✅ | ✅ | Mihon 桌面 sidecar：SpeedBinb 系日漫源搜索报 VerifyError（R8 内联两层构造器） |
 | [BUG-3363](bugs/BUG-3363-onboarding-back-arrow-duplicates-skip.md) | ✅ | ✅ | 新手引导左上返回箭头与「暂时跳过」重复且被误认为上一步 |
 | [BUG-3362](bugs/BUG-3362-galgame-summary-not-selectable.md) | ✅ | ✅ | galgame 详情简介不能选择复制 |

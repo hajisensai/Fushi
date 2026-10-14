@@ -20,20 +20,22 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     return entries;
   }
 
-  /// 作品行 → wire 条目；键解析不到（悬空合集 / 无 bookUid）或装载失败（无任何
-  /// 身份行的残缺作品）→ null，跳过而不是让整份清单 500。
+  /// 作品行 → wire 条目；键解析不到（悬空合集 / 无 bookUid）、还没刮削（无可用
+  /// 身份的骨架，静默跳过）或装载失败（mediaType 损坏，记日志）→ null，跳过而不是
+  /// 让整份清单 500。
   Future<VideoMetadataWorkEntry?> _entryForWorkRow(
     VideoMetadataWorkRow row,
   ) async {
     final VideoMetadataWorkKey? key = await metadataWorkKeyOf(_db, row);
     if (key == null) return null;
-    final VideoMetadataWork work;
+    final VideoMetadataWork? work;
     try {
       work = await loadVideoMetadataWork(_db, row);
     } on StateError catch (e, stack) {
       engineLog.log('sync.videoMetadata.load', e, stack);
       return null;
     }
+    if (work == null) return null;
     return VideoMetadataWorkEntry(
       key: key,
       updatedAt: row.updatedAt,

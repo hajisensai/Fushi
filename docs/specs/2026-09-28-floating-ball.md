@@ -66,7 +66,10 @@
 | `general` 其它页面 | —（没有登记场景的页面） | — |
 | `system` 应用外 | —（原生侧拿不到页面按钮） | — |
 
-每个场景都还能勾选下面的全局按钮（出厂除 `sync` 外全勾）。勾选存在 `floating_ball.buttons.<场景>`
+每个场景都还能勾选下面的全局按钮，出厂勾选按场景分（`FloatingBallGlobalAction.onByDefaultIn`，2026-10-14
+用户截图反馈「漫画里一长列应用外按钮」后改）：`sync` 处处不勾；`system` 其余全勾；`reader` / `manga` / `video`
+只勾 `lookup` 与 `feedback`（球上已有专属按钮，应用外查词 / 剪贴板 / 截屏识字 / 拍照与当前媒体无关）；`general`
+除 `popup_lookup` 外全勾（应用内另开独立查词窗与 `lookup` 重复）。勾选存在 `floating_ball.buttons.<场景>`
 （逗号分隔 id，按目录顺序；空串 = 出厂，`-` = 全关）。旧版单份全局勾选
 `floating_ball.actions` 只作迁移读取：没单独设过的场景沿用它对全局按钮的取舍。
 

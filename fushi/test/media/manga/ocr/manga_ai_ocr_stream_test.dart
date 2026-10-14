@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ai_ocr_stream.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -295,6 +296,52 @@ void main() {
     expect(readBookJson().images.single.blocks.single.lines, <String>['期限の悪い']);
   });
 
+  // 用户本机两天 78 条 `MangaAiOcr.refinePage: AiChatFailure: rate_limited` 错误：
+  // 限流 / 网络 / 5xx 是预期降级（保留本地文字），只该记诊断；400 这类配置问题照记错误。
+  for (final ({String failure, bool isError}) c
+      in <({String failure, bool isError})>[
+        (failure: 'rate_limited', isError: false),
+        (failure: 'network_error', isError: false),
+        (failure: 'http_400', isError: true),
+      ]) {
+    test('重读失败 ${c.failure}：${c.isError ? '记错误' : '只记诊断，不进错误日志'}', () async {
+      final String resultPath = await writeResult(<MokuroImage>[
+        localPage('p1.png', '期限の悪い'),
+        localPage('p2.png', '期限の悪い'),
+      ]);
+      final MangaAiOcrJobFollower follower = MangaAiOcrJobFollower(
+        imageDirPath: dir.path,
+        refiner: MangaAiOcrRefiner(
+          provider: provider,
+          mode: MangaAiOcrMode.lowConfidence,
+          clientFactory: () => _FailingClient(c.failure),
+        ),
+        discardCache: false,
+      );
+      final ErrorLogService log = ErrorLogService.instance;
+      final int errorsBefore = log.entries.length;
+      final int diagnosticsBefore = log.diagnosticEntries.length;
+      follower.onPersisted(
+        resultPath,
+        parseMangaJson(await File(resultPath).readAsString()),
+      );
+      await follower.done.timeout(const Duration(seconds: 5));
+      final Iterable<ErrorLogEntry> newErrors = log.entries
+          .skip(errorsBefore)
+          .where((ErrorLogEntry e) => e.source == 'MangaAiOcr.refinePage');
+      final Iterable<ErrorLogEntry> newDiagnostics = log.diagnosticEntries
+          .skip(diagnosticsBefore)
+          .where((ErrorLogEntry e) => e.source == 'MangaAiOcr.refinePage');
+      if (c.isError) {
+        expect(newErrors, hasLength(1));
+        expect(newDiagnostics, isEmpty);
+      } else {
+        expect(newErrors, isEmpty);
+        expect(newDiagnostics, hasLength(1), reason: '两页失败也只记一条');
+      }
+    });
+  }
+
   test('重新识别（discardCache）先清掉本卷大模型缓存', () async {
     final MangaAiOcrCache cache = MangaAiOcrCache.forVolume(dir.path, provider);
     await cache.storeAll(<String, String>{'stale': 'x'});
@@ -362,4 +409,18 @@ class _GatedClient extends AiChatClient {
     owner.lastClosed = true;
     if (!_closed.isCompleted) _closed.complete();
   }
+}
+
+/// 每次请求都以 [failure] 失败的客户端。
+class _FailingClient extends AiChatClient {
+  _FailingClient(this.failure);
+
+  final String failure;
+
+  @override
+  Future<String> complete({
+    required AiProviderConfig provider,
+    required List<AiChatMessage> messages,
+    int maxTokens = 2048,
+  }) async => throw AiChatFailure(failure);
 }
