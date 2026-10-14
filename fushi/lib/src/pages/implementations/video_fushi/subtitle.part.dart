@@ -3327,20 +3327,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     bool visible,
   ) {
-    // 横屏左 ↔ 右翻转 180° 时窗口尺寸与对称的安全区都不变，只有外壳边变了：
-    // 要跟着它重建，灵动岛换到右侧时内容才会让位。
-    return ValueListenableBuilder<AxisDirection?>(
-      valueListenable: sensorHousingEdge,
-      builder: (BuildContext context, AxisDirection? edge, Widget? _) =>
-          _subtitleJumpSidePanelColumn(controller, visible, edge),
-    );
-  }
-
-  Widget _subtitleJumpSidePanelColumn(
-    VideoPlayerController controller,
-    bool visible,
-    AxisDirection? housingEdge,
-  ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
     // BUG-877：面板宽度可自定义并持久化。未自定义（存值 0）时按屏宽自适应；用户拖拽左边缘
@@ -3364,7 +3350,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 在左侧（被画面那边吃掉）时右侧不再空出一条（2026-10-14 用户反馈）。
     final EdgeInsets systemPadding = obstructedSafeInsets(
       MediaQuery.paddingOf(context),
-      housingEdge,
+      // 页面 State 监听它、变了就重建（横屏左 ↔ 右翻转 180° 时窗口尺寸与对称
+      // 的安全区都不变，只有外壳边变了），见 _onSensorHousingEdgeChanged。
+      sensorHousingEdge.value,
     );
     final EdgeInsets panelSafeInsets = EdgeInsets.only(
       top: systemPadding.top,

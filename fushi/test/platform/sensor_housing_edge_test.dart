@@ -58,7 +58,21 @@ void main() {
     final String panel = _code(
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
     );
-    expect(panel, contains('valueListenable: sensorHousingEdge,'));
+    expect(panel, contains('sensorHousingEdge.value,'));
     expect(panel, contains('obstructedSafeInsets('));
+    // 横屏左 ↔ 右翻转 180° 时安全区不变、只有外壳边变：页面必须监听它重建。
+    final String page = _code(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
+    expect(
+      page,
+      contains('sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);'),
+    );
+    expect(
+      page,
+      contains(
+        'sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);',
+      ),
+    );
   });
 }

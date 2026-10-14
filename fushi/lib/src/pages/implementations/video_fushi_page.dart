@@ -2974,6 +2974,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
 
+  void _onSensorHousingEdgeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2986,6 +2990,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
+    // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3366）：横屏左 ↔ 右翻转时只有它变。
+    sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
@@ -5697,6 +5703,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
