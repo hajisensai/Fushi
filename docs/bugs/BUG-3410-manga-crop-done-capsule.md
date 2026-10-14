@@ -1,4 +1,4 @@
-## BUG-3365 · 手机漫画高级制卡全屏框选页右上角「完成」在动作胶囊里偏左
+## BUG-3410 · 手机漫画高级制卡全屏框选页右上角「完成」在动作胶囊里偏左
 - **报告**：2026-10-14（用户：手机截图「漫画高级制卡手机右上角 ui 有问题」）
 - **真实性**：✅ 真 bug。M3E 悬浮顶栏（`fushi/lib/src/utils/components/glass/fushi_glass_bars.dart` `_buildFloating`）把 actions 收进一枚 `FushiPageChromeCapsule`，并在胶囊**外**自己留 16 的尾部边距；全屏框选页（`fushi/lib/src/mining/advanced_mining/advanced_mining_manga_panels.dart` `_MangaCropFullscreenPageState.build` 的 `actions`）还沿用旧 AppBar 写法给「完成」包了 `Padding(end: 12)`，这 12 落进了胶囊**里面**：按钮左侧只剩胶囊内边距 4、右侧 4+12=16，胶囊被撑宽、按钮明显偏左。
 - **[x] ① 已修复** — 去掉页面自带的尾部 Padding，留白交给悬浮顶栏统一负责。

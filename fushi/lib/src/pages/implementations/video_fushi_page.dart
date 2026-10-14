@@ -2991,7 +2991,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
-    // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3366）：横屏左 ↔ 右翻转时只有它变。
+    // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
     sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);

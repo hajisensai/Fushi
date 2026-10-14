@@ -187,7 +187,7 @@ void main() {
         find.text(t.popup_advanced_mining_crop_page_title),
         findsOneWidget,
       );
-      // BUG-3365：「完成」在顶栏动作胶囊里水平居中，不能被页面自带的尾部
+      // BUG-3410：「完成」在顶栏动作胶囊里水平居中，不能被页面自带的尾部
       // Padding 挤到左边。
       final Finder done = find.text(t.popup_advanced_mining_crop_done);
       final Rect doneButton = tester.getRect(
