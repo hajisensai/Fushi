@@ -2296,6 +2296,79 @@ class _NavMoreCellState extends State<_NavMoreCell> {
   }
 }
 
+/// rail 与其右侧内容区的宽度同步：包住 `Row(rail, Expanded(内容))`，内容区用
+/// [NavRailSyncedContent] 包一层。
+///
+/// rail 展开 / 收起时宽度逐帧变化，`Expanded` 内容的宽度约束随之逐帧变化，整棵
+/// 内容树（含 Offstage 保活的各 tab 页——Offstage 仍参与布局）每帧重排、重绘，
+/// 侧栏动画随之掉帧。过渡期间内容区改按**两态里较宽的内容宽**排版、随 rail
+/// 边缘平移并裁掉右侧溢出：约束不变即跳过子树布局，加上 [RepaintBoundary]
+/// 连重绘也省掉；一次切换至多重排一次（收起在开始时、展开在结束时）。
+class NavRailContentSync extends StatefulWidget {
+  const NavRailContentSync({super.key, required this.child});
+
+  final Widget child;
+
+  static _NavRailContentLag? _of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_NavRailContentSyncScope>()?.lag;
+
+  @override
+  State<NavRailContentSync> createState() => _NavRailContentSyncState();
+}
+
+class _NavRailContentSyncState extends State<NavRailContentSync> {
+  final _NavRailContentLag _lag = _NavRailContentLag();
+
+  @override
+  Widget build(BuildContext context) =>
+      _NavRailContentSyncScope(lag: _lag, child: widget.child);
+}
+
+/// rail 当前宽比本次过渡较窄一端多出的宽度（静止时 0）。可变对象而非 Listenable：
+/// rail 在 build 阶段写，内容区在同一帧随后的 layout 阶段读。
+class _NavRailContentLag {
+  double _railExcess = 0;
+}
+
+class _NavRailContentSyncScope extends InheritedWidget {
+  const _NavRailContentSyncScope({required this.lag, required super.child});
+
+  final _NavRailContentLag lag;
+
+  @override
+  bool updateShouldNotify(_NavRailContentSyncScope oldWidget) =>
+      lag != oldWidget.lag;
+}
+
+/// [NavRailContentSync] 的内容侧：静止时与直接放 [child] 几何一致；rail 过渡中
+/// 把 [child] 钉在恒定宽度上。树结构恒定（不随动画增删层级），子树状态不重挂。
+class NavRailSyncedContent extends StatelessWidget {
+  const NavRailSyncedContent({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double excess = constraints.hasBoundedWidth
+            ? NavRailContentSync._of(context)?._railExcess ?? 0
+            : 0;
+        final double width = math.max(0.0, constraints.maxWidth + excess);
+        return ClipRect(
+          clipBehavior: excess == 0 ? Clip.none : Clip.hardEdge,
+          child: OverflowBox(
+            alignment: AlignmentDirectional.centerStart,
+            minWidth: excess == 0 ? constraints.minWidth : width,
+            maxWidth: excess == 0 ? constraints.maxWidth : width,
+            child: RepaintBoundary(child: child),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// rail 宽度在展开 / 收起两态之间按 M3E default spatial 弹簧过渡。
 ///
 /// 结构恒定（SizedBox → ClipRect → OverflowBox）：内容始终按**目标宽**排版、
@@ -2321,10 +2394,15 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
     spring: fushiExpressiveDefaultSpatial,
   );
 
+  /// 本次过渡两端里较窄的一端（静止时 = 当前宽）；[NavRailContentSync] 据此让
+  /// 内容区在整个过渡里保持同一宽度。
+  late double _narrowEnd = widget.width;
+
   @override
   void didUpdateWidget(covariant _AnimatedRailWidth oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.width != widget.width) {
+      _narrowEnd = math.min(_width.value, widget.width);
       _width.animateTo(
         widget.width,
         animate: fushiExpressiveMotionEnabled(context),
@@ -2347,6 +2425,11 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
         final double target = widget.width;
         final double raw = _width.value;
         final bool settled = (raw - target).abs() < 0.5;
+        // build 阶段写、内容区在随后的 layout 阶段读：同一帧内 rail 宽与内容
+        // 可用宽同步变化，二者之和恒定。
+        NavRailContentSync._of(context)?._railExcess = settled
+            ? 0
+            : math.max(0.0, raw) - _narrowEnd;
         return SizedBox(
           width: settled ? target : math.max(0.0, raw),
           child: ClipRect(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoColors;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
@@ -272,7 +274,8 @@ class SettingsSchemaItem extends StatefulWidget
       settingsContext.refresh();
     }
 
-    final bool glassDesktop = isGlassDesign(context) &&
+    final bool glassDesktop =
+        isGlassDesign(context) &&
         !isCupertinoPlatform(context) &&
         FushiAppleMetrics.of(context).desktop;
 
@@ -285,7 +288,8 @@ class SettingsSchemaItem extends StatefulWidget
       // 「Apple」桌面（macOS 系统设置）与 MD3（Android 16 设置）：动作按钮是
       // 行右侧的胶囊，不换到标题下方；窄到放不下时行自己会堆叠。Cupertino 与
       // Apple 触屏维持按钮在下。
-      controlBelow: onAction != null &&
+      controlBelow:
+          onAction != null &&
           (isCupertinoPlatform(context) ||
               (isGlassDesign(context) && !glassDesktop)),
       onTap: onAction == null ? null : runAction,
@@ -318,7 +322,12 @@ class SettingsSchemaItem extends StatefulWidget
       showIcon: showIcons,
       value: value,
       onChanged: (bool next) async {
-        await toggle.onChanged(settingsContext, next);
+        // 偏好写入在首个 await 之前就把新值放进内存缓存（`setPref`），先刷一次让
+        // 滑块立刻开始动画，不必等 DB 事务落盘 + 全局通知才动（等待期正是手感上的
+        // 「卡一下」）。处理器若先 await 别的再写，这次刷新读到的仍是旧值，无副作用。
+        final FutureOr<void> pending = toggle.onChanged(settingsContext, next);
+        settingsContext.refresh();
+        await pending;
         settingsContext.refresh();
       },
     );
@@ -664,10 +673,7 @@ class SettingsSectionFooter extends StatelessWidget {
         tokens.spacing.gap + tokens.spacing.gap / 2,
         tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
-      child: Text(
-        text,
-        style: (style ?? settingsFootnoteStyle)(context),
-      ),
+      child: Text(text, style: (style ?? settingsFootnoteStyle)(context)),
     );
   }
 }
