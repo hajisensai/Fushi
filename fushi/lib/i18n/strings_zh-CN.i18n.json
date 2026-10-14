@@ -7462,5 +7462,9 @@
   "popup_advanced_mining_reset": "恢复为一键制卡的默认",
   "popup_advanced_mining_confirm_to_deck": "制卡到 ${deck}",
   "manga_mining_crop_to_panel": "一键制卡默认裁到所在分镜",
-  "manga_mining_crop_to_panel_hint": "需要分镜模型；没有模型时使用整页。"
+  "manga_mining_crop_to_panel_hint": "需要分镜模型；没有模型时使用整页。",
+  "popup_advanced_mining_crop_page_title": "框选图片",
+  "popup_advanced_mining_crop_done": "完成",
+  "popup_advanced_mining_crop_download_failed": "分镜模型下载失败",
+  "popup_advanced_mining_sentence_shortcut_hint": "快捷键 [ ] 增减前文 · Shift+[ ] 增减后文"
 }
