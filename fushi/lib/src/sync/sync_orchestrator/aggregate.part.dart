@@ -17,6 +17,13 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
         _db,
         scope: _scope,
         localApplyLock: runExclusiveWithSyncStateApply,
+        peerSnapshotCache: DirectoryAggregatePeerSnapshotCache(
+          () async => Directory(p.join(
+            (await enginePaths.supportRootDirectory()).path,
+            'sync_cache',
+            'aggregate',
+          )),
+        ),
       ).sync(
         store: _backend,
         deviceId: deviceId,

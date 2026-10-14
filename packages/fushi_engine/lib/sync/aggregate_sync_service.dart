@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
+import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
@@ -67,9 +68,14 @@ class AggregateSyncService {
     this._db, {
     this.scope = SyncChannelScope.unscoped,
     this.localApplyLock,
+    this.peerSnapshotCache,
   });
 
   final FushiDatabase _db;
+
+  /// 对端快照的本地副本（见 [AggregatePeerSnapshotCache]）。null = 每轮都下载全部
+  /// 对端快照（测试 / 无头服务端，那里没有出站云同步）。
+  final AggregatePeerSnapshotCache? peerSnapshotCache;
 
   /// 包住「把合并结果写回本地 DB」这一步的窄互斥（BUG-2717）。
   ///
@@ -118,14 +124,18 @@ class AggregateSyncService {
     //    skipped (it is a stale echo of our own state; re-folding it is a no-op
     //    anyway, but skipping saves a download).
     AggregateSnapshot merged = localSnapshot;
-    for (final AssetEntry entry in children) {
-      if (entry.isFolder) continue;
-      if (!_isAggregateAsset(entry.name)) continue;
-      if (entry.name == ownAssetName) continue;
-      if (entry.name == ownLegacyAssetName) continue;
+    final List<AssetEntry> peerEntries = <AssetEntry>[
+      for (final AssetEntry entry in children)
+        if (!entry.isFolder &&
+            _isAggregateAsset(entry.name) &&
+            entry.name != ownAssetName &&
+            entry.name != ownLegacyAssetName)
+          entry,
+    ];
+    for (final AssetEntry entry in peerEntries) {
       Object? peerJson;
       try {
-        peerJson = await store.getJsonAsset(entry.id);
+        peerJson = await _readPeerSnapshot(store, entry);
       } catch (_) {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
@@ -133,6 +143,10 @@ class AggregateSyncService {
       final AggregateSnapshot peer = AggregateSnapshot.fromJson(peerJson);
       merged = mergeSnapshots(merged, peer);
     }
+    await peerSnapshotCache?.retainOnly(
+      scope.id,
+      <String>{for (final AssetEntry e in peerEntries) e.name},
+    );
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     if (!identical(merged, localSnapshot)) {
@@ -168,6 +182,19 @@ class AggregateSyncService {
     await store.putJsonAsset(ns, ownAssetName, payload);
     await _db.setPrefTyped<String>(_lastPushedHashKey, hash);
     return true;
+  }
+
+  /// 一份对端快照的内容：版本标记没变就读本地副本，否则下载并更新副本。
+  Future<Object?> _readPeerSnapshot(
+    SyncAssetStore store,
+    AssetEntry entry,
+  ) async {
+    final AggregatePeerSnapshotCache? cache = peerSnapshotCache;
+    final Object? cached = await cache?.read(scope.id, entry);
+    if (cached != null) return cached;
+    final Object? json = await store.getJsonAsset(entry.id);
+    await cache?.write(scope.id, entry, json);
+    return json;
   }
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
@@ -267,7 +294,39 @@ class AggregateSyncService {
     //    Nothing to share on an all-empty merge: skip the write.
     final AggregateSnapshot outgoing = await filterTombstoned(merged);
     if (outgoing.isEmpty) return;
-    await pushMerged(outgoing.toJson());
+    // host 刚给的就是这份内容时 PUT 只是让 host 把同一批数据再折一遍（并集 / MAX，
+    // 无变化）。比较不计列表顺序：两端数据库查出来的行序天然不同，而折叠结果与
+    // 顺序无关（收藏句合并后按时间重排，其余都是按键并集）。
+    final Map<String, Object?> outgoingJson = outgoing.toJson();
+    if (unorderedSnapshotFingerprint(outgoingJson) ==
+        unorderedSnapshotFingerprint(remote.toJson())) {
+      return;
+    }
+    await pushMerged(outgoingJson);
+  }
+
+  /// 与列表顺序无关的快照内容指纹：顶层每个列表的元素各自编码后排序再拼接。
+  /// 两份快照指纹相同 ⇔ 每个家族的记录集合（含重复次数）逐条相同。
+  @visibleForTesting
+  static String unorderedSnapshotFingerprint(Map<String, Object?> json) {
+    final List<String> keys = json.keys.toList()..sort();
+    final StringBuffer buffer = StringBuffer();
+    for (final String key in keys) {
+      final Object? value = json[key];
+      buffer
+        ..write(jsonEncode(key))
+        ..write(':');
+      if (value is List) {
+        final List<String> items = <String>[
+          for (final Object? item in value) jsonEncode(item),
+        ]..sort();
+        buffer.write(jsonEncode(items));
+      } else {
+        buffer.write(jsonEncode(value));
+      }
+      buffer.write(';');
+    }
+    return _stableHash(buffer.toString());
   }
 
   /// 按本机删除墓碑裁剪一份**将要上行**的快照，规则与 [applySnapshotToLocal] 写回

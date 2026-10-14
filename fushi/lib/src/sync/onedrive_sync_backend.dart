@@ -432,8 +432,30 @@ class OneDriveSyncBackend extends SyncBackend
               name: item['name'] as String,
               isFolder: item.containsKey('folder'),
               sizeBytes: (item['size'] as num?)?.toInt(),
+              revision: _contentRevisionOf(item),
             ))
         .toList();
+  }
+
+  /// driveItem 的内容版本标记：优先内容哈希（个人版给 quickXorHash / sha1Hash，
+  /// 商业版给 quickXorHash），都没有时退到 `cTag`——Graph 规定内容一变 cTag 就变
+  /// （元数据改动只动 eTag）。文件夹没有内容，返回 null。
+  static String? _contentRevisionOf(Map<String, dynamic> item) {
+    final Object? file = item['file'];
+    if (file is! Map<String, dynamic>) return null;
+    final Object? hashes = file['hashes'];
+    if (hashes is Map<String, dynamic>) {
+      for (final String key in const <String>[
+        'quickXorHash',
+        'sha256Hash',
+        'sha1Hash',
+      ]) {
+        final Object? value = hashes[key];
+        if (value is String && value.isNotEmpty) return '$key:$value';
+      }
+    }
+    final Object? cTag = item['cTag'];
+    return cTag is String && cTag.isNotEmpty ? 'cTag:$cTag' : null;
   }
 
   @override
