@@ -3327,6 +3327,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     bool visible,
   ) {
+    // 横屏左 ↔ 右翻转 180° 时窗口尺寸与对称的安全区都不变，只有外壳边变了：
+    // 要跟着它重建，灵动岛换到右侧时内容才会让位。
+    return ValueListenableBuilder<AxisDirection?>(
+      valueListenable: sensorHousingEdge,
+      builder: (BuildContext context, AxisDirection? edge, Widget? _) =>
+          _subtitleJumpSidePanelColumn(controller, visible, edge),
+    );
+  }
+
+  Widget _subtitleJumpSidePanelColumn(
+    VideoPlayerController controller,
+    bool visible,
+    AxisDirection? housingEdge,
+  ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
     // BUG-877：面板宽度可自定义并持久化。未自定义（存值 0）时按屏宽自适应；用户拖拽左边缘
@@ -3346,7 +3360,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 安全区交给面板只给内容让位（[VideoSubtitleJumpPanel.safeAreaInsets]）。以前整列
     // 套 `SafeArea`，刘海在右时面板右边空出一大条黑（2026-10-14 用户反馈）。列宽
     // 因此 = 内容宽 + 右侧安全区；拖拽改的仍是内容宽。
-    final EdgeInsets systemPadding = MediaQuery.paddingOf(context);
+    // iOS 横屏左右对称上报灵动岛深度：只有灵动岛真在右侧时内容才给右边让位，
+    // 在左侧（被画面那边吃掉）时右侧不再空出一条（2026-10-14 用户反馈）。
+    final EdgeInsets systemPadding = obstructedSafeInsets(
+      MediaQuery.paddingOf(context),
+      housingEdge,
+    );
     final EdgeInsets panelSafeInsets = EdgeInsets.only(
       top: systemPadding.top,
       right: systemPadding.right,
