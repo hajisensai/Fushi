@@ -3974,17 +3974,14 @@
   "video_setting_mpv_hwdec_off": "ปิด",
   "video_setting_mpv_interpolation": "เพิ่มเฟรมการเคลื่อนไหว",
   "video_setting_mpv_loop": "เล่นวนไฟล์เดียว",
-  "video_setting_mpv_lua_scripts": "โหลดสคริปต์ Lua",
   "video_setting_mpv_lua_scripts_dir_copied": "คัดลอกเส้นทางโฟลเดอร์แล้ว",
   "video_setting_mpv_lua_scripts_dir_copy": "คัดลอกเส้นทางโฟลเดอร์สคริปต์",
   "video_setting_mpv_lua_scripts_empty": "ยังไม่มีสคริปต์ในโฟลเดอร์ mpv_scripts",
-  "video_setting_mpv_lua_scripts_hint": "โหลดไฟล์ .lua ทั้งหมดในโฟลเดอร์ mpv_scripts เข้าสู่เครื่องเล่น การปิดจะมีผลเมื่อเปิดวิดีโอครั้งถัดไป",
   "video_setting_mpv_lua_scripts_import": "นำเข้าสคริปต์ Lua",
   "video_setting_mpv_lua_scripts_imported": "นำเข้าสคริปต์แล้ว",
   "video_setting_mpv_lua_scripts_input_note": "อินพุตจากคีย์บอร์ดและเมาส์จะอยู่ในแอปและไม่ส่งถึง mpv: สคริปต์ที่พึ่งพาปุ่มลัดหรือ OSC จะเรียกใช้ไม่ได้ ส่วนสคริปต์ที่ทำงานตามพร็อพเพอร์ตี้/เหตุการณ์และข้อความ OSD ใช้งานได้",
   "video_setting_mpv_lua_scripts_status_error": "ข้อผิดพลาด",
   "video_setting_mpv_lua_scripts_status_loaded": "โหลดแล้ว ไม่มีข้อผิดพลาด",
-  "video_setting_mpv_lua_scripts_status_not_loaded": "ยังไม่ได้โหลดในตัวเล่นนี้ (เปิดสวิตช์หรือเปิดวิดีโอใหม่)",
   "video_setting_mpv_lua_scripts_unavailable": "libmpv ที่มาพร้อมแอปบนแพลตฟอร์มนี้ถูกสร้างโดยไม่มี Lua (-Dlua=disabled) จึงรันสคริปต์ที่นี่ไม่ได้",
   "video_setting_mpv_normalize": "ปรับความดังดาวน์มิกซ์ให้สม่ำเสมอ",
   "video_setting_mpv_panscan": "Pan & scan (ตัดขอบ)",
@@ -7482,5 +7479,7 @@
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
   "anki_pending_mine_landing_host_note": "อุปกรณ์นี้เป็นโฮสต์การเชื่อมต่อ โทรศัพท์ที่จับคู่ไว้จึงส่งการ์ดมาทางนี้ไม่ได้ ให้เปิด \"สร้างบัตรไปยังอุปกรณ์ที่จับคู่\" บนโทรศัพท์เหล่านั้นแทน",
-  "manga_series_manage_volume": "Manage volume"
+  "manga_series_manage_volume": "Manage volume",
+  "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
 }

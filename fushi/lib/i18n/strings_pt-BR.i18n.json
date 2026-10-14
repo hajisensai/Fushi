@@ -3974,17 +3974,14 @@
   "video_setting_mpv_hwdec_off": "Desligado",
   "video_setting_mpv_interpolation": "Interpolação de movimento",
   "video_setting_mpv_loop": "Repetir arquivo",
-  "video_setting_mpv_lua_scripts": "Carregar scripts Lua",
   "video_setting_mpv_lua_scripts_dir_copied": "Caminho da pasta copiado",
   "video_setting_mpv_lua_scripts_dir_copy": "Copiar caminho da pasta de scripts",
   "video_setting_mpv_lua_scripts_empty": "Ainda não há scripts na pasta mpv_scripts",
-  "video_setting_mpv_lua_scripts_hint": "Carregar todos os arquivos .lua na pasta mpv_scripts no player. Desativar entra em vigor na próxima vez que um vídeo for aberto.",
   "video_setting_mpv_lua_scripts_import": "Importar scripts Lua",
   "video_setting_mpv_lua_scripts_imported": "Scripts importados",
   "video_setting_mpv_lua_scripts_input_note": "A entrada de teclado e mouse fica no aplicativo e nunca chega ao mpv: scripts que dependem de atalhos ou do OSC não podem ser acionados. Scripts baseados em propriedades/eventos e mensagens OSD funcionam.",
   "video_setting_mpv_lua_scripts_status_error": "Erro",
   "video_setting_mpv_lua_scripts_status_loaded": "Carregado, nenhum erro relatado",
-  "video_setting_mpv_lua_scripts_status_not_loaded": "Ainda não carregado neste player (ative a chave ou reabra o vídeo)",
   "video_setting_mpv_lua_scripts_unavailable": "O libmpv incluído nesta plataforma foi compilado sem Lua (-Dlua=disabled), então os scripts não podem ser executados aqui.",
   "video_setting_mpv_normalize": "Normalizar volume do downmix",
   "video_setting_mpv_panscan": "Pan & scan (cortar bordas)",
@@ -7482,5 +7479,7 @@
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
   "anki_pending_mine_landing_host_note": "Este dispositivo é um host de interconexão, então celulares pareados não conseguem entregar cartões por esse caminho. Nesses celulares, ative \"Minerar para dispositivo pareado\".",
-  "manga_series_manage_volume": "Manage volume"
+  "manga_series_manage_volume": "Manage volume",
+  "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
 }

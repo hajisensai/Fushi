@@ -3974,17 +3974,14 @@
   "video_setting_mpv_hwdec_off": "إيقاف",
   "video_setting_mpv_interpolation": "استيفاء الحركة",
   "video_setting_mpv_loop": "تكرار الملف",
-  "video_setting_mpv_lua_scripts": "تحميل سكربتات Lua",
   "video_setting_mpv_lua_scripts_dir_copied": "تم نسخ مسار المجلد",
   "video_setting_mpv_lua_scripts_dir_copy": "نسخ مسار مجلد السكربتات",
   "video_setting_mpv_lua_scripts_empty": "لا توجد سكربتات في مجلد mpv_scripts بعد",
-  "video_setting_mpv_lua_scripts_hint": "تحميل جميع ملفات .lua في مجلد mpv_scripts إلى المشغّل. الإيقاف يسري عند فتح فيديو جديد.",
   "video_setting_mpv_lua_scripts_import": "استيراد سكربتات Lua",
   "video_setting_mpv_lua_scripts_imported": "تم استيراد السكربتات",
   "video_setting_mpv_lua_scripts_input_note": "إدخال لوحة المفاتيح والفأرة يبقى داخل التطبيق ولا يصل إلى mpv: السكربتات التي تعتمد على اختصارات المفاتيح أو OSC لا يمكن تشغيلها. السكربتات المعتمدة على الخصائص/الأحداث ورسائل OSD تعمل.",
   "video_setting_mpv_lua_scripts_status_error": "خطأ",
   "video_setting_mpv_lua_scripts_status_loaded": "تم التحميل، لا أخطاء",
-  "video_setting_mpv_lua_scripts_status_not_loaded": "لم يُحمَّل في هذا المشغّل بعد (فعّل المفتاح أو أعد فتح الفيديو)",
   "video_setting_mpv_lua_scripts_unavailable": "نسخة libmpv المضمّنة على هذه المنصة بُنيت بدون Lua (-Dlua=disabled)، لذا لا يمكن تشغيل السكربتات هنا.",
   "video_setting_mpv_normalize": "تسوية جهارة الدمج",
   "video_setting_mpv_panscan": "التحريك والقص (قص الحواف)",
@@ -7482,5 +7479,7 @@
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
   "anki_pending_mine_landing_host_note": "هذا الجهاز مضيف للربط البيني، لذا لا تستطيع الهواتف المقترنة تسليمه البطاقات بهذه الطريقة. فعّل بدلًا من ذلك «إرسال إلى الجهاز المقترن» على تلك الهواتف.",
-  "manga_series_manage_volume": "Manage volume"
+  "manga_series_manage_volume": "Manage volume",
+  "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
 }

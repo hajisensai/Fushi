@@ -3974,17 +3974,14 @@
   "video_setting_mpv_hwdec_off": "Aus",
   "video_setting_mpv_interpolation": "Bewegungsinterpolation",
   "video_setting_mpv_loop": "Datei wiederholen",
-  "video_setting_mpv_lua_scripts": "Lua-Skripte laden",
   "video_setting_mpv_lua_scripts_dir_copied": "Ordnerpfad kopiert",
   "video_setting_mpv_lua_scripts_dir_copy": "Skript-Ordnerpfad kopieren",
   "video_setting_mpv_lua_scripts_empty": "Noch keine Skripte im Ordner mpv_scripts",
-  "video_setting_mpv_lua_scripts_hint": "Alle .lua-Dateien im Ordner mpv_scripts in den Player laden. Das Deaktivieren wird beim nächsten Öffnen eines Videos wirksam.",
   "video_setting_mpv_lua_scripts_import": "Lua-Skripte importieren",
   "video_setting_mpv_lua_scripts_imported": "Skripte importiert",
   "video_setting_mpv_lua_scripts_input_note": "Tastatur- und Mauseingaben bleiben in der App und erreichen mpv nie: Skripte, die auf Tastenbelegungen oder das OSC angewiesen sind, lassen sich nicht auslösen. Skripte, die auf Eigenschaften/Ereignisse reagieren, und OSD-Meldungen funktionieren.",
   "video_setting_mpv_lua_scripts_status_error": "Fehler",
   "video_setting_mpv_lua_scripts_status_loaded": "Geladen, keine Fehler gemeldet",
-  "video_setting_mpv_lua_scripts_status_not_loaded": "In diesem Player noch nicht geladen (Schalter einschalten oder Video erneut öffnen)",
   "video_setting_mpv_lua_scripts_unavailable": "Das mitgelieferte libmpv auf dieser Plattform wurde ohne Lua gebaut (-Dlua=disabled), Skripte können hier nicht laufen.",
   "video_setting_mpv_normalize": "Downmix-Lautstärke normalisieren",
   "video_setting_mpv_panscan": "Pan & Scan (Ränder beschneiden)",
@@ -7482,5 +7479,7 @@
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
   "anki_pending_mine_landing_host_note": "Dieses Gerät ist ein Interconnect-Host, daher können gekoppelte Smartphones ihm auf diesem Weg keine Karten übergeben. Schalte auf diesen Smartphones stattdessen „An gekoppeltes Gerät senden“ ein.",
-  "manga_series_manage_volume": "Manage volume"
+  "manga_series_manage_volume": "Manage volume",
+  "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
 }

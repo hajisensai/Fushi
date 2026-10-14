@@ -3974,17 +3974,14 @@
   "video_setting_mpv_hwdec_off": "끄기",
   "video_setting_mpv_interpolation": "모션 보간",
   "video_setting_mpv_loop": "파일 반복",
-  "video_setting_mpv_lua_scripts": "Lua 스크립트 로드",
   "video_setting_mpv_lua_scripts_dir_copied": "폴더 경로 복사됨",
   "video_setting_mpv_lua_scripts_dir_copy": "스크립트 폴더 경로 복사",
   "video_setting_mpv_lua_scripts_empty": "mpv_scripts 폴더에 아직 스크립트가 없습니다",
-  "video_setting_mpv_lua_scripts_hint": "mpv_scripts 폴더의 모든 .lua 파일을 플레이어에 로드합니다. 끄면 다음에 동영상을 열 때 적용됩니다.",
   "video_setting_mpv_lua_scripts_import": "Lua 스크립트 가져오기",
   "video_setting_mpv_lua_scripts_imported": "스크립트 가져옴",
   "video_setting_mpv_lua_scripts_input_note": "키보드와 마우스 입력은 앱에서 처리되며 mpv에 전달되지 않습니다. 키 바인딩이나 OSC에 의존하는 스크립트는 실행할 수 없습니다. 속성/이벤트 기반 스크립트와 OSD 메시지는 동작합니다.",
   "video_setting_mpv_lua_scripts_status_error": "오류",
   "video_setting_mpv_lua_scripts_status_loaded": "로드됨, 오류 없음",
-  "video_setting_mpv_lua_scripts_status_not_loaded": "이 플레이어에 아직 로드되지 않았습니다(스위치를 켜거나 동영상을 다시 여세요)",
   "video_setting_mpv_lua_scripts_unavailable": "이 플랫폼에 포함된 libmpv는 Lua 없이 빌드되어(-Dlua=disabled) 여기서는 스크립트를 실행할 수 없습니다.",
   "video_setting_mpv_normalize": "다운믹스 음량 정규화",
   "video_setting_mpv_panscan": "팬 & 스캔(테두리 잘라내기)",
@@ -7482,5 +7479,7 @@
   "feedback_filter_closed": "Finished",
   "feedback_filter_unread": "New replies",
   "anki_pending_mine_landing_host_note": "이 기기는 인터커넥트 호스트이므로 페어링된 휴대폰이 이 방법으로 카드를 넘길 수 없습니다. 대신 해당 휴대폰에서 '페어링된 기기로 채굴'를 켜세요.",
-  "manga_series_manage_volume": "Manage volume"
+  "manga_series_manage_volume": "Manage volume",
+  "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
+  "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)"
 }
