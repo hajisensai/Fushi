@@ -354,4 +354,44 @@ void main() {
     expect(after.dueDay, before.dueDay);
     expect(after.lastLogId, before.lastLogId);
   });
+
+  test('覆盖恢复备份后：换新化身、全部重新发布、缓存重建', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    SrsTrustedClock clock() => SrsTrustedClock(
+      wallClockMs: () => t,
+      monotonicMs: () => t,
+      bootId: 'boot',
+    );
+    final SrsDbStore a = await SrsDbStore.open(
+      db: db,
+      profileUid: kProfile,
+      deviceId: 'a',
+      engine: const _FakeEngine(),
+      trustedClock: clock(),
+    );
+    final String noteId = await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: lapis('川'),
+    );
+    final String cardId = (await a.cardsOfNote(noteId)).single.id;
+    await a.answer(cardId, 3);
+    await SrsSyncEngine(directory: dir, replica: a).syncOnce();
+    expect(await a.unpublishedEvents(), isEmpty);
+    final String oldWriter = a.writerId;
+    // 恢复备份：本机状态与缓存表被清空（backup_service 的 _srsDeviceLocalDiscardTables）。
+    await db.delete(db.srsLocalState).go();
+    await db.delete(db.srsEventLocal).go();
+    await db.delete(db.srsCardsCache).go();
+    await db.delete(db.srsNotesCache).go();
+    final SrsDbStore restored = await SrsDbStore.open(
+      db: db,
+      profileUid: kProfile,
+      deviceId: 'a',
+      engine: const _FakeEngine(),
+      trustedClock: clock(),
+    );
+    expect(restored.writerId, isNot(oldWriter));
+    expect((await restored.cardRow(cardId))!.reps, 1);
+    expect(await restored.unpublishedEvents(), isNotEmpty);
+  });
 }

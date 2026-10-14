@@ -114,7 +114,12 @@ class SrsDbStore implements SrsSyncReplica {
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
     );
-    await s._loadLocal();
+    final bool hadLocalState = await s._loadLocal();
+    if (!hadLocalState && await s._hasAnyEvent()) {
+      // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
+      // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
+      await s.afterRestore();
+    }
     await s.ensureBuiltins();
     return s;
   }
@@ -140,7 +145,15 @@ class SrsDbStore implements SrsSyncReplica {
 
   // ------------------------------------------------------------------ 本机状态
 
-  Future<void> _loadLocal() async {
+  Future<bool> _hasAnyEvent() async =>
+      await (db.select(db.srsEntities)
+            ..where((t) => t.profileUid.equals(profileUid))
+            ..limit(1))
+          .getSingleOrNull() !=
+      null;
+
+  /// 读本机状态；返回之前是否存过。
+  Future<bool> _loadLocal() async {
     final SrsLocalStateRow? row = await (db.select(
       db.srsLocalState,
     )..where((t) => t.profileUid.equals(profileUid))).getSingleOrNull();
@@ -191,6 +204,7 @@ class SrsDbStore implements SrsSyncReplica {
         bootId: anchor['b']! as String,
       );
     }
+    return row != null;
   }
 
   Hlc _rehome(Hlc h, String writer) => Hlc(h.physical, h.counter, writer);
@@ -1447,6 +1461,15 @@ class SrsDbStore implements SrsSyncReplica {
     }
     return rows;
   }
+
+  /// 这些牌组里全部可见卡片的 ID（优化器训练范围）。
+  Future<List<String>> cardIdsInDecks(Set<String> deckIds) async =>
+      (await (db.select(db.srsCardsCache)..where(
+                (c) => c.deckId.isIn(deckIds) & c.hidden.equals(false),
+              ))
+              .get())
+          .map((SrsCardCacheRow c) => c.id)
+          .toList();
 
   Future<List<SrsCardCacheRow>> cardsOfNote(String noteId) => (db.select(
     db.srsCardsCache,
