@@ -1093,11 +1093,21 @@ $sharedInitViewport
     // BUG-1688：「实际 VN 视口」就是 `.fushi-vn-screen` 这个盒——它已扣掉 chrome
     // 预留带与用户边距。原来读 window.innerWidth/Height（整个视口）会把插图算到
     // 能盖住顶栏/底栏的尺寸。取不到盒时才回退整视口（首屏极早期调用）。
+    // BUG-3395：用户左右边距是屏盒的 padding，rect 宽高是 border-box、含 padding。按它
+    // 算上限时，边距一加大（右边距 9%）插图就比内容盒宽，只能往一侧溢出被裁（iOS 实机
+    // 插图左缘切掉一截、整体偏右）。上限取扣掉 padding 的内容盒。
     var screenBox = this.screen && this.screen.getBoundingClientRect
       ? this.screen.getBoundingClientRect()
       : null;
-    var vw = Math.max(1, (screenBox && screenBox.width) || window.innerWidth || 0);
-    var vh = Math.max(1, (screenBox && screenBox.height) || window.innerHeight || 0);
+    var padX = 0;
+    var padY = 0;
+    if (screenBox && screenBox.width > 0 && screenBox.height > 0) {
+      var screenStyle = window.getComputedStyle(this.screen);
+      padX = (parseFloat(screenStyle.paddingLeft) || 0) + (parseFloat(screenStyle.paddingRight) || 0);
+      padY = (parseFloat(screenStyle.paddingTop) || 0) + (parseFloat(screenStyle.paddingBottom) || 0);
+    }
+    var vw = Math.max(1, ((screenBox && screenBox.width) || window.innerWidth || 0) - padX);
+    var vh = Math.max(1, ((screenBox && screenBox.height) || window.innerHeight || 0) - padY);
     root.style.setProperty('--fushi-image-max-width', Math.max(1, Math.floor(vw * ratio)) + 'px');
     root.style.setProperty('--fushi-image-max-height', vh + 'px');
   },
@@ -1122,11 +1132,10 @@ $sharedInitViewport
     } else {
       baseScreens = this.buildBlockScreens();
     }
-    // BUG-1244：纯图片 screen 没有字符范围。有声书逐句跟随按 cue 字符偏移直接跳到
-    // 下一条文字 screen 时会永久略过这种零宽 screen，图片在整次自动播放里都不可见。
-    // 把连续的前导图片附到下一句/下一块一起渲；章尾没有下一句时附到上一屏，保证媒体
-    // 至少随相邻文字出现一次。
-    baseScreens = this.attachMediaScreensToAdjacentText(baseScreens);
+    // BUG-3395：纯图片 screen 保持独立一屏、按整屏上限铺满。BUG-1244 曾把它附到下一
+    // 句/下一块同屏渲染，但插图按整屏上限排版，同屏文字被挤出可视区（竖排整段落到屏
+    // 左外侧，有声书正读的那句看不见）。「逐句跟随不略过零宽图片屏」改由跟随路径自己
+    // 处理：跨过图片屏且开了图片暂停时先停在图上（pauseAtCrossedMediaScreen）。
     this.baseScreens = baseScreens;
     this.screens = this.mergeSentenceAudioCrossScreenScreens(baseScreens);
     if (!this.screens.length) {
@@ -1167,60 +1176,28 @@ $sharedInitViewport
       render: render
     };
   },
-  attachMediaScreensToAdjacentText: function(screens) {
-    if (!Array.isArray(screens) || !screens.length) return screens || [];
-    var result = [];
-    var pendingMedia = [];
-    for (var i = 0; i < screens.length; i++) {
-      var screen = screens[i];
-      var mediaOnly = !!screen.mediaStop &&
-        this.screenStartCharCount(screen) === this.screenEndCharCount(screen);
-      if (mediaOnly) {
-        pendingMedia.push(screen);
-        continue;
-      }
-      if (pendingMedia.length) {
-        result.push(this.mergeAdjacentScreenParts(pendingMedia.concat([screen])));
-        pendingMedia = [];
-      } else {
-        result.push(screen);
-      }
-    }
-    if (pendingMedia.length) {
-      if (result.length) {
-        var previous = result.pop();
-        result.push(this.mergeAdjacentScreenParts([previous].concat(pendingMedia)));
-      } else {
-        result.push(this.mergeAdjacentScreenParts(pendingMedia));
-      }
-    }
-    return result;
+  isMediaOnlyScreen: function(screen) {
+    return !!(screen && screen.mediaStop) &&
+      this.screenStartCharCount(screen) === this.screenEndCharCount(screen);
   },
-  mergeAdjacentScreenParts: function(parts) {
-    var first = parts[0];
-    var last = parts[parts.length - 1];
-    var ids = new Set();
-    parts.forEach(function(part) {
-      (part.ids || new Set()).forEach(function(id) { ids.add(id); });
-    });
-    return this.screenDescriptor({
-      startCharCount: this.screenStartCharCount(first),
-      endCharCount: parts.reduce(function(max, part) {
-        return Math.max(max, this.screenEndCharCount(part));
-      }.bind(this), this.screenEndCharCount(first)),
-      startRawCount: this.screenStartRawCount(first),
-      endRawCount: parts.reduce(function(max, part) {
-        return Math.max(max, this.screenEndRawCount(part));
-      }.bind(this), this.screenEndRawCount(last)),
-      ids: ids,
-      splittable: false,
-      mediaStop: true,
-      render: function() {
-        var fragment = document.createDocumentFragment();
-        parts.forEach(function(part) { fragment.appendChild(part.render()); });
-        return fragment;
+  // BUG-3395（取代 BUG-1244「把图附到相邻文字同屏」）：纯图片屏没有字符范围，逐句
+  // 跟随按 cue 偏移直接跳到下一条文字屏会略过它。跟随向前跨过图片屏（或音频刚从上
+  // 一章读进本章、目标屏之前有章首图）且宿主开了图片暂停（pauseEnabled =
+  // imagePauseSec > 0，与分页 / 连续模式 TODO-724 同一个门）时，先整屏停在图上并发
+  // onImageDetected；Dart 暂停 imagePauseSec 秒，恢复时 snapReaderToAudio 重新跟随
+  // 当前 cue，落到句子屏。图片暂停关闭时跳过插图，与另两种 view mode 一致。
+  pauseAtCrossedMediaScreen: function(targetIndex, pauseEnabled, fromChapterStart) {
+    if (!pauseEnabled || !this.screens || !this.screens.length) return false;
+    var from = fromChapterStart ? -1 : this.currentScreenIndex;
+    for (var i = from + 1; i < targetIndex; i++) {
+      if (!this.isMediaOnlyScreen(this.screens[i])) continue;
+      this.renderScreen(i, true);
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('onImageDetected');
       }
-    });
+      return true;
+    }
+    return false;
   },
   normalizedScreenCount: function(value, fallback) {
     var parsed = Number(value);
@@ -3102,7 +3079,7 @@ $sharedInitViewport
     this.buildNodeOffsets();
     if (this.activeCueId) this.refreshSentenceAudioCuePresentation();
   },
-  highlightSentenceAudioCue: function(cue, reveal) {
+  highlightSentenceAudioCue: function(cue, reveal, pauseEnabled, fromChapterStart) {
     var cueObject = this.sentenceAudioCueForInput(cue);
     var cueId = typeof cue === 'string' ? cue : cueObject && cueObject.id;
     if (!cueId) return null;
@@ -3116,6 +3093,9 @@ $sharedInitViewport
     if (targetIndex < 0) {
       this.refreshSentenceAudioCuePresentation();
       return null;
+    }
+    if (reveal && this.pauseAtCrossedMediaScreen(targetIndex, pauseEnabled, fromChapterStart)) {
+      return this.calculateProgress();
     }
     if (targetIndex !== this.currentScreenIndex) {
       if (!reveal) {
@@ -3310,7 +3290,7 @@ $sharedInitViewport
     // screenIndexForCharOffset 判成 -1、静默丢弃——正是 BUG-1742 本身的形状。
     // 宿主（audiobook_bridge.dart）是 fire-and-forget 的 evaluateJavascript，不消费
     // 返回值，改成 Promise 对调用方零影响。
-    vn.highlightSelectorCue = async function(selector, reveal) {
+    vn.highlightSelectorCue = async function(selector, reveal, pauseEnabled, fromChapterStart) {
       if (!selector) return null;
       await this.ensureReady();
       var root = this.contentRoot();
@@ -3335,6 +3315,9 @@ $sharedInitViewport
           if (clone && clone.classList) clone.classList.add('fushi-active');
         } catch (_ignored) {}
       }).bind(this);
+      if (reveal && this.pauseAtCrossedMediaScreen(index, pauseEnabled, fromChapterStart)) {
+        return this.calculateProgress();
+      }
       if (index !== this.currentScreenIndex) {
         // reveal=false 是「别打断用户当前阅读位置」的显式请求，不许翻屏。
         if (!reveal) return null;
