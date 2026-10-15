@@ -211,6 +211,15 @@ abstract interface class MangaOcrSidecarProvider {
   });
 }
 
+/// 能取消在飞取页请求的适配器（在线直读换章 / 关阅读器时释放运行时取图通道）。
+///
+/// 独立于 [OnlineMangaRuntimeAdapter]：只有经可取消运行时取页的实现才有意义，
+/// 调用方用 `is OnlineMangaPageCancellable` 判能力。
+abstract interface class OnlineMangaPageCancellable {
+  /// 尽力取消 [pages] 仍在飞的 [OnlineMangaRuntimeAdapter.fetchChapterPage]。
+  Future<void> cancelChapterPages(Iterable<OnlineMangaPageRef> pages);
+}
+
 /// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
 typedef OnlineMangaLoginTarget = ({
   Object runtime,
@@ -298,7 +307,8 @@ class MihonLibraryAdapter
         MangaOcrSidecarProvider,
         OnlineMangaLoginCapable,
         OnlineMangaWebUrlCapable,
-        OnlineMangaLanguageScoped {
+        OnlineMangaLanguageScoped,
+        OnlineMangaPageCancellable {
   const MihonLibraryAdapter(
     this.manager, {
     this.presetContext,
@@ -655,7 +665,7 @@ class MihonLibraryAdapter
         page.context.extension,
         page.context.source,
         page.page,
-        requestId: 'download-${identityHashCode(page)}-${page.index}',
+        requestId: _pageRequestId(page),
         preferences: page.context.preferences,
       );
     }
@@ -666,6 +676,22 @@ class MihonLibraryAdapter
       preferences: page.context.preferences,
     );
   }
+
+  @override
+  Future<void> cancelChapterPages(Iterable<OnlineMangaPageRef> pages) async {
+    final MihonRuntime runtime = manager.runtime;
+    if (runtime is! CancellableMihonRuntime) return;
+    final List<String> requestIds = <String>[
+      for (final OnlineMangaPageRef page in pages)
+        if (page is MihonMangaPageRef) _pageRequestId(page),
+    ];
+    if (requestIds.isEmpty) return;
+    await (runtime as CancellableMihonRuntime).cancelImageRequests(requestIds);
+  }
+
+  /// 同一个页引用对象 → 同一个运行时请求号（取消要对得上）。
+  static String _pageRequestId(MihonMangaPageRef page) =>
+      'download-${identityHashCode(page)}-${page.index}';
 
   @override
   Future<List<int>> fetchCover(

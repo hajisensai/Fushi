@@ -276,6 +276,114 @@ void main() {
       expect(out.linesCoords!.length, out.lines.length);
     });
 
+    // Lens 块：没有 linesCoords，两列竖排的几何只在逐字 regions 里（右列「一二」、
+    // 左列「三四」）。
+    MokuroBlock lensTwoColumns() {
+      MangaOcrTextRegion char(int at, double l, double t) => MangaOcrTextRegion(
+        rectangle: MokuroRect.fromLTRB(l, t, l + 10, t + 40),
+        utf16Start: at,
+        utf16End: at + 1,
+      );
+      return MokuroBlock(
+        rectangle: MokuroRect.fromLTRB(10, 10, 40, 90),
+        isVertical: true,
+        fontSize: 10,
+        zIndex: 0,
+        lines: <String>['一二三四'],
+        regions: <MangaOcrTextRegion>[
+          char(0, 30, 10),
+          char(1, 30, 50),
+          char(2, 10, 10),
+          char(3, 10, 50),
+        ],
+      );
+    }
+
+    test('Lens 块模型读出同样的字：逐字热区原样保留', () {
+      final MokuroBlock source = lensTwoColumns();
+      final MokuroBlock out = applyMangaAiOcrText(source, '一二\n三四');
+      expect(out.lines, source.lines);
+      expect(out.regions, same(source.regions));
+      expect(out.aiRecognized, isTrue);
+    });
+
+    test('Lens 块文字变了：按逐字热区聚回列框排版，不退成横跨两列的单行', () {
+      final MokuroBlock out = applyMangaAiOcrText(lensTwoColumns(), '一二三四五');
+      expect(out.lines.join(), '一二三四五');
+      expect(out.regions, isNull, reason: '旧偏移量对新文字无效');
+      expect(out.linesCoords, isNotNull);
+      expect(out.linesCoords, hasLength(2));
+      expect(out.lines, hasLength(2));
+      // 阅读序：第一列落在右列（x 30–40），第二列落在左列（x 10–20）。
+      final List<double> firstXs = <double>[
+        for (final List<double> p in out.linesCoords![0]) p[0],
+      ];
+      final List<double> secondXs = <double>[
+        for (final List<double> p in out.linesCoords![1]) p[0],
+      ];
+      expect(firstXs.every((double x) => x >= 30 && x <= 40), isTrue);
+      expect(secondXs.every((double x) => x >= 10 && x <= 20), isTrue);
+    });
+
+    test('Lens 斜块文字变了：从逐字热区拟合出倾角，重排后的列框仍沿斜列', () {
+      const double tilt = 5 * math.pi / 180;
+      final double c = math.cos(tilt), s = math.sin(tilt);
+      // 两列竖排各 10 个 30×30 的字，整块顺时针斜 5°；Lens 只给每个字旋转后的
+      // 轴对齐外接框（协议层丢掉了字的旋转）。列向下走 = 局部 (0, 1) → (-s, c)，
+      // 下一列在左边 = 局部 (-1, 0) → (-c, -s)。
+      final double half = 15 * (c + s);
+      final List<MangaOcrTextRegion> regions = <MangaOcrTextRegion>[];
+      for (int column = 0; column < 2; column++) {
+        for (int k = 0; k < 10; k++) {
+          final double cx = 300 - k * 32 * s - column * 40 * c;
+          final double cy = 50 + k * 32 * c - column * 40 * s;
+          final int at = column * 10 + k;
+          regions.add(
+            MangaOcrTextRegion(
+              rectangle: MokuroRect.fromLTRB(
+                cx - half,
+                cy - half,
+                cx + half,
+                cy + half,
+              ),
+              utf16Start: at,
+              utf16End: at + 1,
+            ),
+          );
+        }
+      }
+      final MokuroBlock source = MokuroBlock(
+        rectangle: MokuroRect.fromLTRB(200, 20, 330, 380),
+        isVertical: true,
+        fontSize: 30,
+        zIndex: 0,
+        lines: <String>['あいうえおかきくけこさしすせそたちつてと'],
+        regions: regions,
+      );
+      // 21 字一行：文字变了、行数也与两列对不上，走重排。
+      const String text = '一二三四五六七八九十一二三四五六七八九十一';
+      final MokuroBlock out = applyMangaAiOcrText(source, text);
+      expect(out.lines.join(), text);
+      expect(out.regions, isNull);
+      expect(out.linesCoords, isNotNull);
+      expect(out.linesCoords, hasLength(out.lines.length));
+      expect(out.lines.length, greaterThanOrEqualTo(2));
+      for (final List<List<double>> quad in out.linesCoords!) {
+        final double edgeAngle = math.atan2(
+          quad[1][1] - quad[0][1],
+          quad[1][0] - quad[0][0],
+        );
+        expect(edgeAngle, closeTo(tilt, 1e-6), reason: '重排出的列框必须沿斜列');
+      }
+      // 阅读序：第一列仍在右边。
+      double centerX(List<List<double>> quad) =>
+          quad.fold<double>(0, (double sum, List<double> p) => sum + p[0]) / 4;
+      expect(
+        centerX(out.linesCoords!.first),
+        greaterThan(centerX(out.linesCoords!.last)),
+      );
+    });
+
     test('行数对不上且原行框是斜的：重排后的行框保留原倾角', () {
       const double tilt = -20 * math.pi / 180;
       // 30×180 的列斜 20° 后外接框约 90×180（宽 = 30cos + 180sin）。
