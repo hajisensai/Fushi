@@ -660,23 +660,18 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
 });
 
-/// 最外层套上「挖词目标 = Fushi 复习 / 两者」（[SrsMiningAnkiRepository]）。
+/// 最外层套上「挖词目标 = Fushi 复习」（[SrsMiningAnkiRepository]）。
 ///
-/// **只有复习模块开着、且目标不是「仅 Anki」时才包**：模块关着时链上根本没有这一层，
+/// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，
 /// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
-/// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列；
-/// 目标 = 两者时 Anki 那一半照旧走队列 / 自动重排。
+/// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
   if (!ref.watch(srsModuleEnabledProvider)) return repo;
   final SrsMiningTarget target = ref.watch(
     appProvider.select((AppModel m) => m.srsMiningTarget),
   );
-  if (!target.includesSrs) return repo;
-  return SrsMiningAnkiRepository(
-    inner: repo,
-    target: () => target,
-    miner: () => _readSrsMiner(ref),
-  );
+  if (target != SrsMiningTarget.srs) return repo;
+  return SrsMiningAnkiRepository(inner: repo, miner: () => _readSrsMiner(ref));
 }
 
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。

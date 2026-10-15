@@ -1,4 +1,4 @@
-/// 挖词目标「Fushi SRS」（计划 PR3a）：制卡时把卡写进内置复习，而不是（或同时）发往 Anki。
+/// 挖词目标「Fushi SRS」（计划 PR3a）：制卡时把卡写进内置复习，而不是发往 Anki。
 ///
 /// - [SrsMiner]：一次制卡落进 [SrsDbStore]。字段渲染与 Anki 三个后端是同一套
 ///   [AnkiNoteComposer]（`renderMediaPayload` → `buildMinedFields`），映射固定用
@@ -6,7 +6,7 @@
 ///   句子音频、截图 / 封面、词典图片）存进 [SrsMediaStore]，字段里的引用换成存储后的
 ///   内容哈希文件名。查重用 SRS 的词状态（词形 + 读音，同形异读不算重复）。
 /// - [SrsMiningAnkiRepository]：`ankiRepositoryProvider` 装饰链最外层。只有复习模块
-///   开着且目标不是「仅 Anki」时才包这一层（见 anki_view_model.dart），模块关着时链上
+///   开着且目标是「Fushi 复习」时才包这一层（见 anki_view_model.dart），模块关着时链上
 ///   根本没有它。
 library;
 
@@ -21,7 +21,6 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
 
 /// 制卡上下文 → 笔记出处（拿不到定位时为 manual）。
 SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
@@ -281,22 +280,14 @@ class SrsMiner with AnkiNoteComposer {
 /// 打开 SRS 制卡所需的 store + 媒体目录（模块关着 / 打开失败时为 null）。
 typedef SrsMinerResolver = Future<SrsMiner?> Function();
 
-/// `ankiRepositoryProvider` 装饰链里的 SRS 层（见文件头）。
-///
-/// 两边结果的合并规则（目标 = 两者时）：
-/// - 任一边失败 → 失败（用户必须知道有一边没进去；另一边已写入的不回滚）；
-/// - 任一边新建成功 → 成功（Anki 边成功时用它的结果，保留 noteId / 牌组名）；
-/// - Anki 边进了待发队列 → queued；
-/// - 两边都重复 → 重复；Anki 未配置而 SRS 成功 → 成功。
+/// `ankiRepositoryProvider` 装饰链里的 SRS 层（见文件头）：制卡与判重都只走
+/// Fushi 复习，不再发往内层 Anki。其余操作（设置、牌组、打开笔记等）照旧委托内层。
 class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   SrsMiningAnkiRepository({
     required super.inner,
-    required SrsMiningTarget Function() target,
     required SrsMinerResolver miner,
-  }) : _target = target,
-       _miner = miner;
+  }) : _miner = miner;
 
-  final SrsMiningTarget Function() _target;
   final SrsMinerResolver _miner;
 
   @override
@@ -304,54 +295,20 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
-    final SrsMiningTarget target = _target();
-    if (!target.includesSrs) {
-      return inner.mineEntry(rawPayloadJson: rawPayloadJson, context: context);
-    }
     final SrsMiner? miner = await _miner();
-    final MineOutcome srs = miner == null
-        ? MineOutcome.failure('Fushi review is not available.')
-        : await miner.mine(
-            settings: await inner.loadSettings(),
-            rawPayloadJson: rawPayloadJson,
-            context: context,
-          );
-    if (!target.includesAnki) return srs;
-    final MineOutcome anki = await inner.mineEntry(
+    if (miner == null) {
+      return MineOutcome.failure('Fushi review is not available.');
+    }
+    return miner.mine(
+      settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
       context: context,
     );
-    return combineSrsAndAnkiOutcomes(srs: srs, anki: anki);
   }
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async {
-    final SrsMiningTarget target = _target();
-    if (!target.includesSrs) return inner.isDuplicate(expression, reading);
     final SrsMiner? miner = await _miner();
-    if (miner != null && await miner.isDuplicate(expression, reading)) {
-      return true;
-    }
-    if (!target.includesAnki) return false;
-    return inner.isDuplicate(expression, reading);
+    return miner != null && await miner.isDuplicate(expression, reading);
   }
-}
-
-/// 目标 = 两者时两边结果的合并（规则见 [SrsMiningAnkiRepository]）。
-MineOutcome combineSrsAndAnkiOutcomes({
-  required MineOutcome srs,
-  required MineOutcome anki,
-}) {
-  if (anki.result == MineResult.error) return anki;
-  if (srs.result == MineResult.error) return srs;
-  if (anki.result == MineResult.success) return anki;
-  if (anki.result == MineResult.queued) return anki;
-  if (srs.result == MineResult.success) return srs;
-  if (anki.result == MineResult.duplicate &&
-      srs.result == MineResult.duplicate) {
-    return anki;
-  }
-  // Anki 未配置、SRS 重复：这个词已经在复习里了。
-  if (srs.result == MineResult.duplicate) return srs;
-  return anki;
 }

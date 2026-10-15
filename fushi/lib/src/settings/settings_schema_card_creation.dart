@@ -96,7 +96,7 @@ SettingsDestination buildCardCreationDestination() {
       ),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
-      // 挖词目标（Anki / Fushi 复习 / 两者）：只在复习模块开着时存在。
+      // 挖词目标（Anki / Fushi 复习，二选一）：只在复习模块开着时存在。
       SettingsBodySearchEntry(
         id: 'card_creation.anki.srs_mining_target',
         visible: (SettingsContext c) =>

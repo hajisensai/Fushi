@@ -98,12 +98,10 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
-  SrsMiningAnkiRepository repoFor(_FakeAnki inner, SrsMiningTarget target) =>
-      SrsMiningAnkiRepository(
-        inner: inner,
-        target: () => target,
-        miner: () async => SrsMiner(store: store, media: media),
-      );
+  SrsMiningAnkiRepository repoFor(_FakeAnki inner) => SrsMiningAnkiRepository(
+    inner: inner,
+    miner: () async => SrsMiner(store: store, media: media),
+  );
 
   AnkiMiningContext bookContext() => AnkiMiningContext(
     sentence: '雪が降る。',
@@ -132,7 +130,7 @@ void main() {
 
   test('目标 = SRS：Lapis 字段按 fieldId 落库，媒体按内容哈希存盘并改写引用，出处为书', () async {
     final _FakeAnki inner = _FakeAnki();
-    final MineOutcome out = await repoFor(inner, SrsMiningTarget.srs).mineEntry(
+    final MineOutcome out = await repoFor(inner).mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき', audio: wordAudio.path),
       context: bookContext(),
     );
@@ -175,10 +173,7 @@ void main() {
   });
 
   test('判重：同词同读重复；同形异读不算重复；allowDuplicate 跳过判重', () async {
-    final SrsMiningAnkiRepository repo = repoFor(
-      _FakeAnki(),
-      SrsMiningTarget.srs,
-    );
+    final SrsMiningAnkiRepository repo = repoFor(_FakeAnki());
     const AnkiMiningContext ctx = AnkiMiningContext(sentence: '');
     expect(
       (await repo.mineEntry(
@@ -219,80 +214,36 @@ void main() {
     expect((await store.note(s['上手']!.noteId))!.source!.kind, isNotNull);
   });
 
-  test('目标 = Anki：完全走内层，SRS 不写', () async {
+  test('SRS 层二选一：制卡不发往 Anki；判重只看 SRS，Anki 那边有也不算', () async {
     final _FakeAnki inner = _FakeAnki(duplicate: true);
-    final SrsMiningAnkiRepository repo = repoFor(inner, SrsMiningTarget.anki);
-    final MineOutcome out = await repo.mineEntry(
-      rawPayloadJson: _payload('雪', 'ゆき'),
-      context: const AnkiMiningContext(sentence: ''),
-    );
-    expect(out.deckName, 'Anki deck');
-    expect(inner.mined, 1);
-    expect(await repo.isDuplicate('雪', 'ゆき'), isTrue);
-    expect(
-      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('雪')]),
-      isEmpty,
-    );
-  });
-
-  test('目标 = 两者：两边都写；判重 = SRS 有 || Anki 有；结果合并', () async {
-    final _FakeAnki inner = _FakeAnki();
-    final SrsMiningAnkiRepository repo = repoFor(inner, SrsMiningTarget.both);
+    final SrsMiningAnkiRepository repo = repoFor(inner);
+    expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
     final MineOutcome out = await repo.mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき'),
       context: const AnkiMiningContext(sentence: ''),
     );
     expect(out.result, MineResult.success);
-    expect(out.deckName, 'Anki deck', reason: 'Anki 成功时用它的结果（noteId / 牌组名）');
-    expect(inner.mined, 1);
+    expect(inner.mined, 0, reason: '目标是 Fushi 复习时不再同时发往 Anki');
     expect(await repo.isDuplicate('雪', 'ゆき'), isTrue);
-    expect(await repo.isDuplicate('雨', 'あめ'), isFalse);
-    inner.duplicate = true;
-    expect(await repo.isDuplicate('雨', 'あめ'), isTrue);
-
-    // Anki 失败：整体失败（用户必须知道有一边没进去）。
-    inner.outcome = MineOutcome.failure('anki down');
-    final MineOutcome failed = await repo.mineEntry(
-      rawPayloadJson: _payload('風', 'かぜ'),
-      context: const AnkiMiningContext(sentence: ''),
-    );
-    expect(failed.result, MineResult.error);
     expect(
-      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('風')]),
+      await store.lookupTermStatus(const <SrsTermQuery>[SrsTermQuery('雪')]),
       isNotEmpty,
-      reason: 'SRS 那一半已经写进去，不回滚',
     );
   });
 
-  test('合并规则', () {
-    const MineOutcome ok = MineOutcome.success(deckName: 'd');
-    const MineOutcome dup = MineOutcome.duplicate();
-    const MineOutcome queued = MineOutcome.queued();
-    const MineOutcome none = MineOutcome.notConfigured();
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: dup).result,
-      MineResult.success,
+  test('SRS 打不开：制卡报错（不悄悄落回 Anki），判重为否', () async {
+    final _FakeAnki inner = _FakeAnki(duplicate: true);
+    final SrsMiningAnkiRepository repo = SrsMiningAnkiRepository(
+      inner: inner,
+      miner: () async => null,
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: ok).result,
-      MineResult.success,
+    final MineOutcome out = await repo.mineEntry(
+      rawPayloadJson: _payload('雪', 'ゆき'),
+      context: const AnkiMiningContext(sentence: ''),
     );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: dup).result,
-      MineResult.duplicate,
-    );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: queued).result,
-      MineResult.queued,
-    );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: ok, anki: none).result,
-      MineResult.success,
-    );
-    expect(
-      combineSrsAndAnkiOutcomes(srs: dup, anki: none).result,
-      MineResult.duplicate,
-    );
+    expect(out.result, MineResult.error);
+    expect(inner.mined, 0);
+    expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
   });
 
   test('出处转换：漫画 / 本地视频 / 在线视频 / 游戏 / 无定位', () {
@@ -406,23 +357,24 @@ void main() {
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
     });
 
-    test('模块开着、目标含 SRS：最外层是 SRS 层', () {
-      for (final SrsMiningTarget t in <SrsMiningTarget>[
-        SrsMiningTarget.srs,
-        SrsMiningTarget.both,
-      ]) {
-        final BaseAnkiRepository repo = container(
-          srsEnabled: true,
-          target: t,
-        ).read(ankiRepositoryProvider);
-        expect(repo, isA<SrsMiningAnkiRepository>());
-      }
+    test('模块开着、目标是 Fushi 复习：最外层是 SRS 层', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.srs,
+      ).read(ankiRepositoryProvider);
+      expect(repo, isA<SrsMiningAnkiRepository>());
     });
   });
 
   test('偏好 wire 值', () {
     expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.anki);
     expect(SrsMiningTarget.fromWire('garbage'), SrsMiningTarget.anki);
+    // 只有二选一两档；已退役的「两者」存量值读成 Fushi 复习。
+    expect(SrsMiningTarget.values, <SrsMiningTarget>[
+      SrsMiningTarget.anki,
+      SrsMiningTarget.srs,
+    ]);
+    expect(SrsMiningTarget.fromWire('both'), SrsMiningTarget.srs);
     for (final SrsMiningTarget t in SrsMiningTarget.values) {
       expect(SrsMiningTarget.fromWire(t.wire), t);
     }

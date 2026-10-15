@@ -7726,8 +7726,6 @@
   "srs_mining_target_hint": "制卡时卡片发往哪里",
   "srs_mining_target_anki": "Anki",
   "srs_mining_target_srs": "Fushi 复习",
-  "srs_mining_target_both": "两者都推",
-  "srs_mining_target_both_warning": "Anki 与 Fushi 复习会各自为同一个词安排复习（重复排程）。",
   "srs_ankiconnect_hint": "开启复习模块后，AnkiConnect 工具（Yomitan、asbplayer 等）可把 AnkiConnect 地址填成 http://127.0.0.1:$port，卡片直接进 Fushi 复习。",
   "srs_sync_now": "立即同步",
   "srs_sync_done": "复习数据已同步",

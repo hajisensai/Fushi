@@ -408,8 +408,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
-  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki / Fushi
-  // 复习 / 两者。模块关着时不读。非凭据、跨设备。
+  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
+  // 复习（二选一；存量 'both' 读成 'srs'）。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张

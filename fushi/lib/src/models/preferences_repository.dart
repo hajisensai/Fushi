@@ -2876,7 +2876,8 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs' / 'both'（见 SrsMiningTarget）。
+  // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs'（见 SrsMiningTarget；
+  // 存量 'both' 读成 'srs'）。
   // 只有复习模块开着时才被读取；模块关着时制卡链路不看它。
   String get srsMiningTarget =>
       getPref('srs_mining_target', defaultValue: 'anki') as String;

@@ -7726,8 +7726,6 @@
   "srs_mining_target_hint": "Where a card goes when you mine a word",
   "srs_mining_target_anki": "Anki",
   "srs_mining_target_srs": "Fushi review",
-  "srs_mining_target_both": "Both",
-  "srs_mining_target_both_warning": "Anki and Fushi review will each schedule the same word, so you will review it twice.",
   "srs_ankiconnect_hint": "With the review module on, AnkiConnect tools (Yomitan, asbplayer and others) can use http://127.0.0.1:$port as their AnkiConnect address to add cards straight to Fushi review.",
   "srs_sync_now": "Sync now",
   "srs_sync_done": "Review data synced",

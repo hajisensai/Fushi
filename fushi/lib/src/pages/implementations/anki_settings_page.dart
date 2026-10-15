@@ -2080,7 +2080,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// all=按与查重同一条件（第一字段=expression）覆写任意已存在卡，使更早制的卡也
   /// 能在弹窗里点绿 ✓↩ 覆写。AnkiDroid 拿不到 note id → 选 all 仍降级为不可覆写
   /// 更早卡（与现状一致），不破坏现有行为。
-  /// 挖词目标（Anki / Fushi 复习 / 两者）。选「两者」时副标题换成重复排程的提醒。
+  /// 挖词目标（Anki / Fushi 复习，二选一）。
   Widget _buildSrsMiningTargetPicker() {
     final SrsMiningTarget target = ref.watch(
       appProvider.select((AppModel m) => m.srsMiningTarget),
@@ -2088,9 +2088,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return AdaptiveSettingsPickerRow<SrsMiningTarget>(
       key: const ValueKey<String>('anki-srs-mining-target'),
       title: t.srs_mining_target_title,
-      subtitle: target == SrsMiningTarget.both
-          ? t.srs_mining_target_both_warning
-          : t.srs_mining_target_hint,
+      subtitle: t.srs_mining_target_hint,
       controlBelow: true,
       selected: target,
       options: <AdaptiveSettingsPickerOption<SrsMiningTarget>>[
@@ -2101,10 +2099,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<SrsMiningTarget>(
           value: SrsMiningTarget.srs,
           label: t.srs_mining_target_srs,
-        ),
-        AdaptiveSettingsPickerOption<SrsMiningTarget>(
-          value: SrsMiningTarget.both,
-          label: t.srs_mining_target_both,
         ),
       ],
       onChanged: (SrsMiningTarget value) =>
