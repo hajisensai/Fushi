@@ -58,6 +58,10 @@ abstract final class SrsFieldKeys {
   /// 笔记的「首选牌组」：按需生成的卡片的初始 deckId 由它确定（第六轮审查第 14 条）。
   static const String noteDeck = 'deck';
 
+  /// 笔记的当前笔记类型（「更改笔记类型」写它；没有记录时取身份记录里的创建类型）。
+  /// 身份记录不可变，所以换类型是一条修改记录，不是改身份记录。
+  static const String noteType = 'noteType';
+
   // notetype
   static const String name = 'name';
   static String fieldDef(String fieldId) => 'fieldDef/$fieldId';
@@ -70,6 +74,12 @@ abstract final class SrsFieldKeys {
   static const String buriedUntilDay = 'buried';
   static const String flag = 'flag';
   static const String cardDeck = 'deck';
+
+  /// 卡片的「前身」：更改笔记类型时新卡继承旧卡的复习历史与标志（值恒为 true）。
+  /// 每个前身一个键（集合语义）：两台设备各自加同一个前身是同值，不冲突。
+  static String cardHistoryFrom(String predecessorCardId) =>
+      '$cardHistoryFromPrefix$predecessorCardId';
+  static const String cardHistoryFromPrefix = 'historyFrom/';
 
   // deck
   static const String deckParent = 'parent';
@@ -96,6 +106,8 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
   switch (kind) {
     case SrsEntityKind.note:
       if (fieldKey == SrsFieldKeys.noteDeck) return SrsFieldClass.setting;
+      // 换类型：最后修改生效，被覆盖的进同步冲突记录、可一键改回（字段值另按内容类处理）。
+      if (fieldKey == SrsFieldKeys.noteType) return SrsFieldClass.setting;
       if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
       return SrsFieldClass.content;
     case SrsEntityKind.noteType:

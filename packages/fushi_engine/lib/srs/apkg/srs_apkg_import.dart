@@ -206,6 +206,12 @@ class _Importer {
   final Map<int, List<SrsReviewLog>> _extLogsByCard =
       <int, List<SrsReviewLog>>{};
   final Map<String, int> _extRevlogIds = <String, int>{};
+
+  /// fushi-ext 的 logCards：前身卡日志（更改笔记类型继承来的）→ 它在包里归的 Anki 卡 id。
+  final Map<String, int> _extLogCards = <String, int>{};
+
+  /// 同 profile 回导时补的「前身」链接（日志原样保留在前身卡上）。
+  final List<SrsEditSpec> _historyLinks = <SrsEditSpec>[];
   final Map<String, Map<String, Object?>> _extDecks =
       <String, Map<String, Object?>>{};
   final Map<String, Object?> _extNotes = <String, Object?>{};
@@ -233,6 +239,7 @@ class _Importer {
     await _mapDecks();
     await _importNotes();
     await _flush(force: true);
+    if (_historyLinks.isNotEmpty) await store.writeEdits(_historyLinks);
     onProgress?.call(1);
     return report;
   }
@@ -245,13 +252,19 @@ class _Importer {
     final Object? v = ext['version'];
     if (v is! int || v > srsFushiExtVersion) return;
     _extSameProfile = ext['profileUid'] == profileUid;
+    final Object? logCards = ext['logCards'];
+    if (logCards is Map) {
+      for (final MapEntry<Object?, Object?> e in logCards.entries) {
+        if (e.value is int) _extLogCards['${e.key}'] = e.value! as int;
+      }
+    }
     final Object? logs = ext['logs'];
     if (logs is List) {
       for (final Object? j in logs) {
         if (j is! Map) continue;
         final SrsReviewLog l = SrsReviewLog.fromJson(j.cast<String, Object?>());
-        (_extLogsByCard[SrsIds.ankiNumericId(l.cardId)] ??= <SrsReviewLog>[])
-            .add(l);
+        final int cid = _extLogCards[l.id] ?? SrsIds.ankiNumericId(l.cardId);
+        (_extLogsByCard[cid] ??= <SrsReviewLog>[]).add(l);
       }
     }
     final Object? ids = ext['revlogIds'];
@@ -937,7 +950,10 @@ class _Importer {
           lapses: 0,
           lastRated: null,
         );
-        return nat.any((SrsReviewLog l) => srsImportEquivalent(imported, l));
+        // native 是这张卡的整份历史（含前身卡的日志），同一张逻辑卡。
+        return nat.any(
+          (SrsReviewLog l) => srsImportEquivalent(imported, l, sameCard: true),
+        );
       },
     );
     if (!d.write) return;
@@ -969,6 +985,18 @@ class _Importer {
 
   SrsReviewLog _remapExtLog(SrsReviewLog l, String cardId) {
     if (_extSameProfile && l.cardId == cardId) return l;
+    if (_extSameProfile && _extLogCards.containsKey(l.id)) {
+      // 同 profile：前身卡的身份在本 profile 下不变，日志原样落回前身卡，再补上前身链接。
+      _historyLinks.add(
+        SrsEditSpec(
+          SrsEntityKind.card,
+          cardId,
+          SrsFieldKeys.cardHistoryFrom(l.cardId),
+          true,
+        ),
+      );
+      return l;
+    }
     final Map<String, Object?> j = l.toJson();
     j['id'] = SrsIds.remappedLog(cardId, l.id);
     if (l.revokesId != null) {

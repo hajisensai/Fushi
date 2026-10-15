@@ -85,6 +85,16 @@ class SrsRenderedCard {
   final bool isEmpty;
 }
 
+/// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
+class SrsEditSpec {
+  const SrsEditSpec(this.kind, this.entityId, this.key, this.value);
+
+  final SrsEntityKind kind;
+  final String entityId;
+  final String key;
+  final Object? value;
+}
+
 class SrsDbStore implements SrsSyncReplica {
   SrsDbStore._({
     required this.db,
@@ -603,17 +613,81 @@ class SrsDbStore implements SrsSyncReplica {
         final Object? nt = (jsonDecode(n.payloadJson) as Map)['noteTypeId'];
         if (types.contains(nt)) _dirtyNotes.add(n.id);
       }
+      // 换过类型的笔记：当前类型在笔记缓存里（身份记录里只有创建时的类型）。
+      final List<SrsNoteCacheRow> changed =
+          await (db.select(db.srsNotesCache)..where(
+                (n) =>
+                    n.profileUid.equals(profileUid) & n.noteTypeId.isIn(types),
+              ))
+              .get();
+      _dirtyNotes.addAll(changed.map((SrsNoteCacheRow n) => n.id));
     }
     final List<String> notes = _dirtyNotes.toList();
     _dirtyNotes.clear();
     for (final String n in notes) {
       await _refreshNote(n);
     }
-    final List<String> cards = _dirtyCards.toList();
+    // 卡片的历史 / 标志沿「前身」继承：前身变了，后继卡也要重算。
+    final Set<String> cards = <String>{};
+    final List<String> queue = _dirtyCards.toList();
     _dirtyCards.clear();
+    while (queue.isNotEmpty) {
+      final String c = queue.removeLast();
+      if (!cards.add(c)) continue;
+      queue.addAll(await _successorsOf(c));
+    }
     for (final String c in cards) {
       await _refreshCardById(c);
     }
+  }
+
+  /// 以 [cardId] 为前身的卡（更改笔记类型时由新卡记下）。
+  Future<List<String>> _successorsOf(String cardId) async =>
+      (await (db.select(db.srsFieldEdits)..where(
+                (t) =>
+                    t.entityKind.equals(SrsEntityKind.card.wire) &
+                    t.fieldKey.equals(SrsFieldKeys.cardHistoryFrom(cardId)),
+              ))
+              .get())
+          .map((SrsFieldEditRow r) => r.entityId)
+          .toSet()
+          .toList();
+
+  /// 一张卡的「血统」：自己在前，再按广度优先列出全部前身（防环）。每张卡附带它自己的修改记录。
+  Future<List<(String, SrsEntityEdits)>> _cardLineage(String cardId) async {
+    final List<(String, SrsEntityEdits)> out = <(String, SrsEntityEdits)>[];
+    final Set<String> seen = <String>{cardId};
+    final List<String> queue = <String>[cardId];
+    while (queue.isNotEmpty && out.length < 256) {
+      final String id = queue.removeAt(0);
+      final SrsEntityEdits edits = await _entityEdits(SrsEntityKind.card, id);
+      out.add((id, edits));
+      final List<String> preds = <String>[
+        for (final String k in edits.keys)
+          if (k.startsWith(SrsFieldKeys.cardHistoryFromPrefix) &&
+              edits.value(k) == true)
+            k.substring(SrsFieldKeys.cardHistoryFromPrefix.length),
+      ]..sort();
+      for (final String p in preds) {
+        if (seen.add(p)) queue.add(p);
+      }
+    }
+    return out;
+  }
+
+  /// 卡片标志按血统继承：自己有记录的键用自己的，没有的取最近的前身的
+  /// （换类型后旧卡的暂停 / 旗标 / 牌组跟到新卡；别的设备并发改旧卡也会流过来）。
+  static SrsEntityEdits _inheritedCardEdits(
+    List<(String, SrsEntityEdits)> lineage,
+  ) {
+    final Map<String, SrsRegister> regs = <String, SrsRegister>{};
+    for (final (String _, SrsEntityEdits edits) in lineage.reversed) {
+      for (final String k in edits.keys) {
+        if (k.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) continue;
+        regs[k] = edits[k]!;
+      }
+    }
+    return SrsEntityEdits(regs);
   }
 
   /// 丢掉全部缓存，由事件重建（缓存不同步，随时可重建）。
@@ -754,10 +828,15 @@ class SrsDbStore implements SrsSyncReplica {
     );
   }
 
-  Future<SrsCardHistory> history(String cardId) async {
+  /// 一张卡的复习历史：自己的日志 + 全部前身卡（更改笔记类型继承来的）的日志。
+  Future<SrsCardHistory> history(String cardId) async => _historyOf(<String>[
+    for (final (String id, SrsEntityEdits _) in await _cardLineage(cardId)) id,
+  ]);
+
+  Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
     final List<SrsReviewLogRow> rows = await (db.select(
       db.srsReviewLogs,
-    )..where((t) => t.cardId.equals(cardId))).get();
+    )..where((t) => t.cardId.isIn(cardIds))).get();
     final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final SrsReviewLogRow r in rows)
         SrsReviewLog.fromJson(
@@ -777,12 +856,15 @@ class SrsDbStore implements SrsSyncReplica {
     required int noteCreatedAt,
     required bool hidden,
   }) async {
+    final List<(String, SrsEntityEdits)> lineage = await _cardLineage(cardId);
     final SrsCardFlags flags = SrsCardFlags.materialize(
-      await _entityEdits(SrsEntityKind.card, cardId),
+      _inheritedCardEdits(lineage),
       noteDeckId: noteDeckId,
       fallbackDeckId: defaultDeckId,
     );
-    final SrsCardHistory h = await history(cardId);
+    final SrsCardHistory h = await _historyOf(<String>[
+      for (final (String id, SrsEntityEdits _) in lineage) id,
+    ]);
     final SrsScheduleResult s = h.state;
     await db
         .into(db.srsCardsCache)
@@ -864,6 +946,42 @@ class SrsDbStore implements SrsSyncReplica {
         for (final SrsFieldEdit e in out) SrsEditEvent(e),
       ]);
     }
+    return out;
+  }
+
+  /// 一次写多个实体的修改记录（可带新身份记录），同一个事务、同一次缓存刷新。
+  /// 值没变且无冲突的键不产生记录（与 [editFields] 同一规则）。
+  Future<List<SrsFieldEdit>> writeEdits(
+    List<SrsEditSpec> specs, {
+    List<SrsEntityRecord> records = const <SrsEntityRecord>[],
+  }) async {
+    final (int nowMs, SrsTimeSource src) = now();
+    final Map<String, SrsEntityEdits> current = <String, SrsEntityEdits>{};
+    final List<SrsEvent> events = <SrsEvent>[
+      for (final SrsEntityRecord r in records) SrsEntityEvent(r),
+    ];
+    final List<SrsFieldEdit> out = <SrsFieldEdit>[];
+    for (final SrsEditSpec spec in specs) {
+      final String k = '${spec.kind.wire}/${spec.entityId}';
+      final SrsEntityEdits edits = current[k] ??= await _entityEdits(
+        spec.kind,
+        spec.entityId,
+      );
+      final SrsRegister? reg = edits[spec.key];
+      if (reg != null && srsEditIsNoop(reg, spec.value)) continue;
+      final SrsFieldEdit e = _writer.create(
+        profileUid: profileUid,
+        entityKind: spec.kind,
+        entityId: spec.entityId,
+        fieldKey: spec.key,
+        value: spec.value,
+        hlc: _clock.tick(nowMs),
+        timeSource: src,
+      );
+      out.add(e);
+      events.add(SrsEditEvent(e));
+    }
+    if (events.isNotEmpty) await _emit(events);
     return out;
   }
 
