@@ -8,6 +8,12 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart'
+    show
+        DragStartBehavior,
+        HorizontalDragGestureRecognizer,
+        LongPressGestureRecognizer;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -17,6 +23,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -257,6 +264,12 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// / MD3 FAB）挪到胶囊**起始侧**（LTR 即左侧），整条底栏成为关闭时的镜像；
 /// 胶囊收起时也缩向末端，紧贴 FAB 的另一侧不留空洞。目的地顺序本身由调用方
 /// 传入的 [items] 决定（已按反转排好）。
+///
+/// [barStyle]：底栏形态（用户偏好 `nav_bar_style`，见 [AdaptiveNavBarStyle]）。
+/// 分页滑动（MD3）：查词并进胶囊、所有目的地同级，每页 5 个，在底栏上横滑翻页；
+/// 按住约 0.3 秒进入拖选（震一下），手指停在哪一格就选哪一格，拖到胶囊左右
+/// 边缘停一下自动翻页，松手切过去。目的地不超过 5 个时与平铺相同。Apple 胶囊
+/// 暂不分页，仍按平铺画。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -270,6 +283,7 @@ Widget adaptiveBottomBar({
   AdaptiveNavFab? materialFab,
   bool searchLeading = false,
   ValueChanged<int>? onDragSelect,
+  AdaptiveNavBarStyle barStyle = AdaptiveNavBarStyle.flat,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -312,6 +326,7 @@ Widget adaptiveBottomBar({
     materialFab: materialFab,
     searchLeading: searchLeading,
     onDragSelect: onDragSelect,
+    barStyle: barStyle,
   );
 }
 
@@ -338,7 +353,11 @@ class _MaterialNavCluster extends StatelessWidget {
     this.materialFab,
     this.searchLeading = false,
     this.onDragSelect,
+    this.barStyle = AdaptiveNavBarStyle.flat,
   });
+
+  /// 底栏形态，见 [adaptiveBottomBar]；侧栏与 Apple 胶囊不读。
+  final AdaptiveNavBarStyle barStyle;
 
   /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
   /// [onTap] 的序号）。null = 不启用长按拖选（侧栏、玻璃底栏、调用方没接）。
@@ -391,11 +410,13 @@ class _MaterialNavCluster extends StatelessWidget {
     int i, {
     bool iconOnly = false,
     double? cellWidth,
+    bool? looksSelected,
   }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
       item: items[i],
-      selected: i == currentIndex,
+      // 分页底栏拖选中：选中药丸画在手指罩着的那一格（只是外观）。
+      selected: looksSelected ?? i == currentIndex,
       horizontal: axis == Axis.horizontal,
       extended: axis == Axis.vertical && extended,
       iconOnly: iconOnly,
@@ -404,6 +425,25 @@ class _MaterialNavCluster extends StatelessWidget {
         if (i != currentIndex) fushiSelectionHaptic(context);
         onTap(i);
       },
+    );
+  }
+
+  /// 分页滑动的一排（MD3）：每页 [_kNavPageSize] 格，底栏横滑翻页、长按拖选
+  /// （见 [_NavPagedRow]）。不挂整条胶囊的滑动指示器，各格自己画选中药丸。
+  /// 拖选落地走 [onDragSelect]（宿主据此播模块切换转场），没接时退回 [onTap]。
+  Widget _buildPagedRow(BuildContext context, double width, List<int> indices) {
+    final List<List<int>> pages = <List<int>>[
+      for (int start = 0; start < indices.length; start += _kNavPageSize)
+        indices.sublist(start, math.min(indices.length, start + _kNavPageSize)),
+    ];
+    final double cellWidth = width / _kNavPageSize;
+    final ValueChanged<int> dragSelect = onDragSelect ?? onTap;
+    return _NavPagedRow(
+      pages: pages,
+      currentIndex: currentIndex,
+      cellBuilder: (int i, bool? looksSelected) =>
+          _cell(context, i, cellWidth: cellWidth, looksSelected: looksSelected),
+      onDragSelect: dragSelect,
     );
   }
 
@@ -551,6 +591,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final int? rawSearch = glassSearchIndex;
     int? search;
     if (materialFab == null &&
+        !barStyle.lookupInBar &&
         rawSearch != null &&
         rawSearch >= 0 &&
         rawSearch < items.length &&
@@ -664,6 +705,10 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
+    if (this.barStyle == AdaptiveNavBarStyle.pager &&
+        indices.length > _kNavPageSize) {
+      return _buildPagedRow(context, width, indices);
+    }
     final TextStyle style =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
           fontWeight: FontWeight.w600,
@@ -2192,6 +2237,341 @@ class _FloatingNavSurface extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+/// 分页底栏每页的格数。
+const int _kNavPageSize = 5;
+
+/// 按住多久进入拖选（短于系统长按：底栏上的长按只服务拖选）。
+const Duration _kNavPagedSelectHold = Duration(milliseconds: 300);
+
+/// 拖选中手指在胶囊左右边缘这么宽的范围内（含胶囊外）停住就翻页。
+const double _kNavPagedEdgeZone = 20;
+
+/// 停在边缘多久翻一页；一直停着就每隔这么久再翻一页。
+const Duration _kNavPagedEdgeDwell = Duration(milliseconds: 450);
+
+/// 底栏分页行：[pages] 每页一组目的地（每页 [_kNavPageSize] 格）。
+/// - 横滑：手指跟手拖动整排，松手拖过 1/4 页或甩一下就翻到相邻页（spatial
+///   弹簧带回弹），底部一排小圆点提示页数与当前页；
+/// - 按住约 0.3 秒：进入拖选（震一下），手指罩着哪一格就把选中药丸画在哪一格、
+///   换格轻震；拖到胶囊左右边缘停一下自动翻页；松手切到罩着的那一项（落在空格 /
+///   当前项上 = 取消）；
+/// - 当前项换到别的页（如正文横滑切模块）时自动翻过去；分组变了（开关模块）
+///   直接落到当前项所在页。
+class _NavPagedRow extends StatefulWidget {
+  const _NavPagedRow({
+    required this.pages,
+    required this.currentIndex,
+    required this.cellBuilder,
+    required this.onDragSelect,
+  });
+
+  final List<List<int>> pages;
+  final int currentIndex;
+
+  /// 画一格；`looksSelected` 非空时按它画选中态（拖选中），否则按当前项。
+  final Widget Function(int index, bool? looksSelected) cellBuilder;
+
+  /// 拖选松手落在某一项上。
+  final ValueChanged<int> onDragSelect;
+
+  @override
+  State<_NavPagedRow> createState() => _NavPagedRowState();
+}
+
+class _NavPagedRowState extends State<_NavPagedRow>
+    with SingleTickerProviderStateMixin {
+  /// 以「页」为单位的连续位置：0 = 第一页，1 = 第二页……拖动时取小数。
+  late final AnimationController _position = AnimationController.unbounded(
+    vsync: this,
+  );
+  late int _page = _pageOf(widget.currentIndex) ?? 0;
+  double _width = 1;
+
+  /// 拖选态：手指罩着的目的地（null = 空格 / 胶囊外）。
+  bool _selecting = false;
+  int? _hover;
+  Offset? _selectPoint;
+  int _edgeDirection = 0;
+  Timer? _edgeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _position.value = _page.toDouble();
+  }
+
+  @override
+  void didUpdateWidget(_NavPagedRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 分组变了（开关模块）：旧页号已无意义，直接落到当前项所在页。
+    if (!_samePages(oldWidget.pages, widget.pages)) {
+      _page = _pageOf(widget.currentIndex) ?? 0;
+      _position.value = _page.toDouble();
+      return;
+    }
+    if (oldWidget.currentIndex != widget.currentIndex && !_selecting) {
+      final int? page = _pageOf(widget.currentIndex);
+      if (page != null && page != _page) _settleTo(page);
+    }
+  }
+
+  @override
+  void dispose() {
+    _edgeTimer?.cancel();
+    _position.dispose();
+    super.dispose();
+  }
+
+  static bool _samePages(List<List<int>> a, List<List<int>> b) {
+    if (a.length != b.length) return false;
+    for (int p = 0; p < a.length; p++) {
+      if (!listEquals(a[p], b[p])) return false;
+    }
+    return true;
+  }
+
+  int? _pageOf(int index) {
+    for (int p = 0; p < widget.pages.length; p++) {
+      if (widget.pages[p].contains(index)) return p;
+    }
+    return null;
+  }
+
+  void _settleTo(int page, {double velocity = 0}) {
+    setState(() => _page = page);
+    // 减弱动态效果 / 墨水屏下 token 是降级版，直接落到终值。
+    unawaited(
+      _position.fushiSpringTo(
+        page.toDouble(),
+        context.fushiMotion.spatialFast,
+        velocity: velocity,
+      ),
+    );
+  }
+
+  // ---- 横滑翻页 ----
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final int last = widget.pages.length - 1;
+    double next = _position.value - details.delta.dx / _width;
+    // 首页 / 末页之外有阻尼，不让整排被拖空。
+    if (next < 0 || next > last) {
+      next = _position.value - details.delta.dx / _width / 3;
+    }
+    _position.value = next.clamp(-0.3, last + 0.3);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = -details.velocity.pixelsPerSecond.dx / _width;
+    // 胶囊窄（每页只有一个手掌宽），半页门槛太苛：拖过 1/4 页或甩一下就翻。
+    final double moved = _position.value - _page;
+    int target = _page;
+    if (velocity.abs() > 0.8) {
+      target = velocity > 0 ? _page + 1 : _page - 1;
+    } else if (moved.abs() > 0.25) {
+      target = moved > 0 ? _page + 1 : _page - 1;
+    }
+    target = target.clamp(0, widget.pages.length - 1);
+    if (target != _page) fushiSelectionHaptic(context);
+    _settleTo(target, velocity: velocity);
+  }
+
+  // ---- 长按拖选 ----
+
+  /// 手指位置（本行局部坐标）罩着的目的地：按格宽算第几格，胶囊外 / 空格 = null。
+  int? _targetAt(Offset point) {
+    if (point.dx < 0 || point.dx >= _width) return null;
+    final int slot = (point.dx / (_width / _kNavPageSize)).floor();
+    final List<int> page = widget.pages[_page];
+    return slot < page.length ? page[slot] : null;
+  }
+
+  void _updateHover(Offset point) {
+    _selectPoint = point;
+    final int? hover = _targetAt(point);
+    if (hover != _hover) {
+      if (hover != null) fushiSelectionHaptic(context);
+      setState(() => _hover = hover);
+    }
+    final int direction = point.dx < _kNavPagedEdgeZone
+        ? -1
+        : (point.dx > _width - _kNavPagedEdgeZone ? 1 : 0);
+    if (direction == _edgeDirection) return;
+    _edgeDirection = direction;
+    _edgeTimer?.cancel();
+    _edgeTimer = direction == 0
+        ? null
+        : Timer.periodic(_kNavPagedEdgeDwell, (_) => _edgeFlip());
+  }
+
+  /// 拖选中停在边缘：往那一侧翻一页，罩着的格按新页重算。
+  void _edgeFlip() {
+    final int next = _page + _edgeDirection;
+    if (!mounted || next < 0 || next >= widget.pages.length) return;
+    fushiSelectionHaptic(context);
+    _settleTo(next);
+    final Offset? point = _selectPoint;
+    if (point != null) {
+      final int? hover = _targetAt(point);
+      if (hover != _hover) setState(() => _hover = hover);
+    }
+  }
+
+  void _onSelectStart(LongPressStartDetails details) {
+    // 进入拖选态：一记「拎起」震动，和平铺底栏长按拎起指示器同一手感。
+    fushiLiftHaptic(context);
+    setState(() => _selecting = true);
+    _updateHover(details.localPosition);
+  }
+
+  void _onSelectMove(LongPressMoveUpdateDetails details) =>
+      _updateHover(details.localPosition);
+
+  void _onSelectEnd(LongPressEndDetails details) {
+    final int? target = _hover;
+    _stopSelecting();
+    if (target != null && target != widget.currentIndex) {
+      widget.onDragSelect(target);
+    }
+  }
+
+  void _stopSelecting() {
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+    _edgeDirection = 0;
+    _selectPoint = null;
+    if (!_selecting && _hover == null) return;
+    setState(() {
+      _selecting = false;
+      _hover = null;
+    });
+  }
+
+  Widget _pageRow(List<int> page) {
+    return Row(
+      children: <Widget>[
+        for (int k = 0; k < _kNavPageSize; k++)
+          Expanded(
+            child: k < page.length
+                ? widget.cellBuilder(
+                    page[k],
+                    _selecting ? page[k] == _hover : null,
+                  )
+                : const SizedBox.shrink(),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
+    final Color dot = bar?.content ?? Theme.of(context).colorScheme.onSurface;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        _width = math.max(1, box.maxWidth);
+        return RawGestureDetector(
+          behavior: HitTestBehavior.translucent,
+          // 翻页 / 拖选是纯指针手势，不进语义树；读屏 / 手柄靠各格自己的焦点与
+          // 点击语义，焦点移到别页的格子上时随当前项自动翻过去。
+          excludeFromSemantics: true,
+          gestures: <Type, GestureRecognizerFactory>{
+            // 横向位移先过线 = 翻页；按住不动先到 0.3 秒 = 拖选。两者在手势
+            // 竞技场里谁先成立谁赢，赢了另一个就放弃这根指针。
+            HorizontalDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  HorizontalDragGestureRecognizer
+                >(HorizontalDragGestureRecognizer.new, (
+                  HorizontalDragGestureRecognizer r,
+                ) {
+                  r
+                    // 从按下点起算位移：判定拖动前的触摸余量也算进翻页距离，
+                    // 整排贴着手指走。
+                    ..dragStartBehavior = DragStartBehavior.down
+                    ..onUpdate = _onDragUpdate
+                    ..onEnd = _onDragEnd;
+                }),
+            LongPressGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  LongPressGestureRecognizer
+                >(
+                  () => LongPressGestureRecognizer(
+                    duration: _kNavPagedSelectHold,
+                  ),
+                  (LongPressGestureRecognizer r) {
+                    r
+                      ..onLongPressStart = _onSelectStart
+                      ..onLongPressMoveUpdate = _onSelectMove
+                      ..onLongPressEnd = _onSelectEnd
+                      ..onLongPressCancel = _stopSelecting;
+                  },
+                ),
+          },
+          child: Stack(
+            children: <Widget>[
+              ClipRect(
+                child: AnimatedBuilder(
+                  animation: _position,
+                  builder: (BuildContext context, Widget? _) {
+                    final double pos = _position.value;
+                    return Stack(
+                      children: <Widget>[
+                        for (int p = 0; p < widget.pages.length; p++)
+                          if ((p - pos).abs() < 1.5)
+                            Positioned.fill(
+                              child: Transform.translate(
+                                offset: Offset((p - pos) * _width, 0),
+                                // 看不见的页不进焦点遍历 / 命中。
+                                child: ExcludeFocus(
+                                  excluding: p != _page,
+                                  child: IgnorePointer(
+                                    ignoring: p != _page,
+                                    child: _pageRow(widget.pages[p]),
+                                  ),
+                                ),
+                              ),
+                            ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 3,
+                child: IgnorePointer(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      for (int p = 0; p < widget.pages.length; p++)
+                        AnimatedContainer(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          width: p == _page ? 10 : 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: dot.withValues(
+                              alpha: p == _page ? 0.9 : 0.35,
+                            ),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

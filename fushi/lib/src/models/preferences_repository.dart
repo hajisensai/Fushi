@@ -18,6 +18,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
         kLegacyWebKnowledgeSiteIds,
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
@@ -1491,6 +1492,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setNavBarLabelsVisible(bool value) async {
     await setPref('nav_bar_labels_visible', value);
+    notifyListeners();
+  }
+
+  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。默认平铺（放不下
+  /// 才收进「更多」）。
+  AdaptiveNavBarStyle get navBarStyle => AdaptiveNavBarStyle.fromPref(
+    getPref('nav_bar_style', defaultValue: '') as String,
+  );
+
+  Future<void> setNavBarStyle(AdaptiveNavBarStyle value) async {
+    await setPref('nav_bar_style', value.prefValue);
     notifyListeners();
   }
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -468,6 +469,31 @@ SettingsDestination buildAppearanceDestination() {
               );
             },
             defaultValue: false,
+          ),
+          // 手机底栏形态：平铺（放不下收进「更多」）/ 分页滑动（所有入口同级，
+          // 底栏横滑翻页、按住拖选）。
+          SettingsSegmentedItem<AdaptiveNavBarStyle>(
+            id: 'appearance.nav_bar_style',
+            title: t.home_nav_bar_style,
+            icon: Icons.view_carousel_outlined,
+            options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.flat,
+                label: t.home_nav_bar_style_flat,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.pager,
+                label: t.home_nav_bar_style_pager,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.navBarStyle,
+            onChanged:
+                (SettingsContext settingsContext, AdaptiveNavBarStyle value) =>
+                    settingsContext.appModel
+                        .setNavBarStyle(value)
+                        .then((_) => settingsContext.refresh()),
+            defaultValue: AdaptiveNavBarStyle.flat,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；

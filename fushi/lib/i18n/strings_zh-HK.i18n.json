@@ -7484,5 +7484,8 @@
   "sync_compare_page_of_total": "第 $page / $total 頁",
   "sync_compare_page": "第 $page 頁",
   "lyrics_layout_swap_sides": "Swap sides",
-  "settings_module_nav_order": "Navigation bar order"
+  "settings_module_nav_order": "Navigation bar order",
+  "home_nav_bar_style": "Bottom bar style",
+  "home_nav_bar_style_flat": "Flat",
+  "home_nav_bar_style_pager": "Paged swipe"
 }

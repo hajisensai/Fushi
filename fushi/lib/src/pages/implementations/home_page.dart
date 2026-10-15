@@ -1934,7 +1934,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 含设置，BUG-3351）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
+    return homeModuleSwipeArmed(
+      tabs: _activeTabs(),
+      current: _visibleTab,
+      lookupInBar: appModel.navBarStyle.lookupInBar,
+    );
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
@@ -1944,6 +1948,7 @@ class _HomePageState extends BasePageState<HomePage>
         reversed: appModel.reverseNavigationBar,
         fingerTowardStart: fingerTowardStart,
         textDirection: Directionality.of(context),
+        lookupInBar: appModel.navBarStyle.lookupInBar,
       );
 
   Widget _buildMobileLayout() {
@@ -2018,6 +2023,7 @@ class _HomePageState extends BasePageState<HomePage>
             glassContentUnder: _appleChrome.contentUnderBottom,
             glassSearchIndex: glassSearchIndex,
             showLabels: appModel.navBarLabelsVisible,
+            barStyle: appModel.navBarStyle,
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
