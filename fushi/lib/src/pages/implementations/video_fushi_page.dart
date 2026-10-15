@@ -1411,12 +1411,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Color _videoChromeAccent(ColorScheme cs) =>
       _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
-  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、画面上的单钮、media_kit 自带
-  /// 按钮）：两套设计系统都是纯白，与 [VideoM3eIconButton] 同一前景。强调色只留给
-  /// 播放键、进度已播段 / 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点
-  /// 怪」：传输簇的绿字绿图标与两侧白字胶囊不统一）。
-  Color _videoChromeButtonForeground(ColorScheme cs) =>
-      videoChromeNeutralForeground;
+  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、media_kit 自带按钮——都在悬浮
+  /// 胶囊里）：与 [VideoM3eIconButton] 同一前景。M3E 走胶囊前景
+  /// （[videoM3eChromeForegroundOf]：深色近白、日间近黑、墨水屏白，跟随 app 的
+  /// 日间 / 深色模式，2026-10-14）；Apple 恒白（玻璃 + 白字）。强调色只留给播放键、
+  /// 进度已播段 / 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点怪」）。
+  /// 直接压在画面上、没有胶囊垫底的裸图标不走这里（见 layout.part 的侧浮单钮）。
+  Color _videoChromeButtonForeground(ColorScheme cs) => _appleChrome
+      ? videoChromeNeutralForeground
+      : videoM3eChromeForegroundOf(context);
 
   /// 音量 / 倍速浮层的配色：M3E（非墨水屏）取无色相中性方案
   /// （[videoM3eNeutralChromeScheme]，与悬浮胶囊同一表面）；Apple / 墨水屏仍跟主题。
@@ -1442,7 +1445,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           letterSpacing: -0.2,
         )
       : TextStyle(
-          color: _videoChromeNeutralFg,
+          // M3E：标题在顶栏胶囊里，前景跟胶囊走（日间近黑、深色近白）。
+          color: videoM3eChromeForegroundOf(context),
           fontSize: _videoControlTitleFontSize,
         );
 
@@ -1456,10 +1460,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       kDefaultSubtitleBackgroundColor;
   double get _videoUiScale => appModel.appUiScale;
 
-  Color _osdSurfaceColor(ColorScheme cs) =>
-      cs.inverseSurface.withValues(alpha: 0.82);
+  /// OSD（音量 / 亮度 / 通知卡、横滑跳转提示、制卡队列角标、小窗圆钮）的底色。
+  ///
+  /// M3E（非墨水屏）与悬浮胶囊同一枚与 app 同亮度的表面（[videoM3eFloatingColor]）
+  /// ——此前取 inverseSurface，日间模式下是深色、深色模式下反而是浅色，和旁边的
+  /// 胶囊 / 面板正好反着来（2026-10-14 用户：播放器不吃日间 / 深色模式）。
+  /// Apple / 墨水屏保持 inverseSurface 自配对。
+  Color _osdSurfaceColor(ColorScheme cs) => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eFloatingColor(cs)
+      : cs.inverseSurface.withValues(alpha: 0.82);
 
-  Color _osdTextColor(ColorScheme cs) => cs.onInverseSurface;
+  /// OSD 前景，与 [_osdSurfaceColor] 同一判据自配对。
+  Color _osdTextColor(ColorScheme cs) => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eForeground(cs)
+      : cs.onInverseSurface;
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
@@ -8418,7 +8432,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     overflow: TextOverflow.ellipsis,
                     textAlign: textAlign,
                     style: TextStyle(
-                      color: _videoChromeNeutralFg.withValues(alpha: 0.7),
+                      color: videoM3eChromeForegroundOf(
+                        context,
+                      ).withValues(alpha: 0.7),
                       fontSize: 12 * scale,
                       height: 1.3,
                       fontWeight: FontWeight.w500,
@@ -8463,7 +8479,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// MD3 Expressive 浮动标题胶囊里的作品名字样（播放顶栏与原盘菜单顶栏共用）。
   TextStyle _m3eTopBarTitleStyle() => TextStyle(
-    color: _videoChromeNeutralFg,
+    color: videoM3eChromeForegroundOf(context),
     fontSize: 16 * _videoUiScale * _controlsDensityScale,
     height: 1.25,
     fontWeight: FontWeight.w600,

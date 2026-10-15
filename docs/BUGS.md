@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3369](bugs/BUG-3369-reader-highlight-one-em-lanes.md) | ✅ | ✅ | 阅读器高亮条太粗：所有字体都要一个字高 |
+| [BUG-3413](bugs/BUG-3413-video-chrome-brightness.md) | ✅ | ✅ | 视频播放器 chrome 与面板不跟随日间/深色模式 |
 | [BUG-3368](bugs/BUG-3368-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 > 共 3054 条。点号进各自文件。
 

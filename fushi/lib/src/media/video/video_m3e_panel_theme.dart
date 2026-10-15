@@ -8,37 +8,41 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 // 抽屉 / 剧集轨道）的 M3 Expressive 配色。
 //
 // 这些面板浮在画面上，与顶 / 底栏胶囊、音量 / 倍速浮层是同一层「播放器 chrome」，
-// 所以底色统一用无色相中性深色（[videoM3eFloatingColor]，#2D2D2D @86%），内部
-// 控件读一份中性主题：表面族是不带色相的灰阶、前景纯白 / 白 70%，强调色族仍以
-// app 主色为种子（开关「开」态、选中行、滑条已走段）。浅色主题下也不会黑压黑。
+// 配色跟随 app 的日间 / 深色模式（2026-10-14 用户：日间模式下面板是固定深色、
+// 旁边的面板切换竖条却是浅色，一深一浅）：内部控件读以 app 主色为种子、与 app
+// 同亮度的着色方案（[videoM3eChromeScheme]），面板切换竖条也套同一份主题
+// （video_side_panel.dart），二者恒同色。
 //
 // 为什么不是 `Theme.of(context).copyWith(colorScheme: …)`：主题工厂把 scheme 颜色
 // **烤进**了组件主题（列表选中底、开关轨道、菜单底……），只换 colorScheme 时那些
 // 组件仍是 app 的浅色值；这里经 [rethemeFushiWithScheme] 重走工厂，字阶也按新前景
 // 重新着色。Apple 设计系统与墨水屏不经这里（各自保持原样）。
 
-/// 当前 context 下播放器面板是否走 M3E 中性深色（非 Apple、非墨水屏）。
+/// 当前 context 下播放器面板是否走 M3E 面板主题（非 Apple、非墨水屏）。
 bool videoM3ePanelNeutral(BuildContext context) =>
     !isGlassDesign(context) && !isEinkTheme(context);
 
-final Map<int, ColorScheme> _panelSchemeCache = <int, ColorScheme>{};
-
-/// 面板内的配色：以 app 主色为种子的深色方案（[videoM3eChromeScheme]），与阅读器
-/// 侧板同一套表面层级——面板底 surfaceContainerLow、分组卡 surfaceContainer 往上，
-/// 选中页签 / 行首图标块 / 开关都带主题色相（2026-10-14 用户：播放器设置「很多
-/// 地方都是灰色、没有着色」，要像阅读器设置那样）。浅色主题下面板仍是深色（压在
-/// 画面上）。播放器顶 / 底栏胶囊仍是中性表面，只有面板换成着色方案。
-ColorScheme videoM3ePanelScheme(ColorScheme cs) {
-  final int key = cs.primary.toARGB32();
-  return _panelSchemeCache[key] ??= videoM3eChromeScheme(cs);
-}
+/// 面板内的配色：以 app 主色为种子、与 app 同亮度的方案（[videoM3eChromeScheme]，
+/// 按主色 + 亮度缓存），与阅读器侧板同一套表面层级——面板底 surfaceContainerLow、
+/// 分组卡 surfaceContainer 往上，选中页签 / 行首图标块 / 开关都带主题色相
+/// （2026-10-14 用户：播放器设置「很多地方都是灰色、没有着色」，要像阅读器设置
+/// 那样）。日间模式下是浅色面板、深色模式下是深色面板（同日跟进：面板要吃 app
+/// 的日间 / 深色模式）。播放器顶 / 底栏胶囊仍是中性表面，只有面板换成着色方案。
+ColorScheme videoM3ePanelScheme(ColorScheme cs) => videoM3eChromeScheme(cs);
 
 /// 面板表面色：着色方案的 surfaceContainerLow（[opaque] 时不透明，否则与播放器
-/// 浮层同一不透明度，画面隐约透出）。
+/// 浮层同一不透明度——[videoM3eSurfaceAlpha]，画面隐约透出）。
 Color videoM3ePanelSurfaceColor(ColorScheme cs, {required bool opaque}) {
   final Color base = videoM3ePanelScheme(cs).surfaceContainerLow;
-  return opaque ? base : base.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+  return opaque ? base : base.withValues(alpha: videoM3eSurfaceAlpha(cs));
 }
+
+/// 整页承载面板主题内容时的页底（网页视频页的加载 / 失败态）：深色模式与播放页
+/// 同一块黑底；日间模式换成面板方案的 surface——面板主题此时是浅底深字，压在
+/// 黑底上会黑压黑。
+Color videoM3ePanelBackdrop(ColorScheme cs) => cs.brightness == Brightness.light
+    ? videoM3ePanelScheme(cs).surface
+    : Colors.black;
 
 final Expando<ThemeData> _panelThemeCache = Expando<ThemeData>(
   'videoM3ePanelTheme',

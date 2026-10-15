@@ -80,14 +80,18 @@ void main() {
       final String page = File(
         'lib/src/pages/implementations/video_fushi_page.dart',
       ).readAsStringSync();
+      // 2026-10-14 起按钮都在自带底色的悬浮胶囊里，前景跟胶囊走（随 app 日间 /
+      // 深色模式）：Apple 恒白、M3E 走 videoM3eChromeForegroundOf——仍不能回到
+      // 裸 cs.primary / cs.onSurface。
       expect(
         page,
         matches(RegExp(
           r'Color _videoChromeButtonForeground\(ColorScheme cs\) =>\s*'
-          r'videoChromeNeutralForeground;',
+          r'_appleChrome\s*\?\s*videoChromeNeutralForeground\s*'
+          r':\s*videoM3eChromeForegroundOf\(context\);',
         )),
-        reason: '按钮前景必须是固定亮色（videoChromeNeutralForeground），不能回到 '
-            'cs.primary / cs.onSurface',
+        reason: '按钮前景必须走 chrome 前景 helper（Apple 白 / M3E 胶囊前景），'
+            '不能回到 cs.primary / cs.onSurface',
       );
     });
 

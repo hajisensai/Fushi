@@ -2,7 +2,6 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show
@@ -29,11 +28,12 @@ export 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 ///   实测掉帧、白边）。圆角桌面 18、触屏 28（超椭圆）；[glassRadius] 给定时
 ///   （小药丸取半高）用普通圆角矩形，保证矮表面仍是胶囊。面板里的分组卡用
 ///   [videoPanelAppleColors] 的上一级实色，在实色面上浮起。
-/// - MD3（M3 Expressive）：与播放器悬浮胶囊 / 音量倍速浮层同一层无色相中性
-///   深色表面（[videoM3eFloatingColor]，#2D2D2D @86%），圆角 28、轻阴影；面板
-///   内部读中性主题（[videoM3ePanelTheme]：灰阶容器、白字、强调色仍是 app 主色），
-///   浅色主题下也不再是一块白板压在画面上。墨水屏仍是实色 surfaceContainerLow +
-///   一圈 outline 描边（不半透明、不换配色）。
+/// - MD3（M3 Expressive）：以 app 主色为种子、与 app 同亮度的着色方案
+///   surfaceContainerLow（[videoM3ePanelSurfaceColor]，半透明档与播放器悬浮
+///   胶囊同一不透明度），圆角 28、轻阴影；面板内部读面板主题
+///   （[videoM3ePanelTheme]）。日间模式浅色、深色模式深色，旁边的面板切换竖条
+///   套同一份主题，二者恒同色。墨水屏仍是实色 surfaceContainerLow + 一圈
+///   outline 描边（不半透明、不换配色）。
 class VideoFloatingPanelSurface extends StatelessWidget {
   const VideoFloatingPanelSurface({
     required this.child,
@@ -130,8 +130,8 @@ class VideoFloatingPanelSurface extends StatelessWidget {
         child: child,
       );
     }
-    // M3E：中性深色悬浮表面 + 面板中性主题（Theme 包在表面外，表面的
-    // DefaultTextStyle / 图标色同样读白前景）。
+    // M3E：与 app 同亮度的着色悬浮表面 + 面板主题（Theme 包在表面外，表面的
+    // DefaultTextStyle / 图标色同样读面板前景）。
     return Theme(
       data: videoM3ePanelTheme(Theme.of(context)),
       child: Material(
@@ -505,14 +505,19 @@ class VideoTranslucentSidePanel extends StatelessWidget {
     final bool withRail = sw != null && sw.items.length > 1;
     Widget framed(Widget panel) {
       if (!withRail) return panel;
-      // 切换条挂在面板朝画面的一侧、与面板顶对齐（同阅读器侧板）。
+      // 切换条挂在面板朝画面的一侧、与面板顶对齐（同阅读器侧板）。M3E 下套面板
+      // 主题（[VideoM3ePanelTheme]）：竖条与面板读同一份与 app 同亮度的着色方案，
+      // 不会出现「面板一种颜色、竖条另一种颜色」（2026-10-14 用户：日间模式下面板
+      // 深、竖条浅）。Apple / 墨水屏原样。
       final Widget rail = Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Align(
           alignment: Alignment.topCenter,
-          child: ReaderPanelSwitcherRail(
-            switcher: sw,
-            keyPrefix: 'video_panel',
+          child: VideoM3ePanelTheme(
+            child: ReaderPanelSwitcherRail(
+              switcher: sw,
+              keyPrefix: 'video_panel',
+            ),
           ),
         ),
       );

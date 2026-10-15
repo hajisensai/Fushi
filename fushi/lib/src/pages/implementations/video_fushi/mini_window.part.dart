@@ -483,7 +483,8 @@ extension _VideoMiniWindow on _VideoFushiPageState {
             child: FushiIcon(
               icon,
               size: size * 0.5,
-              color: videoChromeNeutralForeground,
+              // 与圆底 [_osdSurfaceColor] 自配对（随 app 日间 / 深色模式）。
+              color: _osdTextColor(colorScheme),
             ),
           ),
         ),
