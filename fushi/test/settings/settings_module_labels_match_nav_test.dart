@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart' show IconData;
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -66,7 +67,7 @@ void main() {
     );
   }
 
-  test('每个 ModuleId 都有且只有一个开关行，顺序与枚举一致', () {
+  test('每个 ModuleId 都有且只有一个入口：导航模块进拖拽排序列表，其余逐个开关', () {
     expect(
       moduleItemIds.keys.toList(),
       ModuleId.values,
@@ -74,34 +75,37 @@ void main() {
     );
     expect(
       modulesSection().items.map((SettingsItem item) => item.id).toList(),
-      moduleItemIds.values.toList(),
+      <String>[
+        // 有底栏 tab 的模块收进一个可拖拽排序的列表（顺序 = 底栏顺序）。
+        'appearance.nav_module_order',
+        for (final ModuleId module in ModuleId.values)
+          if (homeTabOfModule(module) == null) moduleItemIds[module]!,
+      ],
       reason:
-          '模块开关的构成或顺序变了。顺序是 ModuleId 的枚举顺序'
-          '（库页 → 工具页 → 横切能力 → 设备数据），不是手写清单。',
+          '模块分区的构成或顺序变了：先是导航模块的排序列表，再是没有 tab 的'
+          '模块开关（枚举顺序），不是手写清单。',
     );
   });
 
   test('有底栏 tab 的模块：标题与图标取自底栏真值 homeNavItemFor', () {
-    final Map<String, SettingsItem> byId = <String, SettingsItem>{
-      for (final SettingsItem item in modulesSection().items) item.id: item,
-    };
-
     for (final ModuleId module in ModuleId.values) {
       final HomeTab? tab = homeTabOfModule(module);
       if (tab == null) continue;
-      final SettingsItem item = byId[moduleItemIds[module]!]!;
+      final ({String label, IconData icon}) identity = moduleNavIdentity(
+        module,
+      );
       final AdaptiveNavItem navItem = homeNavItemFor(tab);
       expect(
-        item.title,
+        identity.label,
         navItem.label,
         reason:
-            '${item.id} 的标题与底栏「${navItem.label}」对不上——'
+            '$module 的标题与底栏「${navItem.label}」对不上——'
             '别在设置里手写第二份标签，取 homeNavItemFor(tab).label',
       );
       expect(
-        item.icon,
+        identity.icon,
         navItem.icon,
-        reason: '${item.id} 的图标与底栏不一致，取 homeNavItemFor(tab).icon',
+        reason: '$module 的图标与底栏不一致，取 homeNavItemFor(tab).icon',
       );
     }
   });

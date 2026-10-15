@@ -50,8 +50,8 @@ class ProfileKeys {
     // 全开。排除后既不再写入快照也不再从快照读回，存量老快照里可能已存着的
     // module_* 行留着不读即可（读侧过滤失效，无需 schema 迁移）。
     //
-    // 键名从 [ModuleId.allPrefKeys] 生成，不手抄——加模块时这里自动跟上。
-    ...ModuleId.allPrefKeys,
+    // 键名从 [ModuleId.devicePrefKeys] 生成（开关 + 底栏顺序），不手抄——加模块时这里自动跟上。
+    ...ModuleId.devicePrefKeys,
     'active_profile_id',
     // 绑定临时切换前用户自己选的配置 id：与 active_profile_id 同族。
     'profile_fallback_id',

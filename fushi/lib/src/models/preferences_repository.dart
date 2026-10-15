@@ -1411,6 +1411,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序）。与开关同为设备本地键
+  /// （[ModuleId.devicePrefKeys]）；缺省空 = 枚举顺序。
+  List<ModuleId> get moduleOrder => ModuleId.parseOrder(
+        getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
+      );
+
+  Future<void> setModuleOrder(List<ModuleId> order) async {
+    await setPref(ModuleId.orderPrefKey, ModuleId.encodeOrder(order));
+    notifyListeners();
+  }
+
   /// 新手引导完成标志。缺省值刻意取 **true**：既有安装升级上来不重弹引导；
   /// 全新安装在 HomePage 的 `first_time_setup` 首帧分支里显式写 false，向导
   /// 关闭后写回 true——中途杀进程下次启动值仍是 false，会重新弹出。备份合并的

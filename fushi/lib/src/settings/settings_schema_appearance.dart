@@ -9,6 +9,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/nav_module_order_list.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
     show currentAppIconSelection;
@@ -44,7 +45,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
 /// 各改各的必然漂移，用户看到的就是设置项名字对不上底栏。
 /// 有底栏 tab 的模块取 [homeNavItemFor]（底栏改名这里自动跟着改）；没有 tab 的五个
 /// 取它自己那个设置一级分类的标题与图标（同理，分类改名这里自动跟着改）。
-({String label, IconData icon}) _moduleNavIdentity(ModuleId module) {
+({String label, IconData icon}) moduleNavIdentity(ModuleId module) {
   final HomeTab? tab = homeTabOfModule(module);
   if (tab != null) {
     final AdaptiveNavItem navItem = homeNavItemFor(tab);
@@ -83,47 +84,88 @@ String _moduleItemId(ModuleId module) => switch (module) {
   };
 }
 
-/// 「功能模块」里的单个模块开关。
+/// [module] 在本平台上是否存在（galgame 仅 Windows、浏览器扩展仅桌面、下载
+/// 中心不进 App Store）。判据与读取端同源（[ModuleId.availableOn]），不在这里
+/// 另写一份 Platform 判断。
+bool _moduleAvailableHere(ModuleId module) => module.availableOn(
+  isWindows: Platform.isWindows,
+  isDesktop: DesktopLookupService.isDesktop,
+  isIOS: Platform.isIOS,
+  isAndroid: Platform.isAndroid,
+);
+
+/// 翻转一个模块开关。导航模块的拖拽列表与无 tab 模块的开关行共用这一份。
+Future<void> _applyModuleEnabled(
+  SettingsContext settingsContext,
+  ModuleId module,
+  bool enabled,
+) async {
+  // 「至少保留一个导航模块」：最后一个有 tab 的模块关不掉（否则打开 app 只剩
+  // 设置这一页）。拒绝时开关保持开着，并说明原因。
+  if (!enabled &&
+      isLastNavigationModule(
+        module,
+        settingsContext.appModel.moduleVisibility,
+      )) {
+    final BuildContext ctx = settingsContext.context;
+    if (ctx.mounted) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        FushiSnackBar(content: Text(t.settings_module_keep_one_navigation)),
+      );
+    }
+    settingsContext.refresh();
+    return;
+  }
+  await settingsContext.appModel.setModuleEnabled(module, enabled);
+  settingsContext.refresh();
+}
+
+/// 「功能模块」里没有底栏 tab 的模块（听书 / 制卡 / 在线服务 / AI / 同步）的开关。
+/// 有 tab 的模块不走这里，而是进 [NavModuleOrderList]（开关 + 拖拽排序）。
 SettingsSwitchItem _moduleSwitch(ModuleId module) {
-  final ({String label, IconData icon}) identity = _moduleNavIdentity(module);
+  final ({String label, IconData icon}) identity = moduleNavIdentity(module);
   return SettingsSwitchItem(
     id: _moduleItemId(module),
     title: identity.label,
     icon: identity.icon,
-    // 平台上不存在的模块不出开关（galgame 仅 Windows、浏览器扩展仅桌面、下载
-    // 中心不进 App Store）。判据与读取端同源（[ModuleId.availableOn]），不在这里
-    // 另写一份 Platform 判断。
-    visible: (_) => module.availableOn(
-      isWindows: Platform.isWindows,
-      isDesktop: DesktopLookupService.isDesktop,
-      isIOS: Platform.isIOS,
-      isAndroid: Platform.isAndroid,
-    ),
+    visible: (_) => _moduleAvailableHere(module),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),
-    onChanged: (SettingsContext settingsContext, bool enabled) async {
-      // 「至少保留一个导航模块」：最后一个有 tab 的模块关不掉（否则打开 app 只剩
-      // 设置这一页）。拒绝时开关保持开着，并说明原因。
-      if (!enabled &&
-          isLastNavigationModule(
-            module,
-            settingsContext.appModel.moduleVisibility,
-          )) {
-        final BuildContext ctx = settingsContext.context;
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            FushiSnackBar(content: Text(t.settings_module_keep_one_navigation)),
-          );
-        }
-        settingsContext.refresh();
-        return;
-      }
-      await settingsContext.appModel.setModuleEnabled(module, enabled);
-      settingsContext.refresh();
-    },
+    onChanged: (SettingsContext settingsContext, bool enabled) =>
+        _applyModuleEnabled(settingsContext, module, enabled),
     defaultValue: true,
   );
 }
+
+/// 导航模块的开关 + 拖拽排序（与词典管理同一套交互）。顺序就是底栏 / 侧栏 tab
+/// 顺序，见 `homeActiveTabs`。
+/// 本平台存在的导航模块，按用户顺序。列表渲染与设置搜索关键词共用。
+List<ModuleId> _orderedNavModules(
+  SettingsContext settingsContext,
+) => <ModuleId>[
+  for (final ModuleId module
+      in settingsContext.appModel.moduleVisibility.ordered)
+    if (homeTabOfModule(module) != null && _moduleAvailableHere(module)) module,
+];
+
+SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
+  id: 'appearance.nav_module_order',
+  searchTitle: t.settings_module_nav_order,
+  // 合成一个列表后各模块不再是独立的 schema 行；把模块名挂成关键词，搜「视频」
+  // 仍能直达这块（结果行露出命中的「视频」）。
+  searchKeywords: (SettingsContext settingsContext) => <String>[
+    for (final ModuleId module in _orderedNavModules(settingsContext))
+      moduleNavIdentity(module).label,
+  ],
+  icon: FushiIcons.home,
+  builder: (SettingsContext settingsContext) => NavModuleOrderList(
+    settingsContext: settingsContext,
+    modules: _orderedNavModules(settingsContext),
+    identityOf: moduleNavIdentity,
+    onEnabledChanged: (ModuleId module, bool enabled) =>
+        _applyModuleEnabled(settingsContext, module, enabled),
+  ),
+);
 
 SettingsDestination buildAppearanceDestination() {
   return SettingsDestination(
@@ -341,11 +383,13 @@ SettingsDestination buildAppearanceDestination() {
         id: 'appearance.section.modules',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_section_modules,
-        // 遍历 ModuleId.values 生成，不再逐个手写：加模块只加一个 enum 值，
-        // 枚举顺序就是这里的展示顺序（库页 → 工具页 → 横切能力 → 设备数据）。
-        // 平台上不存在的模块由 _moduleSwitch 自己的 visible 判掉。
+        // 有底栏 tab 的模块收进一个可拖拽排序的列表（用户排的顺序就是底栏顺序）；
+        // 没有 tab 的横切模块仍是逐个开关，按枚举顺序。两者都遍历 ModuleId.values
+        // 生成，加模块只加一个 enum 值。平台上不存在的模块各自判掉。
         items: <SettingsItem>[
-          for (final ModuleId module in ModuleId.values) _moduleSwitch(module),
+          _navModuleOrderItem(),
+          for (final ModuleId module in ModuleId.values)
+            if (homeTabOfModule(module) == null) _moduleSwitch(module),
         ],
       ),
       SettingsSection(

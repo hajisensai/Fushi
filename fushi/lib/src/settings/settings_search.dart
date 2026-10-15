@@ -223,7 +223,7 @@ void _flattenPageInto(
             item: item,
             resolvedTitle: title,
             resolvedSubtitle: item.resolveSubtitle(context),
-            optionLabels: _optionLabelsOf(item),
+            optionLabels: _optionLabelsOf(item, context),
             subPagePath: subPagePath,
           ),
         );
@@ -257,12 +257,15 @@ void _flattenPageInto(
   }
 }
 
-List<String> _optionLabelsOf(SettingsItem item) {
+List<String> _optionLabelsOf(SettingsItem item, SettingsContext context) {
   if (item is SettingsSegmentedItem) {
     return <String>[
       for (final SettingsSegmentOption<dynamic> option in item.options)
         option.label,
     ];
+  }
+  if (item is SettingsCustomItem) {
+    return item.searchKeywords?.call(context) ?? const <String>[];
   }
   return const <String>[];
 }

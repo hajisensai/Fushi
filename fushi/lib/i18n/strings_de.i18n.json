@@ -7483,5 +7483,6 @@
   "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "sync_compare_page_of_total": "Page $page / $total",
   "sync_compare_page": "Page $page",
-  "lyrics_layout_swap_sides": "Swap sides"
+  "lyrics_layout_swap_sides": "Swap sides",
+  "settings_module_nav_order": "Navigation bar order"
 }
