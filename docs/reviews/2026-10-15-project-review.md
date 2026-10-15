@@ -133,3 +133,114 @@
 
 - 先修复并验证 HBK-AUDIT-001～003 的身份与发件箱原子性，再核查跨 Profile、恢复和重启组合场景。
 - 下一轮继续阅读器分页/滚动/VN 的退出恢复、音频 cue 跨章与后台续播、词典导入/FFI 资源生命周期、WebView 缓存与错误恢复。继续排除风格一致性和 CLI 覆盖。
+
+## 第二轮：阅读器退出与恢复、有声书和词典导入
+
+### Scope
+
+- 基线：`e941b75f5a4e0fe4c5dd033780fc7666ec445e94`。用户要求继续审查；仍排除风格一致性和 CLI 覆盖，不实施首轮发现的修复。
+- 检查阅读器退出保存、导航代际、双页文档回执、资源路径和缓存；有声书音轨解析、按章 cue 装配及后台会话；词典文件/目录导入、后台下载更新、暂存和替换生命周期。主审另沿 EPUB 导入原语检查并发发布与失败清理。
+- 文件范围：`reader_fushi_page.dart`、`reader_fushi/{navigation,webview,audiobook}.part.dart`、`base_source_page.dart`、`fushi/lib/src/media/audiobook/{audiobook_session,audiobook_session_launcher,audiobook_controller}.dart`、`packages/fushi_audio/lib/src/audiobook/audiobook_playback_files.dart`、`packages/fushi_engine/lib/epub/{epub_parser,epub_importer,epub_storage,epub_book}.dart`、`dictionary_import_manager.dart`、`dictionary_download_controller.dart`、`dictionary_dialog_page.dart` 及相关仓库/FFI 调用者。
+
+### Findings
+
+新增 **8 项：P1 一项、P2 七项**。三项使用真实组件隔离复现，两项通过抽取生产代码的控制流探针确认反例，三项为静态路径发现；不将抽取探针视为真实播放器/WebView/native 验收。
+
+#### HBK-AUDIT-011：并发导入同名 EPUB，失败任务会删除成功任务的正文目录
+
+- severity：P1
+- status：open，真实 EpubImporter + 内存 SQLite + 临时文件已复现。
+- 位置：`packages/fushi_engine/lib/epub/epub_importer.dart:134–145,160–165,227–239`；数据库插入 `packages/fushi_core/lib/src/database/database_content_misc.part.dart:209–225`。
+- 根因：重复名检查使用未预留身份的库快照，两条导入都能选到同一 bookKey。各自依据旧快照判断目标目录是否属于活跃条目，第二条把第一条刚发布的目录当作孤儿替换；随后主键插入失败，catch 又无条件删除共享的 extractDir。
+- 触发与影响：同库两条导入同时处理标题相同、内容不同的 EPUB，例如手工导入与后台入库重叠。入口各自的串行措施不能代替共享导入原语的所有权。唯一临时目录只避免解包互撞，没有解决最终目录互撞。可出现第一条已成功、数据库仍有该书，但正文目录被失败任务删掉。
+- 真实入口包括 `book_import_dialog.dart:1206–1219` 与 `packages/fushi_engine/lib/media/discovery/import/discovery_engine_importers.dart:33–40`；两者均直接调用共享原语。探针使用默认 suffix 策略，通过覆写数据库读取方法，在真实查询返回后设置 barrier，确定性制造两次查重均先于插入的合法交错，不更改导入器实现。
+- 隔离输出：一条 success、另一条 UNIQUE constraint failed；最终 `dbRows=1, directoryExists=false, chapterExists=false`。
+- 修复建议：对共享存储的身份预留、目录发布、数据库提交建立统一所有权/串行边界；失败只能清理本任务拥有的目录，不能按最终路径猜测所有权。
+- 验证方式：同标题并发 suffix/skip/ask 导入、手工和后台混合导入；所有成功返回的数据库条目必须保有自己的完整正文，失败不能破坏另一个任务。
+
+#### HBK-AUDIT-012：文件名中的字面 # 被误当 URI fragment，章节地址被截断
+
+- severity：P2
+- status：open，真实 EpubParser + 临时 EPUB 已复现。
+- 位置：`packages/fushi_engine/lib/epub/epub_parser.dart:907–911`；`packages/fushi_engine/lib/epub/epub_book.dart:1266–1273`；消费 `fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:46–50,499–509`。
+- 根因：manifest 的编码路径正确解码成磁盘文件名后，_relHref 又对真实磁盘相对路径调用 normalizeHref；后者无条件按 # 和 ? 切断，把文件名字符误当 URL 分隔符。
+- 触发与影响：归档中含 `OEBPS/chapter#one.xhtml`，manifest 使用合法转义 `chapter%23one.xhtml`。解析能找到文件并生成一章，但记录的 href 变成 `OEBPS/chapter`，正文请求指向不存在的文件；同前缀资源还会碰撞。
+- 隔离输出：普通章节 `routedFileExists=true`，# 章节 `hrefs=[OEBPS/chapter], routedFileExists=false`；字面百分号文件作为对照仍可正确定位。没有将 Windows 不允许的 ? 文件名当作产品反例。
+- 修复建议：区分 URI 引用和已解码磁盘路径；只在 URI 层剥离 fragment/query，路径持久化和 URL 编码必须保留合法文件名字符。
+- 验证方式：真实导入带 %23、%25 编码路径和实际 fragment 的 EPUB，验证章节/资源身份、持久化 href、构造 URL 与磁盘文件往返一致。
+
+#### HBK-AUDIT-013：退书时先清控制器引用，关闭后台续播也可能不停播放
+
+- severity：P2
+- status：open，生产方法抽取的控制流反例已确认；未运行真实播放器/WebView E2E。
+- 位置：`fushi/lib/src/pages/implementations/reader_fushi_page.dart:3328–3329,3417–3420,3458,3481–3483,3809–3812`。
+- 根因：退出原语发起持久化后立即 pop，而 onSourcePagePop 先 await 探针和落库。dispose 开头将 _audiobookController 清空，导致同一 dispose 后面的停止条件永远为假；迟到的 onSourcePagePop 也无法再匹配原控制器。
+- 触发与影响：退出后续播关闭，播放中退书；WebView/DB 等待超过路由退出时间，两条停止路径同时错过，会话继续在书架播放。detachReader 仅卸 reader 回调，不负责停止。
+- 抽取探针输出：`READER_EXIT backgroundPlay=false, stopCalls=0, expected=1`。以可控 Future 模拟慢 flush，执行生产 onSourcePagePop、退出原语和相关 dispose 原句。
+- 修复建议：在异步退出前捕获原控制器并按身份发起应有的停止；卸监听不能先抹掉停止判据。继续保留身份核对，避免旧页误停新页会话。
+- 验证方式：真实播放器下延迟退出 flush，覆盖续播关闭/开启、快速重开另一书，断言只停止应停会话且不误停新会话。
+
+#### HBK-AUDIT-014：旧双页文档的 spreadReady 可完成新章节的恢复
+
+- severity：P2
+- status：open，生产 callback 抽取的状态机反例已确认；未在原生 WebView 复现迟到投递。
+- 位置：`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:2608–2625`；发送端 `reader_fushi_page.dart:815`；装载 `reader_fushi/navigation.part.dart:1010–1018`。
+- 根因：正文恢复回执有导航 generation 校验，spreadReady 却不携带或核对代际，也不检查当前是否仍为 spread 文档，直接完成当前 completer、撤遮罩并取消超时。
+- 触发与影响：双页 A 的图片就绪回执已发出但尚未处理时，用户转到正文 B；迟到的 A 回执会把 B 的未完成恢复当作成功，提前放行翻页和进度采样。该投递时序尚需真实 WebView 验证。
+- 抽取探针输出：`currentGeneration=2, currentDocumentIsSpread=false, newRestoreSucceeded=true, ready=true, timeoutCancelled=true`。
+- 修复建议：双页文档同样烘入并返回导航 generation，复用恢复所有权校验；失配或当前非双页的回执不能修改状态。
+- 验证方式：真实桥接或可注入桥接测试中延后旧回执，在新导航开始后投递，断言新 completer、遮罩及超时保持不变。
+
+#### HBK-AUDIT-015：缺失音轨被过滤后，cue 仍使用原下标，播放错轨
+
+- severity：P2
+- status：open，真实音轨 resolver + 临时文件已复现；未启动音频解码器。
+- 位置：`packages/fushi_audio/lib/src/audiobook/audiobook_playback_files.dart:23–29`；接收入口 `fushi/lib/src/media/audiobook/audiobook_session_launcher.dart:42–49`。
+- 根因：显式 audioPaths 过滤不存在的文件并压缩列表，却没有重映射 AudioCue.audioFileIndex；启动入口只检查结果非空。
+- 触发与影响：登记三轨，第一轨被移动/删除后，列表变成后两轨；原 cue 下标 1 从第二轨变成第三轨，最后一轨 cue 还可能越界，跳句和字幕不再对应音频。
+- 隔离输出：`requested_count=3 actual_count=2`；`cue_index_1_expected=track1.mp3 actual=track2.mp3`。
+- 修复建议：保留轨道身份；缺轨时明确拒绝启动并引导修复，或返回并统一应用原下标到播放下标的映射。
+- 验证方式：分别缺第一轨、中间轨、最后一轨，验证保留 cue 和恢复位置不会指向其他文件。
+
+#### HBK-AUDIT-016：退书后台播放仍使用最后一章的局部 cue 列表
+
+- severity：P2
+- status：open，静态代码路径确认，未完成 session/UI 运行复现。
+- 位置：`fushi/lib/src/media/audiobook/audiobook_session.dart:321–332`；装配 `reader_fushi/audiobook.part.dart:543–548`；消费 `fushi/lib/src/media/audiobook/audiobook_controller.dart:186–189,1657–1659`。
+- 根因：普通 SMIL/JSON selector 对齐 EPUB 在 reader 内使用当前章节 cue 子集，detachReader 只清回调，不恢复控制器全书工作集合。全书列表虽然另有缓存，后台显示和更新实际仍消费局部集合。
+- 触发与影响：启用后台续播，第一章退书后播入第二章/下一音轨，局部列表找不到该轨 cue，当前句和悬浮字幕可能停在旧章；通知下一句也因边界回调已卸而无法跨章。不将本来已经用全书 cue 的 SRT 路径算入反例。
+- 修复建议：detach 时切回全书工作集合，或分离后台句子解析与 reader 局部高亮范围；重新 attach 再套用章节约束。
+- 验证方式：两章两轨的真实会话，attach→第一章局部 cue→detach→推进下一轨，验证当前句、悬浮字幕、通知及下一句均更新。
+
+#### HBK-AUDIT-017：本地词典导入绕过共用锁，可能删除后台更新的暂存目录
+
+- severity：P2
+- status：open，静态调用路径确认，未操作用户词典或运行 native 并发导入。
+- 位置：`fushi/lib/src/models/dictionary_import_manager.dart:587–590`；本地入口 `dictionary_dialog_page.dart:976–998,1047,1647,1692`；App 委托 `app_model.dart:6529–6577`。
+- 根因：下载/更新受 DictionaryDownloadController.run 约束并允许收后台，本地文件、文件夹和拖放入口却直接调用导入原语。双方共用固定 import_temp，进入时都会删除已有目录；共享原语本身没有写侧所有权。
+- 触发与影响：更新收后台、native 正在写暂存目录时，再本地导入另一包，后者删除前者输出。除失败外，交错还可能让发布阶段把另一任务的暂存内容放进错误的词典目录。
+- 修复建议：在共享服务统一串行导入/替换/删除生命周期，并让每个任务使用独立暂存；避免只禁用某一个页面按钮或重复嵌套上锁。
+- 验证方式：后台更新在 native 返回前/发布前挂起，再从文件、目录、拖放导入另一包，验证任务排队或拒绝且不互删目录。
+
+#### HBK-AUDIT-018：词典替换先永久删旧，发布或提交失败后没有回滚
+
+- severity：P2
+- status：open，静态失败路径确认，尚未运行文件系统/metadata 故障注入。
+- 位置：`fushi/lib/src/models/dictionary_import_manager.dart:628–675,699–705,1027–1052`。
+- 根因：native 成功后先删除旧 metadata 与目录，之后才发布新目录、复制 CSS/字体和写入新 metadata；catch 仅记录/重抛，没有恢复旧版本。页面宣称的失败保留仅对更早的解析失败成立。
+- 触发与影响：旧版本已删后，最终目录发布/复制遇磁盘空间不足、附件复制失败或 metadata 提交失败；更新报错，但原词典文件和记录已丢失。新暂存也可能被下次导入清除。
+- 修复建议：保留旧目录和元数据，完整准备新版本后协调发布与提交；失败恢复旧版本，全部成功后再清理备份。仍需先释放引擎映射，不能简单颠倒旧版释放顺序。
+- 验证方式：分别在发布、copy fallback、附件复制和 metadata 提交处注入失败，验证旧词典、用户设置、重启后查词均保持可用。
+
+### 验证与证据边界
+
+- 主审独立执行 `epub_concurrent_probe.dart`、`epub_href_probe.dart`、`missing_track_probe.dart`、`reader_exit_controller_probe.dart`、`reader_stale_spread_ready_probe.dart` 并复核输出。证据留在本 worktree 的 `.codex-test/runtime-review-round2/`，汇总见 `results.txt`。
+- EPUB 并发实验调用真实导入器、解析器、目录发布和内存 SQLite，仅读取阶段用 barrier 固定交错；没有改生产业务。# 路径实验调用真实解析器；音轨实验调用真实 resolver，但不代表已听到错误音轨。
+- 退书和 spreadReady 是原方法/回调抽取探针，不包含真实 Flutter 路由动画、native WebView 消息投递或播放器。因此没有把这两项写成真机复现。
+- 本轮不跑全量测试。音频子审尝试临时 Flutter session 用例时，既有 package_config 缺 fushi_srs，编译阶段失败、零测试执行；没有修改依赖，也没有将其算作产品失败或测试通过。纯 Dart 探针使用临时包映射运行。
+- 未修改用户词典、书库、音频或云端数据。新增隔离复现另记本地 `docs/REGRESSION_BUGS.md`。首轮十项仍为 open，本轮没有验证或实施其修复。
+
+### Next Scope
+
+- 优先处理 HBK-AUDIT-011 的共享身份/目录发布与回滚所有权；随后核查其他格式导入器是否共享同类查重和失败清理缺口。
+- 下一轮继续视频进度恢复与字幕状态、下载取消/重试后的入库幂等、云同步删除墓碑和资源回收。风格一致性、CLI 覆盖继续排除。
