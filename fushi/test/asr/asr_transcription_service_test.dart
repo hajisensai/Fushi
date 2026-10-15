@@ -51,8 +51,8 @@ void main() {
           buildFactory: _unusedOnnxFactory,
         ),
         loader: AsrEngineLoader(factory: factory),
-        openStore: (AsrLanguage l) async =>
-            AsrModelStore(tmp, asrModelPackFor(l)),
+        openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+            AsrModelStore(tmp, asrModelPackFor(l, profile: profile)),
         jobsRoot: () async => tmp,
         runInIsolate: false,
       );

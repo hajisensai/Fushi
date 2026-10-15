@@ -18,8 +18,10 @@
 /// **两条不变式**，改这里前先读：
 ///
 /// 1. **默认不能变**。内置 8 个 transducer 包必须仍排在扩语言 Omnilingual 之前，
-///    没做过选择的用户 `asrModelPackFor(ja)` 必须还是 ReazonSpeech。所以扩语言
-///    Omnilingual 沿用**原位置**（清单末尾）而不是插到前面。
+///    没做过选择的用户在**有声书**上 `asrModelPackFor(ja)` 必须还是 ReazonSpeech。
+///    所以扩语言 Omnilingual 沿用**原位置**（清单末尾）而不是插到前面。视频
+///    （mixedAudio）的日语默认是只服务混音素材的 Parakeet（包里排在 ReazonSpeech
+///    前、对有声书不可见），选择也按「语言 × 素材」分开记（[asrChoiceKey]）。
 /// 2. **选择不能靠排序表达**。Omnilingual 一个包服务 9+ 种语言，把它整个提到最前
 ///    会顺带改掉其余每一种语言的默认——「给日语选 Omnilingual」不能是
 ///    「把 Omnilingual 排到第一」。所以选中的包会被复制成一份**只声明那一种语言**
@@ -179,7 +181,8 @@ class AsrModelCatalog {
   /// 用户手动接入的本地模型包。
   final List<AsrModelPack> customPacks;
 
-  /// 语言标签（[AsrLanguage.tag]）→ 选中的包 id。没有条目 = 用默认。
+  /// 选择键（[asrChoiceKey]：有声书是语言标签，其它素材 `<标签>@<素材>`）→ 选中的
+  /// 包 id。没有条目 = 用默认。
   final Map<String, String> choices;
 
   static const AsrModelCatalog empty = AsrModelCatalog();
@@ -225,13 +228,19 @@ class AsrModelCatalog {
         'choices': choices,
       };
 
-  /// 选中某语言用哪个包。[packId] 为 null 表示回到默认（删掉这条选择）。
-  AsrModelCatalog withChoice(AsrLanguage language, String? packId) {
+  /// 选中某语言在某种素材上用哪个包。[packId] 为 null 表示回到默认（删掉这条
+  /// 选择）。
+  AsrModelCatalog withChoice(
+    AsrLanguage language,
+    String? packId, {
+    AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+  }) {
+    final String key = asrChoiceKey(language, profile);
     final Map<String, String> next = Map<String, String>.of(choices);
     if (packId == null) {
-      next.remove(language.tag);
+      next.remove(key);
     } else {
-      next[language.tag] = packId;
+      next[key] = packId;
     }
     return AsrModelCatalog(customPacks: customPacks, choices: next);
   }
@@ -280,6 +289,32 @@ class AsrModelCatalog {
       );
 }
 
+/// 选择表的键：**有声书（[AsrAudioProfile.cleanSpeech]）沿用老键 = 语言标签**，
+/// 其它素材是 `<标签>@<素材名>`（视频：`ja@mixedAudio`）。
+///
+/// 为什么按素材分开记：同一语言在视频与有声书上的最优模型不同（日语：视频
+/// Parakeet、有声书 ReazonSpeech，`AsrModelPack.audioProfiles`）。只按语言记的话，
+/// 老用户在有声书面板里点过一次 ReazonSpeech，就会把视频也钉死在它上面——
+/// 2026-10-15 前视频与有声书共用一个面板，这种记录大量存在。老键只管有声书，
+/// 既有选择一条不丢。
+String asrChoiceKey(AsrLanguage language, AsrAudioProfile profile) =>
+    profile == AsrAudioProfile.cleanSpeech
+        ? language.tag
+        : '${language.tag}@${profile.name}';
+
+/// [asrChoiceKey] 的逆：拆出语言标签与素材；认不出的素材名返回 null（忽略该条）。
+({String tag, AsrAudioProfile profile})? _parseChoiceKey(String key) {
+  final int at = key.indexOf('@');
+  if (at < 0) return (tag: key, profile: AsrAudioProfile.cleanSpeech);
+  final String name = key.substring(at + 1);
+  for (final AsrAudioProfile profile in AsrAudioProfile.values) {
+    if (profile.name == name) {
+      return (tag: key.substring(0, at), profile: profile);
+    }
+  }
+  return null;
+}
+
 /// 纯函数：目录 → 注册表。规则见文件头两条不变式。
 AsrModelRegistry buildAsrModelRegistry(AsrModelCatalog catalog) {
   // 1) 基础表：内置（omnilingual 扩语言）；同 id 的自带包**就地**覆盖内置那份，
@@ -296,32 +331,43 @@ AsrModelRegistry buildAsrModelRegistry(AsrModelCatalog catalog) {
   for (final AsrModelPack pack in catalog.customPacks) {
     if (seen.add(pack.id)) ordered.add(pack);
   }
-  // 3) 每条选择生成一份只声明那一种语言的窄包置顶。
+  // 3) 每条选择生成一份只声明那一种语言、那一种素材的窄包置顶。
   final List<AsrModelPack> narrowed = <AsrModelPack>[];
   for (final MapEntry<String, String> entry in catalog.choices.entries) {
+    final ({String tag, AsrAudioProfile profile})? key =
+        _parseChoiceKey(entry.key);
+    if (key == null) continue;
     final AsrModelPack? pack = _packById(ordered, entry.value);
     if (pack == null) continue;
-    final AsrLanguage? language = _languageOf(pack, entry.key);
-    // 选中的包不服务这门语言（用户换了自带包的语言列表）：忽略这条选择，让它
-    // 回落到默认，而不是造一个跑不起来的窄包。
-    if (language == null) continue;
-    narrowed.add(_withLanguages(pack, <AsrLanguage>[language]));
+    final AsrLanguage? language = _languageOf(pack, key.tag);
+    // 选中的包不服务这门语言（用户换了自带包的语言列表）或这种素材：忽略这条
+    // 选择，让它回落到默认，而不是造一个跑不起来的窄包。
+    if (language == null || !pack.servesProfile(key.profile)) continue;
+    narrowed.add(
+      _withLanguages(
+        pack,
+        <AsrLanguage>[language],
+        audioProfiles: <AsrAudioProfile>[key.profile],
+      ),
+    );
   }
   return AsrModelRegistry(<AsrModelPack>[...narrowed, ...ordered]);
 }
 
-/// 纯函数：这门语言能选哪些包（按注册表展示顺序，同 id 只留一份）。
+/// 纯函数：这门语言在这种素材上能选哪些包（按注册表展示顺序，同 id 只留一份）。
 ///
 /// 结果第一项就是当前生效的那个（[asrModelPackFor] 的判据同样是「第一个服务它的
 /// 包」），所以 UI 不需要另算「当前选中」。
 List<AsrModelPack> asrModelChoicesFor(
   AsrLanguage language,
-  AsrModelRegistry registry,
-) {
+  AsrModelRegistry registry, {
+  AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+}) {
   final List<AsrModelPack> out = <AsrModelPack>[];
   final Set<String> seen = <String>{};
   for (final AsrModelPack pack in registry.packs) {
     if (!pack.languages.contains(language)) continue;
+    if (!pack.servesProfile(profile)) continue;
     if (!seen.add(pack.id)) continue;
     out.add(pack);
   }
@@ -521,7 +567,11 @@ AsrModelCatalog readAsrModelCatalogSync(File file) {
 ///
 /// 包里没有 `copyWith`，字段又全是 final public，所以手写一份——加字段时这里会
 /// 编译报错，正好逼着来同步。
-AsrModelPack _withLanguages(AsrModelPack pack, List<AsrLanguage> languages) =>
+AsrModelPack _withLanguages(
+  AsrModelPack pack,
+  List<AsrLanguage> languages, {
+  List<AsrAudioProfile>? audioProfiles,
+}) =>
     AsrModelPack(
       languages: languages,
       id: pack.id,
@@ -533,6 +583,7 @@ AsrModelPack _withLanguages(AsrModelPack pack, List<AsrLanguage> languages) =>
       indexType: pack.indexType,
       blankToken: pack.blankToken,
       fp32GpuMinBudgetBytes: pack.fp32GpuMinBudgetBytes,
+      audioProfiles: audioProfiles ?? pack.audioProfiles,
     );
 
 /// 换一个 id，其余字段逐字照抄（见 [_withLanguages] 同样的理由）。
@@ -547,6 +598,7 @@ AsrModelPack _withId(AsrModelPack pack, String id) => AsrModelPack(
       indexType: pack.indexType,
       blankToken: pack.blankToken,
       fp32GpuMinBudgetBytes: pack.fp32GpuMinBudgetBytes,
+      audioProfiles: pack.audioProfiles,
     );
 
 AsrModelPack? _packById(List<AsrModelPack> packs, String id) {

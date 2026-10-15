@@ -11,16 +11,22 @@ import 'package:path/path.dart' as p;
 /// 假服务：每种语言的就绪状态可编程；模型目录落在临时目录里，`deleteAll` 走真
 /// 删除以拿到真实的释放字节数。
 class _FakeService extends AsrTranscriptionService {
-  _FakeService({required this.root, required this.readyByLanguage})
-      : super(
-        audioProfile: AsrAudioProfile.cleanSpeech,
+  _FakeService({
+    required this.root,
+    required this.readyByLanguage,
+    AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+  }) : super(
+        audioProfile: profile,
         backend: const AsrIsolateBackend(
           buildFactory: _unusedOnnxFactory,
         ),
 
-          openStore: (AsrLanguage l) async => AsrModelStore(
-            Directory(p.join(root.path, asrModelPackFor(l).id)),
-            asrModelPackFor(l),
+          openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+              AsrModelStore(
+            Directory(
+              p.join(root.path, asrModelPackFor(l, profile: profile).id),
+            ),
+            asrModelPackFor(l, profile: profile),
           ),
           jobsRoot: () async => root,
         );
@@ -28,12 +34,23 @@ class _FakeService extends AsrTranscriptionService {
   final Directory root;
   final Map<AsrLanguage, bool> readyByLanguage;
   final List<AsrLanguage> downloadLanguages = <AsrLanguage>[];
+  final List<AsrLanguage> plannedLanguages = <AsrLanguage>[];
+
+  /// 只服务某种素材的包（日语视频的 Parakeet）那一行用的假服务：就绪状态单独记，
+  /// 默认全部未下载。
+  _FakeService? _other;
+  _FakeService forProfile(AsrAudioProfile profile) => _other ??= _FakeService(
+        root: root,
+        readyByLanguage: <AsrLanguage, bool>{},
+        profile: profile,
+      );
 
   @override
   Future<AsrTranscribePlan> plan({
     required AsrLanguage language,
     required AsrAccelerationPreference preference,
   }) async {
+    plannedLanguages.add(language);
     final bool ready = readyByLanguage[language] ?? false;
     return AsrTranscribePlan(
       language: language,
@@ -96,7 +113,14 @@ void main() {
         AsrLanguage.english: false,
       },
     );
-    await tester.pumpWidget(wrap(AsrModelsSettingsSection(service: service)));
+    await tester.pumpWidget(
+      wrap(
+        AsrModelsSettingsSection(
+          service: service,
+          serviceForProfile: service.forProfile,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     for (final AsrModelPack pack in kAsrModelPacks) {
@@ -143,6 +167,51 @@ void main() {
     );
   });
 
+  testWidgets('只服务视频的包（Parakeet）那一行问的是 mixedAudio 服务，不借用同语言通用包的状态',
+      (WidgetTester tester) async {
+    final _FakeService service = _FakeService(
+      root: tmp,
+      readyByLanguage: <AsrLanguage, bool>{AsrLanguage.japanese: true},
+    );
+    await tester.pumpWidget(
+      wrap(
+        AsrModelsSettingsSection(
+          service: service,
+          serviceForProfile: service.forProfile,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final _FakeService video = service.forProfile(AsrAudioProfile.mixedAudio);
+    expect(video.audioProfile, AsrAudioProfile.mixedAudio);
+    // Parakeet 行问的是视频那份服务；有声书那份只被问了 ReazonSpeech 那一次日语。
+    expect(video.plannedLanguages, <AsrLanguage>[AsrLanguage.japanese]);
+    expect(
+      service.plannedLanguages.where((AsrLanguage l) => l == AsrLanguage.japanese),
+      hasLength(1),
+    );
+    // ReazonSpeech 已下载 → 只有删除；Parakeet 未下载 → 只有下载（修复前它借用
+    // 日语通用包的状态，两行一起显示「已下载」，删 Parakeet 删的是 ReazonSpeech）。
+    expect(
+      find.byKey(ValueKey<String>('asr-models-delete-${kAsrJapanesePack.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>(
+          'asr-models-download-${kAsrParakeetJapanesePack.id}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>('asr-models-delete-${kAsrParakeetJapanesePack.id}'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('删除先弹二次确认；确认后真删目录并回报释放字节', (WidgetTester tester) async {
     final _FakeService service = _FakeService(
       root: tmp,
@@ -155,7 +224,14 @@ void main() {
       ..createSync(recursive: true);
     File(p.join(jaDir.path, 'tokens.txt')).writeAsStringSync('x' * 100);
 
-    await tester.pumpWidget(wrap(AsrModelsSettingsSection(service: service)));
+    await tester.pumpWidget(
+      wrap(
+        AsrModelsSettingsSection(
+          service: service,
+          serviceForProfile: service.forProfile,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(ValueKey<String>('asr-models-delete-${kAsrJapanesePack.id}')),

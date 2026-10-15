@@ -92,8 +92,8 @@ class _FakeService extends AsrTranscriptionService {
             buildFactory: _unusedOnnxFactory,
           ),
           pcm: _FakePcm(),
-          openStore: (AsrLanguage l) async =>
-              AsrModelStore(jobsDir, asrModelPackFor(l)),
+          openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+              AsrModelStore(jobsDir, asrModelPackFor(l, profile: profile)),
           jobsRoot: () async => jobsDir,
         );
 
@@ -1072,7 +1072,16 @@ void main() {
       final String id = catalog.customPacks.single.id;
       expect(id, startsWith(kAsrCustomPackIdPrefix));
       expect(catalog.choices[AsrLanguage.japanese.tag], id);
-      expect(asrModelRegistry.packForLanguage(AsrLanguage.japanese)?.id, id);
+      // 这个弹层服务的是有声书（cleanSpeech），选择记在老键上、按它生效。
+      expect(
+        asrModelRegistry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )
+            ?.id,
+        id,
+      );
     });
   });
 }

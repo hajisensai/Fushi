@@ -94,7 +94,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
-import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
@@ -238,6 +239,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleSyncDecision, SubtitleSyncDecisionKind;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'

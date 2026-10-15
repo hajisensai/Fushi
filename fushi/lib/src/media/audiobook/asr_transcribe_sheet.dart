@@ -380,6 +380,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 弹层其余部分只与「一个 AsrTranscriptionService」对话，不知道底下是谁。
   late AsrTranscriptionService _service = widget.service;
 
+  /// 弹层服务的素材（视频 / 有声书）：取注入的那份服务的断言，**不取 [_service]**
+  /// ——选中系统语音时 [_service] 换成另一份实现，素材却没变。选包、记选择、报
+  /// 模型名都按它：同一语言在视频与有声书上默认是两个包（日语：Parakeet /
+  /// ReazonSpeech）。
+  AsrAudioProfile get _profile => widget.service.audioProfile;
+
   /// 本机有没有系统语音（OS ≥ 26 且原生侧在）。探完才决定下拉里出不出那一项。
   bool _systemSpeechAvailable = false;
 
@@ -774,6 +780,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         registry: asrModelRegistry,
         systemSpeechAvailable: _systemSpeechAvailable,
         systemSpeechLabel: t.audiobook_transcribe_engine_system,
+        profile: _profile,
       );
 
   /// 当前选中的引擎 id。
@@ -781,6 +788,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         language: _language,
         catalog: widget.catalogGetter(),
         options: _engineOptions(),
+        profile: _profile,
       );
 
   /// 按选中的引擎给出服务实例。ONNX 走注入进来的那份（生产是
@@ -849,7 +857,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 所以只报引擎名。
   String _readyEngineLabel(AsrTranscribePlan plan) {
     if (_systemSpeech) return t.audiobook_transcribe_engine_system;
-    return '${asrModelPackFor(plan.language).displayName} · '
+    return '${asrModelPackFor(plan.language, profile: _profile).displayName} · '
         '${_variantLabel(plan.variant)}';
   }
 
@@ -857,7 +865,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
 
-  /// 换模型：记住选择（每语言一条），再按新包重新规划。
+  /// 换模型：记住选择（每语言 × 素材一条），再按新包重新规划。
   ///
   /// 模型换了就是另一套磁盘目录与另一个任务哈希（任务 id 含包 id），所以进行中的
   /// 进度不会被顶掉，切回去还在。
@@ -868,7 +876,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     // 旧引擎去查新引擎的任务。
     setState(() => _service = _serviceFor(engineId));
     await _updateCatalog(
-      widget.catalogGetter().withChoice(_language, engineId),
+      widget.catalogGetter().withChoice(_language, engineId, profile: _profile),
     );
   }
 
@@ -885,7 +893,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     // 撞上同一个 id，撞了要加后缀而不是把先前那份覆盖掉（连同指向它的选择）。
     final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
         widget.catalogGetter().withLocalPack(pack);
-    await _updateCatalog(added.catalog.withChoice(_language, added.pack.id));
+    await _updateCatalog(
+      added.catalog.withChoice(_language, added.pack.id, profile: _profile),
+    );
     if (!mounted) return;
     FushiToast.show(
       msg: t.audiobook_transcribe_model_custom_added(
@@ -1257,7 +1267,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           selected: _language,
           enabled: _canChangePreference,
           entrySubtitle: (AsrLanguage language) =>
-              asrModelPackFor(language).displayName,
+              asrModelPackFor(language, profile: _profile).displayName,
           onChanged: _changeLanguage,
         ),
       ),

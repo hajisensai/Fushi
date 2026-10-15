@@ -151,13 +151,18 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
   applyAsrModelCatalog(catalog);
 }
 
-/// 建一个装配好的转录服务。两个生产实例化点都调这里。
-asr.AsrTranscriptionService createAsrTranscriptionService() =>
+/// 建一个装配好的转录服务。生产实例化点都调这里。
+///
+/// [audioProfile] 是调用方对素材的断言（见 [asr.AsrAudioProfile]）：
+/// - 有声书（默认）是干净朗读：语音与静默能量差 30 dB 以上、双模态可分，能量
+///   门限够用且免掉每 32 ms 一次 ONNX 前向；
+/// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
+///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
+asr.AsrTranscriptionService createAsrTranscriptionService({
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
+}) =>
     asr.AsrTranscriptionService(
-      // 有声书是干净朗读：语音与静默能量差 30 dB 以上、双模态可分，能量门限
-      // 够用且免掉每 32 ms 一次 ONNX 前向。混音素材（动画/影视/带 BGM 的音源）
-      // 必须换 mixedAudio，见 AsrAudioProfile。
-      audioProfile: asr.AsrAudioProfile.cleanSpeech,
+      audioProfile: audioProfile,
       backend: fushiAsrBackend(),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
       openStore: openAsrModelStore,
@@ -173,11 +178,17 @@ asr.AsrTranscriptionService createAsrTranscriptionService() =>
 /// 不注入的话本地模型恒判未就绪：包里的 `AsrModelStore` 只按 `pack.id` 拼目录、
 /// 只在那个目录里 stat 文件名，`AsrModelFile.url` 要到下载时才读——于是弹层会
 /// 提示「需要下载」，点下去再拿 `file:` URL 去发 HTTP 请求。
-Future<asr.AsrModelStore> openAsrModelStore(asr.AsrLanguage language) async {
-  final asr.AsrModelPack pack = asr.asrModelPackFor(language);
+///
+/// [profile]：同一语言在视频与有声书上可以是两个包（日语：Parakeet / ReazonSpeech），
+/// 按素材取包，否则视频的就绪判定与下载会落到有声书那个包的目录上。
+Future<asr.AsrModelStore> openAsrModelStore(
+  asr.AsrLanguage language,
+  asr.AsrAudioProfile profile,
+) async {
+  final asr.AsrModelPack pack = asr.asrModelPackFor(language, profile: profile);
   final Directory? local = localAsrModelDirectory(pack);
   if (local != null) return asr.AsrModelStore(local, pack);
-  return asr.AsrModelStore.open(language);
+  return asr.AsrModelStore.openPack(pack);
 }
 
 /// 本平台是否具备设备端转录能力（= 本地 ONNX Runtime 随包）。

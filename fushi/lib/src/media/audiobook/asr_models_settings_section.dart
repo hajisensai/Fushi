@@ -24,9 +24,21 @@ import 'package:fushi/utils.dart';
 /// 服务经构造参数注入，最小 widget 测试注 fake；真实接线在
 /// `settings_schema_listening.dart`。
 class AsrModelsSettingsSection extends StatefulWidget {
-  const AsrModelsSettingsSection({required this.service, super.key});
+  const AsrModelsSettingsSection({
+    required this.service,
+    this.serviceForProfile,
+    super.key,
+  });
 
+  /// 通用包（有声书与视频都能用的包）这一行用的服务。
   final AsrTranscriptionService service;
+
+  /// 只服务某一种素材的包（日语视频的 Parakeet）用哪份服务：状态 / 下载 / 删除
+  /// 都按「语言 + 素材」取包，拿 [service] 去问会落到同语言的通用包上——Parakeet
+  /// 那一行就会显示、下载、删除 ReazonSpeech。null 时按素材现建
+  /// （[createAsrTranscriptionService]）；测试注入 fake。
+  final AsrTranscriptionService Function(AsrAudioProfile profile)?
+      serviceForProfile;
 
   @override
   State<AsrModelsSettingsSection> createState() =>
@@ -103,11 +115,27 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     super.dispose();
   }
 
+  /// 这一行该问哪份服务（见 [AsrModelsSettingsSection.serviceForProfile]）。
+  AsrTranscriptionService _serviceFor(_PackRow row) {
+    final AsrModelPack pack = row.pack;
+    if (pack.servesProfile(widget.service.audioProfile)) return widget.service;
+    final AsrAudioProfile profile = pack.audioProfiles.first;
+    return _profileServices.putIfAbsent(
+      profile,
+      () =>
+          widget.serviceForProfile?.call(profile) ??
+          createAsrTranscriptionService(audioProfile: profile),
+    );
+  }
+
+  final Map<AsrAudioProfile, AsrTranscriptionService> _profileServices =
+      <AsrAudioProfile, AsrTranscriptionService>{};
+
   Future<void> _refresh(_PackRow row) async {
     if (mounted) setState(() => row.loading = true);
     AsrTranscribePlan? plan;
     try {
-      plan = await widget.service.plan(
+      plan = await _serviceFor(row).plan(
         language: row.pack.language,
         preference: AsrAccelerationPreference.auto,
       );
@@ -132,7 +160,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       row.downloadReceived = plan.modelStatus.obtainedBytes;
       row.downloadFile = '';
     });
-    row.downloadSub = widget.service
+    row.downloadSub = _serviceFor(row)
         .downloadModel(language: row.pack.language, variant: plan.variant)
         .listen(
       (ModelDownloadEvent e) {
@@ -233,7 +261,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     int freed = 0;
     try {
       final AsrModelStore store =
-          await widget.service.modelStore(row.pack.language);
+          await _serviceFor(row).modelStore(row.pack.language);
       freed = await store.deleteAll();
     } finally {
       if (mounted) setState(() => row.deleting = false);

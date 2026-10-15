@@ -2744,6 +2744,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return showAsrTranscribeSheet(
       context: context,
       audioPaths: <String>[audioPath],
+      // 视频是混音素材（BGM / 音效）：断言 mixedAudio。日语因此换成 Parakeet、
+      // 不切 VAD 走滑窗；之前共用有声书的 cleanSpeech 服务，能量门限在这类
+      // 素材上把大段音乐也送进模型，时间轴精确率 0.74（现 0.86）。
+      service: createAsrTranscriptionService(
+        audioProfile: AsrAudioProfile.mixedAudio,
+      ),
     );
   }
 
