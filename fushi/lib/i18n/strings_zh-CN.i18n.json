@@ -7772,5 +7772,14 @@
   "srs_settings_reset_params_done": "已恢复默认参数",
   "srs_ankiconnect_title": "AnkiConnect（Fushi 复习）",
   "backup_category_srs": "复习",
-  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案"
+  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案",
+  "ai_feature_collection_order": "合集排序",
+  "ai_feature_collection_order_summary": "规则排不出 SP / OVA / 特别篇或卷序时，让 AI 决定它们在合集里的位置",
+  "collection_sort_ai": "AI 排序",
+  "collection_sort_ai_running": "正在让 AI 排序…",
+  "collection_sort_ai_applied": "已按 AI 建议调整顺序",
+  "collection_sort_ai_rules_only": "集号 / 卷号已能确定顺序，已按规则排好",
+  "collection_sort_ai_unchanged": "AI 认为当前顺序无需调整",
+  "collection_sort_ai_invalid": "AI 的回复没通过校验，顺序未改",
+  "collection_sort_ai_too_large": "合集太大，无法用 AI 排序"
 }

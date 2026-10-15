@@ -1,4 +1,10 @@
+import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/ai/ai_collection_order_assistant.dart'
+    show resolveCollectionOrderAiProvider;
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
@@ -108,9 +114,11 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   }
 
   /// AppBar「排序」菜单（按名称 / 按导入时间一键重排）；实际重排落库由宿主页回调。
+  /// [onSortByAi] 非 null 时多一项「AI 排序」（AI 模块关着时宿主传 null）。
   Widget buildDetailSortMenu({
     required VoidCallback onSortByTitle,
     required VoidCallback onSortByImported,
+    VoidCallback? onSortByAi,
   }) {
     return FushiMenuAnchor(
       menuChildren: <Widget>[
@@ -124,15 +132,82 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
           onPressed: onSortByImported,
           child: Text(t.collection_sort_by_imported),
         ),
+        if (onSortByAi != null)
+          MenuItemButton(
+            key: const ValueKey<String>('collection_detail_sort_ai'),
+            leadingIcon: const FushiIcon(FushiIcons.ai, size: 20),
+            onPressed: onSortByAi,
+            child: Text(t.collection_sort_ai),
+          ),
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) =>
           FushiIconButtonControl(
-        tooltip: t.sort_by,
-        icon: const FushiIcon(Icons.sort),
-        onPressed: () =>
-            controller.isOpen ? controller.close() : controller.open(),
-      ),
+            tooltip: t.sort_by,
+            icon: const FushiIcon(Icons.sort),
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+          ),
     );
+  }
+
+  bool _detailAiSortBusy = false;
+
+  /// 「AI 排序」（用户意图）：规则判不出的成员（SP / OVA / 汉字卷号 / 上下卷）
+  /// 交 AI 定位，落盘走 `reorderCollectionItems` 并把排序偏好切成 manual
+  /// （[runCollectionAiOrder]）。没指派提供商时**一个请求都不发**，只引导去
+  /// 「设置 › 模型 › LLM」（BUG-2694 的约定）。落了盘返回 true，宿主据此重载。
+  Future<bool> runDetailAiSort({
+    required AiSettingsSource settings,
+    CollectionAiClientFactory? clientFactory,
+  }) async {
+    if (_detailAiSortBusy) return false;
+    if (resolveCollectionOrderAiProvider(settings) == null) {
+      FushiToast.show(msg: t.ai_assist_no_provider);
+      return false;
+    }
+    _detailAiSortBusy = true;
+    FushiToast.show(msg: t.collection_sort_ai_running);
+    final CollectionAiOrderOutcome outcome;
+    try {
+      outcome = await runCollectionAiOrder(
+        db: detailDatabase,
+        collectionId: detailCollection.id,
+        settings: settings,
+        userIntent: true,
+        clientFactory: clientFactory,
+      );
+    } finally {
+      _detailAiSortBusy = false;
+    }
+    final String? message = switch (outcome.status) {
+      CollectionAiOrderStatus.aiOrdered =>
+        outcome.changed
+            ? t.collection_sort_ai_applied
+            : t.collection_sort_ai_unchanged,
+      CollectionAiOrderStatus.ruleOrdered => t.collection_sort_ai_rules_only,
+      CollectionAiOrderStatus.noProvider => t.ai_assist_no_provider,
+      CollectionAiOrderStatus.failed => t.ai_assist_failed(
+        reason: aiFailureText(outcome.failure ?? ''),
+      ),
+      CollectionAiOrderStatus.invalidReply => t.collection_sort_ai_invalid,
+      CollectionAiOrderStatus.tooLarge => t.collection_sort_ai_too_large,
+      CollectionAiOrderStatus.notFound ||
+      CollectionAiOrderStatus.tooFew ||
+      CollectionAiOrderStatus.skippedManual ||
+      CollectionAiOrderStatus.noAmbiguity => null,
+    };
+    if (message != null) {
+      FushiToast.show(
+        msg: message,
+        severity:
+            outcome.status == CollectionAiOrderStatus.failed ||
+                outcome.status == CollectionAiOrderStatus.invalidReply
+            ? ToastSeverity.error
+            : ToastSeverity.success,
+      );
+    }
+    if (outcome.persisted) detailOnChanged();
+    return outcome.persisted;
   }
 
   /// 「删除合集」确认：统一走 PR-0 的 [FushiDestructiveConfirmDialog]。
@@ -164,14 +239,14 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   Future<bool> confirmDetailRemoveMember() async {
     final FushiDestructiveConfirmResult? result =
         await showAppDialog<FushiDestructiveConfirmResult>(
-      context: context,
-      builder: (_) => FushiDestructiveConfirmDialog(
-        title: t.collection_remove_member,
-        message: t.collection_remove_member_confirm,
-        confirmLabel: t.collection_remove_member,
-        leadingIcon: Icons.remove_circle_outline,
-      ),
-    );
+          context: context,
+          builder: (_) => FushiDestructiveConfirmDialog(
+            title: t.collection_remove_member,
+            message: t.collection_remove_member_confirm,
+            confirmLabel: t.collection_remove_member,
+            leadingIcon: Icons.remove_circle_outline,
+          ),
+        );
     return result != null;
   }
 }

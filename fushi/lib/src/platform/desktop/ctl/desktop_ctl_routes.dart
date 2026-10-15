@@ -1,5 +1,6 @@
 import 'package:fushi_cli/fushi_cli.dart';
 
+import 'package:fushi/src/platform/desktop/ctl/ctl_collection_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_dictionary_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_routes.dart';
@@ -16,4 +17,5 @@ List<CtlRoute> buildDesktopCtlRoutes(DesktopCtlContext context) => <CtlRoute>[
   ...buildDataCtlRoutes(context),
   ...buildOnlineCtlRoutes(context),
   ...buildVideoCtlRoutes(context),
+  ...buildCollectionCtlRoutes(context),
 ];

@@ -39,6 +39,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
@@ -617,6 +618,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           onChanged: () {
             unawaited(_reload());
           },
+          collectionAiSettings: isAiModuleEnabled(_appModel.moduleVisibility)
+              ? _appModel.prefsRepo
+              : null,
         ),
       ),
     );

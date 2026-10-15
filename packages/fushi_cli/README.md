@@ -21,6 +21,7 @@ fushi_cli quit              # 落库后退出 app（与关窗口同一条路径�
 | `backup` / `sync` / `dl` / `mediaserver` / `peer` / `storage` | 备份创建与恢复（`--merge` / `--replace` 预设）、云同步（可指定通道）、下载中心（含 http 直链）、Jellyfin / Emby / Plex 浏览与搜索、互联 host 与配对、存储占用 |
 | `ext` / `source` / `discover` / `play` / `nav` | 漫画 / 视频 / 小说扩展与仓库、在线源搜索 / 加库 / 下载、发现与一键获取、视频 / 有声书播放遥控（`--target`）、顶层页面跳转 |
 | `video` | 视频作品列表、刮削 / 重刮 / 取消、手动识别（AniDB / MAL / TMDB）、视频发现、资源搜索与下载入队 |
+| `collection` | 合集 ls / 成员顺序 items、手动定序 order、一键排序 sort `--by title\|imported\|ai`（`ai` = SP / OVA / 汉字卷号等规则判不出的成员交 AI 定位，`--dry-run` 只打印建议序） |
 
 app 侧每个域一个路由文件 `fushi/lib/src/platform/desktop/ctl/ctl_<域>_routes.dart`，CLI 侧一个命令文件
 `lib/src/commands/<域>_commands.dart`；每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。
