@@ -1039,8 +1039,9 @@ window.__fushiInstallShell = function(C) {
   _setReanchorPending: function(value) {
     var settled = this._reanchorPending === true && value !== true;
     this._reanchorPending = value === true;
-    // BUG-2806：重锚落定 = 排版已按新几何落定，有声书补缝阴影按新排版重量。
-    if (settled) this.paintSentenceAudioRubyGaps();
+    // 重锚落定 = 排版已按新几何落定：所有高亮的窄条层（__fushiLanes，按文字片段量出的绝对坐标）
+    // 按新排版重画。
+    if (settled && window.__fushiLanes) window.__fushiLanes.repaint();
     if (settled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       try { window.flutter_inappwebview.callHandler('onReanchorSettled'); } catch (e) {}
     }
@@ -1863,8 +1864,8 @@ window.__fushiInstallShell = function(C) {
     // 注音撑出的间距回到行内——iOS 模拟器实测「会釈を」+3.9px、「自嘲気味」注音与「気」
     // 叠的 3px 变成 8px 空隙。包裹在章节加载后异步执行（图片就绪之后），用户看到的就是
     // 翻进新章节后正文「突然岔开」。现在 ruby 永远留在原位：ruby 内的基字文本就地包进
-    // ruby 内部的 wrapper（排版与原书逐像素一致），长注音留下的缝由
-    // fillSentenceAudioRubyGaps 在高亮时用不参与排版的 box-shadow 补上。
+    // ruby 内部的 wrapper（排版与原书逐像素一致）。长注音留下的缝不再逐缝补色：底色由窄条层
+    // （__fushiLanes）画，同一行里同一句的片段并成一条。
     // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
     // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
     for (var i = cueSegments.length - 1; i >= 0; i--) {
@@ -1904,9 +1905,9 @@ window.__fushiInstallShell = function(C) {
     if (!wrappers.length && !rubyElements.length) return null;
     this.activeCueId = cueId;
     wrappers.forEach(function(wrapper) { wrapper.classList.add('fushi-sentence-audio-active'); });
-    // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
+    // ruby 元素用 class 高亮（避免 ::highlight 对 ruby 双绘，BUG-110）。底色由窄条层（__fushiLanes）
+    // 按这些 class 画一个字高的窄条，同一行的片段并成一条（取代逐缝补 box-shadow）。
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
-    this.fillSentenceAudioRubyGaps(wrappers);
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
       if (target && this.revealElement && this.revealElement(target)) {
@@ -1987,7 +1988,6 @@ window.__fushiInstallShell = function(C) {
     rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
     wrappers.forEach(function(wrapper) { wrapper.classList.remove('fushi-sentence-audio-active'); });
-    this.clearSentenceAudioRubyGaps();
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
@@ -1996,7 +1996,6 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.forEach(function(rubyElements) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
-    this.clearSentenceAudioRubyGaps();
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
     var self = this;

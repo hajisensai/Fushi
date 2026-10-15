@@ -2629,6 +2629,8 @@ $sharedInitViewport
     }
     this.setupReaderImages(this.screen);
     this.buildNodeOffsets();
+    // 换屏后窄条层按新屏重画（旧屏的 Range 已游离，新屏的位置要重量）。
+    if (window.__fushiLanes) window.__fushiLanes.repaint();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
     if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
   },
@@ -2790,6 +2792,7 @@ $sharedInitViewport
     this.revealCursor = 0;
     this.revealComplete = true;
     this.buildNodeOffsets();
+    if (window.__fushiLanes) window.__fushiLanes.repaint();
     this.applyCurrentScreenHighlights();
     this.refreshSentenceAudioCuePresentation();
   },
@@ -3051,7 +3054,6 @@ $sharedInitViewport
         wrapper.classList.remove('fushi-sentence-audio-active');
       });
     };
-    this.clearSentenceAudioRubyGaps();
     if (cueId) {
       clearWrappers(this.cueWrappers.get(cueId) || []);
       return;
@@ -3063,15 +3065,14 @@ $sharedInitViewport
     wrappers.forEach(function(wrapper) {
       wrapper.classList.add('fushi-sentence-audio-active');
     });
-    // BUG-2917：注音撑出的缝用 box-shadow 补色（与分页 / 连续模式同一实现）。
-    this.fillSentenceAudioRubyGaps(wrappers);
+    // 底色由窄条层（__fushiLanes）按 active class 画：同一行里被注音拆开的 wrapper 并成一条，
+    // 不再逐缝补 box-shadow（与分页 / 连续模式相同）。
     return wrappers.length > 0;
   },
   clearSentenceAudioCuePresentation: function() {
     this.clearInlineSentenceAudioCue();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
-    this.clearSentenceAudioRubyGaps();
     this.cueSourceRanges.clear();
     this.cueWrappers.clear();
   },

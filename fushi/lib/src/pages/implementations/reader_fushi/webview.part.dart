@@ -135,14 +135,22 @@ extension _ReaderWebView on _ReaderFushiPageState {
       if (!fontFile.existsSync()) {
         return _notFound('font not found: $fontPath');
       }
-      final Uint8List data = await fontFile.readAsBytes();
-      if (!_isValidFontData(data)) {
-        return _notFound('font corrupted: $fontPath (${data.length} bytes)');
+      final Uint8List fileBytes = await fontFile.readAsBytes();
+      if (!_isValidFontData(fileBytes)) {
+        return _notFound(
+          'font corrupted: $fontPath (${fileBytes.length} bytes)',
+        );
       }
+      // Apple 竖排：错设「x = 0 是竖排基线」的字体整列偏出行盒半个字（见
+      // clearVerticalBaselineFlag），下发前清掉。
+      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
+        fileBytes,
+      );
+      final Uint8List data = fixed.data;
       debugPrint(
         '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
       );
-      final String mime = fallbackMimeType(safeFontPath);
+      final String mime = fixed.mime ?? fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
         contentEncoding: _contentEncodingForMime(mime),
@@ -212,7 +220,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // `application/xhtml+xml`：那会让渲染器切到严格 XML 解析，出版社 EPUB 常见的
     // well-formedness 瑕疵会变成整页 parse error，且 BUG-079 / BUG-737 的
     // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
-    final String mime = isHtmlDocument ? 'text/html' : extMime;
+    String mime = isHtmlDocument ? 'text/html' : extMime;
+
+    // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
+    if (_isFontMime(mime) || _isFontMime(declaredMime)) {
+      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
+        data,
+      );
+      data = fixed.data;
+      mime = fixed.mime ?? mime;
+    }
 
     if (mime == 'text/css') {
       // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
@@ -639,6 +656,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);
+
+  /// EPUB 里字体资源的 media-type：`font/*` 与历史上的 `application/font-*`、
+  /// `application/x-font-*`、`application/vnd.ms-opentype`。
+  static bool _isFontMime(String mime) {
+    final String m = mime.toLowerCase();
+    return m.startsWith('font/') ||
+        m.startsWith('application/font-') ||
+        m.startsWith('application/x-font') ||
+        m == 'application/vnd.ms-opentype';
+  }
 
   // 振假名四态（off / toggle / hidden / dimmed）不再装任何 JS 监听器：隐藏 / 淡显
   // 都由 CSS 承担，toggle 态的「点一个揭示一个」收进 fushiSelection.selectText

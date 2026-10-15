@@ -1,0 +1,12 @@
+## BUG-3369 · 阅读器高亮条太粗：所有字体都要一个字高
+- **报告**：2026-10-15（用户：「我目前 ios 用的 tf 版本的小说高亮还是很粗」；拍板「高亮都改细」「所有字体都要一个字高」「查词要压过当前句」）
+- **真实性**：✅ 真 bug。阅读器所有高亮的底色都铺满整个文字盒，盒厚 = 字体 ascent + descent，随字体变：Mac WKWebView 实测 Hiragino 1.14em、Noto / Klee / Zen 等目录字体约 1.45em。查词 / 收藏 / 搜索走 `::highlight()`（`fushi/lib/src/reader/reader_content_styles.dart` 的 `::highlight(fushi-selection)` 等规则），它只能设 `background-color`，收不窄；有声书当前句与 ruby 分流 class、旧 WebView 包裹 span 是元素背景，同样按文字盒铺。另：M PLUS Rounded 1c（字体目录推荐字体）错设 `head.flags` 第 5 位（「x = 0 是竖排基线」），Apple CoreText 竖排时整列字形偏出自己的行盒 +0.5em，高亮、选区、光标都对不上字（DirectWrite / FreeType 不认这一位，Windows / Android 正常）。
+- **[x] ① 已修复** — 所有高亮底色改由窄条层 `window.__fushiLanes`（`fushi/lib/src/reader/reader_selection_scripts.dart`）统一画：读 `CSS.highlights` 里的查词 / 收藏 / 搜索 Range 与带高亮 class 的元素（当前句 wrapper、ruby 分流 class、`.fushi-active`、旧 WebView 包裹 span），逐文本节点（跳过 rt / rp 与 VN 未显现的字）取行片段，在 body 里一个 `z-index:-1` 的绝对定位层上画沿块方向居中、厚 1em（`ReaderContentStyles.highlightLaneEm`）的窄条；横排含 CJK 时按该字体「国」的墨迹中线居中（canvas measureText）。同一行同一层的片段并成一条（当前句被注音拆成多个 wrapper 也不断、不叠色，取代逐缝补 box-shadow 的旧做法，补缝代码删除），叠放 当前句 < 收藏 < 搜索 < 查词（BUG-125 查词压过当前句）。body 改为 `position: relative; isolation: isolate`（窄条层的包含块与层叠上下文），各路径自身底色透明，墨水屏隐藏窄条层（仍用线式标记）。阅读器下发字体（`/fonts/` 用户字体、`/epub/` 书内字体）时由 `clearVerticalBaselineFlag`（`fushi/lib/src/reader/font_vertical_baseline_flag.dart`）清掉错设的 `head.flags` 第 5 位并重算校验和（sfnt / TTC / WOFF / WOFF2）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/highlight_lanes_test.dart` + `highlight_lanes_harness.mjs`：真 Chrome 跑生产 CSS + 引擎 shell，分页 / 连续 / VN × 横竖排共 6 页：注音句当前句每行一条 1em 窄条且盖住整行基字、无补缝阴影；查词（文字 + ruby class 并成一条）/ 收藏 / 搜索都是 1em 居中窄条；叠放顺序；各路径不铺整盒底色；清掉后窄条消失。另含 JS `LANE_EM` 与 Dart 常量一致、各层颜色规则齐全、墨水屏隐藏窄条层。`fushi/test/reader/font_vertical_baseline_flag_test.dart`：sfnt / CFF / TTC / WOFF 清位与校验和、未设位原样返回。
+- **备注**：
+  - Mac WKWebView（真 WebKit）与 Chromium 实测，页面 = 生产 CSS / 选区脚本 / 引擎：
+    - 逐字体（iOS / macOS 默认链 + 6 款系统字体 + 13 款目录字体；Windows 默认链 + 6 款系统字体 + 13 款目录字体）横竖排：窄条均 1.00em，CJK 墨迹中线偏离窄条中线 ≤ 0.05em、出条 ≤ 0.016em。
+    - 注音回归（会釈、大喝采、自嘲、烏滸、呟，跨行长句）分页 / 连续 / VN × 横竖排两引擎：当前句每行一条、盖住整行、同层不重叠、查词在最上。
+    - M PLUS Rounded 1c 竖排：Mac WebKit 字形偏 +0.496em，经 `clearVerticalBaselineFlag` 后 −0.004em（校验和经 fontTools 严格校验）；反向给正常字体设上这一位同样偏 +0.496em。
+  - 真 app：`fushi/integration_test/reader_audiobook_ruby_highlight_joints_itest.dart`（BUG-3326 那条，量尺改成窄条判据：每列恰好一条、厚 1em、对正基字、盖满整列、wrapper 无整盒底色与补缝阴影）在 macOS app（真 WKWebView）上跑：翻页 / 滚动 / VN 各 11 句全部量到、每种模式 7 处注音拆分接缝，failures=0。
+  - 未在 Fushi app 本体的 iOS 真机上复测（iOS 与 macOS 同为 WebKit，上面 Mac 结果是最近的替代证据）。

@@ -11,14 +11,15 @@
 // BUG-2806: a <ruby> inside a span loses WebKit's annotation overhang, so moving it
 // re-laid the text out after the chapter was already on screen (「自嘲気味」: 気 jumped
 // 8px away right after turning into the new chapter). Now a ruby never moves: the
-// base text is wrapped IN PLACE inside the ruby, text groups stop at rubies, and the
-// gap a non-overhanging annotation leaves is filled at highlight time with a
-// box-shadow (paint only, no layout).
+// base text is wrapped IN PLACE inside the ruby and text groups stop at rubies. The
+// gap a non-overhanging annotation leaves between wrappers is no longer filled per
+// wrapper: since 2026-10-15 every highlight background is painted by the lane layer
+// (__fushiLanes, reader_selection_scripts.dart), which joins one sentence's pieces on
+// a line into a single 1em lane (covered in real Chrome by highlight_lanes_test).
 //
 // This test EXECUTES the real applySentenceAudioCues / sentenceAudioWrapItems /
-// sentenceAudioInlineGap / rubyForNode / fillSentenceAudioRubyGaps /
-// clearSentenceAudioRubyGaps, extracted verbatim from reader_pagination_scripts.dart,
-// on a minimal fake DOM.
+// sentenceAudioInlineGap / rubyForNode / wrapSentenceAudioGroup, extracted verbatim
+// from reader_pagination_scripts.dart, on a minimal fake DOM.
 //
 // Run: node fushi/test/reader/sentence_audio_ruby_wrap_behavior_test.js
 // (driven from sentence_audio_ruby_wrap_behavior_test.dart inside `flutter test`).
@@ -30,7 +31,7 @@ const path = require('path');
 const vm = require('vm');
 
 const readSrc = (f) => fs.readFileSync(path.resolve(__dirname, '../../lib/src/reader/' + f), 'utf8');
-// The grouping + ruby-gap fill is one shared snippet inserted into every shell's
+// The grouping is one shared snippet inserted into every shell's
 // `window.fushiReader` literal (BUG-2917); each shell is tested with it attached.
 const gapSource = readSrc('reader_sentence_audio_ruby_gap_script.dart');
 const source = readSrc('reader_pagination_scripts.dart') + '\n' + gapSource;
@@ -312,10 +313,7 @@ function makeReader(cueRoots) {
   };
   vm.createContext(sandbox);
   const methods = ['applySentenceAudioCues', 'sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode',
-    'fillSentenceAudioRubyGaps', 'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps',
-    'eraseSentenceAudioRubyGaps', 'clearSentenceAudioRubyGaps', '_setReanchorPending',
-    'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap', 'splitSentenceAudioJoinLines',
-    'splitSentenceAudioWrapper', 'wrapSentenceAudioGroup']
+    'wrapSentenceAudioGroup']
     .map(extractMethod).join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
   installSelectionSide(sandbox);
@@ -451,84 +449,9 @@ function kids(n) { return n.childNodes.filter((c) => c.nodeType === 1 || c.nodeV
   assert.ok(wrapperOf(kids(kids(p)[0])[0]), 'leading text is wrapped on its own');
 }
 
-// ── 7. gap fill: box-shadow bridges the gap a long annotation leaves, only while active ──
-{
-  const r = ruby('漢', 'かんじかんじ');
-  const p = el('p', ['ほら', r, '字だ']);
-  const R = makeReader({ c7: p });
-  R.applySentenceAudioCues([{ id: 'c7' }]);
-  const ws = R.cueWrappers.get('c7');
-  assert.strictEqual(ws.length, 3);
-  // vertical-rl: same column (x overlaps), base sits 14px below 「ほら」 and above 「字だ」.
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 58, bottom: 80 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 94, bottom: 138 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.strictEqual(ws[1].style.boxShadow,
-    '0px -14px 0 0 var(--fushi-sentence-audio-background-color), ' +
-    '0px 14px 0 0 var(--fushi-sentence-audio-background-color)',
-    'the in-ruby wrapper bridges both gaps (towards 「ほら」 and 「字だ」)');
-  assert.strictEqual(ws[0].style.boxShadow, undefined, 'plain text wrappers are not touched when the ruby side can bridge');
-  R.clearSentenceAudioRubyGaps();
-  assert.strictEqual(ws[1].style.boxShadow, '', 'cleared when the cue is no longer active');
-}
-
-// ── 8. gap fill never bridges across columns, and contiguous boxes get nothing ──
-{
-  const r = ruby('釈', 'しゃく');
-  const p = el('p', ['会', r, 'をする']);
-  const R = makeReader({ c8: p });
-  R.applySentenceAudioCues([{ id: 'c8' }]);
-  const ws = R.cueWrappers.get('c8');
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 22 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 22, bottom: 44 }];
-  ws[2].rects = [{ left: 60, right: 82, top: 0, bottom: 66 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'no shadow for overhanging / cross-column neighbours'));
-}
-
-// ── 9. a settled relayout (reanchor flag true→false) re-measures the active gap fill ──
-// (page size / chrome insets / UI scale all end in _setReanchorPending(false); a paused
-// cue is never re-highlighted, so without this the stale shadow would stay forever.
-// Stylesheet swaps and font loads are covered in real Chrome by
-// reader_audio_cue_identity_harness.mjs — a fake DOM has no layout to observe.)
-{
-  const r = ruby('漢', 'かんじかんじ');
-  const p = el('p', ['ほら', r, '字だ']);
-  const R = makeReader({ c9: p });
-  R.applySentenceAudioCues([{ id: 'c9' }]);
-  const ws = R.cueWrappers.get('c9');
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 58, bottom: 80 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 94, bottom: 138 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.ok(ws[1].style.boxShadow, 'gap filled initially');
-  // relayout: furigana hidden, the ruby collapses to its base.
-  ws[1].rects = [{ left: 100, right: 122, top: 44, bottom: 66 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
-  R._setReanchorPending(true);
-  assert.ok(ws[1].style.boxShadow, 'nothing repaints while the reanchor is in flight');
-  R._setReanchorPending(false);
-  assert.ok(!ws[1].style.boxShadow, 'stale shadow removed once the relayout settles');
-  // furigana back with a different gap.
-  ws[1].rects = [{ left: 100, right: 122, top: 50, bottom: 72 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 78, bottom: 122 }];
-  R._setReanchorPending(true);
-  R._setReanchorPending(false);
-  assert.strictEqual(ws[1].style.boxShadow,
-    '0px -6px 0 0 var(--fushi-sentence-audio-background-color), ' +
-    '0px 6px 0 0 var(--fushi-sentence-audio-background-color)',
-    'shadow re-measured to the new gap');
-  R.clearSentenceAudioRubyGaps();
-  assert.strictEqual(ws[1].style.boxShadow, '');
-  R._setReanchorPending(true);
-  R._setReanchorPending(false);
-  assert.strictEqual(ws[1].style.boxShadow, '', 'a settle after the cue is cleared paints nothing');
-}
-
-// ── 10. VN shell (BUG-2917): same grouping + gap fill as the paginated shell ──
-// VN used to wrap every segment on its own and never fill gaps, so a vertical
-// sentence highlight broke into pieces around every annotated kanji.
+// ── 10. VN shell (BUG-2917): same grouping as the paginated shell ──
+// VN used to wrap every segment on its own, so a vertical sentence highlight broke
+// into pieces around every annotated kanji.
 function makeVnReader() {
   const sandbox = {
     document: { createRange: () => new Range(), createElement: (t) => new Element(t), documentElement: {}, head: {},
@@ -547,10 +470,7 @@ function makeVnReader() {
   const methods = ['wrapSentenceAudioCueRanges', 'clearInlineSentenceAudioCue', 'applyInlineSentenceAudioCue',
     'clearCurrentSentenceAudioScreenTargets']
     .map((n) => extractMethod(n, vnSource))
-    .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'fillSentenceAudioRubyGaps',
-      'watchSentenceAudioRubyGapLayout', 'paintSentenceAudioRubyGaps', 'eraseSentenceAudioRubyGaps',
-      'clearSentenceAudioRubyGaps', 'sentenceAudioLineRects', 'sentenceAudioSameLine', 'sentenceAudioJoinGap',
-      'splitSentenceAudioJoinLines', 'splitSentenceAudioWrapper', 'wrapSentenceAudioGroup']
+    .concat(['sentenceAudioWrapItems', 'sentenceAudioInlineGap', 'rubyForNode', 'wrapSentenceAudioGroup']
       .map((n) => extractMethod(n, gapSource)))
     .join(',\n');
   vm.runInContext('var R = {\n' + methods + '\n};', sandbox);
@@ -580,172 +500,15 @@ function makeVnReader() {
   assert.strictEqual(rtOf(r).length, 1, 'rt untouched');
   assert.strictEqual(p.textContent, 'コートの中で縦じゅう横無尽に舞う');
 
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 132 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 146, bottom: 168 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 182, bottom: 314 }];
   assert.strictEqual(R.applyInlineSentenceAudioCue('v1'), true);
   ws.forEach((w) => assert.ok(w.classList.contains('fushi-sentence-audio-active')));
-  assert.strictEqual(ws[1].style.boxShadow,
-    '0px -14px 0 0 var(--fushi-sentence-audio-background-color), ' +
-    '0px 14px 0 0 var(--fushi-sentence-audio-background-color)',
-    'VN highlight bridges the ruby gaps like the paginated shell');
+  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'no per-wrapper gap fill; the lane layer joins the pieces'));
   R.clearInlineSentenceAudioCue('v1');
-  assert.strictEqual(ws[1].style.boxShadow, '', 'gap fill cleared with the highlight');
   ws.forEach((w) => assert.ok(!w.classList.contains('fushi-sentence-audio-active')));
 
   R.applyInlineSentenceAudioCue('v1');
-  assert.ok(ws[1].style.boxShadow);
   R.clearCurrentSentenceAudioScreenTargets();
-  assert.strictEqual(ws[1].style.boxShadow, '', 'screen-target reset also drops the gap fill');
   assert.strictEqual(R.cueWrappers.size, 0);
-}
-
-// ── BUG-3326：整句高亮在同一行里是一整条，只有每一行两端是圆角 ──
-const JOIN_S = 'fushi-sentence-audio-join-start';
-const JOIN_E = 'fushi-sentence-audio-join-end';
-const joins = (w) => (w.classList.contains(JOIN_S) ? 'S' : '-') + (w.classList.contains(JOIN_E) ? 'E' : '-');
-
-// 11. 同一列相接的 wrapper：接缝两侧打 join class（CSS 把这一侧改直角），外端不打。
-{
-  const r = ruby('漢', 'かん');
-  const p = el('p', ['ほら', r, '字だ']);
-  const R = makeReader({ c11: p });
-  R.applySentenceAudioCues([{ id: 'c11' }]);
-  const ws = R.cueWrappers.get('c11');
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 44, bottom: 66 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'SE', 'S-'],
-    'joints square on both sides, the sentence ends stay round');
-  R.clearSentenceAudioRubyGaps();
-  assert.deepStrictEqual(Array.from(ws, joins), ['--', '--', '--'], 'join classes dropped with the highlight');
-}
-
-// 12. 换列的相邻 wrapper 不是接缝：两端都保持圆角。
-{
-  const r = ruby('漢', 'かん');
-  const p = el('p', ['ほら', r, '字だ']);
-  const R = makeReader({ c12: p });
-  R.applySentenceAudioCues([{ id: 'c12' }]);
-  const ws = R.cueWrappers.get('c12');
-  ws[0].rects = [{ left: 100, right: 122, top: 700, bottom: 744 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 744, bottom: 766 }];
-  ws[2].rects = [{ left: 60, right: 82, top: 0, bottom: 44 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'S-', '--'], 'a column break is a line end, not a joint');
-}
-
-// 13. 长注音悬挂进邻字（Blink：基字盒压进两侧 5px）：ruby 内 wrapper 的背景扣掉重叠段，
-//     半透明底色不再叠出深色带；只改背景，不碰排版。
-{
-  const r = ruby('橙', 'だいだい');
-  const p = el('p', ['黄、', r, 'の光']);
-  const R = makeReader({ c13: p });
-  R.applySentenceAudioCues([{ id: 'c13' }]);
-  const ws = R.cueWrappers.get('c13');
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 44 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 39, bottom: 71 }];
-  ws[2].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'SE', 'S-']);
-  assert.strictEqual(ws[1].style.backgroundColor, 'transparent', 'the in-ruby wrapper paints via the trimmed gradient');
-  assert.strictEqual(ws[1].style.backgroundImage,
-    'linear-gradient(to bottom, transparent 5.00px, var(--fushi-sentence-audio-background-color) 5.00px, ' +
-    'var(--fushi-sentence-audio-background-color) calc(100% - 5.00px), transparent calc(100% - 5.00px))',
-    'both overlapping ends are left to the neighbours');
-  assert.ok(!ws[0].style.backgroundImage && !ws[2].style.backgroundImage, 'neighbours keep their own background');
-  assert.ok(!ws[1].style.boxShadow, 'an overlap is never bridged with a shadow');
-  R.clearSentenceAudioRubyGaps();
-  assert.strictEqual(ws[1].style.backgroundImage, '', 'trim dropped with the highlight');
-  assert.strictEqual(ws[1].style.backgroundColor, undefined);
-}
-
-// 14. 跨列的 wrapper 在注音接缝那一列被恰好在折行处切开：clone 下 radius 对每个片段一视同仁，
-//     不切的话它在上一列列尾那一端也会被一起改成直角。
-{
-  const r = ruby('漢', 'かん');
-  const p = el('p', ['あいうえおかき', r, 'くけこ']);
-  const R = makeReader({ c14: p });
-  let rebuilt = 0;
-  R.buildNodeOffsets = () => { rebuilt++; };
-  R.applySentenceAudioCues([{ id: 'c14' }]);
-  rebuilt = 0;
-  const ws = R.cueWrappers.get('c14');
-  assert.strictEqual(ws.length, 3);
-  const col = (left, top) => ({ left, right: left + 22, top, bottom: top + 22 });
-  // あいうえ：上一列列尾；おかき・漢・くけこ：下一列列首。
-  ws[0].childNodes[0].charRects = [col(100, 656), col(100, 678), col(100, 700), col(100, 722),
-    col(60, 0), col(60, 22), col(60, 44)];
-  ws[1].childNodes[0].charRects = [col(60, 66)];
-  ws[2].childNodes[0].charRects = [col(60, 88), col(60, 110), col(60, 132)];
-  // 审查补充：切点（「お」前）之后已有查词选区「かき」（关掉「查词时暂停」边播边点词，词典结果
-  // 回来前下一句变成当前句）。它存的是「文本节点 + 数字偏移」，matchedRanges 跨切点；
-  // 拖选锚点也在切点之后。另有一个不进 CSS.highlights 的迟到图片重锚目标（搜索命中 cloneRange）。
-  const t0 = ws[0].childNodes[0];
-  const S = R.testWindow.fushiSelection;
-  S.selection = {
-    startNode: t0, startOffset: 5, text: 'かき',
-    ranges: [{ node: t0, start: 5, end: 7 }],
-    matchedRanges: [{ node: t0, start: 3, end: 6 }],
-  };
-  S.dragAnchor = { node: t0, offset: 5, endNode: t0, endOffset: 6, startX: 0, startY: 0, moved: false };
-  R.__imgReanchorTarget = new LiveRange(t0, 5, t0, 7);
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.strictEqual(R.cueWrappers.get('c14'), ws, 'the stored wrapper list is updated in place');
-  const covered = (segs) => segs.map((r) => {
-    assert.ok(r.start >= 0 && r.start < r.end && r.end <= r.node.nodeValue.length,
-      'segment offsets stay inside their text node: ' + r.node.nodeValue + ' [' + r.start + ',' + r.end + ')');
-    return r.node.nodeValue.slice(r.start, r.end);
-  }).join('');
-  const tailText = ws[1].childNodes[0];
-  assert.strictEqual(tailText.nodeValue, 'おかき');
-  assert.strictEqual(S.selection.startNode, tailText, 'selection start follows the split into the new text node');
-  assert.strictEqual(S.selection.startOffset, 1);
-  assert.strictEqual(covered(S.selection.ranges), 'かき', 'selected text unchanged by the split');
-  assert.strictEqual(covered(S.selection.matchedRanges), 'えおか', 'a segment across the cut is split in two');
-  assert.strictEqual(S.selection.matchedRanges.length, 2);
-  assert.deepStrictEqual([S.dragAnchor.node === tailText, S.dragAnchor.offset, S.dragAnchor.endNode === tailText,
-    S.dragAnchor.endOffset], [true, 1, true, 2], 'drag anchor glyphs follow the split');
-  const target = R.__imgReanchorTarget;
-  assert.ok(target.startContainer === tailText && target.endContainer === tailText,
-    'the late-image reanchor target is not collapsed onto the wrapper by the move');
-  assert.strictEqual(tailText.nodeValue.slice(target.startOffset, target.endOffset), 'かき');
-  liveRanges.length = 0;
-  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['あいうえ', 'おかき', '漢', 'くけこ'],
-    'the wrapper is cut exactly at the column break');
-  assert.strictEqual(ws[1].parentNode, p, 'the new piece is a sibling right after the original wrapper');
-  assert.strictEqual(p.childNodes.indexOf(ws[1]), p.childNodes.indexOf(ws[0]) + 1);
-  assert.ok(ws[1].classList.contains('fushi-sentence-audio-cue'));
-  assert.deepStrictEqual(Array.from(ws, joins), ['--', '-E', 'SE', 'S-'],
-    'the previous column keeps both round ends, the joints in the next column are square');
-  assert.strictEqual(p.textContent, 'あいうえおかき漢かんくけこ', 'text preserved in order');
-  assert.strictEqual(rebuilt, 1, 'node offsets rebuilt once after the split');
-  // 再次高亮（重排后重量）：已是单列片段，不再切分。
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.strictEqual(ws.length, 4);
-  assert.strictEqual(rebuilt, 1);
-}
-
-// 15. 两侧都不在 ruby 里的相邻 wrapper（被 <em> 拆开）：紧贴时是接缝（直角）；量出正缝说明中间
-//     夹着不属于本句的内容（内联外字图），不是接缝——两端保持圆角、不补色，也不为它切分。
-{
-  const em = el('em', ['えお']);
-  const p = el('p', ['あいう', el('img'), em]);
-  const R = makeReader({ c15: p });
-  R.applySentenceAudioCues([{ id: 'c15' }]);
-  const ws = R.cueWrappers.get('c15');
-  assert.deepStrictEqual(Array.from(ws, (w) => w.textContent), ['あいう', 'えお']);
-  ws[0].rects = [{ left: 100, right: 122, top: 0, bottom: 66 }];
-  ws[1].rects = [{ left: 100, right: 122, top: 66, bottom: 110 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.deepStrictEqual(Array.from(ws, joins), ['-E', 'S-'], 'touching non-ruby wrappers form one bar');
-  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'nothing to bridge'));
-  ws[1].rects = [{ left: 100, right: 122, top: 88, bottom: 132 }];
-  R.fillSentenceAudioRubyGaps(ws);
-  assert.deepStrictEqual(Array.from(ws, joins), ['--', '--'], 'content in between is not a joint');
-  ws.forEach((w) => assert.ok(!w.style.boxShadow, 'the in-between image is never painted with the highlight'));
-  assert.strictEqual(ws.length, 2);
 }
 
 // ── BUG-3326 审查（#2115 / #2119 同类）：句子包裹不再用 extractContents ──

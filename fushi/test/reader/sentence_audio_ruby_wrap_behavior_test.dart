@@ -1,13 +1,9 @@
 import 'dart:io';
 
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
-import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
 /// BUG-2780：有声书跟随高亮在带振假名的词上断开留缝（iOS 真机「会|釈|をす」）或
@@ -40,10 +36,11 @@ void main() {
     expect(result.stdout.toString(), contains('all assertions passed'));
   });
 
-  // BUG-2917：VN shell 曾自带一份逐段包裹、不补缝的实现，竖排注音处高亮断开。
-  // 三个 shell 必须各自恰好带一份共享的分组 + 补缝实现，不能再各写各的。
-  test('BUG-2917: every reader shell carries exactly one shared ruby-gap '
-      'implementation', () {
+  // BUG-2917：VN shell 曾自带一份逐段包裹的实现，竖排注音处高亮断开。三个 shell 必须
+  // 各自恰好带一份共享的分组包裹实现，不能再各写各的。注音撑出的缝不再逐 wrapper 用
+  // box-shadow 补：2026-10-15 起底色由窄条层画、同一行并成一条（highlight_lanes_test）。
+  test('BUG-2917: every reader shell carries exactly one shared grouping '
+      'implementation and no per-wrapper gap fill', () {
     final Map<String, String> shells = <String, String>{
       'paginated': ReaderPaginationScripts.paginatedShellSource(),
       'continuous': ReaderPaginationScripts.continuousShellSource(),
@@ -52,8 +49,8 @@ void main() {
     for (final MapEntry<String, String> shell in shells.entries) {
       for (final String fn in <String>[
         'sentenceAudioWrapItems: function',
-        'fillSentenceAudioRubyGaps: function',
-        'clearSentenceAudioRubyGaps: function',
+        'wrapSentenceAudioGroup: function',
+        'rubyForNode: function',
       ]) {
         expect(
           fn.allMatches(shell.value).length,
@@ -61,12 +58,12 @@ void main() {
           reason: '${shell.key} shell must define $fn exactly once',
         );
       }
+      expect(
+        shell.value,
+        isNot(contains('SentenceAudioRubyGaps')),
+        reason: '${shell.key}: the lane layer joins a cue line, no gap fill',
+      );
     }
-    expect(
-      shells['vn'],
-      contains('this.fillSentenceAudioRubyGaps(wrappers)'),
-      reason: 'VN must fill ruby gaps after activating a cue',
-    );
   });
 
   // BUG-3326 审查（#2115 / #2119 同类）：句子包裹曾用 Range.extractContents——它把切点两侧的
@@ -137,61 +134,6 @@ void main() {
       contains('window.__fushiLiveRanges.moveNodes([node], function() {'),
       reason: 'the <fushi-hl-text> move keeps live Ranges and the native '
           'selection',
-    );
-  });
-
-  // BUG-3326：接缝一侧的 join class 必须真的把那一侧改直角；长注音叠色时脚本改用
-  // 渐变背景扣掉重叠段，查词优先（BUG-125）与墨水屏的覆盖规则必须连渐变一起关掉，
-  // 否则当前句底色会从查词色 / 线式标记底下透出来。
-  test('BUG-3326: join sides are square and overrides also drop the trim '
-      'gradient', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final ReaderSettings settings = ReaderSettings(db);
-    await settings.refreshFromDb();
-    String rule(String css, String selector) {
-      final int at = css.indexOf('$selector {');
-      expect(at, isNonNegative, reason: 'missing rule $selector');
-      return css.substring(at, css.indexOf('}', at));
-    }
-
-    final String css = ReaderContentStyles.css(settings: settings);
-    final String joinStart = rule(
-      css,
-      '.fushi-sentence-audio-cue.fushi-sentence-audio-join-start',
-    );
-    expect(joinStart, contains('border-start-start-radius: 0'));
-    expect(joinStart, contains('border-end-start-radius: 0'));
-    final String joinEnd = rule(
-      css,
-      '.fushi-sentence-audio-cue.fushi-sentence-audio-join-end',
-    );
-    expect(joinEnd, contains('border-start-end-radius: 0'));
-    expect(joinEnd, contains('border-end-end-radius: 0'));
-    expect(
-      css.indexOf('fushi-sentence-audio-join-start {'),
-      greaterThan(
-        css.indexOf('.fushi-sentence-audio-cue.fushi-sentence-audio-active {'),
-      ),
-      reason: 'join rules must come after the rounded active rule to win',
-    );
-    expect(
-      rule(
-        css,
-        'ruby.fushi-selection-ruby-active '
-        '.fushi-sentence-audio-cue.fushi-sentence-audio-active',
-      ),
-      contains('background-image: none !important'),
-    );
-
-    final String eink = ReaderContentStyles.css(
-      settings: settings,
-      einkMode: true,
-    );
-    final String einkTail = eink.substring(eink.indexOf('E-ink 墨水屏模式覆盖'));
-    expect(
-      rule(einkTail, '.fushi-sentence-audio-cue.fushi-sentence-audio-active'),
-      contains('background-image: none !important'),
     );
   });
 }

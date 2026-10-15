@@ -188,12 +188,16 @@ void main() {
       );
       final String? plainRule = plainCueRule(plain);
       expect(plainRule != null, isTrue);
+      // 用户 2026-10-15：高亮一律一个字高。底色由窄条层按 .fushi-active 画，读同一个
+      // 变量；元素自己不铺底（压掉 bridge 注入的整盒底色）。
+      expect(plainRule, contains('background-color: transparent !important;'));
+      final int lane = plain.indexOf(
+        'fushi-hl-lane[data-hl="fushi-sentence-audio"] {',
+      );
+      expect(lane, isNonNegative);
       expect(
-        plainRule,
-        contains(
-          'background-color: var(--fushi-sentence-audio-background-color) '
-          '!important;',
-        ),
+        plain.substring(lane, plain.indexOf('}', lane)),
+        contains('var(--fushi-sentence-audio-background-color)'),
       );
       expect(plainRule, isNot(contains('--fushi-sentence-audio-text-color')));
 
