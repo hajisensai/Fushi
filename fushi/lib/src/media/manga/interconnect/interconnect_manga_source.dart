@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
     show mangaChapterDigest;
@@ -86,6 +87,18 @@ class InterconnectMangaCatalog {
           : <OnlineMangaChapter>[chapterFor(seriesKey)],
     );
   }
+
+  /// 对端 bookKey → 该条目经 [entryFor] 收进本机后的 bookKey（`interconnect-…`）。
+  ///
+  /// 收下的行只由对端 bookKey 推导身份（`sourceId` 恒为 [kInterconnectMangaSourceId]），
+  /// 所以对端写的 `book/<对端 bookKey>` 删除墓碑要经这里换算才认得出本机那一行。
+  static String localBookKeyFor(String peerBookKey) =>
+      OnlineMangaLibraryService.bookKeyFor(
+        runtime: OnlineMangaRuntimeKind.interconnect,
+        extensionPackage: kInterconnectMangaPackage,
+        sourceId: kInterconnectMangaSourceId,
+        seriesKey: peerBookKey,
+      );
 
   /// 整卷那一章。
   ///
