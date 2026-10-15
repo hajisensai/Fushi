@@ -8,6 +8,7 @@ import 'package:fushi_core/fushi_core.dart'
     show PendingMineRow, PendingMineStatus;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
@@ -204,9 +205,15 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     unawaited(reload());
   }
 
+  /// 装饰链里的待发队列层。挖词目标 = Fushi 复习时最外层是 SRS 层，队列在它里面
+  /// （切换前攒下的卡仍要补发给 Anki），所以沿 [DelegatingAnkiRepository.inner] 往里找。
   PendingMiningAnkiRepository? get _repo {
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
-    return repo is PendingMiningAnkiRepository ? repo : null;
+    BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    while (true) {
+      if (repo is PendingMiningAnkiRepository) return repo;
+      if (repo is! DelegatingAnkiRepository) return null;
+      repo = repo.inner;
+    }
   }
 
   Future<void> _sendAll() async {

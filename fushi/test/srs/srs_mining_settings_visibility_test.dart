@@ -46,7 +46,6 @@ const List<String> _ankiOnlyEntries = <String>[
   'card_creation.anki.reposition',
   'card_creation.anki.reposition_auto',
   'card_creation.anki.duplicate_scope',
-  'card_creation.anki.overwrite_scope',
   'card_creation.anki.backup_import',
 ];
 
@@ -156,6 +155,7 @@ void main() {
       // SRS 制卡同样读它们；不再要求 Anki 已连上。
       'card_creation.anki.allow_duplicates',
       'card_creation.anki.compact_glossaries',
+      'card_creation.anki.overwrite_scope',
     ]) {
       expect(entry(id).isVisible(ctx), isTrue, reason: id);
     }

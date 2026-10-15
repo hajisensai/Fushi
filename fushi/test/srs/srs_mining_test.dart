@@ -31,9 +31,46 @@ class _FakeAnki extends BaseAnkiRepository {
   bool duplicate;
   int mined = 0;
 
+  /// 复习模式下任何「写 Anki / 依赖 Anki」的调用都不该落到这里（见各用例）。
+  int ankiCalls = 0;
+  AnkiSettings settings = const AnkiSettings(tags: 'mine-tag');
+
   @override
-  Future<AnkiSettings> loadSettings() async =>
-      const AnkiSettings(tags: 'mine-tag');
+  Future<AnkiSettings> loadSettings() async => settings;
+
+  @override
+  Future<MineOutcome> updateMinedNote({
+    required int noteId,
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    ankiCalls++;
+    return const MineOutcome.success();
+  }
+
+  @override
+  Future<bool> openNoteInAnki(int noteId) async {
+    ankiCalls++;
+    return true;
+  }
+
+  @override
+  Future<List<MinedNoteRef>> findMatchingNotes(
+    String expression,
+    String reading,
+  ) async {
+    ankiCalls++;
+    return const <MinedNoteRef>[MinedNoteRef(noteId: 1)];
+  }
+
+  /// 出处不在复习里时才会问到 Anki。
+  int sourceLookups = 0;
+
+  @override
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
+    sourceLookups++;
+    return null;
+  }
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async =>
@@ -391,6 +428,147 @@ void main() {
     expect(resolved.noteTypeFellBack, isFalse);
     expect(resolved.usesLapis, isTrue);
     expect(resolved.deckId, store.defaultDeckId);
+  });
+
+  group('复习模式下的其余制卡操作走 SRS（不碰 Anki）', () {
+    late _FakeAnki inner;
+    late List<String> opened;
+    late SrsMiningAnkiRepository repo;
+
+    setUp(() {
+      inner = _FakeAnki();
+      opened = <String>[];
+      repo = SrsMiningAnkiRepository(
+        inner: inner,
+        miner: () async => SrsMiner(store: store, media: media),
+        openNote: (String id) async {
+          opened.add(id);
+          return true;
+        },
+      );
+    });
+
+    Future<int> mine(String expression, String reading) async {
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload(expression, reading, allowDuplicate: true),
+        context: bookContext(),
+      );
+      expect(out.result, MineResult.success);
+      expect(out.noteId, isNotNull, reason: '有整数句柄才能进「可覆写」态');
+      return out.noteId!;
+    }
+
+    test('覆写：按句柄改同一条复习笔记的字段，标签只增不减，不新建', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: jsonEncode(<String, Object?>{
+          'expression': '雪',
+          'reading': 'ゆき',
+          'glossary': '<ol><li>snowfall</li></ol>',
+          'glossaryFirst': '<ol><li>snowfall</li></ol>',
+          'audio': '',
+        }),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.success);
+      expect(out.noteId, handle);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), contains('積もる'));
+      expect(after.field(fid('Glossary')), contains('snowfall'));
+      expect(after.tags, containsAll(before.tags));
+      expect(
+        (await repo.findMatchingNotes('雪', 'ゆき')).length,
+        1,
+        reason: '覆写不新建笔记',
+      );
+      expect(inner.ankiCalls, 0);
+      expect(inner.mined, 0);
+    });
+
+    test('覆写：原笔记已删 → 明确失败', () async {
+      final int handle = await mine('雪', 'ゆき');
+      await store.deleteNote((await noteOf('雪', 'ゆき')).id);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('覆写范围：仅最近一张 → null；全部 → 这个词最新的复习笔记', () async {
+      await mine('雪', 'ゆき');
+      final int newer = await mine('雪', 'ゆき');
+      expect(await repo.findOverwriteTargetNoteId('雪', 'ゆき'), isNull);
+      inner.settings = inner.settings.copyWith(
+        overwriteScope: AnkiOverwriteScope.all,
+      );
+      expect(await repo.findOverwriteTargetNoteId('雪', 'ゆき'), newer);
+      expect(await repo.findOverwriteTargetNoteId('雨', 'あめ'), isNull);
+    });
+
+    test('同词反查新建的在前；读字段按字段名；已删复核只报明确删掉的', () async {
+      final int older = await mine('雪', 'ゆき');
+      final int newer = await mine('雪', 'ゆき');
+      final List<MinedNoteRef> refs = await repo.findMatchingNotes('雪', 'ゆき');
+      expect(refs.map((MinedNoteRef r) => r.noteId), <int>[newer, older]);
+      expect(refs.first.preview, '雪');
+      expect((await repo.noteFields(newer))!['Expression'], '雪');
+      expect(await repo.noteFields(12345), isNull);
+
+      final String olderId = (await store.noteIdForAnkiNumericId(older))!;
+      await store.deleteNote(olderId);
+      expect(await repo.findDeletedNotes(<int>{older, newer}), <int>{older});
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('打开笔记 / 打开这个词：打开复习的笔记编辑页', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final String id = (await store.noteIdForAnkiNumericId(handle))!;
+      expect(await repo.openNoteInAnki(handle), isTrue);
+      expect(opened, <String>[id]);
+      expect(await repo.openWordInAnki('雪', 'ゆき'), AnkiOpenWordOutcome.opened);
+      expect(opened, <String>[id, id]);
+      expect(await repo.openWordInAnki('雨', 'あめ'), AnkiOpenWordOutcome.noMatch);
+      expect(await repo.openNoteInAnki(98765), isFalse);
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('回到出处改卡：出处在复习里时读写复习笔记；不在复习里才问 Anki', () async {
+      final AnkiMiningContext ctx = bookContext();
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: ctx,
+      );
+      final String sourceId = ctx.sourceLink!.sourceId;
+      final AnkiSourceNote? original = await repo.readSourceNote(sourceId);
+      expect(original, isNotNull, reason: 'MiscInfo 的出处链接带着 sourceId');
+      expect(original!.noteId, out.noteId);
+      expect(inner.sourceLookups, 0);
+
+      await repo.patchSourceNote(
+        original: original,
+        fields: <String, String>{'Sentence': '雪が止む。'},
+      );
+      expect((await noteOf('雪', 'ゆき')).field(fid('Sentence')), '雪が止む。');
+
+      expect(await repo.readSourceNote(CardSourceLink.newSourceId()), isNull);
+      expect(inner.sourceLookups, 1, reason: '复习里没有 → 交给 Anki（切换前的卡）');
+    });
+
+    test('Anki 专属能力在复习模式下关闭', () async {
+      expect(repo.supportsNoteTypeEditing, isFalse);
+      expect(repo.supportsMediaMaintenance, isFalse);
+      expect(await repo.probeMediaMaintenance(), isFalse);
+      expect(repo.supportsDeckReposition, isFalse);
+      expect(await repo.rendersSynchronizedClip(), isNull);
+      expect(repo.canVerifyExistingCards, isTrue);
+      expect(() => repo.createDeck('X'), throwsUnsupportedError);
+      expect(() => repo.listNewCards('X'), throwsUnsupportedError);
+    });
   });
 
   test('出处转换：漫画 / 本地视频 / 在线视频 / 游戏 / 无定位', () {

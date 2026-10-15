@@ -297,6 +297,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 id: 'card_creation.anki.allow_duplicates',
                 child: _buildAllowDuplicatesRow(settings, vm),
               ),
+              // 复习覆写也读它：全部 = 按查重找到的复习笔记都能被 ✓ 覆写。
+              SettingsSearchTarget(
+                id: 'card_creation.anki.overwrite_scope',
+                child: _buildOverwriteScopePicker(settings, vm),
+              ),
               SettingsSearchTarget(
                 id: 'card_creation.anki.compact_glossaries',
                 child: _buildCompactGlossariesRow(settings, vm),

@@ -243,10 +243,9 @@ SettingsDestination buildCardCreationDestination() {
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.overwrite_scope',
-        visible: _ankiOnly(
-          (SettingsContext c) =>
-              c.ref.watch(ankiViewModelProvider).isConfigured,
-        ),
+        // 复习覆写同样按它决定 ✓ 能不能改更早的卡（全部 = 按查重找到的复习笔记）。
+        visible: (SettingsContext c) =>
+            _toReview(c) || c.ref.watch(ankiViewModelProvider).isConfigured,
         hasRevealTarget: true,
         title: t.anki_overwrite_scope,
         subtitle: t.anki_overwrite_scope_hint,

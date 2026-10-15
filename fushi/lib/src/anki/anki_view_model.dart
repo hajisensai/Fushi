@@ -20,6 +20,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
@@ -666,7 +667,13 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
-  return SrsMiningAnkiRepository(inner: repo, miner: () => _readSrsMiner(ref));
+  return SrsMiningAnkiRepository(
+    inner: repo,
+    miner: () => _readSrsMiner(ref),
+    // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
+    openNote: (String noteId) async =>
+        await SrsAppHost.current?.openNote(noteId) ?? false,
+  );
 }
 
 /// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
