@@ -46,17 +46,13 @@ void main() {
 
   test('rail 图标走 chrome 固定亮色强调色（不再硬编码黑白）', () {
     final String body = railForBody();
+    // UI 巡检 PR-4：cs.primary 在浅色 / eink 主题下是深色，裸图标压画面不可读。
+    // BUG-3413（2026-10-14）：胶囊里的按钮前景改为跟随 app 日间 / 深色模式，而 rail
+    // 是**裸压画面**的单钮、没有胶囊垫底，所以固定取 chrome 中性亮前景常量。
     expect(
-      body.contains('_videoChromeColorScheme(context)'),
+      body.contains('color: videoChromeNeutralForeground'),
       isTrue,
-      reason: 'rail 应取 _videoChromeColorScheme（取当前主题色相）',
-    );
-    // UI 巡检 PR-4：cs.primary 在浅色 / eink 主题下是深色，裸图标压画面不可读，
-    // 改与底 / 顶栏 buttonBarButtonColor 同源的 _videoChromeAccent（恒亮 tone）。
-    expect(
-      body.contains('color: _videoChromeButtonForeground(cs)'),
-      isTrue,
-      reason: 'rail 图标应用 chrome 固定亮色强调色（与底 / 顶栏 buttonBarButtonColor 同源）',
+      reason: 'rail 裸压画面的图标应恒用 videoChromeNeutralForeground（不随日间模式变暗）',
     );
     expect(
       body.contains('Colors.black.withValues(alpha: 0.42)'),

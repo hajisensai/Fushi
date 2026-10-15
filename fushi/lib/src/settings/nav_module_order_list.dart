@@ -22,6 +22,7 @@ class NavModuleOrderList extends StatefulWidget {
     required this.modules,
     required this.identityOf,
     required this.onEnabledChanged,
+    this.hintOf,
     super.key,
   });
 
@@ -36,6 +37,9 @@ class NavModuleOrderList extends StatefulWidget {
 
   /// 开关翻转（含「至少保留一个导航模块」的拒绝逻辑，与无 tab 模块的开关共用）。
   final Future<void> Function(ModuleId module, bool enabled) onEnabledChanged;
+
+  /// 行副标题：默认关的模块（复习）要说清打开后会多出什么；null = 无副标题。
+  final String? Function(ModuleId module)? hintOf;
 
   @override
   State<NavModuleOrderList> createState() => _NavModuleOrderListState();
@@ -141,6 +145,7 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
         final bool enabled = widget.settingsContext.appModel.moduleEnabled(
           module,
         );
+        final String? hint = widget.hintOf?.call(module);
         final bool canMoveUp = index > 0;
         final bool canMoveDown = index < modules.length - 1;
         final EdgeInsets buttonPadding = EdgeInsets.all(
@@ -166,6 +171,7 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
                 color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
               ),
             ),
+            subtitle: hint == null ? null : Text(hint),
             onTap: () => unawaited(widget.onEnabledChanged(module, !enabled)),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,

@@ -124,6 +124,11 @@ Future<void> _applyModuleEnabled(
   settingsContext.refresh();
 }
 
+/// 「功能模块」行的副标题。复习默认关：开关本身要说清它是什么，否则用户不知道
+/// 打开后会多出什么。导航模块的拖拽列表与无 tab 模块的开关行共用这一份。
+String? moduleSwitchHint(ModuleId module) =>
+    module == ModuleId.srs ? t.srs_module_switch_hint : null;
+
 /// 「功能模块」里没有底栏 tab 的模块（听书 / 制卡 / 在线服务 / AI / 同步）的开关。
 /// 有 tab 的模块不走这里，而是进 [NavModuleOrderList]（开关 + 拖拽排序）。
 SettingsSwitchItem _moduleSwitch(ModuleId module) {
@@ -132,8 +137,7 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
     id: _moduleItemId(module),
     title: identity.label,
     icon: identity.icon,
-    // 复习默认关：开关本身要说清它是什么，否则用户不知道打开后会多出什么。
-    subtitle: module == ModuleId.srs ? t.srs_module_switch_hint : null,
+    subtitle: moduleSwitchHint(module),
     visible: (_) => _moduleAvailableHere(module),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),
@@ -169,6 +173,7 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
     settingsContext: settingsContext,
     modules: _orderedNavModules(settingsContext),
     identityOf: moduleNavIdentity,
+    hintOf: moduleSwitchHint,
     onEnabledChanged: (ModuleId module, bool enabled) =>
         _applyModuleEnabled(settingsContext, module, enabled),
   ),
@@ -481,7 +486,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsSegmentedItem<AdaptiveNavBarStyle>(
             id: 'appearance.nav_bar_style',
             title: t.home_nav_bar_style,
-            icon: Icons.view_carousel_outlined,
+            icon: FushiIcons.swipe,
             options: <SettingsSegmentOption<AdaptiveNavBarStyle>>[
               SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.flat,

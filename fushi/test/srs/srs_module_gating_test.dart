@@ -18,7 +18,6 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
@@ -64,16 +63,6 @@ class _HostAppModel extends AppModel {
 
   @override
   bool get onboardingCompleted => true;
-}
-
-SettingsSwitchItem _srsSwitch() {
-  final SettingsDestination appearance = buildAppearanceDestination();
-  for (final SettingsSection section in appearance.sections) {
-    for (final SettingsItem item in section.items) {
-      if (item.id == 'system.module_srs') return item as SettingsSwitchItem;
-    }
-  }
-  throw StateError('system.module_srs not found');
 }
 
 Future<void> _settle(WidgetTester tester) async {
@@ -143,11 +132,14 @@ void main() {
       expect(app.moduleEnabled(ModuleId.books), isTrue);
     });
 
-    test('外观 → 功能模块：开关默认值 false，并说明它是什么', () {
-      final SettingsSwitchItem item = _srsSwitch();
-      expect(item.defaultValue, isFalse);
-      expect(item.title, t.nav_srs);
-      expect(item.subtitle, t.srs_module_switch_hint);
+    // 复习有底栏 tab，所以它的开关在「导航模块」拖拽列表里（#2198 起有 tab 的
+    // 模块不再是独立开关行）；列表行副标题与无 tab 开关行共用 moduleSwitchHint。
+    test('外观 → 功能模块：复习在导航模块列表里、默认关，并说明它是什么', () {
+      expect(homeTabOfModule(ModuleId.srs), HomeTab.srs);
+      expect(ModuleId.srs.defaultEnabled, isFalse);
+      expect(moduleNavIdentity(ModuleId.srs).label, t.nav_srs);
+      expect(moduleSwitchHint(ModuleId.srs), t.srs_module_switch_hint);
+      expect(moduleSwitchHint(ModuleId.books), isNull);
     });
 
     test('新手引导不提供复习方格、也不替用户写入', () {

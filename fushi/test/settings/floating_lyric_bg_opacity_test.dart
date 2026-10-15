@@ -8,6 +8,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
@@ -107,7 +108,10 @@ void main() {
     test('buildFloatingLyricStyle scales the background by bgOpacity', () {
       final ColorScheme scheme = ColorScheme.fromSeed(seedColor: Colors.teal);
       FloatingLyricStyle build(int bgOpacity) => buildFloatingLyricStyle(
-        scheme: scheme,
+        theme: buildFushiThemeData(
+          scheme: scheme,
+          textTheme: const TextTheme(),
+        ),
         settings: FloatingLyricStyleSettings(
           fontSize: 20,
           textOpacity: 100,

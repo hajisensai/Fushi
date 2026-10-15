@@ -66,7 +66,7 @@ void main() {
       final FloatingLyricStyleSettings base = appModel
           .floatingLyricStyleSettings();
       return buildFloatingLyricStyle(
-        scheme: appModel.buildColorScheme(Brightness.light),
+        theme: appModel.theme,
         settings: FloatingLyricStyleSettings(
           fontSize: 26,
           textOpacity: base.textOpacity,

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 import '../../pages/reader_fushi_page_source_corpus.dart';
 
 // TODO-708 P2: 悬浮字幕「圆角半径」+「宽度」自定义，镜像现成透明度偏好链路。守卫：
@@ -169,7 +170,10 @@ void main() {
       expect(settings.contains('windowWidth: prefs.floatingLyricWidth'), isTrue,
           reason: '设置快照必须读宽度偏好');
       final FloatingLyricStyle style = buildFloatingLyricStyle(
-          scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+            textTheme: const TextTheme(),
+          ),
           settings: const FloatingLyricStyleSettings(
               fontSize: 20,
               textOpacity: 100,

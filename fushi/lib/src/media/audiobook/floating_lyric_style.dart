@@ -108,12 +108,14 @@ int floatingLyricThemeColor(ColorScheme scheme, FloatingLyricColorRole role) {
   };
 }
 
-/// 由设置快照 + 主题配色构造悬浮字幕样式（M3E）。context-free：调用方传
-/// `appModel.buildColorScheme(brightness)` 得到的配色，不触碰 `Theme.of`。
+/// 由设置快照 + 主题构造悬浮字幕样式（M3E）。context-free：调用方按明暗传
+/// `appModel.theme` / `appModel.darkTheme`（经单一主题工厂成型，墨水屏 / Apple
+/// 配色都在里面），不触碰 `Theme.of`。
 FloatingLyricStyle buildFloatingLyricStyle({
-  required ColorScheme scheme,
+  required ThemeData theme,
   required FloatingLyricStyleSettings settings,
 }) {
+  final ColorScheme scheme = theme.colorScheme;
   int resolve(FloatingLyricColorRole role) =>
       settings.customColor(role) ?? floatingLyricThemeColor(scheme, role);
 
@@ -127,7 +129,6 @@ FloatingLyricStyle buildFloatingLyricStyle({
   );
   // 工具条沿用 galgame 台词浮窗的 M3E 浮动工具条配色（同一个原生窗类、同一套
   // 槽位渲染），两种浮窗的工具条长得一样。
-  final ThemeData theme = ThemeData(colorScheme: scheme, useMaterial3: true);
   final GalHookToolbarPalette palette = galHookToolbarPalette(
     theme,
     textColor: textColor,

@@ -7621,10 +7621,8 @@ class AppModel with ChangeNotifier {
   /// app 级（无 reader）悬浮窗样式：M3E 配色取当前 app 明暗下的配色方案。reader
   /// attach 时会用 reader 明暗的同一套构造覆盖（`_readerFloatingLyricStyle`）。
   FloatingLyricStyle _appLevelFloatingLyricStyle() {
-    final Brightness brightness =
-        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
     return buildFloatingLyricStyle(
-        scheme: buildColorScheme(brightness),
+        theme: themeMode == ThemeMode.dark ? darkTheme : theme,
         settings: floatingLyricStyleSettings());
   }
 

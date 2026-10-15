@@ -1,4 +1,4 @@
-## BUG-3368 · 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭
+## BUG-3415 · 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭
 - **报告**：2026-10-14（用户：iOS 真机录屏，竖排歌词模式点词出底部停靠查词弹窗，点弹窗里「新選国語辞典 第十版」折叠标题——标题呈 `:active` 灰底——弹窗紧接着整个关闭（无淡出）、播放卡重新露出；反复 3 次，看起来在闪）
 - **真实性**：❓ 未复现。读代码：弹窗内 `summary` 点击在 `fushi/assets/popup/popup.js` 的文档 click 处理里直接 return，不发 `tapOutside`；折叠触发的 `popupContentResized` 在底部停靠时被 `base_source_page.dart` `onContentMetrics` 忽略；歌词独有的三个关闭出口（`lyrics_player_overlay.dart` 背景 `onTapBackground`、歌词 JS `onLyricsTapEmpty` / `onLyricsCueTap`）与查词 barrier 都要求触摸落在弹窗外。Mac iOS 26.5 模拟器取证：
   - Flutter 逐层 hitTest（弹窗中心 / 顶栏）：路径为弹窗 `RenderUiKitView` → `_BodySwipeDismissDetector` opaque Listener → 页面 Stack，歌词模式与阅读模式一致，不含歌词背景与 barrier。

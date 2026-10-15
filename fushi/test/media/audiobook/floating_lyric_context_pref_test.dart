@@ -10,6 +10,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_context.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 
 // 悬浮字幕「同时显示句数」偏好 + 端到端接线守卫（取代 TODO-708 P4 的对称上下文 N）。
 //   1) 两键都没写过默认 3 句；新键没写过、旧 N 写过（含 0）时按 2N+1 换算
@@ -18,9 +19,7 @@ import 'package:fushi_core/fushi_core.dart';
 //   3) 句数 → 前后句分布（当前句居中、偶数下文多一句；自动档按平台）；
 //   4) session/app_model/settings 各层把句数接对（源级守卫，原生渲染另需真机）。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -122,7 +121,10 @@ void main() {
       expect(settings.customColor(FloatingLyricColorRole.text), isNull);
 
       final FloatingLyricStyle style = buildFloatingLyricStyle(
-        scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
+          textTheme: const TextTheme(),
+        ),
         settings: settings,
       );
       expect(style.outlineColor, 0);
@@ -187,8 +189,9 @@ void main() {
 
   group('source guards: 句数各层接线', () {
     test('app_model 委托 getter/setter + session 注入闭包', () {
-      final String appModel =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       expect(
         appModel.contains(
           'int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines',

@@ -144,7 +144,9 @@ void main() {
     expect(find.textContaining('Engine:'), findsNothing);
   });
 
-  testWidgets('BUG-3273 进度卡：浅色主题下文字仍是深底上的亮色', (WidgetTester tester) async {
+  // BUG-3413 起浮层面板跟随 app 日间 / 深色模式（浅色主题 = 浅底深字），BUG-3273
+  // 要守的本质是「卡上文字与卡底有足够亮度差、看得清」，不再钉死深底亮字。
+  testWidgets('BUG-3273 进度卡：浅色主题下文字与卡底有足够对比', (WidgetTester tester) async {
     await tester.pumpWidget(
       _host(
         Align(
@@ -181,9 +183,9 @@ void main() {
       );
       final Color fg = paragraph.text.style!.color!;
       expect(
-        fg.computeLuminance(),
-        greaterThan(bg + 0.3),
-        reason: '「$text」在深色卡片上必须是亮色字',
+        (fg.computeLuminance() - bg).abs(),
+        greaterThan(0.3),
+        reason: '「$text」与卡片底色的亮度差太小，看不清',
       );
     }
   });

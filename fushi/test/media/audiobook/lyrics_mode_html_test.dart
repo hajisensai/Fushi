@@ -469,12 +469,12 @@ void main() {
         expect(html, contains('__lyricsFitCues()'));
       });
 
-      // BUG-3369：iOS 一进歌词模式就是竖排时不显示。歌词 WKWebView 在就绪前被
+      // BUG-3416：iOS 一进歌词模式就是竖排时不显示。歌词 WKWebView 在就绪前被
       // Flutter 设为透明，视口是 0×0；旧的逐句「清空→测量」让每句都强制一次整页
       // 布局，竖排零视口下每字一列，600 句卡死 WebContent 主线程十几秒（真机更久），
       // 就绪握手 / resize / 切横排的 loadData 全排在它后面。真 JS 里跑：零视口不量
       // 不写不定位；有视口时常数次强制布局；初始居中等到真实视口才做且只做一次。
-      test('fit pass skips a zero viewport and batches reads (BUG-3369)',
+      test('fit pass skips a zero viewport and batches reads (BUG-3416)',
           () async {
         final String? node = _resolveNode();
         if (node == null) {
@@ -773,6 +773,10 @@ function _lyricsBaseFontPx() { return 24; }
 function _lyricsAvailExtent() { return Math.max(1, window.innerHeight - 40); }
 function _lyricsCenterDelta(el) { return 10; }
 function _lyricsScrollByAxis(d) { scrolls++; }
+// 竖排逐列扫过（BUG-3366）在 fit 末尾为当前句重铺一次；这里只计数，不计入 fit
+// 自身的强制布局次数。
+var sweeps = 0;
+function _lyLayoutSweepColumns(el) { sweeps++; }
 var _lyInitPending = true;
 """;
 

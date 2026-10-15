@@ -1193,14 +1193,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   // ③ 设置开关 [_toggleFloatingLyric] / [_toggleMediaNotification]（薄壳，委托 session）。
 
   /// reader 主题悬浮窗样式（attach 期注入 session）。M3E 配色取阅读器当前明暗下的
-  /// app 配色方案（context-free：`appModel.buildColorScheme`，不碰 State.context），
+  /// app 主题（context-free：`appModel.theme` / `darkTheme`，不碰 State.context），
   /// 设置快照与 app 级构造点共用同一份（[buildFloatingLyricStyle]）。
   FloatingLyricStyle _readerFloatingLyricStyle({double? fontSize}) {
-    final Brightness brightness = _isReaderThemeDark
-        ? Brightness.dark
-        : Brightness.light;
     return buildFloatingLyricStyle(
-      scheme: appModel.buildColorScheme(brightness),
+      theme: _isReaderThemeDark ? appModel.darkTheme : appModel.theme,
       settings: appModel.floatingLyricStyleSettings(fontSize: fontSize),
     );
   }
