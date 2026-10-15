@@ -179,7 +179,7 @@ int resolveMangaOcrJobConcurrency({
 /// 手动档至少给到 4（放开前的上限；已存 4 的用户不能被悄悄降档）。
 const int kMangaOcrMinSelectableTasks = 4;
 
-/// 手动档的硬顶：每个任务一个 isolate + 一整套 ORT 会话（Baberu 模型约 284 MB），
+/// 手动档的硬顶：每个任务一个 isolate + 一整套 ORT 会话（逐列 CTC 一套约 42 MB），
 /// 再多就是内存问题而不是 CPU 问题。偏好存储也按它截断。
 const int kMangaOcrMaxSelectableTasks = 16;
 

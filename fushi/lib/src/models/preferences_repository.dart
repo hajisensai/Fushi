@@ -3942,8 +3942,9 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 本机 OCR 模型 key。经典 manga-ocr（`'manga_ocr'`）已删除：存着它的旧偏好
-  /// 由 [MangaOcrLocalModel.fromKey] 统一映射到默认模型，偏好键与存量值都不改写。
+  /// 本机 OCR 模型 key。经典 manga-ocr（`'manga_ocr'`）与 Baberu（`'baberu'`）
+  /// 已于 2026-10 删除：存着它们的旧偏好由 [MangaOcrLocalModel.fromKey] 统一映射到
+  /// 默认模型，偏好键与存量值都不改写。
   String get mangaOcrLocalModel =>
       getPref(
             'manga_ocr_local_model',

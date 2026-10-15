@@ -935,39 +935,43 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   ///
   /// 换模型写回全局模型偏好（与设置页引擎下拉同一份）；逐页缓存按模型签名分
   /// 目录，换模型重跑一定真正重算。
+  ///
+  /// 本平台只列得出一个模型时（目前五端都只有逐列 CTC）不画下拉：只有一个
+  /// 选项的选择器是噪音；下面的下载入口照常保留。
   Widget _localModelSelector(ThemeData theme, bool busy) {
     final MangaOcrLocalModel selected = _engines.localModel!;
     final MangaOcrModelDownloadProgress? progress =
         _downloads?.progressOf(selected);
+    final List<MangaOcrLocalModel> models = platformMangaOcrLocalModels();
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiDropdownButtonFormField<MangaOcrLocalModel>(
-          key: const ValueKey<String>('manga_ocr_wizard_local_model'),
-          initialValue: selected,
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: t.manga_ocr_local_model,
-            isDense: true,
-          ),
-          items: <DropdownMenuItem<MangaOcrLocalModel>>[
-            for (final MangaOcrLocalModel model
-                in platformMangaOcrLocalModels())
-              DropdownMenuItem<MangaOcrLocalModel>(
-                value: model,
-                child: Text(
-                  localModelLabel(model),
-                  overflow: TextOverflow.ellipsis,
+        if (models.length > 1)
+          FushiDropdownButtonFormField<MangaOcrLocalModel>(
+            key: const ValueKey<String>('manga_ocr_wizard_local_model'),
+            initialValue: selected,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: t.manga_ocr_local_model,
+              isDense: true,
+            ),
+            items: <DropdownMenuItem<MangaOcrLocalModel>>[
+              for (final MangaOcrLocalModel model in models)
+                DropdownMenuItem<MangaOcrLocalModel>(
+                  value: model,
+                  child: Text(
+                    localModelLabel(model),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-          ],
-          onChanged: busy
-              ? null
-              : (MangaOcrLocalModel? model) {
-                  if (model != null) unawaited(_selectLocalModel(model));
-                },
-        ),
+            ],
+            onChanged: busy
+                ? null
+                : (MangaOcrLocalModel? model) {
+                    if (model != null) unawaited(_selectLocalModel(model));
+                  },
+          ),
         if (progress != null) ...<Widget>[
           const SizedBox(height: 8),
           FushiLinearProgressIndicator(

@@ -1,5 +1,6 @@
-/// Selectable local recognizers: per-column CTC (default, every platform) and
-/// Baberu (Windows only). The kha-white manga-ocr model was removed in 2026-10.
+/// Selectable local recognizers. Only per-column CTC (every platform) remains:
+/// the kha-white manga-ocr model and Baberu were both removed in 2026-10. The
+/// enum and its key / platform resolution stay so a future model can plug in.
 library;
 
 import 'dart:io';
@@ -16,26 +17,25 @@ const MangaOcrLocalModel kDefaultMangaOcrLocalModel =
     MangaOcrLocalModel.mangaCtc;
 
 enum MangaOcrLocalModel {
-  baberu('baberu'),
   mangaCtc('manga_ctc');
 
   const MangaOcrLocalModel(this.key);
   final String key;
 
   /// 已删除模型的 key（`manga_ocr`：2026-10 删除的 kha-white manga-ocr；
-  /// `manga_ocr_cuda`：Windows 本地 Python + torch CUDA 档）与未知值一律落回
+  /// `manga_ocr_cuda`：Windows 本地 Python + torch CUDA 档；`baberu`：2026-10
+  /// 删除的 genshiai-daichi/baberu-ocr）与未知值一律落回
   /// [kDefaultMangaOcrLocalModel]：旧偏好 / 备份 / 互联对端可能还带着这些 key。
-  static MangaOcrLocalModel fromKey(String key) => switch (key) {
-    'baberu' => baberu,
-    _ => kDefaultMangaOcrLocalModel,
-  };
+  static MangaOcrLocalModel fromKey(String key) {
+    for (final MangaOcrLocalModel model in values) {
+      if (model.key == key) return model;
+    }
+    return kDefaultMangaOcrLocalModel;
+  }
 
   /// A preference restored from Windows must not select unsupported models on
   /// another device. Settings, imports and inference share this resolution.
-  static MangaOcrLocalModel forPlatform(
-    String key, {
-    String? operatingSystem,
-  }) {
+  static MangaOcrLocalModel forPlatform(String key, {String? operatingSystem}) {
     final MangaOcrLocalModel model = fromKey(key);
     return (operatingSystem ?? Platform.operatingSystem) == 'windows' ||
             model.availableOnAllPlatforms
@@ -43,20 +43,17 @@ enum MangaOcrLocalModel {
         : kDefaultMangaOcrLocalModel;
   }
 
-  /// 纯 ONNX Runtime CPU 推理、出包五端都能跑的模型；Baberu（Windows DirectML
-  /// 视觉图）只给 Windows。
+  /// 纯 ONNX Runtime CPU 推理、出包五端都能跑的模型；只给 Windows 的模型在
+  /// 这里返回 false（目前没有：2026-10 删掉的 Baberu 曾是唯一一个）。
   bool get availableOnAllPlatforms => switch (this) {
     mangaCtc => true,
-    baberu => false,
   };
 
   List<MangaOcrModelFile> get manifest => switch (this) {
-    baberu => kBaberuOcrModelManifest,
     mangaCtc => kMangaCtcOcrModelManifest,
   };
 
   String get cacheSignature => switch (this) {
-    baberu => 'local-onnx-baberu-v1-bicubic-$kMangaOcrPipelineRevision',
     // 不能以 kLocalMangaOcrEngineSignature 开头：那样已删除的 manga-ocr 留下的 v4
     // 旧缓存会被当成可补几何的来源，把 manga-ocr 的文字冒充成 CTC 的结果
     // （BUG-2813 的升级路径）。
@@ -69,7 +66,6 @@ enum MangaOcrLocalModel {
   Future<Directory> modelsDirectory() async {
     final Directory legacy = await model_fp.defaultMangaOcrModelsDir();
     final String sibling = switch (this) {
-      baberu => 'manga-baberu',
       mangaCtc => 'manga-ctc',
     };
     return Directory(p.join(legacy.parent.path, sibling));
@@ -99,8 +95,13 @@ Future<String> resolveInstalledLocalMangaOcrEngineSignature({
 /// 已删除模型留在 `<support>/ocr_models/` 下的兄弟目录名。
 ///
 /// `manga-cuda`：2026-10 删除的 Windows 本地 Python + torch cu128 档，一套
-/// 4~10 GB；枚举值没了之后，设置页与「设置 › 存储」都不再有能删它的入口。
-const List<String> kRemovedMangaOcrModelDirNames = <String>['manga-cuda'];
+/// 4~10 GB；`manga-baberu`：2026-10 删除的 Baberu（约 270 MB，目录里那份
+/// `detector-v4-s_int8.onnx` 是它自己的副本，`manga-ctc` 另有一份，整目录删不波及
+/// CTC）。枚举值没了之后，设置页与「设置 › 存储」都不再有能删它们的入口。
+const List<String> kRemovedMangaOcrModelDirNames = <String>[
+  'manga-cuda',
+  'manga-baberu',
+];
 
 /// 已删除的 kha-white manga-ocr 本地模型留在旧目录 `<support>/ocr_models/manga/`
 /// 里的专属文件（各自的 `.part` 断点残留一并删）。
@@ -191,49 +192,6 @@ Future<int> _deleteRemovedMangaOcrLegacyFiles(Directory legacy) async {
   }
   return deleted;
 }
-
-const String kBaberuOcrRevision = 'd9cc13153e9a1cd8fdfa3b7b1cc329da2020aeae';
-
-const String _baberuBase =
-    'https://huggingface.co/genshiai-daichi/baberu-ocr/resolve/$kBaberuOcrRevision';
-
-/// Apache-2.0 precision tier: FP16 vision weights with float32 IO, int8 decoder
-/// prefill/step graphs with a KV cache. Exact sizes checked against HF blobs.
-const List<MangaOcrModelFile> kBaberuOcrModelManifest = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: 'detector-v4-s_int8.onnx',
-    url:
-        'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
-        'resolve/main/detector-v4-s_int8.onnx',
-    expectedBytes: 11120765,
-    role: MangaOcrModelRole.detector,
-  ),
-  MangaOcrModelFile(
-    fileName: 'vision_fp16.onnx',
-    url: '$_baberuBase/onnx/vision_fp16.onnx',
-    expectedBytes: 172917304,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'decoder_prefill_int8.onnx',
-    url: '$_baberuBase/onnx/decoder_prefill_int8.onnx',
-    expectedBytes: 35133596,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'decoder_step_int8.onnx',
-    url: '$_baberuBase/onnx/decoder_step_int8.onnx',
-    expectedBytes: 33929034,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'vocab.json',
-    url: '$_baberuBase/tokenizer/vocab.json',
-    expectedBytes: 130761,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  ...kPpOcrLineModelManifest,
-];
 
 /// 漫画逐列 CTC 的列识别权重：Kellenok/PP-OCRv6_manga 的 rec v0.2（Apache-2.0，在
 /// PP-OCRv6 small rec 上用 Manga109-s 与 AnimeText 微调）。与 PP-OCRv6 small rec 同

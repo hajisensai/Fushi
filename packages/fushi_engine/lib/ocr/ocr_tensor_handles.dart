@@ -3,7 +3,7 @@
 /// 为什么需要：app 的 ONNX 经 Flutter 插件（MethodChannel）调用，[OcrSession.run]
 /// 每次把全部输入上传、把全部输出读回 Dart。manga-ocr 无 cache 路径每个文字块约有
 /// 58 MB 过通道；KV cache 版每步的 past / cross K/V 若照样来回搬，省下的计算又被
-/// 通道拷贝吃回去（2026-09-23 Baberu 在 app 内比 Python 慢数倍就是这个原因）。
+/// 通道拷贝吃回去（2026-09-23 实测自回归模型在 app 内比 Python 慢数倍就是这个原因）。
 /// 插件自己的 `OrtValue` 本就是原生侧句柄，本文件把这个能力以可选接口的形式
 /// 暴露给引擎：实现了 [OcrHandleSession] 的后端把句柄留在原生侧；没实现的后端
 /// （服务端 FFI、测试 fake）经 [asOcrHandleSession] 包成拷贝适配器，结果相同只是

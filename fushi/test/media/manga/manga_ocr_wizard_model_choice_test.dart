@@ -61,7 +61,7 @@ void main() {
     File(p.join(imageDir.path, 'p001.jpg')).writeAsBytesSync(<int>[1, 2, 3]);
     services = <MangaOcrLocalModel, _FakeOcrService>{
       for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
-        model: _FakeOcrService(ready: model == MangaOcrLocalModel.baberu),
+        model: _FakeOcrService(ready: false),
     };
   });
 
@@ -73,7 +73,7 @@ void main() {
     if (imageDir.existsSync()) imageDir.deleteSync(recursive: true);
   });
 
-  testWidgets('local engine lets the user pick and download a model', (
+  testWidgets('local engine downloads the only model without a picker', (
     WidgetTester tester,
   ) async {
     final List<String> storedModels = <String>[];
@@ -102,16 +102,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 选中的模型没下：本地段仍可选，模型下拉 + 下载入口就在向导里，开跑按钮置灰。
+    // 五端都只列得出逐列 CTC 一个模型：只有一个选项的模型下拉不画；选中的
+    // 模型没下时下载入口仍在向导里，开跑按钮置灰。
+    expect(platformMangaOcrLocalModels(), <MangaOcrLocalModel>[
+      MangaOcrLocalModel.mangaCtc,
+    ]);
     final Finder modelField = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_local_model'),
     );
-    expect(modelField, findsOneWidget);
+    expect(modelField, findsNothing);
     final Finder run = find.widgetWithText(
       FilledButton,
       t.manga_ocr_wizard_run,
     );
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNull);
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed,
+      isNull,
+    );
     final Finder download = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_model_download'),
     );
@@ -130,20 +137,11 @@ void main() {
     await services[MangaOcrLocalModel.mangaCtc]!.downloads.close();
     await tester.pumpAndSettle();
     expect(download, findsNothing);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
-
-    // 换成已下好的 Baberu（只在 Windows 列出）：写回全局模型偏好，仍停在本地
-    // 引擎、可开跑。经典 manga-ocr 删除后五端通用的只剩 CTC 一个模型。
-    if (Platform.isWindows) {
-      await tester.tap(modelField);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.text(localModelLabel(MangaOcrLocalModel.baberu)).last,
-      );
-      await tester.pumpAndSettle();
-      expect(storedModels, <String>['baberu']);
-      expect(modelField, findsOneWidget);
-      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
-    }
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed,
+      isNotNull,
+    );
+    // 没有选择器就不会改写模型偏好。
+    expect(storedModels, isEmpty);
   });
 }

@@ -243,12 +243,13 @@ void main() {
 
   group('modelStatus / deleteModels', () {
     test(
-      'Baberu resolves its eight files and shares one cache identity across runners',
+      'a model in its own directory shares one cache identity across runners',
       () async {
         final Directory fastDir = Directory(p.join(modelsDir.path, 'fast'))
           ..createSync();
-        final List<MangaOcrModelFile> tinyBaberu = <MangaOcrModelFile>[
-          for (final MangaOcrModelFile model in kBaberuOcrModelManifest)
+        final List<MangaOcrModelFile> tinyCtc = <MangaOcrModelFile>[
+          for (final MangaOcrModelFile model
+              in MangaOcrLocalModel.mangaCtc.manifest)
             MangaOcrModelFile(
               fileName: model.fileName,
               url: 'http://unused.invalid/${model.fileName}',
@@ -256,15 +257,15 @@ void main() {
               role: model.role,
             ),
         ];
-        for (final MangaOcrModelFile model in tinyBaberu) {
+        for (final MangaOcrModelFile model in tinyCtc) {
           File(p.join(fastDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
         }
         final _FakeRunner volume = _FakeRunner();
         final _FakePageSessionRunner pages = _FakePageSessionRunner();
         final MangaOcrServiceImpl fast = MangaOcrServiceImpl(
-          localModel: MangaOcrLocalModel.baberu,
+          localModel: MangaOcrLocalModel.mangaCtc,
           modelsDirProvider: () async => fastDir,
-          manifest: tinyBaberu,
+          manifest: tinyCtc,
           jobRunner: volume,
           pageSessionRunner: pages,
           platformSupport: () => true,
@@ -279,19 +280,8 @@ void main() {
         expect(await pageSession.ocrPage('001.jpg'), cachePath);
         final MangaOcrModelPaths paths =
             pages.sessions.single.request.modelPaths;
-        expect(
-          paths.baberu!.visionPath,
-          p.join(fastDir.path, 'vision_fp16.onnx'),
-        );
-        expect(
-          paths.baberu!.prefillPath,
-          p.join(fastDir.path, 'decoder_prefill_int8.onnx'),
-        );
-        expect(
-          paths.baberu!.stepPath,
-          p.join(fastDir.path, 'decoder_step_int8.onnx'),
-        );
-        expect(paths.ctcRecPath, isEmpty);
+        expect(paths.ctcRecPath, p.join(fastDir.path, kMangaCtcRecFileName));
+        expect(paths.detectorPath, startsWith(fastDir.path));
         final Future<List<MangaOcrVolumeEvent>> output = fast
             .ocrFolder(imageDirPath: 'D:/vol')
             .toList();
@@ -475,7 +465,6 @@ void main() {
         paths.ppRecDictPath,
         p.join(modelsDir.path, kPpOcrRecDictFileName),
       );
-      expect(paths.baberu, isNull);
 
       final String cache = await ctc.resolvePageCacheDirPath(
         imageDirPath: 'D:/vol',
@@ -489,36 +478,6 @@ void main() {
         isEmpty,
         reason: 'CTC 不能把已删除的 manga-ocr 留下的 v4 旧缓存当成自己的结果补几何',
       );
-    });
-
-    // 「经典模型」原指 kha-white manga-ocr；2026-10 删掉它后默认本地模型就是
-    // CTC（kDefaultMangaOcrLocalModel），剩下唯一的非 CTC 模型是 Baberu，必须
-    // 显式选它才走得到非 CTC 分支。
-    test('非 CTC 模型（Baberu）的路径不带 CTC rec', () async {
-      final List<MangaOcrModelFile> tinyBaberu = <MangaOcrModelFile>[
-        for (final MangaOcrModelFile model in kBaberuOcrModelManifest)
-          MangaOcrModelFile(
-            fileName: model.fileName,
-            url: 'http://unused.invalid/${model.fileName}',
-            expectedBytes: 1,
-            role: model.role,
-          ),
-      ];
-      for (final MangaOcrModelFile model in tinyBaberu) {
-        File(p.join(modelsDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
-      }
-      final _FakePageSessionRunner pages = _FakePageSessionRunner();
-      await MangaOcrServiceImpl(
-        localModel: MangaOcrLocalModel.baberu,
-        modelsDirProvider: () async => modelsDir,
-        manifest: tinyBaberu,
-        jobRunner: _FakeRunner(),
-        pageSessionRunner: pages,
-        platformSupport: () => true,
-      ).openPageSession(imageDirPath: 'D:/vol');
-      final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
-      expect(paths.ctcRecPath, isEmpty);
-      expect(paths.ppRecPath, p.join(modelsDir.path, kPpOcrRecFileName));
     });
   });
 
