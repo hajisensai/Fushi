@@ -48,28 +48,35 @@ class MangaFolderPlan {
 /// [filePaths] 是 [rootPath] 之下**文件**（不含目录条目）的完整路径；路径命名
 /// 空间与 [rootPath] 一致即可（都是绝对路径、或都相对同一基准），不落在根之下的
 /// 条目被忽略。
+///
+/// [context] 是这批路径的路径语义，缺省为宿主平台（本地目录）。网络来源的路径
+/// 是正斜杠的远端路径 / WebDAV 的 `https://` href，必须传 [p.url]：用宿主语义在
+/// Windows 上 normalize 会把分隔符换成反斜杠、把 URL 拆坏，归出来的卷目录就再也
+/// 对不上远端条目。
 MangaFolderPlan planMangaFolders({
   required String rootPath,
   required Iterable<String> filePaths,
+  p.Context? context,
 }) {
-  final String root = p.normalize(rootPath);
+  final p.Context ctx = context ?? p.context;
+  final String root = ctx.normalize(rootPath);
   bool rootHasImages = false;
   final Set<String> childFolders = <String>{};
   final List<String> mokuroPaths = <String>[];
   for (final String path in filePaths) {
-    final String ext = p.extension(path).toLowerCase();
+    final String ext = ctx.extension(path).toLowerCase();
     if (ext == kMokuroExtension) {
       mokuroPaths.add(path);
       continue;
     }
     if (!kMangaImageExtensions.contains(ext)) continue;
-    final String relative = p.relative(p.normalize(path), from: root);
-    final List<String> segments = p.split(relative);
+    final String relative = ctx.relative(ctx.normalize(path), from: root);
+    final List<String> segments = ctx.split(relative);
     if (segments.isEmpty || segments.first == '..') continue;
     if (segments.length == 1) {
       rootHasImages = true;
     } else {
-      childFolders.add(p.join(root, segments.first));
+      childFolders.add(ctx.join(root, segments.first));
     }
   }
   mokuroPaths.sort(_compareIgnoreCase);
@@ -80,10 +87,10 @@ MangaFolderPlan planMangaFolders({
   final List<String> imageFolders = <String>[];
   for (final String candidate in candidates) {
     final bool claimedByMokuro = mokuroPaths.any((String mokuroPath) {
-      final String mokuroDir = p.dirname(p.normalize(mokuroPath));
-      return p.equals(mokuroDir, candidate) ||
-          p.isWithin(mokuroDir, candidate) ||
-          p.isWithin(candidate, mokuroDir);
+      final String mokuroDir = ctx.dirname(ctx.normalize(mokuroPath));
+      return ctx.equals(mokuroDir, candidate) ||
+          ctx.isWithin(mokuroDir, candidate) ||
+          ctx.isWithin(candidate, mokuroDir);
     });
     if (!claimedByMokuro) imageFolders.add(candidate);
   }

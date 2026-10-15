@@ -15,8 +15,9 @@
 // 网络来源三域全开放，transport 集按域收窄（[_networkTransports]）：
 // - 'book'：SFTP/FTP/WebDAV/AList（EPUB 小体积、扫描时下载后导入）；
 // - 'manga'：SFTP/FTP/WebDAV/AList（整卷下载后导入，重扫有标题预检不重下载）；
-// - 'video'：仅 WebDAV / AList（条目 URL 按流媒体书原地入库播放，AList 起播前
-//   经 fs/get 换签名直链；SFTP/FTP 无 HTTP 直链、播放器吃不了，扫描器也会拒绝）。
+// - 'video'：SFTP / WebDAV / AList（条目按流媒体书原地入库播放：AList 起播前
+//   经 fs/get 换签名直链，SFTP 起播时登记进回环中继按偏移读，见
+//   sftp_stream_source.dart；FTP 没有按偏移读、拖不了进度条，扫描器也会拒绝）。
 // WebDAV 的 rootPath 即完整集合 URL（scheme/host/端口/路径都在里面），无需单独存
 // host/port（见 NetworkSourceFileSystem）。
 
@@ -151,10 +152,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   late final AppModel _appModel;
 
   /// 本域可选的网络传输：书/漫画四 transport 全通（远端文件下载后导入）；
-  /// 视频仅 WebDAV 与 AList/OpenList（条目 URL 原地流播——AList 起播前经 fs/get
-  /// 换签名直链；SFTP/FTP 无 HTTP 直链，扫描器会拒）。
+  /// 视频是 SFTP、WebDAV 与 AList/OpenList（条目原地流播——AList 起播前经 fs/get
+  /// 换签名直链，SFTP 经回环中继按偏移读；FTP 读不了区间，扫描器会拒）。
   List<String> get _networkTransports => widget.mediaKind == 'video'
-      ? const <String>['webdav', 'alist']
+      ? const <String>['sftp', 'webdav', 'alist']
       : const <String>['sftp', 'ftp', 'webdav', 'alist'];
 
   /// 页面页头与所有行级 mutation 共用的忙状态。

@@ -11,7 +11,10 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/alist/alist_stream_url_resolver.dart';
+import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
+import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
@@ -53,19 +56,40 @@ Future<Map<String, String>> resolveSourceStreamHeaders({
 
 /// 按 [sourceId] 解析该来源条目的**播放期直链解析器**；null = 条目地址即流地址。
 ///
-/// 目前只有 AList / OpenList 来源需要：落库的 `<根>/d/<路径>` 是稳定地址，
+/// AList / OpenList 来源需要它：落库的 `<根>/d/<路径>` 是稳定地址，
 /// 真正可播的 `raw_url` 带临期签名，起播那一刻才经 `/api/fs/get` 现取。凭据同
 /// [resolveSourceStreamHeaders] 的红线：账号来自 configJson、密码来自凭据存储，
 /// 不落行级 spec。签名直链本身不带任何认证头（`raw_url` 多指向存储后端或站点
 /// `/p/` 代理，与 API 不同源），故 alist 来源的 [resolveSourceStreamHeaders]
 /// 恒空。
+///
+/// SFTP 来源同样走这里：条目地址是 `sftp://` 稳定地址（播放内核开不了），起播时
+/// 登记进回环中继换成 `http://127.0.0.1/…`，字节经 SFTP 按偏移读
+/// （[SftpStreamUrlResolver]）。凭据同一条红线，只活在解析器内部。
 Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
   required FushiDatabase db,
   required int? sourceId,
 }) async {
   if (sourceId == null) return null;
   final SourceLibraryRow? source = await db.getMediaSourceById(sourceId);
-  if (source == null || source.transport != 'alist') return null;
+  if (source == null) return null;
+  if (source.transport == 'sftp') {
+    final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
+    final SourceLibrarySecret secret =
+        await SourceLibraryCredentialStore(db).readSecret(source.id);
+    final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
+      transport: source.transport,
+      config: cfg,
+      password: secret.password,
+      privateKey: secret.privateKey,
+    );
+    return SftpStreamUrlResolver(
+      sourceId: source.id,
+      urlRoot: sftpSourceUrlRootForConfig(cfg),
+      fs: fs as NetworkSourceFileSystem,
+    );
+  }
+  if (source.transport != 'alist') return null;
   final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
   final String baseUrl = (cfg['baseUrl'] as String?) ?? '';
   if (baseUrl.trim().isEmpty) return null;
