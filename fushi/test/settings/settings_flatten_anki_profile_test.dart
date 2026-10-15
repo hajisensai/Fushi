@@ -23,6 +23,14 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+import '../srs/srs_test_support.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -118,6 +126,7 @@ void main() {
     SettingsDestinationId id,
     List<SettingsDestination> captured, {
     String? panelId,
+    List<Override> extraOverrides = const <Override>[],
   }) async {
     late SettingsDestination target;
     await tester.pumpWidget(
@@ -125,6 +134,7 @@ void main() {
         overrides: <Override>[
           appProvider.overrideWith((Ref ref) => appModel),
           platformServicesProvider.overrideWithValue(platformServices),
+          ...extraOverrides,
         ],
         child: MaterialApp(
           theme: ThemeData(
@@ -258,7 +268,10 @@ void main() {
     // 条件、目标设备、失效条件全由互联决定，互联关掉时留在这里就是纯死开关）。归属由
     // test/sync/sync_settings_visibility_test.dart 咬住；这里只守「不得回流」。
     expect(
-      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Mine to Fushi Interconnect server'),
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Mine to Fushi Interconnect server',
+      ),
       findsNothing,
       reason: '「制卡到 Fushi 互联服务端」不应再出现在 Anki 正文',
     );
@@ -313,8 +326,8 @@ void main() {
       'Delete automatically without asking',
     );
     expect(dedupAutoDeleteRow, findsOneWidget);
-    final AdaptiveSettingsSwitchRow autoDelete =
-        tester.widget<AdaptiveSettingsSwitchRow>(dedupAutoDeleteRow);
+    final AdaptiveSettingsSwitchRow autoDelete = tester
+        .widget<AdaptiveSettingsSwitchRow>(dedupAutoDeleteRow);
     expect(autoDelete.value, isFalse, reason: '自动直接删除必须默认关');
     expect(autoDelete.onChanged, isNull, reason: '自动处理关着时「自动直接删除」必须禁用（从属开关）');
   });
@@ -358,8 +371,9 @@ void main() {
         isNotNull,
         reason: '配置方案 destination 应通过 body 平铺 Profile 管理正文',
       );
-      final List<SettingsItem> profileItems =
-          profiles.sections.expand((SettingsSection s) => s.items).toList();
+      final List<SettingsItem> profileItems = profiles.sections
+          .expand((SettingsSection s) => s.items)
+          .toList();
       expect(
         profileItems.whereType<SettingsNavigationItem>(),
         isEmpty,
@@ -380,4 +394,90 @@ void main() {
       );
     },
   );
+
+  testWidgets('挖词目标 = Fushi 复习：Anki 专属项不渲染，换成复习牌组 / 笔记类型 + 字段映射', (
+    WidgetTester tester,
+  ) async {
+    final (FushiDatabase srsDb, SrsDbStore store) = (await tester.runAsync(
+      () => openSrsTestStore(),
+    ))!;
+    addTearDown(srsDb.close);
+    await tester.runAsync(() async {
+      await appModel.setModuleEnabled(ModuleId.srs, true);
+      await appModel.setSrsMiningTarget(SrsMiningTarget.srs);
+      // 一个非 Lapis 类型：选中后字段映射行逐字段出现。
+      await store.importEvents(<SrsEvent>[
+        SrsEntityEvent(
+          SrsEntityRecord(
+            id: 'nt-vocab',
+            profileUid: kSrsTestProfile,
+            kind: SrsEntityKind.noteType,
+            payload: <String, Object?>{'ankiNum': 1, 'createdAt': 1},
+          ),
+        ),
+      ]);
+      await store
+          .editFields(SrsEntityKind.noteType, 'nt-vocab', <String, Object?>{
+            SrsFieldKeys.name: 'Vocab',
+            SrsFieldKeys.fieldDef('fw'): const SrsFieldDef(
+              id: 'fw',
+              name: 'Word',
+              ord: 0,
+            ).toValue(),
+            SrsFieldKeys.fieldDef('fm'): const SrsFieldDef(
+              id: 'fm',
+              name: 'Meaning',
+              ord: 1,
+            ).toValue(),
+          });
+      await appModel.setSrsMiningNoteTypeId('nt-vocab');
+      await appModel.setSrsMiningFieldMapping('nt-vocab', 'fw', '{expression}');
+    });
+
+    await pumpDestination(
+      tester,
+      SettingsDestinationId.cardCreation,
+      <SettingsDestination>[],
+      extraOverrides: <Override>[
+        srsStoreProvider.overrideWith((Ref ref) async => store),
+      ],
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump();
+
+    // Anki 专属：批量制卡、跨设备中转、Anki 配置 / 刷新 / Lapis、AnkiConnect 入口都不在。
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
+      findsNothing,
+    );
+    expect(find.byType(PendingMineLandingSwitchRow), findsNothing);
+    expect(find.text(t.anki_fetch), findsNothing);
+    expect(find.text(t.anki_create_lapis), findsNothing);
+    expect(find.text('AnkiConnect'), findsNothing);
+    expect(find.text(t.anki_not_configured), findsNothing);
+    // 复习侧：牌组 / 笔记类型 + 非 Lapis 类型逐字段映射；共用的允许重复照旧。
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-deck')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-note-type')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-field-fw')),
+      findsOneWidget,
+    );
+    expect(find.text('{expression}'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-field-fm')),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, t.anki_allow_duplicates),
+      findsOneWidget,
+    );
+  });
 }

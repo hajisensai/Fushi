@@ -1,4 +1,5 @@
-// 挖词目标「Fushi SRS」（计划 PR3a）：SrsMiningAnkiRepository 的三种目标、字段映射、
+// 挖词目标「Fushi SRS」（计划 PR3a）：SrsMiningAnkiRepository（只写复习）、落地牌组 /
+// 笔记类型 / 字段映射与被删回落、
 // 媒体落盘与引用改写、出处、判重（同形异读不算重复），以及「模块关着时装饰层根本不在
 // ankiRepositoryProvider 的链上」。
 import 'dart:convert';
@@ -244,6 +245,152 @@ void main() {
     expect(out.result, MineResult.error);
     expect(inner.mined, 0);
     expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
+  });
+
+  /// 一个非 Lapis 的笔记类型：字段 Word / Meaning / Sentence，词条字段 = Word。
+  Future<String> createVocabType() async {
+    const String id = 'nt-vocab';
+    await store.importEvents(<SrsEvent>[
+      SrsEntityEvent(
+        SrsEntityRecord(
+          id: id,
+          profileUid: kSrsTestProfile,
+          kind: SrsEntityKind.noteType,
+          payload: <String, Object?>{
+            'ankiNum': 1,
+            'ntKind': SrsNoteTypeKind.standard,
+            'createdAt': 1,
+          },
+        ),
+      ),
+    ]);
+    await store.editFields(SrsEntityKind.noteType, id, <String, Object?>{
+      SrsFieldKeys.name: 'Vocab',
+      SrsFieldKeys.fieldDef('fw'): const SrsFieldDef(
+        id: 'fw',
+        name: 'Word',
+        ord: 0,
+      ).toValue(),
+      SrsFieldKeys.fieldDef('fm'): const SrsFieldDef(
+        id: 'fm',
+        name: 'Meaning',
+        ord: 1,
+      ).toValue(),
+      SrsFieldKeys.fieldDef('fs'): const SrsFieldDef(
+        id: 'fs',
+        name: 'Sentence',
+        ord: 2,
+      ).toValue(),
+      SrsFieldKeys.templateDef('t1'): const SrsTemplateDef(
+        id: 't1',
+        name: 'Card 1',
+        ord: 0,
+        front: '{{fld:fw}}',
+        back: '{{fld:fm}}',
+      ).toValue(),
+      SrsFieldKeys.termField: 'fw',
+    });
+    return id;
+  }
+
+  SrsMiningAnkiRepository repoWith(SrsMiningDestination destination) =>
+      SrsMiningAnkiRepository(
+        inner: _FakeAnki(),
+        miner: () async =>
+            SrsMiner(store: store, media: media, destination: destination),
+      );
+
+  test('落地：选定牌组 → 卡进该牌组，回执带牌组名', () async {
+    final String deck = await store.createDeck('Mining');
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(deckId: deck),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    expect(out.deckName, 'Mining');
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.deckId, deck);
+    expect(note.noteTypeId, store.lapisNoteTypeId);
+  });
+
+  test('落地：非 Lapis 笔记类型按映射落字段；没映射过的同名字段沿用 Lapis 默认', () async {
+    final String type = await createVocabType();
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(
+        noteTypeId: type,
+        fieldMappingsByType: <String, Map<String, String>>{
+          type: <String, String>{'fw': '{expression}', 'fm': '{glossary}'},
+        },
+      ),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.noteTypeId, type);
+    expect(note.field('fw'), '雪');
+    expect(note.field('fm'), contains('snow'));
+    expect(note.field('fs'), contains('降る'), reason: 'Sentence 与 Lapis 同名');
+    expect(note.deckId, store.defaultDeckId);
+    // 查重仍按 SRS 词状态：同一个词再制一次是重复。
+    expect(
+      (await repoWith(SrsMiningDestination(noteTypeId: type)).mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: bookContext(),
+      )).result,
+      MineResult.duplicate,
+    );
+  });
+
+  test('落地：非 Lapis 类型第一字段映射成空 → 拒绝建卡', () async {
+    final String type = await createVocabType();
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(
+        noteTypeId: type,
+        fieldMappingsByType: <String, Map<String, String>>{
+          type: <String, String>{'fw': ''},
+        },
+      ),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.error);
+    expect(out.errorCode, AnkiErrorCode.firstFieldEmpty);
+  });
+
+  test('落地：选中的牌组 / 笔记类型被删 → 回落默认牌组 + Lapis', () async {
+    final String deck = await store.createDeck('Gone');
+    final String type = await createVocabType();
+    await store.deleteDeck(deck);
+    await store.editField(
+      SrsEntityKind.noteType,
+      type,
+      SrsFieldKeys.deleted,
+      1,
+    );
+    final SrsMiningDestination dest = SrsMiningDestination(
+      deckId: deck,
+      noteTypeId: type,
+    );
+    final SrsResolvedMiningDestination resolved =
+        await resolveSrsMiningDestination(store, dest);
+    expect(resolved.deckFellBack, isTrue);
+    expect(resolved.noteTypeFellBack, isTrue);
+    expect(resolved.usesLapis, isTrue);
+    expect(resolved.deckId, store.defaultDeckId);
+
+    final MineOutcome out = await repoWith(
+      dest,
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
+    expect(note.deckId, store.defaultDeckId);
+    expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.field(fid('Expression')), '雪');
+  });
+
+  test('落地：没选过 = 默认牌组 + Lapis，不算回落', () async {
+    final SrsResolvedMiningDestination resolved =
+        await resolveSrsMiningDestination(store, const SrsMiningDestination());
+    expect(resolved.deckFellBack, isFalse);
+    expect(resolved.noteTypeFellBack, isFalse);
+    expect(resolved.usesLapis, isTrue);
+    expect(resolved.deckId, store.defaultDeckId);
   });
 
   test('出处转换：漫画 / 本地视频 / 在线视频 / 游戏 / 无定位', () {

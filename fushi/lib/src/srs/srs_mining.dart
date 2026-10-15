@@ -21,6 +21,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 
 /// 制卡上下文 → 笔记出处（拿不到定位时为 manual）。
 SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
@@ -105,12 +106,81 @@ SrsSourceRef? _onlineVideoRef(String uid, int start, int? end, String? title) {
   );
 }
 
+/// [SrsMiningDestination] 解析后真正落地的牌组 / 笔记类型。
+class SrsResolvedMiningDestination {
+  const SrsResolvedMiningDestination({
+    required this.deckId,
+    required this.deckName,
+    required this.noteType,
+    required this.deckFellBack,
+    required this.noteTypeFellBack,
+  });
+
+  final String deckId;
+  final String? deckName;
+
+  /// null = 内置 Lapis。
+  final SrsNoteTypeView? noteType;
+
+  /// 偏好里选的牌组 / 笔记类型已被删除（或不可用），回落到默认牌组 / Lapis。
+  final bool deckFellBack;
+  final bool noteTypeFellBack;
+
+  bool get usesLapis => noteType == null;
+}
+
+/// 把偏好解析成落地位置：选中的牌组 / 笔记类型不存在（被删）时回落默认牌组 / Lapis。
+/// 没有字段的笔记类型做不出卡，同样回落 Lapis。
+Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
+  SrsDbStore store,
+  SrsMiningDestination destination,
+) async {
+  final SrsDeckTree tree = await store.deckTree();
+  final bool wantsDeck = destination.deckId.isNotEmpty;
+  final bool deckExists = wantsDeck && tree[destination.deckId] != null;
+  final String deckId = deckExists ? destination.deckId : store.defaultDeckId;
+
+  SrsNoteTypeView? noteType;
+  bool noteTypeFellBack = false;
+  final String typeId = destination.noteTypeId;
+  if (typeId.isNotEmpty && typeId != store.lapisNoteTypeId) {
+    final SrsNoteTypeView? view = await store.noteType(typeId);
+    if (view != null && view.deletedAt == null && view.fields.isNotEmpty) {
+      noteType = view;
+    } else {
+      noteTypeFellBack = true;
+    }
+  }
+  return SrsResolvedMiningDestination(
+    deckId: deckId,
+    deckName: tree[deckId] == null ? null : tree.fullName(deckId),
+    noteType: noteType,
+    deckFellBack: wantsDeck && !deckExists,
+    noteTypeFellBack: noteTypeFellBack,
+  );
+}
+
+/// 非 Lapis 笔记类型实际生效的字段映射（fieldId → 模板）：用户映射过的字段用用户的
+/// （映射成空串 = 明确不填）；没映射过、且字段名与 Lapis 同名的，沿用 Lapis 默认模板。
+Map<String, String> srsEffectiveFieldMappings(
+  SrsNoteTypeView noteType,
+  Map<String, String>? stored,
+) => <String, String>{
+  for (final SrsFieldDef f in noteType.fields)
+    f.id: stored?[f.id] ?? LapisNoteType.defaultFieldMappings[f.name] ?? '',
+};
+
 /// 一次制卡落进 Fushi 复习（见文件头）。永不抛：失败一律变成 [MineOutcome]。
 class SrsMiner with AnkiNoteComposer {
-  SrsMiner({required this.store, required this.media});
+  SrsMiner({
+    required this.store,
+    required this.media,
+    this.destination = const SrsMiningDestination(),
+  });
 
   final SrsDbStore store;
   final SrsMediaStore media;
+  final SrsMiningDestination destination;
 
   /// 这个词（词形 + 读音）SRS 里有没有卡。读音为空时按词形匹配。
   Future<bool> isDuplicate(String expression, String reading) async {
@@ -162,36 +232,88 @@ class SrsMiner with AnkiNoteComposer {
       return const MineOutcome.duplicate();
     }
 
-    // 映射固定用 Lapis 默认映射（SRS 的内置笔记类型就是 Lapis）；标签、紧凑释义等
-    // 其余设置沿用用户的 Anki 设置。
-    final AnkiSettings lapis = settings.copyWith(
-      fieldMappings: LapisNoteType.defaultFieldMappings,
-      selectedNoteTypeName: LapisNoteType.modelName,
-    );
+    final SrsResolvedMiningDestination target =
+        await resolveSrsMiningDestination(store, destination);
+    final SrsNoteTypeView? noteType = target.noteType;
+
+    // 字段映射：Lapis 固定用 Lapis 默认映射（按 fieldKey 换成 SRS 的 fieldId）；
+    // 其它笔记类型用按类型存的映射，渲染时直接以 fieldId 为键。标签、紧凑释义等
+    // 其余设置沿用用户的制卡设置。
+    if (noteType == null) {
+      final RenderedMinedFields rendered = await _render(
+        settings: settings.copyWith(
+          fieldMappings: LapisNoteType.defaultFieldMappings,
+          selectedNoteTypeName: LapisNoteType.modelName,
+        ),
+        payload: payload,
+        context: context,
+      );
+      final Set<String> lapisFields = LapisNoteType.fields.toSet();
+      return _create(
+        fieldsById: <String, String>{
+          for (final MapEntry<String, String> e in rendered.fields.entries)
+            if (lapisFields.contains(e.key) && e.value.isNotEmpty)
+              srsLapisFieldId(store.profileUid, e.key): e.value,
+        },
+        noteTypeId: store.lapisNoteTypeId,
+        firstFieldId: srsLapisFieldId(store.profileUid, 'Expression'),
+        firstFieldName: 'Expression',
+        target: target,
+        settings: settings,
+        context: context,
+        audioWarning: rendered.audioWarning,
+      );
+    }
     final RenderedMinedFields rendered = await _render(
-      settings: lapis,
+      settings: settings.copyWith(
+        fieldMappings: srsEffectiveFieldMappings(
+          noteType,
+          destination.fieldMappingsByType[noteType.id],
+        ),
+        selectedNoteTypeName: noteType.name,
+      ),
       payload: payload,
       context: context,
     );
-    final Set<String> lapisFields = LapisNoteType.fields.toSet();
-    final Map<String, String> fieldsById = <String, String>{
-      for (final MapEntry<String, String> e in rendered.fields.entries)
-        if (lapisFields.contains(e.key) && e.value.isNotEmpty)
-          srsLapisFieldId(store.profileUid, e.key): e.value,
+    final Set<String> typeFields = <String>{
+      for (final SrsFieldDef f in noteType.fields) f.id,
     };
-    if ((fieldsById[srsLapisFieldId(store.profileUid, 'Expression')] ?? '')
-        .trim()
-        .isEmpty) {
+    return _create(
+      fieldsById: <String, String>{
+        for (final MapEntry<String, String> e in rendered.fields.entries)
+          if (typeFields.contains(e.key) && e.value.isNotEmpty) e.key: e.value,
+      },
+      noteTypeId: noteType.id,
+      firstFieldId: noteType.fields.first.id,
+      firstFieldName: noteType.fields.first.name,
+      target: target,
+      settings: settings,
+      context: context,
+      audioWarning: rendered.audioWarning,
+    );
+  }
+
+  Future<MineOutcome> _create({
+    required Map<String, String> fieldsById,
+    required String noteTypeId,
+    required String firstFieldId,
+    required String firstFieldName,
+    required SrsResolvedMiningDestination target,
+    required AnkiSettings settings,
+    required AnkiMiningContext context,
+    required String? audioWarning,
+  }) async {
+    // 与 Anki 同一条规则：第一字段为空的笔记不建。
+    if ((fieldsById[firstFieldId] ?? '').trim().isEmpty) {
       return MineOutcome.failure(
-        'The first field "Expression" is empty; refusing to create the card.',
+        'The first field "$firstFieldName" is empty; refusing to create the card.',
         errorCode: AnkiErrorCode.firstFieldEmpty,
       );
     }
-    final String deckId = store.defaultDeckId;
     await store.createNote(
-      noteTypeId: store.lapisNoteTypeId,
+      noteTypeId: noteTypeId,
       fieldsById: fieldsById,
-      deckId: deckId,
+      deckId: target.deckId,
       tags: buildNoteTags(
         settings.tags,
         source: context.source,
@@ -203,10 +325,9 @@ class SrsMiner with AnkiNoteComposer {
       ),
       source: srsSourceRefFromMiningContext(context),
     );
-    final SrsDeckTree tree = await store.deckTree();
     return MineOutcome.success(
-      deckName: tree[deckId] == null ? null : tree.fullName(deckId),
-      audioWarning: rendered.audioWarning,
+      deckName: target.deckName,
+      audioWarning: audioWarning,
     );
   }
 

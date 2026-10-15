@@ -46,7 +46,11 @@ mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
 
 /// Anki 设置页里的「待发卡片」入口行：显示张数，点进列表页。
 class PendingMinesEntryRow extends ConsumerStatefulWidget {
-  const PendingMinesEntryRow({super.key});
+  const PendingMinesEntryRow({super.key, this.hideWhenEmpty = false});
+
+  /// 队列为空时整行不显示（挖词目标 = Fushi 复习时：新卡不再进这个 Anki 队列，
+  /// 只剩切换前攒下的卡要处理）。
+  final bool hideWhenEmpty;
 
   @override
   ConsumerState<PendingMinesEntryRow> createState() =>
@@ -69,6 +73,7 @@ class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.hideWhenEmpty && _count == 0) return const SizedBox.shrink();
     return AdaptiveSettingsRow(
       icon: FushiIcons.cloudUpload,
       showIcon: true,

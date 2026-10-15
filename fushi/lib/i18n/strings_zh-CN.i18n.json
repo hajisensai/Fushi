@@ -7770,5 +7770,8 @@
   "srs_settings_reset_params_done": "已恢复默认参数",
   "srs_ankiconnect_title": "AnkiConnect（Fushi 复习）",
   "backup_category_srs": "复习",
-  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案"
+  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案",
+  "srs_mining_deck_fallback": "所选牌组已被删除，制卡改用默认牌组。",
+  "srs_mining_note_type_fallback": "所选笔记类型已被删除，制卡改用 Lapis。",
+  "srs_mining_lapis_mapping_hint": "Lapis 使用内置字段映射。"
 }

@@ -2887,6 +2887,55 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 挖词目标 = Fushi 复习时，卡落进哪个 SRS 牌组 / 用哪个笔记类型（SRS 实体 id；
+  // 空串 = 默认牌组 / 内置 Lapis）。id 自带 profileUid，随 Profile 快照走。
+  String get srsMiningDeckId =>
+      getPref('srs_mining_deck_id', defaultValue: '') as String;
+
+  Future<void> setSrsMiningDeckId(String id) async {
+    await setPref('srs_mining_deck_id', id);
+    notifyListeners();
+  }
+
+  String get srsMiningNoteTypeId =>
+      getPref('srs_mining_note_type_id', defaultValue: '') as String;
+
+  Future<void> setSrsMiningNoteTypeId(String id) async {
+    await setPref('srs_mining_note_type_id', id);
+    notifyListeners();
+  }
+
+  // 非 Lapis 笔记类型的字段映射：JSON `{noteTypeId: {fieldId: 模板}}`（模板与 Anki
+  // 字段映射同一套 handlebar）。坏 JSON / 形状不对的项当没映射过。
+  Map<String, Map<String, String>> get srsMiningFieldMappings {
+    final String raw =
+        getPref('srs_mining_field_mappings', defaultValue: '') as String;
+    if (raw.isEmpty) return const <String, Map<String, String>>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, Map<String, String>>{};
+      return <String, Map<String, String>>{
+        for (final MapEntry<Object?, Object?> e in decoded.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: <String, String>{
+              for (final MapEntry<Object?, Object?> f
+                  in (e.value! as Map).entries)
+                if (f.key is String && f.value is String)
+                  f.key! as String: f.value! as String,
+            },
+      };
+    } on FormatException {
+      return const <String, Map<String, String>>{};
+    }
+  }
+
+  Future<void> setSrsMiningFieldMappings(
+    Map<String, Map<String, String>> mappings,
+  ) async {
+    await setPref('srs_mining_field_mappings', jsonEncode(mappings));
+    notifyListeners();
+  }
+
   // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。没显式
   // 设过时取 videoClip（存量安装由 [settleMiningImageModeInstallDefault] 迁过来）。
   // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析 null / 未知值回退 videoClip

@@ -32,3 +32,44 @@ enum SrsMiningTarget {
     return SrsMiningTarget.anki;
   }
 }
+
+/// 制卡落到 Fushi 复习的哪里（偏好给出，按 profile 存）。
+///
+/// [deckId] / [noteTypeId] 为空 = 默认牌组 / 内置 Lapis。[fieldMappingsByType]
+/// 按笔记类型 id 存「fieldId → 制卡内容模板」（模板语法与 Anki 字段映射同一套
+/// handlebar）；Lapis 不读它，恒用 Lapis 默认映射。
+class SrsMiningDestination {
+  const SrsMiningDestination({
+    this.deckId = '',
+    this.noteTypeId = '',
+    this.fieldMappingsByType = const <String, Map<String, String>>{},
+  });
+
+  final String deckId;
+  final String noteTypeId;
+  final Map<String, Map<String, String>> fieldMappingsByType;
+
+  // 值相等：provider 用 `select` 订阅它，每次从偏好重建出的新对象不该算变化。
+  @override
+  bool operator ==(Object other) {
+    if (other is! SrsMiningDestination ||
+        other.deckId != deckId ||
+        other.noteTypeId != noteTypeId ||
+        other.fieldMappingsByType.length != fieldMappingsByType.length) {
+      return false;
+    }
+    for (final MapEntry<String, Map<String, String>> e
+        in fieldMappingsByType.entries) {
+      final Map<String, String>? o = other.fieldMappingsByType[e.key];
+      if (o == null || o.length != e.value.length) return false;
+      for (final MapEntry<String, String> f in e.value.entries) {
+        if (o[f.key] != f.value) return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(deckId, noteTypeId, fieldMappingsByType.length);
+}

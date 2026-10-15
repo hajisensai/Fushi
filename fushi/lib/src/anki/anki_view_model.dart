@@ -20,7 +20,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
@@ -666,11 +665,7 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// 制卡行为与没有复习模块时逐字节一致（用户硬要求：关闭时零行为变化、零额外开销）。
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
-  if (!ref.watch(srsModuleEnabledProvider)) return repo;
-  final SrsMiningTarget target = ref.watch(
-    appProvider.select((AppModel m) => m.srsMiningTarget),
-  );
-  if (target != SrsMiningTarget.srs) return repo;
+  if (!ref.watch(srsMiningToReviewProvider)) return repo;
   return SrsMiningAnkiRepository(inner: repo, miner: () => _readSrsMiner(ref));
 }
 
@@ -680,7 +675,12 @@ Future<SrsMiner?> _readSrsMiner(Ref ref) async {
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
     final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
     if (store == null || media == null) return null;
-    return SrsMiner(store: store, media: media);
+    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
+    return SrsMiner(
+      store: store,
+      media: media,
+      destination: ref.read(appProvider).srsMiningDestination,
+    );
   } catch (e, stack) {
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
     return null;

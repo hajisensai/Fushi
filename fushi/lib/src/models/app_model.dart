@@ -8248,6 +8248,39 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
+  // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非 Lapis 类型的字段映射）。
+  // 同样可空读：prefs 未装配 = 默认牌组 + Lapis。
+  SrsMiningDestination get srsMiningDestination {
+    final PreferencesRepository? prefs = _prefsRepo;
+    if (prefs == null) return const SrsMiningDestination();
+    return SrsMiningDestination(
+      deckId: prefs.srsMiningDeckId,
+      noteTypeId: prefs.srsMiningNoteTypeId,
+      fieldMappingsByType: prefs.srsMiningFieldMappings,
+    );
+  }
+
+  Future<void> setSrsMiningDeckId(String id) =>
+      prefsRepo.setSrsMiningDeckId(id);
+  Future<void> setSrsMiningNoteTypeId(String id) =>
+      prefsRepo.setSrsMiningNoteTypeId(id);
+
+  /// 写一个非 Lapis 笔记类型某字段的映射（[template] 为空串 = 明确不填）。
+  Future<void> setSrsMiningFieldMapping(
+    String noteTypeId,
+    String fieldId,
+    String template,
+  ) {
+    final Map<String, Map<String, String>> all =
+        <String, Map<String, String>>{
+          for (final MapEntry<String, Map<String, String>> e
+              in prefsRepo.srsMiningFieldMappings.entries)
+            e.key: Map<String, String>.of(e.value),
+        };
+    (all[noteTypeId] ??= <String, String>{})[fieldId] = template;
+    return prefsRepo.setSrsMiningFieldMappings(all);
+  }
+
   // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
       prefsRepo.videoMiningImageMode;
