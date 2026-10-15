@@ -2935,19 +2935,14 @@ void main() {
       );
     });
 
-    // 字幕调轴 + 句尾自动暂停已按语义归到「字幕」分类（用户诉求）：两者都是字幕驱动的
-    // 行为，之前误挂在「播放」。阶段 B：分组不再是手写 _build*Detail 方法，而是 schema
+    // 字幕调轴已按语义归到「字幕」分类（用户诉求）：它是字幕驱动的行为，之前误挂在
+    // 「播放」。阶段 B：分组不再是手写 _build*Detail 方法，而是 schema
     // 声明的 VideoPlacement.group——直接在数据模型上守住归位不回潮。
-    test('数据模型守卫：字幕调轴 + 句尾自动暂停在字幕分类，倍速在播放分类', () {
+    test('数据模型守卫：字幕调轴在字幕分类，倍速在播放分类', () {
       expect(
         _findSchemaItem('video.player.subtitle_sync').video!.group,
         VideoGroup.subtitle,
         reason: '字幕调轴须归到字幕分类',
-      );
-      expect(
-        _findSchemaItem('video.playback.pause_at_subtitle_end').video!.group,
-        VideoGroup.subtitle,
-        reason: '句尾自动暂停须归到字幕分类',
       );
       expect(
         _findSchemaItem('video.player.speed').video!.group,

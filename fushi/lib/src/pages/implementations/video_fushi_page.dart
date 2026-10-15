@@ -5216,7 +5216,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.setDelayMs(_delayMs);
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
     controller.setSecondaryDelayMs(_secondaryDelayMs);
-    controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
     // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
     controller.onPositionWrite = _isRemote
         ? _persistRemotePosition
@@ -10108,7 +10107,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Future<void> _setAsbConfig(VideoAsbplayerConfig config) async {
     _asbConfig = config;
-    _controller?.setPauseAtSubtitleEnd(config.pauseAtSubtitleEnd);
     await appModel.setVideoAsbplayerConfig(VideoAsbplayerConfig.encode(config));
     if (mounted) setState(() {});
   }

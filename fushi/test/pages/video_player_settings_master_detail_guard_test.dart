@@ -299,7 +299,6 @@ void main() {
     );
     expect(schemaSrc, contains('isDesktopPlatform'), reason: '锁窗口比行仍按桌面平台门控');
     expect(schemaSrc, contains('t.video_setting_mpv_aspect'));
-    expect(schemaSrc, contains('pauseAtSubtitleEnd'));
     expect(hostSrc, contains('onLockWindowAspectRatioChanged'));
     expect(hostSrc, contains('onAsbConfigChanged'));
     expect(hostSrc, contains('onSetDelay'));

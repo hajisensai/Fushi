@@ -1139,29 +1139,6 @@ SettingsDestination buildVideoDestination() {
                 },
             defaultValue: VideoPauseOcrScope.defaultScope,
           ),
-          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
-          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
-          // 位置照旧，仅调全局设置页所属 SettingsSection。
-          SettingsSwitchItem(
-            id: 'video.playback.pause_at_subtitle_end',
-            title: t.playback_auto_pause,
-            icon: Icons.pause_circle_outline,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 30,
-              section: t.section_video_subtitle_behavior,
-            ),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(pauseAtSubtitleEnd: value),
-              );
-            },
-            defaultValue: VideoAsbplayerConfig.defaults.pauseAtSubtitleEnd,
-          ),
           // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
           // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
           SettingsSwitchItem(

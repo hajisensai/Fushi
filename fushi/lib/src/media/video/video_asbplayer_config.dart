@@ -6,7 +6,6 @@ class VideoAsbplayerConfig {
   const VideoAsbplayerConfig({
     required this.seekSeconds,
     required this.speedStep,
-    required this.pauseAtSubtitleEnd,
     required this.doubleTapSeekSeconds,
     required this.longPressSpeed,
     required this.dragSeekSensitivity,
@@ -35,7 +34,6 @@ class VideoAsbplayerConfig {
   static const VideoAsbplayerConfig defaults = VideoAsbplayerConfig(
     seekSeconds: 3,
     speedStep: 0.1,
-    pauseAtSubtitleEnd: false,
     doubleTapSeekSeconds: 0,
     longPressSpeed: 2.0,
     dragSeekSensitivity: VideoSeekSensitivity.medium,
@@ -47,7 +45,6 @@ class VideoAsbplayerConfig {
 
   final int seekSeconds;
   final double speedStep;
-  final bool pauseAtSubtitleEnd;
   final double longPressSpeed;
 
   /// 移动端横滑拖动 seek 的灵敏度档位（BUG-1485）。语义是「拖过整屏 = 多长视频时间」，
@@ -86,7 +83,6 @@ class VideoAsbplayerConfig {
   VideoAsbplayerConfig copyWith({
     int? seekSeconds,
     double? speedStep,
-    bool? pauseAtSubtitleEnd,
     int? doubleTapSeekSeconds,
     double? longPressSpeed,
     VideoSeekSensitivity? dragSeekSensitivity,
@@ -98,7 +94,6 @@ class VideoAsbplayerConfig {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
       speedStep: speedStep ?? this.speedStep,
-      pauseAtSubtitleEnd: pauseAtSubtitleEnd ?? this.pauseAtSubtitleEnd,
       doubleTapSeekSeconds: doubleTapSeekSeconds ?? this.doubleTapSeekSeconds,
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       dragSeekSensitivity: dragSeekSensitivity ?? this.dragSeekSensitivity,
@@ -114,7 +109,6 @@ class VideoAsbplayerConfig {
   Map<String, Object> toJson() => <String, Object>{
         'seekSeconds': seekSeconds,
         'speedStep': speedStep,
-        'pauseAtSubtitleEnd': pauseAtSubtitleEnd,
         'doubleTapSeekSeconds': doubleTapSeekSeconds,
         'longPressSpeed': longPressSpeed,
         'dragSeekSensitivity': dragSeekSensitivity.name,
@@ -138,8 +132,6 @@ class VideoAsbplayerConfig {
         speedStep: _readDouble(raw['speedStep'], defaults.speedStep)
             .clamp(0.05, 0.5)
             .toDouble(),
-        pauseAtSubtitleEnd:
-            raw['pauseAtSubtitleEnd'] as bool? ?? defaults.pauseAtSubtitleEnd,
         doubleTapSeekSeconds: _readDoubleTap(raw['doubleTapSeekSeconds']),
         longPressSpeed:
             _readDouble(raw['longPressSpeed'], defaults.longPressSpeed)

@@ -204,7 +204,7 @@ void main() {
         start,
         src.indexOf('\n  }\n', start),
       );
-      // 作废这些 = 「重播本句」播进下一句、首尾相接的「字幕结束暂停」不停。
+      // 作废这些 = 「重播本句」播进下一句、句尾防重复停记号错位。
       for (final String cleared in <String>[
         '_oneShotHoldCueIndex = null;',
         '_lastSubtitleEndPauseCueIndex = null;',
