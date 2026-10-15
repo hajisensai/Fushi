@@ -40,7 +40,7 @@ class VideoOutputManager {
                std::optional<int64_t> width,
                std::optional<int64_t> height);
 
-  // HIBIKI FORK (HDR in the Flutter compositor): see
+  // FUSHI FORK (HDR in the Flutter compositor): see
   // |VideoOutput::SetHdrOutput|.
   void SetHdrOutput(int64_t handle,
                     bool enabled,

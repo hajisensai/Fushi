@@ -94,7 +94,7 @@ void main() {
       final AudiobookPlayerController controller = await loadedAt(
         positionMs: 1000,
         cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
-        audioName: 'hibiki-lyrics-restore-1.mp3',
+        audioName: 'fushi-lyrics-restore-1.mp3',
       );
 
       // Bug precondition: the live index is NOT the saved line. A load-time
@@ -118,7 +118,7 @@ void main() {
       final AudiobookPlayerController controller = await loadedAt(
         positionMs: 0,
         cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
-        audioName: 'hibiki-lyrics-restore-0.mp3',
+        audioName: 'fushi-lyrics-restore-0.mp3',
       );
       expect(controller.allBookCueIdxAtPosition, 0,
           reason: 'position 0 is inside cue(0), index 0');
@@ -131,7 +131,7 @@ void main() {
       final AudiobookPlayerController controller = await loadedAt(
         positionMs: 2500,
         cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
-        audioName: 'hibiki-lyrics-restore-2.mp3',
+        audioName: 'fushi-lyrics-restore-2.mp3',
       );
       expect(controller.allBookCueIdxAtPosition, 2,
           reason: 'position 2500ms falls inside cue(2000) (2000..3000), '

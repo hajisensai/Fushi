@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 排除 `*.test.js` 与 `scripts/`，vendor/ 整目录纳入；assets 侧不允许有清单
 /// 之外的多余文件。漂移时跑 `dart run tool/sync_browser_extension.dart`。
 ///
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   const String toolsRoot = '../tools/browser-extension';
   const String assetsRoot = 'assets/browser_extension';

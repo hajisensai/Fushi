@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （bundled assets/ + real source tools/）都断言 selector 在隐藏清单里；两镜像的
 /// 逐字节一致由 browser_extension_dict_media_mirror_guard_test.dart 另行强制。
 ///
-/// flutter test cwd is the hibiki package root.
+/// flutter test cwd is the fushi package root.
 void main() {
   const Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',

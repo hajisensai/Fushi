@@ -15,7 +15,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///     `seekIndicatorBuilder`，桌面 `_desktopControlsTheme` 不含横滑字段（仅移动端，
 ///     诚实降级），改回旧值即红。
 ///
-/// BUG-1485：像素→时间的换算已从 fork 内建的「按总时长比例」公式换成 Hibiki 侧纯函数
+/// BUG-1485：像素→时间的换算已从 fork 内建的「按总时长比例」公式换成 Fushi 侧纯函数
 /// [VideoHorizontalSeekGesture]（换算本身的数值单测在
 /// `test/media/video/video_horizontal_seek_gesture_test.dart`）。本文件补三层守卫：
 /// 旧常量已删、移动 theme 接上 resolver + 用户档位、fork 的注入点没被 re-vendor 抹掉。

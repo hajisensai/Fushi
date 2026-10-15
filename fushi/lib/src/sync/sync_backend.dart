@@ -146,7 +146,7 @@ class SyncAuthError implements Exception {
 /// folder as `<root>/<sanitized>/`. An empty sanitized name therefore collapses
 /// that folder onto the sync root, scattering the book's `progress_*` /
 /// `statistics_*` / `audioBook_*` JSON (and cover / epub / audiobook package)
-/// directly into `hibiki-data/` next to real book folders (BUG-619, TODO-1329).
+/// directly into `fushi-data/` next to real book folders (BUG-619, TODO-1329).
 /// An empty title also has no unique `bookKey`, so such a row is not syncable —
 /// refuse to resolve a folder for it instead of silently targeting the root.
 /// The single guarded chokepoint every backend's [SyncBackend.ensureBookFolder]
@@ -162,7 +162,7 @@ String requireBookFolderName(String bookTitle) {
   return name;
 }
 
-/// Path-style backends (WebDAV, Hibiki interconnect) use a book/namespace
+/// Path-style backends (WebDAV, Fushi interconnect) use a book/namespace
 /// folderId as a bare path PREFIX: a child is addressed as `folderId + name`
 /// with NO separator inserted (see `WebDavOps.uploadJson`). The prefix therefore
 /// MUST end with `/`, or `folderId + fileName` fuses the two into a sibling of
@@ -288,7 +288,7 @@ mixin SyncAssetStoreDefaults on SyncBackend {
   // these defaults MUST NOT wrap them in another lock — re-acquiring a
   // non-reentrant mutex would deadlock (do not re-wrap).
   //
-  // Path-style backends (WebDAV, Hibiki interconnect) probe existence with a
+  // Path-style backends (WebDAV, Fushi interconnect) probe existence with a
   // HEAD rather than findContentFile, so they still override findAsset; nothing
   // else diverges. The lone readiness difference — InterconnectSyncBackend must
   // settle on a reachable host before any per-asset op — is funnelled through
@@ -351,8 +351,8 @@ SyncBackend resolveSyncBackend(SyncBackendType type) {
     case SyncBackendType.webDav:
       raw = WebDavSyncBackend.instance;
     case SyncBackendType.fushiServer:
-      // 局域网双端（hibiki 自有 server）不是「防扫盘」场景：两端都是用户自己的
-      // 设备/服务，混淆只会徒增开销并破坏 hibiki client/server 的字节协议契约，
+      // 局域网双端（Fushi 自有 server）不是「防扫盘」场景：两端都是用户自己的
+      // 设备/服务，混淆只会徒增开销并破坏 Fushi client/server 的字节协议契约，
       // 所以 fushiServer 直接返回裸后端，不包 ObfuscatingSyncBackend（TODO-623 A1）。
       return InterconnectSyncBackend.instance;
     case SyncBackendType.oneDrive:

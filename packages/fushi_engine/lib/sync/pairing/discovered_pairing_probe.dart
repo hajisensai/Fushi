@@ -64,7 +64,7 @@ class DiscoveredPairingProbeOutcome {
 /// 失败原因的严重度：越靠前越该优先展示给用户。
 ///
 /// tls 是安全事件，必须盖过后面几种；notFushi 最弱——只要有过任何一次
-/// 「连得上但对不上」以外的失败，都比「这里没有 Hibiki」更接近真相。
+/// 「连得上但对不上」以外的失败，都比「这里没有 Fushi」更接近真相。
 const List<FushiPingFailure> _failureSeverity = <FushiPingFailure>[
   FushiPingFailure.tls,
   FushiPingFailure.timeout,
@@ -173,7 +173,7 @@ FushiPingFailure? _tofuToPingFailure(FushiTofuFailure? failure) {
     case FushiTofuFailure.notTls:
     case null:
       // 「该端口不讲 TLS」在一台明文 host 上正是预期结果，零信息量。若拿它去
-      // 评选最终原因，会把 http 候选带回来的「连上了但不是 Hibiki」这种真正
+      // 评选最终原因，会把 http 候选带回来的「连上了但不是 Fushi」这种真正
       // 有用的结论盖掉。
       return null;
   }

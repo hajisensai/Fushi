@@ -405,14 +405,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'VideoMetadataPeople',
       'profilePath',
       PathRebaseKind.externalUserPath,
-      '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+      '预留给媒体来源旁的人物头像 sidecar；位于用户选择的来源根，不随 Fushi 数据根迁移。'),
   PathRebaseColumn('VideoMetadataCharacters', 'imageUrl',
       PathRebaseKind.notAPath, '角色图片的远端 provider URL，不是本机路径。'),
   PathRebaseColumn(
       'VideoMetadataCharacters',
       'imagePath',
       PathRebaseKind.externalUserPath,
-      '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Hibiki 数据根迁移。'),
+      '预留给媒体来源旁的角色图片 sidecar；位于用户选择的来源根，不随 Fushi 数据根迁移。'),
   PathRebaseColumn('VideoMetadataProviderIdentities', 'externalUrl',
       PathRebaseKind.notAPath, 'provider 条目详情页的远端 URL，不是本机路径。'),
   PathRebaseColumn('VideoMetadataRawSnapshots', 'rawJson',
@@ -430,7 +430,7 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'VideoSidecarArtifacts',
       'path',
       PathRebaseKind.externalUserPath,
-      'Hibiki 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
+      'Fushi 生成的 NFO/图片在用户媒体来源目录中的规范绝对路径；不得随应用数据根改写。'),
 
   // ── video_metadata_extras（schema v69 本地/在线附加内容）──────────
   PathRebaseColumn('VideoMetadataExtras', 'sourceKind', PathRebaseKind.notAPath,
@@ -712,7 +712,7 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
       PathRebaseKind.externalUserPath,
       PathValueShape.none,
       'qBittorrent remoteRoot→localRoot 显式映射；localRoot 是用户/后端外部文件系统路径，'
-          '与 MediaSources.rootPath 同语义，不能随 Hibiki 应用数据根改写。'),
+          '与 MediaSources.rootPath 同语义，不能随 Fushi 应用数据根改写。'),
   PathRebasePref('video_mpv_shader_dir', PathRebaseKind.externalUserPath,
       PathValueShape.none, '用户本机 mpv 着色器目录，外部路径，不随数据根走。'),
   PathRebasePref(
@@ -720,7 +720,7 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
       PathRebaseKind.externalUserPath,
       PathValueShape.none,
       '有声书素材库目录（JSON 字符串数组）。用户自己挑的字幕/正文库位置——通常是外接盘'
-          '或下载目录，不在 Hibiki 数据根下，跟着数据根改写只会把有效路径改坏。'
+          '或下载目录，不在 Fushi 数据根下，跟着数据根改写只会把有效路径改坏。'
           '目录没了不影响已入库的书（素材在导入时已复制进书的存储），设置页按'
           'missingDirs 如实提示。'),
   PathRebasePref('manga_external_mokuro_path', PathRebaseKind.externalUserPath,

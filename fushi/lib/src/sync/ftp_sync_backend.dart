@@ -82,7 +82,7 @@ class FtpSyncBackend extends SyncBackend
     final int seq = _tempCounter++;
     final int token = _tempRng.nextInt(1 << 32);
     final String name =
-        'hibiki_${prefix}_${seq}_${token.toRadixString(16)}$extension';
+        'fushi_${prefix}_${seq}_${token.toRadixString(16)}$extension';
     return File('${Directory.systemTemp.path}/$name');
   }
 

@@ -158,7 +158,7 @@ public class FFmpegKitFlutterPlugin implements FlutterPlugin, ActivityAware, Met
         Log.d(LIBRARY_NAME, String.format("FFmpegKitFlutterPlugin created %s.", this));
     }
 
-    // Hibiki: v1 embedding registerWith(Registrar) 已随 Flutter 3.29+ 移除 Registrar
+    // Fushi: v1 embedding registerWith(Registrar) 已随 Flutter 3.29+ 移除 Registrar
     // 类而删除（本插件已实现 v2 FlutterPlugin/ActivityAware）。见 BUG-122。
 
     protected boolean isNativeLibraryAvailable() {

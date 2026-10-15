@@ -826,7 +826,7 @@ String _pickPlaybackVideoUrl(yt.StreamManifest manifest, int? targetHeight) {
       _pickPlaybackVideoStreamInfo(manifest, targetHeight);
   if (chosen.isThrottled) {
     fushiDebugPrint(
-      '[hibiki][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
+      '[fushi][youtube] 选中的播放流 isThrottled=true（异常，缓冲可能慢）：'
       'codec=${chosen.videoCodec} res=${chosen.videoResolution}',
     );
   }

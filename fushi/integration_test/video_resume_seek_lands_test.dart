@@ -95,7 +95,7 @@ void main() {
           videoFile = File(prepushed);
         } else {
           final Directory dir =
-              await Directory.systemTemp.createTemp('hibiki_resume_seek_');
+              await Directory.systemTemp.createTemp('fushi_resume_seek_');
           videoFile = await generateTestVideo(
             outPath: '${dir.path}${Platform.pathSeparator}resume_probe.mp4',
             duration: const Duration(seconds: 90),

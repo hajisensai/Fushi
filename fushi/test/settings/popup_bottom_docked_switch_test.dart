@@ -39,7 +39,7 @@ Future<AppModel> _prefsBackedAppModel(
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
-      Directory.systemTemp.createTempSync('hibiki_popup_dock_');
+      Directory.systemTemp.createTempSync('fushi_popup_dock_');
   addTearDown(() async {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });

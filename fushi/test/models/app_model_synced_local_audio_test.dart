@@ -56,7 +56,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_path_provider_synced');
+        Directory.systemTemp.createTempSync('fushi_path_provider_synced');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -82,8 +82,8 @@ void main() {
     db = _testDb();
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    libraryDir = Directory.systemTemp.createTempSync('hibiki_synced_lib');
-    stagingDir = Directory.systemTemp.createTempSync('hibiki_synced_staging');
+    libraryDir = Directory.systemTemp.createTempSync('fushi_synced_lib');
+    stagingDir = Directory.systemTemp.createTempSync('fushi_synced_staging');
     appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
           prefsRepo: prefs, databaseDirectory: libraryDir);

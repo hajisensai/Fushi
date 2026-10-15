@@ -29,7 +29,7 @@ enum FontTarget {
   dictionary,
 
   /// Video subtitle font (Flutter `VideoSubtitleOverlay` `TextStyle.fontFamily`,
-  /// not libmpv — Hibiki renders text subtitles in the Flutter layer). New in
+  /// not libmpv — Fushi renders text subtitles in the Flutter layer). New in
   /// TODO-864.
   videoSubtitle,
 

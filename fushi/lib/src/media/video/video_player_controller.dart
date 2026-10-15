@@ -1525,7 +1525,7 @@ class VideoPlayerController extends ChangeNotifier
   /// （`paused-for-cache`），页面据 [hasFirstFrame] 提前挂载 [Video] 后，media_kit
   /// 自带缓冲圈接着盖住画面——正是 TODO-1276 想消除的「第二个圈」，而进度条的
   /// 已缓冲填充（`demuxer-cache-time`）此刻已可见，用户看到「进度条显示已经缓冲了、
-  /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Hibiki 页级
+  /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Fushi 页级
   /// 上下文加载层（[VideoLoadingOverlay]，带返回按钮、绝不困死用户）覆盖整个
   /// 解码 + 缓冲窗口，直到有稳定帧且缓冲结束再让位给 media_kit，杜绝冗余第二个圈。
   ///
@@ -3193,11 +3193,11 @@ class VideoPlayerController extends ChangeNotifier
     // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
     // 根治 BUG-801：libmpv 默认 `sub-auto=exact` 会在 `open()` 加载文件时**自动加载与视频
     // 同名的 sidecar 外挂字幕**（用户放在视频旁的 `<video>.ass/.srt`），把它选成字幕轨、
-    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 .ass 得到的可点
+    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Fushi 自己解析同一 .ass 得到的可点
     // [VideoSubtitleOverlay] **叠成两条同句字幕**（原生较小钉底、overlay 较大随控制条避让）。
     // 抑制属性（下面 open 之后的 [buildSubtitleSuppressionProperties]）设 `sub-auto=no` 已**太迟**
     // ——sidecar 在 `open()` 那一刻就已随 `sub-auto=exact` 自动加载并选中。故必须在 **open 之前**
-    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Hibiki 自己的解析
+    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Fushi 自己的解析
     // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
     // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
     // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。

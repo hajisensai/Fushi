@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String path) => File(path).readAsStringSync();
 
-  // hibiki 包内相对路径（flutter test 以包根为 cwd）。
+  // fushi 包内相对路径（flutter test 以包根为 cwd）。
   const String repositoryPath = 'lib/src/models/dictionary_repository.dart';
   const String baseSourcePagePath = 'lib/src/pages/base_source_page.dart';
   const String mixinPath =

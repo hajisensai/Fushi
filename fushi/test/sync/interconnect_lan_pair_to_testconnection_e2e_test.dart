@@ -18,7 +18,7 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 void main() {
   test('LAN 免PIN 配对 → per-peer token（≠共享）+ 指纹 → 测试连接成功', () async {
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_e2e_lan_pair');
+        Directory.systemTemp.createTempSync('fushi_e2e_lan_pair');
     final ({String certificatePem, String privateKeyPem}) gen =
         FushiSelfSignedCertGenerator.generate(
       commonName: 'hibiki-e2e',

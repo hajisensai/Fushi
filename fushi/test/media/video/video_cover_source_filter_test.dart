@@ -77,7 +77,7 @@ void main() {
       // 早退发生在 AppPaths / ffmpeg 之前：本测试无 path_provider mock、无 ffmpeg，
       // 若有人删掉抽取器层的清单拒收，这里会因 MissingPluginException 立即红。
       final Directory tmp =
-          Directory.systemTemp.createTempSync('hibiki_cover_filter_');
+          Directory.systemTemp.createTempSync('fushi_cover_filter_');
       addTearDown(() {
         try {
           tmp.deleteSync(recursive: true);

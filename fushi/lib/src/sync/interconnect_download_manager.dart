@@ -10,7 +10,7 @@ import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 
-/// 一个互联（hibiki 互联 / LAN 对端）下载任务的生命周期状态。
+/// 一个互联（Fushi 互联 / LAN 对端）下载任务的生命周期状态。
 ///
 /// [paused]：用户主动暂停，或进程被杀后从续传清单接回来的任务。`.part` 留着，
 /// [InterconnectDownloadManager.resume] 从已下载的字节处接着下。

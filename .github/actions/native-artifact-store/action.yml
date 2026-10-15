@@ -6,7 +6,7 @@ description: >-
   produced, verifies it, and unpacks it into `path` (output `hit`). `mode: save` uploads
   `path` (file or directory) under `name`. A miss never fails: the caller builds.
 
-# Why artifacts and not actions/cache (measured 2026-09-29 on hajisensai/hibiki):
+# Why artifacts and not actions/cache (measured 2026-09-29 on hajisensai/fushi):
 # the repo sits at 10.8 GB of the 10 GB Actions cache quota and the whole cache store
 # turns over in about an hour (oldest entry 16:16, listing at 17:24; a Windows vcpkg
 # binary entry saved at 15:27 was already gone at 15:52). Linux-gradle entries of

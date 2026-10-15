@@ -1,7 +1,7 @@
 /// FNV-1a 稳定哈希的单一真相源（跨 isolate / 跨版本 / 跨端确定性，非安全用途）。
 ///
 /// 收敛前全仓散落 5 份手写副本、3 种口径（video_manifest / deletion_propagation
-/// 的 UTF-16 拆字节双轮版、audiobook_storage / hibiki_manga_ocr_host 的 UTF-8
+/// 的 UTF-16 拆字节双轮版、audiobook_storage / fushi_manga_ocr_host 的 UTF-8
 /// 逐字节版、local_audio_db 的 16 位码元整体 XOR 弱版——后者即 BUG-1124 根因）。
 /// 这些哈希值已持久化在备份资产名 / 缓存目录名 / 缓存文件名里，因此本文件的每个
 /// 口径都必须**逐字节复现**既有输出；金标向量锁死在
@@ -29,7 +29,7 @@ String fnv1a32Hex(Iterable<int> units) =>
 
 /// FNV-1a 64 位核心。种子 `0xcbf29ce484222325` 在 Dart VM 里是**有符号**字面量
 /// （= 负数），乘法按 64 位二补码回绕，`& 0xFFFFFFFFFFFFFFFF` 即 `& -1` 为恒等
-/// ——与收敛前 `hibiki_manga_ocr_host._stableSlug` 的实现逐位一致。
+/// ——与收敛前 `fushi_manga_ocr_host._stableSlug` 的实现逐位一致。
 int fnv1a64(Iterable<int> units) {
   int hash = 0xcbf29ce484222325;
   for (final int unit in units) {

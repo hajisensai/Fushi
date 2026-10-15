@@ -35,7 +35,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_bug2230');
+    tempDir = Directory.systemTemp.createTempSync('fushi_bug2230');
     db = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 

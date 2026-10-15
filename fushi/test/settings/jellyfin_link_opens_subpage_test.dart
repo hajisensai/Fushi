@@ -90,7 +90,7 @@ Future<AppModel> _appModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir = Directory.systemTemp.createTempSync(
-    'hibiki_jellyfin_link_',
+    'fushi_jellyfin_link_',
   );
   addTearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

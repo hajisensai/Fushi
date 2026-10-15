@@ -29,7 +29,7 @@ class ReaderResourceSanitizer {
 
   // XHTML served as text/html: the HTML5 tokenizer IGNORES the self-closing
   // slash on every NON-void element, so `<tag .../>` becomes an unclosed
-  // `<tag>` open tag. Two ways this breaks Hibiki:
+  // `<tag>` open tag. Two ways this breaks Fushi:
   //  • BUG-079: raw-text elements (`<script/>`, `<style/>`, `<title/>`, …) enter
   //    their "raw text" content model and swallow everything up to the next
   //    matching close tag — which never comes — blanking the whole page.

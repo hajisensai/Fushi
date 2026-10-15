@@ -32,8 +32,8 @@ typedef _NetworkDiscoveryState = ({
 ///
 /// BUG-1053：绝不能在 app 启动时无条件 [open]。[open] 会创建 libtorrent session ——
 /// 绑 6881（TCP+UDP，全网卡）并**默认开 DHT**，于是一个种子都没有的用户，只要开着
-/// Hibiki 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
-/// 「每隔一段时间整机网络高延迟，关掉 Hibiki 就好」。能力探测请用 [probeAvailable]，
+/// Fushi 就在持续收发全球 DHT 小包，把家用路由器的 NAT/conntrack 表撑爆，表现为
+/// 「每隔一段时间整机网络高延迟，关掉 Fushi 就好」。能力探测请用 [probeAvailable]，
 /// 它只加载 DLL、**不建 session、不碰网络**。
 ///
 /// 反吸血：持有全局单例 [AntiLeechEngine]（共享连坐段），`sweepAntiLeech`
@@ -1219,7 +1219,7 @@ void writeUserPausedFile(String resumeDir, Set<String> infoHashes) {
 /// [EmbeddedTorrentHost.open] 走系统搜索路径（或由调用方显式传 libraryPath）。
 String? defaultEmbeddedTorrentLibraryPath() {
   if (Platform.isWindows) {
-    // runner 集成后 DLL 与 hibiki.exe 同目录，DynamicLibrary 按名即可命中；
+    // runner 集成后 DLL 与 fushi.exe 同目录，DynamicLibrary 按名即可命中；
     // 此处不硬编码 build 产物路径（那是 standalone 测试的事）。
     return null;
   }

@@ -76,7 +76,7 @@ class VideoOutput {
 
   void SetSize(std::optional<int64_t> width, std::optional<int64_t> height);
 
-  // HIBIKI FORK (HDR in the Flutter compositor): switches the texture handed
+  // FUSHI FORK (HDR in the Flutter compositor): switches the texture handed
   // to Flutter between 8-bit and half-float extended-range sRGB (see
   // |ANGLESurfaceManager::SetHalfFloat|), together with libmpv's render target
   // (linear BT.2020 while enabled, automatic otherwise). Both change in one
@@ -100,7 +100,7 @@ class VideoOutput {
 
   void Resize(int64_t required_width, int64_t required_height);
 
-  // HIBIKI FORK (HDR): libmpv render target for |SetHdrOutput|.
+  // FUSHI FORK (HDR): libmpv render target for |SetHdrOutput|.
   void SetRenderTarget(bool linear, double target_peak_nits);
 
   int64_t GetVideoWidth();
@@ -129,7 +129,7 @@ class VideoOutput {
   // H/W rendering.
 
   std::unique_ptr<ANGLESurfaceManager> surface_manager_ = nullptr;
-  // HIBIKI FORK (HDR): 203 / SDR white, applied while encoding linear light.
+  // FUSHI FORK (HDR): 203 / SDR white, applied while encoding linear light.
   float hdr_reference_scale_ = 1.0f;
   std::unordered_map<int64_t,
                      std::unique_ptr<FlutterDesktopGpuSurfaceDescriptor>>

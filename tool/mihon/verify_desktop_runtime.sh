@@ -76,7 +76,7 @@ import secrets
 print(secrets.token_urlsafe(32))
 PY
 )"
-data_directory="$(mktemp -d "${TMPDIR:-/tmp}/hibiki-mihon-smoke.XXXXXX")"
+data_directory="$(mktemp -d "${TMPDIR:-/tmp}/fushi-mihon-smoke.XXXXXX")"
 stdout_log="$data_directory/server.out.log"
 stderr_log="$data_directory/server.err.log"
 pid=""

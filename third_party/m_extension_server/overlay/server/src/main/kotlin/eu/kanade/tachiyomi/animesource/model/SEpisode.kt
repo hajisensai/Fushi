@@ -5,7 +5,7 @@ package eu.kanade.tachiyomi.animesource.model
 import java.io.Serializable
 
 /**
- * Hibiki host ABI: the extensions-lib 16 property set (`fillermark`, `summary`,
+ * Fushi host ABI: the extensions-lib 16 property set (`fillermark`, `summary`,
  * `preview_url` on top of the lib-14 fields). Episode parsers in the yuzono /
  * Anikku ecosystem assign `fillermark`, which on a lib-14 host is a
  * NoSuchMethodError at the first episode list -- the "cannot open the source"

@@ -132,8 +132,8 @@ void main() {
     Future<void> injectCss(String css) async {
       await controller.evaluateJavascript(source: '''
         (function () {
-          var s = document.getElementById('hibiki-probe-style');
-          if (!s) { s = document.createElement('style'); s.id = 'hibiki-probe-style';
+          var s = document.getElementById('fushi-probe-style');
+          if (!s) { s = document.createElement('style'); s.id = 'fushi-probe-style';
             document.head.appendChild(s); }
           s.textContent = ${jsonEncode(css)};
         })();
@@ -146,8 +146,8 @@ void main() {
     Future<void> injectBookCss(String css) async {
       await controller.evaluateJavascript(source: '''
         (function () {
-          var s = document.getElementById('hibiki-book-style');
-          if (!s) { s = document.createElement('style'); s.id = 'hibiki-book-style';
+          var s = document.getElementById('fushi-book-style');
+          if (!s) { s = document.createElement('style'); s.id = 'fushi-book-style';
             document.head.appendChild(s); }
           s.textContent = ${jsonEncode(css)};
         })();
@@ -236,10 +236,10 @@ void main() {
     Future<void> injectFixLast(String css) async {
       await controller.evaluateJavascript(source: '''
         (function () {
-          var old = document.getElementById('hibiki-fix-style');
+          var old = document.getElementById('fushi-fix-style');
           if (old) old.remove();
           var s = document.createElement('style');
-          s.id = 'hibiki-fix-style';
+          s.id = 'fushi-fix-style';
           s.textContent = ${jsonEncode(css)};
           document.head.appendChild(s);
         })();

@@ -41,7 +41,7 @@ String browserExtensionsPageUrl(BrowserKind kind) {
 
 const String _kBundlePrefix = 'assets/browser_extension/';
 
-/// TODO-1087：扩展要连的 Hibiki yomitan-api server 连接信息（自动配置真值）。
+/// TODO-1087：扩展要连的 Fushi yomitan-api server 连接信息（自动配置真值）。
 /// 由安装助手写进扩展的 `fushi-defaults.js`，扩展默认即用、无需用户手填。
 class BrowserExtensionServerConfig {
   const BrowserExtensionServerConfig({

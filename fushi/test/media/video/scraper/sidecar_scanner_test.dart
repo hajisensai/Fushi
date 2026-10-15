@@ -25,7 +25,7 @@ void main() {
   late String videoPath;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('hibiki_sidecar_');
+    tmp = await Directory.systemTemp.createTemp('fushi_sidecar_');
     // 视频文件本身不需要真实存在，扫描只看同目录旁车资产。
     videoPath = p.join(tmp.path, 'My Show - 04 [1080p].mkv');
   });
@@ -90,7 +90,7 @@ void main() {
       expect(result.posterFile, isNull);
     });
 
-    test('artifact 与当前文件一致时保留命中并标记为 Hibiki 生成物', () async {
+    test('artifact 与当前文件一致时保留命中并标记为 Fushi 生成物', () async {
       await writeFile('poster.jpg', 'generated');
 
       final SidecarResult result = await SidecarScanner.scan(

@@ -258,7 +258,7 @@ namespace flutter_inappwebview_plugin
       // Deliberately UNCONDITIONAL — not a missing knob. Exposing it as a
       // setting would need a matching Dart field in
       // flutter_inappwebview_platform_interface, which lives in pub-cache and is
-      // NOT forked here (only this windows package is vendored). And no Hibiki
+      // NOT forked here (only this windows package is vendored). And no Fushi
       // surface wants a browser status bar: every WebView in this app renders
       // EPUB / dictionary content, never a browsing chrome.
       //
@@ -285,7 +285,7 @@ namespace flutter_inappwebview_plugin
     //
     // WebView2 defaults AllowExternalDrop=TRUE, which makes the runtime register
     // its own IDropTarget on the HOST top-level HWND so files can be dropped INTO
-    // the web page. Hibiki only renders trusted EPUB/dictionary HTML in WebView,
+    // the web page. Fushi only renders trusted EPUB/dictionary HTML in WebView,
     // so dropping OS files into the page is never wanted. Worse, that registration
     // fights desktop_drop, which calls RegisterDragDrop once for the whole window:
     // WebView2 silently takes over the host HWND's drop target while a reader /

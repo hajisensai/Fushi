@@ -6507,7 +6507,7 @@ def find_install_failure_keeping_sensor_contract(source: MaskedSource) -> list[s
     sensor_installed、几何 provider 被认领、UI 显示查词就绪，点字却永远没有卡片，
     而且没有任何一位说明卡在哪。
     """
-    marker = '[HibikiLookup] install failed: '
+    marker = '[FushiLookup] install failed: '
     index = source.text.find(marker)
     if index < 0:
         return [f"{ADAPTER.name}: 找不到 install failed 的 catch 分支（锚点漂了）"]

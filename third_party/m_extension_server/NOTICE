@@ -1,17 +1,17 @@
 M-Extension-Server v1.0.5.0 is distributed under the Mozilla Public
 License 2.0. The unmodified upstream tree at the exact commit recorded in
-UPSTREAM is vendored here under upstream_src/; Hibiki's modified source
+UPSTREAM is vendored here under upstream_src/; Fushi's modified source
 files are kept alongside it in overlay/ and server-build.gradle.patch and
 are applied on top of that tree at build time.
 
-Significant Hibiki modifications:
+Significant Fushi modifications:
 
 - loopback-only listener;
 - mandatory random Bearer authentication for all routes;
 - authenticated host-owned per-URL outbound proxy policy and proxy credentials;
 - authenticated APK inspection using apksig;
 - authenticated source image and source data clearing routes;
-- Hibiki bridge capability identifier;
+- Fushi bridge capability identifier;
 - catalogue identity preservation for legacy detail parsers;
 - INVOKEINTERFACE correction in the bytecode rewriter.
 

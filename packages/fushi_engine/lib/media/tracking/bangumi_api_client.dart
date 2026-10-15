@@ -77,7 +77,7 @@ class BangumiUserCollection {
 
 /// Bangumi 账号收藏列表中的一条「看过」动画。
 ///
-/// 这不是本地映射：用户在接入 Hibiki 之前已经在 Bangumi 标记过的条目也会出现，
+/// 这不是本地映射：用户在接入 Fushi 之前已经在 Bangumi 标记过的条目也会出现，
 /// 正是首页账号入口需要展示的完整远端历史。
 class BangumiWatchedItem {
   const BangumiWatchedItem({

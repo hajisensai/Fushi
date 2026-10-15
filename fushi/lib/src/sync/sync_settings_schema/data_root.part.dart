@@ -24,7 +24,7 @@ enum DataRootTargetRejection {
 ///
 /// BUG-1115：[sharedDocumentsRoot] 为真表示 [oldDocumentsRoot] 是**共享**的平台
 /// `Documents`（老安装的扁平布局）。此时迁移是白名单选择性搬移，把新根设在它下面的一个
-/// 非白名单子目录（典型：`Documents\Hibiki`，即用户把散落的 16 个目录收进自己的子目录）
+/// 非白名单子目录（典型：`Documents\Fushi`，即用户把散落的 16 个目录收进自己的子目录）
 /// 是安全的，不再按 [DataRootTargetRejection.insideCurrentRoot] 一刀切拒绝。
 DataRootTargetRejection? validateDataRootTarget({
   required DataRootMigrationTarget target,
@@ -128,7 +128,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     try {
       // BUG-1115：显示 documents 根**本身**（内容真正落的地方）。旧实现显示它的父目录，
       // 那在扁平老布局下是用户主目录（`C:\Users\<name>`，根本不是数据位置），在
-      // `<Documents>/Hibiki/data` 新布局下则是导出目录 `Hibiki` —— 两种都误导。
+      // `<Documents>/Fushi/data` 新布局下则是容器目录 `Fushi` —— 两种都误导。
       defaultRootPath = appModel.appDirectory.path;
     } on Error {
       defaultRootPath = null; // late 未初始化 → 只显示「默认位置」不带路径。
@@ -164,7 +164,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     // 探测失败按共享处理：宁可少搬（白名单），绝不整搬/整删共享目录。
     //
     // BUG-1115：这个判定必须在**校验之前**拿到——共享根下的非白名单子目录
-    // （`Documents\Hibiki`）是合法目标，校验要据此放行。
+    // （`Documents\Fushi`）是合法目标，校验要据此放行。
     bool sharedDocumentsRoot;
     try {
       final Directory platformDocuments =
@@ -173,10 +173,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     } catch (_) {
       sharedDocumentsRoot = true;
     }
-    // BUG-1188：把用户挑的目录解析成迁移目标。挑中默认位置（`<Documents>\Hibiki` 或
-    // `<Documents>\Hibiki\data`）时归一化成「与全新安装同形」：documents 根落
-    // `<Documents>\Hibiki\data`、DB 留在平台固定落点。旧实现无条件按 `<picked>/documents`
-    // + `<picked>/support` 派生，用户照文档指引整理完就得到第三种布局（DB 还被拖进文档目录）。
+    // BUG-1188：把用户挑的目录解析成迁移目标。挑中默认位置（`<Documents>\Fushi` 或
+    // `<Documents>\Fushi\data`；存量安装容器为 `Hibiki`）时归一化成「与全新安装同形」：
+    // documents 根落 `<Documents>\Fushi\data`、DB 留在平台固定落点。旧实现无条件按
+    // `<picked>/documents` + `<picked>/support` 派生，用户照文档指引整理完就得到
+    // 第三种布局（DB 还被拖进文档目录）。
     final DataRootMigrationTarget target;
     try {
       final Directory defaultDocs =
@@ -263,7 +264,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
             appModel.updateDataRootMigrationProgress(copied, total),
         // TODO-1182：引擎据此二次拒绝安装目录/exe 目录，回滚也绝不删含运行 exe 的根。
         resolvedExecutablePath: Platform.resolvedExecutable,
-        // TODO-1226：默认根 = 共享用户 Documents → 只搬 Hibiki 自有顶层项白名单，
+        // TODO-1226：默认根 = 共享用户 Documents → 只搬 Fushi 自有顶层项白名单，
         // 且迁移引擎绝不删除 Documents 本体；自定义专属根（<root>/documents）→ 整树。
         documentsTopLevelIncludeNames:
             sharedDocumentsRoot ? AppPaths.fushiOwnedDocumentsEntries : null,
@@ -336,7 +337,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 两个键必须**同时**生效，否则下次启动必然解析到错误的根：
   ///  - 只锚 nested、`data_root` 还在 ⇒ 仍走自定义根分支，指向已经搬空的旧根。
   ///  - 只清 `data_root`、锚点还是 `flat` ⇒ documents 根解析回共享 `Documents`，而数据
-  ///    已经在 `Hibiki/data` 里 = 书库/有声书/词典资源在 UI 上集体消失。
+  ///    已经在 `Fushi/data` 里 = 书库/有声书/词典资源在 UI 上集体消失。
   /// 故任一步失败就把已改的键全部复原并抛错，由引擎回滚整次迁移。
   static Future<void> _commitDefaultLocation(SharedPreferences sp) async {
     final String? previousLayout =
@@ -403,7 +404,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 额外补上音频、图片缓存与 FFI（退出闸门没做这几步）。
   ///
   /// 关于 WebView2：常驻热 WebView2 的 user-data 目录在数据根**之外**（进程默认基于
-  /// exe 名的目录 + 应用外查词覆盖窗的 `%LOCALAPPDATA%\Hibiki\GlobalLookupWebView2`，
+  /// exe 名的目录 + 应用外查词覆盖窗的 `%LOCALAPPDATA%\Fushi\GlobalLookupWebView2`，
   /// 见 `windows/runner/global_lookup_window.cpp`），不落在被迁移的 documents/support
   /// 子树里，故 dispose 它对释放数据根文件锁无意义、此处不做（避免无效的连带拆引擎）。
   /// 真正压在数据根子树上的句柄是：正在播放的音频/视频文件（media_kit/libmpv）、封面/
@@ -508,7 +509,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       });
 
   /// BUG-1188：确认弹窗里把**解析后的**两个根原样列出来。挑中默认位置时目标会被归一化
-  /// （`<Documents>\Hibiki` → 内容落 `<Documents>\Hibiki\data`、DB 留在平台固定落点），
+  /// （`<Documents>\Fushi` → 内容落 `<Documents>\Fushi\data`、DB 留在平台固定落点），
   /// 用户必须在按下确认前就看到数据到底会去哪，而不是重启后自己找。
   Future<bool> _confirmMigrate(DataRootMigrationTarget target) async {
     final List<String> roots = <String>[

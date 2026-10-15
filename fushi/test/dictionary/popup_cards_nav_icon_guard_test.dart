@@ -20,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///      popup.css 内嵌 "Hibiki Symbols"(DejaVu Sans 子集) @font-face 兜底，本文件用
 ///      独立 WOFF/cmap 解析器锁「内嵌字体真含这三个码位」。
 ///
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   String read(String p) => File(p).readAsStringSync();
 

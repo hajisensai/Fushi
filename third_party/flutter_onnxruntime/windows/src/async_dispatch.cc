@@ -1,4 +1,4 @@
-// Hibiki fork: see async_dispatch.h.
+// Fushi fork: see async_dispatch.h.
 
 #include "async_dispatch.h"
 

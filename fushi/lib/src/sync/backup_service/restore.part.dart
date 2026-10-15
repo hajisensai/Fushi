@@ -340,7 +340,7 @@ class BackupRestoreService {
     }
     if (!hasSqliteHeader) {
       // A few low-level restore callers intentionally swap opaque fixture
-      // bytes rather than a Hibiki database. Such a snapshot cannot contain
+      // bytes rather than a Fushi database. Such a snapshot cannot contain
       // device-local rows, so there is nothing to retry or retain.
       debugPrint('BackupRestoreService._reapplyDeviceLocalTablesFromBak: '
           'pre-restore.bak is not a SQLite database; no local tables to '
@@ -642,6 +642,62 @@ class BackupRestoreService {
       archive.findFile(_dbName) ??
       archive.findFile(legacyHibikiDatabaseFileName);
 
+  /// 备份归档里主库的 schema 若低于 [kMinSupportedSchemaVersion]，抛
+  /// [UnsupportedLegacySchemaException]（与开库时同一类型，UI 同一句提示）。
+  ///
+  /// 只读 SQLite 文件头（`user_version` 在偏移 60）：Fushi 备份的条目是 STORE，
+  /// 原始窗口就是文件字节，直接取前 100 字节，不解压整库；DEFLATE 条目（老归档 /
+  /// 测试夹具）流式解到 [probePath] 再读头，读完即删。文件头不是 SQLite（坏包）时
+  /// 不在这里判，交给后续原有的打开校验。
+  static Future<void> _checkArchivedDbSchemaSupported({
+    required String zipPath,
+    required ArchiveFile dbFile,
+    required String probePath,
+  }) async {
+    final int? version = await _peekArchivedDbUserVersion(
+      zipPath: zipPath,
+      dbFile: dbFile,
+      probePath: probePath,
+    );
+    if (version != null) {
+      checkSupportedSchemaVersion(version, dbPath: dbFile.name);
+    }
+  }
+
+  static Future<int?> _peekArchivedDbUserVersion({
+    required String zipPath,
+    required ArchiveFile dbFile,
+    required String probePath,
+  }) async {
+    const int headerSize = 100;
+    final InputStreamBase? raw = dbFile.rawContent;
+    if (raw != null && !dbFile.isCompressed) {
+      raw.reset();
+      final int available = raw.length;
+      if (available < headerSize) return null;
+      return sqliteUserVersionFromHeader(
+        raw.peekBytes(headerSize).toUint8List(),
+      );
+    }
+    try {
+      await _safeDelete(probePath);
+      await _extractEntriesStreaming(
+        zipPath: zipPath,
+        entries: <MapEntry<String, String>>[
+          MapEntry<String, String>(dbFile.name, probePath),
+        ],
+      );
+      final RandomAccessFile f = await File(probePath).open();
+      try {
+        return sqliteUserVersionFromHeader(await f.read(headerSize));
+      } finally {
+        await f.close();
+      }
+    } finally {
+      await _safeDelete(probePath);
+    }
+  }
+
   /// Validate a backup ZIP. Returns metadata if valid.
   ///
   /// Streams the central directory via [InputFileStream] instead of reading the
@@ -723,6 +779,15 @@ class BackupRestoreService {
       final archive = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      // 最低 schema 门槛：备份里的库低于本版本能升级的下限时，必须在**任何**破坏性
+      // 动作（快照、删 -wal/-shm、覆盖主库、换内容树）之前拒绝，当前库原样不动。
+      // 放到覆盖之后再由开库的 onUpgrade 拒绝就晚了：那时活库已经被老库顶掉。
+      await _checkArchivedDbSchemaSupported(
+        zipPath: zipPath,
+        dbFile: dbFile,
+        probePath: '$dbPath.restore-probe',
+      );
 
       // TODO-1183: determinate progress across every streamed byte.
       final void Function(int deltaBytes) reportBytes =
@@ -949,7 +1014,7 @@ class BackupRestoreService {
       }
 
       // 2c) Restore local-audio databases into the support directory. These are
-      //     individual files sharing the directory with hibiki.db, so they are
+      //     individual files sharing the directory with fushi.db, so they are
       //     extracted file-by-file (never the destructive tree swap). When the
       //     backup carries no localAudio/ prefix the existing local-audio DBs
       //     are left untouched (same preserve-on-absent contract as the trees).
@@ -1137,6 +1202,14 @@ class BackupRestoreService {
       final Archive archive = ZipDecoder().decodeBuffer(input);
       final ArchiveFile? dbFile = _findDbEntry(archive);
       if (dbFile == null) throw StateError('No $_dbName in backup archive');
+
+      // 最低 schema 门槛：先于解压 / 迁移 / 快照 / 合并拒绝（第 2 步开 merge-src
+      // 时 onUpgrade 也会拒绝，这里提前判定省掉一次整库解压，且失败面更干净）。
+      await _checkArchivedDbSchemaSupported(
+        zipPath: zipPath,
+        dbFile: dbFile,
+        probePath: '$mergeSrcPath.probe',
+      );
 
       // TODO-1183: determinate progress across every streamed byte.
       final void Function(int deltaBytes) reportBytes =
@@ -1770,10 +1843,10 @@ class BackupRestoreService {
 
   /// Extracts the packed local-audio databases (`localAudio/<file>`) into the
   /// support directory [dbDirectory]. Unlike the content TREES these are
-  /// individual files SHARING the directory with `hibiki.db`, so they are
+  /// individual files SHARING the directory with `fushi.db`, so they are
   /// written file-by-file rather than via the destructive tree swap. Only file
   /// names matching [_localAudioFileName] are accepted (defense in depth: an
-  /// archive entry naming `hibiki.db` under `localAudio/` is rejected).
+  /// archive entry naming `fushi.db` under `localAudio/` is rejected).
   ///
   /// When the backup carries no `localAudio/` entries this is a no-op, so an
   /// audio-less backup leaves this device's local-audio DBs intact (the same
@@ -1797,7 +1870,7 @@ class BackupRestoreService {
       final String name = rawName.substring(_localAudioPrefix.length + 1);
       // Reject nested paths / traversal / non-local-audio names: these files
       // must land flat in the support dir and never escape it or clobber
-      // hibiki.db.
+      // fushi.db.
       if (name.isEmpty ||
           name.contains('/') ||
           !_localAudioFileName.hasMatch(name)) {
@@ -2101,7 +2174,7 @@ class BackupRestoreService {
   }
 
   /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
-  /// whole entry. Hibiki backups are written STORE (see
+  /// whole entry. Fushi backups are written STORE (see
   /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
   /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
   /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in

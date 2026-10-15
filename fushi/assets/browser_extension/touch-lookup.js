@@ -5,7 +5,7 @@
 // （content.js 的「显式点击查词」入口，与字幕面板行内点击同源），不新增任何查词链路。
 // 闸门（每一条都是「绝不抢站点」）：
 //   · 只认 pointerType === 'touch' 且主指针——鼠标/触控笔的行为永远是原样，零变化；
-//   · 扩展自绘 UI（查词弹窗 #hibiki-popup-host 及 #fushi-* 前缀的宿主、字幕覆盖层、
+//   · 扩展自绘 UI（查词弹窗宿主 #fushi-popup-host 等 #fushi-* 前缀的宿主、字幕覆盖层、
 //     toast、排队卡、拖放提示）上的手势全部跳过——弹窗内自有交互，字幕覆盖层自带
 //     click→查词（subtitle-panel.js），不掺和；
 //   · 链接、按钮、输入框、视频画面等交互元素交给站点自己：点播放器暂停/播放
@@ -39,10 +39,10 @@
     });
   } catch (_) {}
 
-  // 扩展自绘的在页 UI：查词弹窗宿主是 #hibiki-popup-host（历史名），其余统一 #fushi-* 前缀。
+  // 扩展自绘的在页 UI：查词弹窗宿主 #fushi-popup-host 与其余宿主统一 #fushi-* 前缀。
   function isOwnUi(t) {
     try {
-      return !!(t && t.closest && t.closest('#hibiki-popup-host, [id^="fushi-"]'));
+      return !!(t && t.closest && t.closest('[id^="fushi-"]'));
     } catch (_) { return false; }
   }
   // 站点交互元素——closest 向上找祖先，正文 <p> 里包着的 <a> 也算命中。

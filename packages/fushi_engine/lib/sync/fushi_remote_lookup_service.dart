@@ -203,7 +203,7 @@ abstract class FushiRemoteMiningService {
   Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun});
 }
 
-/// 把一次查词结果写入 Hibiki 查词历史（无 UI 副作用）。浏览器扩展 record 用。
+/// 把一次查词结果写入 Fushi 查词历史（无 UI 副作用）。浏览器扩展 record 用。
 abstract class FushiRemoteHistoryService {
   void recordHistory(DictionarySearchResult result);
 }

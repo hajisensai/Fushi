@@ -9,7 +9,7 @@ import '../helpers/workspace_pubspec.dart';
 /// Root cause: upstream `media_kit_video` 2.0.1 binds the central
 /// `GestureDetector.onPanUpdate` (gated by `modifyVolumeOnScroll`) so holding
 /// the left mouse button and dragging vertically changes the volume by
-/// `e.delta.dy`. Hibiki users found this accidental — any click-and-drag on the
+/// `e.delta.dy`. Fushi users found this accidental — any click-and-drag on the
 /// video surface silently jumped the volume — so TODO-1097 removes the drag
 /// handler while keeping the scroll-wheel volume path and every tap gesture.
 ///

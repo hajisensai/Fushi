@@ -69,7 +69,7 @@ void main() {
   late _FixtureAdapter adapter;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-online-manga-');
+    root = await Directory.systemTemp.createTemp('fushi-online-manga-');
     // 2026-09-12 起在线条目直接落 `<fushi_books>/<bookKey>`；测试里把书根钉到临时目录。
     EpubStorage.debugBaseDirectoryOverride = root.path;
     database = FushiDatabase.forTesting(NativeDatabase.memory());

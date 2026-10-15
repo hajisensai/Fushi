@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../pages/video_fushi_page_source_corpus.dart';
 
-/// BUG-190 source guard（TODO-080/092）：字幕在 Hibiki 一律走可点
+/// BUG-190 source guard（TODO-080/092）：字幕在 Fushi 一律走可点
 /// [VideoSubtitleOverlay]（cue 同步 + 逐字查词），libmpv / media_kit 不该自己渲染
 /// 任何字幕。本守卫锁定三处调用点不变量——它们都无法在无头 libmpv 下驱动真实
 /// player，故用源码扫描守住「禁用内置渲染」的不变量（纯函数 map 本身由

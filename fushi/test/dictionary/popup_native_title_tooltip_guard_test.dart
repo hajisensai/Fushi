@@ -15,7 +15,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。
+  // flutter test 的 cwd 是 fushi 包根。
   late final String js;
   late final String css;
 

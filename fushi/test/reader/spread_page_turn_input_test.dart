@@ -85,7 +85,7 @@ void main() {
     test('spread 脚本真跑：滚轮方向 / 横扫阈值 / 合成 click 抑制（行为级）', () {
       final String payload = jsonEncode(<String, String>{'html': htmlWith()});
       final Directory temp =
-          Directory.systemTemp.createTempSync('hibiki-spread-input-js-');
+          Directory.systemTemp.createTempSync('fushi-spread-input-js-');
       final File payloadFile = File('${temp.path}/payload.json')
         ..writeAsStringSync(payload);
       late final ProcessResult result;

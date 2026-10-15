@@ -8,7 +8,7 @@ import 'video_fushi_page_source_corpus.dart';
 
 /// 源码守卫（TODO-115）：制卡默认标签接线。
 ///
-/// 行为本体（`hibiki` + `book`/`video` 分类标签的拼装、两后端对称、去重保序）由
+/// 行为本体（`fushi` + `book`/`video` 分类标签的拼装、两后端对称、去重保序）由
 /// `packages/fushi_anki/test/mining_tag_and_parallel_test.dart` 的真制卡行为测试咬住。
 /// 本守卫补两块行为测试照不到的接线：
 ///   1. AnkiDroid 原生 `addNote` 不再硬编码注入旧 fork 的 `"Yuuna"` 默认 tag
@@ -24,7 +24,7 @@ void main() {
     // 旧 fork 曾 `new HashSet<>(Arrays.asList("Yuuna"))`，给每张卡硬塞 Yuuna。
     expect(src.contains('"Yuuna"'), isFalse,
         reason: 'AnkiDroid 不得再注入旧 Yuuna 默认 tag；标签统一由 Dart buildNoteTags 计算');
-    // addNote 仍透传 Dart 传入的 tags（含 hibiki + 分类标签）。
+    // addNote 仍透传 Dart 传入的 tags（含 fushi + 分类标签）。
     expect(src, contains('allTags.addAll(tags)'),
         reason: 'AnkiDroid 必须透传 Dart 传入的 tags');
   });
@@ -122,7 +122,7 @@ void main() {
   // TODO-295 / BUG-242：设置页「添加来源分类标签」开关的提示文案，必须如实描述
   // 视频卡片得到的标签字面量是 `video`（见 base_anki_repository.dart 的
   // `videoTag = 'video'`），不得再写成 `anime`/「动漫」误导用户。
-  // 行为本体（写进 Anki 的 tag 确实是 video）由 hibiki_anki 的真制卡行为测试咬住；
+  // 行为本体（写进 Anki 的 tag 确实是 video）由 fushi_anki 的真制卡行为测试咬住；
   // 本守卫只盯用户可见的提示文案别再漂回旧名。
   test('分类标签提示文案描述视频标签为 video，而非 anime/动漫', () {
     final String enHint =

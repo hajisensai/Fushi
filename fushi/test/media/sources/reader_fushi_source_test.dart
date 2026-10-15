@@ -100,7 +100,7 @@ void main() {
     late Directory tempDir;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('hibiki_font_test_');
+      tempDir = await Directory.systemTemp.createTemp('fushi_font_test_');
     });
 
     tearDown(() async {
@@ -605,7 +605,7 @@ void main() {
 
     setUp(() {
       // deleteBook resolves on-disk persist/extract dirs via path_provider.
-      ppDir = Directory.systemTemp.createTempSync('hibiki_delete_book_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_delete_book_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,
@@ -788,7 +788,7 @@ void main() {
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
     setUp(() {
-      ppDir = Directory.systemTemp.createTempSync('hibiki_del1359_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_del1359_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,
@@ -817,7 +817,7 @@ void main() {
       // on Windows (POSIX allows unlink-while-open, so there the delete just
       // succeeds — either way the committed DB delete must report success).
       final Directory extractDir =
-          Directory.systemTemp.createTempSync('hibiki_del1359_extract');
+          Directory.systemTemp.createTempSync('fushi_del1359_extract');
       final File inner = File(p.join(extractDir.path, 'content.xhtml'))
         ..writeAsStringSync('<html></html>');
       final RandomAccessFile handle = inner.openSync(mode: FileMode.write);
@@ -905,7 +905,7 @@ void main() {
         TestWidgetsFlutterBinding.ensureInitialized();
     late Directory ppDir;
     setUp(() {
-      ppDir = Directory.systemTemp.createTempSync('hibiki_bookkey_rt_pp');
+      ppDir = Directory.systemTemp.createTempSync('fushi_bookkey_rt_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => ppDir.path,

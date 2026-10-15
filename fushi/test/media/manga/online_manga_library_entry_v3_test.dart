@@ -177,7 +177,7 @@ void main() {
     late OnlineMangaLibraryService service;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hibiki-online-manga-v3-');
+      root = await Directory.systemTemp.createTemp('fushi-online-manga-v3-');
       EpubStorage.debugBaseDirectoryOverride = root.path;
       database = FushiDatabase.forTesting(NativeDatabase.memory());
       service = OnlineMangaLibraryService(

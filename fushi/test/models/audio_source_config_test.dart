@@ -35,7 +35,7 @@ void main() {
       expect(source.enabled, isFalse);
     });
 
-    test('round trips multiple local and remote sources plus Hibiki remote',
+    test('round trips multiple local and remote sources plus Fushi remote',
         () {
       final List<AudioSourceConfig> sources = <AudioSourceConfig>[
         AudioSourceConfig.fushiRemote(enabled: true),

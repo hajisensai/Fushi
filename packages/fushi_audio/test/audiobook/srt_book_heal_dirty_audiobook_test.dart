@@ -30,7 +30,7 @@ void main() {
   late FushiDatabase db;
 
   setUp(() async {
-    docsDir = await Directory.systemTemp.createTemp('hibiki_heal_dirty_');
+    docsDir = await Directory.systemTemp.createTemp('fushi_heal_dirty_');
     // 持久根直接经 fushi_audio 的装配点指向临时目录（本包纯 Dart，不再经
     // path_provider method channel）。
     AudiobookStorage.documentsRootResolver = () async => docsDir;

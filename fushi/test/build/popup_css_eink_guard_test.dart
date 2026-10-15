@@ -13,7 +13,7 @@ import '../helpers/source_guard.dart';
 ///     已随剪贴板面板删除）当无效声明吞掉（高亮从未生效）。配平检查让这一类
 ///     「少个括号、静默吞掉后续规则」在测试层直接翻红。
 ///
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   const String popupCssPath = 'assets/popup/popup.css';
   const String contentCssPath = 'assets/browser_extension/vendor/content.css';

@@ -226,7 +226,7 @@ Require-Text '.github/workflows/build-multiplatform.yml' $multiplatformWorkflow 
 # BUG-1292: Magpie has no download path left, so the bundled slim archive is the
 # ONLY way window upscaling can ever install. If a Windows workflow stops
 # building or copying it, the build still goes green and every user gets
-# "Hibiki installation is incomplete" at runtime -- exactly the class of silent
+# "Fushi installation is incomplete" at runtime -- exactly the class of silent
 # packaging regression this guard exists for. Same shape as the helper rules
 # above: build step + payload directory, in BOTH Windows workflows.
 $magpieBundleWorkflows = @{

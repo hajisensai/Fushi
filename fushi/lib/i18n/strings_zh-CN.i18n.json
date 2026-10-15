@@ -94,8 +94,8 @@
   "anki_connect_port": "端口",
   "anki_connect_port_auto_fix": "换一个空闲端口",
   "anki_connect_port_auto_fix_done": "AnkiConnect 端口已改为 ${port}。请重启 Anki 后重试。",
-  "anki_connect_port_auto_fix_hint": "自动挑一个空闲端口，同时写进 Hibiki 和 Anki 的 AnkiConnect 插件配置。改完重启 Anki 生效。",
-  "anki_connect_port_auto_fix_manual": "Hibiki 已改用端口 ${port}，但没找到 AnkiConnect 的插件配置。请在 Anki 的「工具 → 插件 → AnkiConnect → 配置」里把 webBindPort 也改成 ${port}，然后重启 Anki。",
+  "anki_connect_port_auto_fix_hint": "自动挑一个空闲端口，同时写进 Fushi 和 Anki 的 AnkiConnect 插件配置。改完重启 Anki 生效。",
+  "anki_connect_port_auto_fix_manual": "Fushi 已改用端口 ${port}，但没找到 AnkiConnect 的插件配置。请在 Anki 的「工具 → 插件 → AnkiConnect → 配置」里把 webBindPort 也改成 ${port}，然后重启 Anki。",
   "anki_connect_port_auto_fix_none": "本机没有找到空闲端口。",
   "anki_connect_use_on_mobile": "改用 AnkiConnect",
   "anki_connect_use_on_mobile_hint": "仅在可信网络中使用。AnkiConnect 使用明文 HTTP；请配置匹配的 API key，切换后再刷新牌组与笔记类型。",
@@ -4448,7 +4448,7 @@
   "sync_err_not_paired": "尚未配对任何设备，请先在「Fushi 互联」里完成配对。",
   "anki_create_lapis_not_found": "Anki 报告 Lapis 牌组和笔记类型已创建，但回读时仍然找不到它们。请打开 Anki 确认它没有卡住，然后重试。",
   "anki_lapis_suggest_title": "现在还制不出卡",
-  "anki_lapis_suggest_body": "当前选中的牌组和笔记类型做不出 Anki 会接收的卡片。可以让 Hibiki 添加 Lapis 笔记类型和卡组，并直接选用它们。",
+  "anki_lapis_suggest_body": "当前选中的牌组和笔记类型做不出 Anki 会接收的卡片。可以让 Fushi 添加 Lapis 笔记类型和卡组，并直接选用它们。",
   "anki_lapis_suggest_dismiss": "保持当前设置",
   "reader_vn_settings": "视觉小说设置",
   "reader_vn_reveal_speed": "文字渐显速度",
@@ -7569,5 +7569,11 @@
   "audiobook_tts_local_delete_confirm": "将停止服务并删除 ${path}（约 19 GB）。",
   "audiobook_tts_local_remove": "不再使用这份整合包",
   "audiobook_tts_local_remove_hint": "只是让 Fushi 忘掉它，不删除任何文件。",
-  "audiobook_tts_local_editor_not_installed": "还没有本机服务？在 Fushi 里一键部署 GPT-SoVITS"
+  "audiobook_tts_local_editor_not_installed": "还没有本机服务？在 Fushi 里一键部署 GPT-SoVITS",
+  "db_legacy_schema_title": "旧数据需要先升级",
+  "db_legacy_schema_message": "此数据库来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接升级它。你的数据没有被改动。迁移步骤：在当前版本上覆盖安装 Fushi v$version（仍带完整升级路径的桥接版本，数据目录会保留），打开一次完成数据升级，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本，而卸载 Fushi 会同时删除这份数据，卸载前请先备份。下载：$url",
+  "backup_legacy_schema": "此备份来自旧版 Hibiki 或早期版本（数据结构低于 v75），当前版本已无法直接导入。你当前的数据没有任何改动。迁移步骤：安装 Fushi v$version（仍带完整升级路径的桥接版本），在其中导入此备份，再更新到当前版本。Android 系统不允许在新版本上直接安装旧版本：需先卸载当前 Fushi（会删除它现有的数据，需要保留的请先备份），再安装 v$version。下载：$url",
+  "db_legacy_schema_release_open": "打开 Fushi v$version 下载页",
+  "migration_import_legacy_title": "请用 Fushi v$version 导入 Hibiki 数据",
+  "migration_import_legacy_message": "旧版 Hibiki 导出的数据太旧，当前版本无法直接导入。没有任何数据被改动，导出文件也已保留。迁移步骤：1. 卸载当前 Fushi——Android 不允许在新版本上直接安装旧版本，而新装的 Fushi 本来就是空库（如果已经添加过数据，请先备份）。2. 安装 Fushi v$version（仍带完整升级路径的桥接版本）。3. 在其中执行「从 Hibiki 导入」。4. 再更新到当前版本。"
 }

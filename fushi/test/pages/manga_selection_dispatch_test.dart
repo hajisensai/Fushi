@@ -129,7 +129,7 @@ void main() {
 
     test('双页 spread 精确解析命中页图片，不取 spread 首页', () async {
       final Directory root =
-          await Directory.systemTemp.createTemp('hibiki-mining-page-');
+          await Directory.systemTemp.createTemp('fushi-mining-page-');
       addTearDown(() async {
         if (await root.exists()) await root.delete(recursive: true);
       });

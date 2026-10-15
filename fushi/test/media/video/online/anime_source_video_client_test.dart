@@ -34,7 +34,7 @@ void main() {
   ];
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-anime-client-');
+    root = await Directory.systemTemp.createTemp('fushi-anime-client-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _VideoRuntime();
     manager = MihonManager(

@@ -1,7 +1,7 @@
 {
   "name": "fushi-torrent-ffi",
   "version-string": "0.1.0",
-  "description": "Hibiki 内置 torrent 引擎的 libtorrent C ABI bridge（fushi_torrent_ffi.cpp）",
+  "description": "Fushi 内置 torrent 引擎的 libtorrent C ABI bridge（fushi_torrent_ffi.cpp）",
   "$why-pinned": [
     "钉死 libtorrent 2.0.x。fushi_torrent_ffi.cpp 用的是 2.0 API：",
     "torrent_info::files() / lt::add_files / create_torrent(file_storage) /",

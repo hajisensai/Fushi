@@ -19,7 +19,7 @@ void main() {
   late String dbPath;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_downgrade_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_downgrade_test');
     dbPath = '${tempDir.path}/fushi.db';
   });
 

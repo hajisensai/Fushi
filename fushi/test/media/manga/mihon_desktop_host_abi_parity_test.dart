@@ -92,7 +92,7 @@ void main() {
 }
 
 /// 桌面 sidecar 的**有效**版本：vendored 上游 `libs.versions.toml` 的值，再让
-/// Hibiki 补丁里对该文件的 `+` 行覆盖。
+/// Fushi 补丁里对该文件的 `+` 行覆盖。
 ///
 /// 只认补丁里 `libs.versions.toml` 那一段——同一个补丁还改 `build.gradle.kts` 和
 /// Kotlin 源码，不隔离的话 `+coroutines = ...` 会被别处同名行污染。

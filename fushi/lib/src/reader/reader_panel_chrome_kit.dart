@@ -150,7 +150,7 @@ class ReaderPanelHeader extends StatelessWidget {
             ...actions,
             if (onClose != null)
               Semantics(
-                identifier: 'hibiki.reader.side_sheet.close',
+                identifier: 'fushi.reader.side_sheet.close',
                 child: glass
                     ? FushiIconButtonControl.filledTonal(
                         key: const ValueKey<String>('fushi_side_sheet_close'),

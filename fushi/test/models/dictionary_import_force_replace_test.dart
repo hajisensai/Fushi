@@ -223,7 +223,7 @@ void main() {
     }
 
     setUp(() async {
-      resourceDir = Directory.systemTemp.createTempSync('hibiki_replace_');
+      resourceDir = Directory.systemTemp.createTempSync('fushi_replace_');
       db =
           FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
       repo = DictionaryRepository(db);

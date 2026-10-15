@@ -8,7 +8,7 @@ namespace fushi_voice_hook::siglus {
 constexpr size_t kInvalidTextFunctionOffset = static_cast<size_t>(-1);
 
 // Siglus 3 的 UTF-16 文本赋值函数内部特征。该特征来自 LunaTranslator 当前
-// EmbedSiglus2 实现，但这里只移植“定位原始文本对象”这一小段；Hibiki 自己负责把
+// EmbedSiglus2 实现，但这里只移植“定位原始文本对象”这一小段；Fushi 自己负责把
 // TextUnionW 写入共享文本环，不加载/依赖 Luna 的旧引擎数据库。
 //
 // XX 位置是版本相关的寄存器/短跳偏移。固定字节覆盖 std::wstring 扩容到 0x100

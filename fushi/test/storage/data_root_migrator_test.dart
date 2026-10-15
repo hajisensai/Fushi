@@ -27,7 +27,7 @@ void main() {
   late String oldSupportPath;
 
   setUp(() async {
-    tmp = Directory.systemTemp.createTempSync('hibiki_migrate_');
+    tmp = Directory.systemTemp.createTempSync('fushi_migrate_');
     oldDocs = Directory(p.join(tmp.path, 'old', 'documents'))
       ..createSync(recursive: true);
     oldSupport = Directory(p.join(tmp.path, 'old', 'support'))
@@ -581,7 +581,7 @@ void main() {
   });
 
   group('TODO-1226：共享默认根白名单迁移（绝不整搬/整删用户 Documents）', () {
-    test('白名单模式：只搬 Hibiki 自有顶层项，用户文件/junction 不动，Documents 本体保留', () async {
+    test('白名单模式：只搬 Fushi 自有顶层项，用户文件/junction 不动，Documents 本体保留', () async {
       await seedDb();
       // 模拟共享 Documents：用户自己的文件 + 目录 + shell junction（Link 指向别处）。
       final File userDoc = File(p.join(oldDocsPath, 'my_essay.docx'))
@@ -655,7 +655,7 @@ void main() {
     });
 
     test('BUG-1115：目标是共享根内的非白名单子目录（Documents\\Hibiki）→ 允许并搬成', () async {
-      // 老安装唯一自然的整理路径：把散落在共享 Documents 根下的 Hibiki 目录收进
+      // 老安装唯一自然的整理路径：把散落在共享 Documents 根下的 Fushi 目录收进
       // `Documents\Hibiki`。旧实现按「新根位于旧根内部」一律拒绝，用户无路可走。
       // 白名单搬移只动白名单顶层项，`Hibiki` 不在白名单里 → 全程是旁观者。
       await seedDb();
@@ -688,7 +688,7 @@ void main() {
       expect(
           File(p.join(newDocs.path, 'audiobooks', 'Bk', 'a.mp3')).existsSync(),
           isTrue);
-      // 白名单项已离开共享根顶层——文档根不再摊着 Hibiki 的目录。
+      // 白名单项已离开共享根顶层——文档根不再摊着 Fushi 的目录。
       expect(
           Directory(p.join(oldDocsPath, 'fushi_books')).existsSync(), isFalse);
       expect(
@@ -742,7 +742,7 @@ void main() {
               DataRootMigrationTarget.customRoot(p.join(oldDocsPath, 'Hibiki')),
           closeResources: () async {},
           commitLocation: (DataRootMigrationTarget t) async {},
-          // null = Hibiki 专属根、整树搬移语义。
+          // null = Fushi 专属根、整树搬移语义。
           documentsTopLevelIncludeNames: null,
         )),
         throwsA(isA<DataRootMigrationException>()),

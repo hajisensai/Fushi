@@ -1,14 +1,14 @@
 ---
-name: run-hibiki
-description: Launch and drive the real Hibiki app (Flutter desktop/mobile) and look at what it renders — the off-screen Windows integration runner, deterministic navigation hooks, focus-driven interaction, and real-pixel screenshot evidence. Use this whenever you need to run the app rather than the unit-test suite.
+name: run-fushi
+description: Launch and drive the real Fushi app (Flutter desktop/mobile) and look at what it renders — the off-screen Windows integration runner, deterministic navigation hooks, focus-driven interaction, and real-pixel screenshot evidence. Use this whenever you need to run the app rather than the unit-test suite.
 ---
 
-# 跑起真 app 并驱动它（Hibiki）
+# 跑起真 app 并驱动它（Fushi）
 
 「跑起来」= 启动**真的 Fushi app** 并操作它，然后**看截图**。不是 `flutter test`
 跑单测，也不是 import 一个内部函数打印返回值。
 
-Hibiki 有一条已验证的落地路径：**Windows 离屏集成测试 runner**。它启动真 app、
+Fushi 有一条已验证的落地路径：**Windows 离屏集成测试 runner**。它启动真 app、
 真数据库、真渲染树，抓真像素，而且**不抢用户焦点**（用户可以继续用别的窗口）。
 默认先走这条；三端等价跑法（Android 模拟器 / Mac 跨机）见
 [docs/agent/integration-testing.md](../../../docs/agent/integration-testing.md)。

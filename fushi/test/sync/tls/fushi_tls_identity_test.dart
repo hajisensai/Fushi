@@ -87,7 +87,7 @@ void main() {
   group('FushiTlsIdentityStore loadOrCreate / regenerate', () {
     late Directory tmp;
     setUp(() async {
-      tmp = await Directory.systemTemp.createTemp('hibiki_tls_test_');
+      tmp = await Directory.systemTemp.createTemp('fushi_tls_test_');
     });
     tearDown(() async {
       if (await tmp.exists()) await tmp.delete(recursive: true);

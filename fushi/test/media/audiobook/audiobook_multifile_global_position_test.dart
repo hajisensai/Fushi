@@ -81,8 +81,8 @@ void main() {
     await c.load(
       audiobook: ab(),
       audioFiles: <File>[
-        makeFile('hibiki-mf-0.mp3'),
-        makeFile('hibiki-mf-1.mp3'),
+        makeFile('fushi-mf-0.mp3'),
+        makeFile('fushi-mf-1.mp3'),
       ],
       initialPositionMs: 13000,
     );
@@ -105,8 +105,8 @@ void main() {
     await c.load(
       audiobook: ab(),
       audioFiles: <File>[
-        makeFile('hibiki-mf-2.mp3'),
-        makeFile('hibiki-mf-3.mp3'),
+        makeFile('fushi-mf-2.mp3'),
+        makeFile('fushi-mf-3.mp3'),
       ],
       initialPositionMs: 13000,
     );
@@ -154,7 +154,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-mf-single.mp3')],
+      audioFiles: <File>[makeFile('fushi-mf-single.mp3')],
       initialPositionMs: 13000,
     );
     expect(c.globalPosition.inMilliseconds, 13000);

@@ -13,7 +13,7 @@ void main() {
   late Directory finalDir;
 
   setUp(() {
-    finalDir = Directory.systemTemp.createTempSync('hibiki_src_meta_');
+    finalDir = Directory.systemTemp.createTempSync('fushi_src_meta_');
   });
 
   tearDown(() {

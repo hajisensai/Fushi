@@ -29,7 +29,7 @@ FFmpeg n6.0 并打本目录的 cert-pin 补丁（ffmpeg-kit 对非空 `src/ffmpe
   形成**静默产出打不开的文件**。硬件编码器不是替代路：iOS 配方 `--disable-videotoolbox`、
   Android `--disable-mediacodec`，且当前 FFmpeg 6.0 **根本没有** `h264_mediacodec`
   编码器（那是 6.1 才加入的）。
-- **许可**：`--enable-gpl` 让产物从 LGPLv3 变为 **GPLv3**。Hibiki 自身即 GPL-3.0，两者
+- **许可**：`--enable-gpl` 让产物从 LGPLv3 变为 **GPLv3**。Fushi 自身即 GPL-3.0，两者
   一致；`android.sh` / `ios.sh` 会自动写入产物内的 `LICENSE.GPLv3` 与 `license_x264.txt`
   （那是 AAR/xcframework **内部**的文件名，由上游脚本决定，别跟着本仓文件名改）。
   桌面 `tool/ffmpeg-min/build-ffmpeg-min.sh` 早已同样处理。
@@ -119,7 +119,7 @@ ffmpeg（远端视频制卡句子音频 / GIF / 帧封面）时报 `Protocol not
 只加 gnutls 不打补丁也能让 https 通，但那是 ffmpeg 默认的 `tls_verify=0`（**接受任意
 证书**，可被 MITM）。本补丁把它升级成「只认钉扎证书」，逐字对齐 app 现有的 TOFU 钉扎
 （`fushi/lib/src/sync/tls/fushi_tls_identity.dart` 的 `fingerprintOf()` = DER 的
-sha256），因此**不是安全降级，是真钉扎**。Dart 侧只对已 TOFU 钉扎的 Hibiki 自签主机
+sha256），因此**不是安全降级，是真钉扎**。Dart 侧只对已 TOFU 钉扎的 Fushi 自签主机
 传 `-tls_pin_sha256 <fp>`（公网源不传，保持默认）。
 
 ## 覆盖后端

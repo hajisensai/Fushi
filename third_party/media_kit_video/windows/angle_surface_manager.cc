@@ -98,7 +98,7 @@ void ANGLESurfaceManager::Create() {
     return;
   }
   if (!CreateAndBindEGLSurface()) {
-    // HIBIKI FORK (BUG-1657): BUG-1644 introduced a *new* display type
+    // FUSHI FORK (BUG-1657): BUG-1644 introduced a *new* display type
     // (EGL_PLATFORM_DEVICE_EXT on our own device). |EnsureSharedEGLDisplay|
     // only falls back to the upstream EGL_DEFAULT_DISPLAY chain when creating
     // that display fails; anything failing *after* it (config, context,
@@ -121,7 +121,7 @@ void ANGLESurfaceManager::Create() {
 }
 
 void ANGLESurfaceManager::CleanUp(bool release_context) {
-  // HIBIKI FORK (HDR): GL objects / the EGLImage reference the textures that
+  // FUSHI FORK (HDR): GL objects / the EGLImage reference the textures that
   // are about to be released; drop them with the context current (the
   // destructor path reaches here without one).
   if ((output_image_ != EGL_NO_IMAGE_KHR || linear_texture_ != 0 ||
@@ -148,7 +148,7 @@ void ANGLESurfaceManager::CleanUp(bool release_context) {
       eglDestroySurface(display_, surface_);
       surface_ = EGL_NO_SURFACE;
     }
-    // HIBIKI FORK: the |EGLDisplay| & the Direct3D device are process wide now
+    // FUSHI FORK: the |EGLDisplay| & the Direct3D device are process wide now
     // (see |shared_d3d_11_device_|), so only the last instance may tear them
     // down. |d3d_11_device_| / |d3d_11_device_context_| are non-owning aliases
     // and are merely forgotten here; upstream |Release|d them per instance,
@@ -209,7 +209,7 @@ bool ANGLESurfaceManager::EnsureSharedD3D11Device() {
     dxgi->Release();
   }
 
-  // HIBIKI FORK: |D3D11_CREATE_DEVICE_VIDEO_SUPPORT| is what makes this device
+  // FUSHI FORK: |D3D11_CREATE_DEVICE_VIDEO_SUPPORT| is what makes this device
   // usable as libmpv's hardware decoding device: FFmpeg's D3D11VA device init
   // does a QueryInterface for |ID3D11VideoDevice|, which drivers may refuse on
   // a device created without the flag (measured: E_NOINTERFACE on WARP).
@@ -274,7 +274,7 @@ bool ANGLESurfaceManager::CreateD3DTexture() {
   auto d3d11_texture2D_desc = D3D11_TEXTURE2D_DESC{0};
   d3d11_texture2D_desc.Width = width_;
   d3d11_texture2D_desc.Height = height_;
-  // HIBIKI FORK (HDR): half-float carries extended-range values to Flutter.
+  // FUSHI FORK (HDR): half-float carries extended-range values to Flutter.
   d3d11_texture2D_desc.Format = half_float_ ? DXGI_FORMAT_R16G16B16A16_FLOAT
                                             : DXGI_FORMAT_B8G8R8A8_UNORM;
   d3d11_texture2D_desc.MipLevels = 1;
@@ -332,7 +332,7 @@ bool ANGLESurfaceManager::EnsureSharedEGLDisplay() {
     FAIL("eglGetProcAddress");
   }
 
-  // HIBIKI FORK: preferred path - run ANGLE on the device we created instead of
+  // FUSHI FORK: preferred path - run ANGLE on the device we created instead of
   // letting it create a hidden one. libmpv's `d3d11-egl` interop reads its
   // decoding device back out of the display
   // (`EGL_DEVICE_EXT` -> `EGL_D3D11_DEVICE_ANGLE`), so this is the only way to
@@ -477,7 +477,7 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
     if (result == EGL_FALSE || count == 0) {
       FAIL("eglChooseConfig");
     }
-    // HIBIKI FORK (HDR): prefer OpenGL ES 3.0 (what mpv's own
+    // FUSHI FORK (HDR): prefer OpenGL ES 3.0 (what mpv's own
     // --gpu-context=angle asks for first): libmpv only understands a GL_RGBA16F
     // target framebuffer there. ES 2.0 stays the fallback.
     context_ = eglCreateContext(display_, config_, EGL_NO_CONTEXT,
@@ -525,7 +525,7 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
 }
 
 // ---------------------------------------------------------------------------
-// HIBIKI FORK (HDR in the Flutter compositor). See |SetHalfFloat|.
+// FUSHI FORK (HDR in the Flutter compositor). See |SetHalfFloat|.
 
 namespace {
 

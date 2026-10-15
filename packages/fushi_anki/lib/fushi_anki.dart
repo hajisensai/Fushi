@@ -1,4 +1,4 @@
-library hibiki_anki;
+library fushi_anki;
 
 // 零 Flutter 子集（引擎 / 无头服务端只 import 这一层）。
 export 'fushi_anki_core.dart';

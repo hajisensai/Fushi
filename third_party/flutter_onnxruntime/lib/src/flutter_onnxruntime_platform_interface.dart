@@ -44,7 +44,7 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
     throw UnimplementedError('getAvailableProviders() has not been implemented.');
   }
 
-  /// Hibiki fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
+  /// Fushi fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
   /// Returns null where the platform has no such query.
   Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async => null;
 

@@ -15,7 +15,7 @@ void main() {
   DateTime fakeNow = DateTime.utc(2026, 1, 1, 12, 0, 0);
 
   Future<void> startServer() async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_prune_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_prune_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,

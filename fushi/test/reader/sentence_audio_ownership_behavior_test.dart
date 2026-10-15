@@ -14,7 +14,7 @@ import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 void main() {
   test('标点归属行为级（node）', () {
     final Directory temp = Directory.systemTemp.createTempSync(
-      'hibiki-bug2890-ownership-',
+      'fushi-bug2890-ownership-',
     );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(

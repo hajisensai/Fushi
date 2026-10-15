@@ -69,7 +69,7 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    storeDir = Directory.systemTemp.createTempSync('hibiki_todo897');
+    storeDir = Directory.systemTemp.createTempSync('fushi_todo897');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     appModel = _MissingTestAppModel(platformServices, db)

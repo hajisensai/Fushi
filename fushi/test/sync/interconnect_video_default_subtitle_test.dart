@@ -10,6 +10,9 @@
 ///    capabilities 声明 `liveLibrary.videoSubtitleDefault`。
 /// 3b. 混版本（BUG-2728）：假老 host 如实模拟「按后缀覆盖、无备份」，client 探到能力位
 ///    缺失 / false / 端点 404 时一个 PUT 都不发，host 原字幕字节不变，能力位只探一次。
+/// 3c. 改名混版本：改名前的 client 只发 / 只读 `X-Hibiki-*`，新 host 照收、
+///    设为默认的响应头新旧两个名字都回；新 client 请求头新旧都发（只认旧名的老 host
+///    照样拿到后缀），并能读改名前 host 只回的旧响应头。
 /// 4. 源码守卫：视频页远端导入会上传、设置「导入的字幕自动上传到服务端」关掉时
 ///    不上传也不提示、对轴 / 重定时入口不再只认本地文件。
 library;
@@ -23,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -331,6 +335,68 @@ void main() {
       expect(row.subtitleSource, oldJa.path);
     });
 
+    // 改名前（Hibiki）的 client 只发 X-Hibiki-* 请求头、只读 x-hibiki-subtitle-suffix
+    // 响应头：新 host 必须照收，并在响应里把旧名也回上，否则老 client 会把成功的上传
+    // 误报成「host 不支持」。
+    Future<HttpClientResponse> legacyClientPut(
+      HttpClient http,
+      Map<String, String> headers,
+    ) async {
+      final HttpClientRequest req = await http.putUrl(
+        Uri.parse('$base/api/library/videos/video/movie/subtitle'),
+      );
+      req.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
+      headers.forEach(req.headers.set);
+      req.add(utf8.encode(_srtUploaded));
+      return req.close();
+    }
+
+    test('改名前 client 的 X-Hibiki-* 请求头：设为默认照收，响应新旧两个后缀头都回', () async {
+      final HttpClient http = HttpClient();
+      try {
+        final HttpClientResponse res = await legacyClientPut(
+          http,
+          <String, String>{
+            'X-Hibiki-Subtitle-Suffix': Uri.encodeComponent('.en.srt'),
+            'X-Hibiki-Subtitle-Default': '1',
+          },
+        );
+        await res.drain<void>();
+        expect(res.statusCode, 200);
+        expect(res.headers.value('x-hibiki-subtitle-suffix'), '.ja.srt');
+        expect(res.headers.value(kSubtitleSuffixHeader), '.ja.srt');
+      } finally {
+        http.close(force: true);
+      }
+      expect(
+        File(p.join(vidDir.path, 'movie.ja.srt')).readAsStringSync(),
+        _srtUploaded,
+      );
+    });
+
+    test('改名前 client 的 X-Hibiki-Subtitle-Suffix：live push 仍按旧名后缀落盘', () async {
+      final HttpClient http = HttpClient();
+      try {
+        final HttpClientResponse res = await legacyClientPut(
+          http,
+          <String, String>{
+            'X-Hibiki-Subtitle-Suffix': Uri.encodeComponent('.en.srt'),
+          },
+        );
+        await res.drain<void>();
+        expect(res.statusCode, 200);
+      } finally {
+        http.close(force: true);
+      }
+      expect(
+        File(p.join(vidDir.path, 'movie.en.srt')).readAsStringSync(),
+        _srtUploaded,
+      );
+    });
+
     test('不带 asDefault：仍按 client 报的后缀落盘（live push 语义不变）', () async {
       final InterconnectSyncBackend backend = await _clientBackend(
         base: base,
@@ -350,7 +416,7 @@ void main() {
     });
   });
 
-  // BUG-2728 混版本：老 host 不认 X-Hibiki-Subtitle-Default，PUT 走 live push 旧路径
+  // BUG-2728 混版本：老 host 不认 X-Fushi-Subtitle-Default，PUT 走 live push 旧路径
   // 按 client 报的后缀 `rename` 覆盖同名旧字幕、不留备份。假 host 如实模拟这个覆盖
   // 语义，client 必须先看能力位、不支持就一个 PUT 都不发。
   group('老 host（无 videoSubtitleDefault 能力位）', () {
@@ -360,6 +426,7 @@ void main() {
     late String base;
     late int capabilityProbes;
     late int subtitlePuts;
+    final List<String> oldHostSuffixes = <String>[];
     // null = /api/capabilities 整个端点 404（更老的 host）。
     Map<String, dynamic>? capabilities;
 
@@ -369,6 +436,7 @@ void main() {
         ..writeAsStringSync(_srtOriginal);
       capabilityProbes = 0;
       subtitlePuts = 0;
+      oldHostSuffixes.clear();
       fake = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       fake.listen((HttpRequest req) async {
         final HttpResponse res = req.response;
@@ -384,9 +452,11 @@ void main() {
         } else if (req.method == 'PUT' && req.uri.path.endsWith('/subtitle')) {
           subtitlePuts++;
           // 老 host 的 importVideoSubtitle：按 client 报的后缀直接覆盖，无备份。
+          // 老 host 是改名前的版本，只认旧名 header。
           final String suffix = Uri.decodeComponent(
             req.headers.value('x-hibiki-subtitle-suffix') ?? '',
           );
+          oldHostSuffixes.add(suffix);
           final List<int> body = <int>[];
           await req.forEach(body.addAll);
           File(p.join(work.path, 'movie$suffix')).writeAsBytesSync(body);
@@ -459,7 +529,7 @@ void main() {
       );
       final File sub = File(p.join(work.path, 'picked.srt'))
         ..writeAsStringSync(_srtUploaded);
-      // 假 host 回 200 但没有 x-hibiki-subtitle-suffix：不能报「已设为默认」。
+      // 假 host 回 200 但没有 x-fushi-subtitle-suffix：不能报「已设为默认」。
       expect(
         await backend.putRemoteVideoSubtitleAsDefault(
           'video/movie',
@@ -469,6 +539,98 @@ void main() {
         RemoteSubtitleDefaultUpload.hostUnsupported,
       );
       expect(subtitlePuts, 1);
+    });
+
+    test('只认旧名的改名前 host 也能读到 client 报的字幕后缀（live push）', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{'videos': true},
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitle(
+          'video/movie',
+          sub,
+          suffix: '.en.srt',
+        ),
+        isTrue,
+      );
+      expect(oldHostSuffixes, <String>['.en.srt']);
+      expect(
+        File(p.join(work.path, 'movie.en.srt')).readAsStringSync(),
+        _srtUploaded,
+      );
+    });
+  });
+
+  // 改名前（Hibiki）的 host 设为默认成功时只回 x-hibiki-subtitle-suffix：新 client
+  // 必须按旧名回退读到它，否则会把 host 上已经生效的默认字幕误报成「不支持」。
+  group('改名前 host（只回旧名响应头）', () {
+    late HttpServer fake;
+    late Directory work;
+    final List<String?> seenSuffixHeaders = <String?>[];
+    final List<String?> seenLegacySuffixHeaders = <String?>[];
+    final List<String?> seenLegacyDefaultHeaders = <String?>[];
+
+    setUp(() async {
+      work = await Directory.systemTemp.createTemp('default_subtitle_legacy_');
+      seenSuffixHeaders.clear();
+      seenLegacySuffixHeaders.clear();
+      seenLegacyDefaultHeaders.clear();
+      fake = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      fake.listen((HttpRequest req) async {
+        final HttpResponse res = req.response;
+        if (req.uri.path == '/api/capabilities') {
+          res.headers.contentType = ContentType.json;
+          res.write(
+            jsonEncode(<String, dynamic>{
+              'liveLibrary': <String, dynamic>{'videoSubtitleDefault': true},
+            }),
+          );
+        } else if (req.method == 'PUT' && req.uri.path.endsWith('/subtitle')) {
+          seenSuffixHeaders.add(req.headers.value(kSubtitleSuffixHeader));
+          seenLegacySuffixHeaders.add(
+            req.headers.value('x-hibiki-subtitle-suffix'),
+          );
+          seenLegacyDefaultHeaders.add(
+            req.headers.value('x-hibiki-subtitle-default'),
+          );
+          await req.drain<void>();
+          res.headers.set('x-hibiki-subtitle-suffix', '.ja.srt');
+        } else {
+          res.statusCode = 404;
+        }
+        await res.close();
+      });
+    });
+
+    tearDown(() async {
+      await fake.close(force: true);
+      if (work.existsSync()) await work.delete(recursive: true);
+    });
+
+    test('新 client 新旧两个请求头都发，并按旧名读到落盘后缀', () async {
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: 'http://127.0.0.1:${fake.port}',
+        token: 'legacy-host-token',
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.ja.srt',
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
+      expect(seenSuffixHeaders, <String?>['.ja.srt']);
+      expect(seenLegacySuffixHeaders, <String?>['.ja.srt']);
+      expect(seenLegacyDefaultHeaders, <String?>['1']);
     });
   });
 

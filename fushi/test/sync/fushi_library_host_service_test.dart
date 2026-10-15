@@ -47,7 +47,7 @@ void main() {
     late Directory dictRoot;
 
     setUp(() async {
-      tmp = Directory.systemTemp.createTempSync('hibiki_lib_host');
+      tmp = Directory.systemTemp.createTempSync('fushi_lib_host');
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       dictRoot = Directory(p.join(tmp.path, 'dicts'))
         ..createSync(recursive: true);

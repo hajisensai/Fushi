@@ -363,8 +363,8 @@ String resolveFfmpegExecutableFrom({
 /// app 可执行文件同目录下的捆绑 ffmpeg 路径（存在才返回，否则 null）。
 ///
 /// Windows 找 `ffmpeg.exe`，其余找 `ffmpeg`。`Platform.resolvedExecutable` 是
-/// 本进程的可执行文件：Windows `…\Hibiki\hibiki.exe` → 找 `…\Hibiki\ffmpeg.exe`；
-/// macOS `Hibiki.app/Contents/MacOS/Hibiki` → 找同目录 `ffmpeg`；Linux 同理。
+/// 本进程的可执行文件：Windows `…\Fushi\fushi.exe` → 找 `…\Fushi\ffmpeg.exe`；
+/// macOS `Fushi.app/Contents/MacOS/Fushi` → 找同目录 `ffmpeg`；Linux 同理。
 /// 任何异常（沙箱/只读/解析失败）静默返回 null，回退 PATH。
 String? _bundledFfmpegPath() => _bundledExecutablePath('ffmpeg');
 

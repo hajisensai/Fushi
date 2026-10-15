@@ -1,4 +1,4 @@
-// Hibiki patch (BUG-2838) over flutter_local_notifications_windows 2.0.1.
+// Fushi patch (BUG-2838) over flutter_local_notifications_windows 2.0.1.
 //
 // Upstream crashed long-running processes (3.5~7 h) with an uncaught C++
 // exception, HRESULT 0x800401FD CO_E_OBJNOTCONNECTED, thrown from Show() on the

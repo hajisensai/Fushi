@@ -19,7 +19,7 @@ import mextensionserver.model.DataBody
 import mextensionserver.model.FiltersResponse
 
 /**
- * Hibiki serializes manga filters into an explicit wire shape. Jackson cannot
+ * Fushi serializes manga filters into an explicit wire shape. Jackson cannot
  * otherwise preserve the concrete sealed subtype, which makes TriState and
  * Sort indistinguishable to clients.
  */

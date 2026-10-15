@@ -80,7 +80,7 @@ void main() {
     expect(find.byType(FushiDestructiveConfirmDialog), findsNothing);
   });
 
-  testWidgets('占用者是 hibiki 自身旧实例 → 弹窗明确标注本应用另一实例', (WidgetTester tester) async {
+  testWidgets('占用者是 Fushi 自身旧实例 → 弹窗明确标注本应用另一实例', (WidgetTester tester) async {
     final BuildContext context = await pumpHost(tester);
     final Future<PortKillDecision> decisionFuture = decidePortKill(
       context,

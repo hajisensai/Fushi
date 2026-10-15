@@ -219,14 +219,24 @@ String? _extractVideoId(String reqPath, String suffix) {
 
 /// 从请求 header 读一个 URL-encoded 值并解码（HTTP header 只收 ASCII，非 ASCII 值
 /// 由 client 端 [Uri.encodeComponent] 编码）。缺失/空返回 null；解码失败退回原文。
+/// 先读新名，读不到再读改名前的旧名（[interconnectHeaderNameCandidates]）。
 String? _decodeHeaderValue(shelf.Request request, String name) {
-  final String? raw = request.headers[name];
-  if (raw == null || raw.isEmpty) return null;
+  final String? raw = _interconnectHeaderValue(request, name);
+  if (raw == null) return null;
   try {
     return Uri.decodeComponent(raw);
   } catch (_) {
     return raw;
   }
+}
+
+/// 读互联自定义 header 的原文：新名优先，缺失/空时回退改名前的旧名。
+String? _interconnectHeaderValue(shelf.Request request, String name) {
+  for (final String candidate in interconnectHeaderNameCandidates(name)) {
+    final String? raw = request.headers[candidate];
+    if (raw != null && raw.isNotEmpty) return raw;
+  }
+  return null;
 }
 
 File? _coverFile(String? path) {
@@ -235,7 +245,7 @@ File? _coverFile(String? path) {
   return file.existsSync() ? file : null;
 }
 
-/// MIME 推断收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
+/// MIME 推断收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
 /// 旧本地 switch 副本缺 `.webp` → webp 封面按 application/octet-stream 下发，
 /// 对端 WebView 拒绝内联渲染（BUG-1122）；查共享表后随表修复。保留薄 shim 供
 /// 本文件既有调用方。
@@ -535,7 +545,7 @@ class FushiSyncServer {
     // collection) instead of a 404. The client's reachability probe PROPFINDs
     // the root and gates every other op — including the MKCOL that would
     // otherwise lazily create this dir — so without this a reachable,
-    // correctly-authenticating host is reported as "No reachable Hibiki server
+    // correctly-authenticating host is reported as "No reachable Fushi server
     // address", a chicken-and-egg deadlock that never bootstraps (BUG-035).
     // Deliberately outside the bind try/catch below: a read-only/permission
     // failure here should fail-fast and bubble to the caller's error handling
@@ -1257,7 +1267,7 @@ class ExportPackageCache {
   int _seq = 0;
 
   Directory get _dir =>
-      _root ??= Directory.systemTemp.createTempSync('hibiki_export_cache');
+      _root ??= Directory.systemTemp.createTempSync('fushi_export_cache');
 
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。

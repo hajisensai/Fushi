@@ -50,7 +50,7 @@ import 'package:fushi/src/sync/backup_service.dart'
 ///  - [DataRootMigrationTarget.customRoot]：用户挑了一个普通目录 →
 ///    `<root>/documents` + `<root>/support`，提交写 `data_root`，行为逐字节不变。
 ///  - [DataRootMigrationTarget.defaultLocation]：用户挑的就是默认位置 → documents 根 =
-///    `<Documents>/Hibiki/data`、support 根 = 平台固定落点（**DB 不进文档目录**），提交
+///    `<Documents>/Fushi/data`、support 根 = 平台固定落点（**DB 不进文档目录**），提交
 ///    清掉 `data_root` 并把 `documents_layout` 锚成 [AppPaths.documentsLayoutNested]。
 class DataRootMigrationTarget {
   const DataRootMigrationTarget._({
@@ -130,7 +130,7 @@ DataRootMigrationTarget resolveDataRootMigrationTarget({
   final String canonPicked = p.canonicalize(pickedRoot);
   final String canonDefaultDocs = p.canonicalize(defaultDocumentsRoot);
   // 伞目录 = 默认 documents 根的父目录。`defaultDocumentsChildSegments` 恒有 ≥2 段
-  // （`Hibiki/data`），故伞目录绝不会等于共享的平台 `Documents` 本身——否则「挑 Documents
+  // （`Fushi/data`），故伞目录绝不会等于共享的平台 `Documents` 本身——否则「挑 Documents
   // 根」会被误判成默认位置。该不变量由 `data_root_default_location_test.dart` 守卫。
   final String canonUmbrella = p.canonicalize(p.dirname(defaultDocumentsRoot));
   if (canonPicked == canonDefaultDocs || canonPicked == canonUmbrella) {
@@ -158,7 +158,7 @@ class DataRootMigrationRequest {
   /// 旧「内容/书库」根（含 EPUB / 有声书 / 视频封面/字幕/shader / 词典资源 / 缩略图）。
   final Directory oldDocumentsRoot;
 
-  /// 旧「数据库/支持」根（`hibiki.db` + 各 `local_audio_*.db`）。
+  /// 旧「数据库/支持」根（`fushi.db` + 各 `local_audio_*.db`）。
   final Directory oldSupportRoot;
 
   /// BUG-1188：本次迁移的目标形态（两个根 + 位置如何记录）。见 [DataRootMigrationTarget]。
@@ -187,7 +187,7 @@ class DataRootMigrationRequest {
 
   /// TODO-1226：documents 根搬移的**顶层项白名单**。
   ///
-  /// - `null` ⇒ [oldDocumentsRoot] 是 Hibiki 专属目录（自定义数据根的
+  /// - `null` ⇒ [oldDocumentsRoot] 是 Fushi 专属目录（自定义数据根的
   ///   `<root>/documents`）：整树搬移、迁移成功后整目录删除（原行为不变）。
   /// - 非 null ⇒ [oldDocumentsRoot] 是**共享用户目录**（默认根 = 平台 `Documents`）：
   ///   只搬基名命中白名单的顶层项（生产传 `AppPaths.fushiOwnedDocumentsEntries`），
@@ -243,7 +243,7 @@ class DataRootMigrator {
   ///
   /// 步骤：① await 关闭运行时句柄；② 校验新 dataRoot 可建且为空（不覆盖已有数据）；
   /// ③ 把旧 documents/support 整目录搬进新根的 documents/support；④ 在已搬过去的
-  /// `hibiki.db` 上把所有绝对路径列从旧根 rebase 到新根（含 prefs 里的字体 / 本地音频
+  /// `fushi.db` 上把所有绝对路径列从旧根 rebase 到新根（含 prefs 里的字体 / 本地音频
   /// 库 JSON）；⑤ 写 data_root pref；⑥ pref 已写成功后尽力删除旧根。pref 写入前任一
   /// 步失败抛 [DataRootMigrationException]，旧根原样保留、新根半成品清理、不写 pref。
   Future<(Directory documents, Directory support)> migrate(
@@ -255,7 +255,7 @@ class DataRootMigrator {
     // BUG-1188：归一化到默认位置时 DB 本来就躺在平台固定落点（新装的落点也是它）→ support
     // 根根本不需要搬。这一条必须在建搬移计划**之前**判定：源=目标时既不能建搬移计划
     // （rename 到自己），也绝不能跑迁移末尾的 `_deleteOldSupportPreservingPrefs`
-    // （那会把活着的 support 根里除 prefs 外的一切删光，包括刚"搬"过去的 hibiki.db）。
+    // （那会把活着的 support 根里除 prefs 外的一切删光，包括刚"搬"过去的 fushi.db）。
     final bool supportUnchanged =
         p.equals(req.oldSupportRoot.path, newSupport.path);
     // 目标 support 根已有内容（回到默认位置时 = 平台固定落点里的 `shared_preferences.json`）
@@ -280,7 +280,7 @@ class DataRootMigrator {
         ? const <String>{}
         : _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
-      // documents：共享默认根（白名单非 null）只搬 Hibiki 自有顶层项；自定义根整树搬。
+      // documents：共享默认根（白名单非 null）只搬 Fushi 自有顶层项；自定义根整树搬。
       _MovePlan(req.oldDocumentsRoot, newDocs,
           includeTopLevelNames: req.documentsTopLevelIncludeNames,
           excludeTopLevelNames: const <String>{}),
@@ -293,7 +293,7 @@ class DataRootMigrator {
     ];
     // BUG-1188：回滚时可以**整目录清掉**的「本次迁移自建子树」。support 根在两种情况下
     // 绝不能进这个列表：① 未变（它就是活着的平台固定落点，里面还躺着刚 rebase 完的
-    // hibiki.db）；② 合并搬入（里面有先于本次迁移就存在的 `shared_preferences.json`）。
+    // fushi.db）；② 合并搬入（里面有先于本次迁移就存在的 `shared_preferences.json`）。
     // 整目录删掉等于抹掉用户的全部设置与 data_root 配置本身。
     final List<Directory> createdSubtrees = <Directory>[
       newDocs,
@@ -327,7 +327,7 @@ class DataRootMigrator {
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
 
-    // ③ 在新 support 根的 hibiki.db 上把绝对路径从旧根 rebase 到新根。
+    // ③ 在新 support 根的 fushi.db 上把绝对路径从旧根 rebase 到新根。
     try {
       await _rebaseDatabasePaths(
         dbDirectory: newSupport.path,
@@ -391,14 +391,14 @@ class DataRootMigrator {
 
     // 现在删旧根（prefs-preserving）。
     //
-    // TODO-1226：documents 根仅在**整树搬移**（Hibiki 专属根）时删除本体。白名单模式
+    // TODO-1226：documents 根仅在**整树搬移**（Fushi 专属根）时删除本体。白名单模式
     // 下源根是共享用户 `Documents`——白名单项已随搬移离开源根（同盘 rename 移走 /
     // 跨盘 copy 校验后删源），剩下的全是用户自己的文件，**绝不**删除目录本体或残留。
     if (req.documentsTopLevelIncludeNames == null) {
       await _deleteOldRootAfterSwitch(req.oldDocumentsRoot);
     }
     // BUG-1188：support 根未变时**绝不**跑这一步——它会把源根里除 prefs 外的一切删光，
-    // 而此时源根就是目标根（刚 rebase 好的 hibiki.db 正躺在里面）。
+    // 而此时源根就是目标根（刚 rebase 好的 fushi.db 正躺在里面）。
     if (!supportUnchanged) {
       await _deleteOldSupportPreservingPrefs(
           req.oldSupportRoot, supportExclude);
@@ -416,8 +416,8 @@ class DataRootMigrator {
     final String canonNew = p.canonicalize(req.target.pickedPath);
     // BUG-1115：共享 documents 根（白名单选择性搬移）下的**非白名单**子目录是安全目标
     // ——搬移只动白名单顶层项，新根在整个过程里是旁观者。这让老安装能把散落在用户
-    // `Documents` 根下的 16 个 Hibiki 目录一键收进 `Documents\Hibiki`。白名单为 null
-    // （Hibiki 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
+    // `Documents` 根下的 16 个 Fushi 目录一键收进 `Documents\Fushi`。白名单为 null
+    // （Fushi 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
     final Set<String>? whitelist = req.documentsTopLevelIncludeNames;
     final bool nestedInSharedDocuments = whitelist != null &&
         AppPaths.isSafeNestedTargetInSharedDocuments(
@@ -450,7 +450,7 @@ class DataRootMigrator {
     //  - support 根未变时**不检查**（它当然非空——里面正是本次要保留在原地的 DB）。
     //  - 检查目标 support 根时**忽略顶层 prefs 文件**：归一化回默认位置时目标就是平台固定
     //    落点，`shared_preferences.json` 一直住在那儿、且刻意不参与搬移，它的存在不代表
-    //    「那里已有一份别的数据」。除 prefs 外的任何残留（比如一个陈旧的 hibiki.db）仍照拒。
+    //    「那里已有一份别的数据」。除 prefs 外的任何残留（比如一个陈旧的 fushi.db）仍照拒。
     if (newDocs.existsSync() && await _hasAnyFileAsync(newDocs)) {
       throw const DataRootMigrationException('目标数据根已存在数据，拒绝覆盖');
     }
@@ -933,7 +933,7 @@ class DataRootMigrator {
     return false;
   }
 
-  /// 在 [dbDirectory] 的 `hibiki.db` 上把所有数据根内绝对路径从旧根 rebase 到新根。
+  /// 在 [dbDirectory] 的 `fushi.db` 上把所有数据根内绝对路径从旧根 rebase 到新根。
   ///
   /// 覆盖清单的**单一真相源**是 `path_rebase_coverage.dart`（[kPathRebaseColumns] /
   /// [kPathRebasePrefs]），守卫测试 `path_rebase_coverage_guard_test.dart` 双向比对
@@ -942,8 +942,8 @@ class DataRootMigrator {
   /// 三条 BUG-1174 的铁律：
   ///  1. **作用域谓词 = 搬移作用域**（[DocumentsPathRebaser]）。判据不是「以旧根开头」
   ///     而是「相对旧根的首段命中本次真正会被搬走的顶层项集合」。新根落在旧根内部
-  ///     （`<Documents>` → `<Documents>/Hibiki/data`）时，已改写过的路径首段是
-  ///     `Hibiki`（不在白名单里）→ 天然跳过，函数**本质幂等**，跑几遍结果一样。
+  ///     （`<Documents>` → `<Documents>/Fushi/data`）时，已改写过的路径首段是
+  ///     `Fushi`（不在白名单里）→ 天然跳过，函数**本质幂等**，跑几遍结果一样。
   ///  2. **单事务**：整段改写包在 `db.transaction()` 里，中途失败整体回滚，绝不留
   ///     「一半指新根、一半指旧根」的半状态（外层回滚只搬文件，救不了半改的 DB）。
   ///  3. **prefs 与 profile_settings 共用同一个改写函数**（[rebaseMigratedPrefValue]）。
@@ -1450,7 +1450,7 @@ class _MovePlan {
   /// [deferredCopy]）。
   final List<String> movedTopLevelNames = <String>[];
 
-  /// TODO-1226：只允许搬移的顶层项基名白名单；null = 全部可搬（Hibiki 专属根整树
+  /// TODO-1226：只允许搬移的顶层项基名白名单；null = 全部可搬（Fushi 专属根整树
   /// 语义）。非 null（共享用户 `Documents`）⇒ 白名单外的顶层项（用户文件、shell
   /// junction）绝不触碰，回滚同样走合并式搬回。
   final Set<String>? includeTopLevelNames;
@@ -1498,20 +1498,20 @@ class _CopyProgress {
 /// BUG-1174 ③：数据根迁移期的 documents 根路径改写器。**本质幂等**。
 ///
 /// 旧写法的判据是 `startsWith(oldRoot)`。当新根落在旧根**内部**时（正是
-/// `<Documents>` → `<Documents>/Hibiki/data` 这种形态），一条已经改写过的路径**仍然**
-/// 以旧根开头，再跑一次就变成 `Documents/Hibiki/data/Hibiki/data/...` —— 全库路径当场
+/// `<Documents>` → `<Documents>/Fushi/data` 这种形态），一条已经改写过的路径**仍然**
+/// 以旧根开头，再跑一次就变成 `Documents/Fushi/data/Fushi/data/...` —— 全库路径当场
 /// 作废、且不抛任何异常，**静默毁库**。同型的坑在 iOS 容器重定位上已经踩过一次
 /// （BUG-1115）。
 ///
 /// 这里不靠「保证只跑一次」的流程来回避（那是把正确性押在流程上），而是**把判据改对**：
 /// 作用域谓词收窄为「相对旧根的**首段**命中 [scopeTopLevelNames]」，也就是**本次搬移
-/// 真正会动的那些顶层项**。`Hibiki` 不在白名单里（`isSafeNestedTargetInSharedDocuments`
-/// 靠的就是这一点），所以已改写过的路径首段是 `Hibiki` → 天然跳过。「跑没跑过」这个
+/// 真正会动的那些顶层项**。`Fushi` 不在白名单里（`isSafeNestedTargetInSharedDocuments`
+/// 靠的就是这一点），所以已改写过的路径首段是 `Fushi` → 天然跳过。「跑没跑过」这个
 /// 问题因此**消失**，而不是被判断掩盖。
 ///
 /// [scopeTopLevelNames] 必须与 `DataRootMigrationRequest.documentsTopLevelIncludeNames`
 /// **同源**：改写作用域与搬移作用域一旦漂开，就会出现「文件搬走了但路径没改」或反过来
-/// 「路径改了但文件还在旧位置」。`null`（Hibiki 专属根的整树搬移语义）= 无首段限制；
+/// 「路径改了但文件还在旧位置」。`null`（Fushi 专属根的整树搬移语义）= 无首段限制；
 /// 那条路径上 `_validateTarget` 已禁止新根落在旧根内部，故同样幂等。
 @immutable
 class DocumentsPathRebaser {
@@ -1654,7 +1654,7 @@ String rebaseMigratedPrefValue(
   switch (spec.shape) {
     // 字体 JSON 复用 backup_service 的遍历器，但**必须注入作用域改写器**：那两个函数
     // 默认走裸 rebasePath（startsWith 判据），新根落在旧根内部时会把已改写过的 path 再
-    // 改一遍 → `.../Hibiki/data/Hibiki/data/custom_fonts/a.ttf`。这是本次被幂等测试
+    // 改一遍 → `.../Fushi/data/Fushi/data/custom_fonts/a.ttf`。这是本次被幂等测试
     // **真实抓到**的旁路（BUG-1174 ③）。备份恢复侧不传 rewritePath，行为逐字节不变。
     case PathValueShape.fontCatalogJson:
       return rebaseFontCatalogJson(

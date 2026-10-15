@@ -8,20 +8,20 @@
   All events produce formatted output: [timestamp] [backend] [category/action] params → result
 
 .EXAMPLE
-  .\hibiki-debug.ps1 search 猫                    # Trigger WEB_SEARCH intent
-  .\hibiki-debug.ps1 share "テスト文章"            # Trigger SEND intent
-  .\hibiki-debug.ps1 process-text 食べる           # Trigger PROCESS_TEXT
-  .\hibiki-debug.ps1 volume-up 3                   # Volume up 3 times (reader page turn)
-  .\hibiki-debug.ps1 float-dict start              # Start floating dictionary service
-  .\hibiki-debug.ps1 launch                        # Launch app
-  .\hibiki-debug.ps1 pause                         # Send to background
-  .\hibiki-debug.ps1 prefs fontSize                # Read preference
-  .\hibiki-debug.ps1 prefs fontSize 22             # Set preference
-  .\hibiki-debug.ps1 activity                      # Current activity info
-  .\hibiki-debug.ps1 logcat dict                   # Filtered logcat
-  .\hibiki-debug.ps1 eval "1+1"                    # Evaluate via VM service
-  .\hibiki-debug.ps1 script commands.txt           # Run batch commands
-  .\hibiki-debug.ps1 -Backend vm -VmUrl "http://127.0.0.1:xxxxx" eval "expr"
+  .\fushi-debug.ps1 search 猫                    # Trigger WEB_SEARCH intent
+  .\fushi-debug.ps1 share "テスト文章"            # Trigger SEND intent
+  .\fushi-debug.ps1 process-text 食べる           # Trigger PROCESS_TEXT
+  .\fushi-debug.ps1 volume-up 3                   # Volume up 3 times (reader page turn)
+  .\fushi-debug.ps1 float-dict start              # Start floating dictionary service
+  .\fushi-debug.ps1 launch                        # Launch app
+  .\fushi-debug.ps1 pause                         # Send to background
+  .\fushi-debug.ps1 prefs fontSize                # Read preference
+  .\fushi-debug.ps1 prefs fontSize 22             # Set preference
+  .\fushi-debug.ps1 activity                      # Current activity info
+  .\fushi-debug.ps1 logcat dict                   # Filtered logcat
+  .\fushi-debug.ps1 eval "1+1"                    # Evaluate via VM service
+  .\fushi-debug.ps1 script commands.txt           # Run batch commands
+  .\fushi-debug.ps1 -Backend vm -VmUrl "http://127.0.0.1:xxxxx" eval "expr"
 #>
 [CmdletBinding()]
 param(

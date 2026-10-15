@@ -62,7 +62,7 @@ class FushiServerStartError extends FushiServerStartOutcome {
   final String message;
 }
 
-/// App-level owner of the embedded Hibiki LAN sync server + its broadcast.
+/// App-level owner of the embedded Fushi LAN sync server + its broadcast.
 ///
 /// Previously the [FushiSyncServer] and [LanBroadcastService] were owned by the
 /// sync-settings page widget, whose `dispose()` stopped them — so simply

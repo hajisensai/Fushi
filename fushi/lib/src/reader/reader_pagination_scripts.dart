@@ -611,7 +611,7 @@ class ReaderPaginationScripts {
   }
 
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
-  // 的值转换同口径。改用 hibiki_core 共享码点原语（`jp_codepoint_fold.dart`）后
+  // 的值转换同口径。改用 fushi_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
   // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
   // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。

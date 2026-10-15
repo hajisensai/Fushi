@@ -1,6 +1,6 @@
 //
 //  definition.js
-//  Hibiki - Shared structured content rendering for dictionary definitions
+//  Fushi - Shared structured content rendering for dictionary definitions
 //
 //  Extracted from popup.js to unify rendering between popup and main dictionary views.
 //  Copyright © 2026 Manhhao.

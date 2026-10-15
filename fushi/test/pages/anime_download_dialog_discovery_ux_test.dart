@@ -80,7 +80,7 @@ class _MemPlanStore extends AnimeDownloadPlanStore {
   _MemPlanStore() : super(baseDir: Directory('unused-mem-store'));
 
   final Directory tempRoot = Directory.systemTemp.createTempSync(
-    'hibiki-subs-test',
+    'fushi-subs-test',
   );
 
   @override

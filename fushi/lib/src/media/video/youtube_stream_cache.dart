@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
 
-/// TODO-1314（yt-dlp 借鉴项之三）：YouTube **流解析结果的持久缓存**——Hibiki 特有概念。
+/// TODO-1314（yt-dlp 借鉴项之三）：YouTube **流解析结果的持久缓存**——Fushi 特有概念。
 ///
 /// 现状：每次从书架打开一本 YouTube 流媒体书都全量 resolveYoutubeSource（getManifest =
 /// 多次 innertube 往返 + 跨 client 403 探测），慢网下数秒「点了没动静」。googlevideo 直链

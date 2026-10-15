@@ -218,7 +218,7 @@ extension _VideoClipExport on _VideoFushiPageState {
 
   /// 收集片段区间内「用户正在看的字幕」，裁成 SRT 文本（主字幕一条、副字幕一条）。
   ///
-  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Hibiki 的字幕全部由
+  /// 真相源是播放器内存里的 cue 列表，不是源文件的 `0:s:N`：Fushi 的字幕全部由
   /// Flutter overlay 渲染（libmpv 侧被 `setSubtitleTrack(no())` 关掉），外挂字幕在源
   /// 文件里压根没有对应流，内嵌轨也丢掉了用户调过的 [VideoPlayerController.delayMs]
   /// 偏移。从 cue 生成，导出的字幕恰好等于屏幕上看到的那条。

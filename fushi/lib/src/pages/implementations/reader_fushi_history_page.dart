@@ -68,7 +68,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiSpringReveal;
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
-// hibiki_core 未再导出它）。
+// fushi_core 未再导出它）。
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';

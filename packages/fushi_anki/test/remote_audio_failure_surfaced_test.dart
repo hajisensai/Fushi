@@ -188,7 +188,7 @@ AnkiSettings _settings() => AnkiSettings(
       availableNoteTypes: const <AnkiNoteType>[
         AnkiNoteType(
           id: 2,
-          name: 'Hibiki',
+          name: 'Fushi',
           fields: <String>['Expression', 'Audio'],
         ),
       ],

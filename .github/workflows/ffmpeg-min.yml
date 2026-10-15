@@ -1,4 +1,4 @@
-# 构建 Hibiki 桌面用的「精简 ffmpeg」（~12MB 量级，GPL/含 libx264，仅含 Hibiki 调用的组件）。
+# 构建 Fushi 桌面用的「精简 ffmpeg」（~12MB 量级，GPL/含 libx264，仅含 Fushi 调用的组件）。
 # 产物 ffmpeg(.exe) 放到 app 程序旁即被 resolveFfmpegExecutable() 优先选用
 # （见 fushi/lib/src/media/video/ffmpeg_backend.dart）。
 #
@@ -11,7 +11,7 @@
 # fushi/test/tools/desktop_ffmpeg_bundling_guard_test.dart 会要求）。
 # 需要刷新入库二进制时：手动跑此 workflow，下载对应平台 artifact，替换 third_party 下
 # 的 vendored 文件再提交；macOS 侧还要 `git update-index --chmod=+x`，否则拷进
-# hibiki.app 的是不可执行文件。
+# fushi.app 的是不可执行文件。
 #
 # ⚠️ 本 workflow 的 smoke-test 只验**当场刚编出来的**二进制，管不到入库的那个。
 # 「改了 build-ffmpeg-min.sh 却忘记重新 vendor」曾让桌面片段导出静默丢字幕整整一个

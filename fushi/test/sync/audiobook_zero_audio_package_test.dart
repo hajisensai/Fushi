@@ -120,7 +120,7 @@ void main() {
   group('零音频有声书包 (BUG-2551)', () {
     test('导出：音频根解析不出任何音频时，单独下发 unresolvedAudioRoots', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-zero-audio-export-');
+          await Directory.systemTemp.createTemp('fushi-zero-audio-export-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -147,7 +147,7 @@ void main() {
 
     test('导入：srt-backed 包零音频时抛 Incomplete，一行都不落库', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-zero-audio-import-');
+          await Directory.systemTemp.createTemp('fushi-zero-audio-import-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -180,7 +180,7 @@ void main() {
 
     test('导入：纯字幕书零音频仍合法放行（standalone 本来就可以没有音频）', () async {
       final Directory temp = await Directory.systemTemp
-          .createTemp('hibiki-zero-audio-standalone-');
+          .createTemp('fushi-zero-audio-standalone-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -217,7 +217,7 @@ void main() {
 
     test('导入：纯字幕书声明了音频根却丢了音频时，照样抛', () async {
       final Directory temp = await Directory.systemTemp
-          .createTemp('hibiki-zero-audio-standalone-lost-');
+          .createTemp('fushi-zero-audio-standalone-lost-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -257,7 +257,7 @@ void main() {
   group('音频完好判据 (BUG-2551)', () {
     test('files 模式：路径断链 → 不完好', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-audio-intact-');
+          await Directory.systemTemp.createTemp('fushi-audio-intact-');
       addTearDown(() => temp.delete(recursive: true));
       final File track = File(p.join(temp.path, 'a.mp3'))
         ..writeAsStringSync('x');
@@ -277,7 +277,7 @@ void main() {
 
     test('零音频（空清单 / 空目录 / 什么都没有）→ 不完好', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-audio-intact-empty-');
+          await Directory.systemTemp.createTemp('fushi-audio-intact-empty-');
       addTearDown(() => temp.delete(recursive: true));
 
       expect(
@@ -320,7 +320,7 @@ void main() {
   group('导入写库原子性 (BUG-2551)', () {
     test('cue 段中途抛 → 已写下的 Audiobooks / SrtBooks 行一并回滚', () async {
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-import-atomic-');
+          await Directory.systemTemp.createTemp('fushi-import-atomic-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();

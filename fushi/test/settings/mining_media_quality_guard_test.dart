@@ -339,9 +339,9 @@ void main() {
       for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {
         final String ext = format.fileExtension;
         expect(RegExp("'$ext':\\s*'image/").hasMatch(core), isTrue,
-            reason: 'hibiki_core 的 MIME 表缺 $ext（$format 的产出扩展名）');
+            reason: 'fushi_core 的 MIME 表缺 $ext（$format 的产出扩展名）');
         expect(RegExp("'$ext':\\s*'image/").hasMatch(anki), isTrue,
-            reason: 'hibiki_anki 的 MIME 镜像表缺 $ext（$format 的产出扩展名）');
+            reason: 'fushi_anki 的 MIME 镜像表缺 $ext（$format 的产出扩展名）');
       }
     });
   });

@@ -18,7 +18,7 @@ void main() {
   late Directory tmp;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('hibiki_sub_attach_');
+    tmp = await Directory.systemTemp.createTemp('fushi_sub_attach_');
   });
   tearDown(() async {
     if (tmp.existsSync()) await tmp.delete(recursive: true);

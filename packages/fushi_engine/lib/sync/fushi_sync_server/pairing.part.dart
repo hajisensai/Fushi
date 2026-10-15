@@ -19,7 +19,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     //
     // 兼容性：LAN 内且 host 未开「LAN 也要 PIN」时（默认）v1 行为逐字不变，
     // 旧客户端继续可配对；变的只是「本就该要 PIN 的会话」——那些会话以前能拿到
-    // 共享 token 本身就是漏洞，现在必须走 v2（Hibiki 自己的 client 早已先试 v2，
+    // 共享 token 本身就是漏洞，现在必须走 v2（Fushi 自己的 client 早已先试 v2，
     // 只在对端不支持 v2 时才回落 v1）。
     final String? pairRemote = _remoteAddress(request);
     final bool v1PinRequired = FushiPairingProtocol.computePinRequired(
@@ -462,7 +462,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
         'videoTranscode': lib && _videoTranscodeEnabled,
         // 远端导入 / 重定时字幕「设为这一集的默认字幕」（`PUT .../subtitle` 带
-        // `X-Hibiki-Subtitle-Default: 1`，host 按自己的学习语言定后缀、旧 sidecar
+        // `X-Fushi-Subtitle-Default: 1`，host 按自己的学习语言定后缀、旧 sidecar
         // 改名 `.fushi-bak` 让位）。老 host 无此字段 → client **不上传**：老 host
         // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
         // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。

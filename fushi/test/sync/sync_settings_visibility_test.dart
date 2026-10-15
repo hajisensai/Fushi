@@ -58,7 +58,7 @@ void main() {
 
     test('group 1 (sync method) holds selector + scoped account/config', () {
       // BUG-1088：互联回到「同步方式」选择器；选中时显示一行指引（连接配置在
-      // 「Hibiki 互联」分类）。C1：WebDAV/FTP/SFTP 三套凭据表单挪进子页「服务器
+      // 「Fushi 互联」分类）。C1：WebDAV/FTP/SFTP 三套凭据表单挪进子页「服务器
       // 设置」，主页只留一行入口（凭据式后端才显示）。
       expect(idsOf(dest.sections[0]), <String>[
         'sync.mode',
@@ -232,7 +232,7 @@ void main() {
     });
 
     test('manual-sync actions are gated on server mode (BUG-084)', () {
-      // A pure Hibiki host has no outbound sync, so "sync now" / "compare" must
+      // A pure Fushi host has no outbound sync, so "sync now" / "compare" must
       // be hidden in server mode and an explanatory note shown instead — every
       // one of the three carries a visibility predicate (none is unconditional).
       final SettingsSection actions = dest.sections[2];
@@ -481,7 +481,7 @@ void main() {
           devicesPage.sections.expand(
             (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
           ),
-          <String>['sync.hibiki_server_config', 'sync.lan_devices'],
+          <String>['sync.fushi_server_config', 'sync.lan_devices'],
         );
         // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
         // 可见（host 无 outbound 时进一步隐藏）。

@@ -20,7 +20,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-reorder-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-reorder-');
     database = _GatedDatabase();
     manager = MihonManager(
       database: database,

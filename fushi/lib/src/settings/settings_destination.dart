@@ -45,7 +45,7 @@ enum SettingsDestinationId {
   // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。
   storage,
   system,
-  // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
+  // Fushi P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
   // 独立一级分类（构建函数在 sync_settings_schema.dart 同库，共享私有状态）。
   interconnect,
   // Synthetic destination for the reader quick-settings dialog; its own id so

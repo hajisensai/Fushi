@@ -9,7 +9,7 @@ export 'epub_srt_matcher.dart'
 
 /// 格式无关的 cue↔EPUB 模糊匹配器。
 ///
-/// 上游 Sasayaki 只吃 SRT；hibiki 的 SRT/LRC/VTT/ASS 四个 parser 都归一化到
+/// 上游 Sasayaki 只吃 SRT；fushi 的 SRT/LRC/VTT/ASS 四个 parser 都归一化到
 /// 同一份 [AudioCue] 列表，所以匹配逻辑与来源格式无关。底层复用
 /// [EpubSrtMatcher]（Dice 系数模糊匹配，移植自 ttu-whispersync）。
 class EpubCueMatcher {

@@ -183,7 +183,7 @@ void main() {
       expect(text.contains('GNU GENERAL PUBLIC LICENSE'), isTrue,
           reason: '加了 --enable-gpl 后产物许可从 LGPLv3 变为 GPLv3，'
               'AAR 内的 license.txt 必须同步（android.sh 会自动写入）。'
-              'Hibiki 自身即 GPL-3.0，两者一致');
+              'Fushi 自身即 GPL-3.0，两者一致');
       expect(aar.findFile('res/raw/license_x264.txt'), isNotNull,
           reason: 'x264 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/license_libvpx.txt'), isNotNull,

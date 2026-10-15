@@ -138,7 +138,7 @@ bool platformSupportsInAppInstall() =>
     Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
 
 /// Flutter `--split-per-abi` 产出的 Android ABI 标签（CI 的 `app-<abi>-release.apk`
-/// 即据此重命名为 `hibiki-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
+/// 即据此重命名为 `fushi-<version>-<abi>.apk`，见 `.github/workflows/release.yml`）。
 /// 作为「stable release 资产命名」单一真相源的一部分，供 [synthesizeStableAssetNames]
 /// 在没有 GitHub API 资产清单时（TODO-404：纯 GFW 下检查只能拿到 302 跳转里的 tag）
 /// 重建候选资产名。
@@ -375,7 +375,7 @@ class WindowsUpdater extends PlatformUpdater {
 
 /// macOS：去沙盒后的应用内自替换（Phase 3）。选 `-macos-arm64.zip` 包；apply 交给
 /// [MacInstaller.runAndExit]——解压→写握手标记→分离脚本等本进程退出后替换
-/// `/Applications/hibiki.app` 并重启→`exit(0)`。替换失败由脚本回滚旧版本、下次
+/// `/Applications/fushi.app` 并重启→`exit(0)`。替换失败由脚本回滚旧版本、下次
 /// 启动经 [MacUpdateHandoff.reconcile] 提示，绝不留坏档。
 class MacUpdater extends PlatformUpdater {
   @override
@@ -474,10 +474,10 @@ class AndroidInstaller {
 /// - `/SUPPRESSMSGBOXES`：配合 `/VERYSILENT` 抑制 Inno 的错误/选择弹窗，避免
 ///   `DeleteFile failed code 5` 把用户留在 Select action。
 /// - `/NOCLOSEAPPLICATIONS` + `/NOFORCECLOSEAPPLICATIONS`：禁止 Inno /
-///   RestartManager 自动关闭或强制结束任何残留 Hibiki / libmpv 持有进程。
+///   RestartManager 自动关闭或强制结束任何残留 Fushi / libmpv 持有进程。
 /// - `/NORESTARTAPPLICATIONS`：不让 RestartManager 自动拉起被它管理的应用。
 /// - `/NORESTART`：禁止安装器重启**操作系统**（我们只想重启 app，不重启系统）。
-/// - `/DIR=`：应用内更新只写当前运行 `hibiki.exe` 所在目录，不追随注册表或历史路径。
+/// - `/DIR=`：应用内更新只写当前运行 `fushi.exe` 所在目录，不追随注册表或历史路径。
 List<String> windowsInstallerArgs(
   String installerPath, {
   String? logPath,
@@ -688,7 +688,7 @@ class UpdateInstallerException implements Exception {
 
 /// 下载产物是否是真正的 Windows 可执行文件：PE 文件以 DOS「MZ」魔数
 /// (0x4D 0x5A) 开头。GFW 下走的 GitHub 代理镜像（ghfast.top / ghproxy）可能用
-/// HTTP 200 回一个 HTML 限流/错误页，被原样写进 `hibiki-<v>.exe`；把这种字节喂给
+/// HTTP 200 回一个 HTML 限流/错误页，被原样写进 `fushi-<v>.exe`；把这种字节喂给
 /// `Process.start` 在 Windows 上行为不可控（ERROR_BAD_EXE_FORMAT 等），必须先拦掉。
 bool isWindowsExecutableHeader(List<int> header) =>
     header.length >= 2 && header[0] == 0x4D && header[1] == 0x5A;
@@ -938,10 +938,10 @@ class WindowsInstaller {
     }
 
     // launcher 已成功启动（分离进程）。当前实例只让出自己的 AppMutex / exe 锁；
-    // 其他 hibiki.exe / WebView2 实例交给安装器自己的 hibiki.iss InitializeSetup 处理
+    // 其他 fushi.exe / WebView2 实例交给安装器自己的 fushi.iss InitializeSetup 处理
     // （先 WM_CLOSE 优雅关闭给落盘机会，再按 image 名强制结束），而不是靠 Inno
     // 的 RestartManager（已用 /NOCLOSEAPPLICATIONS + /NOFORCECLOSEAPPLICATIONS 关掉）。
-    // 只有安装器杀不掉的真外部锁（非 hibiki/WebView2 占用目标目录 libmpv）才在 preflight
+    // 只有安装器杀不掉的真外部锁（非 Fushi/WebView2 占用目标目录 libmpv）才在 preflight
     // 硬中止并要求用户手动关闭（见 _throwIfWindowsInstallBlocked，TODO-1181）。
     await Future<void>.delayed(Duration.zero);
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
@@ -958,13 +958,13 @@ class WindowsInstaller {
   }
 
   /// 启动安装器前的最后一道占用检查。**只对安装器无法自愈的真外部锁硬中止**；能被
-  /// 安装器按 image 名关闭的进程（其他 `hibiki.exe` 实例 / WebView2 子进程）不再中止。
+  /// 安装器按 image 名关闭的进程（其他 `fushi.exe` 实例 / WebView2 子进程）不再中止。
   ///
-  /// 根因（TODO-1181）：`hibiki.iss` 的 `InitializeSetup()` 在 Inno 的 AppMutex 检查
-  /// 之前，先对 `hibiki.exe` 树发 `WM_CLOSE`（优雅关闭，给正在写 DB 的其他实例落盘机会）、
-  /// 轮询 `FushiSingleInstanceMutex` 释放，再按 image 名强制结束 `hibiki.exe` +
-  /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Hibiki 实例并解开 mutex 死锁。旧的
-  /// Dart 预检却在**启动安装器之前**就因「检测到其他 hibiki.exe」硬 throw，用户永远走不到
+  /// 根因（TODO-1181）：`fushi.iss` 的 `InitializeSetup()` 在 Inno 的 AppMutex 检查
+  /// 之前，先对 `fushi.exe` 树发 `WM_CLOSE`（优雅关闭，给正在写 DB 的其他实例落盘机会）、
+  /// 轮询 `FushiSingleInstanceMutex` 释放，再按 image 名强制结束 `fushi.exe` +
+  /// `msedgewebview2.exe`。即安装器本就能自己关掉其他 Fushi 实例并解开 mutex 死锁。旧的
+  /// Dart 预检却在**启动安装器之前**就因「检测到其他 fushi.exe」硬 throw，用户永远走不到
   /// 这段自愈，只能被迫手动关进程——是过度防御。故这里改为：安装器杀得掉的占用进程只记警告、
   /// 继续启动安装器交给 `.iss` 处理；只有安装器**确实**处置不掉的外部锁（镜像不在安装目录
   /// 树内、也不是 Fushi/WebView2 的进程，见 [_installerCanClose]）才保留硬中止。
@@ -984,13 +984,13 @@ class WindowsInstaller {
             ))
         .toList(growable: false);
     if (externalLocks.isEmpty) {
-      // 只剩安装器能强杀的 hibiki.exe / WebView2 实例：不中止，记警告后继续启动安装器，
+      // 只剩安装器能强杀的 fushi.exe / WebView2 实例：不中止，记警告后继续启动安装器，
       // 由 .iss InitializeSetup 的 WM_CLOSE(优雅落盘)→强杀 序列关掉它们并解开 mutex。
       ErrorLogService.instance.log(
         'WindowsInstaller.installBlockersDeferred',
         'Other Fushi/WebView2 processes are still running; continuing the '
             'update and letting the installer close them (WM_CLOSE then '
-            'force-terminate via hibiki.iss). Target: $target. '
+            'force-terminate via fushi.iss). Target: $target. '
             'Deferred: ${_summarizeBlockingProcesses(blockers)}. '
             'Installer log: $innoLogPath',
       );
@@ -1486,7 +1486,7 @@ Future<void> ensureWindowsInstallTargetWritable(Directory installDir) async {
   );
   try {
     await installDir.create(recursive: true);
-    await probe.writeAsString('hibiki updater preflight', flush: true);
+    await probe.writeAsString('fushi updater preflight', flush: true);
   } catch (e) {
     throw UpdateInstallerException(
       'Cannot write to installation directory: ${installDir.path}. '
@@ -1513,7 +1513,7 @@ class MacSwapStartedProcess {
 /// **纯函数**：从运行中可执行文件路径反解出所属 `.app` 包路径。
 ///
 /// macOS 下 `Platform.resolvedExecutable` 形如
-/// `/Applications/hibiki.app/Contents/MacOS/hibiki`，取从右起第一个以 `.app` 结尾的
+/// `/Applications/fushi.app/Contents/MacOS/fushi`，取从右起第一个以 `.app` 结尾的
 /// 路径段，返回到该段为止的前缀（即 bundle 根）。没有 `.app` 段（如以裸二进制运行、
 /// 命令行测试）→ null，调用方据此拒绝应用内替换、回退打开发布页。
 String? macAppBundlePathForExecutable(String executablePath) {
@@ -1618,7 +1618,7 @@ bool isZipHeader(List<int> header) =>
 
 class MacInstaller {
   /// 解压下载好的 `-macos-arm64.zip`→写握手标记与替换脚本→分离启动脚本→退出本进程，
-  /// 让脚本在本进程退出后替换 `/Applications/hibiki.app` 并重启。
+  /// 让脚本在本进程退出后替换 `/Applications/fushi.app` 并重启。
   ///
   /// 根因防护（对齐 Windows 的崩溃防护）：
   /// 1. 先校验产物确实是 zip（PK 魔数），拦掉代理 HTML/截断文件。

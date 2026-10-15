@@ -56,7 +56,7 @@ void main() {
 
   test('SRT 书标签经 audio 包 manifest 按名 round-trip 到目标设备', () async {
     final Directory temp =
-        await Directory.systemTemp.createTemp('hibiki-audio-tags-');
+        await Directory.systemTemp.createTemp('fushi-audio-tags-');
     addTearDown(() => temp.delete(recursive: true));
     final FushiDatabase sourceDb = testDb();
     final FushiDatabase targetDb = testDb();
@@ -86,7 +86,7 @@ void main() {
 
   test('目标设备已有同名标签时按名复用、不新建重复标签', () async {
     final Directory temp =
-        await Directory.systemTemp.createTemp('hibiki-audio-tags2-');
+        await Directory.systemTemp.createTemp('fushi-audio-tags2-');
     addTearDown(() => temp.delete(recursive: true));
     final FushiDatabase sourceDb = testDb();
     final FushiDatabase targetDb = testDb();

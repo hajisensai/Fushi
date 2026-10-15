@@ -72,7 +72,7 @@ enum BackupCategory {
   videos,
 
   /// Local audio pronunciation databases (`local_audio_*.db` + `-wal`/`-shm`),
-  /// stored flat in the support/database directory alongside `hibiki.db`. The
+  /// stored flat in the support/database directory alongside `fushi.db`. The
   /// `local_audio_dbs` preference stores their absolute paths, so without
   /// packing the files a restore points at databases that never crossed over
   /// and the local audio sources silently disappear (TODO-941). Packed under
@@ -375,7 +375,7 @@ class BackupMeta {
 
   /// Absolute root of the support/database directory on the SOURCE device,
   /// where the local-audio pronunciation databases (`local_audio_*.db`) live
-  /// flat alongside `hibiki.db`. Captured so import can rebase the stored
+  /// flat alongside `fushi.db`. Captured so import can rebase the stored
   /// `local_audio_dbs` preference paths onto this device's root. Null when the
   /// local-audio category was not packed (or a legacy backup).
   final String? localAudioRoot;
@@ -1158,7 +1158,7 @@ class BackupService {
   /// all-in export, so existing callers are unchanged. A non-null set packs
   /// ONLY the listed trees; an omitted tree is skipped (its root treated as if
   /// it carried no content), exactly the same as constructing the service
-  /// without that root. The database (`hibiki.db`) is always included
+  /// without that root. The database (`fushi.db`) is always included
   /// regardless, since it holds every table's metadata. [BackupMeta] still
   /// records the source roots of the trees that were actually packed so import
   /// can rebase them; an omitted tree's root is left null in the meta.
@@ -1191,7 +1191,7 @@ class BackupService {
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
-    final tmpDir = await Directory.systemTemp.createTemp('hibiki_backup_');
+    final tmpDir = await Directory.systemTemp.createTemp('fushi_backup_');
     try {
       final cleanDbPath = p.join(tmpDir.path, _dbName);
       try {
@@ -1563,7 +1563,7 @@ class BackupService {
   /// `profile_settings` as `category='pref'` rows, and `profiles` is ticked by
   /// default on export (`defaultBackupExportCategories()`). So on any device
   /// that ever switched profiles, the credentials deleted from `preferences`
-  /// were still sitting in the exported `hibiki.db` under `profile_settings`.
+  /// were still sitting in the exported `fushi.db` under `profile_settings`.
   /// The snapshot writer/reader now applies the same policy
   /// ([ProfileKeys.isExcludedPref]) so no NEW credential rows are produced, but
   /// pre-existing snapshots on an upgrading device still carry them — this
@@ -2012,7 +2012,7 @@ class BackupService {
   /// Adds every local-audio pronunciation database file (`local_audio_*.db`
   /// plus its `-wal`/`-shm` siblings) from the support/database directory to
   /// [into], keyed by its zip path (`localAudio/<filename>`). Only files
-  /// matching [_localAudioFileName] are packed, so `hibiki.db`, sidecars and
+  /// matching [_localAudioFileName] are packed, so `fushi.db`, sidecars and
   /// every other support file stay out of the backup (TODO-941).
   Future<void> _collectLocalAudioFiles(Map<String, String> into) async {
     final Directory root = Directory(_dbDirectory);

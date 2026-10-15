@@ -122,7 +122,7 @@ void main() {
   test('SyncManager reads the cover only when the backend asks for it',
       () async {
     final Directory tempDir =
-        await Directory.systemTemp.createTemp('hibiki_cover_lazy_');
+        await Directory.systemTemp.createTemp('fushi_cover_lazy_');
     addTearDown(() => tempDir.delete(recursive: true));
     final File coverFile = File('${tempDir.path}/cover.png');
 
@@ -156,7 +156,7 @@ void main() {
 
   test('a cached book folder triggers no cover read at all', () async {
     final Directory tempDir =
-        await Directory.systemTemp.createTemp('hibiki_cover_lazy_hit_');
+        await Directory.systemTemp.createTemp('fushi_cover_lazy_hit_');
     addTearDown(() => tempDir.delete(recursive: true));
     final File coverFile = File('${tempDir.path}/cover.png');
     await coverFile.writeAsBytes(_kCoverBytes);
@@ -187,7 +187,7 @@ void main() {
       'InterconnectSyncBackend: cache miss still uploads the cover, '
       'cache hit never reads it', () async {
     final Directory tempDir =
-        await Directory.systemTemp.createTemp('hibiki_cover_p2p_');
+        await Directory.systemTemp.createTemp('fushi_cover_p2p_');
     addTearDown(() => tempDir.delete(recursive: true));
     await Directory('${tempDir.path}/sync-data').create(recursive: true);
 

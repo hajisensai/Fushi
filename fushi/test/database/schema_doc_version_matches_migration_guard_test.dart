@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show kMinSupportedSchemaVersion;
 
 import '../helpers/source_guard.dart';
 
@@ -59,8 +60,8 @@ import '../helpers/source_guard.dart';
 /// ## 为什么守在 `fushi/test/` 而不是 `packages/fushi_core/test/`
 ///
 /// 两个原因，都不是随手放的：
-///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `hibiki` 包的 test 根，
-///      `hibiki_core` 跨包 import 不到（也不能反向依赖 `hibiki`）。本仓明文禁止
+///   1. 共享词法掩码 `test/helpers/source_guard.dart` 属于 `fushi` 包的 test 根，
+///      `fushi_core` 跨包 import 不到（也不能反向依赖 `fushi`）。本仓明文禁止
 ///      手写注释剥离（`test/tools/source_guard_adoption_test.dart`），在 core 包
 ///      内复制一份掩码实现正是它要防的事。
 ///   2. `packages/*/test` 只由 CI 的 `Run package tests` 覆盖，本地全量门
@@ -72,7 +73,7 @@ import '../helpers/source_guard.dart';
 /// codegen 从 `tables.dart` 逐字复制的**派生副本**，源头改对了它必然跟着对，
 /// 单独再断言一遍只会在同一个缺陷上报两次，还把守卫绑死在 codegen 输出格式上。
 ///
-/// flutter test 的 cwd 是 `hibiki` 包根。
+/// flutter test 的 cwd 是 `fushi` 包根。
 void main() {
   const String tablesPath =
       '../packages/fushi_core/lib/src/database/tables.dart';
@@ -112,12 +113,17 @@ void main() {
         reason: 'addColumn/newColumns 只扫到 ${index.columnAddedAt.length} 列');
 
     // 三条已知锚点，覆盖三种落地形态；解析器一旦漂移，这里先红并指明是哪一种。
-    expect(index.tableCreatedAt['collectionRelations'], 66,
+    // 锚点都取最低 schema 门槛（kMinSupportedSchemaVersion）以上仍在阶梯里的步：
+    // 门槛以下的台阶已整体删除，那里的表/列在索引里本就查不到。
+    expect(index.tableCreatedAt['mediaOpenHistory'], 80,
         reason: 'createTable 形态');
-    expect(index.columnAddedAt['videoScrapeMeta.episodeNumber'], 66,
+    expect(index.columnAddedAt['videoBooks.lastPlayedAt'], 85,
         reason: 'addColumn 形态');
-    expect(index.columnAddedAt['readingHourlyLogs.format'], 67,
+    expect(index.columnAddedAt['galgameSessions.gameTitle'], 113,
         reason: 'TableMigration(newColumns:) 形态');
+    expect(index.tableCreatedAt.keys, isNot(contains('collectionRelations')),
+        reason: 'v66 台阶已随最低 schema 门槛删除；还能扫到说明门槛以下的阶梯'
+            '没删干净（或解析器把注释当成了代码）');
 
     // columnTransformer 是**改名**不是诞生：v57 把 removed_at 改叫 deleted_at，
     // 该列真正的诞生地是建表的 v40。收错会让一堆老列被错标成 v57。
@@ -168,7 +174,21 @@ void main() {
     int checked = 0;
 
     for (final _DocDeclaration d in declarations) {
+      // 门槛以下的台阶已整体删除（库低于 kMinSupportedSchemaVersion 直接拒绝打开），
+      // 这些 doc 版本号是历史事实、已无落地点可比对；只比对门槛及以上的声明。
+      if (d.version < kMinSupportedSchemaVersion) continue;
       final int? actual = index.landedVersionOf(d.symbol);
+      final int dot = d.symbol.indexOf('.');
+      final String table = dot < 0 ? d.symbol : d.symbol.substring(0, dot);
+      // 重建换列：列在宿主表的 create-copy-drop-rename 重建里诞生（如 v82 的
+      // bookmarks.bookUid）。doc 声明命中该表的某次重建版本 = 说实话，放行。宿主表
+      // 的建表台阶在门槛以下已删除时 [actual] 为 null，重建版本仍是唯一落地点。
+      final bool landedByRebuild = dot >= 0 &&
+          (index.tableRebuiltAt[table]?.contains(d.version) ?? false);
+      if (actual == null && landedByRebuild) {
+        checked++;
+        continue;
+      }
       if (actual == null) {
         offenders.add('$tablesPath:${d.line}  ${d.symbol} '
             'doc 声明 v${d.version}，但迁移阶梯里根本找不到它的落地点'
@@ -178,14 +198,7 @@ void main() {
       }
       checked++;
       if (actual != d.version) {
-        // 重建换列：列在宿主表的 create-copy-drop-rename 重建里诞生（如 v82 的
-        // bookmarks.bookUid）。doc 声明命中该表的某次重建版本 = 说实话，放行。
-        final int dot = d.symbol.indexOf('.');
-        final String table = dot < 0 ? d.symbol : d.symbol.substring(0, dot);
-        if (dot >= 0 &&
-            (index.tableRebuiltAt[table]?.contains(d.version) ?? false)) {
-          continue;
-        }
+        if (landedByRebuild) continue;
         offenders.add('$tablesPath:${d.line}  ${d.symbol} '
             'doc 声明 v${d.version}，实际落地于 v$actual\n'
             '      doc: ${d.evidence}');

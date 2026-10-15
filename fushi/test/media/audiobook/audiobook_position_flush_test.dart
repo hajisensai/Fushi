@@ -79,7 +79,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-a.mp3')],
+      audioFiles: <File>[makeFile('fushi-flush-a.mp3')],
       initialPositionMs: 65000,
     );
 
@@ -94,7 +94,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-b.mp3')],
+      audioFiles: <File>[makeFile('fushi-flush-b.mp3')],
       initialPositionMs: 65000,
     );
 
@@ -115,7 +115,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-c.mp3')],
+      audioFiles: <File>[makeFile('fushi-flush-c.mp3')],
       initialPositionMs: 0,
     );
     c.setChapterCues(<AudioCue>[cue(0), cue(1000), cue(2000), cue(3000)]);
@@ -157,7 +157,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-flush-d.mp3')],
+      audioFiles: <File>[makeFile('fushi-flush-d.mp3')],
       initialPositionMs: 12000,
     );
 
@@ -187,7 +187,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-stop-position-order.mp3')],
+      audioFiles: <File>[makeFile('fushi-stop-position-order.mp3')],
       initialPositionMs: 65000,
     );
     final List<int> writes = <int>[];
@@ -214,7 +214,7 @@ void main() {
         _LivePositionWindow.openedBefore(65000);
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-stop-position-queue.mp3')],
+      audioFiles: <File>[makeFile('fushi-stop-position-queue.mp3')],
       initialPositionMs: 65000,
     );
     await c.play();
@@ -267,7 +267,7 @@ void main() {
 
     await c.load(
       audiobook: ab(),
-      audioFiles: <File>[makeFile('hibiki-stop-position-write-error.mp3')],
+      audioFiles: <File>[makeFile('fushi-stop-position-write-error.mp3')],
       initialPositionMs: 42000,
     );
     await c.play();

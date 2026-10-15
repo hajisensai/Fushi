@@ -14,16 +14,16 @@ import 'package:fushi_engine/utils/net/app_user_agent.dart';
 
 const int kMaximumSubtitleDownloadBytes = 64 * 1024 * 1024;
 
-/// Hibiki 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1846）。
+/// Fushi 的大类语言码 → OpenSubtitles 认得的 BCP-47 码（BUG-1846）。
 ///
-/// Hibiki 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
+/// Fushi 内部字幕语言只分到大类（`ja`/`zh`/`en`/`ko`，见 `kJimakuLanguageCodes`——
 /// Jimaku 侧靠文件名启发式识别，本来就分不了地区）。而 OpenSubtitles 的语言表
 /// （`GET /infos/languages`，105 个码）里**没有裸 `zh`**，只有 `zh-cn` / `zh-tw` /
 /// `zh-ca`：把大类码原样发过去，中文字幕恒定搜不到。
 ///
 /// 只有带地区码的语言家族需要展开——实测该表里带地区的仅 `az` / `pt` / `tm` / `zh`
 /// 四族，`ja` `en` `ko` `es` `fr` `de` `it` `ru` `th` `vi` `id` `ar` `nl` `tr` 均有裸码，
-/// 原样透传即可。这里只登记 Hibiki 值域可能产生的那两族，其余交给服务端裁决，不在
+/// 原样透传即可。这里只登记 Fushi 值域可能产生的那两族，其余交给服务端裁决，不在
 /// 客户端擅自丢弃。
 const Map<String, List<String>> kOpenSubtitlesLanguageExpansions =
     <String, List<String>>{
@@ -633,7 +633,7 @@ class OpenSubtitlesClient implements VideoSubtitleProvider {
       RegExp(r'^tt', caseSensitive: false),
       '',
     );
-    // 归一后再发：Hibiki 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
+    // 归一后再发：Fushi 内部是大类码，OpenSubtitles 要 BCP-47（BUG-1846）。
     final List<String> languages =
         normalizeOpenSubtitlesLanguages(request.languages);
     final Map<String, String> common = <String, String>{

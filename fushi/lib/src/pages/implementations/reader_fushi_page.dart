@@ -3872,7 +3872,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                             child: IgnorePointer(
                               child: Semantics(
                                 container: true,
-                                identifier: 'hibiki.reader.lyrics.ready',
+                                identifier: 'fushi.reader.lyrics.ready',
                                 label: 'lyrics ready',
                                 child: const SizedBox(
                                   key: ValueKey<String>('fushi_lyrics_ready'),

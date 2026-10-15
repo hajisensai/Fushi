@@ -610,7 +610,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // charPositionTag（读 appModel.autoAddCharPositionToTags），harness 里没有阅读器、
   // 也没有 Anki，探不到「卡上真带了这个 tag」。两端各有专项测试咬住：注入点由源码
   // 守卫钉死（开关门控 + 走 absoluteCharOffsetOf + 负数哨兵不退化成 0），tag 装配由
-  // hibiki_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
+  // fushi_anki 的 buildNoteTags 用例钉死（追加位置 / 去重 / 清洗 / withMediaRefs）。
   'cardCreation/Auto-add mining position to tags':
       'test/pages/reader_mining_char_position_tag_guard_test.dart + '
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart '
@@ -638,9 +638,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
   'cardCreation/Match sentence audio to playback speed':
       'test/settings/mining_audio_follow_playback_speed_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
-  // TODO-135: 默认标签区现无条件显示（hibiki/分类两开关移出 isConfigured 门控），
+  // TODO-135: 默认标签区现无条件显示（fushi/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
-  // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 hibiki_anki 真制卡
+  // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 fushi_anki 真制卡
   // 测试咬住（tagIncludeHibiki/tagIncludeCategory 开/关各分支）。
   'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
@@ -678,7 +678,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派
   // 本地（非 reader CSS / 主题树），无适用 widget 探针；由专项测试咬住转发路由/字段透传/
   // 序列化契约（远端制卡仓库包装 + 转发载荷 + 服务端 handler）。
-  // 归属：开关已从「制卡」分类移到「Hibiki 互联」→「交给已配对设备」（它的前置条件、
+  // 归属：开关已从「制卡」分类移到「Fushi 互联」→「交给已配对设备」（它的前置条件、
   // 目标设备、失效条件全由互联决定），故登记键的 destId 随之从 cardCreation 变 interconnect。
   'interconnect/Mine to Fushi Interconnect server':
       'test/anki/remote_mining_anki_repository_test.dart + '
@@ -1421,7 +1421,7 @@ void main() {
       // wireLocalAudioForTesting 设 prefsRepo(+localAudioManager) —— prefsRepo 是
       // appearance/lookup/cardCreation/listening/system 绝大多数 blocker 的根源。
       final Directory tmpDir = Directory.systemTemp.createTempSync(
-        'hibiki_settings_cov_',
+        'fushi_settings_cov_',
       );
       addTearDown(() {
         try {
@@ -2032,8 +2032,8 @@ class _CoverageAppModel extends AppModel {
     : super(platformServices);
 
   final PackageInfo _packageInfo = PackageInfo(
-    appName: 'Hibiki',
-    packageName: 'jp.hibiki.test',
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
     version: '9.8.7',
     buildNumber: '654',
   );

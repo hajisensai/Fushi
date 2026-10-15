@@ -10,7 +10,7 @@
 // 修复是在 fork 的 C++ 里**无条件** put_IsStatusBarEnabled(FALSE)：Dart 侧字段住在
 // pub-cache 的 flutter_inappwebview_platform_interface，本仓只 vendor 了 windows 包、
 // 没 vendor platform_interface，加开关要么再 vendor 一个（影响全平台）要么就无条件设；
-// 而 Hibiki 的每个 WebView 都只渲染 EPUB / 词典内容，没有任何 surface 想要浏览器状态栏。
+// 而 Fushi 的每个 WebView 都只渲染 EPUB / 词典内容，没有任何 surface 想要浏览器状态栏。
 //
 // C++ 在 Dart 测试里跑不了，所以在源码层锁定两处 apply 点都设了：
 //   ① prepare()   —— WebView 创建后的初始 settings 下发；

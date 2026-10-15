@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 根因（修前）：单一手势层 `Positioned.fill(bottom: 16.0 + subtitleVerticalShiftOffset)`
 /// 把 `onTap`（toggle 控制栏）与拖动识别器揂在同一层。该底部内缩（屏底 80–130+px）
 /// 本只为不劫持边缘竖滑，却把 `onTap` 命中区也从底部缩上去 → 控制栏隐藏时点画面
-/// 底部/右下角落在死区、唤不出控制栏（Hibiki 外层 Listener 移动端不自做 toggle，
+/// 底部/右下角落在死区、唤不出控制栏（Fushi 外层 Listener 移动端不自做 toggle，
 /// 靠 translucent 下探到本 fork，因此死区无人兜底）。
 ///
 /// 修法：拆成两层——① 全画面 tap/long-press/double-tap 层（无 bottom 内缩，承载

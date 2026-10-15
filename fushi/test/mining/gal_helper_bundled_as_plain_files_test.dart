@@ -11,7 +11,7 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart';
 /// 五天前的版本，注入后建出旧契约共享内存段，本体报 `protocol_mismatch`。
 ///
 /// 新模型：`install_into_bundle.ps1` 在构建期把两个架构都解压进产物的
-/// `voice_hook/<arch>/`，`hibiki.iss` 的 `Source: {#SourceDir}\*` 递归把它带进安装包。
+/// `voice_hook/<arch>/`，`fushi.iss` 的 `Source: {#SourceDir}\*` 递归把它带进安装包。
 /// helper 与本体同一次构建产出、同一个安装包落地，漂移在结构上不再可能。
 ///
 /// 本文件钉住这条链路上三个「一改就回归」的点。
@@ -476,7 +476,7 @@ void main() {
     expect(
       src.contains('[InstallDelete]'),
       isTrue,
-      reason: 'hibiki.iss 没有 [InstallDelete] 段',
+      reason: 'fushi.iss 没有 [InstallDelete] 段',
     );
     final int start = src.indexOf('[InstallDelete]');
     final int end = src.indexOf('[Files]', start);

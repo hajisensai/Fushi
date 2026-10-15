@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 下发。
 ///
 /// media_kit 建 Player 时把 `network-timeout` 钉成 5（media_kit-1.2.6
-/// `native/player/real.dart` 的初始化属性块）。Hibiki 的网络流全部经 Dart 中继
+/// `native/player/real.dart` 的初始化属性块）。Fushi 的网络流全部经 Dart 中继
 /// （`http-proxy`）取字节，mpv 看到的首字节延迟 = 真上游的首字节延迟；在线视频源的
 /// hoster CDN 冷缓存 / 重定向 / 限流下常在 5~15s。属性若在 open 之后才设，loadfile 的
 /// 第一个请求已经带着 5s 超时发出去了——媒体压根打不开、duration/position 恒 0，页面

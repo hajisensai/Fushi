@@ -878,7 +878,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
         debugPrint('AudiobookController.setSource: $e\n$stack');
-        debugPrint('[hibiki-audiobook] setAudioSource failed: $e');
+        debugPrint('[fushi-audiobook] setAudioSource failed: $e');
         _loadReady.complete();
         rethrow;
       }
@@ -896,7 +896,7 @@ class AudiobookPlayerController extends ChangeNotifier {
             .timeout(const Duration(seconds: 60));
       } catch (e, stack) {
         debugPrint('AudiobookController.setSource: $e\n$stack');
-        debugPrint('[hibiki-audiobook] setAudioSource (multi) failed: $e');
+        debugPrint('[fushi-audiobook] setAudioSource (multi) failed: $e');
         _loadReady.complete();
         rethrow;
       }
@@ -925,7 +925,7 @@ class AudiobookPlayerController extends ChangeNotifier {
         }
       } catch (e, stack) {
         debugPrint('AudiobookController.seekSaved: $e\n$stack');
-        debugPrint('[hibiki-audiobook] seek to saved $savedMs ms failed: $e');
+        debugPrint('[fushi-audiobook] seek to saved $savedMs ms failed: $e');
       }
     }
 
@@ -937,7 +937,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       } catch (e, stack) {
         debugPrint('AudiobookController.setSpeed: $e\n$stack');
         debugPrint(
-          '[hibiki-audiobook] initial setSpeed $initialSpeed failed: $e',
+          '[fushi-audiobook] initial setSpeed $initialSpeed failed: $e',
         );
       }
     }
@@ -950,7 +950,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       } catch (e, stack) {
         debugPrint('AudiobookController.setVolume: $e\n$stack');
         debugPrint(
-          '[hibiki-audiobook] initial setVolume $initialVolume failed: $e',
+          '[fushi-audiobook] initial setVolume $initialVolume failed: $e',
         );
       }
     }

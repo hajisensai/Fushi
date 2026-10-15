@@ -122,7 +122,7 @@ void main() {
   late Directory tempDir;
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_cover_service');
+    tempDir = Directory.systemTemp.createTempSync('fushi_cover_service');
     PaintingBinding.instance.imageCache.clear();
   });
 

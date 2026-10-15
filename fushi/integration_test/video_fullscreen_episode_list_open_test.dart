@@ -41,7 +41,7 @@ const int _kStartEpisode = 4; // 第 5 集（下标 4），与反馈截图一致
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;

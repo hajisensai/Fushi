@@ -19,7 +19,7 @@ void main() {
   late FushiSyncServer server;
 
   Future<void> startServer({required bool lanRequiresPin}) async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v1_pin_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_v1_pin_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
@@ -84,7 +84,7 @@ void main() {
   });
 
   test('lanRequiresPinProvider 未接线时按免 PIN 处理（headless / 老配置）', () async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_v1_pin_test2');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_v1_pin_test2');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,

@@ -46,7 +46,7 @@ const List<String> _apiKeyParameterNames = <String>[
   'yomitan_api_key',
 ];
 
-/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Hibiki 浏览器扩展
+/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Fushi 浏览器扩展
 /// （Netflix 等流媒体查词/制卡）的 API surface。只接受 POST；可选 API key 鉴权（支持
 /// x-api-key / Bearer / 裸 Authorization / query / body，也支持扩展用的
 /// `Basic base64('fushi:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize

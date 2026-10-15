@@ -103,10 +103,10 @@
   var COVER_EPS = 0.5;
 
   // C1 — vertical offset (CSS px) from a frame shell top-left to the popup
-  // CONTENT top. In Hibiki the iframe FILLS its shell and the star/audio header
+  // CONTENT top. In Fushi the iframe FILLS its shell and the star/audio header
   // lives INSIDE popup.html body, so popup.js getBoundingClientRect is already
   // relative to the shell top-left -> offset 0 (hoshi reader-popup-host.js uses a
-  // conditional actionBar(37)+sasayaki(37)=74 band ABOVE the iframe; Hibiki has
+  // conditional actionBar(37)+sasayaki(37)=74 band ABOVE the iframe; Fushi has
   // neither). Named + explicit so the coordinate contract is testable.
   var FRAME_CONTENT_TOP = 0;
 

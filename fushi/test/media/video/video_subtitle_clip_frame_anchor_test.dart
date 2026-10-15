@@ -11,7 +11,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// 用户片源真值（神稲ぼたん S01E08 .ja.ass，PlayRes 1920x1080）：同句歌词由左右分屏
 /// 两条 Dialogue 拼成——layer0 `{\clip(0,920,960,1080)}` + layer1
 /// `{\clip(960,920,1920,1080)}`，样式 \an2、MarginV 5/12。mpv 里两条同位叠画、左右
-/// 无缝拼成一行；修复前 Hibiki 把它们锚到「用户底距 + 控制条避让」的容器基线，与固定
+/// 无缝拼成一行；修复前 Fushi 把它们锚到「用户底距 + 控制条避让」的容器基线，与固定
 /// 在帧上的 clip 边带脱节：两半错位断开、字形被 clip 竖向边拦腰裁半。
 AudioCue _clipCue(
   String text, {

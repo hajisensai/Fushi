@@ -220,7 +220,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 不变，内容即真相）。
     if (format == BookFormat.manga) {
       final Directory tmpDir =
-          Directory.systemTemp.createTempSync('hibiki_book_export');
+          Directory.systemTemp.createTempSync('fushi_book_export');
       final File out = File(p.join(tmpDir.path, '${row.bookKey}.epub'));
       final bool ok = await repackageMangaBook(row.extractDir, out.path);
       if (!ok) {
@@ -236,7 +236,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_book_export');
+        Directory.systemTemp.createTempSync('fushi_book_export');
     // 文件名用 title 但扩展名用 .epub，保证重导入时 fileName 是合法 epub 名。
     final String safeBasename = '${row.bookKey}.epub';
     final File out = File(p.join(tmpDir.path, safeBasename));

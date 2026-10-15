@@ -2,13 +2,13 @@
 
 本目录是主 app [`hajisensai/hibiki`](https://github.com/hajisensai/hibiki) 的 native 采集组件。galgame 一键制卡（[docs/specs/galgame-mining](https://github.com/hajisensai/hibiki/blob/develop/docs/specs/galgame-mining/design.md)）C 阶段：从游戏引擎在**混音之前**截取角色语音的干净音轨，回传 Hibiki 做一键制卡。
 
-## 部署边界：不链接进 hibiki.exe
+## 部署边界：不链接进 fushi.exe
 
 注入用的 `CreateRemoteThread` / `WriteProcessMemory` 只存在于 helper 二进制。因此这套组件：
 
-- **单独构建，绝不链接进 `hibiki.exe` 本体**。`tools/build_distribution.ps1` 输出的 x64/x86 校验 zip 随 Windows 主包进入 `galgame_helper/`，也发布到固定 prerelease 供旧包与后台更新。
-- Hibiki 主进程把 `fushi_voice_injector.exe` 当**子进程**拉起，通过共享内存（[`include/voice_hook_ipc.h`](include/voice_hook_ipc.h)）消费干净语音——被标记的注入代码只待在这个隔离二进制里。
-- 许可：Hibiki 与本组件均 **GPLv3**（与 LunaTranslator/LunaHook 同）。
+- **单独构建，绝不链接进 `fushi.exe` 本体**。`tools/build_distribution.ps1` 输出的 x64/x86 校验 zip 随 Windows 主包进入 `galgame_helper/`，也发布到固定 prerelease 供旧包与后台更新。
+- Fushi 主进程把 `fushi_voice_injector.exe` 当**子进程**拉起，通过共享内存（[`include/voice_hook_ipc.h`](include/voice_hook_ipc.h)）消费干净语音——被标记的注入代码只待在这个隔离二进制里。
+- 许可：Fushi 与本组件均 **GPLv3**（与 LunaTranslator/LunaHook 同）。
 - 杀软证据：Windows Defender（签名 1.455.357.0）实扫全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出；国产杀软仍未验证。
 
 ## 组成
@@ -42,7 +42,7 @@ python tests/engine_support_manifest_test.py
 ./tool/galhook.ps1 explain-diag --hookdiag 0x0 --hookio 0x0 --xaudiodiag 0x0 --xaudiodiag2 0x0 --lunadiag 0x0
 ./tool/galhook.ps1 check --dry-run --native
 ./tool/galhook.ps1 probe C:\game\game.exe --output probe.zip
-./tool/galhook.ps1 new engine_id --fushi-root C:\src\hibiki
+./tool/galhook.ps1 new engine_id --fushi-root C:\src\fushi
 ./tool/galhook.ps1 replay tests/fixtures/workflow_replay.json
 ```
 
@@ -114,7 +114,7 @@ x86 release 包额外包含 Locale Emulator 的 `LoaderDll.dll`、`LocaleEmulato
 
 `D:\steam\steamapps\common\manosaba_game\manosaba.exe` 实机目录含 `UnityPlayer.dll`、`GameAssembly.dll`
 和 `manosaba_Data/il2cpp_data/Metadata/global-metadata.dat`，判定为 64 位 Unity IL2CPP（不是 Mono 运行时）。
-Hibiki 的 launch 与已运行窗口 attach 路径都会为这类目标自动打开 Luna PC hooks，使自绘文本进入同一
+Fushi 的 launch 与已运行窗口 attach 路径都会为这类目标自动打开 Luna PC hooks，使自绘文本进入同一
 共享内存文本环；音频侧若没有可读引擎 PCM，会保留文本 helper，并与系统 Loopback 组成混合捕获，不能
 因为音频降级而关掉正确文本。
 
@@ -123,7 +123,7 @@ Hibiki 的 launch 与已运行窗口 attach 路径都会为这类目标自动打
 - **C.1（已落）**：注入管线 + IPC 契约 proof-of-life。injector 注入 DLL、建共享内存/就绪事件，DLL 注入后标记 `hooked=1` 并 `SetEvent`；位数校验、marker 文件。**编译验证 + 对无害进程真实注入验证**。
 - **C.2（已验证）**：XAudio2/DirectSound vtable hook 已落地，并在真实 32 位 KiriKiriZ 与 SiglusEngine 游戏验证非静音 PCM 可由共享内存读取。Siglus 的 DirectSound COM 创建路径也已覆盖。
 - **C.3（部分完成）**：SiglusEngine `koe/*.ovk` 已支持逐句提取完整 Ogg/Vorbis；其它引擎继续回退 A 阶段 loopback。KiriKiriZ 的 DirectSound 输出仍是软件混音后的 BGM+语音，不能视为干净语音。
-- **接 Hibiki**：`EngineHookGalAudioSource` 实现 `GalAudioSource`（Dart 侧），复用 A 阶段同一波形选区 + 制卡出口。
+- **接 Fushi**：`EngineHookGalAudioSource` 实现 `GalAudioSource`（Dart 侧），复用 A 阶段同一波形选区 + 制卡出口。
 
 ## SiglusEngine 支持
 
@@ -133,4 +133,4 @@ Hibiki 的 launch 与已运行窗口 attach 路径都会为这类目标自动打
 %TEMP%\fushi_gal_voice\<tick>_<archive>.ovk_<voice-id>.ogg
 ```
 
-导出前会同时检查索引边界、条目上限、Ogg 页序列号和 EOS；文件 IO 与 Ogg 校验在工作线程执行，`ReadFile` detour 只复制固定大小任务。晚附着可能没有 DirectSound PCM 格式，Hibiki 会用 `rawVoiceReady` 保持引擎源，并优先把本会话的新 Ogg 转为 Anki 音频；无文本时间戳时只选本会话最新条目，绝不拿上一局残留。受保护的 Siglus 进程若令 Toolhelp 线程快照失败，vendored MinHook 会通过 `NtGetNextThread` 安全枚举并冻结其它线程后再启用 hook。
+导出前会同时检查索引边界、条目上限、Ogg 页序列号和 EOS；文件 IO 与 Ogg 校验在工作线程执行，`ReadFile` detour 只复制固定大小任务。晚附着可能没有 DirectSound PCM 格式，Fushi 会用 `rawVoiceReady` 保持引擎源，并优先把本会话的新 Ogg 转为 Anki 音频；无文本时间戳时只选本会话最新条目，绝不拿上一局残留。受保护的 Siglus 进程若令 Toolhelp 线程快照失败，vendored MinHook 会通过 `NtGetNextThread` 安全枚举并冻结其它线程后再启用 hook。

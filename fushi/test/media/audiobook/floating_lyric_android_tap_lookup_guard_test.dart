@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 根因：Android 悬浮字幕点词由原生 [FloatingLyricService.handleTap] 直接
 /// `startActivity(PopupDictFlutterActivity)` 拉起弹窗。悬浮字幕的使用场景恰恰是
-/// Hibiki 不在前台（悬浮窗画在别的 app 上），所以这是一次 *background activity
+/// Fushi 不在前台（悬浮窗画在别的 app 上），所以这是一次 *background activity
 /// launch*：自 API 29 起默认被拦；API 34（targetSdk 34+）不再让 app 默默继承
 /// 后台启动特权；API 35（Android 15）把 SYSTEM_ALERT_WINDOW 豁免收窄到「有权限
 /// 且有可见 overlay」。现代 Android / 更激进的 OEM ROM 上裸 startActivity 被丢弃

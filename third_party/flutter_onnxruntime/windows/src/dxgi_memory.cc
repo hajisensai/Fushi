@@ -1,4 +1,4 @@
-// Hibiki fork: DXGI video-memory budget query (see dxgi_memory.h).
+// Fushi fork: DXGI video-memory budget query (see dxgi_memory.h).
 
 #include "src/dxgi_memory.h"
 

@@ -25,7 +25,7 @@ void main() {
       });
 
       // 全平台自动更新 Phase 3：macOS 去沙盒换真应用内自替换（写 /Applications/
-      // hibiki.app 需沙盒外，见 platform_updater.dart 的 MacInstaller）。此断言从
+      // fushi.app 需沙盒外，见 platform_updater.dart 的 MacInstaller）。此断言从
       // 「app-sandbox 必须在」演进为「app-sandbox 必须已移除」，与 update_settings_
       // android_only_guard 的 BUG-013 演进同性质——有意的不变量演进，不是回归。
       test('$path drops the app sandbox (de-sandboxed for in-app update)', () {
@@ -35,7 +35,7 @@ void main() {
           xml.contains('<key>com.apple.security.app-sandbox</key>'),
           isFalse,
           reason: 'macOS must stay de-sandboxed so the updater can replace '
-              '/Applications/hibiki.app and relaunch.',
+              '/Applications/fushi.app and relaunch.',
         );
       });
     }

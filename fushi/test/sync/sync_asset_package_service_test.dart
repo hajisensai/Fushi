@@ -23,7 +23,7 @@ void main() {
   group('Dictionary sync packages', () {
     test('round trip carries metadata and resource files', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-dict-package-',
+        'fushi-dict-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
@@ -104,7 +104,7 @@ void main() {
       // 显式 `Value(null)`——两者都会让「同步一下，词典名字变回那个又长又带
       // 日期的原名」。
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-dict-package-preserve-',
+        'fushi-dict-package-preserve-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
@@ -167,7 +167,7 @@ void main() {
 
     test('新装词典的用户设置列是 null——没有旧行可继承时不凭空造值', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-dict-package-fresh-',
+        'fushi-dict-package-fresh-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
@@ -208,7 +208,7 @@ void main() {
 
     test('import rejects dictionary package path traversal', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-dict-traversal-',
+        'fushi-dict-traversal-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase db = _testDb();
@@ -248,7 +248,7 @@ void main() {
   group('Audio database sync packages', () {
     test('round trip rewrites paths and restores cues', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-audio-package-',
+        'fushi-audio-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
@@ -346,7 +346,7 @@ void main() {
       // 纯 SRT（standalone）有声书：SrtBooks 行 bookKey 为空、无 Audiobooks 行，
       // 身份=uid、cue 走 uid 命名空间。导出无 audiobook 段、导入不造孤儿 Audiobooks 行。
       final Directory temp =
-          await Directory.systemTemp.createTemp('hibiki-audio-standalone-');
+          await Directory.systemTemp.createTemp('fushi-audio-standalone-');
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
       final FushiDatabase targetDb = _testDb();
@@ -450,7 +450,7 @@ void main() {
       // 用 >2MB（3MB）的伪随机内容，走过 archive 的分块 CRC / writeInputStream
       // 流式路径（小文件走不到），断言导入后磁盘字节与源完全一致。
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-audio-large-',
+        'fushi-audio-large-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();
@@ -532,7 +532,7 @@ void main() {
     test('round trip carries config and restores db bytes (>2MB STORE)',
         () async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki-local-audio-package-',
+        'fushi-local-audio-package-',
       );
       addTearDown(() => temp.delete(recursive: true));
       final FushiDatabase sourceDb = _testDb();

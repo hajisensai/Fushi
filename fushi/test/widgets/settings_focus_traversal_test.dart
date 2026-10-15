@@ -331,7 +331,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('Material settings rows register with Hibiki focus root',
+  testWidgets('Material settings rows register with Fushi focus root',
       (WidgetTester tester) async {
     int taps = 0;
     await tester.pumpWidget(

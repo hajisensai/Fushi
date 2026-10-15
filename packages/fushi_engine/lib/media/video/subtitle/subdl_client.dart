@@ -48,7 +48,7 @@ const int kSubdlSubtitlesPerPage = 30;
 /// `.sub`（MicroDVD）站上也有，但播放页没有它的 parser，不当候选。
 const Set<String> kSubdlTextSubtitleExtensions = kTextSubtitleExtensions;
 
-/// Hibiki 大类语言码 → SubDL 查询码（大写，逗号分隔）。
+/// Fushi 大类语言码 → SubDL 查询码（大写，逗号分隔）。
 ///
 /// SubDL 的码表基本是 ISO 639-1 大写；特殊的只有中文分 `ZH`（简）/ `ZH_BG`（繁，
 /// "Big 5"）和葡语分 `PT` / `BR_PT`。大类码要展开成该族全部码，否则 `zh` 恒定
@@ -77,7 +77,7 @@ List<String> normalizeSubdlLanguages(Iterable<String> languages) {
   return List<String>.unmodifiable(sorted);
 }
 
-/// SubDL 响应里的 `language` 码 → Hibiki 大类小写码。
+/// SubDL 响应里的 `language` 码 → Fushi 大类小写码。
 ///
 /// `ZH_BG` → `zh`、`BR_PT` → `pt`、双语码（`EN_DE` / `BG_EN`）取第一段；空值回
 /// `und`（ISO 639-2「未确定」）——候选 `language` 是 sidecar 后缀的一部分，空串会写成
@@ -149,7 +149,7 @@ class SubdlSubtitleRecord {
   final String url;
   final String releaseName;
 
-  /// 已归一成 Hibiki 小写大类码。
+  /// 已归一成 Fushi 小写大类码。
   final String language;
   final String? author;
 

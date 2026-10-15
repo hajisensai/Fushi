@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('iOS declares Hibiki and Anki URL schemes for AnkiMobile callbacks', () {
+  test('iOS declares Fushi and Anki URL schemes for AnkiMobile callbacks', () {
     final plist = File('ios/Runner/Info.plist').readAsStringSync();
 
     expect(plist, contains('<string>fushi</string>'));

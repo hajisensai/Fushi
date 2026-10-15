@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Hibiki modification, 2026-09-08. No Windows APIs or thread-local storage.
+// Fushi modification, 2026-09-08. No Windows APIs or thread-local storage.
 #pragma once
 #include <stddef.h>
 

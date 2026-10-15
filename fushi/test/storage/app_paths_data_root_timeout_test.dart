@@ -24,8 +24,8 @@ void main() {
   late Directory tmp;
   late Directory fakeTemp;
 
-  /// BUG-1115：默认 documents 根 = `<平台 Documents>/Hibiki/data`。本文件 mock 的 support
-  /// 根下没有 `hibiki.db`，故 resolve() 一律判为**全新安装** → 新布局。
+  /// BUG-1115：默认 documents 根 = `<平台 Documents>/Fushi/data`。本文件 mock 的 support
+  /// 根下没有 `fushi.db`（也没有旧名 `hibiki.db`），故 resolve() 一律判为**全新安装** → 新布局。
   String nestedDefaultDocs() => p.joinAll(<String>[
         p.join(tmp.path, 'default_documents'),
         ...AppPaths.defaultDocumentsChildSegments,
@@ -33,7 +33,7 @@ void main() {
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
-    tmp = Directory.systemTemp.createTempSync('hibiki_dataroot_timeout_');
+    tmp = Directory.systemTemp.createTempSync('fushi_dataroot_timeout_');
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(

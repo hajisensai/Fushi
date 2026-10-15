@@ -45,7 +45,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir = Directory.systemTemp.createTempSync(
-      'hibiki_shelf_read_status_pp',
+      'fushi_shelf_read_status_pp',
     );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -75,7 +75,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir = Directory.systemTemp.createTempSync(
-      'hibiki_shelf_read_status_store',
+      'fushi_shelf_read_status_store',
     );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)

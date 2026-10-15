@@ -22,7 +22,7 @@ import '../helpers/source_guard.dart';
 /// 改守「onLinkClick 走 navigatePopupInPlace、不再回退成 push 子层 + 高亮」。
 /// onTextSelected（释义正文点词）仍叠子层、仍高亮，与 Hoshi 一致。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。
+  // flutter test 的 cwd 是 fushi 包根。
   final File mixin = File(
     'lib/src/pages/implementations/dictionary_page_mixin.dart',
   );

@@ -138,7 +138,7 @@ void main() {
         title: 'Book $key',
         mediaIdentifier: 'fushi://book/$key',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-$key.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-$key.mp3')],
       prefs: SessionPrefs(
         followAudio: true,
         delayMs: 0,
@@ -249,7 +249,7 @@ void main() {
         title: 'Book b',
         mediaIdentifier: 'fushi://book/b',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-b.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-b.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -418,7 +418,7 @@ void main() {
         title: 'Old',
         mediaIdentifier: 'fushi://book/old',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-old-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-old-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -434,7 +434,7 @@ void main() {
         title: 'New',
         mediaIdentifier: 'fushi://book/new',
       ),
-      audioFiles: <File>[makeFile('hibiki-session-new-generation.mp3')],
+      audioFiles: <File>[makeFile('fushi-session-new-generation.mp3')],
       prefs: prefs(),
       persist: persist(),
     );
@@ -485,8 +485,8 @@ void main() {
         mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[
-        makeFile('hibiki-session-bug3197-0.mp3'),
-        makeFile('hibiki-session-bug3197-1.mp3'),
+        makeFile('fushi-session-bug3197-0.mp3'),
+        makeFile('fushi-session-bug3197-1.mp3'),
       ],
       // 旧字幕编码下的「文件 1 第 3 秒」= 10000 + 3000。
       prefs: const SessionPrefs(
@@ -554,8 +554,8 @@ void main() {
         mediaIdentifier: 'fushi://book/a',
       ),
       audioFiles: <File>[
-        makeFile('hibiki-session-bug3251-0.mp3'),
-        makeFile('hibiki-session-bug3251-1.mp3'),
+        makeFile('fushi-session-bug3251-0.mp3'),
+        makeFile('fushi-session-bug3251-1.mp3'),
       ],
       prefs: const SessionPrefs(
         followAudio: true,

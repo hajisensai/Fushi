@@ -11,8 +11,8 @@ import java.util.Base64
 /**
  * Reads an APK's identity **without ever running a byte of its code.**
  *
- * `/inspect` is what the Hibiki host calls *before* it shows the "third-party
- * extensions execute code with Hibiki permissions" trust dialog, so anything
+ * `/inspect` is what the Fushi host calls *before* it shows the "third-party
+ * extensions execute code with Fushi permissions" trust dialog, so anything
  * this route executes has already happened by the time the user is asked — a
  * "cancel" would arrive too late. It therefore stays on a strictly declarative
  * path:
@@ -29,7 +29,7 @@ import java.util.Base64
  * It deliberately does **not** go through `MExtensionServerLoader`. That path
  * runs `dex2jar`, then `Class.forName` + `newInstance` on the extension main
  * class (static initialiser + constructor) and `SourceFactory.createSources()`
- * — arbitrary code with Hibiki's permissions — and it parks the resulting
+ * — arbitrary code with Fushi's permissions — and it parks the resulting
  * instance in a cache with no eviction policy, so a rejected extension would
  * keep its objects, and any threads its constructor started, alive for the rest
  * of the sidecar's life. None of that ever bought anything here: every field
@@ -49,7 +49,7 @@ class InspectHandler {
             session.parseBody(files)
             val request = mapper.readValue(files["postData"], InspectRequest::class.java)
             val bytes = Base64.getDecoder().decode(request.data)
-            val apkFile = kotlin.io.path.createTempFile("hibiki-inspect-", ".apk").toFile()
+            val apkFile = kotlin.io.path.createTempFile("fushi-inspect-", ".apk").toFile()
             apk = apkFile
             apkFile.writeBytes(bytes)
             val verification = ApkVerifier.Builder(apkFile).build().verify()

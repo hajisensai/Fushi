@@ -1,11 +1,11 @@
 package app.fushi.reader.constants;
 
 /**
- * Stable notification-ID constants for Hibiki foreground services.
+ * Stable notification-ID constants for Fushi foreground services.
  *
  * <p>IDs must be unique across all notifications in the app and must never
  * change once shipped (Android associates persistent state with the ID).
- * Reserve the 9520–9539 range for Hibiki floating services.</p>
+ * Reserve the 9520–9539 range for Fushi floating services.</p>
  */
 public final class NotificationIds {
 

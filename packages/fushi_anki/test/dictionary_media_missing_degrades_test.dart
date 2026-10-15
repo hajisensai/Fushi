@@ -31,9 +31,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 拖累）；封面/句子音频缺失**仍然**中止制卡（两套策略故意不同，别再合并）。
 void main() {
   const String dictName = '明鏡国語辞典 第三版';
-  const String gaijiPath = 'gaiji/hibiki_bug1264.svg';
+  const String gaijiPath = 'gaiji/fushi_bug1264.svg';
   const String placeholder = 'fushi_dict_0.svg';
-  const String secondGaijiPath = 'gaiji/hibiki_bug1264_second.svg';
+  const String secondGaijiPath = 'gaiji/fushi_bug1264_second.svg';
   const String secondPlaceholder = 'fushi_dict_1.svg';
 
   final String cacheDir = ankiDictionaryMediaCacheDirPath();
@@ -74,7 +74,7 @@ void main() {
     availableNoteTypes: const <AnkiNoteType>[
       AnkiNoteType(
         id: 2,
-        name: 'Hibiki',
+        name: 'Fushi',
         fields: <String>['Expression', 'Meaning', 'Picture'],
       ),
     ],
@@ -94,7 +94,7 @@ void main() {
   }
 
   setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_bug1264');
+    tempDir = Directory.systemTemp.createTempSync('fushi_bug1264');
     gif = File('${tempDir.path}/cover.gif')
       ..writeAsBytesSync(<int>[0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
     removeCached();

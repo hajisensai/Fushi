@@ -10,7 +10,7 @@ import '../helpers/source_guard.dart';
 /// 这条链路的运行时依赖是真实 WebView2 + native channel，widget 测试跑不起来，
 /// 故守在源码层（与 `overlay_bridge_handlers` 的「绝不复制」红线同一层保护）。
 ///
-/// flutter test 的 cwd 是 hibiki 包根。
+/// flutter test 的 cwd 是 fushi 包根。
 void main() {
   /// 剥掉注释后再扫：讲「为什么」的注释里必然写着下面要断言的每一个符号名，
   /// 连注释一起扫等于让文档给自己背书。统一走共享 helper maskComments。

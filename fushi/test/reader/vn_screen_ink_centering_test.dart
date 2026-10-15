@@ -60,7 +60,7 @@ void main() {
 
   test('BUG-2711: ink box is centred on the block axis of the content box', () {
     final Directory temp = Directory.systemTemp.createTempSync(
-      'hibiki-vn-ink-center-',
+      'fushi-vn-ink-center-',
     );
     final File payload = File('${temp.path}/payload.json')
       ..writeAsStringSync(jsonEncode(<String, String>{'body': centerBody}));

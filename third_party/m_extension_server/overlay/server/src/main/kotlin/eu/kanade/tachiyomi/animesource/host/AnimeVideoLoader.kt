@@ -14,7 +14,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
 /**
- * Hibiki host: turns one episode into the flat list of playable [Video]s the
+ * Fushi host: turns one episode into the flat list of playable [Video]s the
  * player expects, across both extension generations. Shared verbatim by the
  * desktop sidecar and the Android host (the Android build compiles this tree),
  * so the two never disagree on what "the video list of an episode" means.

@@ -149,7 +149,7 @@ void main() {
       expect(SyncTombstoneKind.localaudio.dbValue, 'localaudio');
       expect(SyncTombstoneKind.favoriteword.dbValue, 'favoriteword');
       expect(SyncTombstoneKind.favoritesentence.dbValue, 'favoritesentence');
-      // hibiki_audio 的墓碑常量与本枚举同串（两处真相一致性钉死）。
+      // fushi_audio 的墓碑常量与本枚举同串（两处真相一致性钉死）。
       expect(kFavoriteSentenceTombstoneType,
           SyncTombstoneKind.favoritesentence.dbValue);
     });

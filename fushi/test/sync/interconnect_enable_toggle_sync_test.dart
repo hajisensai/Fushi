@@ -74,7 +74,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_interconnect_toggle_');
+        Directory.systemTemp.createTempSync('fushi_interconnect_toggle_');
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });

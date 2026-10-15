@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// window_manager 的 `setPreventClose(true)` 只拦 NSWindow 的
 /// `windowShouldClose:`（点红叉）。macOS 上最常用的退出方式——⌘Q / 菜单
-/// 「退出 Hibiki」/ Dock 右键退出——走的是 NSApplication 的
+/// 「退出 Fushi」/ Dock 右键退出——走的是 NSApplication 的
 /// `applicationShouldTerminate:`，**完全不经过 `onWindowClose`**。于是整条
 /// `_flushAndExitForWindowClose`（窗口几何落盘 → ExitFlushRegistry 把活跃阅读 /
 /// 听书 / 观看页尚未落库的位置与统计写穿 → 关书同步 drain → close database 做 WAL

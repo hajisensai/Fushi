@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// （尾部余量，与 200ms 头部提前量对称、略放宽），再录到 currentTime >= endAtSec 才停。
 ///
 /// 源码扫描守卫（不依赖真机/真浏览器），两份扩展镜像（随 app 打包的 assets/ 与真源 tools/）都守。
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   final List<File> contents = <File>[
     File('assets/browser_extension/content.js'),

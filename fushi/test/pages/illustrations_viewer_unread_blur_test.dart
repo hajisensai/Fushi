@@ -38,7 +38,7 @@ void main() {
   setUp(() {
     LocaleSettings.setLocale(AppLocale.en);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    extractDir = Directory.systemTemp.createTempSync('hibiki_illust_unread');
+    extractDir = Directory.systemTemp.createTempSync('fushi_illust_unread');
     tempDirs.add(extractDir);
 
     writeText('META-INF/container.xml', '''

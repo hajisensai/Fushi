@@ -25,8 +25,8 @@ void main() {
   late Directory tmp;
   late Directory fakeTemp;
 
-  /// BUG-1115：默认（无自定义数据根）documents 根 = `<平台 Documents>/Hibiki/data`。
-  /// 本文件的 mock support 根下没有 `hibiki.db`，故一律判为**全新安装** → 新布局。
+  /// BUG-1115：默认（无自定义数据根）documents 根 = `<平台 Documents>/Fushi/data`。
+  /// 本文件的 mock support 根下没有 `fushi.db`（也没有旧名 `hibiki.db`），故一律判为**全新安装** → 新布局。
   String nestedDefaultDocs(String platformDocuments) => p.joinAll(<String>[
         platformDocuments,
         ...AppPaths.defaultDocumentsChildSegments,
@@ -35,7 +35,7 @@ void main() {
   setUp(() {
     // 布局判定有进程内缓存，用例间必须清掉，否则先跑的用例会把结论钉给后面的。
     AppPaths.debugResetDocumentsLayoutCache();
-    tmp = Directory.systemTemp.createTempSync('hibiki_dataroot_');
+    tmp = Directory.systemTemp.createTempSync('fushi_dataroot_');
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     // path_provider 的 getTemporaryDirectory 走 method channel；mock 它返回 fakeTemp，
     // 使 resolve() 里 _resolveTempRoot 不触碰真实平台通道。

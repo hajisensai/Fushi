@@ -20,7 +20,7 @@ void main() {
 
     setUp(() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
-      audioDir = Directory.systemTemp.createTempSync('hibiki_resume_point_');
+      audioDir = Directory.systemTemp.createTempSync('fushi_resume_point_');
     });
 
     tearDown(() async {

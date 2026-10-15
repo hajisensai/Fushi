@@ -85,7 +85,7 @@ void main() {
       );
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-anime-library-');
+    root = await Directory.systemTemp.createTemp('fushi-anime-library-');
     // 封面目录落在临时根下（不碰本机真实数据根）。
     previousPaths = enginePaths;
     enginePaths = FixedEnginePaths(

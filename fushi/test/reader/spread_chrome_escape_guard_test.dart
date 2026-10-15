@@ -69,7 +69,7 @@ void main() {
     test('spread 脚本真跑：IMG 短路真生效，点图片不翻底栏（行为级）', () {
       final String payload = jsonEncode(<String, String>{'html': html});
       final Directory temp =
-          Directory.systemTemp.createTempSync('hibiki-spread-js-');
+          Directory.systemTemp.createTempSync('fushi-spread-js-');
       final File payloadFile = File('${temp.path}/payload.json')
         ..writeAsStringSync(payload);
       late final ProcessResult result;

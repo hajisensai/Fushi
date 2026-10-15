@@ -49,10 +49,10 @@ const String kSelfPath = 'test/tools/book_format_discipline_guard_test.dart';
 /// 值的冻结由本文件的 `dbValue 逐字节冻结` 一条单独钉住。
 ///
 /// **只有这一类豁免**；不是每出现一个新违规就往里塞一条。
-const List<String> _kFrozenHistoryValueFiles = <String>[
-  'test/database/migration_v51_pdf_format_test.dart',
-  'test/database/migration_v53_manga_reading_mode_test.dart',
-];
+///
+/// 目前为空：原有的 v51 / v53 迁移测试随最低 schema 门槛 v75 一起删除（那两级
+/// 台阶本身已删）。将来新的 format 迁移步的测试才往这里加。
+const List<String> _kFrozenHistoryValueFiles = <String>[];
 
 /// 读取并把注释换成**等长空白**后的代码文本（共享 `maskComments`）。
 ///
@@ -118,7 +118,7 @@ void main() {
 
   test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {
     expectScanScale(_scannedDartFiles(roots).length,
-        what: 'lib/ + test/ + hibiki_core/lib 下的 .dart（已排除生成物与冻结文件）',
+        what: 'lib/ + test/ + fushi_core/lib 下的 .dart（已排除生成物与冻结文件）',
         atLeast: 3590,
         measured: 4492);
   });

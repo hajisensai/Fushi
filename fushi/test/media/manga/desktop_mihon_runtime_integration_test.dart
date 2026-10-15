@@ -108,7 +108,7 @@ void main() {
     'bundled Java bridge is stopped without a residual process',
     () async {
       final Directory dataDirectory = await Directory.systemTemp.createTemp(
-        'hibiki-mihon-runtime-test-',
+        'fushi-mihon-runtime-test-',
       );
       final DesktopMihonRuntime runtime = DesktopMihonRuntime(
         dataDirectory: dataDirectory,

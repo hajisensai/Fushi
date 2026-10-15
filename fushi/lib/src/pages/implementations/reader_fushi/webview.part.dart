@@ -1932,7 +1932,7 @@ updateLive: function(patch) {
         ),
       ]),
       initialSettings: InAppWebViewSettings(
-        // BUG-468：Windows 上右键会同时弹两个菜单——Hibiki 自定义的 Flutter 菜单
+        // BUG-468：Windows 上右键会同时弹两个菜单——Fushi 自定义的 Flutter 菜单
         // （`_showReaderTextContextMenu`，经 onSecondaryTapDown）和 WebView2 原生菜单
         // （复制/打印/更多工具）。上面 `contextMenu` 的 `hideDefaultSystemContextMenuItems`
         // 是跨平台 ContextMenu API，在 WebView2 fork 上并不接到原生菜单开关；fork 里唯一

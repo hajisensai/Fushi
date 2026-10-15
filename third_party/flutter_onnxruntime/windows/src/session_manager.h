@@ -22,7 +22,7 @@ class TensorManager;
 
 // Session information structure
 struct SessionInfo {
-  // shared_ptr (Hibiki fork): a run in flight on a worker thread keeps the
+  // shared_ptr (Fushi fork): a run in flight on a worker thread keeps the
   // session alive even if closeSession() erases the map entry meanwhile.
   std::shared_ptr<Ort::Session> session;
   std::vector<std::string> input_names;

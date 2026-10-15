@@ -26,7 +26,7 @@ void main() {
   late String defaultDocsRoot;
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('hibiki_default_loc_');
+    tmp = Directory.systemTemp.createTempSync('fushi_default_loc_');
     platformDocuments = Directory(p.join(tmp.path, 'Documents'))
       ..createSync(recursive: true);
     platformSupport =

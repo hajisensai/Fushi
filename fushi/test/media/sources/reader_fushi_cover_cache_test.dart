@@ -132,7 +132,7 @@ void main() {
 
     setUp(() {
       ReaderFushiSource.debugResetCoverCache();
-      tempDir = Directory.systemTemp.createTempSync('hibiki_cover_cache_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_cover_cache_');
     });
     tearDown(() {
       ReaderFushiSource.debugResetCoverCache();

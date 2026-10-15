@@ -8,7 +8,7 @@ fi
 
 mkdir -p "$(dirname "$1")"
 output_directory="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
-download_cache="${2:-${RUNNER_TEMP:-/tmp}/hibiki-mihon-downloads}"
+download_cache="${2:-${RUNNER_TEMP:-/tmp}/fushi-mihon-downloads}"
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/../.." && pwd)"
 overlay_root="$repository_root/third_party/m_extension_server"
@@ -76,7 +76,7 @@ case "$output_directory" in
 esac
 
 mkdir -p "$download_cache"
-working_root="$(mktemp -d "${TMPDIR:-/tmp}/hibiki-mihon-build.XXXXXX")"
+working_root="$(mktemp -d "${TMPDIR:-/tmp}/fushi-mihon-build.XXXXXX")"
 trap 'rm -rf -- "$working_root"' EXIT
 source_root="$working_root/M-Extension-Server"
 staging_root="$working_root/output"
@@ -88,7 +88,7 @@ fi
 mkdir -p "$source_root"
 cp -R "$vendored_source_root/." "$source_root/"
 # `git apply` 在非 git 目录下同样可用（实测 exit 0），补丁与 overlay 的应用顺序
-# 和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Hibiki 的安全
+# 和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Fushi 的安全
 # overlay 覆盖同名文件。
 #
 # 补丁必须带上下文，这里也**绝不能**加回 `--unidiff-zero`（BUG-1428）：零上下文
@@ -101,7 +101,7 @@ git -C "$source_root" apply "$overlay_root/server-build.gradle.patch"
 cp -R "$overlay_root/overlay/." "$source_root/"
 
 # 把 vendored 的 org.jogamp 离线 Maven 仓库搬进构建树。补丁后的 build.gradle.kts
-# 用 `rootProject.file("hibiki-offline-maven/jogamp")` 找它，目录在就离线解析、
+# 用 `rootProject.file("fushi-offline-maven/jogamp")` 找它，目录在就离线解析、
 # 不在就回落到两个远端镜像（见 third_party/jogamp/UPSTREAM：那两个主机分别在
 # 2026-08-09 和 2026-08-25 把 CI 弄红过，而 Maven Central 根本没有 2.5.0）。
 # 路径必须与补丁里的字面量一致，守卫 fushi/test/build/mihon_vendored_jogamp_guard_test.dart。
@@ -110,8 +110,8 @@ if [[ ! -f "$jogamp_repo/org/jogamp/jogl/jogl-all/2.5.0/jogl-all-2.5.0.jar" ]]; 
   echo "vendored org.jogamp repository is missing at $jogamp_repo" >&2
   exit 1
 fi
-mkdir -p "$source_root/hibiki-offline-maven/jogamp"
-cp -R "$jogamp_repo/org" "$source_root/hibiki-offline-maven/jogamp/"
+mkdir -p "$source_root/fushi-offline-maven/jogamp"
+cp -R "$jogamp_repo/org" "$source_root/fushi-offline-maven/jogamp/"
 
 download_verified_archive() {
   local archive="$1"

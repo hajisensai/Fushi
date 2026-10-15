@@ -109,7 +109,7 @@ AnkiSettings _settings() => const AnkiSettings(
       availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: <AnkiNoteType>[
         AnkiNoteType(
-            id: 2, name: 'Hibiki', fields: <String>['Expression', 'Reading']),
+            id: 2, name: 'Fushi', fields: <String>['Expression', 'Reading']),
       ],
       fieldMappings: <String, String>{
         'Expression': '{expression}',
@@ -205,8 +205,8 @@ void main() {
         result: <Map<String, dynamic>>[
           <String, dynamic>{
             'noteId': 777,
-            'modelName': 'Hibiki',
-            'tags': <String>['hibiki'],
+            'modelName': 'Fushi',
+            'tags': <String>['fushi'],
             'fields': <String, dynamic>{
               'Expression': <String, dynamic>{'value': '勉強', 'order': 0},
               'Reading': <String, dynamic>{'value': 'べんきょう', 'order': 1},
@@ -383,7 +383,7 @@ void main() {
           availableNoteTypes: <AnkiNoteType>[
             AnkiNoteType(
                 id: 2,
-                name: 'Hibiki',
+                name: 'Fushi',
                 fields: <String>['Expression', 'Sentence']),
           ],
           fieldMappings: <String, String>{

@@ -364,7 +364,7 @@ class LocalAudioManager {
   }
 
   /// 删除库目录里所有不被 [keepPaths] 引用的本地音频副本文件
-  /// （只动 `local_audio_*.db` 及其 -wal/-shm 旁文件，绝不碰其它文件，如主库 hibiki.db）。
+  /// （只动 `local_audio_*.db` 及其 -wal/-shm 旁文件，绝不碰其它文件，如主库 fushi.db）。
   /// 用于回收"拷贝了但从未持久化"的孤儿文件。
   Future<void> pruneOrphans(Iterable<String> keepPaths) async {
     final List<String> requestedKeep = List<String>.of(keepPaths);

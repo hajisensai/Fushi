@@ -30,7 +30,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_video_pp');
+        Directory.systemTemp.createTempSync('fushi_remote_video_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -61,7 +61,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_remote_video_store');
+        Directory.systemTemp.createTempSync('fushi_remote_video_store');
     remoteVideoCover = File('${storeDir.path}/remote-video-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     platformServices = testPlatformServices();

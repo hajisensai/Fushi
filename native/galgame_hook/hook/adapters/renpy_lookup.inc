@@ -157,7 +157,7 @@ bool ResolveRenpyPythonApi(HMODULE python) {
 // ── 为什么挂载要链式（脚本尾部 _fs_cbs / fushi_prev_periodic 那段）────────────
 // config.periodic_callback 是 Ren'Py **官方文档化**的扩展点（约 20Hz），游戏与 mod
 // 拿它跑自动存档、计时器、状态机。裸赋值会把它们**永久**顶掉：本 DLL 不卸载，也没有
-// 还原路径，症状是「游戏某个功能莫名不动了」，跟 Hibiki 完全对不上号。所以：
+// 还原路径，症状是「游戏某个功能莫名不动了」，跟 Fushi 完全对不上号。所以：
 //   * Ren'Py 7.4+ 有复数列表 config.periodic_callbacks —— 优先 append，谁的槽都不动；
 //   * 只有单数槽时才取旧值存进 fushi_prev_periodic，由 tick 在自己动手前先调一遍。
 // 重复注入时旧值会是**上一次注入的** tick：它与本次是不同的函数对象，identity 比不
@@ -172,7 +172,7 @@ bool ResolveRenpyPythonApi(HMODULE python) {
 // ── 为什么光有 fushi_lookup_on 还不够：宿主心跳 fushi_host_seq ────────────────
 // 开关只覆盖「用户关掉查词」。**Fushi 进程被直接杀掉**时 native 侧一轮都不再跑，开关
 // 会永远停在最后写下的 1，Python 侧照样全速扫描到游戏退出——用户观感是「关了 Fushi
-// 之后游戏还是卡」，且跟 Hibiki 完全对不上号。这与上面那条是同一类缺陷，只是触发面更窄。
+// 之后游戏还是卡」，且跟 Fushi 完全对不上号。这与上面那条是同一类缺陷，只是触发面更窄。
 // 所以 native 每轮再写一个单调递增的心跳，Python 侧连续 kFushiHostStallTicks 轮没见它
 // 变就自锁早退；心跳一恢复递增立刻解锁（绝不能变成「Fushi 重连后查词永久不工作」）。
 //

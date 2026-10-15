@@ -78,7 +78,7 @@ AnkiSettings _legacyIdOnlySettings() => AnkiSettings(
       selectedNoteTypeId: 2,
       availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
       availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression']),
+        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
       ],
       fieldMappings: const <String, String>{'Expression': '{expression}'},
       allowDupes: true,

@@ -7,7 +7,7 @@
 //   3. 证明 PdfViewer 组件能在真 widget 树里挂载并触发 onViewerReady（组件路径可用）。
 //
 // 运行（Windows 离屏）：
-//   cd hibiki
+//   cd fushi
 //   .\tool\run_windows_itest.ps1 integration_test\pdf_spike_render_text_itest.dart
 // 或裸跑（需要一个已连接设备/桌面）：
 //   flutter test integration_test\pdf_spike_render_text_itest.dart -d windows \

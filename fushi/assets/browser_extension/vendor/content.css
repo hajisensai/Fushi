@@ -308,13 +308,16 @@
     scroll-margin-bottom: 14px;
 }
 
-/* BUG-3274：尾批词条按需渲染（与 popup.css 同源，见 popup.js __fushiMarkLazyEntry）。 */
+/* BUG-3274：尾批词条（popup.js __fushiMarkLazyEntry）由浏览器按需渲染——屏外词条跳过
+   样式 / 布局 / 绘制。`auto` 让已渲染过的词条记住真实高度，滚回去时滚动条不再跳；首次
+   未渲染的词条按 600px 预估占位。 */
 .entry.fushi-lazy-entry {
     content-visibility: auto;
     contain-intrinsic-size: auto 600px;
 }
 
-/* BUG-3274：长释义切块（与 popup.css 同源，见 popup.js __fushiChunkLongGlossary）。 */
+/* BUG-3274：长释义切块（popup.js __fushiChunkLongGlossary），预估高度由脚本写在内联
+   contain-intrinsic-size 上；进入预渲染区或空闲预热时摘掉类名回到普通渲染。 */
 .fushi-lazy-chunk {
     content-visibility: auto;
 }
@@ -1280,7 +1283,7 @@
    (.glossary-group) 逐字对齐 Niratan Features/Popup/popup.css `.glossary-group` ——
    描边卡而非填充玻璃卡：1px 半透明描边(rgba 0,0,0,.14) + 顶部 inset 白高光 + 薄贴地投影，
    无 background 填充，观感更扁平、与 Niratan 一致。padding 6px 8px、radius 8px 亦照抄
-   (Niratan 的 calc(8px*--popup-scale) 在 Hibiki 走 documentElement.zoom 整体缩放，故直接 8px)。
+   (Niratan 的 calc(8px*--popup-scale) 在 Fushi 走 documentElement.zoom 整体缩放，故直接 8px)。
    皮肤纯 CSS，不改 DOM/JS，四端(in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：
    行距仍走 margin-top(grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距
    不撑 grid track。暗色变体：描边转白(rgba 255,255,255,.09) + 加深贴地投影(照抄 Niratan 暗色分支)。 */
@@ -4000,7 +4003,7 @@
    app 内查词弹窗是独立 WebView（热槽）浮在 Flutter 画面上，WebView 文档里卡片背后
    什么都没有（Flutter 画面在另一个合成层），backdrop-filter 采样不到，开了也只是空转。
    content.js fushiApplyGlass 给弹窗根 #entries-container 挂 .fushi-glass（半透明填充），
-   给 shadow 宿主 #hibiki-popup-host 挂 data-fushi-glass="light|dark"（模糊 + 圆角 + 细描边）。
+   给 shadow 宿主 #fushi-popup-host 挂 data-fushi-glass="light|dark"（模糊 + 圆角 + 细描边）。
    模糊放在宿主上而不是容器上：宿主才是固定尺寸、内部滚动的那只「卡」，容器随内容变高、
    在宿主里滚动；backdrop-filter 落在宿主自己的圆角盒上最稳，容器的半透明填充再被宿主的
    overflow 圆角裁掉。数值与 Flutter 侧同源（fushi_glass_surface.dart）：模糊 sigma 20、
@@ -4167,7 +4170,7 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
-/* 查词弹窗右侧的滚动条（用户群 10-09「右侧条」）。可滚动的是 shadow 宿主 #hibiki-popup-host 自己
+/* 查词弹窗右侧的滚动条（用户群 10-09「右侧条」）。可滚动的是 shadow 宿主 #fushi-popup-host 自己
    （overflow-y:auto），它是宿主页里的普通元素：此前滚动条按**宿主页**的配色画——浅色网页上深色
    弹窗右侧挂一条带上下箭头的白色经典滚动条；shadow 里的主题滚动条只管 #entries-container 内部，
    够不到宿主本身。本段是页面级样式（content.css 以 manifest css 注入宿主页；同一份文本进 shadow
@@ -4179,31 +4182,31 @@
    透明轨道就会透出网页（深色弹窗贴浅色网页 = 一条白边）。content.js 把量到的卡片底色写进
    --fushi-host-gutter，这里用一道只有最右 10px（= 滚动条宽）的渐变只给那一列上色：随宿主圆角
    裁切、不随内容滚动、不叠到内容区（液态玻璃的半透明填充因此不会在内容区叠两层）。 */
-#hibiki-popup-host {
+#fushi-popup-host {
     scrollbar-width: auto !important;
     scrollbar-color: auto !important;
     background-image: linear-gradient(to left, var(--fushi-host-gutter, transparent) 10px, transparent 10px) !important;
 }
 
-#hibiki-popup-host::-webkit-scrollbar {
+#fushi-popup-host::-webkit-scrollbar {
     width: 10px;
     height: 10px;
     background: transparent;
 }
 
-#hibiki-popup-host::-webkit-scrollbar-track,
-#hibiki-popup-host::-webkit-scrollbar-track-piece,
-#hibiki-popup-host::-webkit-scrollbar-corner {
+#fushi-popup-host::-webkit-scrollbar-track,
+#fushi-popup-host::-webkit-scrollbar-track-piece,
+#fushi-popup-host::-webkit-scrollbar-corner {
     background: transparent;
 }
 
-#hibiki-popup-host::-webkit-scrollbar-button {
+#fushi-popup-host::-webkit-scrollbar-button {
     display: none;
     width: 0;
     height: 0;
 }
 
-#hibiki-popup-host::-webkit-scrollbar-thumb {
+#fushi-popup-host::-webkit-scrollbar-thumb {
     min-height: 32px;
     border: 3px solid transparent;
     border-radius: 999px;
@@ -4211,8 +4214,8 @@
     background-clip: padding-box;
 }
 
-#hibiki-popup-host::-webkit-scrollbar-thumb:hover,
-#hibiki-popup-host::-webkit-scrollbar-thumb:active {
+#fushi-popup-host::-webkit-scrollbar-thumb:hover,
+#fushi-popup-host::-webkit-scrollbar-thumb:active {
     background-color: rgba(128, 128, 128, 0.8);
 }
 

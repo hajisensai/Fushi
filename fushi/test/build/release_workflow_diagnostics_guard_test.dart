@@ -499,7 +499,7 @@ void main() {
     expect(
       smoke,
       contains(r'fushi\build\windows\x64\runner\Release\ffmpeg.exe'),
-      reason: 'release must test the exact ffmpeg.exe copied beside hibiki.exe',
+      reason: 'release must test the exact ffmpeg.exe copied beside fushi.exe',
     );
     // BUG-1420: ffprobe is a second, independent executable with its own
     // consumers (embedded subtitle fonts, audio container tags). Both consumers
@@ -510,7 +510,7 @@ void main() {
       smoke,
       contains(r'fushi\build\windows\x64\runner\Release\ffprobe.exe'),
       reason:
-          'release must test the exact ffprobe.exe copied beside hibiki.exe '
+          'release must test the exact ffprobe.exe copied beside fushi.exe '
           '(BUG-1420: it was never built nor bundled, and both of its consumers '
           'degrade silently when it is absent)',
     );

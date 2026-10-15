@@ -64,7 +64,7 @@ class PermissionHandlerWindowsPlugin : public Plugin {
   void IsLocationServiceEnabled(std::unique_ptr<MethodResult<>> result);
   winrt::fire_and_forget IsBluetoothServiceEnabled(std::unique_ptr<MethodResult<>> result);
 
-  // BUG-1887 (Hibiki vendored patch): build the Geolocator and subscribe to
+  // BUG-1887 (Fushi vendored patch): build the Geolocator and subscribe to
   // PositionChanged ONLY when the location service status is actually asked
   // for. See ../PATCHES.md. Upstream did it in the constructor, which opened
   // a Windows location session for the whole process lifetime.
@@ -92,12 +92,12 @@ void PermissionHandlerWindowsPlugin::RegisterWithRegistrar(
   registrar->AddPlugin(std::move(plugin));
 }
 
-// BUG-1887 (Hibiki vendored patch): the constructor used to subscribe to
+// BUG-1887 (Fushi vendored patch): the constructor used to subscribe to
 // Geolocator::PositionChanged unconditionally (with an EMPTY callback).
 // Subscribing starts a Windows location session, so every app embedding this
 // plugin showed up under Settings > Privacy > Location as "currently in use"
 // from the moment RegisterPlugins ran until the process exited -- even when
-// the app never touches the location permission at all (Hibiki only uses
+// the app never touches the location permission at all (Fushi only uses
 // permission_handler for storage/camera on Android and iOS).
 //
 // The subscription is not pointless upstream: Geolocator::LocationStatus only

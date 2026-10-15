@@ -1839,7 +1839,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           icon: FushiIcons.back,
           label: t.back,
           pinned: true,
-          semanticsId: 'hibiki.reader.header.back',
+          semanticsId: 'fushi.reader.header.back',
           // 与面板「退出」同一条路：maybePop 触发 PopScope → onWillPop
           // （落位置 flush / closeMedia / 关书同步，BUG-782）。
           onPressed: () => unawaited(Navigator.of(context).maybePop()),
@@ -1850,7 +1850,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           icon: lyrics ? FushiIcons.readingMode : FushiIcons.lyrics,
           label: lyrics ? t.book_mode : t.lyrics_mode,
           pinned: lyrics,
-          semanticsId: 'hibiki.reader.header.lyrics_mode',
+          semanticsId: 'fushi.reader.header.lyrics_mode',
           onPressed: () => unawaited(_toggleLyricsMode()),
         );
       case ReaderControlItem.navigation:
@@ -1863,7 +1863,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ShortcutAction.readerOpenNavigation,
           ),
           pinned: true,
-          semanticsId: 'hibiki.reader.header.navigation',
+          semanticsId: 'fushi.reader.header.navigation',
           onPressed: () => unawaited(
             _showAppearanceSheet(initialSubPage: 'location'),
           ),
@@ -1886,7 +1886,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             t.reading_statistics,
             ShortcutAction.readerOpenStatistics,
           ),
-          semanticsId: 'hibiki.reader.header.statistics',
+          semanticsId: 'fushi.reader.header.statistics',
           onPressed: _openReadingStatistics,
         );
       case ReaderControlItem.studyTimer:
@@ -1902,7 +1902,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
             ShortcutAction.readerToggleStudyClock,
           ),
-          semanticsId: 'hibiki.reader.control.study_timer',
+          semanticsId: 'fushi.reader.control.study_timer',
           onPressed: _toggleStudyClockManualPause,
         );
       case ReaderControlItem.title:
@@ -1920,7 +1920,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             t.section_audiobook,
             ShortcutAction.readerOpenAudiobook,
           ),
-          semanticsId: 'hibiki.reader.header.audiobook',
+          semanticsId: 'fushi.reader.header.audiobook',
           // 已挂有声书（含 TTS 朗读）→ 侧栏面板；没有 → 听书入口（朗读 / 导入）。
           onPressed: _audiobookController != null
               ? () => unawaited(
@@ -1935,7 +1935,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ? FushiIcons.fullscreenExit
               : FushiIcons.fullscreen,
           label: t.shortcut_action_global_toggle_fullscreen,
-          semanticsId: 'hibiki.reader.bottom.fullscreen',
+          semanticsId: 'fushi.reader.bottom.fullscreen',
           onPressed: () => unawaited(_changeReaderWindowFullscreen()),
         );
       case ReaderControlItem.toolbars:
@@ -1949,7 +1949,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ? FushiIcons.webAsset
               : FushiIcons.webAssetOff,
           label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
-          semanticsId: 'hibiki.reader.control.toolbars',
+          semanticsId: 'fushi.reader.control.toolbars',
           onPressed: () => unawaited(_setHideToolbars(!hidden)),
         );
       case ReaderControlItem.settings:
@@ -1962,7 +1962,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             ShortcutAction.readerOpenMenu,
           ),
           pinned: true,
-          semanticsId: 'hibiki.reader.bottom.settings',
+          semanticsId: 'fushi.reader.bottom.settings',
           onPressed: () => unawaited(_showAppearanceSheet()),
         );
       // ── 有声书传输键：语义与底栏播放条 [AudiobookPlayBar] 逐颗对齐——上一句 /
@@ -1976,7 +1976,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ? FushiIcons.skipPrevious
               : FushiIcons.fastRewind,
           label: skip == 0 ? t.prev_sentence : '-${skip}s',
-          semanticsId: 'hibiki.reader.control.audiobook_prev',
+          semanticsId: 'fushi.reader.control.audiobook_prev',
           onPressed: () => unawaited(
             skip == 0
                 ? _audiobookController!.skipToPrevCue()
@@ -1990,7 +1990,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               ? FushiIcons.skipNext
               : FushiIcons.fastForward,
           label: skip == 0 ? t.next_sentence : '+${skip}s',
-          semanticsId: 'hibiki.reader.control.audiobook_next',
+          semanticsId: 'fushi.reader.control.audiobook_next',
           onPressed: () => unawaited(
             skip == 0
                 ? _audiobookController!.skipToNextCue()
@@ -2002,21 +2002,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           icon: playing ? FushiIcons.pause : FushiIcons.play,
           label: playing ? t.pause : t.play,
-          semanticsId: 'hibiki.reader.control.audiobook_play_pause',
+          semanticsId: 'fushi.reader.control.audiobook_play_pause',
           onPressed: () => unawaited(_audiobookController!.togglePlayPause()),
         );
       case ReaderControlItem.audiobookSeekBack:
         return ReaderHeaderAction(
           icon: FushiIcons.replay10,
           label: '-10s',
-          semanticsId: 'hibiki.reader.control.audiobook_seek_back',
+          semanticsId: 'fushi.reader.control.audiobook_seek_back',
           onPressed: () => unawaited(_audiobookController!.seekRelative(-10)),
         );
       case ReaderControlItem.audiobookSeekForward:
         return ReaderHeaderAction(
           icon: FushiIcons.forward10,
           label: '+10s',
-          semanticsId: 'hibiki.reader.control.audiobook_seek_forward',
+          semanticsId: 'fushi.reader.control.audiobook_seek_forward',
           onPressed: () => unawaited(_audiobookController!.seekRelative(10)),
         );
       case ReaderControlItem.audiobookFollow:
@@ -2024,7 +2024,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           icon: on ? FushiIcons.link : FushiIcons.linkOff,
           label: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
-          semanticsId: 'hibiki.reader.control.audiobook_follow',
+          semanticsId: 'fushi.reader.control.audiobook_follow',
           onPressed: () => _audiobookController!.setFollowAudio(!on),
         );
     }

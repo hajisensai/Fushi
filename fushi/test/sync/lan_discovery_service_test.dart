@@ -154,7 +154,7 @@ void main() {
     // TODO-961: host 开 TLS 时 TXT 必须广播 tls=1（发现方据此优先 https 探测）。
     test('advertises tls flag in TXT only when enabled', () {
       final LanBroadcastService tlsBroadcast = LanBroadcastService(
-        deviceName: 'Hibiki · pc',
+        deviceName: 'Fushi · pc',
         deviceId: 'abc',
         port: 38765,
         tlsEnabled: true,
@@ -162,7 +162,7 @@ void main() {
       expect(tlsBroadcast.tlsEnabled, isTrue);
 
       final LanBroadcastService plainBroadcast = LanBroadcastService(
-        deviceName: 'Hibiki · pc',
+        deviceName: 'Fushi · pc',
         deviceId: 'abc',
         port: 38765,
       );

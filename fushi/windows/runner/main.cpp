@@ -173,7 +173,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return print_window_helper_exit;
   }
 
-  // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 hibiki.iss AppMutex）。
+  // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 fushi.iss AppMutex）。
   // TODO-904 / BUG-437: 真单实例守卫。第二个 fushi.exe 与首实例共享同一 WebView2
   // 默认 userDataFolder（基于 exe 名），而 WebView2 契约不允许多进程并发同一
   // userDataFolder → 第二实例 env 创建锁冲突失败 → `Cannot create the InAppWebView

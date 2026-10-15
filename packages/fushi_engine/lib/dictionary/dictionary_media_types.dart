@@ -20,7 +20,7 @@ String normalizeDictionaryMediaPath(String path) {
 /// application/octet-stream. Includes image/svg+xml (the main gaiji/accent
 /// format).
 ///
-/// 命名统一轮 G8：查 hibiki_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
+/// 命名统一轮 G8：查 fushi_core 单一 MIME 映射表 [mimeTypeForFilePath]（旧本地
 /// switch 副本之一）。保留旧名薄 shim 供两处消费端（app 内 scheme handler 与
 /// sync server 的 /api/media/dictionary 端点）。
 String dictionaryMediaMimeType(String path) => mimeTypeForFilePath(path);

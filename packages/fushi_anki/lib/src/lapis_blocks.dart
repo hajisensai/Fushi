@@ -6,11 +6,11 @@
 ///   位置，不新增、不删除 Anki 字段。加字段会改卡型 schema、逼 Anki 走 full
 ///   sync，删字段更是不可逆地删卡片数据；而区域的增删只影响「显示不显示」，
 ///   随时可撤。可逆的需求不做成不可逆的实现。
-/// * **真相源是 Hibiki 侧的 [LapisCustomBlock] 列表，模板是产物。** 因此不需要
+/// * **真相源是 Fushi 侧的 [LapisCustomBlock] 列表，模板是产物。** 因此不需要
 ///   从 Anki 端模板里反解区域（那才是易碎的一步）：[composeLapisBackTemplate]
 ///   每次都重新生成，Anki 端是不是我们的产物由指纹判定（同 CSS 侧的
 ///   [decideLapisStylingAction]）。
-/// * **基线是用户 Anki 里那份模板，不是 Hibiki 内置的 vendored 副本。** 我们只
+/// * **基线是用户 Anki 里那份模板，不是 Fushi 内置的 vendored 副本。** 我们只
 ///   把托管区段插进去（插入前先 [stripLapisBlocksSections] 掉上一轮的），用户
 ///   自己的模板逐字节保留。早先拿 vendored 全文当基线，等于每次 Apply 都把别人
 ///   的 Lapis 换成我们这版——用户反馈「没改字体却把字体改了」正是这么来的。
@@ -26,7 +26,7 @@ import 'anki_note_type_definition.dart';
 import 'lapis_note_type.dart';
 import 'lapis_styling.dart';
 
-/// 托管区段标记。用户在 Anki 里看到这段就知道是 Hibiki 生成的；标记之间的内容
+/// 托管区段标记。用户在 Anki 里看到这段就知道是 Fushi 生成的；标记之间的内容
 /// 每次应用都会被整体重写。
 const String lapisBlocksBeginMarker = '<!-- HIBIKI-LAPIS-BLOCKS BEGIN -->';
 const String lapisBlocksEndMarker = '<!-- HIBIKI-LAPIS-BLOCKS END -->';
@@ -272,7 +272,7 @@ String composeLapisBackTemplate(
       renderBlock: buildLapisBlockHtml,
     );
 
-/// 剥掉背面模板里**全部**由 Hibiki 托管的区域区段。
+/// 剥掉背面模板里**全部**由 Fushi 托管的区域区段。
 ///
 /// 每次组合都从「用户自己的模板」重新插入，所以必须先把上一轮插进去的清干净，
 /// 否则每 Apply 一次就多叠一份区域（用户看到的「多出来一行」正是这类症状）。

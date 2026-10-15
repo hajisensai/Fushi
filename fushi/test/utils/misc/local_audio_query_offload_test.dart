@@ -186,7 +186,7 @@ void main() {
     }
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_tts_offload');
+      tmp = Directory.systemTemp.createTempSync('fushi_tts_offload');
       dbPath = '${tmp.path}/audio.db';
       seedDb(dbPath);
     });
@@ -254,7 +254,7 @@ void main() {
     late String dbPath;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_tts_order');
+      tmp = Directory.systemTemp.createTempSync('fushi_tts_order');
       dbPath = '${tmp.path}/audio.db';
       final Database db = sqlite3.open(dbPath);
       db.execute('CREATE TABLE entries '

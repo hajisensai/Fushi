@@ -6,7 +6,7 @@
 //   B. Web Component（<bili-comments> 之类 shadow root 渲染，B 站评论区形态）：
 //      caretPositionFromPoint / elementFromPoint 只在顶层 document 下钻，命中的是
 //      shadow 宿主元素（元素节点）而非内部文字节点。修复前 getCharacterAtPoint 在
-//      `nodeType !== TEXT_NODE` 处直接 return null（Yomitan 能读、Hibiki 读不了的
+//      `nodeType !== TEXT_NODE` 处直接 return null（Yomitan 能读、Fushi 读不了的
 //      根因）。修复后必须沿 element.shadowRoot 下钻到内部文字节点并成功取词。
 //
 // 运行：node fushi/test/lookup/browser_extension_shadow_dom_lookup_bug1012_test.js

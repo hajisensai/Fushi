@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-1432：把「`LogicalKeyboardKey.process` 在 Hibiki 出包的 5 个平台上产不出来」
+/// BUG-1432：把「`LogicalKeyboardKey.process` 在 Fushi 出包的 5 个平台上产不出来」
 /// 这条**平台事实**钉成可执行断言。
 ///
 /// 为什么需要它：仓库里 BUG-430 / BUG-853 / BUG-936 建立了一整套「IME 激活时引擎把
@@ -37,7 +37,7 @@ void main() {
     );
   });
 
-  test('Hibiki 出包的 5 个平台的逻辑键表都产不出 process', () {
+  test('Fushi 出包的 5 个平台的逻辑键表都产不出 process', () {
     // Android / iOS / macOS / Windows / Linux(GTK+GLFW) 的全部 logical 映射，
     // 外加 Fuchsia（同属非 web 原生端，一并钉住）。缺哪张表会让守卫留下盲区，故
     // 逐张列全，而不是只挑 kWindowsToLogicalKey。

@@ -39,8 +39,8 @@ class _SeamTestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-    appName: 'Hibiki',
-    packageName: 'jp.hibiki.test',
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
     version: '1.0.0',
     buildNumber: '1',
   );
@@ -57,7 +57,7 @@ Future<AppModel> _buildAppModel() async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir = Directory.systemTemp.createTempSync(
-    'hibiki_settings_seam_',
+    'fushi_settings_seam_',
   );
   addTearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

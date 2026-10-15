@@ -87,12 +87,38 @@ ${repeated('c')}\t\t\t932\tHQ@1234\tfirst
         'block=EXHQXN8@1647F4;block-name=Krkr2wcs;prefer=HQXN-C@1D2F80;'
         'defer-ms=8000';
     final List<LunaHookCodeProfile> parsed = parseLunaHookCodeProfiles('''
-# Hibiki Luna hook-code profiles v2. UTF-8, tab separated.
+# Fushi Luna hook-code profiles v2. UTF-8, tab separated.
 exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel\toptions
 ${repeated('a')}\t\t\t932\tHQ@1234\twith options\t$options
 ''');
     expect(parsed, hasLength(1));
     expect(parsed.single.options, options);
+  });
+
+  // 改名前（Hibiki）导出 / 落盘的表首行是 `# Hibiki Luna hook-code profiles v1/v2`；
+  // 用户手里的旧文件必须照样能读（native 侧 MatchLunaHookProfiles 同样跳过 `#` 行）。
+  test('files written before the Hibiki → Fushi rename still parse', () {
+    final List<LunaHookCodeProfile> v1 = parseLunaHookCodeProfiles('''
+# Hibiki Luna hook-code profiles v1. UTF-8, tab separated.
+exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel
+${repeated('a')}\t\t\t932\tHQ@1234\told v1
+''');
+    expect(v1.single.hookCode, 'HQ@1234');
+    expect(v1.single.options, isEmpty);
+
+    final List<LunaHookCodeProfile> v2 = parseLunaHookCodeProfiles('''
+# Hibiki Luna hook-code profiles v2. UTF-8, tab separated.
+exe_sha256\tmodule_name\tmodule_sha256\tcodepage\thook_code\tlabel\toptions
+${repeated('b')}\t\t\t932\tHQ@5678\told v2\tdefer-ms=8000
+''');
+    expect(v2.single.hookCode, 'HQ@5678');
+    expect(v2.single.options, 'defer-ms=8000');
+  });
+
+  test('encode writes the Fushi header', () {
+    final String encoded =
+        encodeLunaHookCodeProfiles(const <LunaHookCodeProfile>[]);
+    expect(encoded, startsWith('# Fushi Luna hook-code profiles v1.'));
   });
 
   test('v2 round-trips through encode without losing options', () {

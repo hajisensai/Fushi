@@ -51,7 +51,7 @@ abstract class PlatformVideoController {
     int? height,
   });
 
-  /// HIBIKI FORK (HDR in the Flutter compositor): switches the texture handed
+  /// FUSHI FORK (HDR in the Flutter compositor): switches the texture handed
   /// to Flutter between 8-bit and half-float extended-range sRGB, switching
   /// libmpv's render target (linear BT.2020 / automatic) in the same step.
   /// [referenceWhiteNits] is where libmpv's 203 nit reference white lands

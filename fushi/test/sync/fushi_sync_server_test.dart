@@ -15,7 +15,7 @@ void main() {
     late String token;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp('hibiki_server_test_');
+      tempDir = await Directory.systemTemp.createTemp('fushi_server_test_');
       final syncDataDir = Directory('${tempDir.path}/sync-data');
       await syncDataDir.create();
       final rootDir = Directory('${syncDataDir.path}/$kSyncRootFolderName');

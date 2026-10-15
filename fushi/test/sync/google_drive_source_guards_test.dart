@@ -83,12 +83,12 @@ void main() {
               'toggle (GoogleDriveSyncSpace)');
       expect(src.contains('name = _space.rootFolderName'), isTrue,
           reason: 'the root folder name must come from the space '
-              '(hibiki-data vs ttu-reader-data), not a hardcoded literal');
+              '(fushi-data vs ttu-reader-data), not a hardcoded literal');
     });
   });
 
   /// 两种空间的 scope / 空间别名 / 根目录名的真值源，逐字段守死。
-  ///   - appData：drive.appdata / appDataFolder / hibiki-data（老用户数据原地）。
+  ///   - appData：drive.appdata / appDataFolder / fushi-data（老用户数据原地）。
   ///   - ttuShared：完整 drive / drive / ttu-reader-data（与 Hoshi/ッツ 共享）。
   group('sync space definitions (google_drive_sync_space.dart)', () {
     final File spaceFile = File('lib/src/sync/google_drive_sync_space.dart');

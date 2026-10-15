@@ -181,7 +181,7 @@ void main() {
         floatingOn: true,
         cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
         positionMs: 1000,
-        audioName: 'hibiki-lyric-seed.mp3',
+        audioName: 'fushi-lyric-seed.mp3',
       );
 
       // Observed call order on host:
@@ -220,7 +220,7 @@ void main() {
     await startedSession(
       floatingOn: false,
       cues: <AudioCue>[cue(0)],
-      audioName: 'hibiki-lyric-seed-off.mp3',
+      audioName: 'fushi-lyric-seed-off.mp3',
     );
     expect(nativeCalls.any((MethodCall c) => c.method == 'updateText'), isFalse,
         reason: 'no updateText should be pushed when the overlay is off');
@@ -237,7 +237,7 @@ void main() {
       visibleLines: 1,
       cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
       positionMs: 1000,
-      audioName: 'hibiki-lyric-n0.mp3',
+      audioName: 'fushi-lyric-n0.mp3',
     );
     final int showIndex =
         nativeCalls.indexWhere((MethodCall c) => c.method == 'show');
@@ -266,7 +266,7 @@ void main() {
       visibleLines: 3,
       cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
       positionMs: 1000,
-      audioName: 'hibiki-lyric-n1.mp3',
+      audioName: 'fushi-lyric-n1.mp3',
     );
     final int showIndex =
         nativeCalls.indexWhere((MethodCall c) => c.method == 'show');

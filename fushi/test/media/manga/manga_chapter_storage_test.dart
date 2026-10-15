@@ -11,7 +11,7 @@ void main() {
   late Directory bookDir;
 
   setUp(() async {
-    bookDir = await Directory.systemTemp.createTemp('hibiki-chapter-storage-');
+    bookDir = await Directory.systemTemp.createTemp('fushi-chapter-storage-');
   });
 
   tearDown(() async {

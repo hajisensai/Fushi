@@ -669,7 +669,7 @@ class AppModel with ChangeNotifier {
         .distinct(),
   );
 
-  /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
+  /// App 级 Fushi LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
@@ -1520,7 +1520,7 @@ class AppModel with ChangeNotifier {
   String? _initError;
 
   /// Non-null when init was refused because the on-disk DB was created by a
-  /// NEWER build of Hibiki than this one (downgrade protection). The UI shows a
+  /// NEWER build of Fushi than this one (downgrade protection). The UI shows a
   /// dedicated "update your app" notice with NO retry button — retry would fail
   /// identically and this is not a transient error. The DB file is left intact.
   FushiDatabaseDowngradeException? get downgradeError => _downgradeError;
@@ -1528,13 +1528,20 @@ class AppModel with ChangeNotifier {
 
   /// Non-null when init failed because the database could NOT be opened even
   /// after the full WAL/sidecar recovery ladder (TODO-905) — i.e. the main
-  /// `hibiki.db` itself is corrupt, not just a stale `-wal`/`-shm`. The UI shows
+  /// `fushi.db` itself is corrupt, not just a stale `-wal`/`-shm`. The UI shows
   /// an actionable "restore a backup / clear data" notice; a plain Retry would
   /// loop forever (the very bug TODO-905 fixes), so recovery already ran inside
   /// the open path and a fresh open of the same corrupt file would fail again.
   FushiDatabaseUnrecoverableException? get unrecoverableDbError =>
       _unrecoverableDbError;
   FushiDatabaseUnrecoverableException? _unrecoverableDbError;
+
+  /// 非 null 表示库的 schema 低于本版本能升级的下限（[kMinSupportedSchemaVersion]，
+  /// 或目录里只有改名前的 `hibiki.db`）：迁移阶梯的那一段已删除，开库被拒、库文件
+  /// 原样保留。UI 显专屏提示先装 [kLegacySchemaBridgeAppVersion] 打开一次再更新；
+  /// 不给重试——重试会以同样的方式失败。
+  UnsupportedLegacySchemaException? get legacySchemaError => _legacySchemaError;
+  UnsupportedLegacySchemaException? _legacySchemaError;
 
   /// BUG-815：非 null 表示桌面**配置了自定义数据根、但本次启动它不可达**（休眠 / 掉线 /
   /// 拔出的盘）。UI 据此显「数据位置未响应」逃生屏（重试 / 显式用默认位置启动），而**不**
@@ -1597,6 +1604,7 @@ class AppModel with ChangeNotifier {
     _initError = null;
     _downgradeError = null;
     _unrecoverableDbError = null;
+    _legacySchemaError = null;
     _dataRootUnavailable = null;
     _isInitialised = false;
     notifyListeners();
@@ -3045,7 +3053,7 @@ class AppModel with ChangeNotifier {
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
-    // TODO-1236：把上游 `hibiki_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
+    // TODO-1236：把上游 `fushi_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
     // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
     // （与 TODO-1226 迁移白名单一致），而不是落回平台 Documents。
     AudiobookStorage.documentsRootResolver = AppPaths.documentsRootDirectory;
@@ -3555,9 +3563,18 @@ class AppModel with ChangeNotifier {
       _downgradeError = e;
       _initError = '$e';
       notifyListeners();
+    } on UnsupportedLegacySchemaException catch (e, stack) {
+      // 库比本版本能升级的下限还老（低于最低 schema 门槛，或只有改名前的
+      // hibiki.db）。开库在任何迁移语句之前被拒，文件原样保留。与降级同理：专屏、
+      // 不重试、不继续 init、绝不删库重建。
+      debugPrint('[Fushi] init REFUSED (legacy schema): $e\n$stack');
+      ErrorLogService.instance.log('AppModel.initialise.legacySchema', e, stack);
+      _legacySchemaError = e;
+      _initError = '$e';
+      notifyListeners();
     } on FushiDatabaseUnrecoverableException catch (e, stack) {
       // TODO-905: the WAL/sidecar recovery ladder already ran inside the open
-      // path and exhausted — the main hibiki.db is corrupt. Surface a dedicated,
+      // path and exhausted — the main fushi.db is corrupt. Surface a dedicated,
       // actionable notice (restore backup / clear data) instead of looping the
       // generic Retry button forever against the same un-openable file.
       debugPrint('[Fushi] init FAILED (DB unrecoverable): $e\n$stack');
@@ -5059,8 +5076,8 @@ class AppModel with ChangeNotifier {
   ///
   /// BUG-1053：以前是在 [startAnimeDownloadService] 里对**所有桌面用户无条件**
   /// 创建——而创建 = 起一个 libtorrent session（绑 6881 TCP+UDP + 默认开 DHT）。
-  /// 于是没有任何下载任务的用户，只要 Hibiki 开着就一直在跑全球 DHT，路由器
-  /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
+  /// 于是没有任何下载任务的用户，只要 Fushi 开着就一直在跑全球 DHT，路由器
+  /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Fushi 即恢复。
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
@@ -7310,7 +7327,7 @@ class AppModel with ChangeNotifier {
     );
     final bool launched = await launchUrl(uri);
     if (!launched) {
-      debugPrint('[hibiki] Failed to launch popup dictionary for: $trimmed');
+      debugPrint('[fushi] Failed to launch popup dictionary for: $trimmed');
     }
   }
 
@@ -8707,7 +8724,7 @@ class AppModel with ChangeNotifier {
       ).lookupAudioUrl(expression: expression, reading: reading);
     } on RemoteLookupUnreachableError catch (e, stack) {
       // 全部配对候选传输层不可达：记一次日志后 rethrow，让 WordAudioResolver 把
-      // hibiki-remote 源计入 45s 失败冷却（冷却窗内短路，不再重入、不刷屏）。
+      // fushi-remote 源计入 45s 失败冷却（冷却窗内短路，不再重入、不刷屏）。
       // 「可达但无音频」不走这里，仍正常返回 null。
       ErrorLogService.instance.log('remoteAudioLookup', e, stack);
       rethrow;

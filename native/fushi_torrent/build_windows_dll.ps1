@@ -76,4 +76,4 @@ foreach ($dll in $required) {
 }
 
 Write-Host "==> Done. Prebuilt DLLs in: $outDir"
-Write-Host "    flutter build windows 会自动把它们拷到 hibiki.exe 旁（见 windows/CMakeLists.txt）。"
+Write-Host "    flutter build windows 会自动把它们拷到 fushi.exe 旁（见 windows/CMakeLists.txt）。"

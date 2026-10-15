@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `/api/duplicate`（Anki findNotes / findDuplicateNotes）取真实布尔。两份扩展镜像
 /// （随 app 打包的 assets/ 与真源 tools/）都守，且必须逐字节一致。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
+  // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsBridge = File('assets/browser_extension/bridge-shim.js');
   final File toolsBridge = File('../tools/browser-extension/bridge-shim.js');
   final File assetsBackground = File('assets/browser_extension/background.js');

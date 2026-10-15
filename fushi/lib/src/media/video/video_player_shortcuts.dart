@@ -17,7 +17,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 /// Coalesces a controller button and the synthetic secondary mouse click that
 /// some desktop controller mappers emit for the same physical press.
 ///
-/// Steam Input's desktop layout is a common source: Hibiki receives the real
+/// Steam Input's desktop layout is a common source: Fushi receives the real
 /// controller button through GameInput, while Windows also receives a right
 /// click through the pointer channel. Neither Flutter event carries a shared
 /// source identifier, so the only reliable app-side boundary is their tightly

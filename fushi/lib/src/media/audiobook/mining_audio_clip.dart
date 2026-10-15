@@ -384,7 +384,7 @@ AudioPlaybackRange? _expandAroundCue({
 
 /// 归一化拼接索引：各 cue 归一化文本、其在拼接串中的起点，与拼接串本身。
 /// [_anchoredAdjacentMatch] 与 [_collectSpanCuesByText] 原各持一份逐字相同的
-/// 构建循环，收敛为文件内单一构建点。hibiki_audio 侧
+/// 构建循环，收敛为文件内单一构建点。fushi_audio 侧
 /// `CollectionAudioMatcher._normalizedAdjacentMatch` 的第三份刻意保持包内独立
 /// （不跨包新增共享面；归一化本体 AudioTextNormalizer / BUG-060 白名单不动）。
 ({List<int> cueStarts, List<String> normTexts, String concat})

@@ -145,7 +145,7 @@ void main() {
       String injectorStdout = 'OK hooked pid=4321 mode=attach\n',
     }) async {
       final Directory temp = await Directory.systemTemp.createTemp(
-        'hibiki_gal_shm_open_test_',
+        'fushi_gal_shm_open_test_',
       );
       final File injector =
           File('${temp.path}${Platform.pathSeparator}fake.exe');

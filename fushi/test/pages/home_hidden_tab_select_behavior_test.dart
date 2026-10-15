@@ -312,7 +312,7 @@ void main() {
   });
 
   // 全局热键「置顶主窗并打开查词页」（globalExternalOpenLookupPage）最典型的用法就是
-  // 「正在 Hibiki 里看书 / 看视频 → 切到别的程序 → 按热键」。阅读器 / 播放器 / 漫画
+  // 「正在 Fushi 里看书 / 看视频 → 切到别的程序 → 按热键」。阅读器 / 播放器 / 漫画
   // 都是 `Navigator.push` 压在 HomePage 之上的全屏路由（BUG-286 记过），此时若只
   // `_selectTab` 切底下那层 IndexedStack，用户看到的是「窗口弹到前台却什么都没变」。
   testWidgets('查词 tab 开着但被全屏路由遮住：必须推独立路由到最上层，且不弹掉原页面',

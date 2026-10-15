@@ -2,7 +2,7 @@ import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 // 统计来源标识 kStatSourceBook / kStatSourceVideo（命名统一 Phase 3.4）已挪进
-// hibiki_core 的 stat_source_kind.dart（同枚举 StatSourceKind）——它们是 schema
+// fushi_core 的 stat_source_kind.dart（同枚举 StatSourceKind）——它们是 schema
 // 值域的一部分且写入点跨层。本文件只保留分桶/日期键等纯函数。
 
 /// 把按日期分布的活动计数分桶到「今日 / 本周 / 本月 / 全部」。

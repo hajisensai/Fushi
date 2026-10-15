@@ -428,7 +428,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                 ),
               ),
               Semantics(
-                identifier: 'hibiki.reader.side_sheet.close',
+                identifier: 'fushi.reader.side_sheet.close',
                 child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_reader_stats_close'),
                   icon: const FushiIcon(Icons.close),
@@ -570,7 +570,7 @@ class _SessionHero extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Semantics(
-                identifier: 'hibiki.reader.stats.toggle_pause',
+                identifier: 'fushi.reader.stats.toggle_pause',
                 child: _SessionPauseButton(
                   key: const ValueKey<String>('fushi_reader_stats_pause'),
                   active: session.active,

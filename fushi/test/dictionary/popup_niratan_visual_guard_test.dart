@@ -17,7 +17,7 @@ String _ruleBody(String css, String selector) {
 }
 
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。
+  // flutter test 的 cwd 是 fushi 包根。
   late final String css;
   late final String js;
 
@@ -87,7 +87,7 @@ void main() {
     });
 
     test('五类动作按钮挂 inline-action-button 共享基类（制卡按钮只借布局不借 SVG）', () {
-      // audio / favorite 两顶部按钮 + Hibiki 独有的 clear-draft / 句子上下文步进器。
+      // audio / favorite 两顶部按钮 + Fushi 独有的 clear-draft / 句子上下文步进器。
       // 制卡按钮按 TODO-1325 保留 ✓✓↩ 文本字形（不走 SVG），但 BUG-1895 起也挂共享
       // 基类：它借的是基类的 inline-flex 居中与 pointer 光标，好让文本 '+' 与同排
       // 1em SVG 图标目测齐平，跟「走不走 SVG」正交。「不走 SVG」的真判据在下面还原
@@ -201,7 +201,7 @@ void main() {
     });
   });
 
-  group('未破坏 Hibiki 既有弹窗资产（回归护栏）', () {
+  group('未破坏 Fushi 既有弹窗资产（回归护栏）', () {
     test('header-buttons 仍是单一来源的响应式 clamp gap（TODO-846 不回退）', () {
       final String body = _ruleBody(css, '.header-buttons');
       expect(RegExp(r'gap\s*:\s*clamp\(').hasMatch(body), isTrue,

@@ -194,7 +194,7 @@ $body</body>
     <dc:identifier id="uid">urn:uuid:$uid</dc:identifier>
     <dc:title>$bookTitle</dc:title>
     <dc:language>ja</dc:language>
-    <dc:creator>Hibiki Test Suite</dc:creator>
+    <dc:creator>Fushi Test Suite</dc:creator>
     <meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>
   </metadata>
   <manifest>
@@ -258,7 +258,7 @@ p { margin: 0.5em 0; }
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;

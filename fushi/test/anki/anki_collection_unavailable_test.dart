@@ -115,7 +115,7 @@ void main() {
         '../fushi/android/app/src/main/java/app/fushi/reader/'
         'AnkiChannelHandler.java',
       );
-      // Run from either repo root or the hibiki package directory.
+      // Run from either repo root or the fushi package directory.
       final File java = f.existsSync()
           ? f
           : File(

@@ -411,7 +411,7 @@ mixin AnkiNoteComposer {
   /// 去标签、折叠空白、截断到 [maxLen]。供 note viewer / 多张命中选择列表区分卡片用。
   /// 纯函数、可单测。
   static String previewFromFieldValue(String value, {int maxLen = 60}) {
-    // 标签替换成**空格**（随后统一折叠），与 hibiki_audio 字幕解析的
+    // 标签替换成**空格**（随后统一折叠），与 fushi_audio 字幕解析的
     // `stripHtmlTags`（替换成空串）**故意不同**：Anki 字段 HTML 里 `<br>` /
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。

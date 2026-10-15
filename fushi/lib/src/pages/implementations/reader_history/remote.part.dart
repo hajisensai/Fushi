@@ -8,7 +8,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         _pageWidget.remoteBookClientLoader;
     if (injected != null) return injected();
 
-    // 互联（局域网 hibiki server）已从 backendType 解耦成独立开关，可与云备份并存：
+    // 互联（局域网 fushi server）已从 backendType 解耦成独立开关，可与云备份并存：
     // 互联启用且已配对对端时优先用它的 live 库 API，否则回退云盘备份后端（经
     // CloudRemoteBookClient 适配，TODO-665 阶段1）；鉴权失败返 null（不显示远端区）。
     // 判定与「已从本机移除的远端书」找回列表共用一条。

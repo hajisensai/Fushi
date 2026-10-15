@@ -550,7 +550,7 @@ void main() {
     expect(queries[3], isNot(contains('parent_tmdb_id')));
     for (final Map<String, String> query in queries) {
       expect(query['page'], '3');
-      // BUG-1846：入参仍是 Hibiki 的大类码 ja/zh，但发出去必须是 OpenSubtitles
+      // BUG-1846：入参仍是 Fushi 的大类码 ja/zh，但发出去必须是 OpenSubtitles
       // 认得的 BCP-47——它的语言表里没有裸 zh。旧断言锁的正是那个缺陷行为。
       expect(query['languages'], 'ja,zh-cn,zh-tw');
     }

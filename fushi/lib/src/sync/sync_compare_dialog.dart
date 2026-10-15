@@ -62,7 +62,7 @@ class SyncCompareEntry {
   /// 远端书籍文件夹的原生定位符（删除整本远端书用）；本端独有书为 null。
   final String? remoteFolderId;
 
-  /// Hibiki 互联 live library 里的书名。它没有 WebDAV 书文件夹，下载必须走
+  /// Fushi 互联 live library 里的书名。它没有 WebDAV 书文件夹，下载必须走
   /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
   final String? remoteLiveTitle;
 
@@ -685,7 +685,7 @@ Future<void> showSyncCompareDialog(
   if (backend == null) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an
-    // account login. The Hibiki interconnect (and WebDAV/FTP/SFTP) have no
+    // account login. The Fushi interconnect (and WebDAV/FTP/SFTP) have no
     // sign-in, so "not signed in" was wrong there; use a backend-neutral
     // "set up sync first" message that reads correctly for every backend.
     showSyncMessage(context, t.sync_compare_unavailable);
@@ -1138,7 +1138,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final File audioTmp = File(
       p.join(
         dir.path,
-        'hibiki-compare-audio-'
+        'fushi-compare-audio-'
         '${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
       ),
     );
@@ -1169,7 +1169,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final File tmp = File(
         p.join(
           dir.path,
-          'hibiki-compare-${DateTime.now().microsecondsSinceEpoch}.epub',
+          'fushi-compare-${DateTime.now().microsecondsSinceEpoch}.epub',
         ),
       );
       try {

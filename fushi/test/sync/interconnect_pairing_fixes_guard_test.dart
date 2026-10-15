@@ -13,7 +13,7 @@ import 'sync_settings_schema_source_corpus.dart';
 /// - #3：失败后「重新配对」入口复用 _attemptManualPair，不必删地址重加。
 ///
 /// 这几处是纯客户端 UI / 控制器接线，没有可低成本落地的 widget 测试守着；行为测试
-/// （interconnect_test_connection_tls_test / hibiki_sync_server_pair_v2_test）守住服务端
+/// （interconnect_test_connection_tls_test / fushi_sync_server_pair_v2_test）守住服务端
 /// 与后端契约，本文件在源码切片层钉住 UI 侧接线不被删。
 void main() {
   test('BUG-616：_testAll 把地址钉扎指纹传进 testConnection', () {

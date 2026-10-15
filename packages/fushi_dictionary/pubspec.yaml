@@ -1,6 +1,6 @@
 name: fushi_dictionary
 resolution: workspace
-description: Dictionary engine, FFI bindings, and language implementations for Hibiki
+description: Dictionary engine, FFI bindings, and language implementations for Fushi
 publish_to: none
 
 

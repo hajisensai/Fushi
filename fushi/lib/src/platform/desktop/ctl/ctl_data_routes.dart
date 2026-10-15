@@ -5,7 +5,12 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:fushi_core/fushi_core.dart'
-    show FushiPairedPeerRow, VideoDownloadJobRow;
+    show
+        FushiPairedPeerRow,
+        kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
+        kMinSupportedSchemaVersion,
+        VideoDownloadJobRow;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -244,6 +249,14 @@ List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
       if (meta.schemaVersion > appModel.database.schemaVersion) {
         throw CtlFailure.rejected(
           '备份来自更新版本的 Fushi（schema ${meta.schemaVersion}），先升级 app',
+        );
+      }
+      if (meta.schemaVersion > 0 &&
+          meta.schemaVersion < kMinSupportedSchemaVersion) {
+        throw CtlFailure.rejected(
+          '备份来自旧版 Hibiki 或早期版本（schema ${meta.schemaVersion}），本版本'
+          '已无法直接导入；先装 Fushi v$kLegacySchemaBridgeAppVersion 导入一次再'
+          '更新（$kLegacySchemaBridgeReleaseUrl）',
         );
       }
     }

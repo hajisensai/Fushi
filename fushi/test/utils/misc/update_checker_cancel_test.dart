@@ -80,7 +80,7 @@ void main() {
 
     setUp(() async {
       updatesDir =
-          await Directory.systemTemp.createTemp('hibiki-update-cancel808');
+          await Directory.systemTemp.createTemp('fushi-update-cancel808');
     });
 
     tearDown(() async {

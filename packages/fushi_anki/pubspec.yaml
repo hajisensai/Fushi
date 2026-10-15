@@ -1,6 +1,6 @@
 name: fushi_anki
 resolution: workspace
-description: Anki integration for Hibiki - abstract service, AnkiDroid and AnkiConnect implementations
+description: Anki integration for Fushi - abstract service, AnkiDroid and AnkiConnect implementations
 publish_to: none
 
 environment:

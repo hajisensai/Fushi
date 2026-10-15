@@ -255,7 +255,7 @@ function loadContent(options) {
   }
   vm.runInContext(src, sandbox, { filename: 'content.js' });
 
-  const host = () => created.find((el) => el.id === 'hibiki-popup-host' && el.isConnected) || null;
+  const host = () => created.find((el) => el.id === 'fushi-popup-host' && el.isConnected) || null;
   // ev.stopBeforeDocument：站点在冒泡阶段 stopPropagation（document 冒泡监听收不到）。
   const fire = (type, ev) => {
     for (const fn of winCaptureListeners[type] || []) fn(ev);

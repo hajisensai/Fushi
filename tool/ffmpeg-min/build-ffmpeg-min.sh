@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 构建 Hibiki 桌面用的「精简 ffmpeg」（~10MB 量级），只含 Hibiki 实际调用的组件：
+# 构建 Fushi 桌面用的「精简 ffmpeg」（~10MB 量级），只含 Fushi 实际调用的组件：
 #   - 内封字幕枚举/抽取（-i 探测 + -map 0:s:N 转 srt/ass/vtt）
 #   - cue 动图（fps,scale,palettegen,paletteuse → gif）
 #   - 句子音频片段（解码 → aac/adts）
@@ -266,7 +266,7 @@ if [ ! -d "$SRC/.git" ]; then
 fi
 cd "$SRC"
 
-# 组件白名单（覆盖 Hibiki 四类命令；按需在调优清单里增删）。
+# 组件白名单（覆盖 Fushi 四类命令；按需在调优清单里增删）。
 # image2/image2pipe：有声书片段导出（TODO-945 M4 / TODO-1096）用 `-loop 1 -i clip.png`
 # 把单张 PNG 当循环视频流喂进合成命令。`-loop` 是 image2 demuxer 的输入选项，读命名 PNG
 # 文件走 image2；若改走管道则用 image2pipe——两者都加，零体积成本、LGPL。漏 image2 会让

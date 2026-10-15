@@ -129,7 +129,7 @@ class FushiRadii {
   static const double dialogValue = 28; // MD3 对话框规范圆角（2026-10-04 对话框统一）
   static const double sheetValue = 28; // MD3 底部弹层上两角（2026-10-04 弹层统一）
 
-  /// galgame 竖版海报卡的圆角（对齐 ReinaManager 的圆润卡片观感，比 Hibiki 常规
+  /// galgame 竖版海报卡的圆角（对齐 ReinaManager 的圆润卡片观感，比 Fushi 常规
   /// [cardValue] 稍大一档；见 `docs/design/galgame-library-reina-visual-parity.md`）。
   static const double posterValue = 16;
 

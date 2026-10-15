@@ -782,7 +782,7 @@ constexpr bool kKirikiriLookupProbePaths = false;
 
 // TJS 传感器。职责边界是：采字符几何、做命中测试、在游戏 Layer 上即时绘制选词高亮，
 // 并承载 host 回投的 Fushi popup BGRA 位图与卡片输入。分词、查词、排版、背景和文字
-// 都只由 Hibiki/Fushi 现有 popup 实现；TJS 不维护第二套词典卡渲染器。这里没有网络
+// 都只由 Fushi 现有 popup 实现；TJS 不维护第二套词典卡渲染器。这里没有网络
 // 客户端、认证凭据或 JSON。
 //
 // 三条通道都由 DLL 在游戏主线程的连续帧回调里驱动：
@@ -1987,7 +1987,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					// primary 下之后，两边同系，缩放时一起走。
 					layer = new Layer(global.kag, primary);
 					global.kag.add(layer);
-					layer.name = "Hibiki subtitle highlight";
+					layer.name = "Fushi subtitle highlight";
 					layer.fushiLookupIgnore = true;
 					layer.type = ltAlpha;
 					layer.absolute = 2147482000;
@@ -2308,7 +2308,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						// 里的某一个（引擎对 hitType/absolute 之类的取值范围各有脾气）。
 						// 一个可选属性不被接受就把整张卡片废掉，是把小毛病放大成功能全灭。
 						global.fushiLookupStep = 1;
-						try { card.name = "Hibiki in-game lookup card"; } catch(e) {}
+						try { card.name = "Fushi in-game lookup card"; } catch(e) {}
 						global.fushiLookupStep = 2;
 						try { card.fushiLookupIgnore = true; } catch(e) {}
 						global.fushiLookupStep = 3;
@@ -5415,7 +5415,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				throw new Exception("fushiLookup: no kag input seam available");
 			installStage = 50;
 
-			Debug.notice("[HibikiLookup] sensor installed");
+			Debug.notice("[FushiLookup] sensor installed");
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
 			global.fushiLookupBootstrap = void;
 		}
@@ -5436,7 +5436,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 那正是这批改动通篇在消灭的「同形失败」。撤掉之后 DLL 退回每 30 帧一次的
 			// typeof 探测并继续记前置条件位，失败点仍然读得出来。
 			global.fushiLookupNotify = void;
-			Debug.notice("[HibikiLookup] install failed: " + e.message);
+			Debug.notice("[FushiLookup] install failed: " + e.message);
 			System.removeContinuousHandler(global.fushiLookupBootstrap);
 			global.fushiLookupBootstrap = void;
 		}

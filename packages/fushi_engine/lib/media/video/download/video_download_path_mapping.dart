@@ -86,7 +86,7 @@ String encodeVideoDownloadBackendPathMappings(
           .toList(growable: false),
     );
 
-/// qBittorrent 所见路径与 Hibiki 本机路径之间的双向映射。
+/// qBittorrent 所见路径与 Fushi 本机路径之间的双向映射。
 ///
 /// 远端统一用 `/` 比较和输出；本机侧按当前平台归一化。未配置时可用
 /// [VideoDownloadPathMapping.identity]，但目标路径仍须由调用方验证可访问。

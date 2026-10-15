@@ -321,7 +321,7 @@ switch ($Action) {
     }
     'screenshot' {
         $ts = Get-Date -Format "yyyyMMdd_HHmmss"
-        $local = if ($Rest -and $Rest[0]) { $Rest[0] } else { "d:\APP\vs_claude_code\hibiki\.codex-test\screenshot_$ts.png" }
+        $local = if ($Rest -and $Rest[0]) { $Rest[0] } else { "d:\APP\vs_claude_code\fushi\.codex-test\screenshot_$ts.png" }
         Shell "screencap -p /sdcard/ss.png" | Out-Null
         $dev = Resolve-Device
         & adb -s $dev pull /sdcard/ss.png $local 2>$null | Out-Null

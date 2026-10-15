@@ -235,7 +235,7 @@ class NativeVideoController extends PlatformVideoController {
     }
   }
 
-  /// HIBIKI FORK (HDR in the Flutter compositor): see
+  /// FUSHI FORK (HDR in the Flutter compositor): see
   /// [PlatformVideoController.setHdrOutput].
   @override
   Future<bool> setHdrOutput({

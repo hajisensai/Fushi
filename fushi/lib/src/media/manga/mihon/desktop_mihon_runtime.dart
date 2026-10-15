@@ -527,7 +527,7 @@ class DesktopMihonRuntime extends MihonBridgeRuntime
         await process.exitCode.timeout(const Duration(seconds: 1));
       } on TimeoutException {
         // This is still the exact retained child. Startup fails rather than
-        // allowing an uncontained JVM to outlive Hibiki.
+        // allowing an uncontained JVM to outlive Fushi.
       }
       throw MihonRuntimeException(
         'PROCESS_CONTAINMENT_FAILED',

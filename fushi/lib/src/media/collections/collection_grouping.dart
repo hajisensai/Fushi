@@ -17,7 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 /// 一个待分组条目的最小身份 + 排序回退键 + 渲染载荷。
 ///
-/// 命名统一 Phase 3.3：身份二元组语义收口进 hibiki_core 的 [MediaRef]——
+/// 命名统一 Phase 3.3：身份二元组语义收口进 fushi_core 的 [MediaRef]——
 /// 复合键经 [ref] 视图生成（字段本体仍留在本类：Dart const 构造的初始化列表
 /// 不允许用参数新建 const 对象，存 [MediaRef] 会丢 const 构造）。
 class CollectionOrderingItem<T> {
