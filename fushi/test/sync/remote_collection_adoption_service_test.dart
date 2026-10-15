@@ -61,6 +61,33 @@ void main() {
       expect((await db.getAllCollectionItems()).single.entryKey, video.id);
     },
   );
+  test(
+    'BUG-3418 同类：无合集归属的下载书也记下落地键与对端键的对应，'
+    '删除墓碑据此写对端键 / 把对端墓碑换算回本机',
+    () async {
+      const RemoteBookInfo book = RemoteBookInfo(
+        title: '吾輩は猫である',
+        bookKey: '吾輩は猫である(2)',
+        hasContent: true,
+      );
+      final EpubBookRow row = await insertBook('吾輩は猫である');
+      // 目录刷新（无 localBook）不建立对应：按对端键反查本来就查不到本机行。
+      await service.adoptBook(book);
+      expect(await db.getCollectionBookAliases(), isEmpty);
+      await service.adoptBook(book, localBook: row);
+      expect(await db.getAllCollectionItems(), isEmpty);
+      expect(
+        await db.syncDeletionBookKeyOf('吾輩は猫である'),
+        '吾輩は猫である(2)',
+      );
+      expect(await db.getPeerToLocalBookKeys(), <String, String>{
+        '吾輩は猫である(2)': '吾輩は猫である',
+      });
+      // 没有对应的书照旧写本机键。
+      await insertBook('Kokoro');
+      expect(await db.syncDeletionBookKeyOf('Kokoro'), 'Kokoro');
+    },
+  );
   for (final String format in ['epub', 'manga']) {
     test(
       '$format placeholder promotes using actual imported row UID',

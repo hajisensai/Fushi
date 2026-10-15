@@ -39,13 +39,18 @@ class RemoteCollectionAdoptionService {
     CollectionBookIdentityIndex? identities,
   }) =>
       database.transaction(() async {
-        if (book.collection == null) return;
+        // 别名不再只限合集成员：下载落地键与对端键不同（对端同名书带 `(2)` 后缀、
+        // EPUB 无 dc:title 时回落到临时文件名…）时，删除墓碑 / 标签也要靠它把两端
+        // 认成同一本（BUG-3418 同类）。只有下载入库那一刻（[localBook] 是 importer
+        // 的实际返回）能可靠建立这条对应，事后按对端键反查恰恰查不到。
+        if (book.collection == null && localBook == null) return;
         final String key = book.downloadId;
         final EpubBookRow? local =
             localBook ?? await _findLocalBook(key, identities);
         if (local != null && local.bookKey != key) {
           await database.setCollectionBookAlias(local.uid, key);
         }
+        if (book.collection == null) return;
         await adoptMembership(
           membership: book.collection,
           mediaType: MediaKind.epub,

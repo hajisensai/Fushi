@@ -100,6 +100,23 @@ class InterconnectMangaCatalog {
         seriesKey: peerBookKey,
       );
 
+  /// [localBookKeyFor] 的反向：本机收下的互联漫画行（`sourceMetadata` 是
+  /// runtime=interconnect 的在线描述符）→ 对端 bookKey；其它行返回 null。
+  ///
+  /// 本机键是单向哈希推不回去，对端键只存在描述符的 `series.key` 里。「从所有设备
+  /// 删除」这类行时墓碑必须写对端键，否则推给 host 认不出、host 不删也不写自己的
+  /// 墓碑，整条传播链在这里断掉。
+  static String? peerBookKeyOf(String? sourceMetadata) {
+    final OnlineMangaLibraryEntry? entry =
+        OnlineMangaLibraryEntry.tryParse(sourceMetadata);
+    if (entry == null ||
+        entry.runtime != OnlineMangaRuntimeKind.interconnect) {
+      return null;
+    }
+    final String key = entry.series.key;
+    return key.isEmpty ? null : key;
+  }
+
   /// 整卷那一章。
   ///
   /// [key] 用对端 bookKey 而不是常量 `'volume'`：`manga_chapter_states` 的主键是

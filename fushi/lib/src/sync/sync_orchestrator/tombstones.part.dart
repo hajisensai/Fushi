@@ -104,8 +104,9 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final SyncRepository repo = SyncRepository(_db);
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
-      // 对端在线漫画被本机互联收下后换了键（`interconnect-…`），对端墓碑要先换算。
-      aliasAdoptedInterconnectMangaTombstones(remoteTombstones, present);
+      // 同一本书两端键不同（互联收下的在线漫画 / 落地键不同的下载书），对端墓碑先换算。
+      aliasPeerBookTombstones(remoteTombstones, present,
+          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 

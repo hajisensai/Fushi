@@ -82,6 +82,7 @@ import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
@@ -713,6 +714,9 @@ class SourceLibraryScanner {
       switch (kind) {
         case SourceLibraryKind.book:
           mediaCount = await _importBooks(plan, source.id, files);
+          // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3417）。不留到书架页
+          // 打开才归——本机作为互联 host / 合集云同步源时，对端拿到的归属来自这里。
+          await BookSeriesGrouper(_db).groupAll();
         case SourceLibraryKind.video:
           // Video source imports both single videos and m3u8/m3u playlists
           // (TODO-1237).
@@ -760,6 +764,7 @@ class SourceLibraryScanner {
           }
         case SourceLibraryKind.manga:
           mediaCount = await _importManga(plan, source.id, files);
+          await BookSeriesGrouper(_db).groupAll();
       }
     } catch (e, stack) {
       scanError = e.toString();

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
-import 'package:fushi/src/sync/adopted_manga_tombstone_alias.dart';
+import 'package:fushi/src/sync/peer_book_tombstone_alias.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -48,7 +48,11 @@ void main() {
       isEmpty,
     );
 
-    aliasAdoptedInterconnectMangaTombstones(remote, present);
+    aliasPeerBookTombstones(
+      remote,
+      present,
+      peerToLocalBookKey: const <String, String>{},
+    );
     final List<DeletionPropagationCandidate> candidates =
         computeDeletionPropagation(
           localTombstones: const <String, Map<String, int>>{},
@@ -75,7 +79,11 @@ void main() {
     final DeletionPresentEntries present = <String, Map<String, int?>>{
       book: <String, int?>{localKey: 3000},
     };
-    aliasAdoptedInterconnectMangaTombstones(remote, present);
+    aliasPeerBookTombstones(
+      remote,
+      present,
+      peerToLocalBookKey: const <String, String>{},
+    );
     expect(
       computeDeletionPropagation(
         localTombstones: const <String, Map<String, int>>{},
@@ -95,7 +103,11 @@ void main() {
     final DeletionPresentEntries present = <String, Map<String, int?>>{
       book: <String, int?>{peerKey: 1000, localKey: 1000},
     };
-    aliasAdoptedInterconnectMangaTombstones(remote, present);
+    aliasPeerBookTombstones(
+      remote,
+      present,
+      peerToLocalBookKey: const <String, String>{},
+    );
     expect(remote[book], <String, int>{peerKey: 2000});
   });
 
@@ -103,9 +115,57 @@ void main() {
     final DeletionTombstoneEntries remote = <String, Map<String, int>>{
       book: <String, int>{peerKey: 2000},
     };
-    aliasAdoptedInterconnectMangaTombstones(remote, <String, Map<String, int?>>{
-      book: <String, int?>{'unrelated': 1},
-    });
+    aliasPeerBookTombstones(
+      remote,
+      peerToLocalBookKey: const <String, String>{},
+      <String, Map<String, int?>>{
+        book: <String, int?>{'unrelated': 1},
+      },
+    );
     expect(remote[book], <String, int>{peerKey: 2000});
+  });
+  test('落地键与对端不同的下载书：别名表把对端键墓碑换算到本机 book 与 audiobook', () {
+    final String audiobook = SyncTombstoneKind.audiobook.dbValue;
+    final DeletionTombstoneEntries remote = <String, Map<String, int>>{
+      book: <String, int>{'吾輩は猫である(2)': 2000},
+      audiobook: <String, int>{'吾輩は猫である(2)': 2100},
+    };
+    final DeletionPresentEntries present = <String, Map<String, int?>>{
+      book: <String, int?>{'吾輩は猫である': 1000},
+      audiobook: <String, int?>{'吾輩は猫である': null},
+    };
+    aliasPeerBookTombstones(
+      remote,
+      present,
+      peerToLocalBookKey: const <String, String>{'吾輩は猫である(2)': '吾輩は猫である'},
+    );
+    final List<DeletionPropagationCandidate> candidates =
+        computeDeletionPropagation(
+          localTombstones: const <String, Map<String, int>>{},
+          remoteTombstones: remote,
+          localPresent: present,
+          remotePresent: const <String, Map<String, int?>>{},
+        );
+    expect(
+      candidates
+          .map(
+            (DeletionPropagationCandidate c) => '${c.mediaType}|${c.itemKey}',
+          )
+          .toSet(),
+      <String>{'$book|吾輩は猫である', '$audiobook|吾輩は猫である'},
+    );
+    expect(remote[audiobook]!['吾輩は猫である'], 2100);
+  });
+
+  test('别名指向的本机键已不在库 → 不追加', () {
+    final DeletionTombstoneEntries remote = <String, Map<String, int>>{
+      book: <String, int>{'peer': 2000},
+    };
+    aliasPeerBookTombstones(
+      remote,
+      <String, Map<String, int?>>{book: <String, int?>{}},
+      peerToLocalBookKey: const <String, String>{'peer': 'gone'},
+    );
+    expect(remote[book], <String, int>{'peer': 2000});
   });
 }

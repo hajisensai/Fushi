@@ -13,6 +13,10 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart' show DeleteScope;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteBookInfo;
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
+    show InterconnectMangaCatalog;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 void main() {
@@ -647,6 +651,48 @@ void main() {
       expect(result.deleted, isTrue);
       expect(result.failureReason, isNull);
       expect(await db.getEpubBook('Kokoro'), isNull);
+    });
+
+    test(
+        'BUG-3418 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
+        '（本机 interconnect- 键是单向哈希，对端认不出）', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      const String peerKey = 'mihon-b97e8fd21348ddb21f658beedf9ca3e7';
+      final String localKey = InterconnectMangaCatalog.localBookKeyFor(peerKey);
+      final String metadata = InterconnectMangaCatalog.entryFor(
+        const RemoteBookInfo(
+          title: '志乃と恋',
+          bookKey: peerKey,
+          hasContent: false,
+          format: 'manga',
+          hasMangaChapters: true,
+        ),
+      ).encode();
+      await db.insertEpubBook(epubBook(localKey)
+          .copyWith(sourceMetadata: Value(metadata), format: Value('manga')));
+      // 对照：普通书照旧写本机键。
+      await db.insertEpubBook(epubBook('Kokoro'));
+      // 从对端下载、落地键与对端不同的书（别名表记着对端键；deleteEpubBook 会级联
+      // 删别名，所以必须删行前取）。
+      await db.insertEpubBook(epubBook('Neko'));
+      await db.setCollectionBookAlias(
+          (await db.resolveEpubBookUid('Neko'))!, 'Neko(2)');
+
+      for (final String key in <String>[localKey, 'Kokoro', 'Neko']) {
+        final DeleteBookResult result = await ReaderFushiSource.instance
+            .deleteBook(
+                db: db, bookKey: key, scope: DeleteScope.syncEverywhere);
+        expect(result.deleted, isTrue, reason: key);
+      }
+
+      expect(
+        (await db.getSyncDeletionTombstonesOfType('book'))
+            .map((SyncDeletionTombstoneRow r) => r.itemKey)
+            .toSet(),
+        <String>{peerKey, 'Kokoro', 'Neko(2)'},
+      );
     });
 
     test(

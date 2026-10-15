@@ -17,7 +17,6 @@ import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
-import 'package:fushi_engine/media/collections/series_collection_placement.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -1856,34 +1855,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       final int? sidx = _memberSortIndex[localKey];
       if (sidx != null) memberSortIndex[key] = sidx;
     }
-    // 仍无归属的远端占位卡按系列键归位到本地同系列合集（只影响显示）：对端没把它
-    // 归进合集时清单不带 collection，同名回填又只认整本同名——「志乃と恋 3」「志乃と恋
-    // 4」会散在已成组的 1–2 卷旁边。章节式在线条目（hasMangaChapters）是一整部作品，
-    // 与本地「不按卷归组在线行」同一规则，不参与。
-    final SeriesCollectionPlacement seriesPlacement =
-        placeLooseVolumesInSeriesCollections(
-      members: <SeriesCollectionMember>[
-        for (final CollectionOrderingItem<_ShelfBookSlot> it in shelfItems)
-          if (primaryByEntry[it.ref.compositeKey] case final int cid
-              when _collectionsById.containsKey(cid))
-            (
-              key: it.ref.compositeKey,
-              title: _shelfSlotTitle(it.payload),
-              collectionId: cid,
-              sortIndex: memberSortIndex[it.ref.compositeKey] ?? 1 << 30,
-            ),
-      ],
-      loose: <SeriesLooseVolume>[
-        for (final CollectionOrderingItem<_ShelfBookSlot> it in shelfItems)
-          if (((it.payload.remote != null &&
-                      !it.payload.remote!.hasMangaChapters) ||
-                  it.payload.remoteSrt != null) &&
-              !primaryByEntry.containsKey(it.ref.compositeKey))
-            (key: it.ref.compositeKey, title: _shelfSlotTitle(it.payload)),
-      ],
-    );
-    primaryByEntry.addAll(seriesPlacement.collectionIdByKey);
-    memberSortIndex.addAll(seriesPlacement.sortIndexByKey);
     final List<CollectionGroup<_ShelfBookSlot>> shelfGroups =
         groupByCollections<_ShelfBookSlot>(
       items: shelfItems,
@@ -3485,15 +3456,6 @@ bool _isRemoteSelectionKey(String key) =>
 /// [remote] = 多端库联合视图（spec 2026-07-12 §2.1）的「远端有、本地无」占位卡：
 /// 无本地 importedAt/lastReadAt，排序退化到目录序（注入时以 `-1-index` 编码进
 /// CollectionOrderingItem.importedAt，稳定排在本地条目之后、组内保持目录序）。
-/// 卡片的**原始**标题（系列键判据，与 `BookSeriesGrouper` 读的 DB 原始列同源；
-/// 不经改名覆盖层，远端卡用身份 title 而非 displayName）。
-String _shelfSlotTitle(_ShelfBookSlot slot) =>
-    slot.srt?.title ??
-    slot.epub?.title ??
-    slot.remote?.title ??
-    slot.remoteSrt?.title ??
-    '';
-
 class _ShelfBookSlot {
   const _ShelfBookSlot({
     this.srt,
