@@ -49,6 +49,10 @@ class CollectionMemberProgress {
   /// 时刻本身就是痕迹：播过就一定有时刻，哪怕位置被拖回 0 且未标完成。
   bool get hasTrace => completed || (positionMs ?? 0) > 0 || _playedAt > 0;
 
+  /// 真正开始看了：已完成或有进度。只有时刻（打开几秒就退出、进度存成 0）的
+  /// 成员 [hasTrace] 为真但这里为假——「下一集」据此决定停在它还是推进到它后面。
+  bool get hasStarted => completed || (positionMs ?? 0) > 0;
+
   int get _playedAt {
     final int? at = lastPlayedAt;
     return at != null && at > 0 ? at : 0;
@@ -63,14 +67,30 @@ class CollectionMemberProgress {
 /// - 无任何时刻（旧库）：锚点 = 位置最靠后的有痕迹成员（v85 前口径）。
 /// - 锚点已完成且后面还有成员 → 下一个；否则停在锚点。
 int continueMemberIndex(List<CollectionMemberProgress> members) {
-  if (members.isEmpty) return 0;
-  int anchor = _mostRecentlyPlayedIndex(members);
-  if (anchor < 0) anchor = _lastTracedIndex(members);
-  if (anchor < 0) return 0;
+  final int? anchor = latestPlayedMemberIndex(members);
+  if (anchor == null) return 0;
   if (members[anchor].completed && anchor + 1 < members.length) {
     return anchor + 1;
   }
   return anchor;
+}
+
+/// 合集「最近播放」锚点——**唯一判据**（BUG-3370）。详情大卡 / 合集卡进度行的
+/// [continueMemberIndex]、视频首页「继续观看」「下一集」「已更新未看」三行
+/// （`video_home_layout.dart` 的 `latestPlayedSeriesIndex`）都只经这里选锚点，
+/// 不许各写一份。
+///
+/// - 有时刻：`lastPlayedAt` 最大的成员（并列取位置靠后者，贴连播方向）。
+///   **只打开过、进度存成 0 且未完成**的成员同样算——时刻就是「用户刚才在看哪
+///   一集」的直接事实（BUG-1542）。跳过它会让首页与大卡分叉：看完第 7 集、跳到
+///   第 12 集几秒退出时，大卡说第 12 集、首页说第 8 集。
+/// - 无任何时刻（旧库）：位置最靠后的有痕迹成员（v85 前口径）。
+/// - 全无痕迹 / 空列表 → null。
+int? latestPlayedMemberIndex(List<CollectionMemberProgress> members) {
+  final int recent = _mostRecentlyPlayedIndex(members);
+  if (recent >= 0) return recent;
+  final int traced = _lastTracedIndex(members);
+  return traced >= 0 ? traced : null;
 }
 
 /// `lastPlayedAt` 最大的成员下标；全员无时刻 → -1。并列取靠后者。
