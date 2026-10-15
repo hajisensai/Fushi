@@ -414,6 +414,11 @@ body.ly-past-dim:not(.ly-browsing) .cue.near-3:not(.current ~ .cue) {
    __lyricsReduceMotion 改为直接落位）。 */
 body.ly-reduce .cue,
 body.ly-reduce #ly-follow { transition: none !important; }
+/* 帧率：屏外的行不做过渡。进出手动浏览态（body.ly-browsing）一次改全书几百行的
+   opacity，每行一条过渡、Chromium 给每条在动画的行临时建合成层，滚轮一动就卡一下。
+   屏外的行看不见，直接落值即可；视口附近的行由 IntersectionObserver 标 .ly-vis
+   （不支持时全部标上，退回改动前行为）。 */
+.cue:not(.ly-vis) { transition: none !important; }
 body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 @media (hover: hover) {
   body.ly-themed .cue:hover { background-color: var(--ly-hover, transparent); }
@@ -686,56 +691,85 @@ function _lyResume() {
   }
 }
 window.addEventListener('wheel', function() { _lyEnterBrowse(); }, {passive: true});
-// 竖排只能横向滚：鼠标滚轮只给 deltaY，Chromium / WebKit 不会把它转成横滚，桌面上
-// 滚轮就滚不动歌词。主方向是纵向的滚轮投影成横滚，往下滚 = 往后读 = 视口左移
-// （scrollLeft 变小，两种 RTL 约定同向）。触控板的横向手势（|dx| ≥ |dy|）照原生走。
-//
-// BUG-3282：投影后的横滚不能一步落位——一格滚轮 100px 瞬移，看起来就是一顿一顿
-// 的「有级」滚动（横排走的是浏览器原生平滑滚轮）。滚轮量累加进目标位置，按帧
-// 指数逼近（与原生平滑滚轮同观感）；连续滚动只推远目标、不重置动画。
-var _lyWheelTarget = null, _lyWheelRaf = 0;
+// 无极滚轮（横竖排同一套）：滚轮由这里接管，不交给浏览器原生的逐格动画。
+//  * 竖排只能横向滚：鼠标滚轮只给 deltaY，Chromium / WebKit 不会把它转成横滚。
+//    主方向是纵向的滚轮投影成横滚，往下滚 = 往后读 = 视口左移（scrollLeft 变小，
+//    两种 RTL 约定同向）。
+//  * BUG-3282 / 用户 2026-10-14「支持无极滑动」：一格滚轮 100px，原生平滑滚轮
+//    和旧的「每帧逼近 30%」都在约 50ms 内停稳，而相邻两格间隔 60–120ms——每格之间
+//    停一下，就是一顿一顿的「有级」滚动。滚轮量累加进目标位置，按**真实帧间隔**
+//    指数逼近（时间常数 _LY_WHEEL_TAU_MS，与刷新率无关），连续几格衔接成一段
+//    不停顿的滑行；连续滚动只推远目标、不重置动画。
+//  * 触控板 / 高精度滚轮（单次增量小）本身就是连续的，直接跟手，不加缓动延迟。
+//  * 触控板主方向与滚动轴垂直的手势（竖排时的纯横向两指滑）照原生走。
+var _LY_WHEEL_TAU_MS = 90;
+var _LY_WHEEL_PRECISE_PX = 40;
+var _lyWheelTarget = null, _lyWheelRaf = 0, _lyWheelLast = 0;
 function _lyWheelStop() {
   if (_lyWheelRaf) cancelAnimationFrame(_lyWheelRaf);
   _lyWheelRaf = 0;
   _lyWheelTarget = null;
 }
-// 纯函数：一帧之后的位置。剩余量 < 0.5px 直接落到目标。
-function __lyricsWheelStep(cur, target) {
-  var d = target - cur;
-  if (Math.abs(d) < 0.5) return target;
-  return cur + d * 0.3;
+function _lyAxisPos(s) { return __lyricsVertical ? s.scrollLeft : s.scrollTop; }
+function _lySetAxisPos(s, v) {
+  if (__lyricsVertical) s.scrollLeft = v;
+  else s.scrollTop = v;
 }
-function _lyWheelFrame() {
+// 纯函数：经过 dtMs 之后的位置（时间常数 tauMs 的指数逼近，dt 越长走得越多，
+// 与刷新率无关）。剩余量 < 1px 直接落到目标，不拖亚像素尾巴。
+function __lyricsWheelStep(cur, target, dtMs, tauMs) {
+  var d = target - cur;
+  if (Math.abs(d) < 1) return target;
+  var k = 1 - Math.exp(-Math.max(0, dtMs) / tauMs);
+  var next = cur + d * k;
+  return Math.abs(target - next) < 1 ? target : next;
+}
+function _lyWheelFrame(now) {
   _lyWheelRaf = 0;
   if (_lyWheelTarget === null) return;
+  // 跨帧时长钳到 50ms：后台 / 卡顿一帧后不一步飞到底。
+  var dt = Math.min(50, Math.max(0, now - _lyWheelLast));
+  _lyWheelLast = now;
   var s = _lyricsScrollTarget();
-  var before = s.scrollLeft;
-  var next = __lyricsWheelStep(before, _lyWheelTarget);
-  s.scrollLeft = next;
-  // 顶到滚动边界（scrollLeft 没动）或已到目标：结束，不让越界的目标空转。
-  if (next === _lyWheelTarget || s.scrollLeft === before) {
+  var before = _lyAxisPos(s);
+  var next = __lyricsWheelStep(before, _lyWheelTarget, dt, _LY_WHEEL_TAU_MS);
+  _lySetAxisPos(s, next);
+  // 顶到滚动边界（位置没动）或已到目标：结束，不让越界的目标空转。
+  if (next === _lyWheelTarget || (dt > 0 && _lyAxisPos(s) === before)) {
     _lyWheelTarget = null;
     return;
   }
   _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
 }
-if (__lyricsVertical) {
-  window.addEventListener('wheel', function(e) {
-    if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    var px = e.deltaMode === 1 ? e.deltaY * 40
-        : e.deltaMode === 2 ? e.deltaY * window.innerWidth : e.deltaY;
-    e.preventDefault();
-    var s = _lyricsScrollTarget();
-    if (window.__lyricsReduceMotion) {
-      _lyWheelStop();
-      s.scrollLeft -= px;
-      return;
-    }
-    if (_lyWheelTarget === null) _lyWheelTarget = s.scrollLeft;
-    _lyWheelTarget -= px;
-    if (!_lyWheelRaf) _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
-  }, {passive: false});
-}
+window.addEventListener('wheel', function(e) {
+  if (e.ctrlKey) return;
+  var raw;
+  if (__lyricsVertical) {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    raw = -e.deltaY;
+  } else {
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    raw = e.deltaY;
+  }
+  var extent = __lyricsVertical ? window.innerWidth : window.innerHeight;
+  var px = e.deltaMode === 1 ? raw * 40 : e.deltaMode === 2 ? raw * extent : raw;
+  if (px === 0) return;
+  e.preventDefault();
+  var s = _lyricsScrollTarget();
+  if (window.__lyricsReduceMotion ||
+      (e.deltaMode === 0 && Math.abs(px) < _LY_WHEEL_PRECISE_PX)) {
+    // 跟手：在途的缓动目标一起平移，避免两路互相拉扯。
+    if (_lyWheelTarget !== null) _lyWheelTarget += px;
+    else _lySetAxisPos(s, _lyAxisPos(s) + px);
+    return;
+  }
+  if (_lyWheelTarget === null) {
+    _lyWheelTarget = _lyAxisPos(s);
+    _lyWheelLast = performance.now();
+  }
+  _lyWheelTarget += px;
+  if (!_lyWheelRaf) _lyWheelRaf = requestAnimationFrame(_lyWheelFrame);
+}, {passive: false});
 document.addEventListener('scroll', function() {
   if (performance.now() > _lyProgUntil) _lyEnterBrowse();
 }, {passive: true, capture: true});
@@ -743,6 +777,26 @@ document.addEventListener('scroll', function() {
 // ── cue 切换 ──
 var _currentIdx = -1;
 var _cues = document.querySelectorAll('.cue');
+
+// 视口附近（上下 / 左右各多算一屏）的行标 .ly-vis，只有它们做过渡（见 CSS）。
+(function() {
+  if (typeof IntersectionObserver !== 'function') {
+    for (var i = 0; i < _cues.length; i++) _cues[i].classList.add('ly-vis');
+    return;
+  }
+  var io = new IntersectionObserver(function(entries) {
+    for (var i = 0; i < entries.length; i++) {
+      entries[i].target.classList.toggle('ly-vis', entries[i].isIntersecting);
+    }
+  // root 必须是真正的滚动元素（BUG-784：通常是 body）：以视口为 root 时
+  // rootMargin 扩不出 body 自己的溢出裁剪，「多算一屏」就成了 0。
+  }, {
+    root: _lyricsScrollTarget() === document.documentElement
+        ? null : _lyricsScrollTarget(),
+    rootMargin: '100% 100% 100% 100%',
+  });
+  for (var j = 0; j < _cues.length; j++) io.observe(_cues[j]);
+})();
 
 // ── TODO-1080: over-long cue auto-shrink ──────────────────────────────────
 // A single sentence can be longer than the screen fits. In vertical-rl the cue

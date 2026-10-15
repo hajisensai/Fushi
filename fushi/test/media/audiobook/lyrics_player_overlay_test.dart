@@ -175,6 +175,128 @@ void main() {
     });
   }
 
+  // 2026-10-14 用户：「加个按钮可以切换左边和右边一整块，而且左边改动的时候不要
+  // 导致右边显示范围变小」。互换只换边：歌词区宽高不变、WebView 不重建；左栏
+  // 播放卡收紧后封面区变高也不挤歌词区。
+  testWidgets('md3：左右互换只换边，歌词区大小不变、不重建 WebView', (WidgetTester tester) async {
+    int created = 0;
+    int swaps = 0;
+    final _FakeClock clock = _FakeClock();
+    final Widget probe = _LyricsProbe(onCreate: () => created++);
+    final LyricsPlayerCallbacks base = callbacks();
+    Widget app({required bool mirrored}) => MaterialApp(
+      home: Scaffold(
+        body: ReaderLyricsPlayerOverlay(
+          lyricsView: probe,
+          data: LyricsPlayerData(
+            title: '無職転生',
+            cover: null,
+            isPlaying: false,
+            speed: 1,
+            lyricsMasked: false,
+            clock: clock,
+            sidesMirrored: mirrored,
+          ),
+          callbacks: LyricsPlayerCallbacks(
+            onClose: base.onClose,
+            onPlayPause: base.onPlayPause,
+            onPreviousCue: base.onPreviousCue,
+            onNextCue: base.onNextCue,
+            onSeek: base.onSeek,
+            onToggleMask: base.onToggleMask,
+            onOpenStatistics: base.onOpenStatistics,
+            onSpeedChanged: base.onSpeedChanged,
+            onMore: base.onMore,
+            onTapBackground: base.onTapBackground,
+            onSwapSides: () => swaps++,
+          ),
+          onHtmlThemeChanged: (_) {},
+        ),
+      ),
+    );
+
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(1600, 900);
+    final Finder lyrics = find.byKey(const ValueKey<String>('lyrics_probe'));
+    final Finder swap = find.byKey(
+      const ValueKey<String>('lyrics_swap_sides_button'),
+    );
+
+    await tester.pumpWidget(app(mirrored: false));
+    await tester.pump(const Duration(milliseconds: 50));
+    final Rect normal = tester.getRect(lyrics);
+    expect(normal.left, greaterThan(1600 * 0.25), reason: '默认歌词在右');
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(swap);
+    expect(swaps, 1);
+
+    await tester.pumpWidget(app(mirrored: true));
+    // 换位带动效：途中歌词区在两端之间滑动，宽高始终不变（两端同宽，逐矩形插值）。
+    await tester.pump(const Duration(milliseconds: 50));
+    final Rect midway = tester.getRect(lyrics);
+    expect(midway.left, lessThan(normal.left), reason: '动画途中已开始向左滑');
+    expect(midway.width, moreOrLessEquals(normal.width));
+    // 时长取 FushiMotion.medium（325ms）；背景流动 Ticker 常驻，不能 pumpAndSettle。
+    await tester.pump(const Duration(milliseconds: 400));
+    final Rect mirrored = tester.getRect(lyrics);
+    expect(midway.left, greaterThan(mirrored.left), reason: '途中不是终点');
+    expect(mirrored.right, lessThan(1600 * 0.75), reason: '互换后歌词在左');
+    expect(mirrored.width, moreOrLessEquals(normal.width));
+    expect(mirrored.height, moreOrLessEquals(normal.height));
+    // 互换键跟着底板走（在歌词区上方）。
+    expect(tester.getCenter(swap).dx, lessThan(mirrored.right));
+    expect(created, 1, reason: '互换不得重建歌词 WebView');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 减弱动态效果（及墨水屏）下 fushiMotionDuration 归零：互换直接跳到终值。
+  testWidgets('md3：减弱动态效果下左右互换无动画、立即到位', (WidgetTester tester) async {
+    final _FakeClock clock = _FakeClock();
+    final Widget probe = _LyricsProbe(onCreate: () {});
+    Widget app({required bool mirrored}) => MaterialApp(
+      home: Scaffold(
+        body: ReaderLyricsPlayerOverlay(
+          lyricsView: probe,
+          data: LyricsPlayerData(
+            title: '無職転生',
+            cover: null,
+            isPlaying: false,
+            speed: 1,
+            lyricsMasked: false,
+            clock: clock,
+            sidesMirrored: mirrored,
+          ),
+          callbacks: callbacks(),
+          onHtmlThemeChanged: (_) {},
+        ),
+      ),
+    );
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.view.physicalSize = const Size(1600, 900);
+    final Finder lyrics = find.byKey(const ValueKey<String>('lyrics_probe'));
+
+    await tester.pumpWidget(app(mirrored: false));
+    await tester.pump(const Duration(milliseconds: 50));
+    final Rect normal = tester.getRect(lyrics);
+    await tester.pumpWidget(app(mirrored: true));
+    await tester.pump();
+    final Rect jumped = tester.getRect(lyrics);
+    expect(jumped.right, lessThan(1600 * 0.75), reason: '一帧内已到左侧终点');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.getRect(lyrics), jumped, reason: '之后不再移动');
+    expect(jumped.width, moreOrLessEquals(normal.width));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   test('歌词 HTML 主题渲染为 CSS 变量并支持热更', () {
     const LyricsHtmlTheme theme = LyricsHtmlTheme(
       textColor: Color(0xFFFFFFFF),

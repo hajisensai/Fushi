@@ -256,6 +256,11 @@ class ReaderSettings {
   bool get lyricsSweep => _get<bool>('lyrics_sweep', true);
   Future<void> setLyricsSweep(bool v) => _set<bool>('lyrics_sweep', v);
 
+  /// 歌词模式宽屏双栏左右互换（默认 `false` = 封面与播放卡在左、歌词在右）。
+  bool get lyricsPanelMirrored => _get<bool>('lyrics_panel_mirrored', false);
+  Future<void> setLyricsPanelMirrored(bool v) =>
+      _set<bool>('lyrics_panel_mirrored', v);
+
   /// 有声书正文当前句是否铺底色。默认 `true` = 历史行为；关掉后只靠
   /// [audioHighlightTextColor]（未设时用高亮色本身）给字上色、不加底色。
   bool get audioHighlightBackground =>

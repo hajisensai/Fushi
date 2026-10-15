@@ -497,6 +497,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       sleepTimerMinutes: AudiobookSleepTimer.of(ctrl).remainingMinutes,
       illustrations: _lyricsIllustrations,
+      sidesMirrored: ReaderFushiSource.instance.lyricsPanelMirrored,
     );
   }
 
@@ -527,6 +528,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           unawaited(
             _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
           ),
+      onSwapSides: () => unawaited(_toggleLyricsSides()),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -612,6 +614,14 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (choice == null || !mounted) return;
     timer.start(choice == 0 ? null : choice);
     _rebuild(() {});
+  }
+
+  /// 宽屏左右整块互换（偏好 `lyrics_panel_mirrored`）。只换覆盖层布局：歌词
+  /// WebView 在 Stack 里的位置不变、只换矩形，不重建平台视图、不重载歌词页。
+  Future<void> _toggleLyricsSides() async {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    await src.setLyricsPanelMirrored(!src.lyricsPanelMirrored);
+    if (mounted) _rebuild(() {});
   }
 
   /// 👁：歌词遮罩（听力沉浸模糊，设置项 `lyrics_blur`）。与设置面板同一个偏好。

@@ -7482,5 +7482,6 @@
   "sync_position_conflict_title": "Playback position conflict",
   "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
   "sync_compare_page_of_total": "$page / $total ページ",
-  "sync_compare_page": "$page ページ"
+  "sync_compare_page": "$page ページ",
+  "lyrics_layout_swap_sides": "Swap sides"
 }

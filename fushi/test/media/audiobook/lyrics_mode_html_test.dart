@@ -323,10 +323,11 @@ void main() {
 
       test('vertical wheel is projected onto horizontal scroll', () {
         final String html = build(vertical: true);
-        expect(html,
-            contains('if (__lyricsVertical) {\n  window.addEventListener'));
+        // 竖排：纵向滚轮取反投影到横轴（往下滚 = 往后读 = scrollLeft 变小）。
+        expect(html, contains('raw = -e.deltaY;'));
+        expect(html, contains('if (__lyricsVertical) s.scrollLeft = v;'));
         // BUG-3282：投影量累加进目标位置、按帧平滑逼近（不再一格瞬移）。
-        expect(html, contains('_lyWheelTarget -= px;'));
+        expect(html, contains('_lyWheelTarget += px;'));
       });
 
       // BUG-3282：滚轮平滑的逐帧函数在真 JS 引擎里跑：单调逼近、有限帧内精确
@@ -639,23 +640,39 @@ String? _resolveNode() {
   return null;
 }
 
-/// 从 0 起分别逼近 -300 / +300：每帧都更靠近、从不越过，30 帧内精确落位，
-/// 且第一帧就有明显位移（不是迟滞）。
+/// 从 0 起分别逼近 -300 / +300（60Hz 帧）：每帧都更靠近、从不越过，1 秒内精确
+/// 落位，第一帧就有明显位移（不是迟滞）；同一时刻 120Hz 与 60Hz 走过的距离几乎
+/// 相同（缓动按真实时间、与刷新率无关）；一格（100px）在 80ms 后仍未停稳——
+/// 相邻两格的间隔里不会停顿，连续滚动是一段不停的滑行（「无极」）。
 const String _wheelHarness = r"""
+var TAU = 90;
 var ok = 0;
 [-300, 300].forEach(function(target) {
   var cur = 0, frames = 0, prevGap = Math.abs(target);
   while (cur !== target) {
-    var next = __lyricsWheelStep(cur, target);
+    var next = __lyricsWheelStep(cur, target, 1000 / 60, TAU);
     var gap = Math.abs(target - next);
     if (gap >= prevGap) throw new Error('not converging ' + next);
     if ((target - next) * target < 0) throw new Error('overshoot ' + next);
-    if (frames === 0 && Math.abs(next) < 50) throw new Error('sluggish ' + next);
+    if (frames === 0 && Math.abs(next) < 20) throw new Error('sluggish ' + next);
     prevGap = gap; cur = next;
-    if (++frames > 30) throw new Error('too slow ' + cur);
+    if (++frames > 60) throw new Error('too slow ' + cur);
   }
   ok++;
 });
+function after(ms, hz, target) {
+  var cur = 0, t = 0;
+  while (t + 1e-9 < ms) {
+    cur = __lyricsWheelStep(cur, target, 1000 / hz, TAU);
+    t += 1000 / hz;
+  }
+  return cur;
+}
+if (Math.abs(after(100, 60, 300) - after(100, 120, 300)) > 3) {
+  throw new Error('rate dependent');
+}
+var notch = after(80, 60, 100);
+if (notch >= 99) throw new Error('settles between notches ' + notch);
 console.log('WHEEL_OK ' + ok);
 """;
 
