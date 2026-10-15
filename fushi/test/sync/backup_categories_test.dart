@@ -124,12 +124,9 @@ void main() {
   }
 
   Future<Archive> readZip(String zipPath) async {
-    final input = InputFileStream(zipPath);
-    try {
-      return ZipDecoder().decodeBuffer(input);
-    } finally {
-      await input.close();
-    }
+    // 整包读进内存再解：decodeBuffer(InputFileStream) 的条目内容是惰性的，流关掉后再取
+    // `.content`，超出 FileBuffer 1MB 缓冲的部分会读出负长度（v117 起空库已超 1MB）。
+    return ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
   }
 
   /// Extracts the packed `fushi.db` from [zipPath] into a fresh dir under [into]
@@ -369,8 +366,8 @@ void main() {
         reason: 'audio tree absent from backup → existing tree untouched');
   });
   test(
-      'BackupCategory enumerates the seven content categories plus the four '
-      'DB-only data categories (db is never itself a category)', () {
+      'BackupCategory enumerates the seven content categories, the four '
+      'DB-only data categories and srs (db is never itself a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
       BackupCategory.books,
@@ -383,6 +380,7 @@ void main() {
       BackupCategory.statistics,
       BackupCategory.settings,
       BackupCategory.profiles,
+      BackupCategory.srs,
     });
   });
 

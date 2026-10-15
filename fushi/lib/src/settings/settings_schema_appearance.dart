@@ -30,6 +30,8 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.games => 'system.module_games',
   ModuleId.browse => 'system.module_downloads',
   ModuleId.lookup => 'system.module_lookup',
+  // 2026-10-14 新增（复习 / Fushi 内置 SRS），跟随同一前缀。
+  ModuleId.srs => 'system.module_srs',
   ModuleId.browserExtension => 'system.module_browser_extension',
   ModuleId.listening => 'system.module_listening',
   ModuleId.cardCreation => 'system.module_card_creation',
@@ -79,6 +81,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||
+    ModuleId.srs ||
     ModuleId.browserExtension => throw StateError(
       '$module 有对应 HomeTab，标识应走 homeNavItemFor',
     ),
@@ -129,12 +132,15 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
     id: _moduleItemId(module),
     title: identity.label,
     icon: identity.icon,
+    // 复习默认关：开关本身要说清它是什么，否则用户不知道打开后会多出什么。
+    subtitle: module == ModuleId.srs ? t.srs_module_switch_hint : null,
     visible: (_) => _moduleAvailableHere(module),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),
     onChanged: (SettingsContext settingsContext, bool enabled) =>
         _applyModuleEnabled(settingsContext, module, enabled),
-    defaultValue: true,
+    // 与读取端（PreferencesRepository.moduleEnabled）同一真值：复习默认关。
+    defaultValue: module.defaultEnabled,
   );
 }
 
@@ -362,7 +368,7 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
-      // 「功能模块」：13 个模块的总开关，值域与顺序都是 [ModuleId]。
+      // 「功能模块」：14 个模块的总开关，值域与顺序都是 [ModuleId]。
       //
       // **本区管的不再只是底栏**。这些开关原来只喂 `homeActiveTabs()`（底栏/侧栏
       // tab 列表），于是「关掉视频」之后设置页仍列着「视频」「在线服务」，首页活动

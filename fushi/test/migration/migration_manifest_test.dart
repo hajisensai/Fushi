@@ -154,17 +154,18 @@ void main() {
   });
 
   group('MigrationExporter 纯逻辑', () {
-    test('categoriesForBatch：每批都带核心四类，videos 永不出现', () {
+    test('categoriesForBatch：每批都带核心六类，videos 永不出现', () {
       const Set<BackupCategory> core = <BackupCategory>{
         BackupCategory.games,
         BackupCategory.progress,
         BackupCategory.statistics,
         BackupCategory.settings,
         BackupCategory.profiles,
+        BackupCategory.srs,
       };
       for (final MigrationBatch b in MigrationBatch.values) {
         final Set<BackupCategory> cats = categoriesForBatch(b);
-        expect(cats.containsAll(core), isTrue, reason: '$b 应带核心四类');
+        expect(cats.containsAll(core), isTrue, reason: '$b 应带核心六类');
         expect(cats.contains(BackupCategory.videos), isFalse,
             reason: 'videos 永不打包');
       }

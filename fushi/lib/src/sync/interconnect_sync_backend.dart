@@ -861,6 +861,7 @@ class InterconnectSyncBackend extends SyncBackend
               id: e.href,
               name: _stripTrailingSlash(e.displayName),
               isFolder: e.isCollection,
+              modifiedAt: e.modifiedAt,
             ))
         .toList();
   }

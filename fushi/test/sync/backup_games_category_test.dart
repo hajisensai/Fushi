@@ -40,12 +40,9 @@ void main() {
   }
 
   Future<Archive> readZip(String zipPath) async {
-    final InputFileStream input = InputFileStream(zipPath);
-    try {
-      return ZipDecoder().decodeBuffer(input);
-    } finally {
-      await input.close();
-    }
+    // 整包读进内存再解：decodeBuffer(InputFileStream) 的条目内容是惰性的，流关掉后再取
+    // `.content`，超出 FileBuffer 1MB 缓冲的部分会读出负长度（v117 起空库已超 1MB）。
+    return ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
   }
 
   Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {
@@ -418,6 +415,7 @@ void main() {
         audiobookCount: 0,
         gameCount: 0,
         progressCount: 0,
+        srsNoteCount: 0,
       ),
       peekFailed: true,
     );
@@ -775,13 +773,9 @@ Future<String> _rewriteMetaWithout(
   Directory into,
   List<String> keys,
 ) async {
-  final InputFileStream input = InputFileStream(zipPath);
-  final Archive archive;
-  try {
-    archive = ZipDecoder().decodeBuffer(input);
-  } finally {
-    await input.close();
-  }
+  // 同 readZip：整包读进内存，避免关流后再取惰性条目内容。
+  final Archive archive =
+      ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
   final Archive out = Archive();
   for (final ArchiveFile f in archive.files) {
     if (!f.isFile) continue;

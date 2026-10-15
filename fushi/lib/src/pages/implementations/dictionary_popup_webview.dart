@@ -32,6 +32,7 @@ import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart' show activeModifierKeys;
+import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
@@ -2821,6 +2822,30 @@ JSON.stringify((function(){
               },
             );
           },
+        );
+
+        // Fushi 复习词状态 / 打开卡片（popup.js createSrsStatusBadge）。不经各宿主的
+        // 回调：所有挂本 WebView 的表面（app 内弹窗、独立查词页、阅读器 / 视频 / 漫画 /
+        // 游戏串流……）都在这里一次接上，入口新增时不会漏。复习模块关着时
+        // SrsAppHost.current 为 null → 恒回 null / false；注入的 __fushiSrsEnabled=false
+        // 已让 JS 根本不发这两根桥。
+        controller.addJavaScriptHandler(
+          handlerName: 'srsTermStatus',
+          callback: (args) => _guardJsBridge<Map<String, Object?>?>(
+            'DictPopupWebview.srsTermStatus',
+            null,
+            ErrorLogService.instance,
+            () => srsHandleTermStatusBridge(args, SrsAppHost.current),
+          ),
+        );
+        controller.addJavaScriptHandler(
+          handlerName: 'srsOpenCard',
+          callback: (args) => _guardJsBridge<bool>(
+            'DictPopupWebview.srsOpenCard',
+            false,
+            ErrorLogService.instance,
+            () => srsHandleOpenCardBridge(args, SrsAppHost.current),
+          ),
         );
 
         // TODO-614：覆写范围=「全部」时，popup.js 在 lookup-time 探测到已制卡且不是

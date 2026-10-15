@@ -62,6 +62,13 @@ enum ModuleId {
   /// 弹窗、设置 → 查词 分类（词典导入管理、音频来源）一律保留。
   lookup('module_dictionaries_enabled'),
 
+  /// 复习（Fushi 内置 SRS，FSRS-7 排程）：牌组、复习、笔记编辑与浏览。
+  ///
+  /// **默认关闭**（[defaultEnabled]，用户 2026-10-14 拍板）：普通用户看不到任何
+  /// 复习入口，自己在 设置 → 外观 → 功能模块 里打开才出现底栏 tab 与引导步骤。
+  /// 新手引导**不**提供它的方格、也不替用户写入（见 `onboardingFeatureOfModule`）。
+  srs('module_srs_enabled'),
+
   /// 浏览器扩展管理页与本机扩展服务。**仅桌面**。
   browserExtension('module_browser_extension_enabled'),
 
@@ -132,6 +139,31 @@ enum ModuleId {
     ModuleId.manga ||
     ModuleId.video ||
     ModuleId.lookup ||
+    // 复习不是 App Store 受限能力（纯本地数据 + 用户自己的同步后端），五端都有。
+    ModuleId.srs ||
+    ModuleId.listening ||
+    ModuleId.cardCreation ||
+    ModuleId.services ||
+    ModuleId.ai ||
+    ModuleId.sync => true,
+  };
+
+  /// 偏好里还没有这个键时的取值（出厂默认）。
+  ///
+  /// 只有 [srs] 默认关：它是新加的大块功能，用户明确要求「默认关闭、自己打开」。
+  /// 其余模块默认开，与旧版行为一致（既有安装升级上来不丢任何入口）。读取端
+  /// （`PreferencesRepository.moduleEnabled`、偏好未就绪时的 `AppModel.moduleEnabled`）
+  /// 与设置开关的 `defaultValue` 一律取这里，不各写一份。
+  bool get defaultEnabled => switch (this) {
+    ModuleId.srs => false,
+    ModuleId.home ||
+    ModuleId.books ||
+    ModuleId.manga ||
+    ModuleId.video ||
+    ModuleId.games ||
+    ModuleId.browse ||
+    ModuleId.lookup ||
+    ModuleId.browserExtension ||
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||

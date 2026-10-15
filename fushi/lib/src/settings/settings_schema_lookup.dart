@@ -1195,6 +1195,18 @@ SettingsDestination buildLookupDestination() {
               await _restartFushiApiServerIfEnabled(settingsContext);
             },
           ),
+          // 复习模块（SRS，默认关）开着时，Fushi API 根路径同时是 AnkiConnect v6 兼容
+          // 端点：Yomitan / asbplayer 等只认 AnkiConnect 的工具填这个地址即可往 Fushi
+          // 复习里加卡（API key 与上面同一个）。模块关着时这一行不出现、端点也不存在。
+          SettingsStatusItem(
+            id: 'lookup.srs_ankiconnect',
+            visible: (SettingsContext c) =>
+                c.appModel.moduleVisibility.isEnabled(ModuleId.srs),
+            title: t.srs_ankiconnect_title,
+            icon: FushiIcons.hub,
+            subtitleBuilder: (SettingsContext c) =>
+                t.srs_ankiconnect_hint(port: c.appModel.fushiApiPort),
+          ),
           SettingsSwitchItem(
             id: 'lookup.texthooker',
             title: t.texthooker_enabled,

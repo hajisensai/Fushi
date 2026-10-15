@@ -27,6 +27,7 @@ import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
@@ -46,6 +47,8 @@ import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -71,6 +74,7 @@ import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -3011,6 +3015,10 @@ class AppModel with ChangeNotifier {
       // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
       // Unicode Character Database 生成，Unicode License V3 要求随附许可。
       'unicode-data',
+      // 复习（SRS）排程内核 native/fushi_fsrs 静态链进的两个 Rust crate：
+      // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
+      'fsrs-rs',
+      'ruzstd',
     ];
 
     for (String packageName in packageNames) {
@@ -7893,16 +7901,27 @@ class AppModel with ChangeNotifier {
 
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
-  /// 偏好仓库还没装配好时**一律判开**（fail-open）。模块门控读得比 `initialise()`
+  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]：除复习外都开，
+  /// fail-open；复习默认关，未就绪时同样不该露出）。模块门控读得比 `initialise()`
   /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
   /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
   /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
   /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
   bool moduleEnabled(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.moduleEnabled(module) : true;
+      isPreferencesReady
+      ? prefsRepo.moduleEnabled(module)
+      : module.defaultEnabled;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await prefsRepo.setModuleEnabled(module, value);
+    // SRS 的「今天」与统计页共用日界 stats_day_reset_hour（设计铁律 G）。SRS 默认凌晨 4 点（与 Anki 一致），
+    // 但它是默认关闭的模块：只在用户第一次打开 SRS、且从没自己设过日界时把它设为 4，
+    // 不改动没开 SRS 的用户的统计口径（历史段不重分桶，只影响之后写入）。
+    if (module == ModuleId.srs &&
+        value &&
+        prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
+      await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
+    }
     // 设置 schema 树按 locale 记忆化，两张投影表（阅读器/视频快捷面板）也惰性缓存。
     // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
@@ -8223,6 +8242,13 @@ class AppModel with ChangeNotifier {
   // 又避免早读崩溃。
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
+
+  // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
+  // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
+  SrsMiningTarget get srsMiningTarget =>
+      SrsMiningTarget.fromWire(_prefsRepo?.srsMiningTarget);
+  Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
+      prefsRepo.setSrsMiningTarget(target.wire);
 
   // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
@@ -8842,8 +8868,22 @@ class AppModel with ChangeNotifier {
       _browserVideoStudyBridge ??=
           BrowserVideoStudyBridge(database: () => database);
 
+  /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
+  /// 注入，关着时为 null（Fushi API 根路径 404，不暴露）。运行中切换立即作用到在跑的
+  /// server，下次启动也带上。
+  SrsAnkiConnectEndpoint? _srsAnkiConnectEndpoint;
+
+  SrsAnkiConnectEndpoint? get srsAnkiConnectEndpoint => _srsAnkiConnectEndpoint;
+
+  set srsAnkiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _srsAnkiConnectEndpoint = endpoint;
+    _yomitanServerManager?.ankiConnectEndpoint = endpoint;
+  }
+
   FushiApiServerManager _ensureYomitanManager() {
-    return _yomitanServerManager ??= FushiApiServerManager(
+    final FushiApiServerManager? existing = _yomitanServerManager;
+    if (existing != null) return existing;
+    return _yomitanServerManager = FushiApiServerManager(
       lookupService: createRemoteLookupService(),
       // BUG-530：注入挖词/历史，让浏览器扩展在 yomitan-api server 上查词+制卡真正可用
       // （扩展被安装助手自动配置指向本 server 的 port/token）。
@@ -8906,6 +8946,8 @@ class AppModel with ChangeNotifier {
       // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
       // FontDownloadService，扩展装的字体在 app 里立刻可用。
       fontApi: BrowserExtensionFontCatalog(this),
+      // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
+      srsApiProvider: () => SrsAppHost.current,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
@@ -8913,7 +8955,7 @@ class AppModel with ChangeNotifier {
             FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
-    );
+    )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 
   /// BUG-3141：浏览器扩展查词弹窗收藏的 app 侧实现（`/api/extension/favorite`）。

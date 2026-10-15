@@ -127,6 +127,11 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
 
   // ── API client ────────────────────────────────────────────────────
 
+  /// 测试用：直接装一个（假 HTTP client 驱动的）[drive.DriveApi]，绕过 OAuth。
+  /// 传 null 清掉。[clearCache] / [setSyncSpace] 也会清。
+  @visibleForTesting
+  void debugUseDriveApi(drive.DriveApi? api) => _cachedApi = api;
+
   Future<drive.DriveApi> _api() async {
     if (_cachedApi != null) return _cachedApi!;
     final client = await GoogleDriveAuth.instance.getAuthClient();
@@ -399,7 +404,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
         final list = await api.files.list(
           spaces: _space.spaces, // [GoogleDriveSyncSpace]: 当前空间（appdata/drive）。
           q: "'$qParent' in parents and trashed=false",
-          $fields: 'nextPageToken,files(id,name,mimeType,size,md5Checksum)',
+          $fields:
+              'nextPageToken,files(id,name,mimeType,size,md5Checksum,modifiedTime)',
           pageSize: 1000,
           pageToken: pageToken,
         );
@@ -412,6 +418,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
               sizeBytes: f.size != null ? int.tryParse(f.size!) : null,
               // 内容 MD5：只有二进制文件有，文件夹 / Google 文档为 null。
               revision: f.md5Checksum,
+              // Drive 的 modifiedTime 是 RFC 3339（googleapis 已解析成 DateTime），转 UTC 毫秒。
+              modifiedAt: f.modifiedTime?.toUtc().millisecondsSinceEpoch,
             ));
           }
         }

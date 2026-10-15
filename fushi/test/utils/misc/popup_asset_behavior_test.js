@@ -3695,3 +3695,93 @@ Promise.all([
   testFavoriteBatchPayloadPicksExactHeadword(),
   testFavoriteBatchPayloadWithoutEntriesIsNull(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── Fushi 复习（SRS）词状态标记：createSrsStatusBadge ─────────────────────────────
+// 宿主注入 __fushiSrsEnabled=false（复习模块关）时既不渲染标记、也不发 srsTermStatus
+// 桥（零开销）；开着时按宿主回包（文案由宿主本地化）画标记，点它把 cardId/noteId 交给
+// srsOpenCard；SRS 里没有这个词（回 null）时标记保持隐藏。与 Anki 的 ✓ 互不影响。
+function srsEntry() {
+  return {
+    expression: '刀', reading: '刀', matched: '刀',
+    frequencies: [], pitches: [], rules: [],
+  };
+}
+
+function findByClassDeep(node, name) {
+  const has = (n) => (n.className || '').split(/\s+/).includes(name) ||
+    (n.classList && n.classList.contains(name));
+  if (has(node)) return node;
+  for (const child of node.children ?? []) {
+    const found = findByClassDeep(child, name);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function testSrsBadgeAbsentAndSilentWhenModuleOff() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = false;
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.equal(findByClassDeep(header, 'srs-status-badge'), null,
+    'module off: no SRS badge is rendered');
+  assert.ok(!calls.includes('srsTermStatus'),
+    'module off: the srsTermStatus bridge is never called');
+}
+
+async function testSrsBadgeShowsHostLabelAndOpensCard() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  const opened = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({
+        queue: 'review', dueLabel: '复习中 · 3天后', suspended: false,
+        cardId: 'c1', noteId: 'n1', cardCount: 1, tooltip: 'Open',
+      });
+    }
+    if (name === 'srsOpenCard') {
+      opened.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  assert.ok(badge, 'module on: SRS badge exists');
+  assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> visible');
+  assert.ok(badge.classList.contains('srs-status-review'), 'queue drives the color class');
+  assert.equal(badge.textContent, '复习中 · 3天后', 'host-localized label is shown verbatim');
+  const mine = findByClassDeep(header, 'mine-button');
+  assert.equal(mine.textContent, '✓', 'Anki ✓ still painted independently');
+  await badge.onclick({ stopPropagation() {} });
+  await flush();
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)), [{ cardId: 'c1', noteId: 'n1' }]);
+}
+
+async function testSrsBadgeHiddenWhenWordNotInSrs() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? false : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  assert.ok(badge.classList.contains('srs-status-hidden'),
+    'no SRS card -> badge stays hidden');
+  assert.equal(badge.textContent, '');
+}
+
+Promise.all([
+  testSrsBadgeAbsentAndSilentWhenModuleOff(),
+  testSrsBadgeShowsHostLabelAndOpensCard(),
+  testSrsBadgeHiddenWhenWordNotInSrs(),
+]).then(() => console.log('SRS badge tests passed'))
+  .catch((error) => { console.error(error); process.exitCode = 1; });

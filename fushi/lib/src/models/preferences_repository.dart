@@ -1421,7 +1421,7 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 「功能模块」显隐：用户意愿的**唯一存储**，一个 [ModuleId] 一个键。
   ///
-  /// 默认全开（与旧版行为一致）；新手引导的功能选择与 设置 → 外观 → 功能模块
+  /// 默认开（与旧版行为一致；复习 [ModuleId.srs] 例外，默认关）；新手引导的功能选择与 设置 → 外观 → 功能模块
   /// 写同一真值。games（Windows）与浏览器扩展（桌面）的平台门控**不在这里**——
   /// 这里只存用户意愿，平台判据统一在 [ModuleId.availableOn] 判一次，合成见
   /// [ModuleVisibility.resolve]。首页/设置恒在，是全部关闭后的安全回退面，
@@ -1430,8 +1430,10 @@ class PreferencesRepository extends ChangeNotifier
   /// 此前这里是七对手写 getter/setter（22 行/模块），加一个模块要在 prefs /
   /// AppModel / 设置 schema / 引导 / 底栏 / macOS 侧栏各抄一遍，少抄一处就静默
   /// 漏一处门控。现在读写都走枚举，加模块只加一个 enum 值。
+  ///
+  /// 缺省值按模块取 [ModuleId.defaultEnabled]（复习默认关，其余默认开）。
   bool moduleEnabled(ModuleId module) =>
-      getPref(module.prefKey, defaultValue: true) as bool;
+      getPref(module.prefKey, defaultValue: module.defaultEnabled) as bool;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await setPref(module.prefKey, value);
@@ -2871,6 +2873,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMineToServer(bool value) async {
     await setPref('mine_to_server', value);
+    notifyListeners();
+  }
+
+  // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs' / 'both'（见 SrsMiningTarget）。
+  // 只有复习模块开着时才被读取；模块关着时制卡链路不看它。
+  String get srsMiningTarget =>
+      getPref('srs_mining_target', defaultValue: 'anki') as String;
+
+  Future<void> setSrsMiningTarget(String wire) async {
+    await setPref('srs_mining_target', wire);
     notifyListeners();
   }
 

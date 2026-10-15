@@ -3395,7 +3395,12 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"updateEntry\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
-                  body.find("\"openInAnki\"") != std::string::npos;
+                  body.find("\"openInAnki\"") != std::string::npos ||
+                  // Fushi review (SRS) word status + open-card badge: the main
+                  // Dart engine answers from the SRS store (or null / false
+                  // while the review module is off).
+                  body.find("\"srsTermStatus\"") != std::string::npos ||
+                  body.find("\"srsOpenCard\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {

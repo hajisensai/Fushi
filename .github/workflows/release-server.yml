@@ -28,7 +28,8 @@
 #   fushi_server-<version>-<seq>-windows-x64.zip    同上
 # lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
-# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）。目标机不需要任何
+# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）、SRS 排程内核 fushi_fsrs
+# （Rust/fsrs-rs，只依赖 libc）。目标机不需要任何
 # libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
@@ -245,6 +246,19 @@ jobs:
           set -euo pipefail
           bash native/fushi_p2p/build_linux_so.sh
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
+      # SRS 排程内核（fsrs-rs）.so：服务端按 bin/../lib/libfushi_fsrs.so 定位。同 fushi_p2p：
+      # 只依赖 glibc，构建失败即 job 失败。
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-linux-x64-ubuntu22
+      - name: Build fushi_fsrs (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_fsrs/build_linux_so.sh
+          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so nm
       - name: Build fushi_server bundle
         shell: bash
         run: |
@@ -253,6 +267,7 @@ jobs:
           mkdir -p build/fushi_server_linux/bundle/lib
           cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
           cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
+          cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
@@ -362,6 +377,21 @@ jobs:
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
             exit 1
           fi
+      # 同上：拿 bundle 里那一份 .so 跑 packages/fushi_srs 的真 FFI 测试，并断言没有整组 skip。
+      - name: fushi_fsrs FFI tests against the bundled .so
+        shell: bash
+        working-directory: packages/fushi_srs
+        env:
+          FUSHI_FSRS_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_fsrs.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_FSRS_LIB" || { echo "::error::$FUSHI_FSRS_LIB missing"; exit 1; }
+          dart pub get
+          dart test test/ffi_fsrs_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_fsrs_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_fsrs_test.log"; then
+            echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: bash
         env:
@@ -453,6 +483,17 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
+      # SRS 排程内核（fsrs-rs）DLL：服务端按 bin/../lib/fushi_fsrs.dll 定位。失败即 job 失败。
+      - name: Cache Rust build (fushi_fsrs)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_fsrs -> target
+          key: fushi-fsrs-windows-x64
+      - name: Build fushi_fsrs DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_fsrs/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_fsrs) failed" }
       - name: Build fushi_server bundle
         shell: pwsh
         run: |
@@ -462,6 +503,7 @@ jobs:
           New-Item -ItemType Directory -Force $lib | Out-Null
           Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
           Copy-Item native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll $lib -Force
+          Copy-Item native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll $lib -Force
           $zip = "$env:RUNNER_TEMP/ort.zip"
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
@@ -519,6 +561,20 @@ jobs:
           dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
           if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
+      - name: fushi_fsrs FFI tests against the bundled DLL
+        shell: bash
+        working-directory: packages/fushi_srs
+        env:
+          FUSHI_FSRS_LIB: ${{ github.workspace }}\build\fushi_server_win\bundle\lib\fushi_fsrs.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_FSRS_LIB" || { echo "::error::$FUSHI_FSRS_LIB missing"; exit 1; }
+          dart pub get
+          dart test test/ffi_fsrs_engine_test.dart --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_fsrs_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_fsrs_test.log"; then
+            echo "::error::fushi_fsrs tests were skipped: $FUSHI_FSRS_LIB did not load"
             exit 1
           fi
       - name: Package

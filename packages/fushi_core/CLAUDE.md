@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=116；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
+共享核心模块：定义 Drift SQLite 数据库 schema（当前 schemaVersion=117；以 `database.dart` 的 `schemaVersion` getter 与 `@DriftDatabase(tables: [...])` 注册清单为准，本文数字仅作快照。v82：ReaderPositions/Bookmarks/BookCustomCss/RevealedImages 书键从 bookKey 切稳定 uid；v90：网页播放器自动制卡队列 `web_mine_queue`；v114：收藏词上下文；v115：排行榜 isbn / completedAt；v116：设备端待发制卡队列 `pending_mine_queue`；v117：Fushi SRS——`profiles.uid` 全局身份 + 八张 `srs_*` 表）、表迁移逻辑、偏好键值编解码器（PrefCodec）、语言配置模型和文本选区模型。是所有其他 packages 的基础依赖。
 
 ## 入口与启动
 
@@ -26,7 +26,7 @@
 
 ## 数据模型
 
-90 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
+98 张 Drift 表（按功能分组，以 `database.dart` 的 `@DriftDatabase(tables: [...])` 注册清单为准）：
 
 | 分组 | 表名 |
 |------|------|
@@ -51,6 +51,7 @@
 | 互联 | `FushiPairedPeers` |
 | 游戏库 | `Galgames`, `GalgameSources`, `GalgameSessions` |
 | 删除墓碑 | `BookTombstones`, `StatisticsTombstones`, `CollectionMemberTombstones`, `BookTagMembershipTombstones`, `SyncDeletionTombstones` |
+| SRS（v117） | 同步事件本体 `SrsEntities`, `SrsFieldEdits`, `SrsReviewLogs`, `SrsUnknownEvents`（随备份走，合并导入走 SRS 专用步骤）；本机状态 / 可重建缓存 `SrsEventLocal`, `SrsLocalState`, `SrsNotesCache`, `SrsCardsCache`（设备本地，不进备份、恢复后清空）。身份是 `profiles.uid` |
 
 新增表（相对旧文档的 28 张补齐的 18 张）用途：
 

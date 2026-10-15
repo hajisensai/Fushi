@@ -630,6 +630,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
   'cardCreation/Online video mining':
       'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
+  // 挖词目标（Anki / Fushi 复习 / 两者，复习模块开着才出现）：写 prefsRepo
+  // （changed=true），生效点是 ankiRepositoryProvider 最外层的 SrsMiningAnkiRepository
+  // ——制卡时卡片落进复习库还是 Anki。harness 里没有复习库可探；三种目标的落卡、
+  // 判重、合并规则与「模块关着时链上没有这一层」由专项测试咬死。
+  'cardCreation/Mining target': 'test/srs/srs_mining_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':

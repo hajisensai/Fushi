@@ -2460,6 +2460,61 @@
     transform: none;
 }
 
+/* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：小号 tonal 胶囊，文案
+   （「复习中 · 3天后」/「新卡」/「已暂停」）由宿主本地化后下发。复习模块关着时 popup.js
+   根本不渲染它。M3E：按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
+   用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰胶囊 + 强调色文字。
+   墨水屏由 html.eink 通配压平圆角 / 动效。 */
+.srs-status-badge {
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 24px;
+    white-space: nowrap;
+    color: var(--md-primary, var(--primary-color));
+    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 14%, transparent);
+    opacity: 1;
+    outline: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.15s ease;
+}
+
+.srs-status-badge.srs-status-hidden {
+    display: none;
+}
+
+.srs-status-badge:hover,
+.srs-status-badge:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 22%, transparent);
+}
+
+.srs-status-badge:focus-visible {
+    box-shadow: 0 0 0 2px var(--md-primary, var(--primary-color));
+}
+
+.srs-status-badge.srs-status-learning {
+    color: var(--md-sys-color-tertiary, var(--md-primary, var(--primary-color)));
+    background-color: color-mix(in srgb, var(--md-sys-color-tertiary, var(--md-primary, var(--primary-color))) 14%, transparent);
+}
+
+.srs-status-badge.srs-status-new {
+    color: var(--md-sys-color-secondary, var(--text-color));
+    background-color: color-mix(in srgb, var(--md-sys-color-secondary, var(--text-color)) 12%, transparent);
+}
+
+.srs-status-badge.srs-status-suspended {
+    color: var(--text-color);
+    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
+    opacity: 0.7;
+}
+
 /* =====================================================================
  * BUG-1064 —— 「卡片已在 Anki 中」页内操作面板（app 外裸窗 / 浏览器扩展）。
  *

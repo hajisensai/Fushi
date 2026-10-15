@@ -32,6 +32,7 @@ workspace:
   - packages/fushi_server
   - packages/fushi_p2p
   - packages/fushi_platform
+  - packages/fushi_srs
   - packages/fushi_torrent
   - packages/gamepads_android_stub
   - packages/gamepads_windows

@@ -84,6 +84,31 @@ List<OnboardingTutorialItem> ankiFsrsTutorialSteps({required bool mobile}) =>
       ),
     ];
 
+/// 「Fushi 内置复习」介绍步骤的要点（复习模块开着时才进向导序列）。
+List<OnboardingTutorialItem> srsOnboardingTutorialItems() =>
+    <OnboardingTutorialItem>[
+      OnboardingTutorialItem(
+        icon: FushiIcons.statistics,
+        title: t.onboarding_srs_fsrs_title,
+        description: t.onboarding_srs_fsrs_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: FushiIcons.collection,
+        title: t.onboarding_srs_builtin_title,
+        description: t.onboarding_srs_builtin_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: FushiIcons.ankiCard,
+        title: t.onboarding_srs_mining_title,
+        description: t.onboarding_srs_mining_desc,
+      ),
+      OnboardingTutorialItem(
+        icon: FushiIcons.sync,
+        title: t.onboarding_srs_sync_title,
+        description: t.onboarding_srs_sync_desc,
+      ),
+    ];
+
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
 
@@ -190,6 +215,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           browserExtensionAvailable: _browserExtensionAvailable,
           globalLookupAvailable: _globalLookupAvailable,
           ankiReady: _ankiReadyForFirstCard,
+          // 复习模块默认关、向导不问：只有用户已在设置里自己打开，才出介绍步骤。
+          srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
+            ModuleId.srs,
+          ),
         );
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
@@ -805,6 +834,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           title: t.onboarding_anki_fsrs_title,
           hint: t.onboarding_anki_fsrs_body,
         ),
+        // 开了 Fushi 内置复习的用户：内置复习已经默认 FSRS-7，这段 Anki 教程只在
+        // 还要用 Anki 复习时才需要（教程本身保留，不移出本步）。
+        if (appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs)) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.onboarding_anki_fsrs_srs_note,
+            key: const ValueKey<String>('onboarding-anki-fsrs-srs-note'),
+            style: textTheme.bodyMedium,
+          ),
+        ],
         SizedBox(height: tokens.spacing.gap),
         for (int index = 0; index < fsrsSteps.length; index++)
           OnboardingTutorialStep(
@@ -1043,6 +1082,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return _buildGlobalLookupTutorial();
       case OnboardingStepId.firstAnkiCard:
         return _buildFirstAnkiCardTutorial();
+      case OnboardingStepId.srs:
+        return OnboardingOperationTutorialView(
+          icon: FushiIcons.repeat,
+          title: t.onboarding_srs_title,
+          body: t.onboarding_srs_body,
+          items: srsOnboardingTutorialItems(),
+          actions: <OnboardingAction>[
+            OnboardingAction(
+              icon: FushiIcons.add,
+              label: t.onboarding_srs_action,
+              description: t.onboarding_srs_action_desc,
+              necessity: OnboardingActionNecessity.recommended,
+              onPressed: () => _pushPage((_) => const SrsDeckListPage()),
+            ),
+          ],
+        );
       case OnboardingStepId.finish:
         return _buildFinishStep();
     }

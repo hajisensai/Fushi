@@ -45,6 +45,8 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 
 enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 
@@ -225,6 +227,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         // 攒在这里，用户必须能看到、能处理。
         enter('anki_section_pending', AdaptiveSettingsSection(
           children: [
+            // 挖词目标：复习模块（默认关）开着时才出现；关着时制卡只发 Anki，
+            // 这一行连同它读的偏好都不存在于界面上。
+            if (ref.watch(srsModuleEnabledProvider))
+              SettingsSearchTarget(
+                id: 'card_creation.anki.srs_mining_target',
+                child: _buildSrsMiningTargetPicker(),
+              ),
             SettingsSearchTarget(
               id: 'card_creation.anki.batch_mining',
               child: AdaptiveSettingsSwitchRow(
@@ -2071,6 +2080,38 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// all=按与查重同一条件（第一字段=expression）覆写任意已存在卡，使更早制的卡也
   /// 能在弹窗里点绿 ✓↩ 覆写。AnkiDroid 拿不到 note id → 选 all 仍降级为不可覆写
   /// 更早卡（与现状一致），不破坏现有行为。
+  /// 挖词目标（Anki / Fushi 复习 / 两者）。选「两者」时副标题换成重复排程的提醒。
+  Widget _buildSrsMiningTargetPicker() {
+    final SrsMiningTarget target = ref.watch(
+      appProvider.select((AppModel m) => m.srsMiningTarget),
+    );
+    return AdaptiveSettingsPickerRow<SrsMiningTarget>(
+      key: const ValueKey<String>('anki-srs-mining-target'),
+      title: t.srs_mining_target_title,
+      subtitle: target == SrsMiningTarget.both
+          ? t.srs_mining_target_both_warning
+          : t.srs_mining_target_hint,
+      controlBelow: true,
+      selected: target,
+      options: <AdaptiveSettingsPickerOption<SrsMiningTarget>>[
+        AdaptiveSettingsPickerOption<SrsMiningTarget>(
+          value: SrsMiningTarget.anki,
+          label: t.srs_mining_target_anki,
+        ),
+        AdaptiveSettingsPickerOption<SrsMiningTarget>(
+          value: SrsMiningTarget.srs,
+          label: t.srs_mining_target_srs,
+        ),
+        AdaptiveSettingsPickerOption<SrsMiningTarget>(
+          value: SrsMiningTarget.both,
+          label: t.srs_mining_target_both,
+        ),
+      ],
+      onChanged: (SrsMiningTarget value) =>
+          unawaited(ref.read(appProvider).setSrsMiningTarget(value)),
+    );
+  }
+
   Widget _buildOverwriteScopePicker(AnkiSettings settings, AnkiViewModel vm) {
     return AdaptiveSettingsPickerRow<AnkiOverwriteScope>(
       title: t.anki_overwrite_scope,
