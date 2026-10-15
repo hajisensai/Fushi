@@ -291,7 +291,9 @@ void main() {
     },
   );
 
-  testWidgets('TODO-501: top-bar action buttons are 36 boxes with 20px icons',
+  testWidgets(
+      'TODO-501: top-bar action buttons are 36 boxes with the shared icon '
+      'size (BUG-3412)',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       buildTestApp(
@@ -319,14 +321,16 @@ void main() {
     final FushiIconButton button = tester.widget<FushiIconButton>(
       find.widgetWithIcon(FushiIconButton, Icons.close),
     );
-    expect(button.size, 20);
+    // BUG-3412：图标尺寸统一由 kDictionaryPopupTopActionIconSize（18）给出。
+    expect(button.size, kDictionaryPopupTopActionIconSize);
     expect(
       button.constraints,
       const BoxConstraints.tightFor(width: 36, height: 36),
     );
     // M3E（1fd2964855d）：关闭是独立的 tonal 圆钮，底色画在 padding 盒上，
-    // 内边距补满 36 命中区（(36 - 20) / 2），tonal 圆与命中区同大。
-    expect(button.padding, const EdgeInsets.all((36 - 20) / 2));
+    // 内边距补满 36 命中区（(36 - 图标) / 2），tonal 圆与命中区同大。
+    expect(button.padding,
+        const EdgeInsets.all((36 - kDictionaryPopupTopActionIconSize) / 2));
     expect(button.backgroundColor, isNotNull);
   });
 

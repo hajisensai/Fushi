@@ -147,7 +147,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('mobile top action hit area is at least 44 (2026-10)', () {
+  test('top action extent: mobile >= 44, desktop 36 (BUG-3412)', () {
+    // BUG-3412：三组按钮统一尺寸靠布局（header 拿两簇之间全部剩余宽）与统一图标
+    // 尺寸解决，移动端命中区仍守 44 触控下限，不能为了「变小」收边长。
     expect(dictionaryPopupTopActionExtent(mobile: true),
         greaterThanOrEqualTo(44));
     // 桌面保持压缩顶栏的 36（design-2026-08）。
