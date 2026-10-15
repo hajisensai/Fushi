@@ -12,6 +12,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math';
 
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
+import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
@@ -22,8 +25,12 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_list_layout.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
@@ -48,6 +55,67 @@ const Set<String> _kUnofficialProviders = <String>{
 /// 试听默认文本（日语学习场景；用户可改）。
 const String _kDefaultTestText = 'こんにちは。これは朗読のテストです。';
 
+/// 参考音频能选的扩展名（GPT-SoVITS 经 librosa / ffmpeg 读，常见格式都认）。
+const Set<String> _kReferenceAudioExtensions = <String>{
+  'wav',
+  'mp3',
+  'flac',
+  'ogg',
+  'm4a',
+};
+
+/// 服务地址是不是本机回环地址：是的话服务端看得到本机文件，参考音频可以直接
+/// 在本机选；局域网 / 远端服务只能填服务端那台机器上的路径。
+bool ttsEndpointIsLoopback(String endpoint) {
+  final Uri? uri = Uri.tryParse(endpoint.trim());
+  if (uri == null) return false;
+  final String host = uri.host.toLowerCase();
+  return host == 'localhost' ||
+      host == '::1' ||
+      host == '[::1]' ||
+      host.startsWith('127.');
+}
+
+/// 参考音频的文件名常常就是它的台词（GPT-SoVITS 训练集的惯例，例如
+/// `こんにちは、今日もいい天気.wav`）。文件名里有假名或汉字时拿它预填参考文本；
+/// `ref.wav` 这类无意义的名字返回 null。
+String? ttsPromptTextFromFileName(String path) {
+  // 路径可能来自别的平台（Windows 盘符路径同步到 Android / Linux 等），两种分隔符都切，
+  // 不能只靠 p.basename 按当前平台切分。
+  final String fileName = path.split(RegExp(r'[\\/]')).last;
+  String stem = p.basenameWithoutExtension(fileName).trim();
+  // 常见的情感 / 序号前缀：`【開心】…`、`[happy]…`、`001_…`。
+  stem = stem.replaceFirst(RegExp(r'^(【[^】]*】|\[[^\]]*\]|\d+[_\-\s])+'), '');
+  stem = stem.trim();
+  if (stem.isEmpty) return null;
+  final bool hasCjk = RegExp(r'[぀-ヿ㐀-鿿ｦ-ﾟ]').hasMatch(stem);
+  return hasCjk ? stem : null;
+}
+
+/// 「选择文件」复制进来的参考音频所在目录名（app 数据目录下）。
+const String kTtsReferenceAudioDirName = 'tts_reference_audio';
+
+/// 删掉 [removed] 这份声音后，它的参考音频副本能不能一起删：只认 app 复制进
+/// [referenceDir] 的文件（用户手填的任意路径绝不碰），且 [remaining] 里没有别的
+/// 声音还在用。能删返回该路径，否则 null。
+String? ttsOrphanedReferenceAudio({
+  required TtsVoicePreset removed,
+  required Iterable<TtsVoicePreset> remaining,
+  required String referenceDir,
+}) {
+  if (removed.providerId != GptSovitsTtsDescriptor.providerId) return null;
+  final String path = removed.param(GptSovitsTtsDescriptor.refAudioKey).trim();
+  if (path.isEmpty || !p.isWithin(referenceDir, path)) return null;
+  final String normalized = p.normalize(path);
+  for (final TtsVoicePreset other in remaining) {
+    final String used = other.param(GptSovitsTtsDescriptor.refAudioKey).trim();
+    if (used.isNotEmpty && p.equals(p.normalize(used), normalized)) {
+      return null;
+    }
+  }
+  return path;
+}
+
 /// 新建 / 换引擎时的初始参数：引擎声明的非凭据默认值。
 Map<String, String> ttsDefaultParams(TtsProviderDescriptor descriptor) =>
     <String, String>{
@@ -56,23 +124,41 @@ Map<String, String> ttsDefaultParams(TtsProviderDescriptor descriptor) =>
           spec.key: spec.defaultValue!,
     };
 
+/// 新声音预设的 id（随机、不可猜，跨设备不撞）。
+String newTtsPresetId() {
+  final Random random = Random.secure();
+  return 'tts_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
+      '${random.nextInt(1 << 32).toRadixString(36)}';
+}
+
+/// [openPresetId]：打开后直接定位并编辑这份声音（刚在「本机 GPT-SoVITS」页新建的）。
 Future<void> openTtsVoiceSettingsPage(
   BuildContext context,
-  TtsServices tts,
-) async {
+  TtsServices tts, {
+  String? openPresetId,
+}) async {
   final NavigatorState navigator = Navigator.of(context);
   await tts.seedBuiltinVoiceIfUnset();
   await navigator.push<void>(
     MaterialPageRoute<void>(
-      builder: (_) => TtsVoiceSettingsPage(services: tts),
+      builder: (_) =>
+          TtsVoiceSettingsPage(services: tts, openPresetId: openPresetId),
     ),
   );
 }
 
+/// 「添加声音」里「本机一键部署」那一项的值（其余项是 [TtsProviderCategory]）。
+const String _kAddLocalGptSovits = 'local_gpt_sovits';
+
 class TtsVoiceSettingsPage extends StatefulWidget {
-  const TtsVoiceSettingsPage({required this.services, super.key});
+  const TtsVoiceSettingsPage({
+    required this.services,
+    this.openPresetId,
+    super.key,
+  });
 
   final TtsServices services;
+  final String? openPresetId;
 
   @override
   State<TtsVoiceSettingsPage> createState() => _TtsVoiceSettingsPageState();
@@ -98,6 +184,40 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
   void initState() {
     super.initState();
     unawaited(_refreshCacheSize());
+    final String? open = widget.openPresetId;
+    if (open != null) _focusPreset(open);
+  }
+
+  /// 选中 [id]；窄屏再推进它的编辑页（宽屏右侧窗格已经显示它）。
+  void _focusPreset(String id) {
+    _selectedId = id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!ttsUsesWideLayout(MediaQuery.sizeOf(context).width)) {
+        unawaited(_openEditor(id));
+      }
+    });
+  }
+
+  /// 「本机 GPT-SoVITS」页新建了声音：重读清单、定位到它。
+  Future<void> _openLocalDeploy({required bool wide}) async {
+    // 那边直接读写预设仓：先把防抖中的编辑落盘，回来重读时才不丢。
+    if (_saveDebounce?.isActive ?? false) {
+      _saveDebounce!.cancel();
+      await _store.savePresets(_presets);
+      if (!mounted) return;
+    }
+    final String? created = await openGptSovitsLocalPage(
+      context,
+      widget.services,
+    );
+    if (created == null || !mounted) return;
+    setState(() {
+      _presets = _store.loadPresets();
+      _activeId = _store.activePreset()?.id;
+      _selectedId = created;
+    });
+    if (!wide) unawaited(_openEditor(created));
   }
 
   @override
@@ -138,6 +258,9 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
   }
 
   Future<void> _delete(String id) async {
+    final TtsVoicePreset? removed = _presets
+        .where((TtsVoicePreset p) => p.id == id)
+        .firstOrNull;
     setState(() {
       _presets.removeWhere((TtsVoicePreset p) => p.id == id);
       if (_activeId == id) {
@@ -147,6 +270,24 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     _saveDebounce?.cancel();
     await _store.savePresets(_presets);
     await _store.setActivePresetId(_activeId);
+    if (removed != null) await _deleteOrphanedReferenceAudio(removed);
+  }
+
+  /// 删声音时一并清掉它独占的参考音频副本（「选择文件」复制进数据目录的那份）。
+  Future<void> _deleteOrphanedReferenceAudio(TtsVoicePreset removed) async {
+    try {
+      final Directory support = await enginePaths.supportRootDirectory();
+      final String? orphan = ttsOrphanedReferenceAudio(
+        removed: removed,
+        remaining: _presets,
+        referenceDir: p.join(support.path, kTtsReferenceAudioDirName),
+      );
+      if (orphan == null) return;
+      final File file = File(orphan);
+      if (await file.exists()) await file.delete();
+    } on FileSystemException {
+      // 删不掉（被占用）只是留一个小文件，不影响删除声音本身。
+    }
   }
 
   /// 「添加声音」只按大类选（外部服务 / 在线服务 / 系统语音）；具体是哪个引擎在
@@ -159,27 +300,39 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
         ))
           c,
     ];
-    final TtsProviderCategory? picked =
-        await showFushiChoiceDialog<TtsProviderCategory>(
-          context: context,
-          title: t.audiobook_tts_voice_add_title,
-          icon: FushiIcons.voice,
-          options: <FushiChoiceOption<TtsProviderCategory>>[
-            for (final TtsProviderCategory c in categories)
-              FushiChoiceOption<TtsProviderCategory>(
-                value: c,
-                label: ttsCategoryLabel(c),
-                subtitle: ttsCategoryHint(c),
-                icon: _categoryIcon(c),
-              ),
-          ],
-        );
-    if (picked == null || !mounted) return;
+    final Object? choice = await showFushiChoiceDialog<Object>(
+      context: context,
+      title: t.audiobook_tts_voice_add_title,
+      icon: FushiIcons.voice,
+      options: <FushiChoiceOption<Object>>[
+        // 自己没有服务的用户最该走的一条：放最前。
+        if (widget.services.localGptSovits.isSupported)
+          FushiChoiceOption<Object>(
+            value: _kAddLocalGptSovits,
+            label: t.audiobook_tts_local_add,
+            subtitle: t.audiobook_tts_local_add_hint,
+            icon: FushiIcons.download,
+          ),
+        for (final TtsProviderCategory c in categories)
+          FushiChoiceOption<Object>(
+            value: c,
+            label: ttsCategoryLabel(c),
+            subtitle: ttsCategoryHint(c),
+            icon: _categoryIcon(c),
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    if (choice == _kAddLocalGptSovits) {
+      await _openLocalDeploy(wide: wide);
+      return;
+    }
+    final TtsProviderCategory picked = choice as TtsProviderCategory;
     final TtsProviderDescriptor descriptor = _registry.available.firstWhere(
       (TtsProviderDescriptor d) => d.category == picked,
     );
     final TtsVoicePreset preset = TtsVoicePreset(
-      id: _newId(),
+      id: newTtsPresetId(),
       providerId: descriptor.id,
       name: ttsProviderLabel(descriptor.id),
       params: ttsDefaultParams(descriptor),
@@ -200,12 +353,6 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     TtsProviderCategory.online => FushiIcons.cloud,
     TtsProviderCategory.system => FushiIcons.voice,
   };
-
-  static String _newId() {
-    final Random random = Random.secure();
-    return 'tts_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}'
-        '${random.nextInt(1 << 32).toRadixString(36)}';
-  }
 
   Future<void> _clearCache() async {
     final TtsAudioCache cache = await widget.services.cache();
@@ -258,6 +405,9 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     onChanged: _update,
     onUse: () => unawaited(_setActive(preset.id)),
     onDelete: () => unawaited(onDelete()),
+    // 经列表页打开：那边新建的声音要并进本页的 `_presets`，否则下一次防抖落盘会用
+    // 旧清单把它覆盖掉。
+    onOpenLocalDeploy: () => unawaited(_openLocalDeploy(wide: embedded)),
   );
 
   static String _displayName(TtsVoicePreset preset) =>
@@ -350,6 +500,7 @@ class _TtsVoiceEditorPage extends StatefulWidget {
     required this.onChanged,
     required this.onUse,
     required this.onDelete,
+    required this.onOpenLocalDeploy,
     this.embedded = false,
     super.key,
   });
@@ -364,6 +515,7 @@ class _TtsVoiceEditorPage extends StatefulWidget {
   final ValueChanged<TtsVoicePreset> onChanged;
   final VoidCallback onUse;
   final VoidCallback onDelete;
+  final VoidCallback onOpenLocalDeploy;
 
   @override
   State<_TtsVoiceEditorPage> createState() => _TtsVoiceEditorPageState();
@@ -384,8 +536,21 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
 
   TtsVoicePreset get _preset => widget.preset;
 
+  GptSovitsLocalEngine get _local => widget.services.localGptSovits;
+
+  @override
+  void initState() {
+    super.initState();
+    _local.addListener(_onLocalEngine);
+  }
+
+  void _onLocalEngine() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _local.removeListener(_onLocalEngine);
     _testCancel?.cancel();
     unawaited(_releaseTestPlayer());
     for (final TextEditingController c in _controllers.values) {
@@ -642,6 +807,54 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     );
   }
 
+  /// 本机服务：选一个本机音频文件，复制进 app 数据目录（原文件挪走 / 删掉也不
+  /// 影响朗读）再填进参考音频路径；参考文本还空着时按文件名预填。
+  Future<void> _pickReferenceAudio(TtsParamSpec spec) async {
+    final String? picked = await pickSystemFilePath(
+      context: context,
+      allowedExtensions: _kReferenceAudioExtensions,
+    );
+    if (picked == null || !mounted) return;
+    final String stored;
+    try {
+      final Directory support = await enginePaths.supportRootDirectory();
+      final Directory dir = Directory(
+        p.join(support.path, kTtsReferenceAudioDirName),
+      );
+      await dir.create(recursive: true);
+      // 同名不同文件互不覆盖：时间戳前缀。原名保留，方便用户认。
+      final String target = p.join(
+        dir.path,
+        '${DateTime.now().millisecondsSinceEpoch}_${p.basename(picked)}',
+      );
+      stored = (await File(picked).copy(target)).path;
+    } on FileSystemException {
+      if (mounted) {
+        setState(
+          () => _testResult = (
+            ok: false,
+            message: t.audiobook_tts_param_ref_audio_copy_failed,
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    _controllerFor(spec).text = stored;
+    final Map<String, String> params = <String, String>{
+      ..._preset.params,
+      spec.key: stored,
+    };
+    final String? prompt = ttsPromptTextFromFileName(picked);
+    const String promptKey = GptSovitsTtsDescriptor.promptTextKey;
+    if (prompt != null && _preset.param(promptKey).trim().isEmpty) {
+      params[promptKey] = prompt;
+      _controllers[promptKey]?.text = prompt;
+    }
+    widget.onChanged(_preset.copyWith(params: params));
+    setState(() => _testResult = null);
+  }
+
   Future<void> _pickChoice(TtsParamSpec spec) async {
     final String current = _preset.param(spec.key, fallback: spec.defaultValue);
     final String? picked = await showFushiChoiceDialog<String>(
@@ -650,7 +863,11 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       selected: current,
       options: <FushiChoiceOption<String>>[
         for (final String c in spec.choices)
-          FushiChoiceOption<String>(value: c, label: c),
+          FushiChoiceOption<String>(
+            value: c,
+            label: ttsLanguageLabel(c),
+            subtitle: ttsLanguageLabel(c) == c ? null : c,
+          ),
       ],
     );
     if (picked == null || !mounted) return;
@@ -738,6 +955,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           if (descriptor != null)
             for (final TtsParamSpec spec in descriptor.params)
               _paramRow(spec, problems.contains(spec.key), field),
+          if (_localServiceRow() case final Widget row) row,
           if (descriptor != null &&
               descriptor.category != TtsProviderCategory.system)
             _concurrencyRow(descriptor),
@@ -853,6 +1071,46 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     );
   }
 
+  /// GPT-SoVITS 声音指向本机时：已部署就显示本机服务状态，没部署就给一键部署入口。
+  /// 局域网 / 远端地址、不支持一键部署的平台不显示。
+  Widget? _localServiceRow() {
+    if (_preset.providerId != GptSovitsTtsDescriptor.providerId ||
+        !_local.isSupported) {
+      return null;
+    }
+    final String endpoint = _preset.param(
+      GptSovitsTtsDescriptor.endpointKey,
+      fallback: 'http://127.0.0.1:9880',
+    );
+    if (!ttsEndpointIsLoopback(endpoint)) return null;
+    final bool installed = _local.isInstalled;
+    final bool managed = gptSovitsEndpointIsManaged(
+      endpoint,
+      _local.settings.port,
+    );
+    if (installed && !managed) return null;
+    final String subtitle = !installed
+        ? t.audiobook_tts_local_editor_not_installed
+        : switch (_local.server.phase) {
+            GptSovitsServerPhase.running =>
+              t.audiobook_tts_local_server_running(endpoint: _local.endpoint),
+            GptSovitsServerPhase.starting =>
+              t.audiobook_tts_local_server_starting,
+            _ => t.audiobook_tts_local_server_stopped,
+          };
+    return KeyedSubtree(
+      key: const ValueKey<String>('tts-voice-local-service'),
+      child: AdaptiveSettingsRow(
+        icon: installed ? FushiIcons.server : FushiIcons.download,
+        showIcon: true,
+        title: t.audiobook_tts_local_title,
+        subtitle: subtitle,
+        subtitleMaxLines: 3,
+        onTap: widget.onOpenLocalDeploy,
+      ),
+    );
+  }
+
   /// 并发请求数：默认用引擎的值，用户可按自己的服务端 / 显卡能力调高。
   Widget _concurrencyRow(TtsProviderDescriptor descriptor) {
     final int fallback = descriptor.capabilities.maxConcurrency;
@@ -917,7 +1175,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             title: label,
             onTap: () => unawaited(_pickChoice(spec)),
             trailing: Text(
-              _preset.param(spec.key, fallback: spec.defaultValue),
+              ttsLanguageLabel(
+                _preset.param(spec.key, fallback: spec.defaultValue),
+              ),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: fushiNeutralSecondaryForeground(context),
               ),
@@ -956,7 +1216,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             key: ValueKey<String>('tts-voice-param-${spec.key}'),
             label: label,
             controller: _controllerFor(spec),
-            hintText: ttsParamHint(_preset.providerId, spec.key),
+            hintText: _canPickReferenceAudio(spec)
+                ? t.audiobook_tts_param_ref_audio_local_hint
+                : ttsParamHint(_preset.providerId, spec.key),
             errorText: invalid && _controllerFor(spec).text.isNotEmpty
                 ? t.audiobook_tts_param_invalid
                 : _localReferenceProblem(spec),
@@ -964,12 +1226,31 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             keyboardType: spec.kind == TtsParamKind.url
                 ? TextInputType.url
                 : null,
+            suffixIcon: _canPickReferenceAudio(spec)
+                ? FushiIconButton(
+                    key: const ValueKey<String>('tts-voice-ref-audio-pick'),
+                    icon: FushiIcons.folderOpen,
+                    tooltip: t.audiobook_tts_param_ref_audio_pick,
+                    onTap: () => unawaited(_pickReferenceAudio(spec)),
+                  )
+                : null,
 
             onChanged: (String v) => _setParam(spec, v.trim()),
           ),
         );
     }
   }
+
+  /// 参考音频行带「选择文件」：只在 GPT-SoVITS 服务就是本机时才有意义。
+  bool _canPickReferenceAudio(TtsParamSpec spec) =>
+      _preset.providerId == GptSovitsTtsDescriptor.providerId &&
+      spec.key == GptSovitsTtsDescriptor.refAudioKey &&
+      ttsEndpointIsLoopback(
+        _preset.param(
+          GptSovitsTtsDescriptor.endpointKey,
+          fallback: 'http://127.0.0.1:9880',
+        ),
+      );
 
   Widget _textField({
     required Key key,
