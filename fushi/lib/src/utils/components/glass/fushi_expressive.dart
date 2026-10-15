@@ -668,7 +668,9 @@ class _RenderFushiSqueeze extends RenderBox
     }
     final List<double> widths = List<double>.of(base);
     for (int i = 0; i < n && i < _press.length; i++) {
-      final double p = _press[i];
+      // 弹簧是无界的：松手回弹会短暂冲到 0 以下。负进度会把刚松手的按钮挤得比
+      // 自身固有宽还窄（文字按钮当场折行，「1.5×」变成两行），所以只认 ≥ 0。
+      final double p = math.max(0.0, _press[i]);
       if (p == 0) continue;
       final List<int> neighbours = <int>[
         if (i > 0) i - 1,

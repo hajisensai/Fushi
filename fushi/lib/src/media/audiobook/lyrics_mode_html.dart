@@ -838,26 +838,36 @@ function _lyricsAvailExtent(container) {
   var padH = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
   return Math.max(1, (window.innerWidth - padH) / scale);
 }
-// Fit one cue: clear any prior override, measure at base size, and if it still
-// overflows the available extent, set an inline font-size scaled by the overflow
-// ratio down to the floor. Returns nothing; idempotent.
-function _lyricsFitCue(el, avail, base) {
-  el.style.fontSize = '';
-  // offsetHeight/offsetWidth are the layout-box extents and (unlike
-  // getBoundingClientRect) exclude the .current scale transform, so the
-  // measurement is scale-independent and the shared avail (already discounted
-  // by --cue-scale) applies uniformly to current and non-current cues alike.
-  var measured = __lyricsVertical ? el.offsetHeight : el.offsetWidth;
+// Fit one cue from its base-size measurement: if it overflows the available
+// extent, set an inline font-size scaled by the overflow ratio down to the floor.
+function _lyricsFitCue(el, measured, avail, base) {
   if (measured <= avail) return;
   var shrunk = Math.max(__LYRICS_MIN_FONT_PX, base * (avail / measured));
   if (shrunk < base) el.style.fontSize = shrunk + 'px';
 }
+// WKWebView 在被 Flutter 隐藏（歌词页就绪前 opacity 0）时视口是 0×0。零视口下没有
+// 可用的约束尺寸：每一句都「溢出」，竖排更是每字一列。此时一律不量，等 resize 带来
+// 真实视口再量（下方 resize 监听）。
+function __lyricsHasViewport() {
+  return window.innerWidth > 0 && window.innerHeight > 0;
+}
 function __lyricsFitCues() {
   var container = document.getElementById('lc');
   if (!container) return;
+  if (!__lyricsHasViewport()) return;
   var base = _lyricsBaseFontPx();
   var avail = _lyricsAvailExtent(container);
-  for (var i = 0; i < _cues.length; i++) _lyricsFitCue(_cues[i], avail, base);
+  // 读写分离：先统一清掉旧覆盖、再一次性量完、最后统一写。逐句「写→读」会让每一句
+  // 都触发一次整页同步布局（600 句竖排在零视口下实测 11–13 s，期间 WebContent 主线程
+  // 全程阻塞：就绪握手、resize、后续 loadData 全部排队）。
+  var n = _cues.length, measured = new Array(n), i, el;
+  for (i = 0; i < n; i++) { el = _cues[i]; el.style.fontSize = ''; }
+  // offsetHeight/offsetWidth are the layout-box extents and (unlike
+  // getBoundingClientRect) exclude the .current scale transform, so the
+  // measurement is scale-independent and the shared avail (already discounted
+  // by --cue-scale) applies uniformly to current and non-current cues alike.
+  for (i = 0; i < n; i++) { el = _cues[i]; measured[i] = __lyricsVertical ? el.offsetHeight : el.offsetWidth; }
+  for (i = 0; i < n; i++) _lyricsFitCue(_cues[i], measured[i], avail, base);
   // 字号变了列就变了（BUG-3366）。
   if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
 }
@@ -868,7 +878,11 @@ var _lyricsFitPending = false;
 window.addEventListener('resize', function() {
   if (_lyricsFitPending) return;
   _lyricsFitPending = true;
-  requestAnimationFrame(function() { _lyricsFitPending = false; __lyricsFitCues(); });
+  requestAnimationFrame(function() {
+    _lyricsFitPending = false;
+    __lyricsFitCues();
+    _lyInitialPosition();
+  });
 });
 
 // scroll === false (audio-follow OFF) updates the current/near highlight but
@@ -1330,10 +1344,16 @@ __lyricsFitCues();
 // TODO-907: 同样走 delta 增量滚动，横竖排一致；竖排 vertical-rl 的负向 scrollX
 // 用 scrollBy 增量打到位，不硬算绝对坐标。
 _currentIdx = $currentIndex;
-if ($currentIndex >= 0 && $currentIndex < _cues.length) {
-  var _initEl = _cues[$currentIndex];
-  if (_initEl) _lyricsScrollByAxis(_lyricsCenterDelta(_initEl));
+// 零视口下算出的居中增量没有意义（见 __lyricsHasViewport）：推迟到第一次拿到真实
+// 视口的 resize 再定位，只做一次。
+var _lyInitPending = true;
+function _lyInitialPosition() {
+  if (!_lyInitPending || !__lyricsHasViewport()) return;
+  _lyInitPending = false;
+  var el = (_currentIdx >= 0 && _currentIdx < _cues.length) ? _cues[_currentIdx] : null;
+  if (el) _lyricsScrollByAxis(_lyricsCenterDelta(el));
 }
+_lyInitialPosition();
 </script>
 </body>
 </html>
