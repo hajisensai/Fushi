@@ -111,7 +111,8 @@
 
 - 新增/删除 i18n key **禁止手动逐文件编辑**，必须用 `fushi/tool/i18n_sync.dart`（Slang 要求 17 个文件 key 完整，缺 key 报错）：`--add <key> <en> <zh>` / `--remove <key>` / `--rename <old> <new>` / `--sort` / 无参补全缺失 / `--dry-run` 预览。四个操作 flag **可重复、可混用**，按给出顺序执行、每个文件只读写一次（`--remove a --remove b --add c en zh`）；任何没被 flag 消费的参数一律报 usage error 退出，不会像旧实现那样把多出来的 key 静默吞掉（契约测试 `fushi/test/tools/i18n_sync_ops_test.dart`）。
 - 批量删 key 后**必须按精确键名复核**（`grep '"<key>"'` 带引号）：裸子串会被同前缀的 key 假阳性命中（如 `..._favorites` 命中 `..._favorites_empty`）。
-- `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪到文件末尾。改名只能用 `--rename`（逐语言保留原翻译、原位替换）。
+- `--add`（及无参补全）**不追加到文件末尾**，而是插在字典序前驱 key 之后（补全按基准文件顺序就位）：旧的尾部追加让任意两条加 key 的并发 PR 在 17 份 json 尾部必然冲突，现在不同域的新增落在不同位置、git 自动合并（契约测试含一条真 `git merge-file` 三方合并用例）。**别为此跑 `--sort`**：现有文件不是全排序的，整文件重排会让所有在途 PR 冲突。
+- `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪离原位。改名只能用 `--rename`（逐语言保留原翻译、原位替换）。
 - 改完 key 跑 `dart run slang` 重新生成 `strings.g.dart`，再 `dart format` 生成文件；不要手改生成文件。
 
 ## 验证

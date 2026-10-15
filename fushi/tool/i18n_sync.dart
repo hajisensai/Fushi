@@ -4,7 +4,9 @@
 ///
 /// Usage:
 ///   dart tool/i18n_sync.dart                      # fill missing keys with zh-CN value (or base EN)
-///   dart tool/i18n_sync.dart --add key en zh       # add a new key to all files
+///   dart tool/i18n_sync.dart --add key en zh       # add a new key to all files, right
+///                                                  # after its alphabetical predecessor
+///                                                  # (see [insertKeyAfterPredecessor])
 ///   dart tool/i18n_sync.dart --remove key          # remove a key from all files
 ///   dart tool/i18n_sync.dart --rename old new      # rename a key in all files, keeping every
 ///                                                  # language's existing translation (errors out
@@ -152,11 +154,13 @@ I18nCommand parseI18nCommand(List<String> args) {
         i += 1;
       case '--add':
         final List<String> operands = _takeOperands(args, i + 1, 3, token);
-        ops.add(AddKeyOp(
-          key: operands[0],
-          enValue: operands[1],
-          zhValue: operands[2],
-        ));
+        ops.add(
+          AddKeyOp(
+            key: operands[0],
+            enValue: operands[1],
+            zhValue: operands[2],
+          ),
+        );
         i += 1 + operands.length;
       case '--remove':
         final List<String> operands = _takeOperands(args, i + 1, 1, token);
@@ -242,16 +246,16 @@ I18nApplyResult applyI18nOps({
     final I18nOp op = ops[i];
     switch (op) {
       case AddKeyOp(
-          :final String key,
-          :final String enValue,
-          :final String zhValue
-        ):
+        :final String key,
+        :final String enValue,
+        :final String zhValue,
+      ):
         if (current.containsKey(key)) {
           log.add('  skip $label (key "$key" already exists)');
           continue;
         }
         final String value = isZhCn ? zhValue : enValue;
-        current[key] = value;
+        current = insertKeyAfterPredecessor(current, key, value);
         hitsPerOp[i] = 1;
         log.add('  add "$key": "$value" -> $label');
       case RemoveKeyOp(:final String key):
@@ -288,6 +292,73 @@ I18nApplyResult applyI18nOps({
   }
 
   return I18nApplyResult(json: current, log: log, hitsPerOp: hitsPerOp);
+}
+
+/// Return a copy of [json] with [key] inserted right after its alphabetical
+/// predecessor (the greatest existing key that sorts before it), or first when
+/// no key sorts before it.
+///
+/// Why not just append: every concurrent branch that appended a key edited the
+/// same last lines of 17 files (the new entry plus the comma it forces onto the
+/// previous last entry), so any two i18n-adding PRs conflicted on merge.
+/// Placing each key next to its alphabetical neighbour spreads additions
+/// across the file — keys of one domain share a prefix and cluster together —
+/// so independent additions merge cleanly. The files are not globally sorted,
+/// so the predecessor is searched over all keys rather than by binary search.
+Map<String, dynamic> insertKeyAfterPredecessor(
+  Map<String, dynamic> json,
+  String key,
+  dynamic value,
+) {
+  String? predecessor;
+  for (final String k in json.keys) {
+    if (k.compareTo(key) < 0 &&
+        (predecessor == null || k.compareTo(predecessor) > 0)) {
+      predecessor = k;
+    }
+  }
+  return _insertAfter(json, predecessor, key, value);
+}
+
+/// Return a copy of [json] with [key] inserted right after [anchor] (or first
+/// when [anchor] is null). Assumes [key] is not already present.
+Map<String, dynamic> _insertAfter(
+  Map<String, dynamic> json,
+  String? anchor,
+  String key,
+  dynamic value,
+) {
+  final Map<String, dynamic> out = <String, dynamic>{};
+  if (anchor == null) out[key] = value;
+  for (final MapEntry<String, dynamic> e in json.entries) {
+    out[e.key] = e.value;
+    if (e.key == anchor) out[key] = value;
+  }
+  return out;
+}
+
+/// Return a copy of [json] with every key of [baseOrder] that it lacks filled
+/// from [valueOf], each placed right after the nearest preceding base key it
+/// already has — so a translation file mirrors the base file's layout and a
+/// fill touches the same region the base addition did, instead of the
+/// append-at-end merge hotspot. Falls back to [insertKeyAfterPredecessor] when
+/// no preceding base key is present.
+Map<String, dynamic> fillMissingKeysInBaseOrder(
+  Map<String, dynamic> json,
+  List<String> baseOrder,
+  dynamic Function(String key) valueOf,
+) {
+  Map<String, dynamic> current = Map<String, dynamic>.of(json);
+  String? lastPresent;
+  for (final String key in baseOrder) {
+    if (!current.containsKey(key)) {
+      current = lastPresent == null
+          ? insertKeyAfterPredecessor(current, key, valueOf(key))
+          : _insertAfter(current, lastPresent, key, valueOf(key));
+    }
+    lastPresent = key;
+  }
+  return current;
 }
 
 void main(List<String> args) {
@@ -361,8 +432,9 @@ void _runOps(I18nCommand command) {
   for (final File file in files) {
     final I18nApplyResult result = results[file.path]!;
     for (final String line in result.log) {
-      stdout
-          .writeln(command.dryRun ? line.replaceFirst('  ', '  would ') : line);
+      stdout.writeln(
+        command.dryRun ? line.replaceFirst('  ', '  would ') : line,
+      );
     }
     if (!result.changed) continue;
     changed++;
@@ -376,7 +448,8 @@ void _runOps(I18nCommand command) {
     return;
   }
   stdout.writeln(
-      '\n${command.dryRun ? "Would change" : "Changed"} $changed files.');
+    '\n${command.dryRun ? "Would change" : "Changed"} $changed files.',
+  );
 }
 
 /// Fill missing keys in translation files using zh-CN value, falling back to base EN.
@@ -392,16 +465,18 @@ void _syncMissing(bool dryRun) {
   for (final File file in files) {
     if (_isBase(file)) continue;
 
-    final Map<String, dynamic> json = _readJson(file);
-    final List<String> missing =
-        baseJson.keys.where((k) => !json.containsKey(k)).toList();
+    final Map<String, dynamic> original = _readJson(file);
+    final List<String> missing = baseJson.keys
+        .where((k) => !original.containsKey(k))
+        .toList();
     if (missing.isEmpty) continue;
 
-    for (final String key in missing) {
-      final String fallback =
-          (zhCnJson[key] as String?) ?? (baseJson[key] as String? ?? '');
-      json[key] = fallback;
-    }
+    final Map<String, dynamic> json = fillMissingKeysInBaseOrder(
+      original,
+      baseJson.keys.toList(),
+      (String key) =>
+          (zhCnJson[key] as String?) ?? (baseJson[key] as String? ?? ''),
+    );
     totalAdded += missing.length;
 
     if (dryRun) {
