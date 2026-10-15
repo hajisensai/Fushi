@@ -66,9 +66,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 2026-10 动效重做：首屏卡片错峰淡入，滚动带出的卡瞬间出现。
     return FushiEntranceScope(
-      child: RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
+      child: FushiScrollbar(
         controller: mediaType.scrollController,
         child: LayoutBuilder(
           builder: (context, constraints) => GridView.builder(

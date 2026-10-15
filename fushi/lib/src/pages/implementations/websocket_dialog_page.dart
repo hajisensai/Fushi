@@ -78,9 +78,7 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   List<Widget> get actions => [buildConnectButton()];
 
   Widget buildContent() {
-    return RawScrollbar(
-      thickness: 3,
-      thumbVisibility: true,
+    return FushiScrollbar(
       controller: _contentScrollController,
       child: SingleChildScrollView(
         controller: _contentScrollController,

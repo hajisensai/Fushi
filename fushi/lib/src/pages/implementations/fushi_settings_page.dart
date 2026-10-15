@@ -91,9 +91,7 @@ class _FushiSettingsDialogPageState extends BasePageState
 
     return SizedBox(
       width: double.maxFinite,
-      child: RawScrollbar(
-        thickness: 3,
-        thumbVisibility: true,
+      child: FushiScrollbar(
         controller: _contentScrollController,
         child: PrimaryScrollController(
           controller: _contentScrollController,

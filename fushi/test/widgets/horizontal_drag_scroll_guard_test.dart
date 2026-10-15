@@ -211,12 +211,26 @@ void f() {}
   test('刻意不做成全局 scrollBehavior（否则垂直网格会与卡片拖拽抢手势）', () {
     final File main = File('lib/main.dart');
     expect(main.existsSync(), isTrue);
+    // 全局 scrollBehavior 只允许是 FushiScrollBehavior（只换桌面滚动条的鼠标
+    // 命中，见下方断言：它不碰 dragDevices）。
+    final String source = maskComments(
+      main.readAsStringSync(),
+    ).replaceAll('scrollBehavior: const FushiScrollBehavior()', '');
     expect(
-      maskComments(main.readAsStringSync()),
+      source,
       isNot(contains('scrollBehavior:')),
       reason:
           '全局放开鼠标拖动滚动会让垂直网格与 MediaCardDraggable 的 Draggable '
           '抢手势，把「拖卡进合集」变成「拖动网格滚动」。只包横向区。',
+    );
+
+    final String behavior = maskComments(
+      File('lib/src/utils/components/fushi_scrollbar.dart').readAsStringSync(),
+    );
+    expect(
+      behavior,
+      isNot(contains('dragDevices')),
+      reason: 'FushiScrollBehavior 是全局的，放开鼠标拖动滚动同样会抢卡片拖拽。',
     );
   });
 }

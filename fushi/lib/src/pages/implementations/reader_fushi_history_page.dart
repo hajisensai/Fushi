@@ -229,7 +229,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 本页自己的滚动控制器。书架与漫画库是同一个页面类、取同一个
   /// `ReaderFushiSource.instance.mediaType`，两个 tab 保活并存；共用
   /// `mediaType.scrollController` 会让一个控制器附着两个位置，`thumbVisibility`
-  /// 常显的 [RawScrollbar] 每次依赖变化都断言（BUG-1181 遗留）。
+  /// 常显的滚动条（现为 [FushiScrollbar]）每次依赖变化都断言（BUG-1181 遗留）。
   final ScrollController _shelfScrollController = ScrollController();
 
   @override
@@ -1966,9 +1966,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 2026-10 动效重做：书架首屏的散书卡错峰淡入（见 FushiStaggeredEntrance）；
     // 窗口关闭后滚动带出的卡瞬间出现，不拖影。
     return FushiEntranceScope(
-      child: RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
+      child: FushiScrollbar(
         controller: _shelfScrollController,
         child: LayoutBuilder(
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。

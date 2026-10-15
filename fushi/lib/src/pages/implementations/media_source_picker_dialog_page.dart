@@ -61,9 +61,7 @@ class _MediaSourcePickerDialogPageState
   }
 
   Widget buildSourceTiles(List<MediaSource> mediaSources) {
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
+    return FushiScrollbar(
       controller: _scrollController,
       child: ListView.separated(
         controller: _scrollController,

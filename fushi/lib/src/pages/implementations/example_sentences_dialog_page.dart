@@ -102,9 +102,7 @@ class _ExampleSentencesDialogPageState
   Widget buildContent() {
     return SizedBox(
       width: double.maxFinite,
-      child: RawScrollbar(
-        thumbVisibility: true,
-        thickness: 3,
+      child: FushiScrollbar(
         controller: _scrollController,
         child: widget.exampleSentences.isEmpty
             ? SingleChildScrollView(

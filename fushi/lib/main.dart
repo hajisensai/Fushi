@@ -2694,6 +2694,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           themeMode: themeMode,
           theme: lightTheme,
           darkTheme: darkTheme,
+          // 桌面端自动滚动条：外观不变，按偏一点也能抓住拇指拖、点轨道不再
+          // 整页乱跳（见 FushiScrollBehavior）。
+          scrollBehavior: const FushiScrollBehavior(),
           // 启动首帧从 fallback 主题切到持久化主题时不做过渡；首帧呈现后恢复
           // 正常的主题交叉过渡。墨水屏下始终关闭（中间灰帧每帧一次局部刷新）。
           themeAnimationStyle:
