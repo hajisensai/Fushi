@@ -436,7 +436,11 @@ void main() {
   group('搜索语法', () {
     test('不支持的语法返回明确错误，不静默返回空', () async {
       await h.ok('addNote', <String, Object?>{'note': yomitanNote('猫')});
-      for (final String q in <String>['prop:ivl>10', 'flag:1', 'is:buried']) {
+      for (final String q in <String>[
+        'prop:ease>2',
+        'rated:1',
+        'is:buried-sibling',
+      ]) {
         final Map<String, Object?> r = await h.call(
           'findNotes',
           <String, Object?>{'query': q},
@@ -444,6 +448,19 @@ void main() {
         expect(r['result'], isNull, reason: q);
         expect(r['error'], startsWith('unsupported search syntax'), reason: q);
       }
+      // 浏览页补上的语法与浏览页同一份求值（SrsCardSearchSubject）。
+      expect(
+        await h.ok('findNotes', <String, Object?>{'query': 'prop:ivl=0'}),
+        hasLength(1),
+      );
+      expect(
+        await h.ok('findNotes', <String, Object?>{'query': 'flag:1'}),
+        isEmpty,
+      );
+      expect(
+        await h.ok('findNotes', <String, Object?>{'query': 'is:buried'}),
+        isEmpty,
+      );
       final Map<String, Object?> syntax = await h.call(
         'findCards',
         <String, Object?>{'query': '(猫'},

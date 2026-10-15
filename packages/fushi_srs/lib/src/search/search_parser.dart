@@ -286,8 +286,11 @@ class _Parser {
           'review' => SrsSearchCardState.review,
           'due' => SrsSearchCardState.due,
           'suspended' => SrsSearchCardState.suspended,
-          'buried' || 'buried-manually' || 'buried-sibling' =>
-            throw unsupported('$key:$val', 'is:$val is not supported'),
+          'buried' || 'buried-manually' => SrsSearchCardState.buried,
+          'buried-sibling' => throw unsupported(
+            '$key:$val',
+            'is:$val is not supported',
+          ),
           _ => throw fail('$key:$val', 'invalid state: is:$val'),
         });
       case 'nid':
@@ -295,24 +298,34 @@ class _Parser {
       case 'cid':
         return SrsSearchCardIds(_idList(key, val));
       case 'added':
-        if (!RegExp(r'^\d+$').hasMatch(val)) {
-          throw fail('$key:$val', 'added: expects a positive whole number');
+        return SrsSearchAddedInDays(_dayCount(key, val));
+      case 'edited':
+        return SrsSearchEditedInDays(_dayCount(key, val));
+      case 'flag':
+        final int? flag = RegExp(r'^[0-7]$').hasMatch(val)
+            ? int.parse(val)
+            : null;
+        if (flag == null) {
+          throw fail('$key:$val', 'flag: expects a number from 0 to 7');
         }
-        final int? days = int.tryParse(val);
-        if (days == null || days > 0xFFFFFFFF) {
-          throw fail('$key:$val', 'added: number out of range');
+        return SrsSearchFlag(flag);
+      case 'card':
+        if (RegExp(r'^\d+$').hasMatch(val)) {
+          final int? n = int.tryParse(val);
+          if (n == null) throw fail('$key:$val', 'card: number out of range');
+          // rslib：`card:N` → 序号 N - 1（饱和减），所以 card:0 与 card:1 相同。
+          return SrsSearchCardTemplate.ordinal(n < 1 ? 1 : n);
         }
-        return SrsSearchAddedInDays(days < 1 ? 1 : days);
-      case 'card' ||
-          'flag' ||
-          'resched' ||
-          'prop' ||
-          'edited' ||
+        return SrsSearchCardTemplate.named(_unescape(val));
+      case 'prop':
+        return _prop(key, val);
+      case 're':
+        return SrsSearchRegex(val, _regex('$key:$val', val));
+      case 'resched' ||
           'introduced' ||
           'rated' ||
           'did' ||
           'mid' ||
-          're' ||
           'nc' ||
           'sc' ||
           'w' ||
@@ -321,10 +334,97 @@ class _Parser {
           'preset':
         throw unsupported('$key:$val', '${_asciiLower(key)}: is not supported');
     }
-    if (val.startsWith('re:') || val.startsWith('nc:')) {
-      throw unsupported('$key:$val', 'field:re: / field:nc: is not supported');
+    if (val.startsWith('re:')) {
+      final String source = val.substring(3);
+      return SrsSearchFieldRegex(
+        _unescape(key),
+        source,
+        _regex('$key:$val', source),
+      );
+    }
+    if (val.startsWith('nc:')) {
+      throw unsupported('$key:$val', 'field:nc: is not supported');
     }
     return SrsSearchField(_unescape(key), _unescape(val));
+  }
+
+  /// `edited:` / `added:` 的天数（至少 1）。
+  int _dayCount(String key, String val) {
+    if (!RegExp(r'^\d+$').hasMatch(val)) {
+      throw fail('$key:$val', '$key: expects a positive whole number');
+    }
+    final int? days = int.tryParse(val);
+    if (days == null || days > 0xFFFFFFFF) {
+      throw fail('$key:$val', '$key: number out of range');
+    }
+    return days < 1 ? 1 : days;
+  }
+
+  /// `re:` 的正则（rslib：只解掉 `\"`，其余反斜杠原样交给正则引擎；默认不区分大小写，
+  /// 开头写 `(?-i)` 改为区分大小写）。正则本身不合法 = 语法错误。
+  RegExp _regex(String at, String raw) {
+    String source = raw.replaceAll(r'\"', '"');
+    bool caseSensitive = false;
+    if (source.startsWith('(?-i)')) {
+      source = source.substring(5);
+      caseSensitive = true;
+    } else if (source.startsWith('(?i)')) {
+      source = source.substring(4);
+    }
+    if (source.isEmpty) throw fail(at, 'empty regular expression');
+    try {
+      return RegExp(source, caseSensitive: caseSensitive, unicode: true);
+    } on FormatException catch (e) {
+      throw fail(at, 'invalid regular expression: ${e.message}');
+    }
+  }
+
+  /// `prop:属性 比较符 数值`（rslib `parse_prop`）。
+  SrsSearchProp _prop(String key, String val) {
+    final RegExpMatch? m = RegExp(
+      r'^(ivl|due|reps|lapses|ease|pos|rated|resched|cdn:[^<>=!]*|'
+      r'cds:[^<>=!]*|cdr:[^<>=!]*|r|s|d)(<=|>=|!=|=|<|>)(.*)$',
+    ).firstMatch(val);
+    if (m == null) throw fail('$key:$val', 'invalid property search');
+    final String name = m.group(1)!;
+    final SrsSearchProperty? property = switch (name) {
+      'ivl' => SrsSearchProperty.interval,
+      'due' => SrsSearchProperty.due,
+      'reps' => SrsSearchProperty.reps,
+      'lapses' => SrsSearchProperty.lapses,
+      's' => SrsSearchProperty.stability,
+      'd' => SrsSearchProperty.difficulty,
+      _ => null,
+    };
+    if (property == null) {
+      throw unsupported('$key:$val', 'prop:$name is not supported');
+    }
+    final SrsSearchCompare compare = switch (m.group(2)!) {
+      '<=' => SrsSearchCompare.le,
+      '>=' => SrsSearchCompare.ge,
+      '!=' => SrsSearchCompare.ne,
+      '<' => SrsSearchCompare.lt,
+      '>' => SrsSearchCompare.gt,
+      _ => SrsSearchCompare.eq,
+    };
+    final String text = m.group(3)!;
+    final bool fractional =
+        property == SrsSearchProperty.stability ||
+        property == SrsSearchProperty.difficulty;
+    final num? value = fractional
+        ? (RegExp(r'^-?\d+(\.\d+)?$').hasMatch(text)
+              ? double.tryParse(text)
+              : null)
+        : (RegExp(r'^-?\d+$').hasMatch(text) ? int.tryParse(text) : null);
+    if (value == null) {
+      throw fail(
+        '$key:$val',
+        fractional
+            ? 'prop:$name expects a number'
+            : 'prop:$name expects a whole number',
+      );
+    }
+    return SrsSearchProp(property, compare, value);
   }
 
   List<int> _idList(String key, String val) {

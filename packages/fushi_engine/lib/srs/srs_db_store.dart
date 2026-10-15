@@ -30,6 +30,16 @@ SrsTrustedClock srsProcessTrustedClock() {
   );
 }
 
+/// 批量写的一项：某实体的某字段改成 [value]（见 [SrsDbStore.editFieldsBatch]）。
+class SrsFieldChange {
+  const SrsFieldChange(this.kind, this.entityId, this.key, this.value);
+
+  final SrsEntityKind kind;
+  final String entityId;
+  final String key;
+  final Object? value;
+}
+
 /// 牌组列表的一行。
 class SrsDeckSummary {
   const SrsDeckSummary({
@@ -1032,6 +1042,134 @@ class SrsDbStore implements SrsSyncReplica {
 
   Future<void> moveCard(String cardId, String deckId) =>
       editField(SrsEntityKind.card, cardId, SrsFieldKeys.cardDeck, deckId);
+
+  // ------------------------------------------------------------------ 批量（浏览页）
+
+  /// 多个实体的多个字段一次写：一个事务、一次发件箱批次（浏览页的批量操作）。
+  /// no-op 不产生记录；返回实际写出的修改记录。
+  Future<List<SrsFieldEdit>> editFieldsBatch(
+    List<SrsFieldChange> changes,
+  ) async {
+    final Map<(SrsEntityKind, String), Map<String, Object?>> byEntity =
+        <(SrsEntityKind, String), Map<String, Object?>>{};
+    for (final SrsFieldChange c in changes) {
+      (byEntity[(c.kind, c.entityId)] ??= <String, Object?>{})[c.key] = c.value;
+    }
+    final (int nowMs, SrsTimeSource src) = now();
+    final List<SrsFieldEdit> out = <SrsFieldEdit>[];
+    for (final MapEntry<(SrsEntityKind, String), Map<String, Object?>> e
+        in byEntity.entries) {
+      final (SrsEntityKind kind, String id) = e.key;
+      final SrsEntityEdits current = await _entityEdits(kind, id);
+      for (final MapEntry<String, Object?> v in e.value.entries) {
+        final SrsRegister? reg = current[v.key];
+        if (reg != null && srsEditIsNoop(reg, v.value)) continue;
+        out.add(
+          _writer.create(
+            profileUid: profileUid,
+            entityKind: kind,
+            entityId: id,
+            fieldKey: v.key,
+            value: v.value,
+            hlc: _clock.tick(nowMs),
+            timeSource: src,
+            machine: false,
+          ),
+        );
+      }
+    }
+    if (out.isNotEmpty) {
+      await _emit(<SrsEvent>[
+        for (final SrsFieldEdit e in out) SrsEditEvent(e),
+      ]);
+    }
+    return out;
+  }
+
+  /// 一组卡片的缓存行（不存在的 ID 跳过）。
+  Future<List<SrsCardCacheRow>> cardRows(Iterable<String> cardIds) async {
+    final List<String> ids = cardIds.toSet().toList();
+    final List<SrsCardCacheRow> out = <SrsCardCacheRow>[];
+    for (int i = 0; i < ids.length; i += 500) {
+      final List<String> chunk = ids.sublist(i, min(i + 500, ids.length));
+      out.addAll(
+        await (db.select(
+          db.srsCardsCache,
+        )..where((c) => c.id.isIn(chunk))).get(),
+      );
+    }
+    return out;
+  }
+
+  /// 批量重置为新卡：每张一条 manual 日志，一个批次落库。已经是新卡的跳过。
+  /// 返回写出的日志（撤销用）。
+  Future<List<SrsReviewLog>> resetCards(Iterable<String> cardIds) async {
+    final SrsDayContext day = await dayContext();
+    final List<SrsReviewLog> logs = <SrsReviewLog>[];
+    for (final SrsCardCacheRow c in await cardRows(cardIds)) {
+      if (c.queue == SrsQueue.newCard.wire) continue;
+      logs.add(
+        _ops.reset(
+          cardId: c.id,
+          history: await history(c.id),
+          ctx: _logContext(day),
+        ),
+      );
+    }
+    if (logs.isNotEmpty) {
+      await _emit(<SrsEvent>[
+        for (final SrsReviewLog l in logs) SrsLogEvent(l),
+      ]);
+    }
+    return logs;
+  }
+
+  /// 批量设置到期日（cardId → 排程日序号），一个批次落库。返回写出的日志（撤销用）。
+  Future<List<SrsReviewLog>> setDueDays(Map<String, int> dueDays) async {
+    final SrsDayContext day = await dayContext();
+    final List<SrsReviewLog> logs = <SrsReviewLog>[
+      for (final MapEntry<String, int> e in dueDays.entries)
+        _ops.setDue(
+          cardId: e.key,
+          history: await history(e.key),
+          dueDay: e.value,
+          ctx: _logContext(day),
+        ),
+    ];
+    if (logs.isNotEmpty) {
+      await _emit(<SrsEvent>[
+        for (final SrsReviewLog l in logs) SrsLogEvent(l),
+      ]);
+    }
+    return logs;
+  }
+
+  /// 批量撤销日志（cardId, logId）：一个批次落库。返回撤不了的条数（那条已不是该卡最后一条
+  /// 有效日志——别的设备同步来了更新的复习，铁律 B 的协议限制）。
+  Future<int> undoLogs(List<(String, String)> targets) async {
+    final SrsDayContext day = await dayContext();
+    final List<SrsReviewLog> undos = <SrsReviewLog>[];
+    int blocked = 0;
+    for (final (String cardId, String logId) in targets) {
+      final SrsReviewLog? u = _ops.undo(
+        cardId: cardId,
+        history: await history(cardId),
+        targetLogId: logId,
+        ctx: _logContext(day),
+      );
+      if (u == null) {
+        blocked++;
+      } else {
+        undos.add(u);
+      }
+    }
+    if (undos.isNotEmpty) {
+      await _emit(<SrsEvent>[
+        for (final SrsReviewLog l in undos) SrsLogEvent(l),
+      ]);
+    }
+    return blocked;
+  }
 
   // ------------------------------------------------------------------ 复习
 
