@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "Tocar na legenda flutuante para consultar",
   "floating_lyric_click_lookup_hint": "Mantenha isto ativado com a posição travada se ainda quiser consultar palavras.",
   "floating_lyric_close": "Fechar",
-  "floating_lyric_context_lines": "Linhas de contexto da legenda flutuante",
-  "floating_lyric_context_lines_hint": "0 mostra apenas a linha atual (linha única, sem alteração); defina 1-3 para mostrar essas linhas antes e depois",
   "floating_lyric_corner_radius": "Raio dos cantos da legenda flutuante",
   "floating_lyric_corner_radius_hint": "0 mantém os cantos padrão de cada plataforma; aumente para arredondar mais a barra e os botões",
   "floating_lyric_font_size": "Tamanho da fonte da legenda flutuante",
@@ -7487,5 +7485,18 @@
   "settings_module_nav_order": "Navigation bar order",
   "home_nav_bar_style": "Bottom bar style",
   "home_nav_bar_style_flat": "Flat",
-  "home_nav_bar_style_pager": "Paged swipe"
+  "home_nav_bar_style_pager": "Paged swipe",
+  "floating_lyric_visible_lines": "Sentences shown",
+  "floating_lyric_visible_lines_hint": "The current sentence stays in the middle, like lyrics mode. Auto fills the window height: drag the window taller to see more.",
+  "floating_lyric_visible_lines_auto": "Auto",
+  "floating_lyric_current_line_color": "Current sentence color",
+  "floating_lyric_context_opacity": "Other sentences opacity",
+  "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
+  "floating_lyric_font": "Floating subtitle font",
+  "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",
+  "floating_lyric_appearance_section": "Floating subtitle appearance",
+  "font_target_floating_lyric": "Floating subtitles",
+  "font_target_floating_lyric_short": "Subtitles",
+  "floating_lyric_vertical": "Vertical text",
+  "floating_lyric_vertical_hint": "Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences."
 }

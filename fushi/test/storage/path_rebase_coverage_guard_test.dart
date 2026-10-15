@@ -198,7 +198,7 @@ void main() {
 
   test('字体 pref key 由 dbSourcePrefKey 编码器生成且已登记', () {
     // BUG-1174：声明表用编码器生成 key（不硬编码 media_source 私有前缀格式，见
-    // db_source_pref_key_test）。这里断言编码器产出的 5 个字体 key 确实都在表里——
+    // db_source_pref_key_test）。这里断言编码器产出的全部字体 key 确实都在表里——
     // 编码格式若变化，两侧会同步变化而不会静默漏登记。
     for (final String body in <String>[
       'font_catalog',
@@ -207,6 +207,7 @@ void main() {
       'dict_fonts',
       'video_sub_fonts',
       'game_lookup_fonts',
+      'floating_lyric_fonts',
     ]) {
       final String expected = dbSourcePrefKey('reader_fushi', body);
       expect(

@@ -282,9 +282,11 @@ void main() {
     appModel.enabled = ModuleId.values.toSet();
     expect(
       visibleListeningSectionIds(),
-      hasLength(2),
+      // 播放 / 悬浮字幕 / 悬浮字幕外观三个分区（外观分区的项全不可见时由
+      // visibleSections 另行过滤，分区门本身只看模块）。
+      hasLength(3),
       reason:
-          '听书模块开着却看不到那两个分区——并入阅读时把分区门写反了，'
+          '听书模块开着却看不到那三个分区——并入阅读时把分区门写反了，'
           '或者分区根本没被展开进 buildReadingDestination',
     );
 

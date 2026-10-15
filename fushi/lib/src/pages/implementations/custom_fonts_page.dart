@@ -544,7 +544,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
 
   /// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
   ///
-  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup]）的 DirectWrite 只吃裸
+  /// 只有一条来源：native 分层窗（[FontTarget.gameLookup] /
+  /// [FontTarget.floatingLyric]，同一个 `FloatingLyricWindow`）的 DirectWrite 只吃裸
   /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
   /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
   Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
@@ -552,10 +553,12 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     if (AppFontLoader.nativeOverlayCanUse(path)) {
       return const <FontTarget, String>{};
     }
+    final String reason = t.import_unsupported_file_format(
+      ext: p.extension(path!).toLowerCase(),
+    );
     return <FontTarget, String>{
-      FontTarget.gameLookup: t.import_unsupported_file_format(
-        ext: p.extension(path!).toLowerCase(),
-      ),
+      FontTarget.gameLookup: reason,
+      FontTarget.floatingLyric: reason,
     };
   }
 

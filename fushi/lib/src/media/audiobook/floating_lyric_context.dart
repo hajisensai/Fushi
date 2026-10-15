@@ -64,15 +64,27 @@ FloatingLyricBlock buildFloatingLyricBlock({
   required List<AudioCue> cues,
   required int index,
   required int n,
+}) =>
+    buildFloatingLyricBlockRange(cues: cues, index: index, before: n, after: n);
+
+/// [buildFloatingLyricBlock] 的非对称版：当前句之前取 [before] 句、之后取
+/// [after] 句（负值按 0），头尾不足少显示。
+FloatingLyricBlock buildFloatingLyricBlockRange({
+  required List<AudioCue> cues,
+  required int index,
+  required int before,
+  required int after,
 }) {
   final int len = cues.length;
   if (len == 0 || index < 0 || index >= len) {
     return FloatingLyricBlock.empty;
   }
-  final int radius = n < 0 ? 0 : n;
-  final int windowStart = (index - radius) < 0 ? 0 : (index - radius);
-  final int windowEnd =
-      (index + radius) > (len - 1) ? (len - 1) : (index + radius);
+  final int lead = before < 0 ? 0 : before;
+  final int trail = after < 0 ? 0 : after;
+  final int windowStart = (index - lead) < 0 ? 0 : (index - lead);
+  final int windowEnd = (index + trail) > (len - 1)
+      ? (len - 1)
+      : (index + trail);
 
   final StringBuffer buffer = StringBuffer();
   int currentStart = 0;
@@ -93,4 +105,24 @@ FloatingLyricBlock buildFloatingLyricBlock({
     start: currentStart,
     length: currentLength,
   );
+}
+
+/// 「同时显示句数」→ 当前句前后各取几句。
+///
+/// - `1..`：当前句居中，偶数时下文多一句（与歌词模式「往下读」的方向一致）。
+/// - `0` = 自动：[autoFillsWindow] 为 true（Windows 原生窗会把当前句滚到视口
+///   中央、裁掉超出窗高的部分）时前后各送 [autoRadius] 句，拖高窗口即看到更多；
+///   否则（Android TextView 按内容撑高，没有视口可裁）退回 3 句。
+({int before, int after}) floatingLyricVisibleSpan(
+  int visibleLines, {
+  required bool autoFillsWindow,
+  int autoRadius = 12,
+}) {
+  if (visibleLines <= 0) {
+    return autoFillsWindow
+        ? (before: autoRadius, after: autoRadius)
+        : (before: 1, after: 1);
+  }
+  final int before = (visibleLines - 1) ~/ 2;
+  return (before: before, after: visibleLines - 1 - before);
 }

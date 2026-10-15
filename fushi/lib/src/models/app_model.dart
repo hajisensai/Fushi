@@ -230,7 +230,9 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -1349,45 +1351,41 @@ class AppModel with ChangeNotifier {
   /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
   /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
   late final AudiobookSession audiobookSession = AudiobookSession(
-    audioHandler: () => audioCtrl.audioHandler,
-    showFloatingLyric: () => showFloatingLyric,
-    showMediaNotification: () => showMediaNotification,
-    floatingLyricStyle: _appLevelFloatingLyricStyle,
-    floatingLyricContextLines: () => floatingLyricContextLines,
-    floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
-      // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
-      // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
-      // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
-      // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
-      // reader 的点词处理器。
-      unawaited(() async {
-        if (await tryFloatingLyricGlobalLookup(
-          appModel: this,
-          text: text,
-          index: index,
-          wordRect: wordRect,
-        )) {
-          return;
-        }
-        FloatingLyricLookupNotifier.instance.requestLookup(text, index);
-      }());
-    },
-    controlStreams: AudioControlStreams(
-      playIntentStream: audioCtrl.playIntentStream,
-      seekStream: audioCtrl.seekStream,
-      skipNextStream: audioCtrl.skipNextStream,
-      skipPreviousStream: audioCtrl.skipPreviousStream,
-      toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
-    ),
-    // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
-    // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
-    // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
-    database: () => isDatabaseReady ? database : null,
-    studyIdleTimeout: () => readingIdleTimeout,
-  )
+      audioHandler: () => audioCtrl.audioHandler,
+      showFloatingLyric: () => showFloatingLyric,
+      showMediaNotification: () => showMediaNotification,
+      floatingLyricStyle: _appLevelFloatingLyricStyle,
+      floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+      floatingLyricClickLookup: () => floatingLyricClickLookup,
+      onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
+        // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
+        // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
+        // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
+        // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
+        // reader 的点词处理器。
+        unawaited(() async {
+          if (await tryFloatingLyricGlobalLookup(
+              appModel: this, text: text, index: index, wordRect: wordRect)) {
+            return;
+          }
+          FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+        }());
+      },
+      controlStreams: AudioControlStreams(
+          playIntentStream: audioCtrl.playIntentStream,
+          seekStream: audioCtrl.seekStream,
+          skipNextStream: audioCtrl.skipNextStream,
+          skipPreviousStream: audioCtrl.skipPreviousStream,
+          toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream),
+      // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
+      // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
+      // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
+      database: () => isDatabaseReady ? database : null,
+      studyIdleTimeout: () => readingIdleTimeout)
     ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
+    ..floatingLyricWindowRect = _floatingLyricWindowRect
+    ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
 
@@ -7595,39 +7593,53 @@ class AppModel with ChangeNotifier {
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
 
-  /// app 级（无 reader）悬浮窗样式：用全局主题色，背景跟随当前明暗。reader attach
-  /// 时会用 reader 主题样式覆盖。
+  /// app 级（无 reader）悬浮窗样式：M3E 配色取当前 app 明暗下的配色方案。reader
+  /// attach 时会用 reader 明暗的同一套构造覆盖（`_readerFloatingLyricStyle`）。
   FloatingLyricStyle _appLevelFloatingLyricStyle() {
     final Brightness brightness =
         themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
-    final ColorScheme scheme = buildColorScheme(brightness);
-    final bool dark = brightness == Brightness.dark;
-    final Color bg = scheme.surface;
-    final Color fg = scheme.onSurface;
-    final Color accent = scheme.primary;
-    final int textOpacity = floatingLyricTextOpacity;
-    final int buttonBgOpacity = floatingLyricButtonBgOpacity;
-    final int bgOpacity = floatingLyricBgOpacity;
-    return FloatingLyricStyle(
-      fontSize: floatingLyricFontSize,
-      // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
-      textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
-      bgColor: FloatingLyricStyle.scaleAlpha(
-        bg.withAlpha(dark ? 230 : 220).value,
-        bgOpacity,
-      ),
-      buttonTextColor: fg.value,
-      buttonBgColor: FloatingLyricStyle.scaleAlpha(
-        (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        buttonBgOpacity,
-      ),
-      highlightColor: accent.withAlpha(128).value,
-      activeColor: accent.value,
-      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
-      cornerRadius: floatingLyricCornerRadius,
-      windowWidth: floatingLyricWidth,
-    );
+    return buildFloatingLyricStyle(
+        scheme: buildColorScheme(brightness),
+        settings: floatingLyricStyleSettings());
+  }
+
+  /// 悬浮字幕设置快照（两个样式构造点共用；[fontSize] 供快捷设置即时预览覆盖）。
+  FloatingLyricStyleSettings floatingLyricStyleSettings({double? fontSize}) =>
+      FloatingLyricStyleSettings.fromPreferences(prefsRepo,
+          fontSize: fontSize, font: _floatingLyricNativeFont());
+
+  /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
+  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  ({String family, String? path})? _floatingLyricNativeFont() {
+    if (!Platform.isWindows) return null;
+    final ReaderSettings? settings = ReaderFushiSource.readerSettings;
+    if (settings == null) return null;
+    return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,
+        allowedDirectories: <String>[
+          path.join(appDirectory.path, 'custom_fonts')
+        ]);
+  }
+
+  FloatingLyricWindowRect? _floatingLyricWindowRect() {
+    final String raw = prefsRepo.floatingLyricWindowRect;
+    if (raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<Object?, Object?>) return null;
+      return FloatingLyricWindowRect.fromMap(decoded);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 用户拖动 / 拖角缩放后记住矩形。拖出来的宽度就是用户要的宽度，所以「宽度」
+  /// 偏好回到 0（= 不再强制改窗宽），否则下一次样式推送会把窗宽弹回旧值。
+  Future<void> _persistFloatingLyricWindowRect(
+      FloatingLyricWindowRect rect) async {
+    await prefsRepo.setFloatingLyricWindowRect(jsonEncode(rect.toMap()));
+    if (prefsRepo.floatingLyricWidth != 0) {
+      await prefsRepo.setFloatingLyricWidth(0);
+    }
   }
 
   /// 通知栏「悬浮字幕」custom action / 设置开关翻转悬浮窗（含偏好读写）。返回 false
@@ -9279,10 +9291,10 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricWidth(int value) =>
       prefsRepo.setFloatingLyricWidth(value);
 
-  // TODO-708 P4: 悬浮字幕上下文行数（对称单值，0=只当前行=今天）。
-  int get floatingLyricContextLines => prefsRepo.floatingLyricContextLines;
-  Future<void> setFloatingLyricContextLines(int value) =>
-      prefsRepo.setFloatingLyricContextLines(value);
+  // 悬浮字幕同时显示句数（1..15；0 = 按窗口高度自动）。
+  int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines;
+  Future<void> setFloatingLyricVisibleLines(int value) =>
+      prefsRepo.setFloatingLyricVisibleLines(value);
 
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(

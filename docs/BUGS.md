@@ -69,6 +69,13 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3371](bugs/BUG-3371-sync-compare-manga-zero-progress.md) | ✅ | ✅ | sync-compare-manga-zero-progress |
+> 共 3057 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3389](bugs/BUG-3389-floating-lyric-quick-font-size-resets-style.md) | ✅ | ✅ | 阅读器快捷设置改悬浮字幕字号会清空圆角与窗宽 |
+| [BUG-3388](bugs/BUG-3388-floating-lyric-context-outline-dim.md) | ✅ | ✅ | 悬浮字幕多句时上下文行描边被降亮字色覆盖 |
+| [BUG-3368](bugs/BUG-3368-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
 | [BUG-3369](bugs/BUG-3369-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |

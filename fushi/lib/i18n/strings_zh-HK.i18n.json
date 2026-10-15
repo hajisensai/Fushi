@@ -1267,8 +1267,6 @@
   "floating_lyric_click_lookup": "點按懸浮字幕即可查詞",
   "floating_lyric_click_lookup_hint": "鎖定懸浮字幕位置時若仍想查詞，請保持開啟。",
   "floating_lyric_close": "關閉",
-  "floating_lyric_context_lines": "懸浮字幕上下文行數",
-  "floating_lyric_context_lines_hint": "0 只顯示當前行(單行,與今天一致);設 1-3 在當前行上下各顯示這麼多行上下文",
   "floating_lyric_corner_radius": "懸浮字幕圓角",
   "floating_lyric_corner_radius_hint": "0 = 各平台預設圓角；調大讓字幕條與按鈕更圓",
   "floating_lyric_font_size": "懸浮字幕字號",
@@ -7487,5 +7485,18 @@
   "settings_module_nav_order": "Navigation bar order",
   "home_nav_bar_style": "Bottom bar style",
   "home_nav_bar_style_flat": "Flat",
-  "home_nav_bar_style_pager": "Paged swipe"
+  "home_nav_bar_style_pager": "Paged swipe",
+  "floating_lyric_visible_lines": "同時顯示句數",
+  "floating_lyric_visible_lines_hint": "目前句置中顯示，與歌詞模式一致。自動＝依視窗高度顯示，拉高懸浮窗即可看到更多句。",
+  "floating_lyric_visible_lines_auto": "自動",
+  "floating_lyric_current_line_color": "目前句顏色",
+  "floating_lyric_context_opacity": "其餘句不透明度",
+  "floating_lyric_context_opacity_hint": "同時顯示多句時，非目前句的淡化程度。",
+  "floating_lyric_font": "懸浮字幕字型",
+  "floating_lyric_font_hint": "從管理字型庫中選擇，依序使用第一個啟用的 TTF/OTF 字型。",
+  "floating_lyric_appearance_section": "懸浮字幕外觀與排版",
+  "font_target_floating_lyric": "懸浮字幕",
+  "font_target_floating_lyric_short": "懸浮字幕",
+  "floating_lyric_vertical": "Vertical text",
+  "floating_lyric_vertical_hint": "Lay the subtitle out top-to-bottom with lines flowing right-to-left, like vertical lyrics. Widen the window to see more sentences."
 }

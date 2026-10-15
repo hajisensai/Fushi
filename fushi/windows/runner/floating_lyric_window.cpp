@@ -92,6 +92,11 @@ constexpr float kRubyLineGapScale = 1.25f;
 // 悬停 / 拖动变化时重绘，代价可忽略。
 constexpr float kLyricShadowOffsetDip = 2.0f;
 constexpr uint32_t kLyricShadowColor = 0x59000000;   // 35% 黑投影
+// 投影只服务「透明底板上的桌面歌词」：底板不透明度达到这个 alpha 时（M3E 卡片
+// 默认 92%）投影只会在实底上叠一层灰色重影，让字发虚，所以不画。
+constexpr uint32_t kLyricShadowMaxBodyAlpha = 0x80;
+// 灰度抗锯齿下的增强对比度下限（DirectWrite 默认约 0.5）。
+constexpr float kTextEnhancedContrast = 1.0f;
 // Base logical font size the lyric text was authored at; the rendered font
 // scales with the bar height so growing the bar enlarges the text too.
 constexpr float kBaseStripHeightForFontDip = 96.0f;
@@ -276,12 +281,38 @@ bool FloatingLyricWindow::EnsureDeviceResources() {
       render_target_.Reset();
       return false;
     }
+    text_rendering_params_applied_ = false;
   }
-  return EnsureTextResources();
+  if (!EnsureTextResources()) {
+    return false;
+  }
+  // 字形清晰度：分层窗（逐像素 alpha）只能走灰度抗锯齿，系统默认渲染参数的
+  // 增强对比度偏低，CJK 笔画边缘在浅色底上显得发虚。按系统默认 gamma / 渲染
+  // 模式克隆一份，只把增强对比度抬到不低于 1.0、ClearType 级别归 0（灰度下
+  // 本就不用），让边缘更实。失败不影响绘制（沿用默认参数）。
+  if (!text_rendering_params_applied_) {
+    render_target_->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+    Microsoft::WRL::ComPtr<IDWriteRenderingParams> defaults;
+    if (SUCCEEDED(dwrite_factory_->CreateRenderingParams(
+            defaults.GetAddressOf())) &&
+        defaults != nullptr) {
+      Microsoft::WRL::ComPtr<IDWriteRenderingParams> crisp;
+      if (SUCCEEDED(dwrite_factory_->CreateCustomRenderingParams(
+              defaults->GetGamma(),
+              std::max(defaults->GetEnhancedContrast(), kTextEnhancedContrast),
+              0.0f, DWRITE_PIXEL_GEOMETRY_FLAT, defaults->GetRenderingMode(),
+              crisp.GetAddressOf()))) {
+        render_target_->SetTextRenderingParams(crisp.Get());
+      }
+    }
+    text_rendering_params_applied_ = true;
+  }
+  return true;
 }
 
 void FloatingLyricWindow::DiscardDeviceResources() {
   render_target_.Reset();
+  text_rendering_params_applied_ = false;
 }
 
 bool FloatingLyricWindow::EnsureTextResources() {
@@ -601,6 +632,7 @@ void FloatingLyricWindow::UpdateText(const std::wstring& text,
   context_id_ = context_id;
   current_line_start_ = current_line_start;
   current_line_length_ = current_line_length;
+  follow_current_line_ = current_line_start >= 0 && current_line_length > 0;
   highlight_start_ = -1;
   highlight_length_ = 0;
   text_layout_.Reset();
@@ -822,7 +854,12 @@ FloatingLyricWindow::ScrollBarGeometry FloatingLyricWindow::ComputeScrollBar()
   // metrics.height，从而改变可滚行程，形成回环。轨道底端让开右下角 resize grip，
   // 免得两个可拖拽的东西叠在同一块像素上。
   ScrollBarGeometry g;
-  g.visible = hook_text_mode_ && scroll_max_px_ > 0.0f;
+  // 竖排不画滚动条：竖排的滚动轴是 x，这里的轨道 / thumb / 命中带 / 拖拽换算
+  // 全是按 y 推导的；底部可用的留白只有 pad*0.5，右下角还压着 resize grip，硬塞
+  // 一条横向滚动条要么遮字、要么和 grip 抢像素。竖排下滚轮照样滚、当前句照样
+  // 被跟随到视口中线，所以不画滚动条不丢功能；visible=false 同时保证
+  // ScrollBarContains 恒 false、BeginScrollThumbDrag 永远进不去。
+  g.visible = hook_text_mode_ && scroll_max_px_ > 0.0f && !vertical_active_;
   if (!g.visible) {
     return g;
   }
@@ -859,6 +896,16 @@ FloatingLyricWindow::ScrollBarGeometry FloatingLyricWindow::ComputeScrollBar()
   return g;
 }
 
+float FloatingLyricWindow::TextOriginX() const {
+  return vertical_active_
+             ? text_rect_.left + vertical_flow_shift_px_ + scroll_offset_px_
+             : text_rect_.left;
+}
+
+float FloatingLyricWindow::TextOriginY() const {
+  return vertical_active_ ? text_rect_.top : text_rect_.top - scroll_offset_px_;
+}
+
 bool FloatingLyricWindow::ScrollBarContains(float x, float y) const {
   const ScrollBarGeometry g = ComputeScrollBar();
   return g.visible && x >= g.hit_left && x <= g.hit_right && y >= g.track_top &&
@@ -881,6 +928,7 @@ bool FloatingLyricWindow::BeginScrollThumbDrag(float y) {
     SetScrollOffset((y - g.track_top - g.thumb_h * 0.5f) / travel *
                     scroll_max_px_);
   }
+  follow_current_line_ = false;
   scroll_thumb_dragging_ = true;
   scroll_drag_origin_y_ = y;
   scroll_drag_start_offset_ = scroll_offset_px_;
@@ -1602,7 +1650,11 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
       if (delta != 0) {
         const float step = ScaleForDpi(kScrollWheelStepDip) *
                            (-static_cast<float>(delta) / WHEEL_DELTA);
+        // 竖排时 scroll_offset_px_ 作用在 x 上：向下滚（step > 0）= 偏移增大 =
+        // 内容右移、往左看后文，与横排「向下滚看后文」同一个阅读方向。
         if (ScrollBy(step)) {
+          // 用户手动翻看上下文：停止跟随当前句，直到下一句到来。
+          follow_current_line_ = false;
           return 0;
         }
       }
@@ -1748,7 +1800,7 @@ void FloatingLyricWindow::Render() {
   const float ruby_font_px =
       static_cast<float>(ScaleForDpi(scaled_font * kRubyFontScale));
   const float ruby_gap_px = ruby_font_px * kRubyLineGapScale;
-  const bool has_ruby = !ruby_spans_.empty();
+  // has_ruby 在下面建好 text_format_（确定是否竖排）之后才定。
 
   // 桌面歌词字重：hook 模式半粗（描边字太细会被描边吃掉笔画）；歌词条 / 剪贴板
   // 窗保持 NORMAL，逐像素不变。
@@ -1799,20 +1851,53 @@ void FloatingLyricWindow::Render() {
           hook_text_mode_ ? DWRITE_WORD_WRAPPING_WRAP
                           : DWRITE_WORD_WRAPPING_NO_WRAP);
     }
+    // 竖排（仅 hook 模式）：字从上往下（reading TOP_TO_BOTTOM）、行从右往左
+    // （flow RIGHT_TO_LEFT）。DirectWrite 在 TOP_TO_BOTTOM 阅读方向下自动对 CJK
+    // 走竖排字形（OpenType vert / vrt2：「」、。ー 等换成竖排字形），拉丁字母按默认
+    // glyph orientation 横躺，不需要我们挂任何字体特性。
+    //
+    // 对齐语义随轴旋转、由 DirectWrite 自己映射，上面两行 Set*Alignment 不用改：
+    //  * TextAlignment 作用在阅读方向（纵向）：CENTER = 列内纵向居中，LEADING =
+    //    顶端——即用户「居中 / 前端」偏好在竖排下的自然含义；
+    //  * ParagraphAlignment 作用在行进方向（横向）：每帧在下面的排版分支里按
+    //    「放得下整块水平居中、溢出则 NEAR（第一行贴右）」重设。
+    //
+    // 任一步失败都回退横排（把两个方向恢复成默认值），vertical_active_ 保持
+    // false；建 layout 时若因方向冲突失败，下面还有第二道回退。
+    vertical_active_ = false;
+    if (text_format_ != nullptr && hook_text_mode_ && style_.vertical_text) {
+      if (SUCCEEDED(text_format_->SetReadingDirection(
+              DWRITE_READING_DIRECTION_TOP_TO_BOTTOM)) &&
+          SUCCEEDED(text_format_->SetFlowDirection(
+              DWRITE_FLOW_DIRECTION_RIGHT_TO_LEFT))) {
+        vertical_active_ = true;
+      } else {
+        text_format_->SetReadingDirection(DWRITE_READING_DIRECTION_LEFT_TO_RIGHT);
+        text_format_->SetFlowDirection(DWRITE_FLOW_DIRECTION_TOP_TO_BOTTOM);
+      }
+    }
     text_layout_.Reset();
   }
+  // 竖排下不画注音（有声书路径本来就不传 rubySpans）：注音几何（行盒顶部那条
+  // 加高留白、DrawText 横排小字）全是按横排推导的，竖排要的是「列右侧的竖排
+  // 小字」，硬套只会把读音画到相邻列上。has_ruby 一并为 false，所以下面的行距
+  // 加高也不会为注音多留一条横向空隙，竖排列距只受 line_height 偏好控制。
+  // （非 const：建 layout 时竖排若回退横排，下面会按横排重算一次。）
+  bool has_ruby = !ruby_spans_.empty() && !vertical_active_;
 
   // 振假名的小号 format：居中 + 不换行。注音比基准字窄时居中压在基准上方；比
   // 基准宽时向两侧对称溢出（DrawText 不带 CLIP 选项不会自己裁，外层已经用
   // PushAxisAlignedClip 把一切文字绘制框在 text_rect_ 里，绝不会画到控件带上）。
-  if (has_ruby && ruby_format_ == nullptr) {
+  auto ensure_ruby_format = [&]() {
+    if (!has_ruby || ruby_format_ != nullptr) return;
     create_text_format(ruby_font_px, ruby_format_.GetAddressOf());
     if (ruby_format_ != nullptr) {
       ruby_format_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
       ruby_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
       ruby_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
     }
-  }
+  };
+  ensure_ruby_format();
 
   const float text_padding_dip =
       hook_text_mode_
@@ -1836,14 +1921,28 @@ void FloatingLyricWindow::Render() {
   // 在下面的排版分支里重新量出来。没有文本 = 没有行程（分支根本不执行）；非 hook
   // 模式也永远停在 0，歌词条 / 剪贴板窗因此完全不受滚动这套东西影响。
   scroll_max_px_ = 0.0f;
+  vertical_flow_shift_px_ = 0.0f;
 
   if (text_format_ != nullptr && !text_.empty()) {
     if (text_layout_ == nullptr) {
-      dwrite_factory_->CreateTextLayout(text_.c_str(),
-                                        static_cast<UINT32>(text_.size()),
-                                        text_format_.Get(), text_rect_.width,
-                                        text_rect_.height,
-                                        text_layout_.GetAddressOf());
+      HRESULT layout_hr = dwrite_factory_->CreateTextLayout(
+          text_.c_str(), static_cast<UINT32>(text_.size()), text_format_.Get(),
+          text_rect_.width, text_rect_.height, text_layout_.GetAddressOf());
+      // 竖排的第二道回退：读/行方向组合在部分系统上要到建 layout 时才校验
+      // （DWRITE_E_FLOWDIRECTIONCONFLICTS 等）。失败就把 format 恢复横排再建一次，
+      // 竖排失败绝不让整条字幕消失。横排路径不进这个分支。
+      if (FAILED(layout_hr) && vertical_active_) {
+        text_layout_.Reset();
+        text_format_->SetReadingDirection(DWRITE_READING_DIRECTION_LEFT_TO_RIGHT);
+        text_format_->SetFlowDirection(DWRITE_FLOW_DIRECTION_TOP_TO_BOTTOM);
+        vertical_active_ = false;
+        has_ruby = !ruby_spans_.empty();
+        ensure_ruby_format();
+        dwrite_factory_->CreateTextLayout(
+            text_.c_str(), static_cast<UINT32>(text_.size()),
+            text_format_.Get(), text_rect_.width, text_rect_.height,
+            text_layout_.GetAddressOf());
+      }
       if (hook_text_mode_ && text_layout_ != nullptr &&
           std::abs(style_.letter_spacing) > 0.001) {
         Microsoft::WRL::ComPtr<IDWriteTextLayout1> layout1;
@@ -1893,7 +1992,68 @@ void FloatingLyricWindow::Render() {
       // only the tail is lost; a caption that fits stays centred (unchanged
       // pixels). Scoped to hook mode: the audiobook lyric strip wants its
       // current line near the middle, so its centring is left alone.
-      if (hook_text_mode_) {
+      if (hook_text_mode_ && vertical_active_) {
+        // 竖排：同一套「溢出即贴开头 + 溢出量即行程」模型旋转 90°。
+        //  * 行进方向是从右往左，ParagraphAlignment 管的是行块的**横向**位置：
+        //    放得下整块水平居中；溢出则 NEAR（RTL flow 下 = 第一行贴右沿），保证
+        //    阅读顺序上的开头可见、被裁的是句尾。vertical_alignment 偏好在竖排下
+        //    不参与——竖排的「顶端 / 居中」由 text_alignment（阅读方向）承担。
+        //  * 行程是横向溢出量；滚动 = 绘制原点右移 scroll_offset_px_（见
+        //    TextOriginX），裁剪框不动，左边被裁掉的后文从左侧走进来。
+        DWRITE_TEXT_METRICS metrics = {};
+        if (SUCCEEDED(text_layout_->GetMetrics(&metrics))) {
+          const bool overflow = metrics.width > text_rect_.width;
+          text_layout_->SetParagraphAlignment(
+              overflow ? DWRITE_PARAGRAPH_ALIGNMENT_NEAR
+                       : DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+          scroll_max_px_ = std::max(0.0f, metrics.width - text_rect_.width);
+          if (scroll_max_px_ > 0.0f) {
+            // 对齐改了，metrics.left 随之改变：重新量一次，再把排版块右沿对齐到
+            // 视口右沿（NEAR + RTL 本来就该贴右，这一项通常为 0；显式算出来是为了
+            // 不把滚动模型押在 DirectWrite 溢出时的摆放细节上）。
+            DWRITE_TEXT_METRICS aligned = {};
+            if (SUCCEEDED(text_layout_->GetMetrics(&aligned))) {
+              vertical_flow_shift_px_ =
+                  text_rect_.width - (aligned.left + aligned.width);
+            }
+          }
+          // 跟随当前句：当前句行盒（竖排下是若干列）的水平中线对准视口中线。
+          if (follow_current_line_ && scroll_max_px_ > 0.0f &&
+              current_line_start_ >= 0 && current_line_length_ > 0) {
+            const int len = static_cast<int>(text_.size());
+            const int cur_start = std::clamp(current_line_start_, 0, len);
+            const int cur_end = std::clamp(
+                current_line_start_ + current_line_length_, cur_start, len);
+            UINT32 cur_hits = 0;
+            text_layout_->HitTestTextRange(
+                static_cast<UINT32>(cur_start),
+                static_cast<UINT32>(cur_end - cur_start), 0, 0, nullptr, 0,
+                &cur_hits);
+            if (cur_hits > 0) {
+              std::vector<DWRITE_HIT_TEST_METRICS> cur_metrics(cur_hits);
+              if (SUCCEEDED(text_layout_->HitTestTextRange(
+                      static_cast<UINT32>(cur_start),
+                      static_cast<UINT32>(cur_end - cur_start), 0, 0,
+                      cur_metrics.data(), cur_hits, &cur_hits)) &&
+                  cur_hits > 0) {
+                float cur_left = FLT_MAX;
+                float cur_right = -FLT_MAX;
+                for (const auto& m : cur_metrics) {
+                  cur_left = std::min(cur_left, m.left);
+                  cur_right = std::max(cur_right, m.left + m.width);
+                }
+                if (cur_right > cur_left) {
+                  // 视口里的 x = shift + offset + layout_x；令行盒中线落在
+                  // text_rect_.width / 2 解出 offset。
+                  scroll_offset_px_ = text_rect_.width * 0.5f -
+                                      vertical_flow_shift_px_ -
+                                      (cur_left + cur_right) * 0.5f;
+                }
+              }
+            }
+          }
+        }
+      } else if (hook_text_mode_) {
         DWRITE_TEXT_METRICS metrics = {};
         if (SUCCEEDED(text_layout_->GetMetrics(&metrics))) {
           // BUG-1890：用户选「顶部对齐」时恒 NEAR；没选则维持 BUG-1095 的原判据
@@ -1912,12 +2072,47 @@ void FloatingLyricWindow::Render() {
           // 一动不动 —— 视口下移，被裁掉的句尾从下面走进来。这是分层窗里唯一
           // 不需要第二个渲染目标就能做出来的滚动。
           scroll_max_px_ = std::max(0.0f, metrics.height - text_rect_.height);
+          // 多行上下文跟随：当前句的行盒中线对准视口中线（与歌词模式同观感）。
+          // 只有溢出时才有行程可调；放得下时整块照旧居中，不需要滚。
+          if (follow_current_line_ && scroll_max_px_ > 0.0f &&
+              current_line_start_ >= 0 && current_line_length_ > 0) {
+            const int len = static_cast<int>(text_.size());
+            const int cur_start = std::clamp(current_line_start_, 0, len);
+            const int cur_end = std::clamp(
+                current_line_start_ + current_line_length_, cur_start, len);
+            UINT32 cur_hits = 0;
+            text_layout_->HitTestTextRange(
+                static_cast<UINT32>(cur_start),
+                static_cast<UINT32>(cur_end - cur_start), 0, 0, nullptr, 0,
+                &cur_hits);
+            if (cur_hits > 0) {
+              std::vector<DWRITE_HIT_TEST_METRICS> cur_metrics(cur_hits);
+              if (SUCCEEDED(text_layout_->HitTestTextRange(
+                      static_cast<UINT32>(cur_start),
+                      static_cast<UINT32>(cur_end - cur_start), 0, 0,
+                      cur_metrics.data(), cur_hits, &cur_hits)) &&
+                  cur_hits > 0) {
+                float cur_top = FLT_MAX;
+                float cur_bottom = -FLT_MAX;
+                for (const auto& m : cur_metrics) {
+                  cur_top = std::min(cur_top, m.top);
+                  cur_bottom = std::max(cur_bottom, m.top + m.height);
+                }
+                if (cur_bottom > cur_top) {
+                  scroll_offset_px_ = (cur_top + cur_bottom) * 0.5f -
+                                      text_rect_.height * 0.5f;
+                }
+              }
+            }
+          }
         }
       }
       scroll_offset_px_ = std::clamp(scroll_offset_px_, 0.0f, scroll_max_px_);
       // 没有溢出时 scroll_offset_px_ 恒为 0，text_origin_y == text_rect_.top，
-      // 与滚动引入之前逐像素一致。
-      const float text_origin_y = text_rect_.top - scroll_offset_px_;
+      // 与滚动引入之前逐像素一致。竖排时滚动作用在 x 上、y 恒为 text_rect_.top；
+      // 横排时 text_origin_x 恒为 text_rect_.left（见 TextOriginX / TextOriginY）。
+      const float text_origin_x = TextOriginX();
+      const float text_origin_y = TextOriginY();
       // BUG-1070: the lyric / hook-text body is vertically centred
       // (DWRITE_PARAGRAPH_ALIGNMENT_CENTER) inside a layout box whose top edge
       // is text_rect_.top == controls_h, i.e. just below the hover control band
@@ -1987,6 +2182,24 @@ void FloatingLyricWindow::Render() {
               float max_right = -FLT_MAX;
               float max_bottom = -FLT_MAX;
               for (const auto& m : line_metrics) {
+                if (vertical_active_) {
+                  // 竖排是同一判据转 90°：行（列）的「厚度」在 x 上，空列是
+                  // height == 0 而 width > 0。空列参与**横向**并集（竖排的漏点带
+                  // 是一条竖条），纵向由有字的列决定。
+                  if (m.width <= 0.0f) {
+                    continue;
+                  }
+                  min_left = std::min(min_left, text_origin_x + m.left);
+                  max_right =
+                      std::max(max_right, text_origin_x + m.left + m.width);
+                  if (m.height <= 0.0f) {
+                    continue;
+                  }
+                  min_top = std::min(min_top, text_origin_y + m.top);
+                  max_bottom =
+                      std::max(max_bottom, text_origin_y + m.top + m.height);
+                  continue;
+                }
                 if (m.height <= 0.0f) {
                   continue;  // 退化行：没有垂直范围可并，跳过。
                 }
@@ -1998,9 +2211,9 @@ void FloatingLyricWindow::Render() {
                 if (m.width <= 0.0f) {
                   continue;
                 }
-                min_left = std::min(min_left, text_rect_.left + m.left);
+                min_left = std::min(min_left, text_origin_x + m.left);
                 max_right =
-                    std::max(max_right, text_rect_.left + m.left + m.width);
+                    std::max(max_right, text_origin_x + m.left + m.width);
               }
               if (max_right > min_left && max_bottom > min_top) {
                 render_target_->FillRectangle(
@@ -2028,8 +2241,8 @@ void FloatingLyricWindow::Render() {
               ColorFromArgb(style_.highlight_color), hl.GetAddressOf());
           for (const auto& m : metrics) {
             D2D1_ROUNDED_RECT hr = D2D1::RoundedRect(
-                D2D1::RectF(text_rect_.left + m.left, text_origin_y + m.top,
-                            text_rect_.left + m.left + m.width,
+                D2D1::RectF(text_origin_x + m.left, text_origin_y + m.top,
+                            text_origin_x + m.left + m.width,
                             text_origin_y + m.top + m.height),
                 ScaleForDpi(4), ScaleForDpi(4));
             render_target_->FillRoundedRectangle(hr, hl.Get());
@@ -2037,42 +2250,66 @@ void FloatingLyricWindow::Render() {
         }
       }
       brush->SetColor(ColorFromArgb(style_.text_color));
-      // TODO-708 P4: 多行上下文——当前行满 text_color，其余行降 alpha(~55%)。用
-      // per-range SetDrawingEffect 挂 dim 画刷（D2D DrawTextLayout 会以此覆盖该 range
-      // 的前景色）。current_line_start_<0（N=0 单行/无标记）时不设 dim，整块满色 =
-      // 今天观感（never-break userspace）。与 word 级 highlight 背景框正交。
+      // TODO-708 P4: 多行上下文——当前行满 text_color（或 current_line_color），
+      // 其余行降到 context_line_opacity。用 per-range SetDrawingEffect 挂画刷（D2D
+      // DrawTextLayout 会以此覆盖该 range 的前景色）。current_line_start_<0（单行 /
+      // 无标记）时不设任何效果，整块满色 = 历史观感。与 word 级 highlight 背景框正交。
+      //
+      // 效果**只在填充遍挂上**：drawing effect 会盖掉 DrawTextLayout 传入的画刷，
+      // 若在描边 / 投影遍之前就挂着，上下文行的描边会被画成降亮的字色、糊成一团。
+      // 所以先把 layout 上残留的效果整体清空（layout 跨帧复用），描边遍画完再挂。
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dim_brush;
+      Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> current_brush;
       const int text_len = static_cast<int>(text_.size());
-      if (current_line_start_ >= 0 && current_line_length_ > 0 &&
-          text_len > 0) {
+      const bool has_current_line =
+          current_line_start_ >= 0 && current_line_length_ > 0 && text_len > 0;
+      if (text_len > 0) {
+        text_layout_->SetDrawingEffect(
+            nullptr, DWRITE_TEXT_RANGE{0, static_cast<UINT32>(text_len)});
+      }
+      if (has_current_line) {
         const uint32_t base = style_.text_color;
         const uint32_t base_alpha = (base >> 24) & 0xFF;
+        const float dim_factor = static_cast<float>(
+            std::clamp(style_.context_line_opacity, 0.0, 1.0));
         const uint32_t dim_alpha =
-            static_cast<uint32_t>(base_alpha * 0.55f) & 0xFF;
+            static_cast<uint32_t>(base_alpha * dim_factor) & 0xFF;
         const uint32_t dim_argb = (dim_alpha << 24) | (base & 0x00FFFFFF);
         render_target_->CreateSolidColorBrush(ColorFromArgb(dim_argb),
                                               dim_brush.GetAddressOf());
-        if (dim_brush != nullptr) {
-          const int cur_start =
-              std::clamp(current_line_start_, 0, text_len);
-          const int cur_end = std::clamp(
-              current_line_start_ + current_line_length_, cur_start, text_len);
-          if (cur_start > 0) {
-            DWRITE_TEXT_RANGE pre = {0, static_cast<UINT32>(cur_start)};
-            text_layout_->SetDrawingEffect(dim_brush.Get(), pre);
-          }
-          if (cur_end < text_len) {
-            DWRITE_TEXT_RANGE post = {
-                static_cast<UINT32>(cur_end),
-                static_cast<UINT32>(text_len - cur_end)};
-            text_layout_->SetDrawingEffect(dim_brush.Get(), post);
-          }
+        if ((style_.current_line_color >> 24) != 0) {
+          render_target_->CreateSolidColorBrush(
+              ColorFromArgb(style_.current_line_color),
+              current_brush.GetAddressOf());
         }
       }
+      auto apply_line_effects = [&]() {
+        if (!has_current_line || dim_brush == nullptr) return;
+        const int cur_start = std::clamp(current_line_start_, 0, text_len);
+        const int cur_end = std::clamp(
+            current_line_start_ + current_line_length_, cur_start, text_len);
+        if (cur_start > 0) {
+          text_layout_->SetDrawingEffect(
+              dim_brush.Get(),
+              DWRITE_TEXT_RANGE{0, static_cast<UINT32>(cur_start)});
+        }
+        if (cur_end < text_len) {
+          text_layout_->SetDrawingEffect(
+              dim_brush.Get(),
+              DWRITE_TEXT_RANGE{static_cast<UINT32>(cur_end),
+                                static_cast<UINT32>(text_len - cur_end)});
+        }
+        if (current_brush != nullptr && cur_end > cur_start) {
+          text_layout_->SetDrawingEffect(
+              current_brush.Get(),
+              DWRITE_TEXT_RANGE{static_cast<UINT32>(cur_start),
+                                static_cast<UINT32>(cur_end - cur_start)});
+        }
+      };
       // 桌面歌词式描边（仅 hook 模式）：同一 text_layout_ 先按 8 向偏移画描边、
       // 再画投影，最后回到原点画填充。所有遍都在上面的 text_clip 之内。
-      // hook 的 UpdateText 恒传 current_line_start=-1，不存在 per-range dim
-      // drawing effect，因此描边遍不会被 SetDrawingEffect 换色。
+      // 多行上下文的 per-range 画刷由 apply_line_effects 在填充遍前才挂，描边 /
+      // 投影遍画的是清空了效果的 layout，所以不会被换色。
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_outline;
       Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> lyric_shadow;
       // BUG-1889 — 描边遍改成「图层内不透明叠印 + 整体一次合成」。
@@ -2107,11 +2344,19 @@ void FloatingLyricWindow::Render() {
       }
       if (hook_text_mode_ && lyric_outline != nullptr &&
           lyric_shadow != nullptr) {
-        const float shadow_off = ScaleForDpi(kLyricShadowOffsetDip);
-        render_target_->DrawTextLayout(
-            D2D1::Point2F(text_rect_.left + shadow_off * 0.5f,
-                          text_origin_y + shadow_off),
-            text_layout_.Get(), lyric_shadow.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+        // 投影偏移取整到物理像素（与下面描边同理，BUG-1889）：亚像素偏移会被
+        // 灰度 AA 抹成一片灰雾贴在字的右下沿。实底板上整个不画（见
+        // kLyricShadowMaxBodyAlpha）。
+        if (((body_bg >> 24) & 0xFF) < kLyricShadowMaxBodyAlpha) {
+          const float shadow_off =
+              std::max(1.0f, std::round(ScaleForDpi(kLyricShadowOffsetDip)));
+          const float shadow_dx = std::max(1.0f, std::round(shadow_off * 0.5f));
+          render_target_->DrawTextLayout(
+              D2D1::Point2F(text_origin_x + shadow_dx,
+                            text_origin_y + shadow_off),
+              text_layout_.Get(), lyric_shadow.Get(),
+              D2D1_DRAW_TEXT_OPTIONS_NONE);
+        }
         // BUG-1889 — 偏移必须取整到物理像素。ScaleForDpi 不取整：r = 1.6dip 在
         // 150% DPI 下是 2.4px，d = r*0.7071 = 1.697px，于是每一遍字形都落在**不同
         // 的亚像素相位**上栅格化，灰度 AA 的边缘覆盖率各不相同，叠起来就是摩尔纹
@@ -2137,15 +2382,16 @@ void FloatingLyricWindow::Render() {
           }
           for (const D2D1_POINT_2F& off : ring) {
             render_target_->DrawTextLayout(
-                D2D1::Point2F(text_rect_.left + off.x, text_origin_y + off.y),
+                D2D1::Point2F(text_origin_x + off.x, text_origin_y + off.y),
                 text_layout_.Get(), lyric_outline.Get(),
                 D2D1_DRAW_TEXT_OPTIONS_NONE);
           }
           if (outline_layer != nullptr) render_target_->PopLayer();
         }
       }
+      apply_line_effects();
       render_target_->DrawTextLayout(
-          D2D1::Point2F(text_rect_.left, text_origin_y), text_layout_.Get(),
+          D2D1::Point2F(text_origin_x, text_origin_y), text_layout_.Get(),
           brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
 
       // 振假名：画在基准字所在行盒的顶部那条留白里（行距已在建 layout 时加高）。
@@ -2174,8 +2420,8 @@ void FloatingLyricWindow::Render() {
           }
           const DWRITE_HIT_TEST_METRICS& box = boxes[0];
           const D2D1_RECT_F ruby_rect = D2D1::RectF(
-              text_rect_.left + box.left, text_origin_y + box.top,
-              text_rect_.left + box.left + box.width,
+              text_origin_x + box.left, text_origin_y + box.top,
+              text_origin_x + box.left + box.width,
               text_origin_y + box.top + ruby_gap_px);
           // 注音的桌面歌词描边：字小，半径收到 0.75 倍、不画投影。
           if (hook_text_mode_ && lyric_outline != nullptr) {
@@ -2708,6 +2954,28 @@ int FloatingLyricWindow::CharIndexAt(float x, float y,
   if (local_x < 0 || local_x > text_rect_.width || viewport_y < 0 ||
       viewport_y > text_rect_.height) {
     return -1;
+  }
+  if (vertical_active_) {
+    // 竖排：视口边界判据同上，坐标换算走与 Render 同一个绘制原点（滚动在 x 上）。
+    // 横排路径不进这里，下面的换算一字不动。
+    const float origin_x = TextOriginX();
+    const float origin_y = TextOriginY();
+    BOOL v_trailing = FALSE;
+    BOOL v_inside = FALSE;
+    DWRITE_HIT_TEST_METRICS v_metrics = {};
+    if (FAILED(text_layout_->HitTestPoint(x - origin_x, y - origin_y,
+                                          &v_trailing, &v_inside,
+                                          &v_metrics)) ||
+        !v_inside) {
+      return -1;
+    }
+    if (out_char_rect != nullptr) {
+      out_char_rect->left = origin_x + v_metrics.left;
+      out_char_rect->top = origin_y + v_metrics.top;
+      out_char_rect->right = out_char_rect->left + v_metrics.width;
+      out_char_rect->bottom = out_char_rect->top + v_metrics.height;
+    }
+    return static_cast<int>(v_metrics.textPosition);
   }
   const float local_y = viewport_y + scroll_offset_px_;
   BOOL is_trailing = FALSE;

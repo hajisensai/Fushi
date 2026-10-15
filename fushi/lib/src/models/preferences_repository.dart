@@ -156,6 +156,32 @@ const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 /// 平板上调大的值随备份到手机 / 电脑只会不合身。
 const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
 
+/// Windows 悬浮字幕窗口矩形（本机**物理像素**坐标 JSON）。设备本地（见
+/// `SyncRepository.deviceLocalPrefKeys`）：坐标只对这台机器的显示器布局 / DPI
+/// 有意义，随备份 / 同步 / Profile 带到别的设备会把窗口放到屏幕外或尺寸错位。
+const String kFloatingLyricWindowRectPrefKey = 'floating_lyric_window_rect';
+
+/// 悬浮字幕可自选的四种颜色。键缺省 / 偏好值
+/// [PreferencesRepository.floatingLyricColorFollowTheme]（-1）= 跟随主题（见
+/// `floating_lyric_style.dart`）；0 是合法的完全透明黑。
+enum FloatingLyricColorRole {
+  /// 底板。
+  background('floating_lyric_color_background'),
+
+  /// 非当前句（及单行时整行）的字色。
+  text('floating_lyric_color_text'),
+
+  /// 多行时当前句的字色。
+  current('floating_lyric_color_current'),
+
+  /// 描边色（描边宽 > 0 时才可见）。
+  outline('floating_lyric_color_outline');
+
+  const FloatingLyricColorRole(this.prefKey);
+
+  final String prefKey;
+}
+
 class PreferencesRepository extends ChangeNotifier
     implements PrefStore, AiSettingsSource {
   PreferencesRepository(this._db);
@@ -3736,10 +3762,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（逻辑 dp）。0 = 平台原生默认观感
-  // （Android 直角矩形背景 / Windows 14dp 圆角），确保默认不改动时视觉与历史一致；>0
-  // 时两端都按该 dp 值渲染背景与按钮圆角。上界 48 足够覆盖胶囊化诉求。
-  static const int floatingLyricCornerRadiusDefault = 0;
+  // TODO-708 P2: 悬浮字幕/歌词条「圆角半径」自定义（逻辑 dp）。0 = 直角；两端都按该
+  // dp 值渲染背景与按钮圆角。上界 48 足够覆盖胶囊化诉求。默认 24 = M3E 大号容器圆角
+  // （用户 2026-10-14：默认样式改 M3E）。
+  static const int floatingLyricCornerRadiusDefault = 24;
   static const int floatingLyricCornerRadiusMax = 48;
 
   static int normalizeFloatingLyricCornerRadius(num value) =>
@@ -3813,6 +3839,179 @@ class PreferencesRepository extends ChangeNotifier
       normalizeFloatingLyricContextLines(value),
     );
     notifyListeners();
+  }
+
+  // 悬浮字幕「同时显示句数」（取代上面的对称上下文 N）。1..15 = 固定显示这么多句，
+  // 当前句居中（偶数时下文多一句，与歌词模式「往下看」的阅读方向一致）；0 = 自动：
+  // 前后各送 12 句（`floatingLyricVisibleSpan`），原生窗把当前句滚到视口中央、超出
+  // 窗高的裁掉——拖高窗口就看到更多句（Windows）。新键没写过、旧 N 键写过（含旧
+  // 默认 / 显式 0）时一律按 2N+1 换算（0 → 1 句），老用户观感不变；只有两个键都
+  // 没写过的新用户才用默认 3 句。注意旧 0 必须换成 1 而不是落到新默认 3：旧版
+  // 默认就是 0，绝大多数老用户的旧键都是 0。
+  static const int floatingLyricVisibleLinesAuto = 0;
+  static const int floatingLyricVisibleLinesDefault = 3;
+  static const int floatingLyricVisibleLinesMax = 15;
+
+  static int normalizeFloatingLyricVisibleLines(num value) =>
+      value.round().clamp(0, floatingLyricVisibleLinesMax).toInt();
+
+  int get floatingLyricVisibleLines {
+    final Object? stored = getPref('floating_lyric_visible_lines');
+    if (stored is num) return normalizeFloatingLyricVisibleLines(stored);
+    final Object? legacy = getPref('floating_lyric_context_lines');
+    if (legacy is num) {
+      return normalizeFloatingLyricVisibleLines(
+          normalizeFloatingLyricContextLines(legacy) * 2 + 1);
+    }
+    return floatingLyricVisibleLinesDefault;
+  }
+
+  Future<void> setFloatingLyricVisibleLines(int value) async {
+    await setPref('floating_lyric_visible_lines',
+        normalizeFloatingLyricVisibleLines(value));
+    notifyListeners();
+  }
+
+  // 悬浮字幕排版（Windows 原生窗 DirectWrite；Android TextView 只吃其中能表达的
+  // 几项）。字段与 galgame hook 台词浮窗同一套原生 Style，取值区间也与之对齐。
+  static const double floatingLyricLineHeightDefault = 1.25;
+  static const double floatingLyricLineHeightMin = 0.8;
+  static const double floatingLyricLineHeightMax = 2.0;
+  static const double floatingLyricLetterSpacingMin = -2.0;
+  static const double floatingLyricLetterSpacingMax = 12.0;
+  static const double floatingLyricOutlineWidthMax = 6.0;
+  static const int floatingLyricTextPaddingDefault = 16;
+  static const int floatingLyricTextPaddingMax = 60;
+  static const int floatingLyricContextOpacityDefault = 55;
+
+  /// 竖排（Windows 原生窗：字从上往下、行从右往左，与竖排歌词同向）。默认横排。
+  bool get floatingLyricVertical {
+    final Object? stored = getPref('floating_lyric_vertical');
+    return stored is bool && stored;
+  }
+
+  Future<void> setFloatingLyricVertical(bool value) async {
+    await setPref('floating_lyric_vertical', value);
+    notifyListeners();
+  }
+
+  bool get floatingLyricBold {
+    final Object? stored = getPref('floating_lyric_bold');
+    return stored is bool ? stored : true;
+  }
+
+  Future<void> setFloatingLyricBold(bool value) async {
+    await setPref('floating_lyric_bold', value);
+    notifyListeners();
+  }
+
+  double get floatingLyricLineHeight {
+    final Object? stored = getPref('floating_lyric_line_height');
+    final double value =
+        stored is num ? stored.toDouble() : floatingLyricLineHeightDefault;
+    return value.clamp(floatingLyricLineHeightMin, floatingLyricLineHeightMax);
+  }
+
+  Future<void> setFloatingLyricLineHeight(double value) async {
+    await setPref('floating_lyric_line_height',
+        value.clamp(floatingLyricLineHeightMin, floatingLyricLineHeightMax));
+    notifyListeners();
+  }
+
+  double get floatingLyricLetterSpacing {
+    final Object? stored = getPref('floating_lyric_letter_spacing');
+    final double value = stored is num ? stored.toDouble() : 0.0;
+    return value.clamp(
+        floatingLyricLetterSpacingMin, floatingLyricLetterSpacingMax);
+  }
+
+  Future<void> setFloatingLyricLetterSpacing(double value) async {
+    await setPref(
+        'floating_lyric_letter_spacing',
+        value.clamp(
+            floatingLyricLetterSpacingMin, floatingLyricLetterSpacingMax));
+    notifyListeners();
+  }
+
+  /// 描边宽（逻辑 px）。默认 0：M3E 卡片底上的字不需要描边；底板调透明后
+  /// 想要桌面歌词式描边再打开。
+  double get floatingLyricOutlineWidth {
+    final Object? stored = getPref('floating_lyric_outline_width');
+    final double value = stored is num ? stored.toDouble() : 0.0;
+    return value.clamp(0.0, floatingLyricOutlineWidthMax);
+  }
+
+  Future<void> setFloatingLyricOutlineWidth(double value) async {
+    await setPref('floating_lyric_outline_width',
+        value.clamp(0.0, floatingLyricOutlineWidthMax));
+    notifyListeners();
+  }
+
+  /// 水平对齐：0 = 居中（默认），1 = 左对齐。
+  int get floatingLyricTextAlignment {
+    final Object? stored = getPref('floating_lyric_text_alignment');
+    return stored is num && stored.round() == 1 ? 1 : 0;
+  }
+
+  Future<void> setFloatingLyricTextAlignment(int value) async {
+    await setPref('floating_lyric_text_alignment', value == 1 ? 1 : 0);
+    notifyListeners();
+  }
+
+  int get floatingLyricTextPadding {
+    final Object? stored = getPref('floating_lyric_text_padding');
+    final int value =
+        stored is num ? stored.round() : floatingLyricTextPaddingDefault;
+    return value.clamp(0, floatingLyricTextPaddingMax);
+  }
+
+  Future<void> setFloatingLyricTextPadding(int value) async {
+    await setPref('floating_lyric_text_padding',
+        value.clamp(0, floatingLyricTextPaddingMax));
+    notifyListeners();
+  }
+
+  /// 多行时非当前句的不透明度（0..100，相对文字色）。
+  int get floatingLyricContextOpacity {
+    final Object? stored = getPref('floating_lyric_context_opacity');
+    return normalizeFloatingLyricOpacity(
+        stored is num ? stored : floatingLyricContextOpacityDefault);
+  }
+
+  Future<void> setFloatingLyricContextOpacity(int value) async {
+    await setPref(
+        'floating_lyric_context_opacity', normalizeFloatingLyricOpacity(value));
+    notifyListeners();
+  }
+
+  /// 悬浮字幕四色（ARGB）。键缺省或存 [floatingLyricColorFollowTheme] = 跟随主题
+  /// （M3E 配对色，见 `floating_lyric_style.dart`）；其余值 = 用户自选色。
+  ///
+  /// 哨兵取 -1 而不是 0：ARGB 经 `Color.toARGB32()` 恒落在 0..0xFFFFFFFF，-1 永远
+  /// 不会与合法颜色撞值；0 是合法的「完全透明黑」（描边色开了 alpha 通道，用户
+  /// 真能选到它），若拿 0 当哨兵，选完全透明会被误判成跟随主题。
+  static const int floatingLyricColorFollowTheme = -1;
+
+  int floatingLyricColor(FloatingLyricColorRole role) {
+    final Object? stored = getPref(role.prefKey);
+    return stored is num ? stored.toInt() : floatingLyricColorFollowTheme;
+  }
+
+  Future<void> setFloatingLyricColor(
+      FloatingLyricColorRole role, int argb) async {
+    await setPref(role.prefKey, argb);
+    notifyListeners();
+  }
+
+  /// Windows 悬浮字幕窗口矩形（物理 px JSON，`{left,top,width,height}`）；空 =
+  /// 平台默认位置。用户拖动 / 拖角缩放后由原生 `windowRectChanged` 回写。
+  String get floatingLyricWindowRect {
+    final Object? stored = getPref(kFloatingLyricWindowRectPrefKey);
+    return stored is String ? stored : '';
+  }
+
+  Future<void> setFloatingLyricWindowRect(String json) async {
+    await setPref(kFloatingLyricWindowRectPrefKey, json);
   }
 
   // ── update preferences ───────────────────────────────────────────────

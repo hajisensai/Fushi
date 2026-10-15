@@ -173,4 +173,28 @@ void main() {
       expect(block.length, 0);
     });
   });
+
+  group('buildFloatingLyricBlockRange', () {
+    test('非对称窗口：当前句区间落在块内正确位置', () {
+      final FloatingLyricBlock block = buildFloatingLyricBlockRange(
+          cues: cuesFrom(<String>['c0', 'c1', 'c2', 'c3', 'c4']),
+          index: 1,
+          before: 1,
+          after: 2);
+      expect(block.text, 'c0\nc1\nc2\nc3');
+      expect(block.start, 3);
+      expect(block.length, 2);
+    });
+
+    test('对称版与 before==after 的非对称版逐字节一致', () {
+      final List<AudioCue> cues = cuesFrom(<String>['a', 'bb', 'ccc', 'dddd']);
+      final FloatingLyricBlock sym =
+          buildFloatingLyricBlock(cues: cues, index: 2, n: 1);
+      final FloatingLyricBlock range = buildFloatingLyricBlockRange(
+          cues: cues, index: 2, before: 1, after: 1);
+      expect(range.text, sym.text);
+      expect(range.start, sym.start);
+      expect(range.length, sym.length);
+    });
+  });
 }

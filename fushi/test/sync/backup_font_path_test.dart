@@ -168,6 +168,12 @@ void main() {
         ]),
       );
       await srcDb.setPref(
+        'src:reader_fushi:floating_lyric_fonts',
+        jsonEncode(<Map<String, dynamic>>[
+          {'name': 'Mincho', 'path': uiFontPath, 'enabled': true},
+        ]),
+      );
+      await srcDb.setPref(
         'src:reader_fushi:font_catalog',
         jsonEncode(<String, dynamic>{
           'version': 1,
@@ -195,6 +201,9 @@ void main() {
             ],
             'game_lookup_fonts': <Map<String, dynamic>>[
               {'fontId': 'font_1', 'enabled': true},
+            ],
+            'floating_lyric_fonts': <Map<String, dynamic>>[
+              {'fontId': 'font_2', 'enabled': true},
             ],
           },
         }),
@@ -289,6 +298,20 @@ void main() {
         reason: 'game lookup font absolute path must not leak the source '
             'device root',
       );
+      final List<dynamic> floatingLyric =
+          jsonDecode(prefs['src:reader_fushi:floating_lyric_fonts']!)
+              as List<dynamic>;
+      expect(
+        (floatingLyric[0] as Map)['path'],
+        '${dstFontsDir.path}/Mincho_2.otf',
+      );
+      expect(
+        (floatingLyric[0] as Map)['path'],
+        isNot(contains(srcFontsDir.path)),
+        reason:
+            'floating lyric font absolute path must not leak the source '
+            'device root',
+      );
 
       final Map<String, dynamic> catalog =
           jsonDecode(prefs['src:reader_fushi:font_catalog']!)
@@ -314,6 +337,9 @@ void main() {
           targetRows['game_lookup_fonts'] as List<dynamic>;
       expect((gameRows.single as Map<dynamic, dynamic>)['fontId'], 'font_1');
       expect((gameRows.single as Map<dynamic, dynamic>)['enabled'], true);
+      final List<dynamic> lyricRows =
+          targetRows['floating_lyric_fonts'] as List<dynamic>;
+      expect((lyricRows.single as Map<dynamic, dynamic>)['fontId'], 'font_2');
     });
 
     test('legacy backup (no fontsRoot) imports without crashing', () async {

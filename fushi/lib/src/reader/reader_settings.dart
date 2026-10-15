@@ -15,7 +15,8 @@ import 'package:fushi_engine/epub/reader_resource_host.dart' as engine_host;
 
 /// The independent font targets a user can configure (TODO-049 / TODO-864):
 /// 软件系统字体 ([appUi]) / 小说正文字体 ([body]) / 词典字体 ([dictionary]) /
-/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]). Each maps to its own persisted
+/// 视频字幕字体 ([videoSubtitle]) / 游戏查词窗口字体 ([gameLookup]) /
+/// 有声书悬浮字幕字体 ([floatingLyric]). Each maps to its own persisted
 /// `[{name,path,enabled}]` list; see [ReaderSettings.fontKeyForTarget].
 enum FontTarget {
   /// App-wide UI (ThemeData) font — menus, buttons, settings, etc.
@@ -46,15 +47,24 @@ enum FontTarget {
   /// .resolveForNativeOverlay`）；缺字回退靠 native 追加的系统字体集，
   /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
   gameLookup,
+
+  /// Windows 有声书**悬浮字幕**（native 分层窗 `FloatingLyricWindow`，与
+  /// [gameLookup] 同一个原生窗类，DirectWrite 自绘）的字体。
+  ///
+  /// 语义、平台可用性（只 Windows）与导入格式限制都与 [gameLookup] 相同：
+  /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
+  /// 缺字回退靠 native 追加的系统字体集。
+  floatingLyric
 }
 
 /// 这个用途在当前平台**是否真有消费端**。
 ///
-/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// [FontTarget.gameLookup] / [FontTarget.floatingLyric] 只有 Windows 有 native
+/// 消费端（分层窗 DirectWrite），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
-      FontTarget.gameLookup => Platform.isWindows,
+      FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
       FontTarget.appUi ||
       FontTarget.body ||
       FontTarget.dictionary ||
@@ -730,6 +740,10 @@ class ReaderSettings {
   /// Persistence key for the Windows galgame Hook text / lookup overlay font.
   static const String fontKeyGameLookup = 'game_lookup_fonts';
 
+  /// Persistence key for the Windows audiobook floating-subtitle overlay font.
+  /// Backs [FontTarget.floatingLyric].
+  static const String fontKeyFloatingLyric = 'floating_lyric_fonts';
+
   /// Persistence key for the shared font catalog.
   static const String fontCatalogKey = 'font_catalog';
 
@@ -742,6 +756,7 @@ class ReaderSettings {
     fontKeyDictionary,
     fontKeyVideoSubtitle,
     fontKeyGameLookup,
+    fontKeyFloatingLyric
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -777,6 +792,8 @@ class ReaderSettings {
         fontKeyVideoSubtitle: _legacyFontListForKey(fontKeyVideoSubtitle),
       if (_cache.containsKey(fontKeyGameLookup))
         fontKeyGameLookup: _legacyFontListForKey(fontKeyGameLookup),
+      if (_cache.containsKey(fontKeyFloatingLyric))
+        fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric)
     };
   }
 
@@ -944,6 +961,11 @@ class ReaderSettings {
   List<Map<String, dynamic>> get gameLookupFonts =>
       _fontListForTargetKey(fontKeyGameLookup);
 
+  /// Windows audiobook floating-subtitle overlay font list. Empty when unset so
+  /// the native renderer keeps its default family.
+  List<Map<String, dynamic>> get floatingLyricFonts =>
+      _fontListForTargetKey(fontKeyFloatingLyric);
+
   /// Resolves the persisted font list for a [FontTarget].
   List<Map<String, dynamic>> fontsForTarget(FontTarget target) =>
       switch (target) {
@@ -952,6 +974,7 @@ class ReaderSettings {
         FontTarget.dictionary => dictionaryFonts,
         FontTarget.videoSubtitle => videoSubtitleFonts,
         FontTarget.gameLookup => gameLookupFonts,
+        FontTarget.floatingLyric => floatingLyricFonts
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -997,6 +1020,7 @@ class ReaderSettings {
         FontTarget.dictionary => fontKeyDictionary,
         FontTarget.videoSubtitle => fontKeyVideoSubtitle,
         FontTarget.gameLookup => fontKeyGameLookup,
+        FontTarget.floatingLyric => fontKeyFloatingLyric
       };
 
   /// Persists the whole list for [target]. The body convenience overload

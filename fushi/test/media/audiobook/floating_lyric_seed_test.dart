@@ -99,13 +99,13 @@ void main() {
 
   AudiobookSession makeSession({
     required bool floatingOn,
-    int contextLines = 0,
+    int visibleLines = 1,
   }) {
     return AudiobookSession(
       audioHandler: () => null,
       showFloatingLyric: () => floatingOn,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => contextLines,
+      floatingLyricVisibleLines: () => visibleLines,
       floatingLyricStyle: () => const FloatingLyricStyle(
         fontSize: 16,
         textColor: 0,
@@ -144,12 +144,12 @@ void main() {
     required bool floatingOn,
     required List<AudioCue> cues,
     int positionMs = 0,
-    int contextLines = 0,
+    int visibleLines = 1,
     required String audioName,
   }) async {
     installPlatform();
     final AudiobookSession session =
-        makeSession(floatingOn: floatingOn, contextLines: contextLines);
+        makeSession(floatingOn: floatingOn, visibleLines: visibleLines);
     addTearDown(session.dispose);
     await session.start(
       info: SessionBookInfo(
@@ -229,11 +229,12 @@ void main() {
   // TODO-708 P4 T4: 默认 N=0 = 零变化守卫。_syncFloatingLyric 走原单行分支——
   // updateText 只携带当前行文本 + 无行标记 (-1, 0)，与今天逐字节等价（原生据此退化为
   // 单行渲染，无中间行明暗）。任何回归把 N=0 也灌多行/带真实区间都会在这里挂。
-  test('N=0 keeps single-line updateText with no-line-marker range (-1, 0)',
+  test(
+      '1 sentence (old N=0) keeps single-line updateText with no-line-marker range (-1, 0)',
       () async {
     await startedSession(
       floatingOn: true,
-      contextLines: 0,
+      visibleLines: 1,
       cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
       positionMs: 1000,
       audioName: 'hibiki-lyric-n0.mp3',
@@ -257,11 +258,12 @@ void main() {
 
   // TODO-708 P4: N>0 = 多行块 + 当前行真实区间。current line = 'cue 1000' 位于
   // 'cue 0\ncue 1000\ncue 2000' 的 offset 6，长度 8。
-  test('N=1 pushes a 3-line context block with the real current-line range',
+  test(
+      '3 sentences (old N=1) push a 3-line context block with the real current-line range',
       () async {
     await startedSession(
       floatingOn: true,
-      contextLines: 1,
+      visibleLines: 3,
       cues: <AudioCue>[cue(0), cue(1000), cue(2000)],
       positionMs: 1000,
       audioName: 'hibiki-lyric-n1.mp3',

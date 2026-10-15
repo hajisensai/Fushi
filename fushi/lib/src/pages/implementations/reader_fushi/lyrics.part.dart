@@ -1192,34 +1192,16 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   // ② 桌面悬浮窗点词路由 [_lookupFromFloatingLyric]（attach 期注入，路由进 reader 弹窗）；
   // ③ 设置开关 [_toggleFloatingLyric] / [_toggleMediaNotification]（薄壳，委托 session）。
 
-  /// reader 主题悬浮窗样式（attach 期注入 session）。
+  /// reader 主题悬浮窗样式（attach 期注入 session）。M3E 配色取阅读器当前明暗下的
+  /// app 配色方案（context-free：`appModel.buildColorScheme`，不碰 State.context），
+  /// 设置快照与 app 级构造点共用同一份（[buildFloatingLyricStyle]）。
   FloatingLyricStyle _readerFloatingLyricStyle({double? fontSize}) {
-    final Color bg = _themeBackgroundColor();
-    final Color fg = _themeTextColor();
-    final bool dark = _isReaderThemeDark;
-    final Color accent = _readerLyricAccentColor();
-    final int textOpacity = appModel.floatingLyricTextOpacity;
-    final int buttonBgOpacity = appModel.floatingLyricButtonBgOpacity;
-    final int bgOpacity = appModel.floatingLyricBgOpacity;
-    return FloatingLyricStyle(
-      fontSize: fontSize ?? appModel.floatingLyricFontSize,
-      // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
-      textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
-      bgColor: FloatingLyricStyle.scaleAlpha(
-        bg.withAlpha(dark ? 230 : 220).value,
-        bgOpacity,
-      ),
-      buttonTextColor: fg.value,
-      buttonBgColor: FloatingLyricStyle.scaleAlpha(
-        (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        buttonBgOpacity,
-      ),
-      highlightColor: accent.withAlpha(128).value,
-      activeColor: accent.value,
-      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
-      cornerRadius: appModel.floatingLyricCornerRadius,
-      windowWidth: appModel.floatingLyricWidth,
+    final Brightness brightness = _isReaderThemeDark
+        ? Brightness.dark
+        : Brightness.light;
+    return buildFloatingLyricStyle(
+      scheme: appModel.buildColorScheme(brightness),
+      settings: appModel.floatingLyricStyleSettings(fontSize: fontSize),
     );
   }
 

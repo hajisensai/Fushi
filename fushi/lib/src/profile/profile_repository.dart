@@ -517,6 +517,7 @@ class ProfileRepository {
     dbSourcePrefKey(kReaderSourcePersistedKey, 'dict_fonts'),
     dbSourcePrefKey(kReaderSourcePersistedKey, 'video_sub_fonts'),
     dbSourcePrefKey(kReaderSourcePersistedKey, 'game_lookup_fonts'),
+    dbSourcePrefKey(kReaderSourcePersistedKey, 'floating_lyric_fonts'),
   ];
 
   /// 解析并校验一个导出 JSON 字符串。坏文件 / 魔数不符 / 版本不兼容 / 结构非法

@@ -1691,7 +1691,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!_floatingToolbars) return _readerChromeHeight;
     double extent = kReaderFloatingBarMargin;
     // 迷你播放条：M3E 72（胶囊 + 底边波浪进度），Apple 64。
-    if (audio) extent += isGlassDesign(context) ? kFushiFloatingToolbarExtent : 72;
+    if (audio) {
+      extent += isGlassDesign(context) ? kFushiFloatingToolbarExtent : 72;
+    }
     if (dock) extent += kFushiFloatingToolbarExtent;
     if (audio && dock) extent += kFushiFloatingToolbarFabGap;
     return extent;
@@ -2659,16 +2661,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       floatingLyricFontSize: appModel.floatingLyricFontSize,
       onFloatingLyricFontSizeChanged: (v) async {
         await appModel.setFloatingLyricFontSize(v);
-        final FloatingLyricStyle style = _readerFloatingLyricStyle(fontSize: v);
-        await FloatingLyricChannel.updateStyle(
-          fontSize: style.fontSize,
-          textColor: style.textColor,
-          bgColor: style.bgColor,
-          buttonTextColor: style.buttonTextColor,
-          buttonBgColor: style.buttonBgColor,
-          highlightColor: style.highlightColor,
-          activeColor: style.activeColor,
-        );
+        // 整份样式重推（与设置页同一条链路）：只推几项会把圆角 / 窗宽 / 字体等
+        // 未传字段打回原生默认值（快捷设置改一次字号圆角就没了）。
+        await appModel.audiobookSession.applyFloatingLyricStyle();
       },
       floatingLyricClickLookup: appModel.floatingLyricClickLookup,
       onFloatingLyricClickLookupChanged: (bool value) async {

@@ -49,14 +49,18 @@ void main() {
         reason: 'accent helper 体内绝不可触碰 State.context');
   });
 
-  test('悬浮窗样式 getter 用 _readerLyricAccentColor 取强调色', () {
+  test('悬浮窗样式 getter 的配色是 context-free 的', () {
     final int idx =
         src.indexOf('FloatingLyricStyle _readerFloatingLyricStyle(');
     expect(idx, greaterThan(0));
     final int end = src.indexOf('\n  }', idx);
     final String body = src.substring(idx, end);
-    expect(body.contains('_readerLyricAccentColor()'), isTrue,
-        reason: '悬浮窗样式 accent 必须经 context-free helper');
+    // M3E 改版后悬浮窗整套配色（含强调色 = primary）取自 context-free 的
+    // appModel.buildColorScheme（与歌词强调色 helper 同源），不碰 State.context。
+    expect(RegExp(r'appModel\s*\.\s*buildColorScheme\(').hasMatch(body), isTrue,
+        reason: '悬浮窗配色必须取自 context-free 的 appModel.buildColorScheme');
     expect(body.contains('Theme.of('), isFalse);
+    expect(body.contains('context'), isFalse,
+        reason: '悬浮窗样式 getter 体内绝不可触碰 State.context');
   });
 }
