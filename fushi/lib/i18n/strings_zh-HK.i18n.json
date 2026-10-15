@@ -7480,5 +7480,7 @@
   "video_setting_mpv_lua_scripts_import_hint": "Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.",
   "video_setting_mpv_lua_scripts_status_pending": "Not loaded in this playback (reopen the video)",
   "sync_position_conflict_title": "Playback position conflict",
-  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep."
+  "sync_position_conflict_message": "These items were played on both this device and the paired device since the last sync. Choose which position to keep.",
+  "sync_compare_page_of_total": "第 $page / $total 頁",
+  "sync_compare_page": "第 $page 頁"
 }

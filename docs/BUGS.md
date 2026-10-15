@@ -64,6 +64,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3395](bugs/BUG-3395-vn-merged-image-hides-sentence.md) | ✅ | ✅ | VN 图文合并屏插图铺满整屏，同屏句子被挤出屏外 |
+> 共 3054 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3371](bugs/BUG-3371-sync-compare-manga-zero-progress.md) | ✅ | ✅ | sync-compare-manga-zero-progress |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
 | [BUG-3365](bugs/BUG-3365-floating-ball-media-defaults.md) | ✅ | ✅ | 漫画等媒体页悬浮球出厂带一长列应用外按钮 |
