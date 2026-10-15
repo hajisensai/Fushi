@@ -753,6 +753,34 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsNothing);
   });
 
+  testWidgets('左右横滑内容区切换分类（与阅读器设置面板同款）', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    int shown = 0;
+    await _pumpSheet(tester, onSubtitleCategoryShown: () => shown++);
+    // 等面板进场动画落定再横滑（与真实操作一致：面板滑入途中不会去甩它）。
+    await tester.pumpAndSettle();
+    expect(find.text(t.video_setting_speed), findsOneWidget);
+
+    // 播放 → 音频 → 字幕：每次向左横滑翻到下一个分类。
+    for (int i = 0; i < 2; i++) {
+      await tester.fling(find.byType(TabBarView), const Offset(-300, 0), 1000);
+      await tester.pumpAndSettle();
+    }
+    expect(find.text(t.video_setting_speed), findsNothing);
+    expect(find.text(t.video_setting_subtitle_font_size), findsOneWidget);
+    expect(shown, 1, reason: '横滑进字幕分类与点页签同一条路，触发一次字幕源加载');
+
+    // 向右横滑回到音频分类。
+    await tester.flingFrom(
+      tester.getTopLeft(find.byType(TabBarView)) + const Offset(100, 12),
+      const Offset(300, 0),
+      1000,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.video_setting_subtitle_font_size), findsNothing);
+  });
+
   testWidgets('scaled settings side panel stays inside a narrow viewport', (
     tester,
   ) async {
@@ -2672,9 +2700,12 @@ void main() {
       // 不另写一套 chip 条，也不回退左右 master-detail / 窄窗 push。
       expect(
         src,
-        contains('LibrarySectionTabs<String>('),
+        contains('LibrarySectionTabs<String>.controlled('),
         reason: '分类页签须复用共享的 LibrarySectionTabs',
       );
+      // 页签与内容区共用一个 TabController，内容区左右横滑切页（与阅读器设置
+      // 面板同款），不能退回只能点页签的 AnimatedSwitcher 单页。
+      expect(src, contains('TabBarView('), reason: '视频设置内容区须能左右横滑切分类');
       expect(
         src,
         isNot(contains('MaterialSupportingPaneLayout(')),

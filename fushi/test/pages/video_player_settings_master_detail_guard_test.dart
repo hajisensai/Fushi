@@ -139,7 +139,7 @@ void main() {
     // 不再有「宽窗分栏 / 窄窗 push」两套外壳，也不再有带徽标的大标题页头。
     expect(
       source,
-      contains('LibrarySectionTabs<String>('),
+      contains('LibrarySectionTabs<String>.controlled('),
       reason: 'categories must use the shared section tabs',
     );
     expect(
@@ -197,9 +197,9 @@ void main() {
       contains('for (final VideoGroup group in widget.groups)'),
       reason: '_categories 必须由 groups 驱动，禁止手写平行列表',
     );
-    // 只有一个分组（字幕 / 音频面板）时不画页签。
-    expect(source, contains('final bool showTabs = groups.length > 1;'));
-    expect(source, contains('if (showTabs)'));
+    // 只有一个分组（字幕 / 音频面板）时不画页签（也没有横滑分页）。
+    expect(source, contains('if (widget.groups.length <= 1) return null;'));
+    expect(source, contains('if (tabController != null)'));
     // 设置面板的分组：字幕 / 音频已拆成独立面板，不在设置里重复（只放一处）。
     final String settingsGroups = _between(
       source,
@@ -314,7 +314,7 @@ void main() {
 
     expect(
       source,
-      contains('LibrarySectionTabs<String>('),
+      contains('LibrarySectionTabs<String>.controlled('),
       reason: 'categories render in the shared top section tabs',
     );
     expect(

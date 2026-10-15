@@ -1,5 +1,7 @@
 import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart' show VelocityTracker;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
@@ -724,7 +726,11 @@ class _VideoBottomSheetFrameState extends State<_VideoBottomSheetFrame> {
 /// 滑条、横向滚动的页签等子控件自己也认横向拖动，手势竞技场里它们在命中链更深处、
 /// 先过触发阈值，按在它们上面横拖仍是调值 / 滚动；只有在空白处与普通行上横滑才
 /// 切面板。判据按松手速度（甩动），慢慢拖不切，避免读文字时手指微移误触。
-class VideoPanelSwipeSwitch extends StatelessWidget {
+///
+/// 面板内容自带左右分页（设置面板的分类 [TabBarView]）时，分页在竞技场里赢下横拖，
+/// 外层手势收不到松手。分页已在首页再往右甩、已在末页再往左甩时它翻不动，这一甩
+/// 交还给外层切面板（[edgeHandoffTarget]）；中间页的横甩仍只翻分页。
+class VideoPanelSwipeSwitch extends StatefulWidget {
   const VideoPanelSwipeSwitch({
     required this.switcher,
     required this.child,
@@ -752,23 +758,145 @@ class VideoPanelSwipeSwitch extends StatelessWidget {
     return ids[next];
   }
 
+  /// 内层分页赢下横拖后，松手时这一甩是否越过分页边界、该交给外层切面板。
+  ///
+  /// [startedAtMin] / [startedAtMax]：拖动开始时分页是否已在首 / 末页；
+  /// [endedAtMin] / [endedAtMax]：松手时是否仍停在该边界（中途拖回中间页再甩不算）。
+  /// [axisDirection] 决定哪个手指方向是在往 min 推（RTL 下分页方向镜像）。
+  static String? edgeHandoffTarget(
+    ReaderPanelSwitcher switcher, {
+    required bool startedAtMin,
+    required bool startedAtMax,
+    required bool endedAtMin,
+    required bool endedAtMax,
+    required AxisDirection axisDirection,
+    required double velocityDx,
+  }) {
+    if (velocityDx == 0) return null;
+    final bool pushingTowardMin = axisDirection == AxisDirection.left
+        ? velocityDx < 0
+        : velocityDx > 0;
+    final bool pastEdge = pushingTowardMin
+        ? startedAtMin && endedAtMin
+        : startedAtMax && endedAtMax;
+    if (!pastEdge) return null;
+    return targetFor(switcher, velocityDx);
+  }
+
+  @override
+  State<VideoPanelSwipeSwitch> createState() => _VideoPanelSwipeSwitchState();
+}
+
+class _VideoPanelSwipeSwitchState extends State<VideoPanelSwipeSwitch> {
+  /// 边界判定的容差（逻辑像素）：弹性回弹物理下越界是负值，夹紧物理下恰为 0。
+  static const double _edgeTolerance = 1;
+
+  static const Set<PointerDeviceKind> _swipeDevices = <PointerDeviceKind>{
+    PointerDeviceKind.touch,
+    PointerDeviceKind.stylus,
+  };
+
+  int? _pointer;
+  VelocityTracker? _tracker;
+
+  /// 本次触摸里内层分页开始拖动时的边界状态；null = 分页没被拖动（外层手势自己处理）。
+  ({bool atMin, bool atMax})? _pageDragStart;
+  PageMetrics? _lastPageMetrics;
+
+  void _reset() {
+    _pointer = null;
+    _tracker = null;
+    _pageDragStart = null;
+    _lastPageMetrics = null;
+  }
+
+  static bool _atMin(ScrollMetrics m) =>
+      m.pixels <= m.minScrollExtent + _edgeTolerance;
+
+  static bool _atMax(ScrollMetrics m) =>
+      m.pixels >= m.maxScrollExtent - _edgeTolerance;
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_pointer != null || !_swipeDevices.contains(event.kind)) return;
+    _reset();
+    _pointer = event.pointer;
+    _tracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.position);
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) return;
+    _tracker?.addPosition(event.timeStamp, event.position);
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _pointer) return;
+    final ReaderPanelSwitcher? sw = widget.switcher;
+    final ({bool atMin, bool atMax})? start = _pageDragStart;
+    final PageMetrics? last = _lastPageMetrics;
+    final VelocityTracker? tracker = _tracker;
+    _reset();
+    if (sw == null || start == null || last == null || tracker == null) return;
+    tracker.addPosition(event.timeStamp, event.position);
+    final String? target = VideoPanelSwipeSwitch.edgeHandoffTarget(
+      sw,
+      startedAtMin: start.atMin,
+      startedAtMax: start.atMax,
+      endedAtMin: _atMin(last),
+      endedAtMax: _atMax(last),
+      axisDirection: last.axisDirection,
+      velocityDx: tracker.getVelocity().pixelsPerSecond.dx,
+    );
+    if (target != null) sw.onSelect(target);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _pointer) _reset();
+  }
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    final ScrollMetrics metrics = notification.metrics;
+    // 只认横向分页（TabBarView / PageView）；横向滚动的页签条不是分页，不接管。
+    if (_pointer == null ||
+        metrics is! PageMetrics ||
+        metrics.axis != Axis.horizontal) {
+      return false;
+    }
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _pageDragStart = (atMin: _atMin(metrics), atMax: _atMax(metrics));
+    }
+    if (_pageDragStart != null) _lastPageMetrics = metrics;
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ReaderPanelSwitcher? sw = switcher;
-    if (sw == null || sw.items.length < 2) return child;
-    return GestureDetector(
-      key: const ValueKey<String>('video-panel-swipe-switch'),
-      // 只占用横向拖动；纵向滚动照常交给内容。
+    final ReaderPanelSwitcher? sw = widget.switcher;
+    if (sw == null || sw.items.length < 2) return widget.child;
+    return Listener(
       behavior: HitTestBehavior.translucent,
-      supportedDevices: const <PointerDeviceKind>{
-        PointerDeviceKind.touch,
-        PointerDeviceKind.stylus,
-      },
-      onHorizontalDragEnd: (DragEndDetails details) {
-        final String? target = targetFor(sw, details.primaryVelocity ?? 0);
-        if (target != null) sw.onSelect(target);
-      },
-      child: child,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScrollNotification,
+        child: GestureDetector(
+          key: const ValueKey<String>('video-panel-swipe-switch'),
+          // 只占用横向拖动；纵向滚动照常交给内容。
+          behavior: HitTestBehavior.translucent,
+          supportedDevices: _swipeDevices,
+          onHorizontalDragEnd: (DragEndDetails details) {
+            final String? target = VideoPanelSwipeSwitch.targetFor(
+              sw,
+              details.primaryVelocity ?? 0,
+            );
+            if (target != null) sw.onSelect(target);
+          },
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

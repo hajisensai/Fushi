@@ -40,6 +40,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
 import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
+import 'package:fushi/src/platform/sensor_housing_edge.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -92,17 +93,12 @@ Rect appFloatingBallViewport(
   EdgeInsets viewPadding, {
   AxisDirection? sensorHousingEdge,
 }) {
-  final double left = sensorHousingEdge == AxisDirection.right
-      ? 0
-      : viewPadding.left;
-  final double right = sensorHousingEdge == AxisDirection.left
-      ? 0
-      : viewPadding.right;
+  final EdgeInsets inset = obstructedSafeInsets(viewPadding, sensorHousingEdge);
   return Rect.fromLTRB(
-    left,
-    viewPadding.top,
-    window.width - right,
-    window.height - viewPadding.bottom,
+    inset.left,
+    inset.top,
+    window.width - inset.right,
+    window.height - inset.bottom,
   );
 }
 
@@ -379,6 +375,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   void _onSensorHousingEdge(AxisDirection? edge) {
     if (!mounted || edge == _sensorHousingEdge) return;
+    // 同步给全应用共享的一份（视频字幕列表侧栏等贴边布局也要按它让位）。
+    sensorHousingEdge.value = edge;
     setState(() => _sensorHousingEdge = edge);
   }
 

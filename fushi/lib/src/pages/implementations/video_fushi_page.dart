@@ -291,6 +291,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
+import 'package:fushi/src/platform/sensor_housing_edge.dart';
 import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -2988,6 +2989,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
 
+  void _onSensorHousingEdgeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -3000,6 +3005,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
+    // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
+    sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
@@ -5726,6 +5733,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();

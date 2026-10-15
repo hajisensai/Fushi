@@ -50,6 +50,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3412](bugs/BUG-3412-lookup-toolbar-size.md) | ✅ | ✅ | 阅读器查词框顶栏三组按钮尺寸不统一 |
+> 共 3055 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3411](bugs/BUG-3411-ios-landscape-subtitle-list-safe-area.md) | ✅ | ✅ | iOS 横屏视频字幕列表侧栏右侧整条安全区空着 |
+| [BUG-3410](bugs/BUG-3410-manga-crop-done-capsule.md) | ✅ | ✅ | 手机漫画高级制卡全屏框选页右上角「完成」在动作胶囊里偏左 |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
 | [BUG-3365](bugs/BUG-3365-floating-ball-media-defaults.md) | ✅ | ✅ | 漫画等媒体页悬浮球出厂带一长列应用外按钮 |

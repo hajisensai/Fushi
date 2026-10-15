@@ -474,13 +474,12 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
               fit: BoxFit.scaleDown,
               child: Text(t.popup_advanced_mining_crop_page_title),
             ),
+            // 不自带尾部留白：M3E 悬浮顶栏把 actions 收进一枚胶囊、自己在胶囊外留
+            // 边距，这里再包 Padding 会落进胶囊里，按钮偏左（BUG-3410）。
             actions: <Widget>[
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 12),
-                child: FushiFilledButton(
-                  onPressed: () => _close(keep: true),
-                  child: Text(t.popup_advanced_mining_crop_done),
-                ),
+              FushiFilledButton(
+                onPressed: () => _close(keep: true),
+                child: Text(t.popup_advanced_mining_crop_done),
               ),
             ],
           ),
