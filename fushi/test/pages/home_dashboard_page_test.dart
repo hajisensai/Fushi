@@ -1461,6 +1461,109 @@ void main() {
     expect(opened, <(String, int?)>[('e2', cid)]);
   });
 
+  /// 书合集：卷 1..n 按给定顺序加进同一合集（sortIndex 即加入顺序）。成员行
+  /// 必须真有对应 `epub_books` 行——首页合集归属查询只认库里还在的书。成员键
+  /// 默认 `epub_books.uid`（v83 起的生产形态）；[legacyBookKey] 模拟 v83 前写入
+  /// 的 bookKey 键旧行。
+  Future<int> seedBookCollection(
+    String name,
+    List<String> keys, {
+    bool legacyBookKey = false,
+  }) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int cid = await db.createMediaCollection(name);
+    for (final String k in keys) {
+      final String uid = await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: k,
+        title: k,
+        epubPath: '/abs/$k.epub',
+        extractDir: '/abs/$k',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: now - 60000,
+      ));
+      await db.addToCollection(cid, MediaKind.epub, legacyBookKey ? k : uid);
+    }
+    return cid;
+  }
+
+  MediaItem bookAt(String key, {required int position}) =>
+      readingBook(key, key, position: position);
+
+  testWidgets('书合集续读：读完第 1 卷后「继续」推进到第 2 卷（不再整套消失）',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedBookCollection('某轻小说', <String>['卷1', '卷2', '卷3']);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[
+        // 卷 1 读到末尾（position == duration → finished），卷 2/3 没开读。
+        bookAt('卷1', position: 100),
+        bookAt('卷2', position: 0),
+        bookAt('卷3', position: 0),
+      ],
+      <String, int>{'卷1': now},
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final HomeContinueHero h = onlyHero(tester);
+    expect(h.title, '某轻小说');
+    expect(h.progressLabel, t.home_continue_volume(n: 2));
+    expect(rowCards(), findsNothing);
+  });
+
+  testWidgets('书合集续读：整套读完 → 不出卡；同合集两卷在读只出一张最近读的',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedBookCollection('读完的系列', <String>['完1', '完2']);
+    await seedBookCollection('在读的系列', <String>['读1', '读2', '读3']);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[
+        bookAt('完1', position: 100),
+        bookAt('完2', position: 100),
+        // 读3 是刚才读的那卷（时刻最新），读1 是更早留下的半截。
+        bookAt('读1', position: 30),
+        bookAt('读2', position: 0),
+        bookAt('读3', position: 60),
+      ],
+      <String, int>{
+        '完1': now - 9000,
+        '完2': now - 8000,
+        '读1': now - 5000,
+        '读3': now,
+      },
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final HomeContinueHero h = onlyHero(tester);
+    expect(h.title, '在读的系列');
+    expect(h.progressLabel, t.home_continue_volume(n: 3));
+    expect(rowCards(), findsNothing);
+  });
+
+  testWidgets('书合集续读：v83 前 bookKey 键的旧成员行同样推进到下一卷',
+      (WidgetTester tester) async {
+    useSize(tester, const Size(1280, 900));
+    await seedBookCollection('旧合集', <String>['旧1', '旧2'],
+        legacyBookKey: true);
+    await tester.pumpWidget(buildAppWithBooks(
+      <MediaItem>[
+        bookAt('旧1', position: 100),
+        bookAt('旧2', position: 0),
+      ],
+      <String, int>{'旧1': DateTime.now().millisecondsSinceEpoch},
+    ));
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    final HomeContinueHero h = onlyHero(tester);
+    expect(h.title, '旧合集');
+    expect(h.progressLabel, t.home_continue_volume(n: 2));
+  });
+
   testWidgets('继续区合集 Next-Up：整个合集全部看完 → 不出卡（自然滚出继续区）',
       (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
