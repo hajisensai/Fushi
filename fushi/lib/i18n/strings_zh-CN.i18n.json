@@ -7781,5 +7781,6 @@
   "collection_sort_ai_rules_only": "集号 / 卷号已能确定顺序，已按规则排好",
   "collection_sort_ai_unchanged": "AI 认为当前顺序无需调整",
   "collection_sort_ai_invalid": "AI 的回复没通过校验，顺序未改",
-  "collection_sort_ai_too_large": "合集太大，无法用 AI 排序"
+  "collection_sort_ai_too_large": "合集太大，无法用 AI 排序",
+  "collection_sort_ai_unknown": "AI 不认识这部作品，也没查到资料，顺序未改"
 }

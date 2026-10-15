@@ -8,7 +8,10 @@
 /// 1. [collectionOrderAmbiguousIndices] 判「有没有规则判不出的成员」（纯函数）——
 ///    没有就**不发请求**；
 /// 2. 把整张合集（规则序 + 每个成员的编号与刮削事实）交给模型，要求它只给一个
-///    下标排列；
+///    下标排列；模型**不认识这部作品**时回 `{"known": false}`、对拿不准的成员可以
+///    不排（留在规则位置）——不许按标题模式硬猜。回了不认识且用户启用了联网资料
+///    站（[WebKnowledgeClient]，与「AI 下视频」同一套站点）时，用合集名抓条目正文，
+///    带着资料再问一轮；仍不认识 → [AiCollectionOrderStatus.unknown]，顺序不改；
 /// 3. [parseAiCollectionOrder] 本地校验：越界 / 重复剔除；规则排得出的成员
 ///    （锚点）**一律保持规则相对序**，模型只能决定判不出的成员插在哪两个锚点之间；
 ///    模型漏掉的判不出成员留在规则位置。返回值恒是完整排列，坏回复返回 null
@@ -25,6 +28,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
@@ -33,6 +37,10 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 /// 喂给模型的成员上限。再大的合集（长篇连载几百集）提示词又贵又容易被截断，
 /// 而且这种合集的 SP 通常也已有刮削编号——超过上限直接不问。
 const int kAiCollectionOrderMaxMembers = 200;
+
+/// 联网资料：最多喂几页、每页截多长（合集排序只需要剧集 / 卷目清单那一段）。
+const int kAiCollectionOrderMaxReferencePages = 3;
+const int kAiCollectionOrderMaxCharsPerPage = 6000;
 
 /// 合集按哪套规则看：视频按季 / 集，书按卷。
 enum AiCollectionOrderKind { video, book }
@@ -216,7 +224,14 @@ $task
 
 Rules:
 - Answer with a single JSON object and nothing else: {"order": [index, ...]}.
-- "order" lists every member index exactly once, from first to last.
+- "order" lists member indexes from first to last, each at most once. Keep
+  every member with "needs_placement": false.
+- Only place a "needs_placement" member when you actually know where it belongs
+  in this specific work: from your own knowledge of it, or from the reference
+  excerpts when given. Never guess from title patterns alone. Leave out of
+  "order" any member you are not sure about; it keeps its current position.
+- If you do not recognise this work and the excerpts (if any) do not tell you
+  either, answer exactly {"known": false}.
 - Use only the indexes you were given. Never invent members.
 ''';
 }
@@ -225,6 +240,7 @@ String buildAiCollectionOrderUserPrompt({
   required String collectionName,
   required List<AiCollectionOrderMember> members,
   required Set<int> ambiguous,
+  List<WebKnowledgePage> references = const <WebKnowledgePage>[],
 }) {
   final StringBuffer buffer = StringBuffer()
     ..writeln('Collection: ${jsonEncode(collectionName)}')
@@ -244,8 +260,24 @@ String buildAiCollectionOrderUserPrompt({
       }),
     );
   }
+  if (references.isNotEmpty) {
+    buffer.writeln('Reference excerpts (fetched for this collection):');
+    for (final WebKnowledgePage page in references) {
+      buffer.writeln(
+        jsonEncode(<String, Object?>{
+          'source': page.url.toString(),
+          'title': page.title,
+          'text': page.text,
+        }),
+      );
+    }
+  }
   return buffer.toString();
 }
+
+/// 模型明说「不认识这部作品」（`{"known": false}`）。
+bool aiCollectionOrderReplyIsUnknown(String reply) =>
+    decodeAiJsonObject(reply)?['known'] == false;
 
 /// 解析并校验模型回复，返回 0..count-1 的完整排列；回复解析不出、或模型对
 /// [floating]（规则判不出的成员）一个都没给位置时返回 null（调用方不改顺序）。
@@ -317,6 +349,9 @@ enum AiCollectionOrderStatus {
   /// 模型回复没通过本地校验，顺序不改。
   invalidReply,
 
+  /// 模型不认识这部作品（联网资料也没帮上），顺序不改。
+  unknown,
+
   /// 拿到了通过校验的完整排列（可能与输入序相同）。
   proposed,
 }
@@ -346,14 +381,17 @@ class AiCollectionOrderProposal {
   }
 }
 
-/// 对**已按规则排好**的 [members] 问一次 AI。没有判不出的成员 / 合集过大时不发
-/// 请求；网络 / 提供商失败原样抛 [AiChatFailure]（文案已脱敏）。
+/// 对**已按规则排好**的 [members] 问 AI。没有判不出的成员 / 合集过大时不发
+/// 请求；模型回「不认识」且 [web] 启用了资料站时，用合集名抓资料再问一轮。
+/// 网络 / 提供商失败原样抛 [AiChatFailure]（文案已脱敏）；抓资料失败只记诊断
+/// （[WebKnowledgeClient.search] 不抛），按没资料处理。
 Future<AiCollectionOrderProposal> requestAiCollectionOrder({
   required AiChatClient client,
   required AiProviderConfig provider,
   required AiCollectionOrderKind kind,
   required String collectionName,
   required List<AiCollectionOrderMember> members,
+  WebKnowledgeClient? web,
 }) async {
   final List<int> identity = List<int>.unmodifiable(
     List<int>.generate(members.length, (int i) => i),
@@ -372,7 +410,7 @@ Future<AiCollectionOrderProposal> requestAiCollectionOrder({
       ambiguous: ambiguous,
     );
   }
-  final String reply = await client.complete(
+  Future<String> ask(List<WebKnowledgePage> references) => client.complete(
     provider: provider,
     messages: <AiChatMessage>[
       AiChatMessage.system(buildAiCollectionOrderSystemPrompt(kind)),
@@ -381,20 +419,45 @@ Future<AiCollectionOrderProposal> requestAiCollectionOrder({
           collectionName: collectionName,
           members: members,
           ambiguous: ambiguous,
+          references: references,
         ),
       ),
     ],
     // 每个下标几个 token；200 成员的排列也远低于这个数，留给推理模型思考余量。
     maxTokens: 4096,
   );
+
+  String reply = await ask(const <WebKnowledgePage>[]);
+  if (aiCollectionOrderReplyIsUnknown(reply)) {
+    // 模型不认识这部作品：先查资料再答，查不到就不动（不让它硬猜）。
+    final List<WebKnowledgePage> references = web != null && web.isEnabled
+        ? (await web.search(
+            collectionName,
+            maxCharsPerPage: kAiCollectionOrderMaxCharsPerPage,
+          )).take(kAiCollectionOrderMaxReferencePages).toList()
+        : const <WebKnowledgePage>[];
+    if (references.isNotEmpty) reply = await ask(references);
+    if (references.isEmpty || aiCollectionOrderReplyIsUnknown(reply)) {
+      return AiCollectionOrderProposal(
+        status: AiCollectionOrderStatus.unknown,
+        order: identity,
+        ambiguous: ambiguous,
+      );
+    }
+  }
   final List<int>? order = parseAiCollectionOrder(
     reply,
     count: members.length,
     floating: ambiguous,
   );
   if (order == null) {
+    // 合法的 order 但一个待定成员都没排 = 模型对它们都拿不准，按「不知道」不动，
+    // 不算坏回复。
+    final bool abstained = decodeAiJsonObject(reply)?['order'] is List;
     return AiCollectionOrderProposal(
-      status: AiCollectionOrderStatus.invalidReply,
+      status: abstained
+          ? AiCollectionOrderStatus.unknown
+          : AiCollectionOrderStatus.invalidReply,
       order: identity,
       ambiguous: ambiguous,
     );

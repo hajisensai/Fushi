@@ -36,6 +36,72 @@ class _Settings implements AiSettingsSource {
   List<WebKnowledgeSite> get aiWebKnowledgeSites => const <WebKnowledgeSite>[];
 }
 
+/// 按顺序回 [replies]（用完重复最后一条），把每次请求的 user 文本记进 [prompts]。
+AiChatClient _sequenceClient(List<String> replies, List<String> prompts) {
+  int call = 0;
+  return AiChatClient(
+    client: MockClient((http.Request request) async {
+      final Map<String, Object?> body =
+          jsonDecode(request.body) as Map<String, Object?>;
+      for (final Object? m in body['messages'] as List<Object?>) {
+        final Map<String, Object?> message = m as Map<String, Object?>;
+        if (message['role'] == 'user') {
+          prompts.add(message['content'] as String);
+        }
+      }
+      final String reply =
+          replies[call < replies.length ? call : replies.length - 1];
+      call++;
+      return http.Response(
+        jsonEncode(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{'content': reply},
+            },
+          ],
+        }),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
+      );
+    }),
+  );
+}
+
+/// 假资料站：记下查询词，回固定页面；[enabled] = 用户有没有启用任何资料站。
+class _FakeWeb implements WebKnowledgeClient {
+  _FakeWeb(this.pages, {this.enabled = true});
+
+  final List<WebKnowledgePage> pages;
+  final bool enabled;
+  final List<String> queries = <String>[];
+
+  @override
+  bool get isEnabled => enabled;
+
+  @override
+  Future<List<WebKnowledgePage>> search(
+    String query, {
+    int pagesPerSource = 1,
+    int maxCharsPerPage = 12000,
+  }) async {
+    queries.add(query);
+    return pages;
+  }
+
+  @override
+  void close() {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+WebKnowledgePage _page(String text) => WebKnowledgePage(
+  site: kBuiltinWebKnowledgeSites.first,
+  title: 'Show',
+  url: Uri.parse('https://example.invalid/wiki/Show'),
+  text: text,
+);
+
 /// 回固定 [reply]，把每次请求的 user 文本记进 [prompts]。
 AiChatClient _client(String reply, List<String> prompts) => AiChatClient(
   client: MockClient((http.Request request) async {
@@ -307,6 +373,116 @@ void main() {
       );
       expect(proposal.status, AiCollectionOrderStatus.invalidReply);
       expect(proposal.order, <int>[0, 1]);
+    });
+
+    test('认识作品但对待定成员都拿不准（一个没排）→ unknown、恒等，不算坏回复', () async {
+      final AiChatClient client = _client('{"order": [0]}', <String>[]);
+      addTearDown(client.close);
+      final AiCollectionOrderProposal proposal = await requestAiCollectionOrder(
+        client: client,
+        provider: _provider(),
+        kind: AiCollectionOrderKind.video,
+        collectionName: 'Show',
+        members: <AiCollectionOrderMember>[
+          _video('Show - 01.mkv'),
+          _video('Show - SP.mkv'),
+        ],
+      );
+      expect(proposal.status, AiCollectionOrderStatus.unknown);
+      expect(proposal.order, <int>[0, 1]);
+    });
+  });
+
+  group('不认识作品时先查资料，查不到不瞎排', () {
+    List<AiCollectionOrderMember> members() => <AiCollectionOrderMember>[
+      _video('Show - 01.mkv'),
+      _video('Show - 02.mkv'),
+      _video('Show - SP.mkv'),
+    ];
+
+    test('第一轮回 known:false → 用合集名查资料 → 带资料第二轮排好', () async {
+      final List<String> prompts = <String>[];
+      final AiChatClient client = _sequenceClient(<String>[
+        '{"known": false}',
+        '{"order": [0, 2, 1]}',
+      ], prompts);
+      addTearDown(client.close);
+      final _FakeWeb web = _FakeWeb(<WebKnowledgePage>[
+        _page('Show episode list: SP airs between episode 1 and 2.'),
+      ]);
+      final AiCollectionOrderProposal proposal = await requestAiCollectionOrder(
+        client: client,
+        provider: _provider(),
+        kind: AiCollectionOrderKind.video,
+        collectionName: 'Show',
+        members: members(),
+        web: web,
+      );
+      expect(web.queries, <String>['Show']);
+      expect(prompts, hasLength(2));
+      expect(prompts.first, isNot(contains('Reference excerpts')));
+      expect(prompts.last, contains('Reference excerpts'));
+      expect(prompts.last, contains('SP airs between episode 1 and 2'));
+      expect(proposal.status, AiCollectionOrderStatus.proposed);
+      expect(proposal.order, <int>[0, 2, 1]);
+    });
+
+    test('没启用资料站：不认识就原样不动，只发一次请求', () async {
+      final List<String> prompts = <String>[];
+      final AiChatClient client = _sequenceClient(<String>[
+        '{"known": false}',
+      ], prompts);
+      addTearDown(client.close);
+      final _FakeWeb web = _FakeWeb(const <WebKnowledgePage>[], enabled: false);
+      final AiCollectionOrderProposal proposal = await requestAiCollectionOrder(
+        client: client,
+        provider: _provider(),
+        kind: AiCollectionOrderKind.video,
+        collectionName: 'Show',
+        members: members(),
+        web: web,
+      );
+      expect(web.queries, isEmpty);
+      expect(prompts, hasLength(1));
+      expect(proposal.status, AiCollectionOrderStatus.unknown);
+      expect(proposal.order, <int>[0, 1, 2]);
+    });
+
+    test('查到资料仍不认识 / 资料站搜不到：原样不动', () async {
+      final List<String> prompts = <String>[];
+      final AiChatClient client = _sequenceClient(<String>[
+        '{"known": false}',
+        '{"known": false}',
+      ], prompts);
+      addTearDown(client.close);
+      final AiCollectionOrderProposal withPages =
+          await requestAiCollectionOrder(
+            client: client,
+            provider: _provider(),
+            kind: AiCollectionOrderKind.video,
+            collectionName: 'Show',
+            members: members(),
+            web: _FakeWeb(<WebKnowledgePage>[_page('unrelated text')]),
+          );
+      expect(withPages.status, AiCollectionOrderStatus.unknown);
+      expect(withPages.order, <int>[0, 1, 2]);
+      expect(prompts, hasLength(2));
+
+      final List<String> prompts2 = <String>[];
+      final AiChatClient client2 = _sequenceClient(<String>[
+        '{"known": false}',
+      ], prompts2);
+      addTearDown(client2.close);
+      final AiCollectionOrderProposal noPages = await requestAiCollectionOrder(
+        client: client2,
+        provider: _provider(),
+        kind: AiCollectionOrderKind.video,
+        collectionName: 'Show',
+        members: members(),
+        web: _FakeWeb(const <WebKnowledgePage>[]),
+      );
+      expect(noPages.status, AiCollectionOrderStatus.unknown);
+      expect(prompts2, hasLength(1));
     });
   });
 

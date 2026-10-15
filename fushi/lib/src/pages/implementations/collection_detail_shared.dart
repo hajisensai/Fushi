@@ -190,6 +190,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         reason: aiFailureText(outcome.failure ?? ''),
       ),
       CollectionAiOrderStatus.invalidReply => t.collection_sort_ai_invalid,
+      CollectionAiOrderStatus.unknown => t.collection_sort_ai_unknown,
       CollectionAiOrderStatus.tooLarge => t.collection_sort_ai_too_large,
       CollectionAiOrderStatus.notFound ||
       CollectionAiOrderStatus.tooFew ||

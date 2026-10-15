@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 132311 (7783 per locale)
+/// Strings: 132328 (7784 per locale)
 ///
-/// Built on 2026-10-15 at 05:39 UTC
+/// Built on 2026-10-15 at 06:38 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11245,6 +11245,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'AI\'s answer didn\'t pass validation; order unchanged';
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -30065,6 +30067,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -49275,6 +49280,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -68544,6 +68552,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -87894,6 +87905,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -106897,6 +106911,9 @@ class _StringsId extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -126066,6 +126083,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -144235,6 +144255,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -162440,6 +162463,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -181557,6 +181583,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -200743,6 +200772,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -219874,6 +219906,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -238683,6 +238718,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -257696,6 +257734,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -276636,6 +276677,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 // Path: <root>
@@ -293922,6 +293966,8 @@ class _StringsZhCn extends _StringsEn {
   String get collection_sort_ai_invalid => 'AI 的回复没通过校验，顺序未改';
   @override
   String get collection_sort_ai_too_large => '合集太大，无法用 AI 排序';
+  @override
+  String get collection_sort_ai_unknown => 'AI 不认识这部作品，也没查到资料，顺序未改';
 }
 
 // Path: <root>
@@ -311532,6 +311578,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get collection_sort_ai_too_large =>
       'This collection is too large for AI sorting';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
 }
 
 /// Flat map(s) containing all translations.
@@ -327678,6 +327727,8 @@ extension on _StringsEn {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -343819,6 +343870,8 @@ extension on _StringsAr {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -360036,6 +360089,8 @@ extension on _StringsDe {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -376235,6 +376290,8 @@ extension on _StringsEs {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -392452,6 +392509,8 @@ extension on _StringsFr {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -408613,6 +408672,8 @@ extension on _StringsId {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -424810,6 +424871,8 @@ extension on _StringsIt {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -440880,6 +440943,8 @@ extension on _StringsJa {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -456958,6 +457023,8 @@ extension on _StringsKo {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -473150,6 +473217,8 @@ extension on _StringsNl {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -489334,6 +489403,8 @@ extension on _StringsPtBr {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -505523,6 +505594,8 @@ extension on _StringsRu {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -521668,6 +521741,8 @@ extension on _StringsTh {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -537844,6 +537919,8 @@ extension on _StringsTr {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -554003,6 +554080,8 @@ extension on _StringsVi {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }
@@ -569978,6 +570057,8 @@ extension on _StringsZhCn {
         return 'AI 的回复没通过校验，顺序未改';
       case 'collection_sort_ai_too_large':
         return '合集太大，无法用 AI 排序';
+      case 'collection_sort_ai_unknown':
+        return 'AI 不认识这部作品，也没查到资料，顺序未改';
       default:
         return null;
     }
@@ -585993,6 +586074,8 @@ extension on _StringsZhHk {
         return 'AI\'s answer didn\'t pass validation; order unchanged';
       case 'collection_sort_ai_too_large':
         return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       default:
         return null;
     }

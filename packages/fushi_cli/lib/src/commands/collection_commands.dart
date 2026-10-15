@@ -134,6 +134,7 @@ String describeCollectionSortStatus(String? status) => switch (status) {
   'noProvider' => '「合集排序」没有指派 AI 提供商（设置 › 模型 › LLM）',
   'failed' => 'AI 请求失败，顺序未改',
   'invalidReply' => 'AI 回复没通过校验，顺序未改',
+  'unknown' => 'AI 不认识这部作品，联网资料也没查到，顺序未改',
   'tooLarge' => '合集太大，不做 AI 排序',
   'tooFew' => '成员不足两个，无需排序',
   _ => status ?? '完成',

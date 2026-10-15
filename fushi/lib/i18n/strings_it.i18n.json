@@ -7781,5 +7781,6 @@
   "collection_sort_ai_rules_only": "Episode and volume numbers already decide the order; sorted by them",
   "collection_sort_ai_unchanged": "AI kept the current order",
   "collection_sort_ai_invalid": "AI's answer didn't pass validation; order unchanged",
-  "collection_sort_ai_too_large": "This collection is too large for AI sorting"
+  "collection_sort_ai_too_large": "This collection is too large for AI sorting",
+  "collection_sort_ai_unknown": "AI didn't recognise this work and found nothing online; order unchanged"
 }

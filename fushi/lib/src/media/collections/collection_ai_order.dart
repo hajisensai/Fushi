@@ -6,6 +6,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_collection_order_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
@@ -53,6 +54,9 @@ enum CollectionAiOrderStatus {
 
   /// AI 回复没通过本地校验，不动。
   invalidReply,
+
+  /// AI 不认识这部作品 / 对判不出的成员都拿不准（联网资料也没帮上），不动。
+  unknown,
 
   /// 用户意图路径：规则已能定序，按规则序排（没问 AI）。
   ruleOrdered,
@@ -116,6 +120,10 @@ class CollectionAiOrderOutcome {
 /// 造 AI 客户端：测试注入假 `http.Client` 走这条缝；生产恒是默认构造。
 typedef CollectionAiClientFactory = AiChatClient Function();
 
+/// 造联网资料客户端（模型不认识作品时查资料用）：测试注入假站点；生产按用户在
+/// 「设置 › 模型 › LLM」启用的资料站构造。
+typedef CollectionWebKnowledgeFactory = WebKnowledgeClient Function();
+
 /// 一个排序单元：视频一个文件；书一卷（EPUB 与它配对的 SRT 合成一个单元）。
 class _Unit {
   _Unit(this.member, this.rows);
@@ -139,6 +147,7 @@ Future<CollectionAiOrderOutcome> runCollectionAiOrder({
   bool dryRun = false,
   CollectionAiClientFactory? clientFactory,
   AiChatClient? client,
+  CollectionWebKnowledgeFactory? webFactory,
 }) async {
   final MediaCollectionRow? collection = await db.getMediaCollectionById(
     collectionId,
@@ -196,6 +205,9 @@ Future<CollectionAiOrderOutcome> runCollectionAiOrder({
   }
   final AiChatClient useClient =
       client ?? clientFactory?.call() ?? AiChatClient();
+  final WebKnowledgeClient web =
+      webFactory?.call() ??
+      WebKnowledgeClient(sites: settings.aiWebKnowledgeSites);
   final AiCollectionOrderProposal proposal;
   try {
     proposal = await requestAiCollectionOrder(
@@ -204,6 +216,7 @@ Future<CollectionAiOrderOutcome> runCollectionAiOrder({
       kind: kind,
       collectionName: collection.name,
       members: ruledMembers,
+      web: web,
     );
   } on AiChatFailure catch (failure) {
     debugPrint(
@@ -217,6 +230,7 @@ Future<CollectionAiOrderOutcome> runCollectionAiOrder({
   } finally {
     // 调用方传进来的共享客户端由调用方关。
     if (client == null) useClient.close();
+    web.close();
   }
   switch (proposal.status) {
     case AiCollectionOrderStatus.tooLarge:
@@ -229,6 +243,12 @@ Future<CollectionAiOrderOutcome> runCollectionAiOrder({
       return const CollectionAiOrderOutcome(
         CollectionAiOrderStatus.invalidReply,
       );
+    case AiCollectionOrderStatus.unknown:
+      debugPrint(
+        '[collection-ai-order] collection $collectionId: AI does not know '
+        'this work (web references did not help); keeping rule order',
+      );
+      return const CollectionAiOrderOutcome(CollectionAiOrderStatus.unknown);
     case AiCollectionOrderStatus.noAmbiguity:
     case AiCollectionOrderStatus.proposed:
       break;
