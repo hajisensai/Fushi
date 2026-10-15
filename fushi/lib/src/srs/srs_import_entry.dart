@@ -1,4 +1,4 @@
-/// 复习牌组列表的「导入」/「导出到 Anki」/「从制卡历史导入」三个入口。
+/// 复习牌组列表的「导入」/「导出（.apkg）」/「从制卡历史导入」三个入口。
 ///
 /// - 导入：选 .apkg / .colpkg → 选项（「用导入内容更新已有笔记」默认关）→ 进度 →
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
@@ -285,7 +285,7 @@ Future<bool?> _askImportOptions(BuildContext context) {
   );
 }
 
-/// 牌组列表 ⋯「导出到 Anki（.apkg）」：导出全部牌组。
+/// 牌组列表 ⋯「导出（.apkg）」：导出全部牌组（Anki 与 Fushi 自己的「导入」都能吃）。
 Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
   final SrsDbStore? store = await readSrsStore(ref);
   if (store == null) {

@@ -4365,7 +4365,7 @@
   "wheel_page_turn_interval": "Intervalo de virada de página com a roda do mouse",
   "word_favorite_added": "Palavra salva nos favoritos",
   "word_favorite_removed": "Palavra removida dos favoritos",
-  "fushi_api_key": "Chave da Fushi API (opcional)",
+  "fushi_api_key": "Chave da Fushi API",
   "fushi_api_server": "Servidor da Fushi API",
   "fushi_api_server_hint": "Permite que a extensão do navegador e clientes compatíveis com yomitan-api consultem os dicionários do Fushi (porta 19633)",
   "fushi_api_server_started": "Servidor da Fushi API iniciado",
@@ -7737,7 +7737,7 @@
   "srs_history_import": "Import from mining history",
   "srs_history_import_confirm": "Words you mined before (word, reading, definition, sentence) will be added to the default deck of the current profile \"$profile\". Words already imported are skipped.",
   "srs_history_import_done": "Imported $n, skipped $skipped",
-  "srs_export_apkg": "Export to Anki (.apkg)",
+  "srs_export_apkg": "Export (.apkg)",
   "srs_export_fsrs7_note": "Anki will schedule these cards with FSRS-6. After importing, run Optimize once in the deck options in Anki.",
   "srs_export_done": "Exported",
   "srs_export_failed": "Export failed",
@@ -7772,5 +7772,9 @@
   "srs_settings_reset_params_done": "Default parameters restored",
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
-  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device"
+  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
+  "fushi_api_key_hint": "Other devices and tools (Yomitan, Fushi on another device) enter this same key to connect. While it's empty, other devices can't add cards to Fushi review; once it's set, tools on this device need it too.",
+  "srs_ankiconnect_key_missing": "No key set: only this device can connect. To add cards from another device, generate a key and enter the same key there.",
+  "srs_ankiconnect_key_set": "From another device, replace 127.0.0.1 with this computer's LAN address and enter the same Fushi API key.",
+  "srs_ankiconnect_generate_key": "Generate key"
 }
