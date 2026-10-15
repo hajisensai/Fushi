@@ -31,6 +31,7 @@ class SrsCardFace {
     required this.css,
     required this.languageCode,
     required this.onBridgeKey,
+    this.bridgeKeys = kSrsReviewBridgeKeys,
   });
 
   final String cardId;
@@ -43,8 +44,12 @@ class SrsCardFace {
   /// 卡面 `lang`（字形 / 断行按学习语言走）；空 = 不标。
   final String? languageCode;
 
-  /// WebView 持有键盘焦点时，页内截获的按键 token（见 [kSrsReviewBridgeKeys]）。
+  /// WebView 持有键盘焦点时，页内截获的按键 token（见 [bridgeKeys]）。
   final void Function(String token) onBridgeKey;
+
+  /// WebView 持焦时要交回 Dart 的键：复习页用 [kSrsReviewBridgeKeys]，浏览页的预览用
+  /// [kSrsBrowseBridgeKeys]。
+  final List<String> bridgeKeys;
 }
 
 /// 卡面视图构造器。
@@ -78,14 +83,34 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Meta+KeyZ',
 ];
 
+/// 浏览页预览持焦时要交回 Dart 的键：翻面（Enter / 空格）、上一张 / 下一张（方向键）、
+/// 撤销、Esc。
+const List<String> kSrsBrowseBridgeKeys = <String>[
+  'Space',
+  'Enter',
+  'NumpadEnter',
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'Escape',
+  'Ctrl+KeyZ',
+  'Meta+KeyZ',
+];
+
 const String _kSrsBridgeHandler = 'onSrsReviewKey';
 
-/// 卡面键盘桥脚本（每次换内容后注入；生成器自带幂等守卫）。
-final String srsReviewKeyBridgeScript = webViewKeyBridgeScript(
+/// [keys] 的卡面键盘桥脚本（每次换内容后注入；生成器自带幂等守卫）。
+String srsCardFaceBridgeScript(List<String> keys) => webViewKeyBridgeScript(
   handlerName: _kSrsBridgeHandler,
-  keys: kSrsReviewBridgeKeys,
+  keys: keys,
   forwardRepeats: false,
   stopPropagation: true,
+);
+
+/// 复习页的卡面键盘桥脚本。
+final String srsReviewKeyBridgeScript = srsCardFaceBridgeScript(
+  kSrsReviewBridgeKeys,
 );
 
 String _cssColor(Color c) =>
@@ -284,7 +309,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
 
   Future<void> _injectBridge(InAppWebViewController controller) async {
     try {
-      await controller.evaluateJavascript(source: srsReviewKeyBridgeScript);
+      await controller.evaluateJavascript(
+        source: identical(widget.face.bridgeKeys, kSrsReviewBridgeKeys)
+            ? srsReviewKeyBridgeScript
+            : srsCardFaceBridgeScript(widget.face.bridgeKeys),
+      );
     } catch (_) {
       // 页面正在换内容 / 平台视图重建：下一次 onLoadStop 会再注入。
     }

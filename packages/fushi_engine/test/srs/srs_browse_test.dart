@@ -307,6 +307,29 @@ void main() {
       }
     });
 
+    test('按字段搜索（不用记语法）：特殊字符转义成字面量', () async {
+      final SrsDbStore s = await device('a');
+      await add(s, 'a*b_c"d:e');
+      await add(s, 'aBBc');
+      final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(s);
+      expect(srsFieldContainsQuery('Expression', '  '), '');
+      expect(
+        exprs(
+          snap.query(query: srsFieldContainsQuery('Expression', '*b_c"d:')),
+        ),
+        <String>['a*b_c"d:e'],
+      );
+      expect(
+        exprs(snap.query(query: srsFieldContainsQuery('expression', 'bb'))),
+        <String>['aBBc'],
+      );
+      expect(
+        snap.query(query: srsFieldContainsQuery('Expression', 'b_c')),
+        hasLength(1),
+        reason: '_ 是字面量，不是单字符通配',
+      );
+    });
+
     test('删除的笔记不出现', () async {
       final SrsDbStore s = await device('a');
       final String a = await add(s, '食べる');

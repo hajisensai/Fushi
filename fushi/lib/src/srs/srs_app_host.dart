@@ -73,14 +73,14 @@ Future<bool> srsPushNoteEditor(NavigatorState? navigator, String noteId) async {
   return true;
 }
 
-/// 在 [navigator] 上压一页浏览。
-Future<bool> srsPushBrowse(NavigatorState? navigator) async {
+/// 在 [navigator] 上压一页浏览，可带上初始查询（AnkiConnect guiBrowse）。
+Future<bool> srsPushBrowse(NavigatorState? navigator, {String? query}) async {
   if (navigator == null || !navigator.mounted) return false;
   unawaited(
     navigator.push<void>(
       adaptivePageRoute<void>(
         context: navigator.context,
-        builder: (BuildContext context) => const SrsBrowsePage(),
+        builder: (BuildContext context) => SrsBrowsePage(initialQuery: query),
       ),
     ),
   );

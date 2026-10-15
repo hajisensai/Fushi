@@ -20,6 +20,18 @@ int srsNoteModifiedAt(SrsNoteView note) {
   return out;
 }
 
+/// Anki 搜索里的字面量：通配符（`*` `_` `\`）与语法字符（`"` `:`）全部转义。
+String _searchLiteral(String text) =>
+    text.replaceAllMapped(RegExp(r'[\\*_":]'), (Match m) => '\\${m.group(0)}');
+
+/// 「不用记语法」的按字段搜索：在 [field] 字段里包含 [text]（不区分大小写、去 HTML 比较），
+/// 生成等价的 Anki 查询 `"字段:*文本*"`。[text] 为空返回空串（= 全部）。
+String srsFieldContainsQuery(String field, String text) {
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return '';
+  return '"${_searchLiteral(field)}:*${_searchLiteral(trimmed)}*"';
+}
+
 /// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
 class SrsCardSearchSubject implements SrsSearchSubject {
   SrsCardSearchSubject({
