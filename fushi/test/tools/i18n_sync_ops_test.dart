@@ -355,4 +355,130 @@ void main() {
       expect(merged.length, base.length + 2);
     });
   });
+
+  group('mergeI18nThreeWay：按 key 三方合并（git 合并驱动的核心）', () {
+    Map<String, dynamic> base() => <String, dynamic>{'a': '1', 'b': '2'};
+
+    test('两边各加相邻 key → 都保留且结果有序，无冲突', () {
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: <String, dynamic>{...base(), 'a_x': 'X'},
+        theirs: <String, dynamic>{...base(), 'a_y': 'Y'},
+      );
+      expect(r.json.keys.toList(), <String>['a', 'a_x', 'a_y', 'b']);
+      expect(r.conflicts, isEmpty);
+    });
+
+    test('一边删、另一边没动 → 删除生效', () {
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: base(),
+        theirs: <String, dynamic>{'b': '2'},
+      );
+      expect(r.json, <String, dynamic>{'b': '2'});
+      expect(r.conflicts, isEmpty);
+    });
+
+    test('一边改译文、另一边没动 → 取改动方', () {
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: base(),
+        theirs: <String, dynamic>{'a': '1!', 'b': '2'},
+      );
+      expect(r.json['a'], '1!');
+    });
+
+    test('两边做了同样的改动 → 不算冲突', () {
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: <String, dynamic>{...base(), 'c': 'C'},
+        theirs: <String, dynamic>{...base(), 'c': 'C'},
+      );
+      expect(r.conflicts, isEmpty);
+      expect(r.json['c'], 'C');
+    });
+
+    test('两边把同一 key 改成不同值 / 一改一删 → 报冲突并保留 ours', () {
+      final I18nMergeResult edit = mergeI18nThreeWay(
+        base: base(),
+        ours: <String, dynamic>{'a': 'ours', 'b': '2'},
+        theirs: <String, dynamic>{'a': 'theirs', 'b': '2'},
+      );
+      expect(edit.conflicts, <String>['a']);
+      expect(edit.json['a'], 'ours');
+
+      final I18nMergeResult editDelete = mergeI18nThreeWay(
+        base: base(),
+        ours: <String, dynamic>{'b': '2'},
+        theirs: <String, dynamic>{'a': 'theirs', 'b': '2'},
+      );
+      expect(editDelete.conflicts, <String>['a']);
+      expect(editDelete.json.containsKey('a'), isFalse);
+    });
+
+    test('真 git 仓库：两分支加字典序相邻的 key，驱动接上后 git merge 无冲突', () {
+      final Directory repo = Directory.systemTemp.createTempSync(
+        'i18n_driver_e2e_',
+      );
+      addTearDown(() => repo.deleteSync(recursive: true));
+      final String driver = File('tool/i18n_merge_driver.dart').absolute.path;
+
+      ProcessResult git(List<String> args) {
+        final ProcessResult r = Process.runSync('git', <String>[
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@t',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ], workingDirectory: repo.path);
+        return r;
+      }
+
+      void write(Map<String, dynamic> json) => File(
+        '${repo.path}/s.i18n.json',
+      ).writeAsStringSync(encodeI18nJson(json));
+
+      expect(git(<String>['init', '-q', '-b', 'main']).exitCode, 0);
+      git(<String>['config', 'core.autocrlf', 'false']);
+      git(<String>[
+        'config',
+        'merge.fushi-i18n-json.driver',
+        'dart "${driver.replaceAll('\\', '/')}" %O %A %B',
+      ]);
+      File(
+        '${repo.path}/.gitattributes',
+      ).writeAsStringSync('*.i18n.json merge=fushi-i18n-json\n');
+      write(<String, dynamic>{'a': '1', 'b': '2'});
+      git(<String>['add', '.']);
+      git(<String>['commit', '-q', '-m', 'base']);
+
+      git(<String>['checkout', '-q', '-b', 'feature']);
+      write(<String, dynamic>{'a': '1', 'a_y': 'Y', 'b': '2'});
+      git(<String>['commit', '-q', '-am', 'theirs']);
+
+      git(<String>['checkout', '-q', 'main']);
+      write(<String, dynamic>{'a': '1', 'a_x': 'X', 'b': '2'});
+      git(<String>['commit', '-q', '-am', 'ours']);
+
+      final ProcessResult merge = git(<String>[
+        'merge',
+        '--no-edit',
+        '-q',
+        'feature',
+      ]);
+      expect(
+        merge.exitCode,
+        0,
+        reason:
+            '相邻 key 按行合并必冲突，驱动没生效才会到这里：'
+            '${merge.stdout}${merge.stderr}',
+      );
+      final Map<String, dynamic> merged =
+          jsonDecode(File('${repo.path}/s.i18n.json').readAsStringSync())
+              as Map<String, dynamic>;
+      expect(merged.keys.toList(), <String>['a', 'a_x', 'a_y', 'b']);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+  });
 }

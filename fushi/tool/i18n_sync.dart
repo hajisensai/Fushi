@@ -361,6 +361,70 @@ Map<String, dynamic> fillMissingKeysInBaseOrder(
   return current;
 }
 
+/// Outcome of [mergeI18nThreeWay]: the merged, key-sorted table plus the keys
+/// both sides changed differently (left at [ours]' value).
+class I18nMergeResult {
+  const I18nMergeResult({required this.json, required this.conflicts});
+
+  final Map<String, dynamic> json;
+  final List<String> conflicts;
+}
+
+/// Key-level three-way merge of one i18n file — the git merge driver
+/// (`tool/i18n_merge_driver.dart`) and its tests share this.
+///
+/// Per key: a side that left the key as in [base] yields to the other side's
+/// change (add, edit or delete); both sides making the same change is no
+/// conflict; both changing it differently keeps [ours] and reports the key.
+/// The result is key-sorted, matching the invariant the guard
+/// `test/i18n/i18n_keys_sorted_guard_test.dart` enforces, so a line-level
+/// conflict between two sorted files never reaches a human.
+I18nMergeResult mergeI18nThreeWay({
+  required Map<String, dynamic> base,
+  required Map<String, dynamic> ours,
+  required Map<String, dynamic> theirs,
+}) {
+  final Map<String, dynamic> merged = <String, dynamic>{};
+  final List<String> conflicts = <String>[];
+  final Set<String> keys = <String>{...base.keys, ...ours.keys, ...theirs.keys};
+  for (final String key in keys.toList()..sort()) {
+    final bool inBase = base.containsKey(key);
+    final bool inOurs = ours.containsKey(key);
+    final bool inTheirs = theirs.containsKey(key);
+    final bool oursChanged =
+        inOurs != inBase || !_jsonEquals(ours[key], base[key]);
+    final bool theirsChanged =
+        inTheirs != inBase || !_jsonEquals(theirs[key], base[key]);
+
+    final bool takeTheirs;
+    if (!theirsChanged) {
+      takeTheirs = false;
+    } else if (!oursChanged) {
+      takeTheirs = true;
+    } else {
+      final bool same =
+          inOurs == inTheirs && _jsonEquals(ours[key], theirs[key]);
+      if (!same) conflicts.add(key);
+      takeTheirs = false;
+    }
+
+    if (takeTheirs) {
+      if (inTheirs) merged[key] = theirs[key];
+    } else if (inOurs) {
+      merged[key] = ours[key];
+    }
+  }
+  return I18nMergeResult(json: merged, conflicts: conflicts);
+}
+
+bool _jsonEquals(dynamic a, dynamic b) => jsonEncode(a) == jsonEncode(b);
+
+/// Encode [json] exactly as every i18n file is stored on disk.
+String encodeI18nJson(Map<String, dynamic> json) {
+  const JsonEncoder encoder = JsonEncoder.withIndent('  ');
+  return '${encoder.convert(json)}\n';
+}
+
 void main(List<String> args) {
   final I18nCommand command;
   try {
@@ -516,8 +580,7 @@ Map<String, dynamic> _readJson(File file) {
 }
 
 void _writeJson(File file, Map<String, dynamic> json) {
-  const JsonEncoder encoder = JsonEncoder.withIndent('  ');
-  file.writeAsStringSync('${encoder.convert(json)}\n');
+  file.writeAsStringSync(encodeI18nJson(json));
 }
 
 bool _listEquals(List<String> a, List<String> b) {
