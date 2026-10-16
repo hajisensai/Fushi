@@ -1618,11 +1618,17 @@ String _mangaGestureJs({
       if (match(failed[i])) _retryPageImage(failed[i]);
     }
   }
+  // 点击重取只认失败页中央那个重试符号的命中区（以页面中心为心的方块，边长
+  // RETRY_HIT_PX，≥48dp），不认整页：单页模式下失败页铺满视口，按整页命中会把
+  // 左右翻页热区的点击全吞掉，读者卡在失败页上翻不走（BUG：在线直读失败页吞翻页点击）。
+  var RETRY_HIT_PX = 72;
   function _retryFailedPageAt(x, y){
     var failed = document.querySelectorAll('.manga-page[data-load-failed="1"]');
+    var half = RETRY_HIT_PX / 2;
     for (var i = 0; i < failed.length; i++) {
       var r = failed[i].getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      var cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      if (Math.abs(x - cx) <= half && Math.abs(y - cy) <= half) {
         return _retryPageImage(failed[i]);
       }
     }
@@ -1997,8 +2003,6 @@ String _mangaGestureJs({
   function _onTap(x, y){
     var b = _bridge();
     if (!b) return;
-    // 点在失败页上：重取它，这一击不再做别的（失败页没有 OCR 字可查）。
-    if (_retryFailedPageAt(x, y)) return;
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x, y);
     if (zone) {
@@ -2006,6 +2010,10 @@ String _mangaGestureJs({
       b.callHandler('onMangaTurn', zone);
       return;
     }
+    // 翻页热区之外、点中失败页的重试符号：重取它，这一击不再做别的。必须排在
+    // 热区之后——失败页上的左右热区照常翻页，翻走 / 翻回也会触发重取
+    // （__mangaApplyTranslate）。
+    if (_retryFailedPageAt(x, y)) return;
     // 第二击落在同一块空白上 → 取消第一击挂起的 onTapEmpty（否则悬浮栏会跟着
     // 闪一次），在该点缩放；等比在「贴合」与 2× 之间切换。
     if (IS_WEBTOON && !${preferences.webtoonDoubleTapZoom}) {
