@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 /// job 用随包那份），没有时整组 skip 并说明原因。
 void main() {
   group('bucketServerDictPaths（与 app bucketDictPaths 同规则）', () {
-    test('隐藏的 term 仍进桶，隐藏的 freq/pitch/kanji 不进；不存在的目录跳过；hasKanji 双桶', () {
+    test('隐藏的词典四种类型都不进桶（BUG-3451）；不存在的目录跳过；hasKanji 双桶', () {
       final b = bucketServerDictPaths(<ServerDictPathEntry>[
         (type: 'term', path: 't1', exists: true, hidden: true, hasKanji: false),
         (type: 'term', path: 't2', exists: true, hidden: false, hasKanji: true),
@@ -27,8 +27,9 @@ void main() {
         (type: 'frequency', path: 'f2', exists: true, hidden: false, hasKanji: false),
         (type: 'pitch', path: 'p1', exists: true, hidden: false, hasKanji: false),
         (type: 'kanji', path: 'k1', exists: true, hidden: false, hasKanji: false),
+        (type: 'term', path: 'mixedHidden', exists: true, hidden: true, hasKanji: true),
       ]);
-      expect(b.term, <String>['t1', 't2']);
+      expect(b.term, <String>['t2']);
       expect(b.freq, <String>['f2']);
       expect(b.pitch, <String>['p1']);
       expect(b.kanji, <String>['t2', 'k1']);
@@ -216,14 +217,15 @@ void main() {
       expect(await lookup.lookupAudio(expression: '食べる', reading: 'たべる'), isNull);
     });
 
-    test('隐藏的 term 词典在弹窗 JSON 里被剔除；删掉元数据后重载即查不到', () async {
+    test('隐藏的 term 词典不进引擎、查不到；删掉元数据后重载即查不到', () async {
       final DictionaryMetaRow row = (await db.getAllDictionaryMetadata()).firstWhere(
         (DictionaryMetaRow r) => r.name == 'ServerTestDict',
       );
       await db.upsertDictionaryMeta(row.toCompanion(true).copyWith(hiddenLanguagesJson: const Value<String>('["ja"]')));
       await host.refresh();
-      final DictionarySearchResult? hidden = host.search('食べる', maximumTerms: 10);
-      expect(hidden?.popupJson, isNot(contains('to eat')));
+      // BUG-3451：隐藏词典根本不装进引擎——唯一的词典被关掉就是「无结果」，而不是
+      // 引擎命中后再在 popupJson 里滤空（那样它的长匹配仍占 top-N 与高亮长度）。
+      expect(host.search('食べる', maximumTerms: 10), isNull);
       await db.upsertDictionaryMeta(row.toCompanion(true));
       await db.deleteDictionaryMeta('ServerTestDict');
       await host.refresh();
