@@ -4365,7 +4365,7 @@
   "wheel_page_turn_interval": "滑鼠滾輪翻頁間隔",
   "word_favorite_added": "已收藏該詞",
   "word_favorite_removed": "已取消收藏該詞",
-  "fushi_api_key": "Fushi API 金鑰（可選）",
+  "fushi_api_key": "Fushi API 金鑰",
   "fushi_api_server": "Fushi API 伺服器",
   "fushi_api_server_hint": "讓瀏覽器擴展和兼容 yomitan-api 的客戶端查詢 Fushi 詞典（連接埠 19633）",
   "fushi_api_server_started": "Fushi API 伺服器已開啟",
@@ -7737,7 +7737,7 @@
   "srs_history_import": "Import from mining history",
   "srs_history_import_confirm": "Words you mined before (word, reading, definition, sentence) will be added to the default deck of the current profile \"$profile\". Words already imported are skipped.",
   "srs_history_import_done": "Imported $n, skipped $skipped",
-  "srs_export_apkg": "Export to Anki (.apkg)",
+  "srs_export_apkg": "Export (.apkg)",
   "srs_export_fsrs7_note": "Anki will schedule these cards with FSRS-6. After importing, run Optimize once in the deck options in Anki.",
   "srs_export_done": "Exported",
   "srs_export_failed": "Export failed",
@@ -7772,5 +7772,9 @@
   "srs_settings_reset_params_done": "Default parameters restored",
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
-  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device"
+  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
+  "fushi_api_key_hint": "其他裝置和工具（Yomitan、另一部裝置上的 Fushi）連線時要填同一個金鑰。留空時其他裝置無法往 Fushi 複習裡加卡；設定後，本機的工具也要填它。",
+  "srs_ankiconnect_key_missing": "未設金鑰：只有本機能連線。要從其他裝置加卡，先產生金鑰，再在那邊填同一個金鑰。",
+  "srs_ankiconnect_key_set": "從其他裝置連線時，把 127.0.0.1 換成這部電腦的區域網路位址，並填同一個 Fushi API 金鑰。",
+  "srs_ankiconnect_generate_key": "產生金鑰"
 }

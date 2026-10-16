@@ -1166,7 +1166,10 @@ SettingsDestination buildLookupDestination() {
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.fushiApiServerEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setFushiApiServerEnabled(value);
+              // 从关到开时空 key 自动播种（见 setFushiApiServerEnabledByUser）。
+              await settingsContext.appModel.setFushiApiServerEnabledByUser(
+                value,
+              );
               if (value) {
                 try {
                   await settingsContext.appModel.startFushiApiServer();
@@ -1186,6 +1189,9 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.fushi_api_key',
             visible: (SettingsContext c) => c.appModel.fushiApiServerEnabled,
             title: t.fushi_api_key,
+            // 不再写「可选」：其他设备 / AnkiConnect 客户端连这里要填同一个 key，
+            // 与 Fushi 作为 AnkiConnect 客户端那边「远程必填」是同一件事的两端。
+            subtitle: t.fushi_api_key_hint,
             icon: Icons.key_outlined,
             secret: true,
             value: (SettingsContext settingsContext) =>
@@ -1204,8 +1210,27 @@ SettingsDestination buildLookupDestination() {
                 c.appModel.moduleVisibility.isEnabled(ModuleId.srs),
             title: t.srs_ankiconnect_title,
             icon: FushiIcons.hub,
-            subtitleBuilder: (SettingsContext c) =>
-                t.srs_ankiconnect_hint(port: c.appModel.fushiApiPort),
+            // 端点没 key 时只收回环请求（非本机一律 403）：状态行直说，并就地给
+            // 「生成密钥」入口（只在空 key 时出现，绝不覆盖已有 key）。
+            subtitleBuilder: (SettingsContext c) {
+              final String hint = t.srs_ankiconnect_hint(
+                port: c.appModel.fushiApiPort,
+              );
+              final String keyState = c.appModel.fushiApiKey.isEmpty
+                  ? t.srs_ankiconnect_key_missing
+                  : t.srs_ankiconnect_key_set;
+              return '$hint\n$keyState';
+            },
+            actionLabel: t.srs_ankiconnect_generate_key,
+            actionVisible: (SettingsContext c) =>
+                c.appModel.fushiApiKey.isEmpty,
+            onAction: (SettingsContext settingsContext) async {
+              final bool seeded = await settingsContext.appModel
+                  .seedFushiApiKeyIfEmpty();
+              if (seeded) {
+                await _restartFushiApiServerIfEnabled(settingsContext);
+              }
+            },
           ),
           SettingsSwitchItem(
             id: 'lookup.texthooker',

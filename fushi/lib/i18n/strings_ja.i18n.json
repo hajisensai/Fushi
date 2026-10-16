@@ -4365,7 +4365,7 @@
   "wheel_page_turn_interval": "マウスホイールのページめくり間隔",
   "word_favorite_added": "単語をお気に入りに保存しました",
   "word_favorite_removed": "単語をお気に入りから削除しました",
-  "fushi_api_key": "Fushi API キー（任意）",
+  "fushi_api_key": "Fushi API キー",
   "fushi_api_server": "Fushi API サーバー",
   "fushi_api_server_hint": "ブラウザ拡張機能や yomitan-api 互換クライアントから Fushi の辞書を検索できるようにします（ポート 19633）",
   "fushi_api_server_started": "Fushi API サーバーが起動しました",
@@ -7737,7 +7737,7 @@
   "srs_history_import": "Import from mining history",
   "srs_history_import_confirm": "Words you mined before (word, reading, definition, sentence) will be added to the default deck of the current profile \"$profile\". Words already imported are skipped.",
   "srs_history_import_done": "Imported $n, skipped $skipped",
-  "srs_export_apkg": "Export to Anki (.apkg)",
+  "srs_export_apkg": "Export (.apkg)",
   "srs_export_fsrs7_note": "Anki will schedule these cards with FSRS-6. After importing, run Optimize once in the deck options in Anki.",
   "srs_export_done": "Exported",
   "srs_export_failed": "Export failed",
@@ -7772,5 +7772,9 @@
   "srs_settings_reset_params_done": "Default parameters restored",
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
-  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device"
+  "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
+  "fushi_api_key_hint": "他のデバイスやツール（Yomitan、別のデバイスの Fushi）から接続するときは同じキーを入力します。空欄のままだと他のデバイスから Fushi の復習にカードを追加できません。設定後は、このデバイスのツールにも入力が必要です。",
+  "srs_ankiconnect_key_missing": "キー未設定：このデバイスからのみ接続できます。他のデバイスからカードを追加するには、キーを生成して向こうにも同じキーを入力してください。",
+  "srs_ankiconnect_key_set": "他のデバイスから接続するときは、127.0.0.1 をこのコンピューターの LAN アドレスに置き換え、同じ Fushi API キーを入力してください。",
+  "srs_ankiconnect_generate_key": "キーを生成"
 }

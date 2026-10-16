@@ -8435,6 +8435,26 @@ class AppModel with ChangeNotifier {
   Future<void> setFushiApiKey(String value) =>
       prefsRepo.setFushiApiKey(value);
 
+  /// [fushiApiKey] 为空时播种一枚随机 key（与 sync server 同款密码学安全随机源），
+  /// 返回是否真的播种了。**绝不覆盖**非空值：主 Fushi API 一旦有 key，本机回环请求
+  /// 也必须带 key，覆盖会让已配好的客户端（Yomitan / 浏览器扩展 / 另一台设备）401。
+  Future<bool> seedFushiApiKeyIfEmpty() async {
+    if (fushiApiKey.isNotEmpty) return false;
+    await setFushiApiKey(FushiSyncServer.generateToken());
+    return true;
+  }
+
+  /// 用户在设置里拨动「Fushi API 服务器」开关。与 [setFushiApiServerEnabled] 的区别：
+  /// **从关到开**那一刻若 key 为空就先播种一枚（复习模块的 AnkiConnect 兼容端点没
+  /// key 时只收回环请求，别的设备连它必须带 key）。已开着 + 空 key 的存量用户不走
+  /// 这里（启动只读偏好），他们不带 key 的本机客户端不会突然 401。
+  Future<void> setFushiApiServerEnabledByUser(bool value) async {
+    if (value && !fushiApiServerEnabled) {
+      await seedFushiApiKeyIfEmpty();
+    }
+    await setFushiApiServerEnabled(value);
+  }
+
   /// 实验性：整套键盘/手柄焦点导航是否启用（默认 false）。关闭时 main.dart 不安装
   /// FushiFocusRoot/Ring，App 回退到 Flutter 原生焦点遍历。
   bool get experimentalFocusNavigationEnabled =>

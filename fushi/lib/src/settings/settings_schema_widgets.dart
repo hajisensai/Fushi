@@ -176,6 +176,7 @@ class SettingsSchemaItem extends StatefulWidget
       SettingsStatusItem status => <Object?>[
         status.resolveTitle(ctx),
         status.resolveSubtitle(ctx),
+        status.resolveAction(ctx) != null,
       ],
       SettingsActionItem action => <Object?>[action.resolveSubtitle(ctx)],
       SettingsSwitchItem toggle => <Object?>[
@@ -268,7 +269,8 @@ class SettingsSchemaItem extends StatefulWidget
   }
 
   Widget _status(BuildContext context, SettingsStatusItem status) {
-    final SettingsItemAction? onAction = status.onAction;
+    // actionVisible 判否时按纯状态行渲染（无按钮、不进焦点）。
+    final SettingsItemAction? onAction = status.resolveAction(settingsContext);
     // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 才到得了
     // （BUG-016）。`AdaptiveSettingsRow` 里 `if (onTap == null) return content;`
     // ——没有 onTap 的行根本不包 _SettingsRowFocusTarget、不进 FushiFocusController

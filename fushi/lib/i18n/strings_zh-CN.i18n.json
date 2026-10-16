@@ -4365,7 +4365,7 @@
   "wheel_page_turn_interval": "滚轮翻页间隔",
   "word_favorite_added": "已收藏该词",
   "word_favorite_removed": "已取消收藏该词",
-  "fushi_api_key": "Fushi API 密钥（可选）",
+  "fushi_api_key": "Fushi API 密钥",
   "fushi_api_server": "Fushi API 服务器",
   "fushi_api_server_hint": "让浏览器扩展和兼容 yomitan-api 的客户端查询 Fushi 词典（端口 19633）",
   "fushi_api_server_started": "Fushi API 服务器已开启",
@@ -7737,7 +7737,7 @@
   "srs_history_import": "从制卡历史导入",
   "srs_history_import_confirm": "将把以前的制卡记录（词、读音、释义、例句）导入到当前 profile「$profile」的默认牌组。已导入过的不会重复导入。",
   "srs_history_import_done": "已导入 $n 条，跳过 $skipped 条",
-  "srs_export_apkg": "导出到 Anki（.apkg）",
+  "srs_export_apkg": "导出（.apkg）",
   "srs_export_fsrs7_note": "Anki 里会改用 FSRS-6，建议导入后在 Anki 的牌组选项里点一次「优化」。",
   "srs_export_done": "已导出",
   "srs_export_failed": "导出失败",
@@ -7772,5 +7772,9 @@
   "srs_settings_reset_params_done": "已恢复默认参数",
   "srs_ankiconnect_title": "AnkiConnect（Fushi 复习）",
   "backup_category_srs": "复习",
-  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案"
+  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案",
+  "fushi_api_key_hint": "其他设备和工具（Yomitan、另一台设备上的 Fushi）连接时要填同一个密钥。留空时其他设备无法往 Fushi 复习里加卡；设置后，本机的工具也要填它。",
+  "srs_ankiconnect_key_missing": "未设密钥：只有本机能连。要从其他设备加卡，先生成密钥，再在那边填同一个密钥。",
+  "srs_ankiconnect_key_set": "从其他设备连接时，把 127.0.0.1 换成这台电脑的局域网地址，并填同一个 Fushi API 密钥。",
+  "srs_ankiconnect_generate_key": "生成密钥"
 }
