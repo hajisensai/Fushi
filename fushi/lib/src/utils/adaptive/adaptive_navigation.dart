@@ -268,8 +268,8 @@ const double _kGlassSidebarCollapsedCellWidth = 60;
 /// [barStyle]：底栏形态（用户偏好 `nav_bar_style`，见 [AdaptiveNavBarStyle]）。
 /// 分页滑动（MD3）：查词并进胶囊、所有目的地同级，每页 5 个，在底栏上横滑翻页；
 /// 按住约 0.3 秒进入拖选（震一下），手指停在哪一格就选哪一格，拖到胶囊左右
-/// 边缘停一下自动翻页，松手切过去。目的地不超过 5 个时与平铺相同。Apple 胶囊
-/// 暂不分页，仍按平铺画。
+/// 边缘停一下自动翻页，松手切过去。目的地不超过 5 个时与平铺同一排。Apple
+/// 胶囊同语义分页（2026-10-16），分页状态 / 手势与 MD3 共用 [_NavPagedRow]。
 Widget adaptiveBottomBar({
   required BuildContext context,
   required int currentIndex,
@@ -356,7 +356,7 @@ class _MaterialNavCluster extends StatelessWidget {
     this.barStyle = AdaptiveNavBarStyle.flat,
   });
 
-  /// 底栏形态，见 [adaptiveBottomBar]；侧栏与 Apple 胶囊不读。
+  /// 底栏形态，见 [adaptiveBottomBar]；MD3 悬浮胶囊与 Apple 胶囊都读，侧栏不读。
   final AdaptiveNavBarStyle barStyle;
 
   /// MD3 悬浮底栏「长按拎起选中指示器、拖到目标模块松手」的落地回调（参数同
@@ -411,9 +411,11 @@ class _MaterialNavCluster extends StatelessWidget {
     bool iconOnly = false,
     double? cellWidth,
     bool? looksSelected,
+    bool glassOwnLens = false,
   }) {
     return _NavFocusCell(
       id: FushiFocusId('$idPrefix-$i'),
+      glassOwnLens: glassOwnLens,
       item: items[i],
       // 分页底栏拖选中：选中药丸画在手指罩着的那一格（只是外观）。
       selected: looksSelected ?? i == currentIndex,
@@ -428,34 +430,61 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// 分页滑动的一排（MD3）：每页 [_kNavPageSize] 格，底栏横滑翻页、长按拖选
-  /// （见 [_NavPagedRow]）。不挂整条胶囊的滑动指示器，各格自己画选中药丸。
-  /// 拖选落地走 [onDragSelect]（宿主据此播模块切换转场），没接时退回 [onTap]。
-  Widget _buildPagedRow(BuildContext context, double width, List<int> indices) {
+  /// 分页滑动的一排（MD3 悬浮胶囊与 Apple 胶囊共用）：每页 [_kNavPageSize]
+  /// 格，底栏横滑翻页、长按拖选（见 [_NavPagedRow]）。不挂整条胶囊的滑动
+  /// 指示器，各格自己画选中态（MD3 药丸 / Apple lens，[glass]）。
+  /// 拖选落地：MD3 走 [onDragSelect]（宿主据此播模块切换转场），没接时退回
+  /// [onTap]；Apple 保持 iOS 标签栏的点按切换语义（同胶囊拖动 lens 的落地），
+  /// 一律走 [onTap]。
+  Widget _buildPagedRow(
+    BuildContext context,
+    double width,
+    List<int> indices, {
+    bool glass = false,
+  }) {
     final List<List<int>> pages = <List<int>>[
       for (int start = 0; start < indices.length; start += _kNavPageSize)
         indices.sublist(start, math.min(indices.length, start + _kNavPageSize)),
     ];
     final double cellWidth = width / _kNavPageSize;
-    final ValueChanged<int> dragSelect = onDragSelect ?? onTap;
+    final ValueChanged<int> dragSelect = glass
+        ? onTap
+        : (onDragSelect ?? onTap);
     return _NavPagedRow(
       pages: pages,
       currentIndex: currentIndex,
-      cellBuilder: (int i, bool? looksSelected) =>
-          _cell(context, i, cellWidth: cellWidth, looksSelected: looksSelected),
+      cellBuilder: (int i, bool? looksSelected) => _cell(
+        context,
+        i,
+        cellWidth: cellWidth,
+        looksSelected: looksSelected,
+        glassOwnLens: glass,
+      ),
       onDragSelect: dragSelect,
     );
   }
+
+  /// 底栏是否按「分页滑动」画：偏好选了分页、且进胶囊的目的地多于一页。
+  /// 不多于 [_kNavPageSize] 个时与平铺同一排（MD3 / Apple 同一判据）。
+  bool _pagedFor(List<int> capsuleIndices) =>
+      barStyle == AdaptiveNavBarStyle.pager &&
+      capsuleIndices.length > _kNavPageSize;
 
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
   /// 只剩当前项图标的圆（宽度动画；减弱动态效果下瞬间到位），其余目的地
   /// 淡出并移出焦点遍历 / 命中测试。焦点 id 与展开态一致（`nav-bar-<序号>`），
   /// 最小化圆用单独的 `nav-mini-bar`。
+  ///
+  /// 分页滑动（[barStyle]，2026-10-16 用户「apple 也要分页」）：与 MD3 同语义
+  /// ——查词并进胶囊、所有目的地同级，多于一页时胶囊里换成共用的
+  /// [_NavPagedRow]（横滑翻页、页点、按住拖选、边缘停留翻页）；胶囊自己的
+  /// 「横拖 lens」让位给翻页手势，选中态由各格自己画 lens。
   Widget _buildGlassTabBar(BuildContext context) {
     final int? rawSearch = glassSearchIndex;
     final int? search =
-        rawSearch != null &&
+        !barStyle.lookupInBar &&
+            rawSearch != null &&
             rawSearch >= 0 &&
             rawSearch < items.length &&
             items.length > 1
@@ -482,12 +511,15 @@ class _MaterialNavCluster extends StatelessWidget {
         final double innerFull = fullWidth - 2 * _kGlassNavBarInnerPadding;
         const double innerMini =
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
-        final Widget fullRow = Row(
-          children: <Widget>[
-            for (final int i in capsuleIndices)
-              Expanded(child: _cell(context, i)),
-          ],
-        );
+        final bool paged = _pagedFor(capsuleIndices);
+        final Widget fullRow = paged
+            ? _buildPagedRow(context, innerFull, capsuleIndices, glass: true)
+            : Row(
+                children: <Widget>[
+                  for (final int i in capsuleIndices)
+                    Expanded(child: _cell(context, i)),
+                ],
+              );
         // 隐藏的那一层不挂焦点目标：FushiFocus 按几何找方向邻居，透明但仍注册
         // 的目标会让 D-pad 落到看不见的格子上。
         final Widget miniCell = selectedInCapsule
@@ -524,7 +556,9 @@ class _MaterialNavCluster extends StatelessWidget {
           );
         }
 
-        final int? selectedPos = selectedInCapsule
+        // 分页时胶囊不画统一 lens（它按整枚胶囊的格数对齐，翻页后对不上），
+        // 由各格自己画（[_NavFocusCell.glassOwnLens]）。
+        final int? selectedPos = selectedInCapsule && !paged
             ? capsuleIndices.indexOf(currentIndex)
             : null;
         // 搜索圆钮：默认在胶囊右侧；反转底栏方向时挪到左侧（[searchLeading]）。
@@ -554,6 +588,8 @@ class _MaterialNavCluster extends StatelessWidget {
                 minimized: minimized,
                 itemCount: capsuleIndices.length,
                 selectedPos: selectedPos,
+                // 分页时横拖归翻页（[_NavPagedRow]），胶囊不再横拖滑 lens。
+                swipeSelect: !paged,
                 duration: duration,
                 curve: curve,
                 onSelectPos: (int pos) {
@@ -705,8 +741,7 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final double width = box.maxWidth;
-    if (this.barStyle == AdaptiveNavBarStyle.pager &&
-        indices.length > _kNavPageSize) {
+    if (_pagedFor(indices)) {
       return _buildPagedRow(context, width, indices);
     }
     final TextStyle style =
@@ -2253,7 +2288,9 @@ const double _kNavPagedEdgeZone = 20;
 /// 停在边缘多久翻一页；一直停着就每隔这么久再翻一页。
 const Duration _kNavPagedEdgeDwell = Duration(milliseconds: 450);
 
-/// 底栏分页行：[pages] 每页一组目的地（每页 [_kNavPageSize] 格）。
+/// 底栏分页行：[pages] 每页一组目的地（每页 [_kNavPageSize] 格）。MD3 悬浮
+/// 胶囊与 Apple 胶囊共用这一份状态 / 手势，外观只差在格子（[cellBuilder]）
+/// 与页点样式。
 /// - 横滑：手指跟手拖动整排，松手拖过 1/4 页或甩一下就翻到相邻页（spatial
 ///   弹簧带回弹），底部一排小圆点提示页数与当前页；
 /// - 按住约 0.3 秒：进入拖选（震一下），手指罩着哪一格就把选中药丸画在哪一格、
@@ -2298,6 +2335,12 @@ class _NavPagedRowState extends State<_NavPagedRow>
   int _edgeDirection = 0;
   Timer? _edgeTimer;
 
+  /// 焦点（方向键 / 手柄 / Tab）此刻停在哪一页的哪一格（null = 不在本行）。
+  /// 停在当前页首格 / 末格时，相邻那一页放进焦点遍历（[_pageFocusable]），
+  /// 方向键再往外走就能进去、进去即翻页（[_onCellFocusChange]）。
+  int? _focusPage;
+  int? _focusSlot;
+
   @override
   void initState() {
     super.initState();
@@ -2311,6 +2354,8 @@ class _NavPagedRowState extends State<_NavPagedRow>
     if (!_samePages(oldWidget.pages, widget.pages)) {
       _page = _pageOf(widget.currentIndex) ?? 0;
       _position.value = _page.toDouble();
+      _focusPage = null;
+      _focusSlot = null;
       return;
     }
     if (oldWidget.currentIndex != widget.currentIndex && !_selecting) {
@@ -2351,6 +2396,41 @@ class _NavPagedRowState extends State<_NavPagedRow>
         velocity: velocity,
       ),
     );
+  }
+
+  /// 第 [page] 页的格此刻是否进焦点遍历。
+  ///
+  /// 当前页恒进；别页默认**不进**——被动焦点修复（进页 / 焦点丢失时自动落点）
+  /// 按阅读顺序挑首个目标，看不见的页若一直可聚焦，修复会把焦点落到屏幕外、再
+  /// 把整排翻走。只在焦点停在当前页的边缘格时放开紧挨着的那一页：此时主焦点
+  /// 可用、被动修复不会动它，而显式方向输入（几何上最近的就是相邻页紧挨着的
+  /// 那一格）终于够得着别页的目的地。
+  bool _pageFocusable(int page) {
+    if (page == _page) return true;
+    final int? slot = _focusSlot;
+    if (_focusPage != _page || slot == null) return false;
+    if (page == _page + 1) return slot == widget.pages[_page].length - 1;
+    if (page == _page - 1) return slot == 0;
+    return false;
+  }
+
+  /// 焦点进 / 出某一格。进了别页的格（方向键越过当前页边缘）就翻到那一页。
+  void _onCellFocusChange(int page, int slot, bool hasFocus) {
+    if (!mounted) return;
+    if (!hasFocus) {
+      if (page == _focusPage && slot == _focusSlot) {
+        setState(() {
+          _focusPage = null;
+          _focusSlot = null;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _focusPage = page;
+      _focusSlot = slot;
+    });
+    if (page != _page && !_selecting) _settleTo(page);
   }
 
   // ---- 横滑翻页 ----
@@ -2451,15 +2531,23 @@ class _NavPagedRowState extends State<_NavPagedRow>
     });
   }
 
-  Widget _pageRow(List<int> page) {
+  Widget _pageRow(int p) {
+    final List<int> page = widget.pages[p];
     return Row(
       children: <Widget>[
         for (int k = 0; k < _kNavPageSize; k++)
           Expanded(
             child: k < page.length
-                ? widget.cellBuilder(
-                    page[k],
-                    _selecting ? page[k] == _hover : null,
+                // 只听焦点进出（定位「焦点在哪页哪格」），自己不是落点。
+                ? Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    includeSemantics: false,
+                    onFocusChange: (bool has) => _onCellFocusChange(p, k, has),
+                    child: widget.cellBuilder(
+                      page[k],
+                      _selecting ? page[k] == _hover : null,
+                    ),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -2469,8 +2557,14 @@ class _NavPagedRowState extends State<_NavPagedRow>
 
   @override
   Widget build(BuildContext context) {
+    // 页点：MD3 是当前页拉长的短胶囊（胶囊前景色）；Apple 是 iOS 页控件的
+    // 等大小圆点，当前页实色、其余淡（label 色）。
+    final bool glass = isGlassDesign(context);
     final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
-    final Color dot = bar?.content ?? Theme.of(context).colorScheme.onSurface;
+    final Color dot = glass
+        ? appleColorsOf(context).label
+        : (bar?.content ?? Theme.of(context).colorScheme.onSurface);
+    final double dotSize = glass ? 5 : 4;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints box) {
         _width = math.max(1, box.maxWidth);
@@ -2523,14 +2617,19 @@ class _NavPagedRowState extends State<_NavPagedRow>
                         for (int p = 0; p < widget.pages.length; p++)
                           if ((p - pos).abs() < 1.5)
                             Positioned.fill(
+                              // 按页号保身份：窗口里的页集合随翻页增减，按下标
+                              // 复用元素会把别页的格（及其焦点节点）错配过来。
+                              key: ValueKey<int>(p),
                               child: Transform.translate(
                                 offset: Offset((p - pos) * _width, 0),
-                                // 看不见的页不进焦点遍历 / 命中。
+                                // 看不见的页不接指针；焦点遍历见
+                                // [_pageFocusable]（焦点停在边缘格时放开相邻
+                                // 页，否则键盘 / 手柄永远够不着别页的目的地）。
                                 child: ExcludeFocus(
-                                  excluding: p != _page,
+                                  excluding: !_pageFocusable(p),
                                   child: IgnorePointer(
                                     ignoring: p != _page,
-                                    child: _pageRow(widget.pages[p]),
+                                    child: _pageRow(p),
                                   ),
                                 ),
                               ),
@@ -2554,14 +2653,16 @@ class _NavPagedRowState extends State<_NavPagedRow>
                             context,
                             FushiMotion.short,
                           ),
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          width: p == _page ? 10 : 4,
-                          height: 4,
+                          margin: EdgeInsets.symmetric(
+                            horizontal: glass ? 2.5 : 2,
+                          ),
+                          width: p == _page && !glass ? 10 : dotSize,
+                          height: dotSize,
                           decoration: BoxDecoration(
                             color: dot.withValues(
-                              alpha: p == _page ? 0.9 : 0.35,
+                              alpha: p == _page ? 0.9 : (glass ? 0.3 : 0.35),
                             ),
-                            borderRadius: BorderRadius.circular(2),
+                            borderRadius: BorderRadius.circular(dotSize / 2),
                           ),
                         ),
                     ],
@@ -2961,7 +3062,12 @@ class _GlassTabCapsule extends StatefulWidget {
     required this.curve,
     required this.onSelectPos,
     required this.children,
+    this.swipeSelect = true,
   });
+
+  /// 按住横拖让 lens 在各项间滑行、松手切过去。分页底栏关掉它：横拖归翻页
+  /// （[_NavPagedRow]），否则两个横向拖动识别器在竞技场里抢同一根指针。
+  final bool swipeSelect;
 
   /// 胶囊目标宽（展开 = 可用宽减搜索圆钮，最小化 = 胶囊高）。
   final double width;
@@ -3131,10 +3237,12 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         excludeFromSemantics: true,
-        onHorizontalDragStart: _onDragStart,
-        onHorizontalDragUpdate: _onDragUpdate,
-        onHorizontalDragEnd: (DragEndDetails _) => _onDragEnd(),
-        onHorizontalDragCancel: _onDragEnd,
+        onHorizontalDragStart: widget.swipeSelect ? _onDragStart : null,
+        onHorizontalDragUpdate: widget.swipeSelect ? _onDragUpdate : null,
+        onHorizontalDragEnd: widget.swipeSelect
+            ? (DragEndDetails _) => _onDragEnd()
+            : null,
+        onHorizontalDragCancel: widget.swipeSelect ? _onDragEnd : null,
         child: SpringBuilder(
           value: morph && _down ? 1.04 : 1.0,
           spring: GlassSpring.snappy(
@@ -3303,6 +3411,7 @@ class _NavFocusCell extends StatefulWidget {
     this.extended = true,
     this.iconOnly = false,
     this.cellWidth,
+    this.glassOwnLens = false,
   });
 
   final FushiFocusId id;
@@ -3310,6 +3419,9 @@ class _NavFocusCell extends StatefulWidget {
   final bool selected;
   final bool horizontal;
   final VoidCallback onSelect;
+
+  /// Apple 分页底栏的格：自己画选中 lens（胶囊的统一 lens 只在平铺时画）。
+  final bool glassOwnLens;
 
   /// 侧栏是否展开（见 [_MaterialNavCluster.extended]）。
   final bool extended;
@@ -3377,6 +3489,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
       pillWidth: metrics.pillWidth,
       compactLabel: metrics.compact,
       indicatorKey: _indicatorKey,
+      glassOwnLens: widget.glassOwnLens,
     );
     final bool labelsHidden =
         !(_FloatingBarStyle.maybeOf(context)?.showLabels ?? true);
@@ -3529,10 +3642,15 @@ class _FushiNavTile extends StatelessWidget {
     this.pillWidth = AdaptiveNavTileMetrics.fullPillWidth,
     this.compactLabel = false,
     this.indicatorKey,
+    this.glassOwnLens = false,
   });
 
   final AdaptiveNavItem item;
   final bool selected;
+
+  /// Apple 底栏胶囊里的格自己画选中 lens（分页底栏；平铺时 lens 由
+  /// [_GlassTabCapsule] 统一画）。
+  final bool glassOwnLens;
 
   /// 底栏（图标在上、小字在下）还是侧栏行。
   final bool horizontal;
@@ -3624,8 +3742,16 @@ class _FushiNavTile extends StatelessWidget {
       //
       // 底栏纯图标（与 MD3 底栏同一规则，用户 2026-10-12「底部栏跟安卓一样文字
       // 也去掉」）：文字只进 tooltip 与无障碍语义，不再画在图标下面。
+      //
+      // 分页底栏（[glassOwnLens]）：胶囊的统一 lens 按整枚胶囊格数对齐、翻页
+      // 后对不上，改由格自己画同款 lens（实色档高一阶底 / 玻璃档透明 + 细高光
+      // 边 + 柔和投影），选中 / 拖选换格时随 [duration] 淡入淡出。长按归拖选，
+      // tooltip 只留悬停（名称仍在语义里）。
+      const double cellHeight =
+          kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding;
       return FushiTooltip(
         message: item.label,
+        triggerMode: glassOwnLens ? TooltipTriggerMode.manual : null,
         child: Semantics(
           label: item.label,
           selected: selected,
@@ -3633,8 +3759,16 @@ class _FushiNavTile extends StatelessWidget {
             duration: duration,
             curve: FushiMotion.standard,
             width: double.infinity,
-            height: kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding,
+            height: cellHeight,
             alignment: Alignment.center,
+            decoration: glassOwnLens
+                ? BoxDecoration(
+                    color: lensFill,
+                    borderRadius: BorderRadius.circular(cellHeight / 2),
+                    border: lensRim,
+                    boxShadow: lensShadow,
+                  )
+                : null,
             child: glyph(24, color: tabFg),
           ),
         ),

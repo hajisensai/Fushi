@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3106 条。点号进各自文件。
+> 共 3107 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |
 | [BUG-3449](bugs/BUG-3449-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |

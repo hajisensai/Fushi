@@ -60,6 +60,7 @@ class VideoRemoteNowPlaying {
     this.speed = 1.0,
     this.subtitlesVisible = true,
     this.currentFavorited = false,
+    this.volume,
   });
 
   /// 作品名。
@@ -84,6 +85,9 @@ class VideoRemoteNowPlaying {
 
   /// 当前句是否已收藏（收藏按钮的选中态）。
   final bool currentFavorited;
+
+  /// 电脑音量 0..100；电脑不上报（旧版本）为 null。
+  final int? volume;
 
   /// 「作品名 · 集数」。
   String get titleWithEpisode {
@@ -249,6 +253,10 @@ IconData videoRemoteControlIcon(
     active ? FushiIcons.subtitles : FushiIcons.subtitlesOff,
   VideoRemoteControlItem.seekBack => FushiIcons.replay10,
   VideoRemoteControlItem.seekForward => FushiIcons.forward10,
+  VideoRemoteControlItem.episodes => FushiIcons.playlist,
+  VideoRemoteControlItem.subtitleTrack => FushiIcons.subtitles,
+  VideoRemoteControlItem.volume =>
+    active ? FushiIcons.volumeOff : FushiIcons.volumeUp,
 };
 
 /// 控制按钮的文案（tooltip / 无障碍 / 横屏网格标签 / 编辑器）。
@@ -271,6 +279,9 @@ String videoRemoteControlLabel(
     t.video_remote_control_subtitle_visibility,
   VideoRemoteControlItem.seekBack => t.video_remote_control_seek_back,
   VideoRemoteControlItem.seekForward => t.video_remote_control_seek_forward,
+  VideoRemoteControlItem.episodes => t.video_episode_list,
+  VideoRemoteControlItem.subtitleTrack => t.video_control_subtitle_track,
+  VideoRemoteControlItem.volume => t.audio_volume,
 };
 
 /// 按钮当前是不是「开着」的状态（图标 / 选中态用）。
@@ -281,6 +292,8 @@ bool videoRemoteControlActive(
   VideoRemoteControlItem.playPause => nowPlaying.isPlaying,
   VideoRemoteControlItem.favorite => nowPlaying.currentFavorited,
   VideoRemoteControlItem.subtitleVisibility => nowPlaying.subtitlesVisible,
+  // 音量按钮的「开着」= 电脑静音（图标换成静音）。
+  VideoRemoteControlItem.volume => nowPlaying.volume == 0,
   _ => false,
 };
 

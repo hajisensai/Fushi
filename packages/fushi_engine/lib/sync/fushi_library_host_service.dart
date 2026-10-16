@@ -1349,14 +1349,29 @@ BookProgressSyncAction resolveBookProgressThreeWay({
 /// 纯函数。远端书的去重键 = `sanitizeTtuFilename(title)`（与 `EpubBooks.bookKey`
 /// 派生一致，由调用方算好后传入 [keyOf]）。本端已有同 key 的书就不再在「配对设备」
 /// 区重复展示（TODO-033 #6：远端与本地重复同一本书）。
+///
+/// host 显式下发的 bookKey（[RemoteBookInfo.bookKey]）也算命中（BUG-3452）：
+/// 从对端下载、本机落地键与对端键不同的书（对端书名带 `(2)` 后缀、EPUB 无
+/// dc:title…）只在别名表里记着对端键——调用方把别名并进 [localBookKeys]，但只按
+/// 书名派生键比对的话，host bookKey 与书名不同源时永远对不上，下载完那张「未下载」
+/// 占位卡就一直留在书架上。没带 bookKey（旧 host / 云盘）时不拿原始书名当键比：
+/// 书名与 bookKey 不是同一个值域（BUG-2274）。
 List<RemoteBookInfo> dedupeRemoteBooks({
   required List<RemoteBookInfo> remote,
   required Set<String> localBookKeys,
   required String Function(String title) keyOf,
 }) {
+  bool hostKeyIsLocal(RemoteBookInfo book) {
+    final String? hostKey = book.bookKey;
+    return hostKey != null &&
+        hostKey.isNotEmpty &&
+        localBookKeys.contains(hostKey);
+  }
+
   return <RemoteBookInfo>[
     for (final RemoteBookInfo book in remote)
-      if (!localBookKeys.contains(keyOf(book.title))) book,
+      if (!localBookKeys.contains(keyOf(book.title)) && !hostKeyIsLocal(book))
+        book,
   ];
 }
 

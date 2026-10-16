@@ -448,6 +448,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 显示加载覆盖层，直到有声书下完（成功或失败都在 finally 清除）。
   final Set<String> _downloadingAudiobookKeys = <String>{};
 
+  /// 已在本机落地、但远端清单还没按新本地状态重新去重的对端书（键 =
+  /// [RemoteBookInfo.downloadId]，BUG-3452）。渲染时跳过它们的占位卡；由
+  /// [_onRemoteBookLanded] 写入，那一轮远端清单回来后摘除。
+  final Set<String> _landedRemoteDownloadIds = <String>{};
+
   /// 本地卡在「有声书还在下」时叠的居中加载覆盖层（BUG-990）；[bookKey] 不在下载集合
   /// 时返回 null（不叠）。
   Widget? _audiobookDownloadingOverlay(String? bookKey) {
@@ -1779,7 +1784,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final List<RemoteBookInfo> remoteBooks = <RemoteBookInfo>[
       if (showRemote)
         for (final RemoteBookInfo b in remoteState.books)
-          if (_matchesShelfSearch(<String>[b.title])) b,
+          if (!_landedRemoteDownloadIds.contains(b.downloadId) &&
+              _matchesShelfSearch(<String>[b.title]))
+            b,
     ];
     // 纯 SRT（standalone）远端有声书占位（互联后端 listRemoteAudiobooks 的 standalone
     // 项，本地无同 uid SrtBook）——与远端 EPUB 书同门控混排进主网格。

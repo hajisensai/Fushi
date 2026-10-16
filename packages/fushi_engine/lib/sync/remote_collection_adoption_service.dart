@@ -77,7 +77,22 @@ class RemoteCollectionAdoptionService {
     final CollectionBookIdentityIndex identities =
         preloaded ?? await CollectionBookIdentityIndex.load(database);
     final String? uid = identities.uidByKey[remoteKey];
-    return uid == null ? null : database.getEpubBookByUid(uid);
+    if (uid != null) return database.getEpubBookByUid(uid);
+    if (preloaded == null) return null;
+    // BUG-3452：[preloaded] 是整份清单收养开始时的快照，逐本收养之间别的事务照常
+    // 落库——这一轮循环期间正好下载落地、已把占位成员提升成本地 uid 的书，在快照里
+    // 查不到，按「本机没有」处理就会把对端键的占位成员行重新插回合集：合集里同一本
+    // 书两行（本地卡 + 未下载占位卡，册数翻倍），直到下一轮目录刷新才被收掉。快照
+    // 落空时在本事务里按对端键再精确查一次（本机落地键 = 对端键，或下载时记下的
+    // 别名），只多两次按键查询，不重新物化整份索引。
+    final EpubBookRow? sameKey = await database.getEpubBook(remoteKey);
+    if (sameKey != null) return sameKey;
+    final CollectionBookAliasRow? alias =
+        await (database.select(database.collectionBookAliases)..where(
+              ($CollectionBookAliasesTable t) => t.remoteKey.equals(remoteKey),
+            ))
+            .getSingleOrNull();
+    return alias == null ? null : database.getEpubBookByUid(alias.localUid);
   }
 
   /// 适配器已经持有入库行和 DTO 归属时使用；无归属是纯 no-op。

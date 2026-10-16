@@ -1538,8 +1538,9 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。默认平铺（放不下
-  /// 才收进「更多」）。
+  /// 手机底栏形态（[AdaptiveNavBarStyle]）：平铺 / 分页滑动。没写过时取
+  /// [AdaptiveNavBarStyle.defaultStyle]（2026-10-16 起为分页滑动）；只在用户
+  /// 显式选择时落库，所以「没选过」与「选了平铺」可区分。
   AdaptiveNavBarStyle get navBarStyle => AdaptiveNavBarStyle.fromPref(
     getPref('nav_bar_style', defaultValue: '') as String,
   );
