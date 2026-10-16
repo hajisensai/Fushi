@@ -112,30 +112,14 @@ extension _VideoClipExport on _VideoFushiPageState {
     _rebuild(() => _clipExporting = true);
     _showOsd(t.video_clip_exporting, severity: ToastSeverity.info);
 
-    final VideoClipExportResult result = await exportVideoClipViaFfmpeg(
+    final VideoClipExportResult result = await _exportClipFile(
+      controller: controller,
       inputPath: startPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: outputPath,
       audioStreamIndex: audioStreamIndex,
       audioStreamCount: audioStreamCount,
-      subtitleContents: _clipExportSubtitleContents(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
-      // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
-      // 不可播（见 resolveClipSubtitleCodec）。
-      subtitleCues: _clipExportSubtitleCues(
-        controller: controller,
-        startMs: startMs,
-        endMs: endMs,
-      ),
-      subtitleRenderer: _clipExportSubtitleRenderer(),
-      // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
-      // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
-      videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
     );
 
     if (!mounted) {
@@ -325,6 +309,42 @@ extension _VideoClipExport on _VideoFushiPageState {
       );
     };
   }
+
+  /// 片段导出的 ffmpeg 一步（快捷键两段式导出与桌面 CLI `video clip` 共用）：
+  /// 当前看到的主 / 副字幕裁成 SRT、按 cue 烧录硬字幕、用户设的视频码率。
+  Future<VideoClipExportResult> _exportClipFile({
+    required VideoPlayerController controller,
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    required int? audioStreamIndex,
+    required int? audioStreamCount,
+  }) => exportVideoClipViaFfmpeg(
+    inputPath: inputPath,
+    startMs: startMs,
+    endMs: endMs,
+    outputPath: outputPath,
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+    subtitleContents: _clipExportSubtitleContents(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    // 硬字幕烧录（BUG-2202）：cue 带时间轴，导出层探出画面尺寸后回调渲染。
+    // 内封软字幕轨已经不用了——mp4 里的 tx3g 会让整个片段在 QQ 这类 IM 里判为
+    // 不可播（见 resolveClipSubtitleCodec）。
+    subtitleCues: _clipExportSubtitleCues(
+      controller: controller,
+      startMs: startMs,
+      endMs: endMs,
+    ),
+    subtitleRenderer: _clipExportSubtitleRenderer(),
+    // 用户设的视频码率（0 = 跟随源，导出层归一成 null）。在这里取值而不是在
+    // 标起点时取：用户常在标完起点、按导出前才去快捷面板改码率。
+    videoBitrateKbps: appModel.videoClipExportVideoBitrateKbps,
+  );
 
   void _clearClipExportState() {
     _clipExportGeneration++;

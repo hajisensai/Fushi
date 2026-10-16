@@ -94,15 +94,27 @@ import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
-import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:collection/collection.dart' show IterableExtension;
+import 'package:fushi_asr_core/asr_core.dart' show AsrLanguage;
+import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart'
+    show
+        AudiobookTranscribeCancelToken,
+        AudiobookTranscribeCancelled,
+        AudiobookTranscribeJob,
+        AudiobookTranscribeJobPhase;
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
+import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
+    show AppAudiobookTranscriber;
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
@@ -214,6 +226,7 @@ import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_episode_panel.dart';
+import 'package:fushi/src/media/video/video_fullscreen_back_scope.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
@@ -5067,7 +5080,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    final CardSourceLink? source = widget.sourceReview;
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
+    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     if (source != null) {
       bool matches = false;
       try {
@@ -6670,27 +6685,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MangaStreamOcrSetup> _prepareGraphicSubtitleOcr(
     String workDirPath, {
     String? language,
+    _GraphicOcrConsentGates? consent,
   }) {
     // 两个询问框（「默认交给 LLM」与 Lens 上传披露）都会夺走视频键盘焦点：
     // 套 guardOverlay，任何退出路径都把快捷键还给播放器。
     return prepareMangaStreamOcr(
       imageDirPath: workDirPath,
-      engines: MangaOcrWizardEngines.resolve(
-        context: context,
-        db: appModel.database,
-      ).wrapDecideAiDefault(_focusOwnership.guardOverlay),
+      engines:
+          MangaOcrWizardEngines.resolve(
+            context: context,
+            db: appModel.database,
+          ).wrapDecideAiDefault(
+            consent == null
+                ? _focusOwnership.guardOverlay
+                : (Future<void> Function() _) => consent.decideAiDefault(),
+          ),
       preference: MangaOcrEnginePreferenceKey.fromKey(
         appModel.mangaOcrEnginePreference,
       ),
       lensLanguage: appModel.mangaOcrLensLanguage,
-      confirmLensUpload: () async =>
-          mounted &&
-          await _focusOwnership.guardOverlay(
-            () => ensureGoogleLensDisclosure(
-              context,
-              scene: GoogleLensDisclosureScene.videoFrames,
-            ),
-          ),
+      confirmLensUpload: consent != null
+          ? consent.confirmLensUpload
+          : () async =>
+                mounted &&
+                await _focusOwnership.guardOverlay(
+                  () => ensureGoogleLensDisclosure(
+                    context,
+                    scene: GoogleLensDisclosureScene.videoFrames,
+                  ),
+                ),
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,
         title: _title,
@@ -7451,7 +7474,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
   /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
-  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。全屏期间经
+  /// `Navigator.maybePop` 到达的返回由全屏路由里的 [VideoFullscreenBackScope] 接住，
+  /// 走同一份 [_dismissTopForegroundLayer]（BUG-3423）。
   void _handleVideoEscapeAction() {
     if (_dismissTopForegroundLayer()) return;
     final BuildContext? ctx = _videoControlsContext;
@@ -10550,6 +10575,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
+      subtitleProbeLimitMs: _subtitleAlignProbeLimitMs,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
               _canResolveSubtitleAlignAudio

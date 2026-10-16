@@ -6,16 +6,22 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:fushi_core/fushi_core.dart'
     show
+        EpubBookRow,
         FushiPairedPeerRow,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
         kMinSupportedSchemaVersion,
+        VideoBookRow,
         VideoDownloadJobRow;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart'
+    show VideoBookRepository;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart'
-    show HostDownloadAddRequest, videoDownloadJobToWire;
+    show videoDownloadJobToWire;
+import 'package:fushi_engine/sync/interconnect_device_name.dart'
+    show resolveInterconnectDeviceName;
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
@@ -26,14 +32,20 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
-    show showManualDownloadTaskDialog;
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show videoDownloadJobCanResume, videoDownloadJobCanSetPriority;
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_wire.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_download_support.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart'
+    show HostDownloadJob;
+import 'package:fushi/src/sync/interconnect_link_pairing.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show withoutInterconnectHost;
 import 'package:fushi/src/sync/manual_sync_ui.dart'
     show runManualSyncWithFeedback;
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
@@ -53,7 +65,13 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         defaultBackupExportCategories,
         BackupImportMode,
         BackupImportPreset,
+        DataRootMigrationPlan,
+        DataRootMigrationPrecheckFailure,
+        DataRootMigrationRunOutcome,
+        interconnectPairFailureMessage,
+        planDataRootMigration,
         runBackupImportFlowForFile,
+        runDataRootMigration,
         runInterconnectLinkPairingFlow;
 
 /// data 域控制通道路由（CLI 侧命令见 `packages/fushi_cli/lib/src/commands/data_commands.dart`）。
@@ -64,14 +82,25 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 /// [AppModel.discoveryDownloadQueue]、媒体
 /// 服务器 [MediaServerConfig.buildBrowser]、互联 [FushiSyncServerController]、存储
 /// [StorageUsageService]。
-List<CtlRoute> buildDataCtlRoutes(DesktopCtlContext context) => <CtlRoute>[
-  ..._backupRoutes(context),
-  ..._syncRoutes(context),
-  ..._downloadRoutes(context),
-  ..._mediaServerRoutes(context),
-  ..._peerRoutes(context),
-  ..._storageRoutes(context),
-];
+List<CtlRoute> buildDataCtlRoutes(DesktopCtlContext context) {
+  final _CtlDataTasks tasks = _CtlDataTasks();
+  return <CtlRoute>[
+    ..._backupRoutes(context, tasks),
+    ..._syncRoutes(context),
+    ..._downloadRoutes(context),
+    ..._mediaServerRoutes(context),
+    ..._peerRoutes(context),
+    ..._storageRoutes(context, tasks),
+  ];
+}
+
+/// 控制通道发起、在后台跑的长任务的最近一次结局（`backup status` /
+/// `storage migrate-status` 读）。进度本身在 [AppModel] 上（与 app 内遮罩 / 进度条同一
+/// 真相源），这里只补「终端发起的那一次最后怎样了」——任务结束后 app 侧状态会被清掉。
+class _CtlDataTasks {
+  Map<String, Object?>? lastBackup;
+  Map<String, Object?>? lastMigration;
+}
 
 /// 破坏性动作在 app 侧的第二道门：body / query 必须带 `confirm: true`。
 void _requireConfirm(CtlCall call, String what) {
@@ -127,7 +156,10 @@ Future<Map<String, Object?>> _backupFileToWire(File file) async {
   };
 }
 
-List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
+List<CtlRoute> _backupRoutes(
+  DesktopCtlContext context,
+  _CtlDataTasks tasks,
+) => <CtlRoute>[
   // 列出某目录下的备份包（文件名口径 = isBackupArchiveName，与存储页 / 导出前
   // 清扫同一判据），逐个读包内 meta。
   CtlRoute.get('/api/admin/backups', (CtlCall call) async {
@@ -166,6 +198,8 @@ List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
   }),
   // 创建备份：与设置页导出同一个 [BackupService.createBackup]，区别只在落点——
   // 设置页先打到临时目录再弹「另存为」，CLI 已经给了路径，直接写过去。
+  // `books` / `videos` = 设置页导出框里「只备份选中的书 / 视频」（bookKeys /
+  // videoKeys）；`wait: false` 时后台打包，进度与结局用 `backup status` 查。
   CtlRoute.post('/api/admin/backups', (CtlCall call) async {
     final AppModel appModel = context.appModel;
     if (appModel.backupExportActive) {
@@ -185,41 +219,114 @@ List<CtlRoute> _backupRoutes(DesktopCtlContext context) => <CtlRoute>[
       throw CtlFailure.notFound('目录不存在：${p.dirname(outputPath)}');
     }
     final bool all = call.optBool('all') ?? false;
-    final Set<BackupCategory>? categories = all
+    final Set<BackupCategory>? explicit = parseBackupCategories(
+      call.stringList('categories'),
+    );
+    Set<BackupCategory>? categories = all
         ? null
-        : (parseBackupCategories(call.stringList('categories')) ??
-              // ignore: invalid_use_of_visible_for_testing_member
-              defaultBackupExportCategories());
-    List<String> skippedDictionaries = const <String>[];
-    appModel.beginBackupExport();
-    final BackupMeta meta;
-    try {
-      meta = await service.createBackup(
-        outputPath,
-        categories: categories,
-        onProgress: appModel.reportBackupExportProgress,
-        onDictionariesSkipped: (List<String> names) =>
-            skippedDictionaries = names,
-      );
-    } catch (_) {
-      // 半截 zip 不留给用户当成备份。
-      try {
-        await File(outputPath).delete();
-      } catch (_) {}
-      rethrow;
-    } finally {
-      appModel.endBackupExport();
+        // ignore: invalid_use_of_visible_for_testing_member
+        : (explicit ?? defaultBackupExportCategories());
+    final Set<String> bookKeys = call.stringList('books').toSet();
+    final Set<String> videoKeys = call.stringList('videos').toSet();
+    if (bookKeys.isNotEmpty &&
+        categories != null &&
+        !categories.contains(BackupCategory.books)) {
+      throw const CtlFailure.badRequest('--book 要和 books 分类一起用');
     }
-    return <String, Object?>{
+    if (videoKeys.isNotEmpty &&
+        categories != null &&
+        !categories.contains(BackupCategory.videos)) {
+      // 视频文件不在默认分类里（太大）；点名了视频就是要带上它们。
+      if (explicit != null) {
+        throw const CtlFailure.badRequest('--video 要和 videos 分类一起用');
+      }
+      categories = <BackupCategory>{...categories, BackupCategory.videos};
+    }
+    for (final String key in bookKeys) {
+      final EpubBookRow? row = await appModel.database.getEpubBook(key);
+      if (row == null) throw CtlFailure.notFound('没有这本书：$key');
+    }
+    final VideoBookRepository videos = VideoBookRepository(appModel.database);
+    for (final String key in videoKeys) {
+      final VideoBookRow? row = await videos.getByBookUid(key);
+      if (row == null) throw CtlFailure.notFound('没有这个视频：$key');
+    }
+    final Set<BackupCategory>? finalCategories = categories;
+    final bool wait = call.optBool('wait') ?? true;
+    appModel.beginBackupExport();
+    Future<Map<String, Object?>> export() async {
+      List<String> skippedDictionaries = const <String>[];
+      final BackupMeta meta;
+      try {
+        meta = await service.createBackup(
+          outputPath,
+          categories: finalCategories,
+          bookKeys: bookKeys.isEmpty ? null : bookKeys,
+          videoKeys: videoKeys.isEmpty ? null : videoKeys,
+          onProgress: appModel.reportBackupExportProgress,
+          onDictionariesSkipped: (List<String> names) =>
+              skippedDictionaries = names,
+        );
+      } catch (_) {
+        // 半截 zip 不留给用户当成备份。
+        try {
+          await File(outputPath).delete();
+        } catch (_) {}
+        rethrow;
+      } finally {
+        appModel.endBackupExport();
+      }
+      return <String, Object?>{
+        'path': outputPath,
+        'bytes': await File(outputPath).length(),
+        'categories': finalCategories == null
+            ? <String>[
+                for (final BackupCategory c in BackupCategory.values) c.name,
+              ]
+            : <String>[for (final BackupCategory c in finalCategories) c.name],
+        if (bookKeys.isNotEmpty) 'books': bookKeys.toList(),
+        if (videoKeys.isNotEmpty) 'videos': videoKeys.toList(),
+        'skippedDictionaries': skippedDictionaries,
+        ...backupMetaToWire(meta),
+      };
+    }
+
+    if (wait) return export();
+    tasks.lastBackup = <String, Object?>{
+      'state': 'running',
       'path': outputPath,
-      'bytes': await File(outputPath).length(),
-      'categories': categories == null
-          ? <String>[
-              for (final BackupCategory c in BackupCategory.values) c.name,
-            ]
-          : <String>[for (final BackupCategory c in categories) c.name],
-      'skippedDictionaries': skippedDictionaries,
-      ...backupMetaToWire(meta),
+      'startedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    _runDetached('backup.create', () async {
+      try {
+        tasks.lastBackup = <String, Object?>{
+          'state': 'completed',
+          ...await export(),
+        };
+      } catch (e) {
+        tasks.lastBackup = <String, Object?>{
+          'state': 'failed',
+          'path': outputPath,
+          'error': redactCtlSecrets('$e'),
+        };
+        rethrow;
+      }
+      return null;
+    });
+    return <String, Object?>{
+      'ok': true,
+      'started': true,
+      'path': outputPath,
+      'message': '已开始打包备份（backup status 查看进度）',
+    };
+  }),
+  // 备份导出进度（与设置页导出共用 AppModel 上的同一个进度源）+ 终端最近一次后台导出的结局。
+  CtlRoute.get('/api/admin/backups/status', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    return <String, Object?>{
+      'active': appModel.backupExportActive,
+      'progress': ?appModel.backupExportProgress.value,
+      'last': ?tasks.lastBackup,
     };
   }),
   // 恢复备份：交给 app 既有的导入编排 [runBackupImportFlowForFile]（校验 → 确认框
@@ -410,11 +517,43 @@ Future<T> _mapPipelineErrors<T>(Future<T> Function() body) async {
   }
 }
 
+/// 远端代下载协议只有列表 / 取消 / 重试 / 删除（与下载页「远端任务」卡一致），
+/// 继续 / 优先级 / 详情只对本机任务成立。
+void _rejectRemoteOnlyLocal(CtlCall call) {
+  final String? device = call.optString('device');
+  if (device != null && device != 'local') {
+    throw const CtlFailure.badRequest(
+      '互联 host 上的任务只支持 ls / get / cancel / retry / rm（远端协议没有这项操作）',
+    );
+  }
+}
+
 List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
   // 与无头服务端 `admin_api.dart` 的 GET /api/admin/downloads 同形：能力位 + 任务表。
+  // `device` = 互联 host：列它的代下载任务（与下载页「远端任务」段同一个
+  // [InterconnectDownloadClient.listJobs]）。
   CtlRoute.get('/api/admin/downloads', (CtlCall call) async {
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
+    final CtlDownloadDeviceRemote? remote = await resolveCtlRemoteJobDevice(
+      appModel,
+      call.optString('device'),
+    );
+    if (remote != null) {
+      final List<HostDownloadJob> jobs = await mapCtlHostErrors(
+        remote.target,
+        () => remote.client.listJobs(remote.target),
+      );
+      return <String, Object?>{
+        'device': remote.target.label,
+        'remote': true,
+        'backend': remote.target.backend,
+        'jobs': <Map<String, Object?>>[
+          for (final HostDownloadJob job in jobs)
+            hostDownloadJobToWire(job, device: remote.target.label),
+        ],
+      };
+    }
     return <String, Object?>{
       ...await appModel.appDownloadHost.capability(),
       'jobs': <Map<String, Object?>>[
@@ -430,15 +569,25 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     final String id = call.params['id']!;
+    final CtlDownloadDeviceRemote? remote = await resolveCtlRemoteJobDevice(
+      appModel,
+      call.optString('device'),
+    );
+    if (remote != null) {
+      return hostDownloadJobToWire(
+        await requireCtlHostJob(remote, id),
+        device: remote.target.label,
+      );
+    }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
       return directDownloadTaskToWire(_requireDirectTask(appModel, directId));
     }
     return videoDownloadJobToWire(await _requireJob(appModel, id));
   }),
-  // 磁链：走 [AppDownloadHost.add]（与 admin_api / 互联代下载同一入口，落到
-  // 默认受管视频来源）。.torrent：打开「添加任务」对话框预填该种子，由用户确认
-  // 标题 / 内容类型 / 目标来源（对话框是种子解析与文件选择的唯一实现）。
+  // 磁链 / .torrent：直接入队，参数与下载页「添加任务」对话框一一对应（内容类型、
+  // 目标库、字幕策略、执行设备），外加对话框没露出但管线支持的文件选择 / 作品身份 /
+  // 优先级，见 [addCtlTorrentDownload]。http(s) 直链进直链队列。
   CtlRoute.post('/api/admin/downloads', (CtlCall call) async {
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
@@ -446,41 +595,37 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
         call.optString('magnet') ?? call.requireString('target');
     switch (classifyDownloadTarget(target)) {
       case CtlDownloadTargetKind.magnet:
-        final String? title = magnetTaskTitle(target, call.optString('title'));
-        if (title == null) {
-          throw const CtlFailure.badRequest('磁链里没有显示名（dn），请用 --title 指定');
-        }
-        final String jobId = await _mapPipelineErrors(
-          () => appModel.appDownloadHost.add(
-            HostDownloadAddRequest.magnet(
-              magnetUri: target,
-              title: title,
-              mediaKind: call.optString('mediaKind') == 'tv' ? 'tv' : 'movie',
-            ),
-          ),
+        return addCtlTorrentDownload(
+          appModel: appModel,
+          call: call,
+          magnet: target,
         );
-        return <String, Object?>{'jobId': jobId, 'title': title};
       case CtlDownloadTargetKind.torrentFile:
-        if (!p.isAbsolute(target) || !await File(target).exists()) {
-          throw CtlFailure.notFound('种子文件不存在：$target');
-        }
-        final BuildContext ui = await _uiContext(context);
-        _runDetached(
-          'downloads.add',
-          () => showManualDownloadTaskDialog(
-            context: ui,
-            appModel: appModel,
-            torrentPaths: <String>[target],
-          ),
+        return addCtlTorrentDownload(
+          appModel: appModel,
+          call: call,
+          torrentPath: target,
         );
-        return const <String, Object?>{
-          'ok': true,
-          'dialog': true,
-          'message': '已在 Fushi 里打开「添加任务」对话框，确认后入队',
-        };
       case CtlDownloadTargetKind.url:
         // http(s) 直链：进下载中心既有的直链队列（发现页 http 资源同一条
         // [DiscoveryDownloadQueue]：续传、自动重试、下完按内容类型自动入库）。
+        final String? device = call.optString('device');
+        if (device != null && device != 'local') {
+          throw const CtlFailure.badRequest('http 直链只能在本机下（直链队列不经互联 host）');
+        }
+        final List<String> torrentOnly = <String>[
+          if (call.optInt('source') != null) '--source',
+          if (call.optString('subtitlePolicy') != null) '--subtitles',
+          if (call.stringList('files').isNotEmpty) '--files',
+          if (call.optInt('priority') != null) '--priority',
+          if (call.optInt('year') != null) '--year',
+          if (call.optString('metadataProvider') != null) '--provider',
+        ];
+        if (torrentOnly.isNotEmpty) {
+          throw CtlFailure.badRequest(
+            'http 直链不支持 ${torrentOnly.join('、')}（只用于磁链 / 种子任务）',
+          );
+        }
         if (Uri.tryParse(target)?.path.toLowerCase().endsWith('.torrent') ??
             false) {
           throw const CtlFailure.unsupported(
@@ -528,6 +673,22 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     final String id = call.params['id']!;
+    final CtlDownloadDeviceRemote? remote = await resolveCtlRemoteJobDevice(
+      appModel,
+      call.optString('device'),
+    );
+    if (remote != null) {
+      // 远端任务卡同一判据：只有未结束的任务有「取消」。
+      final HostDownloadJob job = await requireCtlHostJob(remote, id);
+      if (hostDownloadJobFinished(job)) {
+        throw CtlFailure.conflict('任务已结束，不能取消（当前：${job.lifecycle}）');
+      }
+      await mapCtlHostErrors(
+        remote.target,
+        () => remote.client.cancel(remote.target, id),
+      );
+      return null;
+    }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
       // 与下载页直链行「取消」同一入口：`.part` 保留，重试即续传。
@@ -542,6 +703,21 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     final AppModel appModel = context.appModel;
     _requireDownloads(appModel);
     final String id = call.params['id']!;
+    final CtlDownloadDeviceRemote? remote = await resolveCtlRemoteJobDevice(
+      appModel,
+      call.optString('device'),
+    );
+    if (remote != null) {
+      final HostDownloadJob job = await requireCtlHostJob(remote, id);
+      if (!hostDownloadJobRetryable(job)) {
+        throw CtlFailure.conflict('只有失败 / 需要处理的任务能重试（当前：${job.lifecycle}）');
+      }
+      await mapCtlHostErrors(
+        remote.target,
+        () => remote.client.retry(remote.target, id),
+      );
+      return null;
+    }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
       final DiscoveryDownloadTask task = _requireDirectTask(appModel, directId);
@@ -556,6 +732,78 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     await _mapPipelineErrors(() => _requirePipeline(appModel).retryJob(id));
     return null;
   }),
+  // 恢复已暂停的任务：与下载页任务卡「继续」同一入口（`cancel` 在管线里实为暂停，
+  // 已下数据保留，恢复即续传）。判据复用任务卡同款 [videoDownloadJobCanResume]。
+  CtlRoute.post('/api/admin/downloads/:id/resume', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    _requireDownloads(appModel);
+    final String id = call.params['id']!;
+    _rejectRemoteOnlyLocal(call);
+    if (parseDirectDownloadTaskId(id) != null) {
+      throw const CtlFailure.badRequest('直链任务没有暂停态：已取消的直链用 dl retry 续传');
+    }
+    final VideoDownloadJobRow job = await _requireJob(appModel, id);
+    if (!videoDownloadJobCanResume(job)) {
+      throw CtlFailure.conflict('只有已暂停的任务能继续（当前：${job.lifecycle}）');
+    }
+    await _mapPipelineErrors(() => _requirePipeline(appModel).resumeJob(id));
+    return videoDownloadJobToWire(await _requireJob(appModel, id));
+  }),
+  // 排队优先级：与任务卡「优先级」菜单同一入口（high = 1 / normal = 0 / low = -1，
+  // 数值越大越先取），可用判据同 [videoDownloadJobCanSetPriority]。
+  CtlRoute.post('/api/admin/downloads/:id/priority', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    _requireDownloads(appModel);
+    final String id = call.params['id']!;
+    final int priority =
+        call.optInt('priority') ??
+        (throw const CtlFailure.badRequest('priority 缺失'));
+    _rejectRemoteOnlyLocal(call);
+    if (parseDirectDownloadTaskId(id) != null) {
+      throw const CtlFailure.badRequest('直链队列按添加顺序下载，没有优先级');
+    }
+    final VideoDownloadJobRow job = await _requireJob(appModel, id);
+    if (!videoDownloadJobCanSetPriority(job)) {
+      throw CtlFailure.conflict('只有排队中 / 进行中的任务能调优先级（当前：${job.lifecycle}）');
+    }
+    await _mapPipelineErrors(
+      () => _requirePipeline(appModel).setJobPriority(id, priority),
+    );
+    return videoDownloadJobToWire(await _requireJob(appModel, id));
+  }),
+  // 任务详情（种子快照 + 文件清单 + 落盘位置）：与任务卡「详情」对话框 / 「打开
+  // 位置」同一数据源；没有管线时退回持久化的那一半（与 browse_page 同）。
+  CtlRoute.get('/api/admin/downloads/:id/details', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    _requireDownloads(appModel);
+    final String id = call.params['id']!;
+    _rejectRemoteOnlyLocal(call);
+    if (parseDirectDownloadTaskId(id) != null) {
+      throw const CtlFailure.badRequest('直链任务没有种子详情（dl get 查看进度）');
+    }
+    final VideoDownloadJobRow job = await _requireJob(appModel, id);
+    final VideoDownloadPipelineService? pipeline =
+        appModel.videoDownloadPipelineService;
+    final VideoDownloadJobDetails details = pipeline != null
+        ? await _mapPipelineErrors(() => pipeline.loadJobDetails(id))
+        : buildPersistedVideoDownloadJobDetails(
+            job,
+            await appModel.database.getVideoDownloadJobFiles(id),
+          );
+    final String? location = pipeline == null
+        ? null
+        : await _mapPipelineErrors(() => pipeline.resolveJobLocation(id));
+    return <String, Object?>{
+      ...videoDownloadJobToWire(job),
+      ...downloadJobDetailsToWire(details, location: location),
+    };
+  }),
+  // 任务落点：视频任务可投的目标库 + 执行设备（本机 / 在线的互联 host）。
+  CtlRoute.get('/api/admin/download-targets', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    _requireDownloads(appModel);
+    return ctlDownloadTargets(appModel);
+  }),
   // 与下载页任务面板「删除」同一路径（`browse_page.dart` onDelete）：有管线走
   // [VideoDownloadPipelineService.deleteJob]，没有就只删持久化任务。
   CtlRoute.delete('/api/admin/downloads/:id', (CtlCall call) async {
@@ -563,6 +811,48 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     _requireDownloads(appModel);
     _requireConfirm(call, '删除下载任务');
     final bool deleteFiles = call.optBool('deleteFiles') ?? false;
+    final CtlDownloadDeviceRemote? remote = await resolveCtlRemoteJobDevice(
+      appModel,
+      call.optString('device'),
+    );
+    if (remote != null) {
+      // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
+      // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
+      // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
+      final bool supported = remote.target.deleteFilesParam;
+      if (deleteFiles && !supported) {
+        throw CtlFailure.rejected(
+          'host「${remote.target.label}」版本较旧，不支持选择是否删除文件（--delete-files）；'
+          '不加这个参数时按它的缺省处理：Fushi app 当 host 保留文件、无头 fushi_server 连数据一起删',
+        );
+      }
+      final String id = call.params['id']!;
+      final HostDownloadJob job = await requireCtlHostJob(remote, id);
+      if (!hostDownloadJobFinished(job)) {
+        throw CtlFailure.conflict('任务还没结束，先 dl cancel（当前：${job.lifecycle}）');
+      }
+      await mapCtlHostErrors(
+        remote.target,
+        () => remote.client.delete(
+          remote.target,
+          id,
+          deleteFiles: supported ? deleteFiles : null,
+        ),
+      );
+      return <String, Object?>{
+        'ok': true,
+        'jobId': id,
+        'device': remote.target.label,
+        'remote': true,
+        // 老 host：删不删由它决定、这里分不出是哪种 → null，如实说明。
+        'deletedFiles': supported ? deleteFiles : null,
+        'message': supported
+            ? '已删除 host「${remote.target.label}」上的任务'
+                  '${deleteFiles ? '，并删除了已下载文件' : '，已下载文件保留'}'
+            : '已删除 host「${remote.target.label}」上的任务。这台 host 版本较旧，'
+                  '文件去留由它决定：Fushi app 当 host 保留文件，无头 fushi_server 连下载数据一起删除',
+      };
+    }
     final int? directId = parseDirectDownloadTaskId(call.params['id']!);
     if (directId != null) {
       // 与下载页直链行「删除任务」同一入口（[DiscoveryDownloadQueue.remove]）：只摘
@@ -757,8 +1047,11 @@ List<CtlRoute> _peerRoutes(DesktopCtlContext context) => <CtlRoute>[
     await appModel.syncServerController.stop(persistDisabled: true);
     return _hostStatus(appModel);
   }),
-  // 配对链接：必须经 app 的确认框（链接可能来自任何网页），这里只解析并拉起
-  // [runInterconnectLinkPairingFlow]，结果在 app 里提示。
+  // 配对链接。缺省经 app 的确认框（链接可能来自任何网页）：拉起
+  // [runInterconnectLinkPairingFlow]，结果在 app 里提示。带 `confirm: true`（CLI
+  // `--yes`，本机持令牌的操作者已核对过链接）时跳过确认框，直接走同一个
+  // [pairWithInterconnectLink] 并把结果回给终端；不带票据、要 PIN 的链接终端输不了
+  // PIN，如实报错让用户回 app 配。
   CtlRoute.post('/api/admin/peers/pair', (CtlCall call) async {
     final String raw = call.requireString('link');
     final FushiPairLink? link = FushiPairLink.tryParse(raw);
@@ -766,6 +1059,41 @@ List<CtlRoute> _peerRoutes(DesktopCtlContext context) => <CtlRoute>[
       throw const CtlFailure.badRequest('不是有效的 fushi://pair 配对链接');
     }
     final AppModel appModel = context.appModel;
+    if (call.optBool('confirm') == true) {
+      final SyncRepository repo = SyncRepository(appModel.database);
+      final InterconnectLinkPairingResult result =
+          await pairWithInterconnectLink(
+            repo: repo,
+            link: link,
+            localDeviceName: await resolveInterconnectDeviceName(
+              appModel.platformServices.deviceInfo,
+            ),
+            pinProvider: () async => null,
+          );
+      switch (result) {
+        case InterconnectLinkPaired(
+          :final String baseUrl,
+          :final String? deviceName,
+        ):
+          return <String, Object?>{
+            'ok': true,
+            'paired': true,
+            'url': baseUrl,
+            'hostId': link.hostId,
+            'deviceName': ?(deviceName ?? link.deviceName),
+            'message': '已配对：${deviceName ?? link.deviceName ?? baseUrl}',
+          };
+        case InterconnectLinkPairingFailed(:final String reason):
+          if (reason == 'cancelled' || reason == 'pin') {
+            throw const CtlFailure.rejected(
+              '这个链接不带一次性票据，host 要求输入 PIN；终端无法输入，去掉 --yes 在 app 里配对',
+            );
+          }
+          throw CtlFailure.rejected(
+            '配对失败（$reason）：${interconnectPairFailureMessage(reason)}',
+          );
+      }
+    }
     final BuildContext ui = await _uiContext(context);
     _runDetached(
       'peers.pair',
@@ -777,44 +1105,196 @@ List<CtlRoute> _peerRoutes(DesktopCtlContext context) => <CtlRoute>[
       'message': '已在 Fushi 里弹出配对确认，请在 app 里确认',
     };
   }),
+  // 本机 host 签发一次性配对链接：与设置页「扫码配对」二维码同一入口
+  // [FushiSyncServerController.createPairLink]（重新签发即作废上一张票据）。链接
+  // 就是要交给对方设备的东西，所以原样回给终端（二维码里本来也是它）。
+  CtlRoute.post('/api/admin/peers/pair-link', (CtlCall call) async {
+    final FushiSyncServerController controller =
+        context.appModel.syncServerController;
+    final FushiPairLink? link = await controller.createPairLink();
+    if (link == null) {
+      throw const CtlFailure.conflict('本机互联 host 没在运行（peer host start）');
+    }
+    if (link.addresses.isEmpty) {
+      // 与二维码窗口同一判据：没有可公布的地址，对方拿到链接也连不上。
+      controller.revokePairTicket();
+      throw const CtlFailure.rejected(
+        '本机 host 没有可公布的地址（只监听本机？在设置 › 互联里开放局域网访问）',
+      );
+    }
+    return <String, Object?>{
+      'link': link.toUri(),
+      'hostId': link.hostId,
+      'deviceName': ?link.deviceName,
+      'oneTime': link.hasTicket,
+      'addresses': link.addresses.map(pairLinkAddressToWire).toList(),
+    };
+  }),
+  // 作废当前配对票据（= 关掉二维码窗口），凭它开出、还没确认的会话一并作废。
+  CtlRoute.delete('/api/admin/peers/pair-link', (CtlCall call) async {
+    context.appModel.syncServerController.revokePairTicket();
+    return const <String, Object?>{'ok': true, 'revoked': true};
+  }),
+  // 吊销一台已配对到本机 host 的设备：与设置页「移除已配对设备」同一入口
+  // [FushiSyncServerController.revokePeer]（删 per-peer token，下一次请求即 401）。
+  CtlRoute.delete('/api/admin/peers/clients/:peerId', (CtlCall call) async {
+    _requireConfirm(call, '吊销已配对设备');
+    final String peerId = call.params['peerId']!;
+    final bool revoked = await context.appModel.syncServerController.revokePeer(
+      peerId,
+    );
+    if (!revoked) throw CtlFailure.notFound('没有这台已配对设备：$peerId（peer ls 查看）');
+    return <String, Object?>{'ok': true, 'peerId': peerId};
+  }),
+  // 忘记本机作为 client 记住的一台 host：与设置页地址行「删除」同一变换
+  // [withoutInterconnectHost]，经 [SyncRepository.updateFushiClientUrls] 串行写库
+  // （与后台地址学习、链接配对互斥）。按 hostId 认：同一台 host 的全部地址一起删。
+  CtlRoute.delete('/api/admin/peers/hosts/:host', (CtlCall call) async {
+    _requireConfirm(call, '忘记 host');
+    final SyncRepository repo = SyncRepository(context.appModel.database);
+    final ({String url, String? hostId}) target = resolveForgetHost(
+      await repo.getFushiClientUrls(),
+      call.params['host']!,
+    );
+    int removed = 0;
+    final List<FushiClientUrl> after = await repo.updateFushiClientUrls((
+      List<FushiClientUrl> current,
+    ) {
+      final List<FushiClientUrl> next = withoutInterconnectHost(
+        current,
+        url: target.url,
+        hostId: target.hostId,
+      );
+      removed = current.length - next.length;
+      return next;
+    });
+    return <String, Object?>{
+      'ok': true,
+      'url': target.url,
+      'hostId': ?target.hostId,
+      'removedAddresses': removed,
+      'remainingAddresses': after.length,
+    };
+  }),
 ];
 
 // ── 存储 ─────────────────────────────────────────────────────────────
 
-List<CtlRoute> _storageRoutes(DesktopCtlContext context) => <CtlRoute>[
-  CtlRoute.get('/api/admin/storage/root', (CtlCall call) async {
-    final AppModel appModel = context.appModel;
-    final Directory documents = await AppPaths.documentsRootDirectory();
-    final Directory defaultDocuments =
-        await AppPaths.defaultLocationDocumentsRoot();
-    return <String, Object?>{
-      'documents': documents.path,
-      'support': (await AppPaths.supportRootDirectory()).path,
-      'temp': (await AppPaths.tempRootDirectory()).path,
-      'database': appModel.databaseDirectory.path,
-      'customDataRoot': !p.equals(documents.path, defaultDocuments.path),
-    };
-  }),
-  // 与设置 › 存储页同一个扫描器，只出类目合计（明细行要书目清单，存储页那份
-  // 组装逻辑在设置 schema 里，CLI 不复制）。
-  CtlRoute.get('/api/admin/storage/usage', (CtlCall call) async {
-    final AppModel appModel = context.appModel;
-    final List<Map<String, Object?>> categories = <Map<String, Object?>>[];
-    int total = 0;
-    await for (final StorageCategoryUsage usage
-        in StorageUsageService().scanCategories(
-          books: const <StorageBookRef>[],
-          dictionaryNames: <String>[
-            for (final Dictionary dictionary in appModel.dictionaries)
-              dictionary.name,
-          ],
-        )) {
-      total += usage.bytes;
-      categories.add(<String, Object?>{
-        'id': usage.id.name,
-        'bytes': usage.bytes,
-      });
-    }
-    return <String, Object?>{'totalBytes': total, 'categories': categories};
-  }),
-];
+List<CtlRoute> _storageRoutes(DesktopCtlContext context, _CtlDataTasks tasks) =>
+    <CtlRoute>[
+      // 数据目录迁移：与设置 › 存储「更改位置」同一套 [planDataRootMigration]（解析 +
+      // 触发前校验）→ [runDataRootMigration]（关库 → 搬移 → 写位置 → 自动重启）。
+      // `dryRun` 只出解析后的两个落点（= 设置页确认框里列的那两行），不动任何东西。
+      // 真迁移要 `confirm: true`；它会关掉数据库并在成功后重启 app，所以在后台跑、
+      // 立即返回，进度用 GET 查（重启后控制通道换成新进程的）。
+      CtlRoute.post('/api/admin/storage/migrate', (CtlCall call) async {
+        final String path = call.requireString('path');
+        if (!p.isAbsolute(path)) {
+          throw CtlFailure.badRequest('目标目录必须是绝对路径：$path');
+        }
+        final bool dryRun = call.optBool('dryRun') ?? false;
+        if (!dryRun) _requireConfirm(call, '迁移数据目录');
+        final AppModel appModel = context.appModel;
+        if (appModel.dataRootMigrationActive) {
+          throw const CtlFailure.conflict('数据目录迁移已在进行中');
+        }
+        if (appModel.backupExportActive) {
+          throw const CtlFailure.conflict('备份导出进行中，先等它结束');
+        }
+        final DataRootMigrationPlan plan;
+        try {
+          plan = await planDataRootMigration(appModel: appModel, picked: path);
+        } on DataRootMigrationPrecheckFailure catch (e) {
+          throw CtlFailure.rejected(e.message);
+        }
+        final Map<String, Object?> planWire = <String, Object?>{
+          'path': path,
+          'documentsRoot': plan.target.documentsRoot.path,
+          'supportRoot': plan.target.supportRoot.path,
+          'defaultLocation': plan.target.isDefaultLocation,
+          'fromDocumentsRoot': plan.oldDocumentsRoot,
+          'fromSupportRoot': plan.oldSupportRoot,
+        };
+        if (dryRun) return <String, Object?>{...planWire, 'dryRun': true};
+        tasks.lastMigration = <String, Object?>{
+          ...planWire,
+          'state': 'running',
+          'startedAt': DateTime.now().millisecondsSinceEpoch,
+        };
+        _runDetached('storage.migrate', () async {
+          try {
+            final DataRootMigrationRunOutcome outcome =
+                await runDataRootMigration(appModel: appModel, plan: plan);
+            tasks.lastMigration = <String, Object?>{
+              ...planWire,
+              'state': outcome.name,
+              if (appModel.dataRootMigrationFailure != null)
+                'message': appModel.dataRootMigrationFailure,
+            };
+          } on DataRootMigrationPrecheckFailure catch (e) {
+            tasks.lastMigration = <String, Object?>{
+              ...planWire,
+              'state': 'failed',
+              'message': e.message,
+            };
+          }
+          return null;
+        });
+        return <String, Object?>{
+          ...planWire,
+          'ok': true,
+          'started': true,
+          'message':
+              '已开始迁移（app 显示迁移遮罩，数据库已关闭）；成功后 app 会自动重启。'
+              '用 storage migrate-status 查进度，重启后 storage root 确认新位置',
+        };
+      }),
+      CtlRoute.get('/api/admin/storage/migrate', (CtlCall call) async {
+        final AppModel appModel = context.appModel;
+        final ({int copied, int total})? progress =
+            appModel.dataRootMigrationProgress;
+        return <String, Object?>{
+          'active': appModel.dataRootMigrationActive,
+          // 跨盘逐文件复制时才有（已复制文件数 / 总文件数）；同盘 rename 瞬时完成、无进度。
+          if (progress != null) 'copiedFiles': progress.copied,
+          if (progress != null) 'totalFiles': progress.total,
+          'failure': ?appModel.dataRootMigrationFailure,
+          'last': ?tasks.lastMigration,
+        };
+      }),
+      CtlRoute.get('/api/admin/storage/root', (CtlCall call) async {
+        final AppModel appModel = context.appModel;
+        final Directory documents = await AppPaths.documentsRootDirectory();
+        final Directory defaultDocuments =
+            await AppPaths.defaultLocationDocumentsRoot();
+        return <String, Object?>{
+          'documents': documents.path,
+          'support': (await AppPaths.supportRootDirectory()).path,
+          'temp': (await AppPaths.tempRootDirectory()).path,
+          'database': appModel.databaseDirectory.path,
+          'customDataRoot': !p.equals(documents.path, defaultDocuments.path),
+        };
+      }),
+      // 与设置 › 存储页同一个扫描器，只出类目合计（明细行要书目清单，存储页那份
+      // 组装逻辑在设置 schema 里，CLI 不复制）。
+      CtlRoute.get('/api/admin/storage/usage', (CtlCall call) async {
+        final AppModel appModel = context.appModel;
+        final List<Map<String, Object?>> categories = <Map<String, Object?>>[];
+        int total = 0;
+        await for (final StorageCategoryUsage usage
+            in StorageUsageService().scanCategories(
+              books: const <StorageBookRef>[],
+              dictionaryNames: <String>[
+                for (final Dictionary dictionary in appModel.dictionaries)
+                  dictionary.name,
+              ],
+            )) {
+          total += usage.bytes;
+          categories.add(<String, Object?>{
+            'id': usage.id.name,
+            'bytes': usage.bytes,
+          });
+        }
+        return <String, Object?>{'totalBytes': total, 'categories': categories};
+      }),
+    ];

@@ -948,6 +948,36 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     };
   }
 
+  /// 「从所有设备删除」这本书时墓碑该写的键：从对端下载、本机落地键与对端不同的
+  /// 书（[CollectionBookAliases] 记着对端键，见 RemoteCollectionAdoptionService）写
+  /// **对端键**，否则推给 host 认不出、对端消费也对不上（BUG-3443 同类）；其余照旧
+  /// 本机 bookKey。必须在删书行**之前**调（[deleteEpubBook] 会级联删掉别名）。
+  Future<String> syncDeletionBookKeyOf(String bookKey) async {
+    final QueryRow? row = await customSelect(
+      'SELECT a.remote_key FROM collection_book_aliases a '
+      'INNER JOIN epub_books b ON b.uid = a.local_uid '
+      'WHERE b.book_key = ? LIMIT 1',
+      variables: [Variable<String>(bookKey)],
+      readsFrom: {collectionBookAliases, epubBooks},
+    ).getSingleOrNull();
+    final String? remoteKey = row?.read<String>('remote_key');
+    return remoteKey == null || remoteKey.isEmpty ? bookKey : remoteKey;
+  }
+
+  /// 对端书键 → 本机 bookKey（只含父书仍在的别名），供删除墓碑消费端把对端键
+  /// 墓碑换算到本机行上。
+  Future<Map<String, String>> getPeerToLocalBookKeys() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT a.remote_key, b.book_key FROM collection_book_aliases a '
+      'INNER JOIN epub_books b ON b.uid = a.local_uid',
+      readsFrom: {collectionBookAliases, epubBooks},
+    ).get();
+    return <String, String>{
+      for (final QueryRow row in rows)
+        row.read<String>('remote_key'): row.read<String>('book_key'),
+    };
+  }
+
   /// 收养 DTO 携带的主合集成员；远端刷新没有撤销删除或覆盖手动排序的权限。
   /// 返回自然键对应的最小合集 ID；任一身份被墓碑阻止时返回 null。
   /// 占位提升和去重在同一事务完成，不产生用户删除墓碑。

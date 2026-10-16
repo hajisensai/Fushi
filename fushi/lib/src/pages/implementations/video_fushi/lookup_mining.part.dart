@@ -73,23 +73,24 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _miningDraft.setContext();
       return _miningDraft.length;
     }
-    final int prevStart = (idx - prevCount).clamp(0, idx);
-    final List<MiningDraftSentence> prev = <MiningDraftSentence>[
-      for (int i = prevStart; i < idx; i++)
-        MiningDraftSentence(
-          sentence: cues[i].text,
-          audioRange: _cueRange(cues[i]),
-        ),
-    ];
-    final int nextEnd = (idx + 1 + nextCount).clamp(idx + 1, cues.length);
-    final List<MiningDraftSentence> next = <MiningDraftSentence>[
-      for (int i = idx + 1; i < nextEnd; i++)
-        MiningDraftSentence(
-          sentence: cues[i].text,
-          audioRange: _cueRange(cues[i]),
-        ),
-    ];
-    _miningDraft.setContext(prev: prev, next: next);
+    // 与有声书歌词模式同一个切法（cueContextNeighbors）：一条 cue 就是一句。
+    final ({List<AudioCue> prev, List<AudioCue> next}) around =
+        cueContextNeighbors(
+          cues: cues,
+          anchorIndex: idx,
+          prevCount: prevCount,
+          nextCount: nextCount,
+        );
+    MiningDraftSentence toEntry(AudioCue cue) =>
+        MiningDraftSentence(sentence: cue.text, audioRange: _cueRange(cue));
+    _miningDraft.setContext(
+      prev: <MiningDraftSentence>[
+        for (final AudioCue cue in around.prev) toEntry(cue),
+      ],
+      next: <MiningDraftSentence>[
+        for (final AudioCue cue in around.next) toEntry(cue),
+      ],
+    );
     return _miningDraft.length;
   }
 

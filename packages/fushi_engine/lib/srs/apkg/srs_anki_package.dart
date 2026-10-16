@@ -15,6 +15,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
 
 /// 导入失败（整包不可用）。单条笔记 / 卡片的问题不抛，进导入报告。
@@ -329,7 +330,8 @@ class SrsAnkiCollection {
     await f.writeAsBytes(sqliteBytes, flush: true);
     final Database db;
     try {
-      db = sqlite3.open(f.path, mode: OpenMode.readOnly);
+      // 新 schema 的 fields / notetypes / decks… 用 COLLATE unicase（BUG-3428）。
+      db = openAnkiCollectionDb(f.path);
     } on Object catch (e) {
       await dir.delete(recursive: true);
       throw SrsImportException(SrsImportException.corrupt, 'sqlite: $e');

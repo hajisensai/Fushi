@@ -621,6 +621,48 @@ void main() {
       );
     });
 
+    testWidgets('页面开着时别处（fushi_cli）改了清单：没改过的草稿跟着刷新，保存只写本页改过的那家', (
+      WidgetTester tester,
+    ) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+        _config(id: 'p2', name: 'Beta', baseUrl: 'https://api.deepseek.com/v1'),
+      ]);
+      await pumpSection(tester);
+
+      // 别处：改 p2 的模型、新增 p3、指派默认。
+      await prefs.setAiProviders(<AiProviderConfig>[
+        prefs.aiProviders.first,
+        _config(
+          id: 'p2',
+          name: 'Beta',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-chat',
+        ),
+        _config(id: 'p3', name: 'Gamma', model: 'gpt-5'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments().withDefault('p3'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('ai-provider-p3')), findsOneWidget);
+
+      // 本页：只改 p1 的模型。
+      await openEditor(tester, 'p1');
+      await enter(tester, 'ai-provider-0-model', 'gpt-4.1');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+
+      final Map<String, AiProviderConfig> saved = <String, AiProviderConfig>{
+        for (final AiProviderConfig c in prefs.aiProviders) c.id: c,
+      };
+      expect(saved.keys, <String>['p1', 'p2', 'p3']);
+      expect(saved['p1']!.model, 'gpt-4.1');
+      expect(saved['p2']!.model, 'deepseek-chat', reason: '陈旧草稿不能覆盖别处的改动');
+      expect(saved['p3']!.model, 'gpt-5', reason: '别处新增的保留');
+      expect(prefs.storedAiFeatureAssignments.defaultProviderId, 'p3');
+    });
+
     testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (
       WidgetTester tester,
     ) async {

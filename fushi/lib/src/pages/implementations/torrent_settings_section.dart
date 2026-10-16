@@ -21,6 +21,74 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 /// 视频设置。所有字段写 `QbConnectionConfig`（即时生效到内置引擎）。
 enum TorrentSettingsScope { all, common, connection, trackers, advanced }
 
+/// 当前生效的下载配置（未配置 = 默认值）。设置页与控制通道共用。
+QbConnectionConfig currentTorrentConfig(AppModel appModel) =>
+    effectiveTorrentConfig(appModel.qbConnectionConfig);
+
+/// 改一处下载配置并写穿（即时生效到内置引擎）。设置页与控制通道共用。
+Future<void> updateTorrentConfig(
+  AppModel appModel,
+  QbConnectionConfig Function(QbConnectionConfig c) mutate,
+) => appModel.setQbConnectionConfig(mutate(currentTorrentConfig(appModel)));
+
+/// 「测试连接」的结果：成功带 WebUI 版本，失败带后端给的具体原因（可能为空）。
+typedef TorrentConnectionProbe = ({String? version, String? failure});
+
+/// 按 [config] 解析后端并探测连通性（qb = WebUI 版本号）。设置页与控制通道共用。
+Future<TorrentConnectionProbe> probeTorrentConnection(
+  AppModel appModel,
+  QbConnectionConfig config,
+) async {
+  final TorrentBackend backend = appModel.createTorrentBackend(config);
+  String? version;
+  String? failure;
+  try {
+    version = await backend.probeConnection();
+  } finally {
+    if (version == null && backend is QbTorrentBackend) {
+      failure = backend.lastProbeFailure;
+    }
+    backend.close();
+  }
+  return (version: version, failure: failure);
+}
+
+/// 把 tracker 订阅地址写进配置，再立即拉取一次（强制刷新）。设置页与控制通道共用。
+Future<List<String>> refreshTorrentTrackerSubscription(
+  AppModel appModel,
+  String sourceUrl,
+) async {
+  final String url = sourceUrl.trim();
+  await updateTorrentConfig(
+    appModel,
+    (QbConnectionConfig c) => c.copyWith(trackerSubscriptionUrl: url),
+  );
+  return appModel.refreshTrackerSubscription(sourceUrl: url);
+}
+
+/// 「下载执行设备」的候选：已配对且启用的互联地址（含同一台 host 的多条）。
+/// 库没开（测试 seam / 极早期）就是没有 host。设置页与控制通道共用。
+Future<List<FushiClientUrl>> loadDownloadExecutionHostUrls(
+  AppModel appModel,
+) async {
+  if (!appModel.isDatabaseReady) return const <FushiClientUrl>[];
+  return (await SyncRepository(appModel.database).getFushiClientUrls())
+      .where((FushiClientUrl u) => u.enabled)
+      .toList(growable: false);
+}
+
+/// 下载目录不可用原因的人读文案。设置页与控制通道共用。
+String downloadSaveRootIssueMessage(DownloadSaveRootIssue issue) {
+  switch (issue) {
+    case DownloadSaveRootIssue.notAbsolute:
+      return t.download_save_root_not_absolute;
+    case DownloadSaveRootIssue.createFailed:
+      return t.download_save_root_create_failed;
+    case DownloadSaveRootIssue.notWritable:
+      return t.download_save_root_not_writable;
+  }
+}
+
 class TorrentSettingsSection extends ConsumerStatefulWidget {
   const TorrentSettingsSection({
     super.key,
@@ -51,8 +119,7 @@ class _TorrentSettingsSectionState
       widget.embeddedSupportedOverride ??
       ref.read(appProvider).supportsEmbeddedTorrent;
 
-  QbConnectionConfig get _config =>
-      effectiveTorrentConfig(ref.read(appProvider).qbConnectionConfig);
+  QbConnectionConfig get _config => currentTorrentConfig(ref.read(appProvider));
 
   /// 「测试连接」进行中（按钮禁用防重入）。
   bool _probing = false;
@@ -91,13 +158,11 @@ class _TorrentSettingsSectionState
   }
 
   Future<void> _loadPairedHosts() async {
-    final AppModel appModel = ref.read(appProvider);
     // 配对清单在 DB 的 preferences 表里；库没开（测试 seam / 极早期）就是没有 host。
-    if (!appModel.isDatabaseReady) return;
-    final List<FushiClientUrl> enabled =
-        (await SyncRepository(appModel.database).getFushiClientUrls())
-            .where((FushiClientUrl u) => u.enabled)
-            .toList(growable: false);
+    final List<FushiClientUrl> enabled = await loadDownloadExecutionHostUrls(
+      ref.read(appProvider),
+    );
+    if (enabled.isEmpty) return;
     if (mounted) {
       setState(() {
         _pairedUrls = enabled;
@@ -143,7 +208,7 @@ class _TorrentSettingsSectionState
   Future<void> _commit(
     QbConnectionConfig Function(QbConnectionConfig c) mutate,
   ) async {
-    await ref.read(appProvider).setQbConnectionConfig(mutate(_config));
+    await updateTorrentConfig(ref.read(appProvider), mutate);
     if (mounted) setState(() {});
   }
 
@@ -153,19 +218,12 @@ class _TorrentSettingsSectionState
   Future<void> _probeConnection() async {
     if (_probing) return;
     setState(() => _probing = true);
-    final TorrentBackend backend = ref
-        .read(appProvider)
-        .createTorrentBackend(_config);
-    String? version;
-    String? failure;
-    try {
-      version = await backend.probeConnection();
-    } finally {
-      if (version == null && backend is QbTorrentBackend) {
-        failure = backend.lastProbeFailure;
-      }
-      backend.close();
-    }
+    final TorrentConnectionProbe probe = await probeTorrentConnection(
+      ref.read(appProvider),
+      _config,
+    );
+    final String? version = probe.version;
+    final String? failure = probe.failure;
     if (!mounted) return;
     setState(() => _probing = false);
     final String message;
@@ -184,18 +242,15 @@ class _TorrentSettingsSectionState
   Future<void> _refreshTrackers() async {
     if (_fetchingTrackers) return;
     final String sourceUrl = _trackerUrlCtrl.text.trim();
-    await _commit(
-      (QbConnectionConfig c) => c.copyWith(trackerSubscriptionUrl: sourceUrl),
-    );
-    if (!mounted) return;
     setState(() {
       _fetchingTrackers = true;
       _trackerFetchError = null;
     });
     try {
-      final List<String> trackers = await ref
-          .read(appProvider)
-          .refreshTrackerSubscription(sourceUrl: sourceUrl);
+      final List<String> trackers = await refreshTorrentTrackerSubscription(
+        ref.read(appProvider),
+        sourceUrl,
+      );
       if (!mounted) return;
       setState(() => _trackerPreview = trackers);
     } on Object catch (error) {
@@ -243,16 +298,8 @@ class _TorrentSettingsSectionState
     if (mounted) setState(() {});
   }
 
-  static String _saveRootIssueMessage(DownloadSaveRootIssue issue) {
-    switch (issue) {
-      case DownloadSaveRootIssue.notAbsolute:
-        return t.download_save_root_not_absolute;
-      case DownloadSaveRootIssue.createFailed:
-        return t.download_save_root_create_failed;
-      case DownloadSaveRootIssue.notWritable:
-        return t.download_save_root_not_writable;
-    }
-  }
+  static String _saveRootIssueMessage(DownloadSaveRootIssue issue) =>
+      downloadSaveRootIssueMessage(issue);
 
   /// 下载目录分组（当前路径 + 更改 / 恢复默认 + 启动回退警告）。
   /// 只在内置引擎分支渲染：外接 qb 的落盘目录由 qb 自己管，改不到。

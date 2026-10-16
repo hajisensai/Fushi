@@ -92,6 +92,13 @@ class AudiobookRepository {
     // 墓碑还在」误判（范式仿书/视频的插入清墓碑）。
     await _db.clearSyncDeletionTombstone(
         SyncTombstoneKind.audiobook.dbValue, bookKey);
+    // 书从对端下载、落地键不同时删除墓碑写的是对端键（见 [deleteAudiobook]），
+    // 同一条也要撤销，否则重新配上有声书后那条旧墓碑仍会推给 host。
+    final String peerKey = await _db.syncDeletionBookKeyOf(bookKey);
+    if (peerKey != bookKey) {
+      await _db.clearSyncDeletionTombstone(
+          SyncTombstoneKind.audiobook.dbValue, peerKey);
+    }
   }
 
   /// 换音频（唯一写音频两列的入口）。[audioPaths] 为落地后的绝对路径列表，
@@ -198,13 +205,18 @@ class AudiobookRepository {
   }) async {
     final Audiobook? before =
         deleteLocalFiles ? await findByBookKey(bookKey) : null;
+    // 有声书与书共享 bookKey：书从对端下载、落地键不同时墓碑写对端键（别名表），
+    // 否则推给 host（只按 bookKey 精确匹配）与对端消费都对不上（BUG-3443 同类）。
+    final String syncTombstoneKey = propagateDeletion
+        ? await _db.syncDeletionBookKeyOf(bookKey)
+        : bookKey;
     // deleteAudiobookByBookKey 内部已先删 audioCues 再删 audiobooks。
     await _db.deleteAudiobookByBookKey(bookKey);
     if (propagateDeletion) {
       try {
         await _db.writeSyncDeletionTombstone(
             SyncTombstoneKind.audiobook.dbValue,
-            bookKey,
+            syncTombstoneKey,
             DateTime.now().millisecondsSinceEpoch);
       } catch (_) {
         // best-effort：记账失败不影响有声书已删。

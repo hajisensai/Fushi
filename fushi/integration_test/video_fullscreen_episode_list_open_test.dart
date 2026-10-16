@@ -259,6 +259,8 @@ void main() {
 
       final AppModel appModel = await readyAppModel(tester);
       await appModel.setVideoAutoPlayNext(false);
+      // 焦点导航开着时 app 根的兜底节点才可聚焦（Esc 走 Navigator.maybePop 的那条路）。
+      await appModel.setExperimentalFocusNavigationEnabled(true);
       final VideoBookRepository repo = VideoBookRepository(appModel.database);
       final Directory dir = await _fixturesDir();
       final List<String> uids = <String>[];
@@ -423,6 +425,57 @@ void main() {
         reason: '打开剧集横轨不应退全屏',
       );
       expect(windowedOpened, isTrue, reason: '窗口态点剧集按钮应打开横轨（对照）');
+
+      // 反馈 _oQPV1HPqX / 2XRS7o4YJ8：全屏 + 剧集横轨开着按 Esc，应先关横轨、不退全屏；
+      // 再按一次 Esc 才退全屏。
+      //
+      // 焦点刻意放到 app 级兜底节点（Navigator 之上）：这是焦点被动修复 / 主窗失焦再
+      // 回来之后焦点的真实落点，Esc 此时绕过页面键盘通道，经全局「返回上一级」走
+      // `Navigator.maybePop`。焦点停在横轨卡片上那条路径由页面键盘通道直接接住，
+      // 早就是对的（本用例改前实测：卡片持焦时第一次 Esc 关横轨、全屏保持）。
+      final Finder fallbackFocus = find.byWidgetPredicate(
+        (Widget w) =>
+            w is Focus && w.focusNode?.debugLabel == 'fushi-focus-fallback',
+        skipOffstage: false,
+      );
+      expect(fallbackFocus, findsOneWidget, reason: 'app 根应挂着焦点兜底节点');
+      (tester.widget(fallbackFocus) as Focus).focusNode!.requestFocus();
+      await tester.pump(const Duration(milliseconds: 50));
+      final FocusNode? focusBeforeEsc = FocusManager.instance.primaryFocus;
+      expect(
+        focusBeforeEsc?.debugLabel,
+        'fushi-focus-fallback',
+        reason: '焦点应已落到 app 根兜底节点',
+      );
+      debugPrint(
+        '[fs-eplist-open] before-esc primaryFocus=$focusBeforeEsc '
+        'chain=${focusBeforeEsc?.ancestors.map((FocusNode n) => n.debugLabel ?? n.runtimeType.toString()).join(' < ')}',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      for (int i = 0; i < 20; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      _dumpPanels(tester, 'after-esc-1');
+      final bool fsAfterFirstEsc = await WindowCaptionChannel.isFullscreen();
+      debugPrint('[fs-eplist-open] after-esc-1 fullscreen=$fsAfterFirstEsc');
+      expect(fsAfterFirstEsc, isTrue, reason: '剧集横轨开着时第一次 Esc 只应关横轨，不应退全屏');
+      expect(
+        vis().contains('true'),
+        isFalse,
+        reason: '第一次 Esc 应关掉剧集横轨（visible=${vis()}）',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      bool fsAfterSecondEsc = true;
+      for (int i = 0; i < 20 && fsAfterSecondEsc; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        fsAfterSecondEsc = await WindowCaptionChannel.isFullscreen();
+      }
+      expect(fsAfterSecondEsc, isFalse, reason: '横轨已关时第二次 Esc 应退全屏');
+      expect(
+        find.byType(Video).evaluate().isNotEmpty,
+        isTrue,
+        reason: '第二次 Esc 只退全屏，不应退出视频页',
+      );
       assertStrictErrors(errors);
     } finally {
       FlutterError.onError = oldHandler;

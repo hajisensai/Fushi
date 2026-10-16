@@ -501,53 +501,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // （`const LiquidRoundedSuperellipse(borderRadius: barHeight / 2)` 要求它是 const）。
     const double barHeight = kMinInteractiveDimension;
 
-    // Apple 分支专用：iOS 26 编辑菜单里的一格。MD3 走下方
-    // [ReaderSelectionActionBar]（按宽度降级 + 溢出菜单）。
-    Widget glassButton(IconData icon, String label, String action) {
-      // Apple：iOS 26 编辑菜单里的一格——无底、按下变淡、无水波；字形与
-      // 文字同为 label 色（不上强调色，菜单项是中性的）。
-      final Color fg = appleColorsOf(overlayContext).label;
-      return FushiPlainButton(
-        onPressed: () => _runSelectionAction(action),
-        borderRadius: BorderRadius.circular(barHeight / 2),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12.0,
-            vertical: 10.0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiIcon(icon, size: 18.0, color: fg),
-              const SizedBox(width: 6.0),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14.0,
-                  fontWeight: FontWeight.w500,
-                  color: fg,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    List<Widget> glassSelectionButtons() => <Widget>[
-          glassButton(FushiIcons.search, t.search, 'search'),
-          glassButton(FushiIcons.copy, t.copy, 'copy'),
-          if (isAndroidPlatform)
-            glassButton(FushiIcons.share, t.share, 'share'),
-          if (isAndroidPlatform)
-            glassButton(
-                FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
-          glassButton(FushiIcons.star, t.action_favorite, 'favorite'),
-          if (hasAudio)
-            glassButton(FushiIcons.video,
-                t.audiobook_export_clip, 'export'),
-        ];
-
     ReaderSelectionActionItem item(
       IconData icon,
       String label,
@@ -558,6 +511,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
           label: label,
           onPressed: () => unawaited(_runSelectionAction(action)),
         );
+
+    final List<ReaderSelectionActionItem> actionItems =
+        <ReaderSelectionActionItem>[
+      item(FushiIcons.search, t.search, 'search'),
+      item(FushiIcons.copy, t.copy, 'copy'),
+      if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
+      if (isAndroidPlatform)
+        item(
+          FushiIcons.travelExplore,
+          t.selection_web_search,
+          'webSearch',
+        ),
+      item(FushiIcons.star, t.action_favorite, 'favorite'),
+      if (hasAudio) item(FushiIcons.video, t.audiobook_export_clip, 'export'),
+    ];
 
     // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
     // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
@@ -573,51 +541,36 @@ extension _ReaderChrome on _ReaderFushiPageState {
             // Apple：iOS 26 文本编辑菜单——浮在正文上的液态玻璃胶囊（控件层），
             // 高度同 MD3 条（[barHeight]），定位算法不变。iOS / macOS 正文是
             // 原生 WebView 平台视图，着色器采不到它，走 BackdropFilter 回退。
-            ? Align(
-                alignment: Alignment.center,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: GlassContainer(
-                    useOwnLayer: true,
-                    quality: fushiGlassQuality(overlayContext, prominent: true),
-                    settings: fushiGlassSettingsOverPlatformView(overlayContext),
-                    shape: const LiquidRoundedSuperellipse(
-                      borderRadius: barHeight / 2,
-                    ),
-                    platformViewBackdrop:
-                        fushiGlassOverPlatformView(overlayContext),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: glassSelectionButtons(),
+            ? LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  return Align(
+                    alignment: Alignment.center,
+                    child: GlassContainer(
+                      useOwnLayer: true,
+                      quality: fushiGlassQuality(overlayContext, prominent: true),
+                      settings:
+                          fushiGlassSettingsOverPlatformView(overlayContext),
+                      shape: const LiquidRoundedSuperellipse(
+                        borderRadius: barHeight / 2,
+                      ),
+                      platformViewBackdrop:
+                          fushiGlassOverPlatformView(overlayContext),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        child: ReaderGlassSelectionActionRow(
+                          items: actionItems,
+                          maxWidth: constraints.maxWidth - 8.0,
+                          barHeight: barHeight,
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               )
             : ReaderSelectionActionBar(
                 color: theme.popupMenuTheme.color ??
                     theme.colorScheme.surfaceContainerHigh,
-                items: <ReaderSelectionActionItem>[
-                  item(FushiIcons.search, t.search, 'search'),
-                  item(FushiIcons.copy, t.copy, 'copy'),
-                  if (isAndroidPlatform)
-                    item(FushiIcons.share, t.share, 'share'),
-                  if (isAndroidPlatform)
-                    item(
-                      FushiIcons.travelExplore,
-                      t.selection_web_search,
-                      'webSearch',
-                    ),
-                  item(FushiIcons.star, t.action_favorite, 'favorite'),
-                  if (hasAudio)
-                    item(
-                      FushiIcons.video,
-                      t.audiobook_export_clip,
-                      'export',
-                    ),
-                ],
+                items: actionItems,
               ),
       ),
     );
@@ -1005,7 +958,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     await _clearReaderAppSelection();
     if (!mounted) return;
-    final List<EpubImageRef> images = book.images;
+    final List<EpubImageRef> images =
+        await _loadBookImagesOffUiIsolate(book, _extractDir);
+    if (!mounted || !identical(_book, book)) return;
     final int currentChapter = _currentChapter;
     final List<TtuTocEntry> toc = _buildTtuToc();
     // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
@@ -3898,7 +3853,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
-  Future<void> _refreshSectionHighlights(int section) async {
+  /// [freshId]：刚收藏的那条，笔触样式下给它放一次落笔动画（只有收藏动作传）。
+  Future<void> _refreshSectionHighlights(int section, {String? freshId}) async {
     if (_controller == null) return;
     if (_lyricsMode) await _applyLyricsFavorites();
     final List<FavoriteSentence> chapterFavs =
@@ -3910,6 +3866,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _controller!,
       chapterFavs,
       backgroundHex: _readerBackgroundHex,
+      freshIds: freshId == null ? const <String>[] : <String>[freshId],
     );
     await _controller!.evaluateJavascript(
       source:
@@ -4002,7 +3959,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _invalidateFavoriteSentenceCache();
     _rebuild(() => _currentSentenceIsFavorited = true);
     if (mounted) {
-      await _refreshSectionHighlights(section);
+      await _refreshSectionHighlights(section, freshId: fav.id);
     }
     FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
   }
@@ -4324,6 +4281,146 @@ class ReaderSelectionActionBar extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// Apple（iOS 26 编辑菜单）选区操作行：与 [ReaderSelectionActionBar] 同一套三级
+/// 降级（带文字 → 只图标 + Tooltip → 前 [ReaderSelectionActionBar.pinnedCount]
+/// 颗常驻 + 「⋯」溢出菜单），每颗命中区不小于 [barHeight]（48dp），不再把整排
+/// 按钮用 FittedBox 等比缩小。
+class ReaderGlassSelectionActionRow extends StatelessWidget {
+  const ReaderGlassSelectionActionRow({
+    required this.items,
+    required this.maxWidth,
+    required this.barHeight,
+    super.key,
+  });
+
+  final List<ReaderSelectionActionItem> items;
+
+  /// 行可用的最大宽度（已扣掉容器内边距）。
+  final double maxWidth;
+  final double barHeight;
+
+  static const double _labelHorizontalPadding = 12;
+  static const double _iconSize = 18;
+  static const double _iconLabelGap = 6;
+  static const double _fontSize = 14;
+
+  double _labeledWidth(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double total = 0;
+    for (final ReaderSelectionActionItem item in items) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(
+          text: item.label,
+          style: const TextStyle(
+            fontSize: _fontSize,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double w = painter.width +
+          _iconSize +
+          _iconLabelGap +
+          _labelHorizontalPadding * 2;
+      painter.dispose();
+      total += w < barHeight ? barHeight : w;
+    }
+    return total;
+  }
+
+  Widget _button(
+    BuildContext context,
+    ReaderSelectionActionItem item, {
+    required bool labeled,
+  }) {
+    // iOS 26 编辑菜单里的一格：无底、按下变淡；字形与文字同为 label 色。
+    final Color fg = appleColorsOf(context).label;
+    final Widget button = FushiPlainButton(
+      onPressed: item.onPressed,
+      semanticLabel: item.label,
+      borderRadius: BorderRadius.circular(barHeight / 2),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minWidth: barHeight, minHeight: barHeight),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: labeled ? _labelHorizontalPadding : 0,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              FushiIcon(item.icon, size: _iconSize, color: fg),
+              if (labeled) ...<Widget>[
+                const SizedBox(width: _iconLabelGap),
+                Text(
+                  item.label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: _fontSize,
+                    fontWeight: FontWeight.w500,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+    return labeled ? button : FushiTooltip(message: item.label, child: button);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const int pinned = ReaderSelectionActionBar.pinnedCount;
+    final List<Widget> children;
+    if (_labeledWidth(context) <= maxWidth) {
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items)
+          _button(context, i, labeled: true),
+      ];
+    } else if (items.length * barHeight <= maxWidth || items.length <= pinned) {
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items)
+          _button(context, i, labeled: false),
+      ];
+    } else {
+      final List<ReaderSelectionActionItem> overflow = items.sublist(pinned);
+      children = <Widget>[
+        for (final ReaderSelectionActionItem i in items.take(pinned))
+          _button(context, i, labeled: false),
+        FushiPopupMenuButton<int>(
+          key: const ValueKey<String>('reader_selection_action_more'),
+          icon: FushiIcon(
+            FushiIcons.more,
+            size: 20,
+            color: appleColorsOf(context).label,
+          ),
+          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+          constraints: BoxConstraints(minWidth: barHeight),
+          onSelected: (int index) => overflow[index].onPressed(),
+          itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+            for (int index = 0; index < overflow.length; index++)
+              PopupMenuItem<int>(
+                value: index,
+                child: Row(
+                  children: <Widget>[
+                    Icon(overflow[index].icon, size: 20),
+                    const SizedBox(width: 12),
+                    Flexible(child: Text(overflow[index].label)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ];
+    }
+    return Row(mainAxisSize: MainAxisSize.min, children: children);
   }
 }
 

@@ -2,7 +2,6 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -106,11 +105,9 @@ void main() {
       .firstWhere((VideoBookRow r) => r.bookUid == uid)
       .title;
 
-  // #792 起入口收进 more_horiz 管理菜单，不再是顶栏独立 IconButton。
+  // 管理动作默认平铺成顶栏图标钮（label 在 tooltip，放不下才收进「⋯」）。
   Future<void> invokeEpisodeRename(WidgetTester tester) async {
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.collection_episode_rename).last);
+    await tester.tap(find.byTooltip(t.collection_episode_rename));
     await tester.pumpAndSettle();
   }
 

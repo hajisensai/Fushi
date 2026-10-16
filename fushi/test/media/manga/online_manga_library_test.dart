@@ -167,6 +167,37 @@ void main() {
       await database.getCollectionItems(collections.single.id), hasLength(1));
   });
 
+  test('BUG-3443：重新收下经互联来的漫画撤销此前写的对端键删除墓碑，'
+      '不碰无关墓碑', () async {
+    final OnlineMangaLibraryEntry entry = InterconnectMangaCatalog.entryFor(
+      const RemoteBookInfo(
+        title: 'Remote manga',
+        bookKey: 'host-manga-key',
+        hasContent: false,
+        hasMangaChapters: true,
+        format: 'manga',
+      ),
+    );
+    // 上一次「从所有设备删除」写的是对端键（本机 interconnect- 键对端认不出），
+    // 还没推出去就又收下了：留着它，下一轮会把 host 上的书删掉。
+    await database.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue, 'host-manga-key', 100);
+    await database.writeSyncDeletionTombstone(
+        SyncTombstoneKind.book.dbValue, 'unrelated', 100);
+
+    await service.add(entry);
+
+    expect(
+      <String>{
+        for (final SyncDeletionTombstoneRow r
+            in await database.getSyncDeletionTombstonesOfType(
+                SyncTombstoneKind.book.dbValue))
+          r.itemKey,
+      },
+      <String>{'unrelated'},
+    );
+  });
+
   test('刷出空章节列表不得覆盖书架：抛失败、库里旧描述符原样保留', () async {
     final EpubBookRow row = await service.add(entryFor(chapters: chapters));
     final OnlineMangaLibraryEntry stored =

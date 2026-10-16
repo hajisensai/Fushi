@@ -4,6 +4,8 @@
 /// 而不是加完目录一片沉默、只能等下一次下载才知道配没配上。
 library;
 
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
@@ -13,6 +15,47 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+/// 素材目录的无界面增删（控制通道 `config run listening.audiobook_material_library`）：
+/// 与管理框同一份偏好与同一次重扫。[add] 必须是存在的目录；[remove] 不在列表里
+/// 给 [ArgumentError]。都不给 = 只重扫并回报。
+Future<Map<String, Object?>> editAudiobookMaterialDirs(
+  AppModel appModel, {
+  String? add,
+  String? remove,
+}) async {
+  List<String> dirs = decodeAudiobookMaterialDirs(
+    appModel.prefsRepo.audiobookMaterialDirs,
+  );
+  final String? toAdd = add?.trim();
+  final String? toRemove = remove?.trim();
+  if (toAdd != null && toAdd.isNotEmpty) {
+    if (!Directory(toAdd).existsSync()) {
+      throw ArgumentError('目录不存在：$toAdd');
+    }
+    if (!dirs.contains(toAdd)) dirs = <String>[...dirs, toAdd];
+  }
+  if (toRemove != null && toRemove.isNotEmpty) {
+    if (!dirs.contains(toRemove)) {
+      throw ArgumentError('素材目录里没有：$toRemove');
+    }
+    dirs = <String>[
+      for (final String d in dirs)
+        if (d != toRemove) d,
+    ];
+  }
+  await appModel.prefsRepo.setAudiobookMaterialDirs(
+    encodeAudiobookMaterialDirs(dirs),
+  );
+  final AudiobookMaterialScan scan = await appModel.audiobookMaterialService
+      .refresh();
+  return <String, Object?>{
+    'dirs': dirs,
+    'missingDirs': scan.missingDirs,
+    'scannedFiles': scan.scannedFileCount,
+    'identifiedWorks': scan.index.identifiedWorkCount,
+  };
+}
 
 class AudiobookMaterialLibraryDialog extends StatefulWidget {
   const AudiobookMaterialLibraryDialog({required this.appModel, super.key});

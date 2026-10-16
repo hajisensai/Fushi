@@ -81,6 +81,7 @@ void main() {
       expect(
         ReaderPaginationScripts.stableProgressInvocation(),
         'window.fushiReader && !window.fushiReader._reanchorPending '
+        '&& !(window.fushiReader.pageTurnBusy && window.fushiReader.pageTurnBusy()) '
         '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null',
       );
     });

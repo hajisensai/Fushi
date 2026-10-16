@@ -22,7 +22,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
-import 'package:fushi/src/models/dictionary_repository.dart';
+import 'package:fushi/src/models/recommended_dictionary_installer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -1137,18 +1137,8 @@ class _DictionaryDialogPageState extends BasePageState {
     _importDictionaryPaths(importPaths);
   }
 
-  bool _isDictInstalled(RecommendedDictionary rec) {
-    return appModel.dictionaries.any((d) {
-      final String base = DictionaryRepository.baseName(d.name);
-      if (base == rec.matchPrefix) return true;
-      if (d.name == rec.matchPrefix) return true;
-      if (d.name.startsWith(rec.matchPrefix) &&
-          d.name.substring(rec.matchPrefix.length).trimLeft().startsWith('[')) {
-        return true;
-      }
-      return false;
-    });
-  }
+  bool _isDictInstalled(RecommendedDictionary rec) =>
+      isRecommendedDictionaryInstalled(appModel.dictionaries, rec);
 
   Set<int> _computeInstalledIndices(List<RecommendedDictionary> cat) {
     final Set<int> indices = {};
@@ -1365,50 +1355,29 @@ class _DictionaryDialogPageState extends BasePageState {
             // 「导入失败」，用户于是先看到下载失败、再看到导入失败，误以为是两次错误。
             bool zipDownloaded = false;
             try {
-              final File zipFile = await DictionaryDownloader.download(
-                url: rec.url,
+              await downloadAndImportRecommendedDictionary(
+                appModel: appModel,
+                rec: rec,
+                job: job,
                 tempDir: tempDir,
-                progressNotifier: downloadProgress,
-                cancelToken: job.cancelToken,
                 onBytes: (int received, int total) =>
                     progressNotifier.value = dictionaryDownloadStageMessage(
                   name: rec.name,
                   received: received,
                   total: total,
                 ),
-              );
-              zipDownloaded = true;
-
-              // BUG-1493：与单本更新同一套阶段切换（归零进度条 → 不定态），否则导入
-              // 期间进度条定格满格，看起来就是卡死。BUG-1499：同时把取消按钮禁掉。
-              enterDictionaryImportStage(
-                name: rec.name,
-                progressNotifier: progressNotifier,
-                downloadProgress: downloadProgress,
-                job: job,
-              );
-              // TODO-1075：初装即把「可更新性」权威信号锚定在 catalog 来源真值上。
-              // 对存在**分离 index.json 端点**的来源（yomidevs releases / wty，见
-              // [RecommendedDictionary.indexUrl]）回填 isUpdatable:'true' + indexUrl +
-              // downloadUrl 三件套——与手动更新链路（_updateSingleDictionary）一致，
-              // 让通过 catalog 导入的词典**初装即可 isUpdatable==true**，不再依赖第三方
-              // 包内是否碰巧声明这些字段（修 TODO-1075：初装 gate 恒空、自动更新永不启用）。
-              // 对无分离 index 端点的来源（MarvNC / grammar / frequency）只回填
-              // downloadUrl，isUpdatable 交回包内 index.json 声明——不误标不可更新来源为
-              // 可更新，避免对无源词典发无效更新请求。
-              final String? recIndexUrl = rec.indexUrl;
-              final Map<String, String> sourceOverride = recIndexUrl != null
-                  ? <String, String>{
-                      'isUpdatable': 'true',
-                      'indexUrl': recIndexUrl,
-                      'downloadUrl': rec.url,
-                    }
-                  : <String, String>{'downloadUrl': rec.url};
-              await appModel.importDictionary(
-                file: zipFile,
-                progressNotifier: progressNotifier,
-                onImportSuccess: () {},
-                sourceOverride: sourceOverride,
+                onDownloaded: () {
+                  zipDownloaded = true;
+                  // BUG-1493：与单本更新同一套阶段切换（归零进度条 → 不定态），否则
+                  // 导入期间进度条定格满格，看起来就是卡死。BUG-1499：同时把取消按钮
+                  // 禁掉。可更新性来源回填见 [recommendedDictionarySourceOverride]。
+                  enterDictionaryImportStage(
+                    name: rec.name,
+                    progressNotifier: progressNotifier,
+                    downloadProgress: downloadProgress,
+                    job: job,
+                  );
+                },
               );
               successCount++;
             } catch (e, st) {

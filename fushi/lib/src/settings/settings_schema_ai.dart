@@ -81,6 +81,7 @@ SettingsDestination buildAiDestination() {
           SettingsCustomItem.rows(
             id: 'ai.web_knowledge.custom',
             searchTitle: t.ai_web_knowledge_custom_title,
+            cliList: buildWebKnowledgeCustomCliList(),
             rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
                 ? buildAiWebKnowledgeCustomSiteRows(
                     c.context,

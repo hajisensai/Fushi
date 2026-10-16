@@ -128,6 +128,12 @@ class _MangaTestAppModel extends AppModel {
   int get mangaZoomSensitivity => kMangaZoomSensitivityDefault;
   @override
   String get mangaPageAnimation => MangaPageAnimation.slide.key;
+
+  @override
+  String get mangaPageAnimationSpeed => PageTurnAnimationSpeed.normal.key;
+
+  @override
+  bool get mangaPageTurnFollowDrag => kMangaPageTurnFollowDragDefault;
   @override
   bool get mangaTapZonePaging => true;
 

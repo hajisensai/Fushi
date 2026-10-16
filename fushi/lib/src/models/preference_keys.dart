@@ -286,6 +286,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // String（`PageTurnAnimationSpeed.key`，默认 `normal`）：漫画翻页动画速度。
+  'manga_page_animation_speed',
+  // bool（默认 true）：单 / 双页模式滑动翻页逐帧跟手。
+  'manga_page_turn_follow_drag',
   // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
   'manga_panel_navigation',
   // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，

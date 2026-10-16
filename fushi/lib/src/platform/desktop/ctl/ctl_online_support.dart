@@ -105,6 +105,9 @@ class CtlOnlineTask {
   String? resultKey;
   int? finishedAt;
 
+  /// CLI 请求了取消；任务在下一个检查点（章节之间）停下并转为 `cancelled`。
+  bool cancelRequested = false;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'kind': kind,
@@ -114,6 +117,7 @@ class CtlOnlineTask {
     'total': total,
     if (error != null) 'error': error,
     if (resultKey != null) 'resultKey': resultKey,
+    if (cancelRequested && status == 'running') 'cancelRequested': true,
     'createdAt': createdAt,
     if (finishedAt != null) 'finishedAt': finishedAt,
   };
@@ -159,6 +163,17 @@ class CtlOnlineTaskRegistry {
     );
     _tasks.add(task);
     _trim();
+    return task;
+  }
+
+  /// 请求取消运行中的任务；已结束的任务抛 409，没有这个任务抛 404。
+  CtlOnlineTask cancel(String id) {
+    final CtlOnlineTask? task = byId(id);
+    if (task == null) throw CtlFailure.notFound('没有这个任务：$id');
+    if (task.status != 'running') {
+      throw CtlFailure.conflict('任务 $id 已结束（${task.status}）');
+    }
+    task.cancelRequested = true;
     return task;
   }
 
@@ -316,5 +331,10 @@ Map<String, Object?> ctlVideoPlaybackJson(VideoPlaybackSnapshot? snapshot) {
     'durationMs': snapshot.durationMs,
     'speed': snapshot.speed,
     'cue': snapshot.cue,
+    if (snapshot.volume != null) 'volume': snapshot.volume,
+    if (snapshot.audioTrackId != null) 'audioTrack': snapshot.audioTrackId,
+    if (snapshot.subtitleSource != null) 'subtitle': snapshot.subtitleSource,
+    if (snapshot.secondarySubtitleSource != null)
+      'secondarySubtitle': snapshot.secondarySubtitleSource,
   };
 }

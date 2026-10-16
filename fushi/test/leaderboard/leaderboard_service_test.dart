@@ -411,18 +411,37 @@ void main() {
     expect(await store(2).read(), isNull);
   });
 
-  test('encodeLeaderboardAvatarBytes：居中裁成 128 正方形 JPEG', () {
-    final img.Image src = img.Image(width: 400, height: 200);
+  test('encodeLeaderboardAvatarBytes：居中裁成 384 正方形 JPEG（大西瓜大球不糊）', () {
+    final img.Image src = img.Image(width: 800, height: 400);
     final Uint8List out = encodeLeaderboardAvatarBytes(
       Uint8List.fromList(img.encodePng(src)),
     );
     final img.Image decoded = img.decodeJpg(out)!;
-    expect(decoded.width, 128);
-    expect(decoded.height, 128);
+    // 大西瓜最大球直径 192 逻辑像素：头像至少要够 2x 屏原生像素。
+    expect(kLeaderboardAvatarSize, greaterThanOrEqualTo(384));
+    expect(decoded.width, kLeaderboardAvatarSize);
+    expect(decoded.height, kLeaderboardAvatarSize);
+    expect(out.length, lessThanOrEqualTo(kLeaderboardAvatarMaxBytes));
     expect(
       () => encodeLeaderboardAvatarBytes(Uint8List.fromList(<int>[1, 2, 3])),
       throwsFormatException,
     );
+  });
+
+  test('encodeLeaderboardAvatarBytes：高噪点图也压到服务端上限以内', () {
+    final Random rnd = Random(7);
+    final img.Image noise = img.Image(width: 600, height: 600);
+    for (final img.Pixel p in noise) {
+      p
+        ..r = rnd.nextInt(256)
+        ..g = rnd.nextInt(256)
+        ..b = rnd.nextInt(256);
+    }
+    final Uint8List out = encodeLeaderboardAvatarBytes(
+      Uint8List.fromList(img.encodePng(noise)),
+    );
+    expect(out.length, lessThanOrEqualTo(kLeaderboardAvatarMaxBytes));
+    expect(img.decodeJpg(out), isNotNull);
   });
 
   test('leaderboardCoverThumb：没有本地封面 / 文件不在返回 null，否则 ≤300px JPEG', () async {

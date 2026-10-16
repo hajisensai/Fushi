@@ -39,6 +39,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale_prompt.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/galgame_scrape_dialog.dart';
@@ -536,8 +537,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
   /// BUG-3361：合集成员数与合集详情页（[buildGameCollectionMemberCard]）同一判据。
   bool _isGameCollectionMemberVisible(String mediaType, String entryKey) =>
-      MediaKind.tryParse(mediaType) == MediaKind.game &&
-      _games.any((GalgameEntry g) => g.id == entryKey);
+      isGameCollectionMemberVisible(
+        games: _games,
+        mediaType: mediaType,
+        entryKey: entryKey,
+      );
 
   /// 单卡「加入合集」：与书/视频同走 [showAddToCollectionDialog]（同一条
   /// createMediaCollection / addToCollection DAO 路径）；成功后重取分组映射刷新。
@@ -617,6 +621,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           onChanged: () {
             unawaited(_reload());
           },
+          collectionAiSettings: isAiModuleEnabled(_appModel.moduleVisibility)
+              ? _appModel.prefsRepo
+              : null,
         ),
       ),
     );
@@ -1954,6 +1961,17 @@ String pendingGameDownloadLabel(DiscoveryDownloadTask task) {
       return t.game_library_download_queued;
   }
 }
+
+/// 游戏合集成员行在合集详情页（[buildGameCollectionMemberCard]）里画不画得出来：
+/// 只认 game 行且 [games] 里还在的条目（已从库移除的孤儿引用、混合合集里的书 /
+/// 视频都不算）。游戏库页与游戏详情页的「加入合集」共用它计数（BUG-3361）。
+bool isGameCollectionMemberVisible({
+  required List<GalgameEntry> games,
+  required String mediaType,
+  required String entryKey,
+}) =>
+    MediaKind.tryParse(mediaType) == MediaKind.game &&
+    games.any((GalgameEntry g) => g.id == entryKey);
 
 /// 合集详情页的 game 成员卡（纯查找 + 纯 widget，顶层函数供 widget 测试直接驱动）。
 ///

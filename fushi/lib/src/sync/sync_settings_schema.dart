@@ -76,6 +76,8 @@ import 'package:fushi_engine/sync/tls/fushi_tofu_probe.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_compare_cli.dart'
+    show listSyncCompareForCli;
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
@@ -305,6 +307,12 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_compare,
             icon: FushiIcons.swap,
             visible: (SettingsContext ctx) => !_cloudOutboundUnavailable(ctx),
+            // 列出差异与默认选择；逐条选择后提交走 sync.compare_apply
+            // （`fushi_cli sync compare` / `sync compare-apply`，sync_compare_cli.dart）。
+            cli: SettingsCliAction(
+              run: (SettingsContext ctx, Map<String, String> _) =>
+                  listSyncCompareForCli(ctx.appModel),
+            ),
             onTap: (SettingsContext ctx) => showSyncCompareDialog(
               ctx.context,
               ctx.appModel.database,
@@ -412,6 +420,29 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.hoshi_import_entry,
             subtitle: t.hoshi_import_entry_subtitle,
             icon: FushiIcons.importFile,
+            // CLI 直接给备份文件（代替系统文件选择器）：扫描 → 预览 →（非 dry_run）
+            // 起后台导入任务（task get / task cancel），与导入页同一个
+            // ExternalReaderImportService。
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '.hoshi / .zip 备份文件绝对路径',
+                  path: true,
+                ),
+                SettingsCliParam(
+                  'dry_run',
+                  help: 'true = 只扫描并预览，不导入',
+                  required: false,
+                ),
+              ],
+              run: (SettingsContext ctx, Map<String, String> args) =>
+                  runExternalReaderImportFromCli(
+                    ctx,
+                    args['value']!,
+                    dryRun: args['dry_run'] == 'true',
+                  ),
+            ),
             onTap: (SettingsContext ctx) => pushSettingsPage(
               ctx,
               (_) => ExternalReaderImportPage(appModel: ctx.appModel),
@@ -596,6 +627,10 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
             icon: FushiIcons.cast,
+            cli: const SettingsCliAction.unsupported(
+              '加入游戏串流是实时画面接收界面（串流本身只能在 app 里看）；'
+              '游戏库操作用 fushi_cli game 命令',
+            ),
             onTap: (SettingsContext ctx) => pushSettingsPage(
               ctx,
               (BuildContext context) => GameStreamJoinPage(

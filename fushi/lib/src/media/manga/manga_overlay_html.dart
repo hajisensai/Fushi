@@ -743,6 +743,8 @@ String mangaWindowDocument(
   int zoomMaxPercent = kMangaZoomMaxPercent,
   int zoomSensitivity = kMangaZoomSensitivityDefault,
   MangaPageAnimation pageAnimation = MangaPageAnimation.slide,
+  PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
+  bool followDrag = kMangaPageTurnFollowDragDefault,
   bool tapZonePaging = true,
   MangaTapZoneLayout tapZoneLayout = MangaTapZoneLayout.leftRight,
   String backgroundCss = '#000',
@@ -781,9 +783,9 @@ String mangaWindowDocument(
     panWidePages = preferences.panWide;
     zoomStartPosition = preferences.zoomStartPosition;
     showOcrBoxes = preferences.showOcrBoxes;
-    if (!preferences.animateTransitions || preferences.einkMode) {
-      pageAnimation = MangaPageAnimation.none;
-    }
+    // 翻页动画只认 `manga_page_animation`（调用方传入的 [pageAnimation]）；
+    // animateTransitions 是它的旧投影，不再参与判定。墨水屏强制无动画。
+    if (preferences.einkMode) pageAnimation = MangaPageAnimation.none;
   }
   if (preferences.einkMode) backgroundCss = '#fff';
   // Vertical paging shares the scroll bridge with long-strip mode, but each
@@ -898,13 +900,24 @@ String mangaWindowDocument(
             'box-sizing:border-box;${hasGaps ? 'margin-bottom:12px;' : ''}'
             '${isVerticalPaged ? 'scroll-snap-align:start;' : ''}}'
             '${isVerticalPaged ? '#manga-root{scroll-snap-type:y mandatory;}' : ''}'
-      : '#manga-viewport{overflow:hidden;width:100vw;height:100vh;}'
+      : '#manga-viewport{overflow:hidden;width:100vw;height:100vh;'
+            'position:relative;}'
             '#manga-root{display:flex;flex-direction:row;direction:ltr;'
-            'height:100vh;align-items:center;'
-            '${_rootTransitionCss(pageAnimation)}}'
+            'height:100vh;align-items:center;}'
             '.manga-spread{display:flex;flex:0 0 100vw;'
             'width:100vw;height:100vh;align-items:center;'
-            'justify-content:center;$pageDirectionCss}';
+            'justify-content:center;$pageDirectionCss}'
+            // 「覆盖」翻页的克隆层：与 strip 同在 #manga-canvas 下（缩放 / 平移一致），
+            // 不吃指针，带一圈投影压在下面那一屏上。
+            '.manga-cover-layer{position:absolute;left:0;top:0;width:100vw;'
+            'height:100vh;pointer-events:none;z-index:2;'
+            'box-shadow:0 0 28px rgba(0,0,0,.45);}';
+  // #manga-root 的过渡声明单独一张样式表：设置 / 系统「减弱动态效果」变化时
+  // JS（__mangaSetPageAnimation）只换这张表的内容，不重建文档。
+  final String animCss = isWebtoon
+      ? ''
+      : '<style id="manga-anim-css">#manga-root{'
+            '${_rootTransitionCss(pageAnimation, pageAnimationSpeed)}}</style>';
 
   // spread 时 strip 包进 overflow:hidden 视口；webtoon 时 root 直接在 body。
   final String content = isWebtoon
@@ -985,7 +998,7 @@ String mangaWindowDocument(
       // iOS/macOS WebKit < 17.2）走 highlightSelection 的降级分支：把命中字符
       // 包进 .fushi-dict-highlight span。缺这条规则时那一侧照样什么都不画。
       '.fushi-dict-highlight{background-color:rgba(255,196,0,0.45);}'
-      '</style></head>'
+      '</style>$animCss</head>'
       '<body${showOcrBoxes ? ' class="ocr-boxes-visible"' : ''}>'
       '$body'
       '<div id="manga-flash"></div>'
@@ -993,7 +1006,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
       '</script>'
       '</body></html>';
 }
@@ -1018,19 +1031,28 @@ String mangaImageFilterCss(MangaReaderPreferences preferences) =>
 /// 禁用，消除桌面拖动时的原生图片/选区残影（「秃瓢」）。手势阈值镜像 reader
 /// （absDx>absDy 判 swipe，小位移判 tap）。spread translateX 在 [_mangaApplyTranslate]
 /// 按 data-spread 测量。
-/// `#manga-root` 的过渡声明，由翻页动画偏好决定。
+/// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
+const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
+
+/// `#manga-root` 的过渡声明，由翻页动画效果与速度决定（JS 侧 `_rootTransitionDecl`
+/// 是它的运行时镜像，设置变化时换掉 `#manga-anim-css` 的内容）。
 ///
-/// `slide` = 旧行为（transform 过渡，时长由动画样式的统一值域给出）；`none` = 不声明过渡
-/// （瞬时翻页，给要极限响应的用户）；`fade` = 只过渡 opacity，位移由 JS 在淡出后
-/// 瞬时完成（见 `__mangaApplyTranslate`）。
-String _rootTransitionCss(MangaPageAnimation animation) {
+/// `slide` = transform 过渡；`none` = 不声明过渡（瞬时翻页）；`fade` = 只过渡
+/// opacity（淡出、瞬时位移、淡入各占半程，见 `_fadeTurn`）；`cover` = strip 本身瞬时
+/// 定位，动的是克隆出来的覆盖层（见 `_coverTurn`），root 不声明过渡。
+String _rootTransitionCss(
+  MangaPageAnimation animation, [
+  PageTurnAnimationSpeed speed = PageTurnAnimationSpeed.normal,
+]) {
   switch (animation) {
-    case MangaPageAnimation.none:
+    case PageTurnAnimation.none:
+    case PageTurnAnimation.cover:
       return '';
-    case MangaPageAnimation.slide:
-      return 'transition:transform ${animation.durationMs}ms ease-out;';
-    case MangaPageAnimation.fade:
-      return 'transition:opacity ${animation.durationMs}ms ease-out;';
+    case PageTurnAnimation.slide:
+      return 'transition:transform ${speed.durationMs}ms $kMangaPageTurnEasing;';
+    case PageTurnAnimation.fade:
+      return 'transition:opacity ${(speed.durationMs / 2).round()}ms '
+          '$kMangaPageTurnEasing;';
   }
 }
 
@@ -1044,6 +1066,8 @@ String _mangaGestureJs({
   required int zoomMaxPercent,
   required int zoomSensitivity,
   required MangaPageAnimation pageAnimation,
+  PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
+  bool followDrag = kMangaPageTurnFollowDragDefault,
   required bool tapZonePaging,
   required MangaTapZoneLayout tapZoneLayout,
   bool disableZoomOut = false,
@@ -1101,6 +1125,8 @@ String _mangaGestureJs({
   // innerHeight*(1-ZOOM)/2 —— 画面自己上下跳一截。IS_WEBTOON 必须在这里就绪：
   // 下面的 _recenterPan / _applyCanvas 在文档解析期就会跑。
   var IS_WEBTOON = $isWebtoon;
+  // 纵向分页（pagedVertical）走 webtoon 的滚动桥，但相邻翻页要平滑滚动。
+  var IS_VERTICAL_PAGED = $isVerticalPaged;
   var PAN_X = 0;
   var PAN_Y = 0;
   // One source transform owns image and OCR geometry. Crop bounds stay in
@@ -1379,11 +1405,18 @@ String _mangaGestureJs({
   };
   _applyCanvas();
   // ── spread translateX：把固定 100vw 的 spread 容器平移到视口左边缘 ──
-  // 动画样式由设置决定：slide/none 直接改 transform（过渡与否交给 CSS）；fade 先
-  // 淡出、位移完成后再淡入（位移本身不过渡，否则会同时看到滑动与淡入淡出）。
+  // 翻页动画四选一（slide / cover / fade / none）与速度由设置决定；运行中经
+  // __mangaSetPageAnimation 改（设置面板 / 系统「减弱动态效果」变化），不重建文档。
+  // 规则：长距离跳页（> MAX_ANIM_DIST 跨页）一律瞬时；动画进行中来了新的翻页，
+  // 先把当前动画直接落到终点再开始下一次（不排长队）。
   var PAGE_ANIM = '${pageAnimation.key}';
-  var PAGE_ANIM_MS = ${pageAnimation.durationMs};
-  var _fadeTimer = null;
+  var PAGE_ANIM_MS = ${pageAnimationSpeed.durationMs};
+  var FOLLOW_DRAG = $followDrag;
+  var MAX_ANIM_DIST = $kPageTurnAnimationMaxAnimatedDistance;
+  var FOLLOW_COMMIT = $kPageTurnFollowCommitFraction;
+  var FOLLOW_FLING = $kPageTurnFollowFlingVelocity;
+  var FOLLOW_EDGE_DAMPING = 0.3;
+  var PAGE_EASE = '$kMangaPageTurnEasing';
   // 纯投影（无动画语义）：把 target 跨页的 offsetLeft 现场重测并换算成 root 的
   // translateX，同时记入语义真值 CURRENT。翻页动画走 __mangaApplyTranslate；
   // 摆位/resize 重投影走 _reanchor 的无过渡路径——两边共用这一个投影实现，
@@ -1414,44 +1447,291 @@ String _mangaGestureJs({
       }
     }
   }
+  function _animMs(){ return PAGE_ANIM === 'none' ? 0 : PAGE_ANIM_MS; }
+  function _spreadEl(i){
+    var root = document.getElementById('manga-root');
+    return root ? root.querySelector('.manga-spread[data-spread="'+i+'"]') : null;
+  }
+  // 无过渡落位（_reanchor 同一套：关过渡 → 写 transform → 强制 reflow → 还原）。
+  function _snapToSpread(target){
+    var root = document.getElementById('manga-root');
+    var prevTransition = root ? root.style.transition : '';
+    if (root) root.style.transition = 'none';
+    _translateToSpread(target);
+    if (root) {
+      void root.offsetHeight;
+      root.style.transition = prevTransition;
+    }
+  }
+  // 只挪 strip 的像素位置（不改语义真值 CURRENT）：拖动跟手与覆盖层的底图用。
+  function _setStripX(px){
+    var root = document.getElementById('manga-root');
+    if (!root) return;
+    root.style.transition = 'none';
+    root.style.transform = 'translateX(' + px + 'px)';
+  }
+  // 当前在播的翻页动画：{finish}。finish 把它直接落到终点（连按 / 新拖动 / 换设置）。
+  var _pageAnim = null;
+  function _finishPageAnim(){
+    var a = _pageAnim;
+    _pageAnim = null;
+    if (a) a.finish();
+  }
+  // 登记一段时长 ms 的动画；到点或被 finish 时恰好执行一次 done。
+  function _runPageAnim(ms, done){
+    var a = {timer: null, finish: null};
+    var ran = false;
+    var run = function(){
+      if (ran) return;
+      ran = true;
+      if (a.timer) { clearTimeout(a.timer); a.timer = null; }
+      if (_pageAnim === a) _pageAnim = null;
+      done();
+    };
+    a.finish = run;
+    a.timer = setTimeout(run, ms + 34);
+    _pageAnim = a;
+    return a;
+  }
+  function _slideTurn(target, ms){
+    var root = document.getElementById('manga-root');
+    if (!root) { _translateToSpread(target); return; }
+    root.style.transition = 'transform ' + ms + 'ms ' + PAGE_EASE;
+    _hintWillChange(root, ms + 120);
+    _translateToSpread(target);
+    _runPageAnim(ms, function(){
+      _snapToSpread(CURRENT);
+      root.style.transition = '';
+    });
+  }
+  // 淡入淡出：淡出半程 → 瞬时位移 → 淡入半程（位移本身不过渡，否则会同时看到
+  // 滑动与淡入淡出）。
+  function _fadeTurn(ms){
+    var root = document.getElementById('manga-root');
+    if (!root) { _translateToSpread(CURRENT); return; }
+    var half = Math.max(1, Math.round(ms / 2));
+    var phase = null;
+    root.style.transition = 'opacity ' + half + 'ms ' + PAGE_EASE;
+    root.style.opacity = '0';
+    phase = setTimeout(function(){
+      phase = null;
+      _snapToSpread(CURRENT);
+      root.style.opacity = '1';
+    }, half);
+    _runPageAnim(ms, function(){
+      if (phase) { clearTimeout(phase); phase = null; }
+      root.style.transition = 'none';
+      _translateToSpread(CURRENT);
+      root.style.opacity = '';
+      void root.offsetHeight;
+      root.style.transition = '';
+    });
+  }
+  // ── 覆盖（cover）──
+  // 前进：当前页带阴影整体移走，露出下面已经就位的目标页；后退：目标页带阴影
+  // 盖回来。被移动的那一屏克隆进 #manga-viewport 里的绝对定位层（图片已缓存，克隆
+  // 便宜），strip 本身瞬时定位，动画结束移除覆盖层。克隆去掉 data-* / id：OCR 替换、
+  // 预解码、失败重取等选择器只会命中 strip 里的真页。
+  // c = {from, to, forward, delta, layer, x}；delta = strip 从 from 到 to 的位移。
+  function _coverBegin(from, to){
+    var fromEl = _spreadEl(from), toEl = _spreadEl(to);
+    var vp = document.getElementById('manga-viewport');
+    if (!fromEl || !toEl || !vp) return null;
+    var c = {from: from, to: to, forward: to > from,
+      delta: fromEl.offsetLeft - toEl.offsetLeft, layer: null, x: 0};
+    var src = c.forward ? fromEl : toEl;
+    var layer = document.createElement('div');
+    layer.className = 'manga-cover-layer';
+    var clone = src.cloneNode(true);
+    clone.removeAttribute('data-spread');
+    var tagged = clone.querySelectorAll('[data-spread],[data-page],[id]');
+    for (var i = 0; i < tagged.length; i++) {
+      tagged[i].removeAttribute('data-spread');
+      tagged[i].removeAttribute('data-page');
+      tagged[i].removeAttribute('id');
+    }
+    layer.appendChild(clone);
+    // 覆盖层要遮住下面那一屏的留白，底色跟随当前页面底色（含自动底色）。
+    var bg = window.getComputedStyle ?
+        window.getComputedStyle(document.body).backgroundColor : '';
+    if (bg) layer.style.background = bg;
+    c.layer = layer;
+    _coverPlace(c, _coverStart(c));
+    vp.appendChild(layer);
+    _setStripX(c.forward ? -toEl.offsetLeft : -fromEl.offsetLeft);
+    return c;
+  }
+  // 覆盖层在「没翻」/「翻完」时的位置。
+  function _coverStart(c){ return c.forward ? 0 : -c.delta; }
+  function _coverEnd(c){ return c.forward ? c.delta : 0; }
+  function _coverPlace(c, x){
+    c.x = x;
+    c.layer.style.transition = 'none';
+    c.layer.style.transform = 'translateX(' + x + 'px)';
+  }
+  function _coverRemove(c){
+    if (c && c.layer && c.layer.parentNode) c.layer.parentNode.removeChild(c.layer);
+  }
+  // 覆盖层从当前位置动画到 toX，结束（或被 finish）时执行 done。
+  function _coverAnimate(c, toX, ms, done){
+    var layer = c.layer;
+    _hintWillChange(layer, ms + 120);
+    void layer.offsetWidth;
+    layer.style.transition = 'transform ' + ms + 'ms ' + PAGE_EASE;
+    layer.style.transform = 'translateX(' + toX + 'px)';
+    c.x = toX;
+    _runPageAnim(ms, done);
+  }
+  // 播一次覆盖翻页（c = 拖动里已经建好的覆盖层，null = 现建）。失败返回 false，
+  // 调用方降为平移。
+  function _coverTurn(from, to, ms, c){
+    if (!c) c = _coverBegin(from, to);
+    if (!c) return false;
+    // 前进时底图就是目标页：立即走一遍完整落位（宽页策略 / 底色 / 预解码）。
+    if (c.forward) _snapToSpread(to);
+    _coverAnimate(c, _coverEnd(c), ms, function(){
+      _coverRemove(c);
+      _snapToSpread(CURRENT);
+      var root = document.getElementById('manga-root');
+      if (root) root.style.transition = '';
+    });
+    return true;
+  }
   // 每次 Dart 推进跨页 +1。跟手拖动松手后要等 Dart 答复：Dart 换了页就由翻页
-  // 动画接管；没换（到头、分镜翻页、半页翻页）才由拖动自己回弹（见 _swipeSettle）。
+  // 动画接管；没换（到头、分镜翻页、半页翻页）才由拖动自己回弹（见 _swipeRelease）。
   var TURN_SERIAL = 0;
+  // 跟手拖动松手后、等 Dart 答复期间的交接：Dart 换了页，翻页动画就从手指停下
+  // 的位置接着走到目标，剩余时长按剩余距离等比缩短（{x, cover}）。
+  var _dragHandoff = null;
+  function _dropDragHandoff(){
+    var h = _dragHandoff;
+    _dragHandoff = null;
+    if (!h) return;
+    if (h.cover) _coverRemove(h.cover);
+    _snapToSpread(CURRENT);
+    var root = document.getElementById('manga-root');
+    if (root) root.style.transition = '';
+  }
   window.__mangaApplyTranslate = function(target){
     TURN_SERIAL++;
     // 翻到含失败页的跨页 = 读者要看它：重取一次。
     _retryFailedPagesWhere(function(page){
       return Number(page.getAttribute('data-spread')) === target;
     });
-    if(target !== CURRENT) _flashPageChange();
-    if(target!==CURRENT) PAGE_HALF=target<CURRENT ? 1 : 0;
+    var from = CURRENT;
+    var handoff = _dragHandoff;
+    _dragHandoff = null;
+    // 连按：上一段动画直接落到终点，再开始这一次。
+    _finishPageAnim();
+    if(target !== from) _flashPageChange();
+    if(target!==from) PAGE_HALF=target<from ? 1 : 0;
     CURRENT = target;
+    var ms = _animMs();
+    var dist = Math.abs(target - from);
     var root = document.getElementById('manga-root');
-    if (root) _hintWillChange(root, PAGE_ANIM_MS + 120);
-    if (PAGE_ANIM !== 'fade') {
-      _translateToSpread(target);
+    var cover = handoff ? handoff.cover : null;
+    if (cover && (PAGE_ANIM !== 'cover' || cover.from !== from ||
+        cover.to !== target)) {
+      _coverRemove(cover);
+      cover = null;
+    }
+    // 无动画 / 原地重放 / 长距离跳页：瞬时落位。
+    if (!root || ms <= 0 || dist === 0 || dist > MAX_ANIM_DIST) {
+      if (cover) _coverRemove(cover);
+      _snapToSpread(target);
+      if (root) root.style.transition = '';
       return;
     }
-    if (_fadeTimer) clearTimeout(_fadeTimer);
-    if (root) root.style.opacity = '0';
-    _fadeTimer = setTimeout(function(){
-      _fadeTimer = null;
-      _translateToSpread(target);
-      var r = document.getElementById('manga-root');
-      if (r) r.style.opacity = '1';
-    }, PAGE_ANIM_MS);
+    _hintWillChange(root, ms + 120);
+    if (PAGE_ANIM === 'fade') { _fadeTurn(ms); return; }
+    // 覆盖：宽页切半态降为平移（翻的视图是同一跨页的半边）。
+    if (PAGE_ANIM === 'cover' && !SPLIT_ACTIVE) {
+      var coverMs = ms;
+      if (cover) {
+        var span = Math.max(1, Math.abs(cover.delta));
+        coverMs = Math.max(40, Math.round(
+            ms * Math.min(1, Math.abs(_coverEnd(cover) - cover.x) / span)));
+      }
+      if (_coverTurn(from, target, coverMs, cover)) return;
+    }
+    if (cover) { _coverRemove(cover); _setStripX(handoff.x); }
+    var slideMs = ms;
+    var toEl = _spreadEl(target);
+    if (handoff && toEl) {
+      slideMs = Math.max(40, Math.round(ms * Math.min(1,
+          Math.abs(-toEl.offsetLeft - handoff.x) /
+          Math.max(1, window.innerWidth || 1))));
+    }
+    _slideTurn(target, slideMs);
   };
+  // 运行中换翻页动画设置（设置面板 / 系统「减弱动态效果」切换）。
+  function _rootTransitionDecl(){
+    if (PAGE_ANIM === 'slide') {
+      return 'transition:' + 'transform ' + PAGE_ANIM_MS + 'ms ' + PAGE_EASE + ';';
+    }
+    if (PAGE_ANIM === 'fade') {
+      return 'transition:' + 'opacity ' + Math.round(PAGE_ANIM_MS / 2) + 'ms ' +
+          PAGE_EASE + ';';
+    }
+    return '';
+  }
+  window.__mangaSetPageAnimation = function(anim, ms, follow){
+    _finishPageAnim();
+    PAGE_ANIM = String(anim);
+    PAGE_ANIM_MS = Number(ms) || 0;
+    FOLLOW_DRAG = !!follow;
+    var css = document.getElementById('manga-anim-css');
+    if (css) css.textContent = '#manga-root{' + _rootTransitionDecl() + '}';
+  };
+  // ── 纵向分页的相邻翻页平滑滚动（JS 逐帧，曲线与 CSS 过渡一致）──
+  function _ease(t){
+    // cubic-bezier(.2,.7,.2,1)：按 x 二分求参数，再取 y。
+    var lo = 0, hi = 1, s = t;
+    for (var i = 0; i < 24; i++) {
+      s = (lo + hi) / 2;
+      var bx = 3*(1-s)*(1-s)*s*0.2 + 3*(1-s)*s*s*0.2 + s*s*s;
+      if (bx < t) lo = s; else hi = s;
+    }
+    return 3*(1-s)*(1-s)*s*0.7 + 3*(1-s)*s*s + s*s*s;
+  }
+  var _scrollAnimRaf = null;
+  function _stopScrollAnim(){
+    if (_scrollAnimRaf) { cancelAnimationFrame(_scrollAnimRaf); _scrollAnimRaf = null; }
+  }
+  function _animateScrollTo(top, ms){
+    var y0 = window.scrollY, t0 = null;
+    var step = function(now){
+      if (t0 === null) t0 = now;
+      var p = Math.min(1, (now - t0) / ms);
+      window.scrollTo(0, y0 + (top - y0) * _ease(p));
+      if (p < 1) { _scrollAnimRaf = requestAnimationFrame(step); return; }
+      _scrollAnimRaf = null;
+      // 动画期间的滚动上报被挡住了（中途的 topPage 是半路的页）：落定后补报一次。
+      window.dispatchEvent(new Event('scroll'));
+    };
+    _scrollAnimRaf = requestAnimationFrame(step);
+  }
   // ── webtoon scrollTo：恢复时把 data-spread==target 的页顶滚进视口，再按**页内**
   //    fraction 微调（HIGH-1：fraction 是 (scrollY-page.offsetTop)/page.offsetHeight
   //    页内归一化，与 onMangaScroll 报的口径一致；绝非文档全局 fraction）──
   window.__mangaScrollToSpread = function(target, fraction){
     var page = document.querySelector('.manga-page[data-spread="'+target+'"]');
     if (!page) return;
+    var from = CURRENT;
     CURRENT = target;
     RESTORE_FRACTION = fraction || 0;
     // offsetTop/offsetHeight 是布局坐标；#manga-canvas 被 scale(ZOOM) 后
     // 视觉（滚动）坐标 = 布局坐标 * ZOOM。缺这一步在缩放态下会定位到错误的页。
     var top = (page.offsetTop + (fraction || 0) * page.offsetHeight) * ZOOM;
+    _stopScrollAnim();
+    // 纵向分页的相邻翻页平滑滚动（时长按速度档）；条漫、跳多页、恢复页内位置、
+    // 无动画 / 墨水屏一律瞬时。
+    var ms = _animMs();
+    if (IS_VERTICAL_PAGED && ms > 0 && !fraction &&
+        Math.abs(target - from) === 1 && Math.abs(window.scrollY - top) > 1) {
+      _animateScrollTo(top, ms);
+      return;
+    }
     window.scrollTo(0, top);
   };
   // 聚焦一个页面内的归一化分镜矩形。Dart 侧只传原图坐标，避免把 WebView
@@ -1618,11 +1898,17 @@ String _mangaGestureJs({
       if (match(failed[i])) _retryPageImage(failed[i]);
     }
   }
+  // 点击重取只认失败页中央那个重试符号的命中区（以页面中心为心的方块，边长
+  // RETRY_HIT_PX，≥48dp），不认整页：单页模式下失败页铺满视口，按整页命中会把
+  // 左右翻页热区的点击全吞掉，读者卡在失败页上翻不走（BUG：在线直读失败页吞翻页点击）。
+  var RETRY_HIT_PX = 72;
   function _retryFailedPageAt(x, y){
     var failed = document.querySelectorAll('.manga-page[data-load-failed="1"]');
+    var half = RETRY_HIT_PX / 2;
     for (var i = 0; i < failed.length; i++) {
       var r = failed[i].getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      var cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+      if (Math.abs(x - cx) <= half && Math.abs(y - cy) <= half) {
         return _retryPageImage(failed[i]);
       }
     }
@@ -1656,6 +1942,8 @@ String _mangaGestureJs({
       window.__mangaScrollToSpread(CURRENT, RESTORE_FRACTION);
       return;
     }
+    // 动画里的像素都是旧视口算的：先落到终点再重投影。
+    _finishPageAnim();
     var root = document.getElementById('manga-root');
     var prevTransition = root ? root.style.transition : '';
     if (root) root.style.transition = 'none';
@@ -1693,14 +1981,25 @@ String _mangaGestureJs({
   // 横向锁定后 #manga-root 的 translateX 逐帧 = 落位值 + 手指横移（扣掉放大态
   // 平移吃掉的那段），1:1 跟随；松手由 _end 的阈值决定交给 Dart 翻页还是回弹。
   // 拖动中关掉 root 的 transition（否则每一帧都在追一段 ease-out，永远慢半拍），
-  // 松手前还原，翻页 / 回弹动画都从手指停下的位置接着走。
+  // 翻页 / 回弹动画都从手指停下的位置接着走。
+  // 跟手只在设置开着、效果是有位移的 slide / cover 时生效（_followActive）；
+  // 「覆盖」跟手时动的是克隆层（见 _coverDrag），朝没有相邻跨页的方向拖按
+  // FOLLOW_EDGE_DAMPING 阻尼，松手回弹，跨章仍交给 Dart。
   // swipe：null = 没有在跟的手势；axis 在越过 SWIPE_SLOP 后锁定为 'x' / 'y'。
   var SWIPE_SLOP = 8;
   var swipe = null;
   var swipeToken = 0;
+  function _followActive(){
+    return FOLLOW_DRAG && !IS_WEBTOON && _animMs() > 0 &&
+        (PAGE_ANIM === 'slide' || PAGE_ANIM === 'cover');
+  }
   function _start(x, y){
     has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X;
-    swipe = {axis: null, base: null, vx: 0, lastX: x, lastT: st};
+    // 新的一次按下：在播的翻页动画直接落到终点，还挂着的上一次松手交接作废。
+    _finishPageAnim();
+    _dropDragHandoff();
+    swipe = {axis: null, base: null, vx: 0, lastX: x, lastT: st, x: 0,
+      cover: null, follow: _followActive()};
   }
   function _swipeMove(x, y){
     if (!has || !swipe || IS_WEBTOON) return;
@@ -1714,7 +2013,7 @@ String _mangaGestureJs({
     }
     // 宽页切半（SPLIT_ACTIVE）的翻页是同一跨页内的视图变换，平移整条 strip
     // 露出的是相邻跨页、不是另一半——这种页不跟手，保持松手判定。
-    if (swipe.axis !== 'x' || SPLIT_ACTIVE) return;
+    if (swipe.axis !== 'x' || SPLIT_ACTIVE || !swipe.follow) return;
     var root = document.getElementById('manga-root');
     if (!root) return;
     if (swipe.base === null) {
@@ -1724,26 +2023,76 @@ String _mangaGestureJs({
     }
     // 手指横移 − 画布平移吃掉的那段 = 交给翻页的余量（与 _end 的 ux 同口径）。
     var follow = (x - sx) - (PAN_X - spx);
+    // 拖向的相邻跨页：内容左移（follow<0）露出 strip 右边那一屏；RTL 倒序排布时
+    // 右边是上一跨页（与 _end 的 swipeRight === IS_RTL 同一镜像）。
+    var nb = CURRENT + (((follow < 0) !== IS_RTL) ? 1 : -1);
+    var hasNeighbour = follow !== 0 &&
+        !!root.querySelector('.manga-spread[data-spread="'+nb+'"]');
+    if (follow !== 0 && !hasNeighbour) follow *= FOLLOW_EDGE_DAMPING;
     _hintWillChange(root, PAGE_ANIM_MS + 400);
-    root.style.transform = 'translateX(' + (swipe.base + follow) + 'px)';
+    // swipe.x 恒记「平移跟手时 strip 该在的位置」：覆盖层被放弃（Dart 换的不是拖向
+    // 的那一页）时，降级的平移从这里接着走。
+    swipe.x = swipe.base + follow;
+    if (PAGE_ANIM === 'cover' && hasNeighbour) { _coverDrag(nb, follow); return; }
+    if (swipe.cover) { _coverRemove(swipe.cover); swipe.cover = null; }
+    root.style.transition = 'none';
+    root.style.transform = 'translateX(' + swipe.x + 'px)';
+  }
+  // 「覆盖」跟手：动的是克隆层，strip 静止在底图位置。换了拖动方向（目标跨页变了）
+  // 就拆掉旧层按新方向重建。
+  function _coverDrag(nb, follow){
+    var c = swipe.cover;
+    if (c && c.to !== nb) { _coverRemove(c); c = null; swipe.cover = null; }
+    if (!c) {
+      c = _coverBegin(CURRENT, nb);
+      if (!c) return;
+      swipe.cover = c;
+    }
+    _hintWillChange(c.layer, PAGE_ANIM_MS + 400);
+    _coverPlace(c, _coverStart(c) + follow);
+  }
+  // 回弹到当前跨页（instant = 瞬时，第二指落下进捏合时用）。
+  function _swipeBounce(s, instant){
+    var root = document.getElementById('manga-root');
+    if (!root) return;
+    var cur = _spreadEl(CURRENT);
+    var dist = s.cover
+        ? Math.abs(_coverStart(s.cover) - s.cover.x)
+        : Math.abs((cur ? -cur.offsetLeft : 0) - s.x);
+    var ms = instant ? 0 : Math.max(80, Math.round(
+        _animMs() * Math.min(1, dist / Math.max(1, window.innerWidth || 1))));
+    var done = function(){
+      if (s.cover) _coverRemove(s.cover);
+      _snapToSpread(CURRENT);
+      root.style.transition = '';
+    };
+    if (ms <= 0 || _animMs() <= 0) { done(); return; }
+    if (s.cover) { _coverAnimate(s.cover, _coverStart(s.cover), ms, done); return; }
+    root.style.transition = 'transform ' + ms + 'ms ' + PAGE_EASE;
+    _translateToSpread(CURRENT);
+    _runPageAnim(ms, done);
   }
   // 结束跟手。turning=false：立即回弹到当前跨页。turning=true：只还原
   // transition，返回一个 settle 回调——Dart 处理完翻页请求后调用它：Dart 真换了
   // 页（TURN_SERIAL 变了）就什么都不做，由翻页动画接管；没换（到头 / 分镜翻页 /
   // 换章中）才回弹。新的一次拖动开始后旧 settle 作废。
-  function _swipeRelease(turning){
+  function _swipeRelease(turning, instant){
     var s = swipe;
     swipe = null;
     if (!s || s.base === null) return null;
     var root = document.getElementById('manga-root');
     if (!root) return null;
-    root.style.transition = '';
     var token = ++swipeToken;
-    if (!turning) { _translateToSpread(CURRENT); return null; }
+    if (!turning) { _swipeBounce(s, instant); return null; }
+    // 页面停在手指松开的位置等 Dart：换了页由 __mangaApplyTranslate 接着走，
+    // 没换由下面的 settle 回弹。
+    var handoff = {x: s.x, cover: s.cover};
+    _dragHandoff = handoff;
     var serial = TURN_SERIAL;
     return function(){
       if (token !== swipeToken || swipe || TURN_SERIAL !== serial) return;
-      _translateToSpread(CURRENT);
+      if (_dragHandoff === handoff) _dragHandoff = null;
+      _swipeBounce(s, false);
     };
   }
   // ── 触屏双指捏合缩放 ──
@@ -1997,8 +2346,6 @@ String _mangaGestureJs({
   function _onTap(x, y){
     var b = _bridge();
     if (!b) return;
-    // 点在失败页上：重取它，这一击不再做别的（失败页没有 OCR 字可查）。
-    if (_retryFailedPageAt(x, y)) return;
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x, y);
     if (zone) {
@@ -2006,6 +2353,10 @@ String _mangaGestureJs({
       b.callHandler('onMangaTurn', zone);
       return;
     }
+    // 翻页热区之外、点中失败页的重试符号：重取它，这一击不再做别的。必须排在
+    // 热区之后——失败页上的左右热区照常翻页，翻走 / 翻回也会触发重取
+    // （__mangaApplyTranslate）。
+    if (_retryFailedPageAt(x, y)) return;
     // 第二击落在同一块空白上 → 取消第一击挂起的 onTapEmpty（否则悬浮栏会跟着
     // 闪一次），在该点缩放；等比在「贴合」与 2× 之间切换。
     if (IS_WEBTOON && !${preferences.webtoonDoubleTapZoom}) {
@@ -2042,8 +2393,19 @@ String _mangaGestureJs({
     var ux = dx - (PAN_X - spx), aux = Math.abs(ux);
     var vel = aux / Math.max(1, el) * 1000;
     var flingBack = rvx * ux < 0 && Math.abs(rvx) >= 900;
+    // 跟手态：拖过 FOLLOW_COMMIT 个视口宽，或往翻页方向甩得够快（px/ms）才提交，
+    // 否则回弹。没跟手（动画关 / 淡入淡出 / 设置关）沿用固定像素阈值。
+    var followed = !!(swipe && swipe.follow && swipe.base !== null);
+    var commit;
+    if (followed) {
+      var flingVel = Math.max(vel, (ux > 0 ? rvx : -rvx)) / 1000;
+      commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1) ||
+          (aux >= 24 && flingVel > FOLLOW_FLING);
+    } else {
+      commit = aux >= 72 || (aux >= 36 && vel >= 900);
+    }
     if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
-        (aux >= 72 || (aux >= 36 && vel >= 900))) {
+        commit) {
       var settle = _swipeRelease(true);
       var b = _bridge();
       if (!b) { if (settle) settle(); return; }
@@ -2075,7 +2437,8 @@ String _mangaGestureJs({
         pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
         pinchGuard = true;
         has = false;
-        _swipeRelease(false);
+        // 跟到一半的页面立即复位（不播回弹），捏合从静止的当前跨页开始。
+        _swipeRelease(false, true);
         panDrag = null;
         _stopFlick();
         return;
@@ -2090,8 +2453,9 @@ String _mangaGestureJs({
       return;
     }
     if (e.button !== 0) return;
-    // 触屏惯例：滑动中按下即刹车。
+    // 触屏惯例：滑动中按下即刹车（含纵向分页的平滑翻页滚动）。
     _stopFlick();
+    _stopScrollAnim();
     panDrag = {
       id: e.pointerId, lastX: e.clientX, lastY: e.clientY,
       lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch'
@@ -2409,6 +2773,8 @@ String _mangaGestureJs({
         // resize 与重投影之间的窗口期：此刻几何是新视口的、scrollY 还是旧投影，
         // 视觉上停在错误的页；把它上报/记入真值会让 _reanchor 反过来钉死漂移。
         if (_resizePending) return;
+        // 纵向分页平滑翻页途中：半路的 topPage 不是语义位置，落定后补报。
+        if (_scrollAnimRaf) return;
         var b = _bridge();
         if (!b) return;
         // 换回布局坐标：scrollY 含 scale(ZOOM)，而 offsetTop/offsetHeight 不含。

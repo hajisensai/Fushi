@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show computeTocAnchorCharOffsets, tocAnchorKey;
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart'
-    show epubImageFileFor, parseVolumeBookForPeek;
+    show epubImageFileFor, parseVolumeBookForPeekOffUi;
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -27,7 +27,7 @@ import 'package:fushi/utils.dart';
 /// 装载与接线，画廊本体只有一份。
 ///
 /// 与阅读器内打开的差别只在数据来源：
-/// - 结构在 isolate 里解析（[parseVolumeBookForPeek]，与看兄弟卷同一入口）；
+/// - 结构在 isolate 里解析（[parseVolumeBookForPeekOffUi]，与看兄弟卷同一入口）；
 /// - 阅读位置读 Drift `reader_positions`；没有位置行 = 这本一次都没打开过，
 ///   传 `currentChapter: null`——不按进度遮罩、不出「当前阅读位置」标记；
 /// - 揭开 / 恢复遮罩直接落 `revealed_images`（与阅读器共享真相源，BUG-898）；
@@ -100,7 +100,7 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
     try {
       // 结构解析（isolate）与两次 Drift 读互不依赖，并行起跑。
       final Future<EpubBook> bookFuture =
-          compute(parseVolumeBookForPeek, widget.extractDir);
+          parseVolumeBookForPeekOffUi(widget.extractDir);
       final Future<ReaderPosition?> positionFuture = widget.bookUid.isEmpty
           ? Future<ReaderPosition?>.value(null)
           : ReaderPositionRepository(widget.database)

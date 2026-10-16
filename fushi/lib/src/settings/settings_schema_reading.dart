@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io' show Platform;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -393,6 +396,29 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(c);
             },
           ),
+          // 高亮样式：收藏 / 查词 / 有声书当前句 / 搜索四类高亮各自的笔触样式 + 粗细 / 浓度 / 抖动 /
+          // 盖住振假名 / 落笔动画，子页带实时预览。子页写偏好经
+          // ReaderFushiSource.setHighlightStrokeConfig 触发正文样式热替换。
+          SettingsNavigationItem(
+            id: 'reading_display.highlight_style',
+            title: t.reader_highlight_title,
+            subtitleBuilder: (SettingsContext c) =>
+                highlightStyleSummary(c.readerSource),
+            icon: kHighlightStyleIcon,
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 27),
+            onTap: (SettingsContext c) async {
+              await pushSettingsPage(
+                c,
+                (_) => HighlightStylePage(
+                  source: c.readerSource,
+                  initiallyVertical: c.readerSource.readerWritingMode
+                      .startsWith('vertical'),
+                  lineHeight: c.readerSource.readerLineHeight,
+                ),
+              );
+              notifyReaderSettingsChanged(c);
+            },
+          ),
           SettingsStepperItem(
             id: 'reading_display.font_size',
             title: t.reader_font_size,
@@ -665,6 +691,100 @@ SettingsDestination buildReadingDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 翻页动画（View Transitions 快照翻页，见 reader_page_turn_script.dart）。只在
+          // 翻页模式生效：滚动 / VN 模式下置灰并说明原因（不隐藏——让用户知道有这项、
+          // 切回翻页模式就能用）。改值走 notifyReaderSettingsChanged → updateLive 热下发。
+          SettingsSegmentedItem<PageTurnAnimation>(
+            id: 'reading_controls.page_turn_animation',
+            title: t.page_turn_animation,
+            icon: FushiIcons.animation,
+            enabled: isPaginated,
+            subtitleBuilder: (SettingsContext c) =>
+                isPaginated(c) ? null : t.page_turn_animation_paginated_only,
+            defaultValue: ReaderSettings.defaultPageTurnAnimation,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 22,
+            ),
+            options: <SettingsSegmentOption<PageTurnAnimation>>[
+              SettingsSegmentOption<PageTurnAnimation>(
+                value: PageTurnAnimation.none,
+                label: t.page_turn_animation_none,
+              ),
+              SettingsSegmentOption<PageTurnAnimation>(
+                value: PageTurnAnimation.slide,
+                label: t.page_turn_animation_slide,
+              ),
+              SettingsSegmentOption<PageTurnAnimation>(
+                value: PageTurnAnimation.cover,
+                label: t.page_turn_animation_cover,
+              ),
+              SettingsSegmentOption<PageTurnAnimation>(
+                value: PageTurnAnimation.fade,
+                label: t.page_turn_animation_fade,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.pageTurnAnimation,
+            onChanged: (SettingsContext c, PageTurnAnimation value) async {
+              await c.readerSource.setPageTurnAnimation(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          SettingsSegmentedItem<PageTurnAnimationSpeed>(
+            id: 'reading_controls.page_turn_animation_speed',
+            title: t.page_turn_animation_speed,
+            icon: FushiIcons.speed,
+            enabled: isPaginated,
+            subtitleBuilder: (SettingsContext c) =>
+                isPaginated(c) ? null : t.page_turn_animation_paginated_only,
+            defaultValue: ReaderSettings.defaultPageTurnAnimationSpeed,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 23,
+            ),
+            options: <SettingsSegmentOption<PageTurnAnimationSpeed>>[
+              SettingsSegmentOption<PageTurnAnimationSpeed>(
+                value: PageTurnAnimationSpeed.fast,
+                label: t.page_turn_animation_speed_fast,
+              ),
+              SettingsSegmentOption<PageTurnAnimationSpeed>(
+                value: PageTurnAnimationSpeed.normal,
+                label: t.page_turn_animation_speed_normal,
+              ),
+              SettingsSegmentOption<PageTurnAnimationSpeed>(
+                value: PageTurnAnimationSpeed.slow,
+                label: t.page_turn_animation_speed_slow,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.pageTurnAnimationSpeed,
+            onChanged: (SettingsContext c, PageTurnAnimationSpeed value) async {
+              await c.readerSource.setPageTurnAnimationSpeed(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          // 跟手只对有位移的效果（平移 / 覆盖）有意义；淡入淡出 / 无也置灰。
+          SettingsSwitchItem(
+            id: 'reading_controls.page_turn_follow_drag',
+            title: t.page_turn_follow_drag,
+            icon: FushiIcons.swipe,
+            enabled: (SettingsContext c) =>
+                isPaginated(c) &&
+                c.readerSource.pageTurnAnimation.isDirectional,
+            subtitleBuilder: (SettingsContext c) => isPaginated(c)
+                ? t.page_turn_follow_drag_description
+                : t.page_turn_animation_paginated_only,
+            defaultValue: ReaderSettings.defaultPageTurnFollowDrag,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 24,
+            ),
+            value: (SettingsContext c) => c.readerSource.pageTurnFollowDrag,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setPageTurnFollowDrag(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
         ],
       ),
       // TODO-745 / TODO-830：「翻页方向」分组只收**真正反转翻页/句子方向**的
@@ -916,6 +1036,7 @@ SettingsDestination buildReadingDestination() {
               group: ReaderGroup.behavior,
               order: 14,
             ),
+            cliValue: readerControlLayoutCli,
             builder: buildReaderControlLayoutEditor,
           ),
           SettingsActionItem(
@@ -928,6 +1049,14 @@ SettingsDestination buildReadingDestination() {
             ),
             // 2026-10 体验优化：重置会丢掉用户自定义的控件排列，先确认
             // （destructive），完成后给一条提示，否则点了看不出有没有生效。
+            // CLI：确认改由 --yes 给出。
+            cli: SettingsCliAction(
+              confirm: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                await resetReaderControlLayouts(c);
+                return null;
+              },
+            ),
             onTap: (SettingsContext c) async {
               final bool confirmed = await showSettingsConfirmationDialog(
                 c,
@@ -936,13 +1065,7 @@ SettingsDestination buildReadingDestination() {
                 destructive: true,
               );
               if (!confirmed) return;
-              await c.appModel.setReaderControlLayout(
-                ReaderControlLayout.defaults,
-              );
-              await c.appModel.setReaderCompactControlLayout(
-                ReaderControlLayout.compactDefaults,
-              );
-              notifyReaderChromeReanchored(c);
+              await resetReaderControlLayouts(c);
               FushiToast.show(msg: t.reader_control_layout_reset_done);
             },
           ),
@@ -1108,6 +1231,56 @@ SettingsDestination buildReadingDestination() {
 
 /// 阅读器按钮布局编辑器（设置页 / 书内设置抽屉共用）：读 appModel 当前布局，改动
 /// 立刻写穿偏好；桌面按鼠标手感、其余按触屏。
+/// 阅读器顶栏 / 底栏布局恢复出厂（宽窗 + 窄窗两份），并重锚 chrome。设置页
+/// 重置按钮与控制通道共用。
+Future<void> resetReaderControlLayouts(SettingsContext c) async {
+  await c.appModel.setReaderControlLayout(ReaderControlLayout.defaults);
+  await c.appModel.setReaderCompactControlLayout(
+    ReaderControlLayout.compactDefaults,
+  );
+  notifyReaderChromeReanchored(c);
+}
+
+/// 阅读器控件布局在控制通道上的读写：`{"wide": <布局 JSON>, "compact": <布局
+/// JSON>}`（任一段可省略，省略的不改）。布局解码器对坏输入静默回落出厂布局，
+/// 所以写入前先校验结构。写入与编辑器同一组 setter + 重锚。
+final SettingsCliValue readerControlLayoutCli = SettingsCliValue(
+  help:
+      '{"wide": <布局 JSON，含 slots>, "compact": <布局 JSON>}'
+      '（config get 的输出可改后原样写回）',
+  read: (SettingsContext c) => jsonEncode(<String, Object?>{
+    'wide': jsonDecode(c.appModel.readerControlLayoutFor(compact: false).encode()),
+    'compact': jsonDecode(
+      c.appModel.readerControlLayoutFor(compact: true).encode(),
+    ),
+  }),
+  write: (SettingsContext c, String raw) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException catch (e) {
+      throw FormatException('不是 JSON：${e.message}');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        !(decoded.containsKey('wide') || decoded.containsKey('compact'))) {
+      throw const FormatException('写成 {"wide": …, "compact": …}');
+    }
+    ReaderControlLayout? parse(Object? layout, String name) {
+      if (layout == null) return null;
+      if (layout is! Map<String, dynamic> || layout['slots'] is! Map) {
+        throw FormatException('$name 布局必须含 slots 对象');
+      }
+      return ReaderControlLayout.decode(jsonEncode(layout));
+    }
+
+    final ReaderControlLayout? wide = parse(decoded['wide'], 'wide');
+    final ReaderControlLayout? compact = parse(decoded['compact'], 'compact');
+    if (wide != null) await c.appModel.setReaderControlLayout(wide);
+    if (compact != null) await c.appModel.setReaderCompactControlLayout(compact);
+    notifyReaderChromeReanchored(c);
+  },
+);
+
 Widget buildReaderControlLayoutEditor(SettingsContext context) {
   return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,

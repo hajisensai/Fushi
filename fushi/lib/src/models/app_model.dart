@@ -43,6 +43,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
@@ -639,6 +641,14 @@ class AppModel with ChangeNotifier {
       dictRepo = dictionaryRepository;
       _dictionaryRepoReady = true;
     }
+  }
+
+  /// Test seam：注入带假 Bangumi API 的 [MediaTrackingService]（控制通道 /
+  /// 设置页测试不能打真网络）。
+  @visibleForTesting
+  void wireMediaTrackingServiceForTesting(MediaTrackingService service) {
+    _mediaTrackingService?.dispose();
+    _mediaTrackingService = service;
   }
 
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
@@ -1433,7 +1443,19 @@ class AppModel with ChangeNotifier {
   );
 
   late FileExportManager _fileExportManager;
-  late LocalAudioManager _localAudioManager;
+  LocalAudioManager? _localAudioManagerOrNull;
+  LocalAudioManager get _localAudioManager => _localAudioManagerOrNull!;
+  set _localAudioManager(LocalAudioManager value) =>
+      _localAudioManagerOrNull = value;
+
+  /// Android 原生 `TtsChannelHandler` 新挂上本引擎时重推本地音频库配置（BUG-3439，
+  /// 见 [TtsChannel.onNativeHandlerAttached]）。管理器还没建好时什么也不做：
+  /// `initialise()` 随后自己会绑定，那时原生 handler 已经在了。
+  Future<void> rebindLocalAudioForNativeHandler() async {
+    final LocalAudioManager? manager = _localAudioManagerOrNull;
+    if (manager == null) return;
+    await manager.bindForNativeHandler();
+  }
 
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final FushiShortcutRegistry shortcutRegistry = FushiShortcutRegistry();
@@ -3165,6 +3187,9 @@ class AppModel with ChangeNotifier {
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
+      // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
+      // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
+      installCollectionAiOrderSettings(_prefsRepo);
       final BaseAnkiRepository ankiRepo =
           platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(
@@ -5986,6 +6011,7 @@ class AppModel with ChangeNotifier {
           subtitlePath: subtitlePath,
           audioPaths: job.audioPaths,
           contentPath: job.contentPath,
+          targetBookKey: job.targetBookKey,
           title: job.title,
         ),
       );
@@ -9541,6 +9567,14 @@ class AppModel with ChangeNotifier {
   String get mangaPageAnimation => prefsRepo.mangaPageAnimation;
   Future<void> setMangaPageAnimation(String value) =>
       prefsRepo.setMangaPageAnimation(value);
+
+  String get mangaPageAnimationSpeed => prefsRepo.mangaPageAnimationSpeed;
+  Future<void> setMangaPageAnimationSpeed(String value) =>
+      prefsRepo.setMangaPageAnimationSpeed(value);
+
+  bool get mangaPageTurnFollowDrag => prefsRepo.mangaPageTurnFollowDrag;
+  Future<void> setMangaPageTurnFollowDrag(bool value) =>
+      prefsRepo.setMangaPageTurnFollowDrag(value);
 
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>

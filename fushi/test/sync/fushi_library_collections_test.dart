@@ -68,6 +68,74 @@ void main() {
       expect(bookA.collection!.sortIndex, 1);
     });
 
+    test(
+        'BUG-3441 listBooks 出清单前先按系列归组：host 没开过书架时散着的 3、4 卷 '
+        '也带上系列合集归属（只走同步状态窄锁，不碰整轮同步锁）', () async {
+      final FushiDatabase db = memDb();
+      Future<void> volume(String title) => db.insertEpubBook(
+            EpubBooksCompanion.insert(
+              bookKey: title,
+              title: title,
+              epubPath: '/tmp/$title.cbz',
+              extractDir: '/tmp/$title',
+              chapterCount: 1,
+              chaptersJson: '[]',
+              importedAt: DateTime.now().millisecondsSinceEpoch,
+              format: Value(BookFormat.manga.dbValue),
+            ),
+          );
+      await volume('志乃と恋 [3574f94a]');
+      await volume('志乃と恋 ２ [e11812e5]');
+      // 用户电脑库的真实形状：合集里只有 1、2 卷（从别处同步来 / 早先归的）。
+      final int cid =
+          await db.createMediaCollection('志乃と恋', collectionType: 'playlist');
+      for (final String t in <String>['志乃と恋 [3574f94a]', '志乃と恋 ２ [e11812e5]']) {
+        await db.addToCollection(
+            cid, MediaKind.epub, (await db.resolveEpubBookUid(t))!);
+      }
+      await volume('志乃と恋 3 [998c5526]');
+      await volume('志乃と恋 ４');
+
+      int wideLockCalls = 0;
+      int narrowLockCalls = 0;
+      final LocalLibraryHostService svc = LocalLibraryHostService(
+        db: db,
+        dictionaryResourceRoot: Directory.systemTemp,
+        packages: SyncAssetPackageService(db: db),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) {
+          wideLockCalls++;
+          return body();
+        },
+        runSyncStateExclusive: (Future<void> Function() body) {
+          narrowLockCalls++;
+          return body();
+        },
+      );
+      final Map<String, RemoteBookInfo> byKey = <String, RemoteBookInfo>{
+        for (final RemoteBookInfo b in await svc.listBooks()) b.downloadId: b,
+      };
+
+      expect(wideLockCalls, 0);
+      expect(narrowLockCalls, 1);
+      expect(
+        <String, int?>{
+          for (final MapEntry<String, RemoteBookInfo> e in byKey.entries)
+            e.key: e.value.collection?.sortIndex,
+        },
+        <String, int?>{
+          '志乃と恋 [3574f94a]': 0,
+          '志乃と恋 ２ [e11812e5]': 1,
+          '志乃と恋 3 [998c5526]': 2,
+          '志乃と恋 ４': 3,
+        },
+      );
+      expect(
+        byKey.values.map((RemoteBookInfo b) => b.collection?.collectionName),
+        everyElement('志乃と恋'),
+      );
+    });
+
     test('listBooks 对不属任何合集的书归属为 null（散卡）', () async {
       final FushiDatabase db = memDb();
       await db.insertEpubBook(EpubBooksCompanion.insert(

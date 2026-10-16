@@ -1759,7 +1759,7 @@ class DictionaryPopupLayer extends StatelessWidget {
 
   /// 窄宽顶栏的「⋯」溢出菜单：A−/A+（与独立按钮走同一条 zoomFontStep 路径）。
   Widget _buildOverflowMenuButton(BuildContext context) {
-    return PopupMenuButton<_PopupTopBarOverflowAction>(
+    return FushiPopupMenuButton<_PopupTopBarOverflowAction>(
       key: const ValueKey<String>('popup_topbar_overflow'),
       tooltip: MaterialLocalizations.of(context).showMenuTooltip,
       padding: EdgeInsets.zero,

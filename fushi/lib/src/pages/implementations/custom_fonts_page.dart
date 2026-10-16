@@ -210,6 +210,41 @@ bool customFontFileStillReferenced(
   return rows.any((CustomFontCatalogRow row) => row.path == filePath);
 }
 
+/// 删除字体行后清理文件：[rows] 是删除后的目录，仍有别的行引用 [filePath] 时
+/// 不删。返回是否真删了文件；IO 失败抛 [FileSystemException]（调用方决定怎么
+/// 报）。字体库页与控制通道（`CustomFontLibrary`）共用。
+Future<bool> deleteCustomFontFileIfUnreferenced(
+  List<CustomFontCatalogRow> rows,
+  String filePath,
+) async {
+  if (customFontFileStillReferenced(rows, filePath)) return false;
+  final File file = File(filePath);
+  if (!await file.exists()) return false;
+  await file.delete();
+  return true;
+}
+
+/// 这个字体行**格式上**用不了的用途 → 给用户看的原因。
+///
+/// 只有一条来源：native 分层窗（[FontTarget.gameLookup] /
+/// [FontTarget.floatingLyric]，同一个 `FloatingLyricWindow`）的 DirectWrite 只吃裸
+/// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
+/// 同一个 [AppFontLoader.nativeOverlayCanUse]。字体库页（禁用对应芯片）与控制
+/// 通道（拒绝写入）共用。
+Map<FontTarget, String> customFontUnsupportedTargets(CustomFontCatalogRow row) {
+  final String? path = row.path;
+  if (AppFontLoader.nativeOverlayCanUse(path)) {
+    return const <FontTarget, String>{};
+  }
+  final String reason = t.import_unsupported_file_format(
+    ext: p.extension(path!).toLowerCase(),
+  );
+  return <FontTarget, String>{
+    FontTarget.gameLookup: reason,
+    FontTarget.floatingLyric: reason,
+  };
+}
+
 int _nextCatalogFontId(List<CustomFontCatalogRow> rows) {
   final RegExp generatedId = RegExp(r'^font_(\d+)$');
   int next = 1;
@@ -548,19 +583,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   /// [FontTarget.floatingLyric]，同一个 `FloatingLyricWindow`）的 DirectWrite 只吃裸
   /// sfnt，WOFF/WOFF2 会被 `resolveForNativeOverlay` 静默跳过。判据与 loader 共用
   /// 同一个 [AppFontLoader.nativeOverlayCanUse]，两处不会漂开。
-  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) {
-    final String? path = row.path;
-    if (AppFontLoader.nativeOverlayCanUse(path)) {
-      return const <FontTarget, String>{};
-    }
-    final String reason = t.import_unsupported_file_format(
-      ext: p.extension(path!).toLowerCase(),
-    );
-    return <FontTarget, String>{
-      FontTarget.gameLookup: reason,
-      FontTarget.floatingLyric: reason,
-    };
-  }
+  Map<FontTarget, String> _unsupportedTargetsFor(CustomFontCatalogRow row) =>
+      customFontUnsupportedTargets(row);
 
   Future<void> _save() {
     final FontCatalogState state = customFontCatalogStateFromRows(_fonts);
@@ -1150,10 +1174,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       if (_detailIdentity == entry.identity) _detailIdentity = null;
     });
     await _save();
-    if (filePath != null && !customFontFileStillReferenced(_fonts, filePath)) {
+    if (filePath != null) {
       try {
-        final f = File(filePath);
-        if (await f.exists()) await f.delete();
+        await deleteCustomFontFileIfUnreferenced(_fonts, filePath);
       } catch (e, stack) {
         ErrorLogService.instance.log('CustomFontsPage.deleteFont', e, stack);
         debugPrint('[Fushi] failed to delete font file $filePath: $e');

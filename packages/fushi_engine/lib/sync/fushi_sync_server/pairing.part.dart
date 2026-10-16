@@ -428,7 +428,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
       if (jobs != null) 'jobs': jobs,
-      if (downloads != null) 'downloads': downloads,
+      // `deleteFilesParam`：本路由的 DELETE 认 `?deleteFiles=`（BUG-3437）；老 host
+      // 没有这个键，client 据此决定能不能让用户选「同时删除已下载文件」。
+      if (downloads != null)
+        'downloads': <String, Object?>{
+          ...downloads,
+          kHostDownloadDeleteFilesParamCapability: true,
+        },
       if (subscriptions != null) 'subscriptions': subscriptions,
       if (assistant != null) 'assistant': assistant,
       // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host

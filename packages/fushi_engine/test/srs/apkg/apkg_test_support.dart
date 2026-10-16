@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -160,20 +161,34 @@ CREATE TABLE revlog (id integer PRIMARY KEY, cid integer NOT NULL, usn integer N
   time integer NOT NULL, type integer NOT NULL);
 ''';
 
-/// schema 18（新格式）多出来的配置表。
+/// schema 18（新格式）多出来的配置表。DDL 照 Anki rslib
+/// （`storage/upgrades/schema15_upgrade.sql` 起）：name 列与唯一索引都是
+/// `COLLATE unicase`，fields / templates / config / tags 是 `WITHOUT ROWID`。
+/// 建表与读表都要先注册 `unicase`（[buildSqlite] / [patchSqlite] 已代办，
+/// 被测代码必须自己注册，见 BUG-3428）。
 const String schema18Extra = '''
-CREATE TABLE notetypes (id integer NOT NULL PRIMARY KEY, name text NOT NULL,
+CREATE TABLE notetypes (id integer NOT NULL PRIMARY KEY, name text NOT NULL COLLATE unicase,
   mtime_secs integer NOT NULL, usn integer NOT NULL, config blob NOT NULL);
-CREATE TABLE fields (ntid integer NOT NULL, ord integer NOT NULL, name text NOT NULL,
-  config blob NOT NULL, PRIMARY KEY (ntid, ord));
-CREATE TABLE templates (ntid integer NOT NULL, ord integer NOT NULL, name text NOT NULL,
-  mtime_secs integer NOT NULL, usn integer NOT NULL, config blob NOT NULL, PRIMARY KEY (ntid, ord));
-CREATE TABLE decks (id integer PRIMARY KEY NOT NULL, name text NOT NULL, mtime_secs integer NOT NULL,
-  usn integer NOT NULL, common blob NOT NULL, kind blob NOT NULL);
+CREATE UNIQUE INDEX idx_notetypes_name ON notetypes (name);
+CREATE INDEX idx_notetypes_usn ON notetypes (usn);
+CREATE TABLE fields (ntid integer NOT NULL, ord integer NOT NULL,
+  name text NOT NULL COLLATE unicase, config blob NOT NULL, PRIMARY KEY (ntid, ord))
+  WITHOUT ROWID;
+CREATE UNIQUE INDEX idx_fields_name_ntid ON fields (name, ntid);
+CREATE TABLE templates (ntid integer NOT NULL, ord integer NOT NULL,
+  name text NOT NULL COLLATE unicase, mtime_secs integer NOT NULL, usn integer NOT NULL,
+  config blob NOT NULL, PRIMARY KEY (ntid, ord)) WITHOUT ROWID;
+CREATE UNIQUE INDEX idx_templates_name_ntid ON templates (name, ntid);
+CREATE INDEX idx_templates_usn ON templates (usn);
+CREATE TABLE decks (id integer PRIMARY KEY NOT NULL, name text NOT NULL COLLATE unicase,
+  mtime_secs integer NOT NULL, usn integer NOT NULL, common blob NOT NULL, kind blob NOT NULL);
+CREATE UNIQUE INDEX idx_decks_name ON decks (name);
 CREATE TABLE deck_config (id integer PRIMARY KEY NOT NULL, name text NOT NULL,
   mtime_secs integer NOT NULL, usn integer NOT NULL, config blob NOT NULL);
 CREATE TABLE config (KEY text NOT NULL PRIMARY KEY, usn integer NOT NULL,
-  mtime_secs integer NOT NULL, val blob NOT NULL);
+  mtime_secs integer NOT NULL, val blob NOT NULL) WITHOUT ROWID;
+CREATE TABLE tags (tag text NOT NULL PRIMARY KEY COLLATE unicase, usn integer NOT NULL,
+  collapsed boolean NOT NULL, config blob NULL) WITHOUT ROWID;
 ''';
 
 /// 一张来源卡。
@@ -248,6 +263,8 @@ Uint8List buildSqlite(void Function(Database db) fill) {
   final Directory dir = Directory.systemTemp.createTempSync('fx_anki_');
   final String path = '${dir.path}${Platform.pathSeparator}c.db';
   final Database db = sqlite3.open(path);
+  // Anki 自己写库时注册了 unicase；夹具同样注册才建得出 schema 18 的索引。
+  registerAnkiCollations(db);
   try {
     fill(db);
   } finally {
@@ -268,6 +285,7 @@ Uint8List patchSqlite(Uint8List bytes, void Function(Database db) fn) {
   final String path = '${dir.path}${Platform.pathSeparator}c.db';
   File(path).writeAsBytesSync(bytes);
   final Database db = sqlite3.open(path);
+  registerAnkiCollations(db);
   try {
     fn(db);
   } finally {

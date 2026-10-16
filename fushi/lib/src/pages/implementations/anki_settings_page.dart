@@ -10,8 +10,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show Dictionary, JapaneseLanguage;
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
@@ -21,12 +19,12 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart'
 import 'package:file_picker/file_picker.dart' show FilePickerResult;
 import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
+import 'package:fushi/src/anki/anki_settings_actions.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_video_template_entry.dart';
-import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
@@ -1448,11 +1446,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ),
         );
     if (result == null) return;
-    await vm.setLapisCustomCss(result.customCss);
-    await vm.setLapisCustomBlocks(result.blocks);
-    for (final MapEntry<String, String> entry in result.fieldMappings.entries) {
-      await vm.updateFieldMapping(entry.key, entry.value);
-    }
+    await applyLapisVisualEditorResult(vm, result);
   }
 
   Future<void> _applyLapisStyling(
@@ -1557,29 +1551,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _portRepairBusy = true);
     try {
-      // 排掉当前端口：调用这个功能的前提就是它不好使，把它选回来等于没动。
-      final int? port = await findFreeAnkiConnectPort(
-        exclude: settings.ankiConnectPort,
+      final AnkiPortRepairOutcome outcome = await repairAnkiConnectPort(
+        vm,
+        settings,
       );
-      if (port == null) {
-        messenger.showSnackBar(
-          FushiSnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
-        );
-        return;
-      }
-      final AnkiConnectPortWriteResult result = await writeAnkiConnectAddonPort(
-        port,
-      );
-      await vm.updateAnkiConnectPort(port.toString());
       messenger.showSnackBar(
-        FushiSnackBar(
-          content: Text(switch (result.status) {
-            AnkiConnectPortWriteStatus.updated =>
-              t.anki_connect_port_auto_fix_done(port: port),
-            AnkiConnectPortWriteStatus.addonNotFound =>
-              t.anki_connect_port_auto_fix_manual(port: port),
-          }),
-        ),
+        FushiSnackBar(content: Text(ankiPortRepairMessage(outcome))),
       );
     } finally {
       if (mounted) setState(() => _portRepairBusy = false);
@@ -1658,14 +1635,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     bool value,
   ) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    await vm.setAutoLaunchAnkiDesktop(value);
-    if (!value || settings.ankiDesktopExecutable.isNotEmpty) return;
-    if (!Platform.isWindows) return;
-    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
-    if (detected != null) {
-      await vm.setAnkiDesktopExecutable(detected);
-      return;
-    }
+    final bool needsExecutable = await applyAutoLaunchAnkiDesktop(
+      vm,
+      settings,
+      value,
+    );
+    if (!needsExecutable) return;
     messenger.showSnackBar(
       FushiSnackBar(content: Text(t.anki_desktop_launch_not_configured)),
     );
@@ -1673,14 +1648,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Future<void> _detectAnkiExecutable(AnkiViewModel vm) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
-    if (detected == null) {
+    if (await detectAndStoreAnkiExecutable(vm) == null) {
       messenger.showSnackBar(
         FushiSnackBar(content: Text(t.anki_desktop_executable_detect_failed)),
       );
-      return;
     }
-    await vm.setAnkiDesktopExecutable(detected);
   }
 
   Future<void> _pickAnkiExecutable(AnkiViewModel vm) async {
@@ -1703,30 +1675,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _ankiLaunchBusy = true);
     try {
-      final AnkiDesktopLaunchResult result = await AnkiDesktopLauncher.launch(
+      final AnkiDesktopLaunchResult result = await launchAnkiDesktopAndLearn(
+        vm,
         settings,
       );
-      final String? learned = result.learnedExecutable;
-      if (learned != null) await vm.setAnkiDesktopExecutable(learned);
       messenger.showSnackBar(
-        FushiSnackBar(content: Text(_ankiLaunchMessage(result))),
+        FushiSnackBar(content: Text(ankiLaunchMessage(result))),
       );
     } finally {
       if (mounted) setState(() => _ankiLaunchBusy = false);
-    }
-  }
-
-  String _ankiLaunchMessage(AnkiDesktopLaunchResult result) {
-    switch (result.status) {
-      case AnkiDesktopLaunchStatus.launched:
-        return t.anki_desktop_launch_started;
-      case AnkiDesktopLaunchStatus.alreadyRunning:
-        return t.anki_desktop_launch_already_running;
-      case AnkiDesktopLaunchStatus.notConfigured:
-        return t.anki_desktop_launch_not_configured;
-      case AnkiDesktopLaunchStatus.skipped:
-      case AnkiDesktopLaunchStatus.failed:
-        return t.anki_desktop_launch_failed(error: result.detail ?? '');
     }
   }
 
@@ -1737,25 +1694,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final AnkiAddonInstallResult result =
           await AnkiConnectInstaller.install();
       messenger.showSnackBar(
-        FushiSnackBar(content: Text(_addonInstallMessage(result))),
+        FushiSnackBar(content: Text(ankiAddonInstallMessage(result))),
       );
     } finally {
       if (mounted) setState(() => _addonInstallBusy = false);
-    }
-  }
-
-  String _addonInstallMessage(AnkiAddonInstallResult result) {
-    switch (result.status) {
-      case AnkiAddonInstallStatus.handedToAnki:
-        return t.anki_connect_addon_handed;
-      case AnkiAddonInstallStatus.ankiNotRunning:
-        return t.anki_connect_addon_anki_not_running;
-      case AnkiAddonInstallStatus.downloadFailed:
-        return t.anki_connect_addon_download_failed(error: result.detail ?? '');
-      case AnkiAddonInstallStatus.invalidPackage:
-        return t.anki_connect_addon_invalid;
-      case AnkiAddonInstallStatus.launchFailed:
-        return t.anki_connect_addon_launch_failed(error: result.detail ?? '');
     }
   }
 
@@ -1766,7 +1708,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final LapisBackupOutcome? outcome = await vm.lapisTemplateService
           .backupNow();
       messenger.showSnackBar(
-        FushiSnackBar(content: Text(_lapisBackupMessage(outcome))),
+        FushiSnackBar(content: Text(lapisBackupMessage(outcome))),
       );
     } catch (e) {
       messenger.showSnackBar(
@@ -1909,19 +1851,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return report;
   }
 
-  /// 手动备份的提示文案：顺带告诉用户按保留策略清理了几份旧备份（删除不可
-  /// 逆，必须让用户看得见结果）。
-  String _lapisBackupMessage(LapisBackupOutcome? outcome) {
-    if (outcome == null) return t.anki_lapis_not_found;
-    if (outcome.prunedCount == 0) {
-      return t.anki_lapis_backup_done(path: outcome.file.path);
-    }
-    return t.anki_lapis_backup_done_pruned(
-      path: outcome.file.path,
-      count: '${outcome.prunedCount}',
-    );
-  }
-
   /// 备份文件名 `lapis-<ISO时间戳(冒号→'-')>.json` → 本地可读时间标签；
   /// 解析失败原样显示文件名主体（仍可区分）。时刻解析走
   /// [parseLapisBackupTimestamp]——保留策略用的是同一份判据，两处各写一个
@@ -1976,10 +1905,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Future<void> _openDeckReposition(AnkiViewModel vm) {
     // 隐藏的词频词典根本不进引擎（AppModel.bucketDictPaths），列表只给已装载的。
-    final List<String> loaded = appModel.freqDictionaries
-        .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
-        .map((Dictionary d) => d.name)
-        .toList();
+    final List<String> loaded = loadedFrequencyDictionaryNames(appModel);
     return showAnkiDeckRepositionDialog(
       context,
       viewModel: vm,

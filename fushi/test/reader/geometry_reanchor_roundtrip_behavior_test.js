@@ -220,7 +220,7 @@ function createModel(installProductionShell, initialTop = 0,
   function inset(t, b = 0) { reader.setChromeInsets(t, b); flush(); return snapshot(); }
   function resize(h) { reader.updatePageSize(WIDTH, h); flush(); return snapshot(); }
   return {
-    reader, frames, timers, events, snapshot, flush, inset, resize, capacity, glyph,
+    window, reader, frames, timers, events, snapshot, flush, inset, resize, capacity, glyph,
     resetDomScroll() { body.scrollTop = 0; },
     get caretReads() { return caretReads; },
     element, targets,
@@ -481,6 +481,42 @@ async function runCases(installProductionShell) {
     const after = m.snapshot();
     m.inset(0); m.inset(24);
     samePlace(m.snapshot(), after, 'subsequent geometry must not resurrect a pre-style anchor');
+  });
+  // 群反馈 10-15「切后台再回来往前跳一页」：系统栏在后台出现让排版临时缩水，
+  // 视口靠几何锚回得来，但进度组装上报的是临时页的首字，落库后若进程在后台被
+  // 回收，重开就按那个更早的字恢复。持锚期间落库位置必须是锚。
+  function progress(m) {
+    const parts = m.window.fushiProgressDetails().split(',').map(Number);
+    return { read: parts[0], total: parts[1], off: parts[2], end: parts[3] };
+  }
+  await test('transient geometry persists the held anchor, not the temporary first char', () => {
+    const m = model(); const before = m.snapshot();
+    const reported = progress(m);
+    const temporary = m.inset(24);
+    assert.notEqual(temporary.first, before.first,
+      'regression premise: the temporary layout must start on a different char');
+    const p = progress(m);
+    assert.equal(p.off, before.first, 'persisted char offset must stay on the reading anchor');
+    assert.equal(p.read, reported.read,
+      'persisted progress must describe the anchor with the same granularity as the original page');
+    assert.equal(p.end, -1, 'a geometry-compensated page is not a reading arrival');
+  });
+  await test('returning to the original geometry reports the page normally', () => {
+    const m = model(); const before = m.snapshot();
+    m.inset(24); m.inset(0);
+    const p = progress(m);
+    assert.equal(p.off, before.first);
+    assert.ok(p.end > p.off, 'settled original page must report its visible end');
+  });
+  await test('page turn after transient geometry reports the new page', () => {
+    const m = model();
+    m.inset(24);
+    assert.equal(m.reader.paginate('forward'), 'scrolled');
+    m.flush();
+    const now = m.snapshot();
+    const p = progress(m);
+    assert.equal(p.off, now.first, 'explicit navigation releases the geometry anchor');
+    assert.ok(p.end > p.off);
   });
   console.log(JSON.stringify({
     kind: 'modeled ideal DOM; NOT a browser or Android reproduction', cases,

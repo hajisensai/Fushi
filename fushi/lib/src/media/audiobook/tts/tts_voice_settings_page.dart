@@ -116,6 +116,46 @@ String? ttsOrphanedReferenceAudio({
   return path;
 }
 
+/// 删掉 [id] 这份声音后的清单与使用中的声音：删的正是使用中的就退回第一份
+/// （一份不剩则为 null）。设置页与 `fushi_cli voice rm` 共用。
+({List<TtsVoicePreset> presets, String? activeId}) ttsPresetsAfterDelete(
+  List<TtsVoicePreset> presets,
+  String? activeId,
+  String id,
+) {
+  final List<TtsVoicePreset> remaining = <TtsVoicePreset>[
+    for (final TtsVoicePreset preset in presets)
+      if (preset.id != id) preset,
+  ];
+  return (
+    presets: remaining,
+    activeId: activeId == id
+        ? (remaining.isEmpty ? null : remaining.first.id)
+        : activeId,
+  );
+}
+
+/// 删声音时一并清掉它独占的参考音频副本（「选择文件」复制进数据目录的那份）。
+/// 设置页与 `fushi_cli voice rm` 共用。
+Future<void> deleteOrphanedTtsReferenceAudio(
+  TtsVoicePreset removed,
+  Iterable<TtsVoicePreset> remaining,
+) async {
+  try {
+    final Directory support = await enginePaths.supportRootDirectory();
+    final String? orphan = ttsOrphanedReferenceAudio(
+      removed: removed,
+      remaining: remaining,
+      referenceDir: p.join(support.path, kTtsReferenceAudioDirName),
+    );
+    if (orphan == null) return;
+    final File file = File(orphan);
+    if (await file.exists()) await file.delete();
+  } on FileSystemException {
+    // 删不掉（被占用）只是留一个小文件，不影响删除声音本身。
+  }
+}
+
 /// 新建 / 换引擎时的初始参数：引擎声明的非凭据默认值。
 Map<String, String> ttsDefaultParams(TtsProviderDescriptor descriptor) =>
     <String, String>{
@@ -262,31 +302,16 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
         .where((TtsVoicePreset p) => p.id == id)
         .firstOrNull;
     setState(() {
-      _presets.removeWhere((TtsVoicePreset p) => p.id == id);
-      if (_activeId == id) {
-        _activeId = _presets.isEmpty ? null : _presets.first.id;
-      }
+      final ({List<TtsVoicePreset> presets, String? activeId}) next =
+          ttsPresetsAfterDelete(_presets, _activeId, id);
+      _presets = next.presets;
+      _activeId = next.activeId;
     });
     _saveDebounce?.cancel();
     await _store.savePresets(_presets);
     await _store.setActivePresetId(_activeId);
-    if (removed != null) await _deleteOrphanedReferenceAudio(removed);
-  }
-
-  /// 删声音时一并清掉它独占的参考音频副本（「选择文件」复制进数据目录的那份）。
-  Future<void> _deleteOrphanedReferenceAudio(TtsVoicePreset removed) async {
-    try {
-      final Directory support = await enginePaths.supportRootDirectory();
-      final String? orphan = ttsOrphanedReferenceAudio(
-        removed: removed,
-        remaining: _presets,
-        referenceDir: p.join(support.path, kTtsReferenceAudioDirName),
-      );
-      if (orphan == null) return;
-      final File file = File(orphan);
-      if (await file.exists()) await file.delete();
-    } on FileSystemException {
-      // 删不掉（被占用）只是留一个小文件，不影响删除声音本身。
+    if (removed != null) {
+      await deleteOrphanedTtsReferenceAudio(removed, _presets);
     }
   }
 
