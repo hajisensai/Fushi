@@ -409,7 +409,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_media_notification',
   'show_remote_entries',
   // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
-  // 复习（二选一；存量 'both' 读成 'srs'）。模块关着时不读。非凭据、跨设备。
+  // 复习（二选一；存量 'both' 读成 'anki'）。模块关着时不读。非凭据、跨设备。
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
   'srs_mining_deck_id',

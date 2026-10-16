@@ -18,14 +18,12 @@ enum SrsMiningTarget {
 
   final String wire;
 
-  /// 已退役的「两者都发」档的存量 wire 值。
-  static const String _legacyBothWire = 'both';
-
   /// 未知值 / null 一律当 [anki]（最保守：不改变既有制卡去向）。
   ///
-  /// 存量 `'both'` 读成 [srs]：用户当初主动选过复习，保留复习这一边。
+  /// 已退役的「两者都发」档的存量值 `'both'` 同样读成 [anki]（所有者 2026-10-16
+  /// 拍板）：老用户本来就在往 Anki 发，更新后继续发 Anki，不加更新提示。只在读时
+  /// 映射，不改写偏好。
   static SrsMiningTarget fromWire(String? wire) {
-    if (wire == _legacyBothWire) return SrsMiningTarget.srs;
     for (final SrsMiningTarget t in SrsMiningTarget.values) {
       if (t.wire == wire) return t;
     }

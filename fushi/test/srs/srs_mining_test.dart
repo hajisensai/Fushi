@@ -694,12 +694,13 @@ void main() {
   test('偏好 wire 值', () {
     expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.anki);
     expect(SrsMiningTarget.fromWire('garbage'), SrsMiningTarget.anki);
-    // 只有二选一两档；已退役的「两者」存量值读成 Fushi 复习。
+    // 只有二选一两档。
     expect(SrsMiningTarget.values, <SrsMiningTarget>[
       SrsMiningTarget.anki,
       SrsMiningTarget.srs,
     ]);
-    expect(SrsMiningTarget.fromWire('both'), SrsMiningTarget.srs);
+    // 已退役的「两者」存量值读成 Anki：老用户更新后继续发 Anki。
+    expect(SrsMiningTarget.fromWire('both'), SrsMiningTarget.anki);
     for (final SrsMiningTarget t in SrsMiningTarget.values) {
       expect(SrsMiningTarget.fromWire(t.wire), t);
     }
