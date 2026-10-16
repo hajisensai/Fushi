@@ -6,6 +6,7 @@
 // ignore_for_file: non_constant_identifier_names
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/extensions/duration.dart';
@@ -351,6 +352,16 @@ class MaterialVideoControlsThemeData {
   /// See third_party/media_kit_video/PATCHES.md.
   final Listenable? restartHideTimerSignal;
 
+  /// Optional host-driven "keep the controls up" hold (Fushi patch), mobile
+  /// counterpart of [MaterialDesktopVideoControlsThemeData.holdVisible]: while
+  /// its value is `true` the auto-hide timer does not hide the bar (a popup
+  /// opened from a bar button — the "⋮" overflow menu — must not lose its
+  /// anchor under the user's finger); when it drops back to `false` the
+  /// auto-hide countdown restarts.
+  /// Null (upstream default) = no hold, behaviour identical to pub.dev.
+  /// See third_party/media_kit_video/PATCHES.md.
+  final ValueListenable<bool>? holdVisible;
+
   // SEEK START (Fushi patch)
 
   /// Optional callback fired the moment the user starts dragging / tapping the
@@ -469,6 +480,7 @@ class MaterialVideoControlsThemeData {
     this.shiftSubtitlesOnControlsVisibilityChange = false,
     this.visibilityNotifier,
     this.restartHideTimerSignal,
+    this.holdVisible,
     this.onSeekStart,
     this.onSeekEnd,
     this.onSeekDispatched,
@@ -532,6 +544,7 @@ class MaterialVideoControlsThemeData {
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     Listenable? restartHideTimerSignal,
+    ValueListenable<bool>? holdVisible,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
@@ -618,6 +631,7 @@ class MaterialVideoControlsThemeData {
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
       restartHideTimerSignal:
           restartHideTimerSignal ?? this.restartHideTimerSignal,
+      holdVisible: holdVisible ?? this.holdVisible,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
@@ -680,6 +694,14 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
   // currently subscribed to, kept so dispose() / a theme change can detach the
   // exact listener we attached (the theme's listenable identity can change).
   Listenable? _restartHideTimerSignal;
+
+  /// Fushi patch: the host hold currently bound (see
+  /// [MaterialVideoControlsThemeData.holdVisible]).
+  ValueListenable<bool>? _holdVisible;
+
+  /// Fushi patch: the host currently holds the controls up — the auto-hide
+  /// timer must not hide them.
+  bool get _held => _holdVisible?.value ?? false;
 
   double _brightnessValue = 0.0;
   bool _brightnessIndicator = false;
@@ -806,7 +828,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         _timer = Timer(
           _theme(context).controlsHoverDuration,
           () {
-            if (mounted) {
+            if (mounted && !_held) {
               setState(() {
                 visible = false;
               });
@@ -828,6 +850,20 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       _restartHideTimerSignal = signal;
       _restartHideTimerSignal?.addListener(_restartHideTimer);
     }
+    // Fushi patch: (re)bind the host's hold, same lifecycle as the signal above.
+    final ValueListenable<bool>? hold = _theme(context).holdVisible;
+    if (!identical(hold, _holdVisible)) {
+      _holdVisible?.removeListener(_onHoldChanged);
+      _holdVisible = hold;
+      _holdVisible?.addListener(_onHoldChanged);
+    }
+  }
+
+  /// Fushi patch: the hold was released — give the bar a fresh auto-hide
+  /// countdown instead of hiding it the instant the popup closes.
+  void _onHoldChanged() {
+    if (_held) return;
+    _restartHideTimer();
   }
 
   /// Fushi patch (TODO-1059): restart the auto-hide timer without toggling
@@ -842,7 +878,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     if (!mounted || !visible) return;
     _timer?.cancel();
     _timer = Timer(_theme(context).controlsHoverDuration, () {
-      if (mounted) {
+      if (mounted && !_held) {
         setState(() {
           visible = false;
         });
@@ -863,6 +899,8 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     // Fushi patch (TODO-1059): detach the host's restart-hide-timer listener.
     _restartHideTimerSignal?.removeListener(_restartHideTimer);
     _restartHideTimerSignal = null;
+    _holdVisible?.removeListener(_onHoldChanged);
+    _holdVisible = null;
     super.dispose();
   }
 
@@ -908,7 +946,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       shiftSubtitle();
       _timer?.cancel();
       _timer = Timer(_theme(context).controlsHoverDuration, () {
-        if (mounted) {
+        if (mounted && !_held) {
           setState(() {
             visible = false;
           });
@@ -1365,7 +1403,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         _timer = Timer(
                                           _theme(context).controlsHoverDuration,
                                           () {
-                                            if (mounted) {
+                                            if (mounted && !_held) {
                                               setState(() {
                                                 visible = false;
                                               });

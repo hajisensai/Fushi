@@ -1864,6 +1864,20 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   // ---- 阶段 2：选种 ----
 
   Widget _buildTorrentStage(ThemeData theme) {
+    // 标题 / 查询词 / 筛选条与种子列表同属一个滚动视图：头部随列表上滑让出屏幕，
+    // 手机上列表不再被压在头部与任务区之间的一条窄缝里滚（反馈 XFsZIWYbr8）。
+    return CustomScrollView(
+      key: const ValueKey<String>('anime-download-torrent-scroll'),
+      slivers: <Widget>[
+        SliverToBoxAdapter(child: _buildTorrentHeader(theme)),
+        ..._buildTorrentResultSlivers(theme),
+      ],
+    );
+  }
+
+  /// 选种阶段头部：返回 + 作品名、Nyaa 查询词、分类 / 可信 / 集号 / 合集 / 单集
+  /// 筛选与排序。
+  Widget _buildTorrentHeader(ThemeData theme) {
     final AniListMedia media = _selectedMedia!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1979,23 +1993,31 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           ],
         ),
         const SizedBox(height: 8),
-        Expanded(child: _buildTorrentResults(theme)),
       ],
     );
   }
 
-  Widget _buildTorrentResults(ThemeData theme) {
+  /// 种子结果区的 sliver 序列。状态占位用 [SliverFillRemaining]：头部没滚走时
+  /// 撑满剩余视口居中，窗口太矮放不下时按自身高度排、随整页滚动，不会溢出裁掉
+  /// 「重试 / 去设置」。
+  List<Widget> _buildTorrentResultSlivers(ThemeData theme) {
+    Widget status(Widget child) => SliverFillRemaining(
+      hasScrollBody: false,
+      child: Center(child: child),
+    );
     if (_loadingTorrents) {
-      return _buildResultsSkeleton();
+      return <Widget>[
+        SliverToBoxAdapter(child: _buildResultsSkeleton(shrinkWrap: true)),
+      ];
     }
     if (_torrentsError) {
-      return _scrollableResultStatus(_buildErrorRetry(
+      return <Widget>[status(_buildErrorRetry(
         theme,
         t.anime_download_search_failed,
         _fetchTorrents,
         detail: _torrentsErrorDetail,
         offerSettings: true,
-      ));
+      ))];
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
       final _TorrentSearchSnapshot applied = _appliedTorrentSearch!;
@@ -2005,27 +2027,30 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         '1_3' => t.anime_download_category_non_english,
         _ => t.anime_download_category_all,
       };
-      return _scrollableResultStatus(_buildNoResults(
+      return <Widget>[status(_buildNoResults(
         theme,
         query: applied.query,
         filters:
             '$categoryLabel · ${applied.trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
-      ));
+      ))];
     }
     final List<NyaaTorrent> visible = _visibleTorrents;
     if (_torrentsLoaded && visible.isEmpty) {
       // 原始结果非空、被筛选器滤光：不是「没搜到」，提示放宽筛选。
-      return _scrollableResultStatus(
-        FushiPlaceholderMessage(
-          icon: FushiIcons.searchOff,
-          message: t.anime_download_no_results,
+      return <Widget>[
+        status(
+          FushiPlaceholderMessage(
+            icon: FushiIcons.searchOff,
+            message: t.anime_download_no_results,
+          ),
         ),
-      );
+      ];
     }
     // replayKey = 本次结果列表 + 筛选：重搜 / 换排序 / 换筛选都重播一次进场。
-    return FushiEntranceScope(
+    return <Widget>[FushiEntranceScope(
       replayKey: (_torrents, _packScope, _episodeScope),
-      child: ListView.builder(
+      child: SliverList.builder(
+        key: const ValueKey<String>('anime-download-torrent-results'),
         itemCount: visible.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           final NyaaTorrent torrent = visible[i];
@@ -2059,7 +2084,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           );
         }),
       ),
-    );
+    )];
   }
 
   /// 单个种子行的徽标：分辨率/组名/体积/seeders/trusted/合集区间/字幕覆盖。

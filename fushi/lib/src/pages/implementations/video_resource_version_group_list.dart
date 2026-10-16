@@ -19,6 +19,7 @@ class VideoResourceVersionGroupList extends StatefulWidget {
     this.onSetGroupSelected,
     this.multiSelect = false,
     this.compact = false,
+    this.sliver = false,
     super.key,
   });
 
@@ -40,6 +41,10 @@ class VideoResourceVersionGroupList extends StatefulWidget {
 
   /// 对话框态用紧凑密度（与旧平铺列表同参数语义）。
   final bool compact;
+
+  /// true = 产出 sliver（嵌进外层 [CustomScrollView]，与查询头部同滚）；
+  /// false = 自带滚动的 [ListView]。
+  final bool sliver;
 
   @override
   State<VideoResourceVersionGroupList> createState() =>
@@ -110,12 +115,23 @@ class _VideoResourceVersionGroupListState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    Widget item(BuildContext context, int index) =>
+        _buildCard(theme, widget.groups[index]);
+    Widget separator(BuildContext _, int __) => const SizedBox(height: 8);
+    const Key key = ValueKey<String>('video-resource-version-groups');
+    if (widget.sliver) {
+      return SliverList.separated(
+        key: key,
+        itemCount: widget.groups.length,
+        separatorBuilder: separator,
+        itemBuilder: item,
+      );
+    }
     return ListView.separated(
-      key: const ValueKey<String>('video-resource-version-groups'),
+      key: key,
       itemCount: widget.groups.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCard(theme, widget.groups[index]),
+      separatorBuilder: separator,
+      itemBuilder: item,
     );
   }
 

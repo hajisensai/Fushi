@@ -7,6 +7,7 @@
 import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -262,6 +263,20 @@ class MaterialDesktopVideoControlsThemeData {
   /// Null (upstream default) = no signal, behaviour identical to pub.dev.
   final Listenable? wakeSignal;
 
+  /// Optional host-driven "keep the controls up" hold (Fushi patch): while its
+  /// value is `true` neither the pointer leaving the controls' [MouseRegion]
+  /// nor the auto-hide timer hides the bar; when it drops back to `false` the
+  /// controls behave as after a hover (shown, auto-hide timer restarted).
+  ///
+  /// A popup route the host opens *from* a control-bar button (the "⋮"
+  /// overflow menu) puts a modal barrier over the whole page: the
+  /// `MouseTracker` re-hit-tests the still pointer, the controls'
+  /// [MouseRegion] fires `onExit` and the bar — including the button the
+  /// menu is anchored to — vanished the instant the menu opened.
+  /// Null (upstream default) = no hold, behaviour identical to pub.dev.
+  /// See third_party/media_kit_video/PATCHES.md.
+  final ValueListenable<bool>? holdVisible;
+
   // SEEK START (Fushi patch)
 
   /// Optional callback fired the moment the user starts dragging / tapping the
@@ -382,6 +397,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.shiftSubtitlesOnControlsVisibilityChange = true,
     this.visibilityNotifier,
     this.wakeSignal,
+    this.holdVisible,
     this.onSeekStart,
     this.onSeekEnd,
     this.onSeekDispatched,
@@ -445,6 +461,7 @@ class MaterialDesktopVideoControlsThemeData {
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     Listenable? wakeSignal,
+    ValueListenable<bool>? holdVisible,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
@@ -527,6 +544,7 @@ class MaterialDesktopVideoControlsThemeData {
               this.shiftSubtitlesOnControlsVisibilityChange,
       visibilityNotifier: visibilityNotifier ?? this.visibilityNotifier,
       wakeSignal: wakeSignal ?? this.wakeSignal,
+      holdVisible: holdVisible ?? this.holdVisible,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
@@ -593,6 +611,14 @@ class _MaterialDesktopVideoControlsState
   /// theme hands over a different Listenable.
   Listenable? _wakeSignal;
 
+  /// Fushi patch: the host hold currently bound (see
+  /// [MaterialDesktopVideoControlsThemeData.holdVisible]).
+  ValueListenable<bool>? _holdVisible;
+
+  /// Fushi patch: the host currently holds the controls up — pointer exit and
+  /// the auto-hide timer must not hide them.
+  bool get _held => _holdVisible?.value ?? false;
+
   late /* private */ var playlist = controller(context).player.state.playlist;
   late bool buffering = controller(context).player.state.buffering;
 
@@ -657,7 +683,7 @@ class _MaterialDesktopVideoControlsState
         _timer = Timer(
           _theme(context).controlsHoverDuration,
           () {
-            if (mounted) {
+            if (mounted && !_held) {
               setState(() {
                 visible = false;
               });
@@ -680,6 +706,21 @@ class _MaterialDesktopVideoControlsState
       _wakeSignal = signal;
       _wakeSignal?.addListener(_onWakeSignal);
     }
+    // Fushi patch: (re)bind the host's hold, same lifecycle as the wake signal.
+    final ValueListenable<bool>? hold = _theme(context).holdVisible;
+    if (!identical(hold, _holdVisible)) {
+      _holdVisible?.removeListener(_onHoldChanged);
+      _holdVisible = hold;
+      _holdVisible?.addListener(_onHoldChanged);
+    }
+  }
+
+  /// Fushi patch: the hold was released — resume as after a hover (shown, a
+  /// fresh auto-hide countdown), so the bar fades on its normal schedule
+  /// instead of staying pinned or vanishing the instant the menu closes.
+  void _onHoldChanged() {
+    if (_held) return;
+    _onWakeSignal();
   }
 
   /// Fushi patch (BUG-2453): host asked to wake the controls — same effect as
@@ -707,6 +748,8 @@ class _MaterialDesktopVideoControlsState
     // Fushi patch (BUG-2453): detach the host's wake-signal listener.
     _wakeSignal?.removeListener(_onWakeSignal);
     _wakeSignal = null;
+    _holdVisible?.removeListener(_onHoldChanged);
+    _holdVisible = null;
     super.dispose();
   }
 
@@ -751,7 +794,7 @@ class _MaterialDesktopVideoControlsState
     shiftSubtitle();
     _timer?.cancel();
     _timer = Timer(_theme(context).controlsHoverDuration, () {
-      if (mounted) {
+      if (mounted && !_held) {
         setState(() {
           visible = false;
         });
@@ -770,7 +813,7 @@ class _MaterialDesktopVideoControlsState
     shiftSubtitle();
     _timer?.cancel();
     _timer = Timer(_theme(context).controlsHoverDuration, () {
-      if (mounted) {
+      if (mounted && !_held) {
         setState(() {
           visible = false;
         });
@@ -977,7 +1020,13 @@ class _MaterialDesktopVideoControlsState
                             : SystemMouseCursors.basic,
                     onHover: (_) => onHover(),
                     onEnter: (_) => onEnter(),
-                    onExit: (_) => onExit(),
+                    // Fushi patch: a popup opened from the bar (overflow
+                    // menu) covers the controls with its barrier; that exit
+                    // must not hide the bar the menu is anchored to.
+                    onExit: (_) {
+                      if (_held) return;
+                      onExit();
+                    },
                     child: Stack(
                       children: [
                         // Fushi patch (touch on desktop): mobile-style swipe
@@ -1146,7 +1195,7 @@ class _MaterialDesktopVideoControlsState
                                                 _theme(context)
                                                     .controlsHoverDuration,
                                                 () {
-                                                  if (mounted) {
+                                                  if (mounted && !_held) {
                                                     setState(() {
                                                       visible = false;
                                                     });

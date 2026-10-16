@@ -26,8 +26,9 @@ import '../helpers/test_platform_services.dart';
 /// 走设置页那一行真正的 onChanged 写偏好，再把 AppModel 读出的值按首页外壳的
 /// 同一接线（`barStyle: appModel.navBarStyle`，下方源码守卫钉住）喂给生产底栏
 /// [adaptiveBottomBar]，断言屏幕上看得见的结果：
-/// - 平铺（默认）：1200 宽下 9 个入口全部平铺，没有「+」；
-/// - 分页滑动：一页 5 个（T0–T4），后面的不在栏上，没有「更多」。
+/// - 分页滑动（出厂默认，2026-10-16 用户拍板）：一页 5 个（T0–T4），后面的
+///   不在栏上，没有「更多」；
+/// - 平铺：1200 宽下 9 个入口全部平铺，没有「+」。
 void main() {
   late FushiDatabase db;
   late Directory tmp;
@@ -137,16 +138,33 @@ void main() {
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: tmp);
 
     await pumpShell(tester);
-    expect(styleRow().selected(settingsContext), AdaptiveNavBarStyle.flat);
-    expect(visible(), labels, reason: '默认平铺：1200 宽全部平铺');
-    expect(onBar(t.home_nav_more), isFalse);
-
-    await choose(tester, AdaptiveNavBarStyle.pager);
+    // 从没写过偏好 = 出厂默认分页滑动（老用户升级上来同样如此）。
+    expect(styleRow().selected(settingsContext), AdaptiveNavBarStyle.pager);
+    expect(styleRow().defaultValue, AdaptiveNavBarStyle.pager);
     expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
     expect(onBar(t.home_nav_more), isFalse);
 
     await choose(tester, AdaptiveNavBarStyle.flat);
-    expect(visible(), labels);
+    expect(visible(), labels, reason: '平铺：1200 宽全部平铺');
+    expect(onBar(t.home_nav_more), isFalse);
+
+    // 显式选过平铺的落库了，重新载入偏好后仍是平铺，不被新默认覆盖。
+    await tester.runAsync(() async {
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      await reloaded.loadFromDb();
+      expect(reloaded.navBarStyle, AdaptiveNavBarStyle.flat);
+    });
+
+    await choose(tester, AdaptiveNavBarStyle.pager);
+    expect(visible(), <String>['T0', 'T1', 'T2', 'T3', 'T4']);
+  });
+
+  test('没写过 / 未知值回落出厂默认分页；显式值原样读回', () {
+    expect(AdaptiveNavBarStyle.defaultStyle, AdaptiveNavBarStyle.pager);
+    expect(AdaptiveNavBarStyle.fromPref(''), AdaptiveNavBarStyle.pager);
+    expect(AdaptiveNavBarStyle.fromPref('launcher'), AdaptiveNavBarStyle.pager);
+    expect(AdaptiveNavBarStyle.fromPref('flat'), AdaptiveNavBarStyle.flat);
+    expect(AdaptiveNavBarStyle.fromPref('pager'), AdaptiveNavBarStyle.pager);
   });
 
   test('home shell feeds the bottom bar from navBarStyle', () {

@@ -838,3 +838,38 @@ on the stack. The patch adds `if (!didPop) return;`.
 Tests: `fushi/test/media/video/video_fullscreen_back_scope_test.dart` (source
 guard on this file plus the route-level behaviour), and
 `fushi/integration_test/video_fullscreen_episode_list_open_test.dart` (real app).
+
+## Host-held controls while a bar popup is open (`holdVisible`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` and
+`lib/media_kit_video_controls/src/controls/material.dart`: theme data
+(`MaterialDesktopVideoControlsThemeData` / `MaterialVideoControlsThemeData`)
+and the control States.
+
+Fushi opens its "⋮" overflow menu from a button on the controls bar. The menu
+is a popup route whose modal barrier covers the whole page. On desktop the
+`MouseTracker` re-hit-tests the still pointer at the end of the frame, the
+controls' `MouseRegion` is no longer in the hit path and fires `onExit`, and
+`onExit()` sets `visible = false` — the bar, including the button the menu is
+anchored to, vanished the instant the menu opened (user report, Windows). On
+mobile the auto-hide timer kept running under the open menu with the same
+result a few seconds later.
+
+The patch adds an optional `final ValueListenable<bool>? holdVisible;` (field +
+constructor + `copyWith`). The States bind it in `didChangeDependencies` (re-bound
+when the theme hands over a different listenable) and unbind in `dispose`.
+While its value is `true`:
+
+- desktop: the `MouseRegion.onExit` callback returns early (the explicit
+  "hide controls" tap action still calls `onExit()` directly);
+- both: every auto-hide `Timer` callback checks `!_held` before hiding.
+
+When the value drops back to `false` the controls resume as after a hover
+(desktop: `_onWakeSignal()` → `onHover()`; mobile: `_restartHideTimer()`), i.e.
+the bar fades on its normal schedule. Null (upstream default) = no hold,
+behaviour identical to pub.dev.
+
+Fushi injects `_controlsHeldByMenu` into both themes and drives it from
+`VideoControlBar.onMenuOpenChanged`.
+
+Source-guard test: `fushi/test/pages/video_controls_menu_hold_guard_test.dart`.

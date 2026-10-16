@@ -368,6 +368,41 @@ void main() {
     expect(selectedHq, isTrue);
   });
 
+  testWidgets('shader page group titles sit outside cards, not inside one '
+      'row card (feedback FxUMLvIqM1)', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpSheet(tester);
+    await _tapCategory(tester, 'shaders', t.video_settings_cat_shaders);
+
+    final Finder surface = find.byType(AdaptiveSettingsSurface);
+    // 管理视图本身不再被当成 schema 行套进一张卡片。
+    final Finder manager = find.byType(VideoShaderManagerView);
+    expect(manager, findsOneWidget);
+    expect(
+      find.ancestor(of: manager, matching: surface),
+      findsNothing,
+      reason: 'shader manager must be the page body, not a row inside a card',
+    );
+    // 三个分组标题都在卡片外（与其它分类页的分组标题同一形态）。
+    for (final String title in <String>[
+      t.video_shader_quality_tier,
+      t.video_shader_section_advanced,
+      t.video_shader_section_installed,
+    ]) {
+      final Finder header = find.descendant(
+        of: manager,
+        matching: find.text(title),
+      );
+      expect(header, findsOneWidget, reason: title);
+      expect(
+        find.ancestor(of: header, matching: surface),
+        findsNothing,
+        reason: '"$title" must not be drawn inside a card',
+      );
+    }
+  });
+
   testWidgets(
     'video settings stacks top category chips over the detail on wide windows '
     '(TODO-556)',
