@@ -74,7 +74,7 @@ void main() {
 
   test('剥注释的词法器本身可信（防空壳）', () {
     final String stripped = stripPascalComments(
-      "{ taskkill } (* powershell *) // Exec(\n"
+      '{ taskkill } (* powershell *) // Exec(\n'
       "x := 'it''s {app}'; Exec('taskkill.exe');",
     );
     expect(stripped, isNot(contains('powershell')));
