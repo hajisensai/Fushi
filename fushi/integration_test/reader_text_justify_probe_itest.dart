@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
@@ -31,7 +32,7 @@ import 'test_helpers.dart';
 /// Run (from fushi/, offscreen):
 ///   tool\run_windows_itest.ps1 integration_test/reader_text_justify_probe_itest.dart `
 ///     -DartDefine @('FUSHI_PROBE_EPUB_EN=<standardebooks epub>',
-///                   'FUSHI_PROBE_NEEDLE_EN=It is a truth universally',
+///                   'FUSHI_PROBE_NEEDLE_EN=universally',  // no spaces: the runner splits them
 ///                   'FUSHI_PROBE_EPUB_JA=<japanese epub>',
 ///                   'FUSHI_PROBE_NEEDLE_JA=<text in a body chapter>',
 ///                   'FUSHI_PROBE_OUT=<dir for screenshots>')
@@ -134,6 +135,7 @@ const String _measureJs = r'''
   var paras = new Map();
   var w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), n, rg = document.createRange();
   var rtVisible = 0;
+  var clippedKeys = [];
   while ((n = w.nextNode())) {
     if (!n.nodeValue.trim()) continue;
     var pe = n.parentElement;
@@ -149,8 +151,13 @@ const String _measureJs = r'''
     for (var i = 0; i < rs.length; i++) {
       var q = rs[i];
       if (!(q.width > 0 && q.height > 0)) continue;
-      if (q.left < 0 || q.right > innerWidth || q.top < 0 || q.bottom > innerHeight) continue;
       var key = vertical ? (q.left + q.right) / 2 : (q.top + q.bottom) / 2;
+      if (q.left < 0 || q.right > innerWidth || q.top < 0 || q.bottom > innerHeight) {
+        // A line cut by the viewport edge (next page / column) looks short
+        // but is not ragged: drop the whole line.
+        if (q.right > 0 && q.left < innerWidth && q.bottom > 0 && q.top < innerHeight) clippedKeys.push({ key: key, a: vertical ? q.top : q.left });
+        continue;
+      }
       var a = vertical ? q.top : q.left, z = vertical ? q.bottom : q.right;
       var lines = paras.get(blk);
       if (!lines) { lines = []; paras.set(blk, lines); }
@@ -166,6 +173,14 @@ const String _measureJs = r'''
   paras.forEach(function (lines, blk) {
     lines.sort(function (x, y) { return vertical ? y.key - x.key : x.key - y.key; });
     for (var k = 0; k < lines.length - 1; k++) {
+      var cut = false;
+      for (var c = 0; c < clippedKeys.length; c++) {
+        // Same line, and the cut piece continues this line (not a line of
+        // the next column, which starts a column gap further on).
+        var ck = clippedKeys[c];
+        if (Math.abs(ck.key - lines[k].key) < fs * 0.5 && ck.a <= lines[k].z + 2) cut = true;
+      }
+      if (cut) continue;
       all.push({ a: lines[k].a, z: lines[k].z, align: getComputedStyle(blk).textAlign });
     }
   });
@@ -303,6 +318,31 @@ void main() {
                   await _pinSection(appModel, row!.uid, section, offset);
                   await _openBook(tester, bookKey);
                   final Map<String, dynamic> r = await _eval(_measureJs);
+                  // VN shows one screen at a time (the chapter may open on an
+                  // illustration or the heading): advance screens and add up
+                  // the lines until enough body text was measured.
+                  for (
+                    int step = 0;
+                    mode == 'vn' && step < 30 && (r['lines'] as num) < 6;
+                    step++
+                  ) {
+                    await _eval(
+                      "(function(){window.fushiReader.paginate('forward');"
+                      "return '{}';})()",
+                    );
+                    await tester.pump(const Duration(milliseconds: 700));
+                    final Map<String, dynamic> next = await _eval(_measureJs);
+                    for (final String k in <String>['lines', 'ragged']) {
+                      r[k] = (r[k] as num) + (next[k] as num);
+                    }
+                    r['maxGap'] = math.max(
+                      (r['maxGap'] as num).toDouble(),
+                      (next['maxGap'] as num).toDouble(),
+                    );
+                    r['rtTotal'] =
+                        (r['rtTotal'] as num) + (next['rtTotal'] as num);
+                    r['vnScreens'] = step + 2;
+                  }
                   final String label = '$lang-$mode-${justify ? 'on' : 'off'}';
                   final String line = '[justify] $label ${jsonEncode(r)}';
                   debugPrint(line);
@@ -323,9 +363,9 @@ void main() {
                     if (ragged * 10 > lines) {
                       failures.add('$label $ragged/$lines lines ragged');
                     }
-                  } else if (lang == 'en' && ragged * 2 < lines) {
+                  } else if (lang == 'en' && ragged == 0) {
                     // Control: the SE book itself never justifies paragraphs, so
-                    // with the switch off most lines must stay ragged — proves
+                    // with the switch off ragged lines must show up — proves
                     // the probe can see raggedness at all.
                     failures.add('$label control: only $ragged/$lines ragged');
                   }

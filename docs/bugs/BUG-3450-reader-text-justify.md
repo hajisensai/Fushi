@@ -30,7 +30,19 @@
 
 ### 验证
 
-见 PR 正文（真 app 三种 view mode × 开 / 关，英文 SE 原书 + 日文竖排真书）。
+- CSS 生成器测试 + 既有 `reader_content_styles_test.dart`：107 条全过（Mac offload，Flutter 3.47.6）。
+- Windows 真 app（离屏 runner，WebView2，生产开书路径）`reader_text_justify_probe_itest.dart`，standardebooks
+  *Pride and Prejudice* 原书 + 日文竖排真书（無職転生 1 卷，带注音），统计可见正文行里「非段末行比本栏最远行尾短 >1.5px」的行数：
+
+  | 模式 | 英文 关 | 英文 开 | 日文竖排 关 | 日文竖排 开 |
+  |---|---|---|---|---|
+  | paginated | 4/5 参差 | 0/5 | 1/7 | 0/5 |
+  | continuous | 4/5 | 0/5 | 1/7 | 0/7 |
+  | vn | 2/7 | 0/7 | 0/6 | 0/6 |
+
+  英文章标题 `h2` 两种状态下 computed `text-align` 都是 `center`（书里显式居中的元素不受影响）；日文注音（`rt`）开关两态都在。
+- Mac WKWebView（swiftc 小程序加载 SE 第一章 / 日文章 + 生产 CSS dump，`debugDefaultTargetPlatformOverride = macOS`，含 WebKit 注音专用规则）：
+  paginated / continuous 英文关 8/9 参差、开 0/9，标题仍居中；日文竖排开时 0 参差、注音位置正常。VN 在 WebKit 侧没有单独验（VN 版式依赖引擎 JS 舞台，这个小程序只加载 CSS），WebKit VN 未验证。
 
 ### 待拍板
 
