@@ -1299,6 +1299,17 @@ function isFlowEscapingStructuredContentStyle(property, value) {
     return false;
 }
 
+// 词典给行内节点加 white-space:nowrap，本意是「这组词别拆开」（日本語シソーラス 的
+// `肝所　0412.05 ≪勘所（意味）≫` 一整组就是一个 nowrap span）。但 nowrap 让
+// `.glossary-group` 的 overflow-wrap:anywhere（BUG-1827）失效，组宽超过卡片时整组
+// 画到卡外。改写成原子 inline-block + max-width:100%：放得下的整组换到下一行（与
+// nowrap 同效），比一整行还宽时才在组内按父级的 white-space 折行。只动行内节点；
+// 词典显式给了 display 的、块级标签的 nowrap 照原样。
+function isInlineStructuredContentElement(element) {
+    const tag = element.tagName;
+    return tag === 'SPAN' || tag === 'A';
+}
+
 function setStructuredContentElementStyle(element, style) {
     for (const [property, value] of Object.entries(style)) {
         if (isFlowEscapingStructuredContentStyle(property, value)) {
@@ -1309,6 +1320,11 @@ function setStructuredContentElementStyle(element, style) {
         } else {
             element.style[property] = value;
         }
+    }
+    if (style.whiteSpace === 'nowrap' && style.display === undefined && isInlineStructuredContentElement(element)) {
+        element.style.whiteSpace = '';
+        element.style.display = 'inline-block';
+        element.style.maxWidth = '100%';
     }
 }
 

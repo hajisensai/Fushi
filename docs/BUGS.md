@@ -34,6 +34,10 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3102 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3448](bugs/BUG-3448-popup-nowrap-group-overflows-card.md) | ✅ | ✅ | 查词卡里词典 nowrap 词组整组画到卡片外 |
 > 共 3072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
