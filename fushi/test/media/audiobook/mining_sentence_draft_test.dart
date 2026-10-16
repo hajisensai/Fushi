@@ -694,4 +694,65 @@ void main() {
       expect(p['total'], 2);
     });
   });
+
+  // BUG-3417：歌词模式与视频字幕共用的「相邻 cue 作上下文」切法。
+  group('cueContextNeighbors', () {
+    List<AudioCue> cues(int n) => <AudioCue>[
+      for (int i = 0; i < n; i++)
+        AudioCue()
+          ..text = 'c$i'
+          ..startMs = i * 1000
+          ..endMs = i * 1000 + 900
+          ..audioFileIndex = 0,
+    ];
+    List<String> texts(List<AudioCue> list) => <String>[
+      for (final AudioCue c in list) c.text,
+    ];
+
+    test('takes adjacent cues before and after the anchor in order', () {
+      final r = cueContextNeighbors(
+        cues: cues(6),
+        anchorIndex: 3,
+        prevCount: 2,
+        nextCount: 1,
+      );
+      expect(texts(r.prev), <String>['c1', 'c2']);
+      expect(texts(r.next), <String>['c4']);
+    });
+
+    test('caps at both ends so "add one more" stops growing', () {
+      final r = cueContextNeighbors(
+        cues: cues(3),
+        anchorIndex: 0,
+        prevCount: 2,
+        nextCount: 5,
+      );
+      expect(r.prev, isEmpty);
+      expect(texts(r.next), <String>['c1', 'c2']);
+    });
+
+    test('zero or negative counts yield no context', () {
+      final r = cueContextNeighbors(
+        cues: cues(4),
+        anchorIndex: 1,
+        prevCount: 0,
+        nextCount: -1,
+      );
+      expect(r.prev, isEmpty);
+      expect(r.next, isEmpty);
+    });
+
+    test('anchor not in the list clears context instead of guessing', () {
+      for (final int bad in <int>[-1, 4, 99]) {
+        final r = cueContextNeighbors(
+          cues: cues(4),
+          anchorIndex: bad,
+          prevCount: 1,
+          nextCount: 1,
+        );
+        expect(r.prev, isEmpty, reason: 'anchor $bad');
+        expect(r.next, isEmpty, reason: 'anchor $bad');
+      }
+    });
+  });
 }

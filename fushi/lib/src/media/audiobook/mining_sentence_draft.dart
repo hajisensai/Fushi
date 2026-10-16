@@ -350,3 +350,32 @@ AudioPlaybackRange? mergeMiningAudioRanges(List<AudioPlaybackRange?> ranges) {
     endMs: endMs,
   );
 }
+
+/// 以 [cues]（已按播放 / 阅读顺序排好）里第 [anchorIndex] 条为锚，取它之前最多
+/// [prevCount] 条、之后最多 [nextCount] 条，作「上 N 句 / 下 N 句」制卡上下文。
+///
+/// 「一条 cue 就是一句」的表面（视频字幕、有声书歌词模式）共用这一个切法：上下文句
+/// 就是相邻的 cue，不必去正文 DOM 里按句读点重新切句。到列表两端自然封顶（返回条数
+/// 不再增长，高级制卡对话框据此禁用对应的「加一句」）。[anchorIndex] 越界时两侧都
+/// 返回空列表——宿主据此清空上下文，而不是拿错位的句子凑数。纯函数，可单测。
+({List<AudioCue> prev, List<AudioCue> next}) cueContextNeighbors({
+  required List<AudioCue> cues,
+  required int anchorIndex,
+  required int prevCount,
+  required int nextCount,
+}) {
+  if (anchorIndex < 0 || anchorIndex >= cues.length) {
+    return (prev: const <AudioCue>[], next: const <AudioCue>[]);
+  }
+  final int safePrev = prevCount < 0 ? 0 : prevCount;
+  final int safeNext = nextCount < 0 ? 0 : nextCount;
+  final int prevStart = (anchorIndex - safePrev).clamp(0, anchorIndex);
+  final int nextEnd = (anchorIndex + 1 + safeNext).clamp(
+    anchorIndex + 1,
+    cues.length,
+  );
+  return (
+    prev: cues.sublist(prevStart, anchorIndex),
+    next: cues.sublist(anchorIndex + 1, nextEnd),
+  );
+}
