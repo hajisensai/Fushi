@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "Gelöscht",
   "storage_entry_delete_failed": "Löschen fehlgeschlagen: $reason",
   "storage_entry_delete_files_confirm_body": "Wird sofort von der Festplatte gelöscht. Nichts in deiner Bibliothek verweist darauf – es sind zwischengespeicherte, exportierte oder erneut herunterladbare Daten.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "Audio verweist auf die Originaldateien und belegt keinen App-Speicher",
   "storage_entry_more_rest": "$n weitere Einträge, insgesamt $size",
   "storage_modules_anime4k_delete_done": "$n Shader-Dateien gelöscht",

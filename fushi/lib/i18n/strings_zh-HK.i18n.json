@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "已刪除",
   "storage_entry_delete_failed": "刪除失敗：$reason",
   "storage_entry_delete_files_confirm_body": "將立即從磁碟刪除。媒體庫裡沒有項目引用它——這裡放的是快取、匯出或可重新取得的資料。",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "音訊引用原檔案，不佔用應用空間",
   "storage_entry_more_rest": "其餘 $n 項，共 $size",
   "storage_modules_anime4k_delete_done": "已刪除 $n 個着色器檔案",

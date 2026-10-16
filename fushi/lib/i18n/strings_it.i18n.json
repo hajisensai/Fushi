@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "Eliminato",
   "storage_entry_delete_failed": "Eliminazione fallita: $reason",
   "storage_entry_delete_files_confirm_body": "Verrà eliminato subito dal disco. Nulla nella tua libreria vi fa riferimento: sono dati in cache, esportati o riscaricabili.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "L'audio fa riferimento ai file originali e non occupa spazio dell'app",
   "storage_entry_more_rest": "$n altri elementi, $size in totale",
   "storage_modules_anime4k_delete_done": "Eliminati $n file shader",

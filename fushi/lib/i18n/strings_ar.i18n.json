@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "تم الحذف",
   "storage_entry_delete_failed": "فشل الحذف: $reason",
   "storage_entry_delete_files_confirm_body": "سيُحذف من القرص فورًا. لا يشير إليه أي عنصر في مكتبتك — فهذه بيانات مؤقتة أو مُصدَّرة أو يمكن تنزيلها من جديد.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "يشير الصوت إلى الملفات الأصلية ولا يستهلك مساحة التطبيق",
   "storage_entry_more_rest": "$n عنصر إضافي، $size إجمالاً",
   "storage_modules_anime4k_delete_done": "تم حذف $n ملف شيدر",

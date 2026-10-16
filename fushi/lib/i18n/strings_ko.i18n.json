@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "삭제됨",
   "storage_entry_delete_failed": "삭제 실패: $reason",
   "storage_entry_delete_files_confirm_body": "디스크에서 즉시 삭제합니다. 라이브러리의 어떤 항목도 이를 참조하지 않습니다 — 캐시, 내보낸 파일, 또는 다시 받을 수 있는 데이터입니다.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "오디오는 원본 파일을 참조하므로 앱 저장 공간을 쓰지 않아요",
   "storage_entry_more_rest": "$n개 항목 더, 총 $size",
   "storage_modules_anime4k_delete_done": "셰이더 파일 $n개 삭제됨",

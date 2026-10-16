@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "Excluído",
   "storage_entry_delete_failed": "Exclusão falhou: $reason",
   "storage_entry_delete_files_confirm_body": "Será excluído do disco imediatamente. Nada na sua biblioteca faz referência a isso — são dados em cache, exportados ou que podem ser baixados de novo.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "O áudio referencia os arquivos originais e não ocupa espaço do app",
   "storage_entry_more_rest": "$n mais itens, $size no total",
   "storage_modules_anime4k_delete_done": "Excluídos $n arquivos de shader",

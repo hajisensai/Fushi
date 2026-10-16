@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "ลบแล้ว",
   "storage_entry_delete_failed": "ลบไม่สำเร็จ: $reason",
   "storage_entry_delete_files_confirm_body": "จะถูกลบออกจากดิสก์ทันที ไม่มีรายการใดในคลังอ้างอิงถึงไฟล์นี้ — เป็นข้อมูลแคช ข้อมูลที่ส่งออก หรือข้อมูลที่ดาวน์โหลดใหม่ได้",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "เสียงอ้างอิงไฟล์ต้นฉบับ ไม่ใช้พื้นที่ของแอป",
   "storage_entry_more_rest": "อีก $n รายการ รวม $size",
   "storage_modules_anime4k_delete_done": "ลบไฟล์เชดเดอร์ $n ไฟล์แล้ว",

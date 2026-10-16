@@ -6113,6 +6113,7 @@
   "storage_entry_delete_done": "Supprimé",
   "storage_entry_delete_failed": "Suppression échouée : $reason",
   "storage_entry_delete_files_confirm_body": "Suppression immédiate du disque. Rien dans votre bibliothèque n'y fait référence : ce sont des données en cache, exportées ou re-téléchargeables.",
+  "storage_entry_delete_video_confirm_body": "Removes this video from the library and deletes its file from this device.",
   "storage_entry_external_audio_hint": "L'audio référence les fichiers d'origine et n'occupe aucun espace de l'application",
   "storage_entry_more_rest": "$n éléments de plus, $size au total",
   "storage_modules_anime4k_delete_done": "$n fichiers de shaders supprimés",
