@@ -4,7 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
-/// BUG-3450：「两端对齐」开关开时，正文必须真的两端对齐。
+/// BUG-3484：「两端对齐」开关开时，正文必须真的两端对齐。
 ///
 /// 旧实现开关开时只是「不注入 `text-align: start`」，从不注入 `justify`，对齐全看书自带
 /// CSS——Standard Ebooks 的 EPUB 不给正文段落写 text-align，于是始终左对齐、行尾参差。
@@ -38,7 +38,7 @@ void main() {
 
   for (final String viewMode in viewModes) {
     for (final String writingMode in writingModes) {
-      group('BUG-3450 $viewMode / $writingMode', () {
+      group('BUG-3484 $viewMode / $writingMode', () {
         test('开关开：body 注入 text-align: justify，且只在 body 上', () async {
           final String css = ReaderContentStyles.css(
             settings: await _settings(

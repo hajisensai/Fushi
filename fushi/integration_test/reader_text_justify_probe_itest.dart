@@ -22,7 +22,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-3450 real-book probe: with「两端对齐」on, body paragraphs are really
+/// BUG-3484 real-book probe: with「两端对齐」on, body paragraphs are really
 /// justified (line ends flush with the column edge) in paginated / continuous /
 /// VN, on a book whose own CSS never sets `text-align` on paragraphs (Standard
 /// Ebooks), while elements the book explicitly aligns (centered headings) keep
@@ -245,7 +245,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'BUG-3450 real-book probe: text_justify really justifies body paragraphs '
+    'BUG-3484 real-book probe: text_justify really justifies body paragraphs '
     'across paginated / continuous / VN without touching explicit alignment',
     timeout: const Timeout(Duration(minutes: 30)),
     (WidgetTester tester) async {

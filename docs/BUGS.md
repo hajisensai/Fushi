@@ -44,7 +44,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3450](bugs/BUG-3450-reader-text-justify.md) | ✅ | ✅ | 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB） |
+| [BUG-3484](bugs/BUG-3484-reader-text-justify.md) | ✅ | ✅ | 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB） |
 | [BUG-3449](bugs/BUG-3449-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
 | [BUG-3448](bugs/BUG-3448-popup-nowrap-group-overflows-card.md) | ✅ | ✅ | 查词卡里词典 nowrap 词组整组画到卡片外 |
 | [BUG-3447](bugs/BUG-3447-rail-toggle-right-edge-flicker.md) | ✅ | ✅ | rail-toggle-right-edge-flicker |

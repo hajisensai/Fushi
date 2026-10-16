@@ -1,8 +1,8 @@
-## BUG-3450 · 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB）
+## BUG-3484 · 两端对齐开关开启时正文不对齐（Standard Ebooks EPUB）
 - **报告**：2026-10-16（应用内反馈，Android 2.10.0-debug.19013：「英语两侧对齐，对齐不准。有的书籍文件可以，用 standardebooks 里的 EPUB 总是不能对齐」，附截图：开关已开，英文正文行尾参差）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/reader/reader_content_styles.dart:572`（修复前）：`settings.enableTextJustification ? '' : 'text-align: start …'`——开关开时只是**不注入** `start`，全仓没有任何地方注入 `justify`）
 - **[x] ① 已修复** — 开关开时在 `body` 规则注入 `text-align: justify !important;`（`reader_content_styles.dart` gridCss），提交见 PR
-- **[x] ② 已加自动化测试** — CSS 生成器测试 `fushi/test/reader/reader_text_justify_bug3450_test.dart`（三种 view mode × 横竖排：开 → body 规则里恰有一条 justify、全 CSS 只此一处、无 start；关 → start / hanging-punctuation / line-break 原样、无 justify）；真 app 探针 `fushi/integration_test/reader_text_justify_probe_itest.dart`
+- **[x] ② 已加自动化测试** — CSS 生成器测试 `fushi/test/reader/reader_text_justify_bug3484_test.dart`（三种 view mode × 横竖排：开 → body 规则里恰有一条 justify、全 CSS 只此一处、无 start；关 → start / hanging-punctuation / line-break 原样、无 justify）；真 app 探针 `fushi/integration_test/reader_text_justify_probe_itest.dart`
 - **备注**：开关开时仍不注入 hanging-punctuation / line-break（与修复前一致，见「待拍板」）。
 
 ### 根因
