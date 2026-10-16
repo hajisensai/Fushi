@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Оставьте включённым с фиксацией положения, если хотите сохранить поиск слов.",
   "floating_lyric_close": "Закрыть",
   "floating_lyric_corner_radius": "Скругление углов плавающих субтитров",
-  "floating_lyric_corner_radius_hint": "0 оставляет углы по умолчанию для платформы; увеличьте, чтобы скруглить панель и кнопки",
+  "floating_lyric_corner_radius_hint": "0 — прямые углы; увеличьте, чтобы сильнее скруглить панель и кнопки (по умолчанию 24)",
   "floating_lyric_font_size": "Размер шрифта плавающих субтитров",
   "floating_lyric_hint": "Показывать текущее предложение поверх других приложений.",
   "floating_lyric_lock": "Заблокировать",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "Том $n"
 }

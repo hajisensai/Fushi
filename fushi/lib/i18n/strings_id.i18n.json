@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Biarkan ini aktif dengan kunci posisi jika kamu masih ingin pencarian kata.",
   "floating_lyric_close": "Tutup",
   "floating_lyric_corner_radius": "Radius sudut subtitle mengambang",
-  "floating_lyric_corner_radius_hint": "0 menggunakan sudut default setiap platform; naikkan untuk membulatkan bar dan tombol lebih banyak",
+  "floating_lyric_corner_radius_hint": "0 berarti sudut siku; naikkan untuk membulatkan bar dan tombol lebih banyak (default 24)",
   "floating_lyric_font_size": "Ukuran font subtitle mengambang",
   "floating_lyric_hint": "Tampilkan kalimat saat ini di atas aplikasi lain.",
   "floating_lyric_lock": "Kunci",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "Jilid $n"
 }

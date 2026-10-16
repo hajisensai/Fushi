@@ -19,6 +19,10 @@ import 'package:fushi_core/fushi_core.dart';
 /// 分流 class）、收藏、搜索都是 1em 居中窄条；叠放 当前句 < 收藏 < 搜索 < 查词（BUG-125）；
 /// 各路径自身不再铺整盒背景。WebKit 那一侧（含 13 款目录字体与系统字体的逐字体墨迹实测）
 /// 在 Mac WKWebView 上做过，见 PR 描述。
+///
+/// BUG-3421：书自带底色的段落里，窄条画在书的底色之上、字之下（真截图取像素：窄条范围里
+/// 不再露出裸底色，字仍压在窄条上），高亮撤掉后挂上的层与标记一并撤。行内元素的底色压不住
+/// （Chromium 把行内底色随行内容一起画），只钉住「不给它挂层」，见 harness 注释。
 void main() {
   const String p1 =
       '彼は軽く会<ruby>釈<rt>しゃく</rt></ruby>をして、'
@@ -36,6 +40,7 @@ void main() {
   Future<String> page({
     required String writingMode,
     required String viewMode,
+    bool backdrop = false,
   }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -83,10 +88,14 @@ void main() {
     };
     return '<!doctype html><html><head><meta charset="utf-8">'
         '<style id="fushi-reader-style">$css</style>'
+        // 书自带的段落底色与行内底色（出版社 CSS，不带 !important）。
+        '${backdrop ? '<style>p.bd { background-color: rgb(60, 200, 120); } '
+                  'span.mk { background-color: rgb(240, 130, 60); }</style>' : ''}'
         '<script>window.flutter_inappwebview = { callHandler: function() '
         '{ return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};</script>'
-        '</head><body><p>$p1</p><p>$p2</p>'
+        '</head><body><p>$p1</p>'
+        '${backdrop ? '<p class="bd">${p2.replaceFirst('窓の外', '<span class="mk">窓の外</span>')}</p>' : '<p>$p2</p>'}'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'
         '<script>window.__fushiInstallShell(${jsonEncode(config)});</script>'
         '</body></html>';
@@ -101,6 +110,7 @@ void main() {
         return;
       }
       final List<Map<String, String>> pages = <Map<String, String>>[];
+      final List<Map<String, String>> backdropPages = <Map<String, String>>[];
       for (final String writingMode in <String>[
         'vertical-rl',
         'horizontal-tb',
@@ -114,6 +124,14 @@ void main() {
             'name': '$writingMode/$viewMode',
             'html': await page(writingMode: writingMode, viewMode: viewMode),
           });
+          backdropPages.add(<String, String>{
+            'name': '$writingMode/$viewMode/book-background',
+            'html': await page(
+              writingMode: writingMode,
+              viewMode: viewMode,
+              backdrop: true,
+            ),
+          });
         }
       }
       final Directory temp = Directory.systemTemp.createTempSync(
@@ -121,7 +139,12 @@ void main() {
       );
       try {
         final File payload = File('${temp.path}/pages.json')
-          ..writeAsStringSync(jsonEncode(<String, Object>{'pages': pages}));
+          ..writeAsStringSync(
+            jsonEncode(<String, Object>{
+              'pages': pages,
+              'backdropPages': backdropPages,
+            }),
+          );
         final Process process = await Process.start(nodeExe, <String>[
           'test/reader/highlight_lanes_harness.mjs',
           payload.path,
@@ -146,6 +169,7 @@ void main() {
         }
         expect(exitCode, 0, reason: '$out\n${await stderr}');
         expect(out, contains('PASS 6 lane pages'));
+        expect(out, contains('6 book-background pages'));
       } finally {
         temp.deleteSync(recursive: true);
       }

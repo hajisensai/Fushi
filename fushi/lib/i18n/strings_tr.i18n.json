@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Sözcük aramasını korumak isterseniz konum kilidiyle birlikte bunu açık tutun.",
   "floating_lyric_close": "Kapat",
   "floating_lyric_corner_radius": "Kayan altyazı köşe yarıçapı",
-  "floating_lyric_corner_radius_hint": "0 her platformun varsayılan köşelerini korur; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın",
+  "floating_lyric_corner_radius_hint": "0 köşeleri düz yapar; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın (varsayılan 24)",
   "floating_lyric_font_size": "Kayan altyazı yazı tipi boyutu",
   "floating_lyric_hint": "Geçerli cümleyi diğer uygulamaların üzerinde göster.",
   "floating_lyric_lock": "Kilitle",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "$n. cilt"
 }

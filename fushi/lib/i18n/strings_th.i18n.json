@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "เปิดไว้พร้อมล็อกตำแหน่งถ้ายังต้องการค้นคำได้",
   "floating_lyric_close": "ปิด",
   "floating_lyric_corner_radius": "ความโค้งมุมคำบรรยายลอย",
-  "floating_lyric_corner_radius_hint": "0 ใช้มุมเริ่มต้นของแต่ละแพลตฟอร์ม; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น",
+  "floating_lyric_corner_radius_hint": "0 คือมุมฉาก; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น (ค่าเริ่มต้น 24)",
   "floating_lyric_font_size": "ขนาดตัวอักษรซับไตเติลลอย",
   "floating_lyric_hint": "แสดงประโยคปัจจุบันเหนือแอปอื่น",
   "floating_lyric_lock": "ล็อก",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "เล่ม $n"
 }

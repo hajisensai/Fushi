@@ -438,6 +438,34 @@ export async function launchChromeDriver() {
     return shot.data;
   }
 
+  // Evaluate on the page evalOnPage last loaded, without navigating.
+  async function evalHere(expr) {
+    const res = await sock.send('Runtime.evaluate', {
+      expression: `Promise.resolve((function(){ return (${expr}); })()).then((v) => JSON.stringify(v))`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (res.exceptionDetails) {
+      throw new Error('eval exception: ' + JSON.stringify(res.exceptionDetails));
+    }
+    return JSON.parse(res.result.value);
+  }
+
+  // PNG (base64) of a rect of the current page given in client (getBoundingClientRect)
+  // coordinates, at scale 1. The CDP clip is in document coordinates, which differ from
+  // client ones whenever the viewport is scrolled — including a vertical-rl document wider
+  // than the viewport, whose initial position is its right edge — so add the visual
+  // layout viewport's page offset (client rects are relative to it).
+  async function capture(clip) {
+    const metrics = await sock.send('Page.getLayoutMetrics', {});
+    const lv = metrics.cssLayoutViewport || metrics.layoutViewport || { pageX: 0, pageY: 0 };
+    const shot = await sock.send('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: clip.x + lv.pageX, y: clip.y + lv.pageY, width: clip.width, height: clip.height, scale: 1 },
+    });
+    return shot.data;
+  }
+
   function close() {
     try {
       sock && sock.close();
@@ -453,5 +481,5 @@ export async function launchChromeDriver() {
     } catch (_) {}
   }
 
-  return { evalOnPage, snap, close };
+  return { evalOnPage, evalHere, capture, snap, close };
 }

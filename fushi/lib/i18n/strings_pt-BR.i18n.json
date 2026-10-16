@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Mantenha isto ativado com a posição travada se ainda quiser consultar palavras.",
   "floating_lyric_close": "Fechar",
   "floating_lyric_corner_radius": "Raio dos cantos da legenda flutuante",
-  "floating_lyric_corner_radius_hint": "0 mantém os cantos padrão de cada plataforma; aumente para arredondar mais a barra e os botões",
+  "floating_lyric_corner_radius_hint": "0 deixa os cantos retos; aumente para arredondar mais a barra e os botões (padrão 24)",
   "floating_lyric_font_size": "Tamanho da fonte da legenda flutuante",
   "floating_lyric_hint": "Mostrar a frase atual sobre outros apps.",
   "floating_lyric_lock": "Bloquear",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "Volume $n"
 }

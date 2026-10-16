@@ -42,7 +42,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 | Android | `build_android_so.ps1 [-NdkRoot …] [-Abis …]` / `build_android_so.sh <ndk-root> [abi…]`（cargo-ndk，API 24） | `prebuilt/android/<abi>/libfushi_fsrs.so` | `fushi/android/app/build.gradle` 的 `jniLibs.srcDirs` copy-if-present |
 | Linux x64 | `build_linux_so.sh` | `prebuilt/linux-x64/libfushi_fsrs.so` | `fushi/linux/CMakeLists.txt` copy-if-present 到 `bundle/lib/`；服务端放 `bundle/lib/` |
 | macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_fsrs.dylib`（install name `@rpath/…`） | Runner 构建阶段「Bundle fushi_fsrs dylib」（`fushi/macos/bundle_fushi_fsrs.sh`）copy-if-present 到 `Contents/Frameworks` |
-| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]`（伞形 staticlib，部署目标 15.1） | `native/fushi_ios_umbrella/prebuilt/ios/{iphoneos,iphonesimulator}/libfushi_ios_umbrella.a` + `fushi_ios_umbrella.xcconfig` | **尚未接进 Runner**，见下「iOS」 |
+| iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]`（伞形 staticlib，部署目标 15.1） | `native/fushi_ios_umbrella/prebuilt/ios/{iphoneos,iphonesimulator}/libfushi_ios_umbrella.a` + `fushi_ios_umbrella.xcconfig` | `fushi/ios/Flutter/{Debug,Release}.xcconfig` 可选 `#include?` 那份 xcconfig → Runner `OTHER_LDFLAGS` 的 `$(FUSHI_IOS_NATIVE_LDFLAGS)`（`-force_load`），见下「iOS」 |
 
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包。
 - 构建脚本只断言文件存在；`verify_abi.sh <二进制> [nm]` 按 Dart 绑定里 lookup 的 `ffsrs_*`
@@ -71,23 +71,17 @@ llvm-nm 核对，12 个 `fp2p_*` + 6 个 `ffsrs_*` 全是 `T`。真 iOS 链接�
 `native/fushi_fsrs/build_ios_staticlib.sh` 仍保留：只出单独的 `libfushi_fsrs.a` 与
 `FUSHI_FSRS_LDFLAGS`，供「只要 SRS 不要 P2P」的实验构建；**不能**与 fushi_p2p 的单独 .a 同时接。
 
-**切换步骤**（fushi/ios 目前仍只接 fushi_p2p 单独那份，本 PR 不动，因为本机无法验证 iOS）：
+**接线**（2026-10-15 起，此前 iOS 包里没有 `ffsrs_*`，复习页恒报「排程内核不可用」）：
 
-1. `fushi/ios/Flutter/Debug.xcconfig` 与 `Release.xcconfig`：把
-   `#include? "../../../native/fushi_p2p/prebuilt/ios/fushi_p2p.xcconfig"` 换成
-   `#include? "../../../native/fushi_ios_umbrella/prebuilt/ios/fushi_ios_umbrella.xcconfig"`。
-2. `fushi/ios/Runner.xcodeproj/project.pbxproj`：Runner 三个配置的 `OTHER_LDFLAGS` 里
-   `"$(FUSHI_P2P_LDFLAGS)"` 换成 `"$(FUSHI_IOS_NATIVE_LDFLAGS)"`（共 3 处）。
-3. CI：`build-multiplatform.yml` 的 ios job 与 `release-desktop.yml` 的 iOS job 把
-   「Build fushi_p2p (iOS device staticlib)」换成 `native/fushi_ios_umbrella/build_ios_staticlib.sh device`，
-   持久库（native-artifact-store，名字取自 `.github/actions/native-store-names/names.sh` 的 P2P
-   输入）要改成以 `native/fushi_ios_umbrella` + `native/fushi_p2p` + `native/fushi_fsrs` 为输入、
-   路径 `native/fushi_ios_umbrella/prebuilt/ios`；出包后在 Runner（或 `Runner.debug.dylib`）上
-   **两个** verify_abi.sh 都跑（`native/fushi_p2p/verify_abi.sh` 与本目录的）。
-4. `release-desktop.yml` 的 App Store archive 核对同样两个都跑。
-
-目前 `build-multiplatform.yml` 的 ios job 已经额外编一次伞形库的 device 切片并核对归档符号
-（不链进 Runner），所以伞形库在 iOS 上编不过会在 PR 上暴露。
+- `fushi/ios/Flutter/Debug.xcconfig` 与 `Release.xcconfig` 可选
+  `#include? "../../../native/fushi_ios_umbrella/prebuilt/ios/fushi_ios_umbrella.xcconfig"`；
+  Runner 三个配置的 `OTHER_LDFLAGS` 用 `"$(FUSHI_IOS_NATIVE_LDFLAGS)"`。没编过伞形库 → 变量为空 →
+  不链接，P2P 与 SRS 复习都判不可用，Runner 照常构建。
+- CI：`build-multiplatform.yml` 的 ios job 与 `release-desktop.yml` 的 iOS job 编伞形库 device 切片，
+  持久库名 `ios_native`（`.github/actions/native-store-names/names.sh`，输入
+  `native/fushi_ios_umbrella` + `native/fushi_p2p` + `native/fushi_fsrs`），出包后在 Runner（debug
+  构建是 `Runner.debug.dylib`）上 `native/fushi_p2p/verify_abi.sh` 与本目录的 `verify_abi.sh` 都跑；
+  App Store archive 同样两个都跑。
 
 ## CI
 
@@ -95,7 +89,7 @@ llvm-nm 核对，12 个 `fp2p_*` + 6 个 `ffsrs_*` 全是 `T`。真 iOS 链接�
 |---|---|---|
 | `build-multiplatform.yml`（PR，路径门） | Windows | 编 DLL → 跑 `packages/fushi_srs` 真 FFI 测试 → 出包后核对 bundle 里有 `fushi_fsrs.dll` |
 | | macOS | 编 arm64 dylib + ABI 核对 → 出包后核对 `Contents/Frameworks` 里的 dylib（install name / 架构 / 符号 / ctypes 冒烟） |
-| | iOS | 编伞形 staticlib device 切片 + 核对两组符号（不链进 Runner） |
+| | iOS | 编伞形 staticlib device 切片 + 核对归档两组符号 → 链进 Runner 后再核对 Runner 两组符号 |
 | | linux-server | 编 .so + ABI 核对 → 装进服务端 bundle → 拿 bundle 里那份跑真 FFI 测试 |
 | `native-fsrs-gate.yml`（PR，paths） | Android 三 ABI | cargo-ndk → ELF 架构 + 符号 |
 | | ubuntu | `cargo test --release --locked`（lib.rs 单元测试） |
@@ -106,8 +100,8 @@ llvm-nm 核对，12 个 `fp2p_*` + 6 个 `ffsrs_*` 全是 `T`。真 iOS 链接�
 `packages/fushi_srs/` 路由给四个平台 job、`native/fushi_ios_umbrella/` 路由给 iOS，守卫
 `fushi/test/build/multiplatform_pr_gating_guard_test.dart`。
 
-**尚未接线**（发布包里还不会有 fushi_fsrs）：`release.yml`（Android APK，需要
-cargo-ndk 三 ABI + 出包后逐 ABI 核对）与 `release-desktop.yml`（Windows / macOS / iOS 发布）。
+`release.yml`（Android APK）与 `release-desktop.yml`（Windows / macOS / iOS，iOS 走伞形库）
+的发布包都随带 fushi_fsrs，出包后逐一核对。
 fushi_fsrs 编译只要约 20 s（本机，热缓存），没进 native-artifact-store。
 
 ## 测试

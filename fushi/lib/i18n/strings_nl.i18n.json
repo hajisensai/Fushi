@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Houd dit aan met positievergrendeling als je nog steeds woorden wilt opzoeken.",
   "floating_lyric_close": "Sluiten",
   "floating_lyric_corner_radius": "Zwevende ondertitel hoekradius",
-  "floating_lyric_corner_radius_hint": "0 behoudt de standaardhoeken per platform; verhoog om de balk en knoppen ronder te maken",
+  "floating_lyric_corner_radius_hint": "0 geeft rechte hoeken; verhoog om de balk en knoppen ronder te maken (standaard 24)",
   "floating_lyric_font_size": "Lettergrootte zwevende ondertitel",
   "floating_lyric_hint": "Huidige zin over andere apps tonen.",
   "floating_lyric_lock": "Vergrendelen",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "Deel $n"
 }

@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "أبقِ هذا مفعّلًا مع قفل الموضع إن كنت لا تزال تريد البحث عن الكلمات.",
   "floating_lyric_close": "إغلاق",
   "floating_lyric_corner_radius": "نصف قطر زوايا الترجمة العائمة",
-  "floating_lyric_corner_radius_hint": "0 يحتفظ بالزوايا الافتراضية لكل منصة؛ ارفعه لتدوير الشريط والأزرار أكثر",
+  "floating_lyric_corner_radius_hint": "0 يعني زوايا قائمة؛ ارفعه لتدوير الشريط والأزرار أكثر (الافتراضي 24)",
   "floating_lyric_font_size": "حجم خط الترجمة العائمة",
   "floating_lyric_hint": "عرض الجملة الحالية فوق التطبيقات الأخرى.",
   "floating_lyric_lock": "قفل",
@@ -7773,5 +7773,5 @@
   "srs_ankiconnect_title": "AnkiConnect for Fushi review",
   "backup_category_srs": "Review",
   "backup_category_srs_desc": "Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren't restored too, it's merged into the matching profile on this device",
-  "home_continue_volume": "Vol. $n"
+  "home_continue_volume": "المجلد $n"
 }
