@@ -33,6 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3084 条。点号进各自文件。
 > 共 3086 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
@@ -68,6 +69,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-book-collection-continue-next-volume.md) | ✅ | ✅ | book-collection-continue-next-volume |
 | [BUG-3428](bugs/BUG-3428-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
 | [BUG-3427](bugs/BUG-3427-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
 | [BUG-3426](bugs/BUG-3426-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
