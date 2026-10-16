@@ -1963,6 +1963,7 @@
   "download_clear_completed_confirm": "清除 $n 个已完成的下载任务？不勾选下方选项时只移出列表，已下载的文件保留。",
   "download_clear_completed_confirm_keeps_files": "其中 $n 个无法在这里删除文件，勾选后也只会移出列表。",
   "download_clear_completed_confirm_needs_delete": "其中 $n 个只能连同文件一起删除，不勾选时保持不动。",
+  "download_clear_completed_confirm_removes_library": "对应的视频也会从媒体库中移除。",
   "download_clear_completed_confirm_seeding": "其中 $n 个正在做种，删除文件会同时停止做种。",
   "download_clear_completed_confirm_unsupported": "其中 $n 个不支持在这里清除，将保持不动。",
   "download_clear_completed_result_cleared": "已清除 $n 项",

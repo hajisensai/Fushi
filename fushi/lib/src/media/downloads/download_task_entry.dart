@@ -34,6 +34,7 @@ class DownloadTaskActions {
     this.clear,
     this.delete,
     this.deletesFiles = false,
+    this.deleteFilesRemovesLibraryEntries = false,
     this.setPriority,
   });
 
@@ -72,6 +73,13 @@ class DownloadTaskActions {
   /// 决定要不要摆出「同时删除已下载文件」勾选框——兑现不了就不显示，否则用户勾了
   /// 以为盘清干净了，而几十 GB 还在，且再没有第二次机会发现。
   final bool deletesFiles;
+
+  /// `delete(deleteFiles: true)` 会不会顺带把对应的媒体库条目（与封面）一起删掉。
+  ///
+  /// video job 的删文件走 `deletePersistedVideoDownloadJob`：文件删掉后它登记的
+  /// 视频库行随之移除。确认框据此在勾选「同时删除文件」时多说一句，不让用户以为
+  /// 只是腾了磁盘、库里的条目还在。
+  final bool deleteFilesRemovesLibraryEntries;
 
   /// 设置任务级调度优先级（1 高 / 0 普通 / -1 低）。
   final Future<void> Function(int priority)? setPriority;
@@ -118,5 +126,5 @@ class DownloadTaskEntry {
   final WidgetBuilder builder;
 }
 
-typedef DownloadTasksBuilder = Widget Function(
-    BuildContext context, List<DownloadTaskEntry> tasks);
+typedef DownloadTasksBuilder =
+    Widget Function(BuildContext context, List<DownloadTaskEntry> tasks);

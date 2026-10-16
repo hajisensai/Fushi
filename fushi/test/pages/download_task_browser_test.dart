@@ -1126,6 +1126,7 @@ void main() {
       bool delete = false,
       bool deletesFiles = false,
       bool seeding = false,
+      bool removesLibrary = false,
       String? collectionKey,
     }) => DownloadTaskEntry(
       id: id,
@@ -1142,6 +1143,7 @@ void main() {
                   calls.add('delete:$id:$deleteFiles')
             : null,
         deletesFiles: deletesFiles,
+        deleteFilesRemovesLibraryEntries: removesLibrary,
       ),
       builder: (BuildContext context) => DownloadTaskCard(
         key: ValueKey<String>(id),
@@ -1157,7 +1159,13 @@ void main() {
     /// 进行中与失败的任务（不是「已完成」，一律不碰）。
     List<DownloadTaskEntry> mixed() => <DownloadTaskEntry>[
       entry('direct', clear: true),
-      entry('video', delete: true, deletesFiles: true, seeding: true),
+      entry(
+        'video',
+        delete: true,
+        deletesFiles: true,
+        seeding: true,
+        removesLibrary: true,
+      ),
       entry('ext', delete: true, deletesFiles: true),
       entry('remote-old', delete: true),
       entry(
@@ -1291,6 +1299,40 @@ void main() {
         find.textContaining(t.download_clear_completed_result_untouched(n: 1)),
         findsOneWidget,
       );
+    });
+
+    testWidgets('勾选且含 video job 时才说明视频会从媒体库移除', (WidgetTester tester) async {
+      _viewport(tester, const Size(900, 900));
+      final Finder note = find.text(
+        t.download_clear_completed_confirm_removes_library,
+      );
+      await tester.pumpWidget(_host(mixed()));
+      await tester.pumpAndSettle();
+      await tester.tap(clearButton);
+      await tester.pumpAndSettle();
+      expect(note, findsNothing, reason: '不勾不会删库条目，不该提前说');
+      await tester.tap(deleteFilesRow);
+      await tester.pumpAndSettle();
+      expect(note, findsOneWidget);
+      await tester.tap(deleteFilesRow);
+      await tester.pumpAndSettle();
+      expect(note, findsNothing);
+      await tester.tap(find.text(t.dialog_cancel).last);
+      await tester.pumpAndSettle();
+
+      // 只有扩展源成品（删文件不联动删库）：勾了也不说。
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          entry('ext-only', delete: true, deletesFiles: true),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(clearButton);
+      await tester.pumpAndSettle();
+      await tester.tap(deleteFilesRow);
+      await tester.pumpAndSettle();
+      expect(note, findsNothing);
+      expect(calls, isEmpty);
     });
 
     testWidgets('没有一条能删文件时不摆勾选框', (WidgetTester tester) async {

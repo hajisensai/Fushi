@@ -1963,6 +1963,7 @@
   "download_clear_completed_confirm": "Clear $n completed download tasks? Without the option below they are only removed from the list and downloaded files are kept.",
   "download_clear_completed_confirm_keeps_files": "$n of them cannot have their files deleted from here and will only be removed from the list.",
   "download_clear_completed_confirm_needs_delete": "$n of them can only be removed together with their files, so they stay unless you tick the option.",
+  "download_clear_completed_confirm_removes_library": "The matching videos will also be removed from your library.",
   "download_clear_completed_confirm_seeding": "$n of them are seeding; deleting their files also stops seeding.",
   "download_clear_completed_confirm_unsupported": "$n of them cannot be cleared from here and stay as they are.",
   "download_clear_completed_result_cleared": "Cleared $n",

@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// - 删不了文件的（直链 / mokuro 等）勾了也只移出列表；
 /// - 两样都做不了的始终不动；
 /// - 正在做种的，删文件会把种子一起摘掉。
+/// - 勾选后会联动删媒体库条目的（video job），勾上时再追加一句说明。
 ///
 /// 没有任何一条兑现得了删文件时不摆勾选框、恒返回 false（「兑现不了就不显示」）。
 Future<bool?> showDownloadClearCompletedConfirm(
@@ -28,6 +29,7 @@ Future<bool?> showDownloadClearCompletedConfirm(
   int keepsFiles = 0;
   int unsupported = 0;
   int seeding = 0;
+  int removesLibraryEntries = 0;
   for (final DownloadTaskEntry task in tasks) {
     final bool hasClear = task.actions.clear != null;
     final bool canDeleteFiles = downloadTaskCanDeleteFiles(task);
@@ -35,6 +37,9 @@ Future<bool?> showDownloadClearCompletedConfirm(
     if (hasClear && !canDeleteFiles) keepsFiles++;
     if (!hasClear && !canDeleteFiles) unsupported++;
     if (task.seeding && canDeleteFiles) seeding++;
+    if (canDeleteFiles && task.actions.deleteFilesRemovesLibraryEntries) {
+      removesLibraryEntries++;
+    }
   }
   final String message = <String>[
     t.download_clear_completed_confirm(n: tasks.length),
@@ -55,6 +60,10 @@ Future<bool?> showDownloadClearCompletedConfirm(
           leadingIcon: FushiIcons.deleteSweep,
           confirmLabel: t.clear,
           checkboxLabel: offerDeleteFiles ? t.download_task_delete_files : null,
+          // 只在勾选且确有条目会联动删库行时才说：不勾就不会发生。
+          checkedNote: removesLibraryEntries > 0
+              ? t.download_clear_completed_confirm_removes_library
+              : null,
           checkboxKey: const ValueKey<String>(
             'download-clear-completed-delete-files',
           ),
