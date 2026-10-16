@@ -64,10 +64,13 @@ void main() {
       );
       expect(full, contains('final AudioCue? anchor = _lookupCue;'));
       expect(full, contains('_lyricsCueList.indexOf(anchor)'));
-      expect(full, contains('cueContextNeighbors('));
+      // 切法 + 每句取自己 cue 的音频坐标，都在纯函数里（行为由
+      // mining_sentence_draft_test.dart 的 cueContextDraftSentences 组钉死）。
+      expect(full, contains('cueContextDraftSentences('));
       expect(full, contains('cues: _lyricsCueList,'));
-      // 每句音频区间与当前句 / 写卡同一条求值路径。
-      expect(full, contains('_sentenceAudioRangeFor('));
+      // 不得再走按查词句章节号换算位置的 _sentenceAudioRangeFor：相邻句跨章时会被
+      // 换算进本章、合并成整章区间（BUG-3417 复核）。
+      expect(full, isNot(contains('_sentenceAudioRangeFor(')));
       expect(full, contains('_miningDraft.setContext('));
     },
   );

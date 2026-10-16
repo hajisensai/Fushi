@@ -1,5 +1,7 @@
 import 'package:fushi_audio/fushi_audio.dart';
 
+import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
+
 /// 「选择句子上下文」对话框里可被手改文本的三种槽位。
 ///
 /// 用来在 UI ↔ 宿主 ↔ 草稿之间指明「改的是哪一句」，避免各层用裸字符串
@@ -377,5 +379,63 @@ AudioPlaybackRange? mergeMiningAudioRanges(List<AudioPlaybackRange?> ranges) {
   return (
     prev: cues.sublist(prevStart, anchorIndex),
     next: cues.sublist(anchorIndex + 1, nextEnd),
+  );
+}
+
+/// 「一条 cue 就是一句」表面（有声书歌词模式）的上下文句草稿：切法同
+/// [cueContextNeighbors]，每句的音频区间取**该 cue 自己**的起止与所属音频文件
+/// （[miningCueAudioRange]，与当前句同一套修零长 / 首尾留白 / A/V 偏移）。
+///
+/// BUG-3417：旧接线把相邻 cue 交给「按查词句章节号 + 句内字符位置求区间」的路径，
+/// 相邻句落在下一章 / 上一章时被换算到查词句所在章，合并后成了「本章开头 → 查词句
+/// 结尾」的整章区间；无位置信息的普通字幕又回落全文文本匹配，重复短句取到更早一句
+/// 的音频。相邻句本身就是 cue，它的音频坐标就是它自己——这里不经任何章号 / 文本
+/// 推断，也就不可能被带到别的章或别的同文句上。
+///
+/// [textOf] 给每条 cue 的展示文本（歌词模式与当前句同源，缺省取 `cue.text`）。
+/// 区间的 `audioFileIndex` 越出 `[0, audioFileCount)` 时该句只留文本（与当前句
+/// `_sentenceAudioRangeFor` 的越界判定一致）。纯函数，可单测。
+({List<MiningDraftSentence> prev, List<MiningDraftSentence> next})
+cueContextDraftSentences({
+  required List<AudioCue> cues,
+  required int anchorIndex,
+  required int prevCount,
+  required int nextCount,
+  required int audioFileCount,
+  String Function(AudioCue cue)? textOf,
+  int delayMs = 0,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kMiningTailPadMs,
+}) {
+  final ({List<AudioCue> prev, List<AudioCue> next}) around =
+      cueContextNeighbors(
+        cues: cues,
+        anchorIndex: anchorIndex,
+        prevCount: prevCount,
+        nextCount: nextCount,
+      );
+  MiningDraftSentence toEntry(AudioCue cue) {
+    final AudioPlaybackRange range = miningCueAudioRange(
+      cues: cues,
+      cue: cue,
+      delayMs: delayMs,
+      headPadMs: headPadMs,
+      tailPadMs: tailPadMs,
+    );
+    final bool fileKnown =
+        range.audioFileIndex >= 0 && range.audioFileIndex < audioFileCount;
+    return MiningDraftSentence(
+      sentence: textOf == null ? cue.text : textOf(cue),
+      audioRange: fileKnown ? range : null,
+    );
+  }
+
+  return (
+    prev: <MiningDraftSentence>[
+      for (final AudioCue cue in around.prev) toEntry(cue),
+    ],
+    next: <MiningDraftSentence>[
+      for (final AudioCue cue in around.next) toEntry(cue),
+    ],
   );
 }

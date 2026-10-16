@@ -8,7 +8,13 @@
 - **[x] ① 已修复** — 歌词模式分流到 `_setLyricsSentenceContextToDraft`（`reader_fushi/lyrics.part.dart`）：以查词锚点
   `_lookupCue` 在 `_lyricsCueList` 里的位置取相邻 cue 作上下文；切法抽成纯函数
   `cueContextNeighbors`（`fushi/lib/src/media/audiobook/mining_sentence_draft.dart`），视频字幕
-  `_setSentenceContextToDraft` 改用同一函数（不另写一份）。每句音频区间走 `_sentenceAudioRangeFor`，与当前句 / 写卡同源。提交见 PR。
-- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/mining_sentence_draft_test.dart`（`cueContextNeighbors` 切片 / 封顶 / 越界）；
+  `_setSentenceContextToDraft` 改用同一函数（不另写一份）。提交见 PR。
+  复核修正：初版每句音频区间走 `_sentenceAudioRangeFor`，它用的是**查词句**的章节号
+  （`reader_fushi/audiobook.part.dart` `_lookupSectionIndex`），相邻句在上一章 / 下一章时经
+  `mining_audio_clip.dart` TODO-956 分支被换算进查词句所在章，合并后成「本章开头 → 查词句结尾」整章区间
+  （探针实测：next=0-1000、merged=0-3000）；无位置的普通字幕回落全文文本匹配，重复短句取到更早一句（实测 0-700）。
+  改为纯函数 `cueContextDraftSentences` → `miningCueAudioRange`：每句取该 cue 自己的起止与音频文件
+  （同一套修零长 / 留白 / A/V 偏移），文本与当前句同源（`LyricsCueTextResolver`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/mining_sentence_draft_test.dart`（`cueContextNeighbors` 切片 / 封顶 / 越界；`cueContextDraftSentences` 章节交界加句不得跨章 / 整章区间、跨文件退化只合文本、同文短句取相邻 cue）；
   `fushi/test/pages/reader_lyrics_sentence_context_wiring_guard_test.dart`（阅读器歌词模式分流 + 视频共用同一函数的接线守卫）。
 - **备注**：未做真机复测（阅读器 WebView + 有声书播放器无头测不了，接线用源码守卫钉住）。

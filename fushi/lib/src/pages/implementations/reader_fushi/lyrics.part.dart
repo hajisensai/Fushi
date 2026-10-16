@@ -1297,46 +1297,32 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// `__lyricsCueContext.cueIndex`，见 lookup.part.dart）。上下文直接取它在
   /// [_lyricsCueList] 里的相邻 cue——与视频字幕同一个切法 [cueContextNeighbors]，
   /// 不再去正文 WebView 按 DOM 选区切句（歌词模式下正文没有选区，恒为空）。
-  /// 每句的音频区间走 [_sentenceAudioRangeFor]，与当前句、写卡同一条求值路径
-  /// （cue 自带的音频坐标 fragment 作句子位置），草稿合并后试听即所写。
+  /// 每句的音频区间取**该 cue 自己**的起止与音频文件（[cueContextDraftSentences]
+  /// → [miningCueAudioRange]），不走 [_sentenceAudioRangeFor]：后者按查词句的章节号
+  /// （[_lookupSectionIndex]）换算句子位置，相邻句跨章时会被换算进查词句所在章、
+  /// 合并成整章区间；无位置的普通字幕还会按文本回落到更早的同文句。
   /// 锚点不在歌词列表里时清空上下文，不拿错位的句子凑数。
   int _setLyricsSentenceContextToDraft(int prevCount, int nextCount) {
     final AudioCue? anchor = _lookupCue;
     final int anchorIndex = anchor == null
         ? -1
         : _lyricsCueList.indexOf(anchor);
-    final ({List<AudioCue> prev, List<AudioCue> next}) around =
-        cueContextNeighbors(
-          cues: _lyricsCueList,
-          anchorIndex: anchorIndex,
-          prevCount: prevCount,
-          nextCount: nextCount,
-        );
-    MiningDraftSentence toEntry(AudioCue cue) {
-      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-        cue.textFragmentId,
-      );
-      return MiningDraftSentence(
-        sentence: cue.text,
-        audioRange: _sentenceAudioRangeFor(
-          sentence: cue.text,
-          cue: cue,
-          normOffset: frag?.normCharStart,
-          normLength: frag == null
-              ? null
-              : frag.normCharEnd - frag.normCharStart,
-        ),
-      );
-    }
-
-    _miningDraft.setContext(
-      prev: <MiningDraftSentence>[
-        for (final AudioCue cue in around.prev) toEntry(cue),
-      ],
-      next: <MiningDraftSentence>[
-        for (final AudioCue cue in around.next) toEntry(cue),
-      ],
+    final AudiobookPlayerController? audioController = _audiobookController;
+    final EpubBook? book = _book;
+    final ({List<MiningDraftSentence> prev, List<MiningDraftSentence> next})
+    context = cueContextDraftSentences(
+      cues: _lyricsCueList,
+      anchorIndex: anchorIndex,
+      prevCount: prevCount,
+      nextCount: nextCount,
+      audioFileCount: audioController?.audioFiles.length ?? 0,
+      // 与当前句（_syncCueSentence）同源：歌词行展示的是正文文本。
+      textOf: book == null ? null : _lyricsCueTextResolverFor(book).textForCue,
+      delayMs: audioController?.delayMs.value ?? 0,
+      headPadMs: appModel.miningAudioHeadPadMs,
+      tailPadMs: appModel.miningAudioTailPadMs,
     );
+    _miningDraft.setContext(prev: context.prev, next: context.next);
     return _miningDraft.length;
   }
 }
