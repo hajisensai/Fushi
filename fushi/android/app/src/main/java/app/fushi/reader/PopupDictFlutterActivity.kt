@@ -52,6 +52,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         const val EXTRA_SUBTITLE_BOTTOM: String = "subtitleBottom"
 
         /**
+         * 截屏识字（BUG-3453）：被点字所在 ML Kit text block 的全文（块内各行按 `\n`
+         * 拼接）与 EXTRA_PROCESS_TEXT 那一行在块里的起始 UTF-16 偏移。Dart 查词窗据此截出
+         * 含被点字的整句作制卡 `{sentence}`；竖排 / 折行长句不再只剩被点的那一行。
+         * 缺省（旧入口 / 悬浮字幕 / 系统划词）时句子回落为整行，行为同 BUG-2900。
+         */
+        const val EXTRA_SOURCE_BLOCK: String = "sourceBlock"
+        const val EXTRA_SOURCE_BLOCK_OFFSET: String = "sourceBlockOffset"
+
+        /**
          * 悬浮球「剪贴板查词」：activity 拿到窗口焦点后**自己**读剪贴板再查。
          * Android 10+ 只有前台且有输入焦点的 app 能读剪贴板，后台的悬浮球服务读不到，
          * 所以不能由服务读好再塞进 EXTRA_PROCESS_TEXT。剪贴板为空时留一个只有搜索栏
@@ -124,7 +133,8 @@ class PopupDictFlutterActivity : FlutterActivity() {
         val charIndex: Int = extractCharIndex(intent)
         val anchor: IntArray? = extractAnchorRect(intent)
         val subtitle: IntArray? = extractSubtitleRect(intent)
-        PopupEngineHolder.setPendingText(text, charIndex, anchor, subtitle)
+        val sourceBlock: PopupEngineHolder.SourceBlock? = extractSourceBlock(intent)
+        PopupEngineHolder.setPendingText(text, charIndex, anchor, subtitle, sourceBlock)
         engineWasCold = PopupEngineHolder.ensureEngine(this)
         PopupEngineHolder.setOnFinish(this) { runOnUiThread { finish() } }
         super.onCreate(savedInstanceState)
@@ -136,7 +146,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
-            PopupEngineHolder.pushProcessText(text, charIndex, anchor, subtitle)
+            PopupEngineHolder.pushProcessText(text, charIndex, anchor, subtitle, sourceBlock)
             // 悬浮球空查词窗：热引擎上把空词也推过去，清掉上一次的词。剪贴板查词等拿到
             // 焦点读完剪贴板再决定推什么，避免先清空再填词闪一下。
             if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
@@ -167,6 +177,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
             extractCharIndex(intent),
             extractAnchorRect(intent),
             extractSubtitleRect(intent),
+            extractSourceBlock(intent),
         )
         clipboardReadPending = intent.getBooleanExtra(EXTRA_READ_CLIPBOARD, false)
         if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
@@ -285,6 +296,18 @@ class PopupDictFlutterActivity : FlutterActivity() {
      */
     private fun extractCharIndex(intent: Intent?): Int {
         return intent?.getIntExtra(EXTRA_CHAR_INDEX, -1) ?: -1
+    }
+
+    /**
+     * 截屏识字带来的所属块全文与本行在块里的起点（BUG-3453），没有就是 null。偏移越界
+     * 的载荷一律当作没有，Dart 侧回落为整行句子。
+     */
+    private fun extractSourceBlock(intent: Intent?): PopupEngineHolder.SourceBlock? {
+        if (intent == null) return null
+        val block: String = intent.getStringExtra(EXTRA_SOURCE_BLOCK) ?: return null
+        val offset: Int = intent.getIntExtra(EXTRA_SOURCE_BLOCK_OFFSET, -1)
+        if (offset < 0 || offset > block.length) return null
+        return PopupEngineHolder.SourceBlock(block, offset)
     }
 
     /**

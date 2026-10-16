@@ -32,6 +32,7 @@ import android.os.Looper;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.TextPaint;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -493,6 +494,9 @@ public class ScreenOcrService extends Service {
     private static List<ScreenOcrLayout.Line> toLines(@NonNull Text text) {
         List<ScreenOcrLayout.Line> out = new ArrayList<>();
         for (Text.TextBlock block : text.getTextBlocks()) {
+            // BUG-3453：先收齐本块留下的行，再把它们拼成块全文、记下每行偏移——竖排 /
+            // 折行的长句跨行，制卡句子要从块全文里截，不能只拿被点的那一行。
+            List<ScreenOcrLayout.Line> blockLines = new ArrayList<>();
             for (Text.Line line : block.getLines()) {
                 Rect box = line.getBoundingBox();
                 String value = line.getText();
@@ -516,8 +520,17 @@ public class ScreenOcrService extends Service {
                     glyphs = ScreenOcrLayout.proportionalGlyphs(
                             value, box.left, box.top, box.right, box.bottom, vertical);
                 }
-                out.add(new ScreenOcrLayout.Line(
+                blockLines.add(new ScreenOcrLayout.Line(
                         value, box.left, box.top, box.right, box.bottom, glyphs, vertical));
+            }
+            List<String> blockTexts = new ArrayList<>(blockLines.size());
+            for (ScreenOcrLayout.Line l : blockLines) blockTexts.add(l.text);
+            String blockText = TextUtils.join("\n", blockTexts);
+            int[] offsets = ScreenOcrLayout.blockLineOffsets(blockTexts);
+            for (int i = 0; i < blockLines.size(); i++) {
+                ScreenOcrLayout.Line l = blockLines.get(i);
+                out.add(new ScreenOcrLayout.Line(l.text, l.left, l.top, l.right, l.bottom,
+                        l.glyphs, l.vertical, blockText, offsets[i]));
             }
         }
         return out;
@@ -580,6 +593,10 @@ public class ScreenOcrService extends Service {
         intent.putExtra(Intent.EXTRA_PROCESS_TEXT, line.text);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX,
                 glyph != null ? glyph.start : -1);
+        // BUG-3453：所属块全文 + 本行在块里的起点，查词窗据此截出含被点字的整句作制卡
+        // {sentence}；EXTRA_PROCESS_TEXT 仍是整行（源文本条与扫描查词不变）。
+        intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK, line.blockText);
+        intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK_OFFSET, line.blockOffset);
         if (glyph != null) {
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_LEFT, glyph.left);
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_TOP, glyph.top);

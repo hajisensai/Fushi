@@ -4,28 +4,33 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
+/// BUG-3453：截屏识字带来的「被点字所在 OCR text block 全文 + 本行在块里的起点」。
+/// 只有截屏识字入口给；其它入口为 null（制卡句子回落为整行）。
+typedef PopupSourceBlock = ({String text, int offset});
+
+/// 原生侧推来的一次查词。
+typedef PopupProcessTextHandler =
+    void Function(
+      String text,
+      int charIndex,
+      Rect? anchor,
+      Rect? subtitle,
+      PopupSourceBlock? sourceBlock,
+    );
+
 class PopupChannel {
   PopupChannel._();
   static final PopupChannel instance = PopupChannel._();
 
   static const _channel = FushiChannels.popup;
 
-  void Function(String text, int charIndex, Rect? anchor, Rect? subtitle)?
-      _onNewProcessText;
+  PopupProcessTextHandler? _onNewProcessText;
 
-  void init({
-    void Function(String text, int charIndex, Rect? anchor, Rect? subtitle)?
-        onNewProcessText,
-  }) {
+  void init({PopupProcessTextHandler? onNewProcessText}) {
     _onNewProcessText = onNewProcessText;
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'onNewProcessText' && _onNewProcessText != null) {
-        final ({
-          String text,
-          int charIndex,
-          Rect? anchor,
-          Rect? subtitle
-        }) parsed = _parseProcessTextArgs(call.arguments);
+        final _ProcessText parsed = _parseProcessTextArgs(call.arguments);
         // 空词也放行：原生侧只在入口**有意**打开空查词窗时才推空词（悬浮球「查词」、
         // 剪贴板为空，见 PopupEngineHolder.pushProcessText 的 allowBlank），热页据此
         // 清掉上一次的结果、回到只有搜索栏的初始态。系统 PROCESS_TEXT 的偶发空选区
@@ -35,6 +40,7 @@ class PopupChannel {
           parsed.charIndex,
           parsed.anchor,
           parsed.subtitle,
+          parsed.sourceBlock,
         );
       }
     });
@@ -46,59 +52,113 @@ class PopupChannel {
             data.charIndex,
             data.anchor,
             data.subtitle,
+            data.sourceBlock,
           );
         }
       });
     }
   }
 
-  Future<({String? text, int charIndex, Rect? anchor, Rect? subtitle})>
-      getInitialProcessText() async {
+  Future<
+    ({
+      String? text,
+      int charIndex,
+      Rect? anchor,
+      Rect? subtitle,
+      PopupSourceBlock? sourceBlock,
+    })
+  >
+  getInitialProcessText() async {
     try {
-      final Object? result =
-          await _channel.invokeMethod<Object>('getInitialProcessText');
+      final Object? result = await _channel.invokeMethod<Object>(
+        'getInitialProcessText',
+      );
       if (result is Map) {
         final String? text = result['text']?.toString();
-        final int charIndex =
-            result['charIndex'] is int ? result['charIndex'] as int : -1;
+        final int charIndex = result['charIndex'] is int
+            ? result['charIndex'] as int
+            : -1;
         return (
           text: text,
           charIndex: charIndex,
           anchor: _parseAnchor(result['anchor']),
           subtitle: _parseAnchor(result['subtitle']),
+          sourceBlock: _parseSourceBlock(result),
         );
       }
       if (result is String) {
-        return (text: result, charIndex: -1, anchor: null, subtitle: null);
+        return (
+          text: result,
+          charIndex: -1,
+          anchor: null,
+          subtitle: null,
+          sourceBlock: null,
+        );
       }
-      return (text: null, charIndex: -1, anchor: null, subtitle: null);
+      return (
+        text: null,
+        charIndex: -1,
+        anchor: null,
+        subtitle: null,
+        sourceBlock: null,
+      );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('PopupChannel.getInitialProcessText', e, stack);
+      ErrorLogService.instance.log(
+        'PopupChannel.getInitialProcessText',
+        e,
+        stack,
+      );
       debugPrint('[Fushi-popup] getInitialProcessText failed: $e');
-      return (text: null, charIndex: -1, anchor: null, subtitle: null);
+      return (
+        text: null,
+        charIndex: -1,
+        anchor: null,
+        subtitle: null,
+        sourceBlock: null,
+      );
     }
   }
 
-  static ({String text, int charIndex, Rect? anchor, Rect? subtitle})
-      _parseProcessTextArgs(
-    Object? args,
-  ) {
+  static _ProcessText _parseProcessTextArgs(Object? args) {
     if (args is Map) {
       final String text = args['text']?.toString() ?? '';
-      final int charIndex =
-          args['charIndex'] is int ? args['charIndex'] as int : -1;
+      final int charIndex = args['charIndex'] is int
+          ? args['charIndex'] as int
+          : -1;
       return (
         text: text,
         charIndex: charIndex,
         anchor: _parseAnchor(args['anchor']),
         subtitle: _parseAnchor(args['subtitle']),
+        sourceBlock: _parseSourceBlock(args),
       );
     }
     if (args is String) {
-      return (text: args, charIndex: -1, anchor: null, subtitle: null);
+      return (
+        text: args,
+        charIndex: -1,
+        anchor: null,
+        subtitle: null,
+        sourceBlock: null,
+      );
     }
-    return (text: '', charIndex: -1, anchor: null, subtitle: null);
+    return (
+      text: '',
+      charIndex: -1,
+      anchor: null,
+      subtitle: null,
+      sourceBlock: null,
+    );
+  }
+
+  /// BUG-3453：截屏识字的所属块全文与本行起点。缺键 / 类型不对 / 偏移越界一律 null
+  /// （不抛），制卡句子回落为整行。
+  static PopupSourceBlock? _parseSourceBlock(Map<Object?, Object?> map) {
+    final Object? text = map['sourceBlock'];
+    final Object? offset = map['sourceBlockOffset'];
+    if (text is! String || offset is! int) return null;
+    if (offset < 0 || offset > text.length) return null;
+    return (text: text, offset: offset);
   }
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（物理像素 [left, top, right,
@@ -135,3 +195,11 @@ class PopupChannel {
     }
   }
 }
+
+typedef _ProcessText = ({
+  String text,
+  int charIndex,
+  Rect? anchor,
+  Rect? subtitle,
+  PopupSourceBlock? sourceBlock,
+});
