@@ -10,7 +10,7 @@ import 'package:fushi/src/anki/ankiconnect_addon_installer.dart'
 ///
 /// 为什么需要它：AnkiConnect 默认蹲 8765，这个端口在装了别的开发/游戏/加速工具的
 /// 机器上经常已经被别人占了。占用者**接受 TCP 连接却不按 AnkiConnect 应答**时，
-/// 用户能看到的只有一句超时——而真正的解法要同时改两处：Hibiki 这边的端口，和
+/// 用户能看到的只有一句超时——而真正的解法要同时改两处：Fushi 这边的端口，和
 /// Anki「工具 → 插件 → AnkiConnect → 配置」里的 `webBindPort`。少改一处就仍然连不上，
 /// 这正是这个流程劝退人的地方。这里把「挑一个空闲端口 + 两处一起写」收成一次点击。
 ///

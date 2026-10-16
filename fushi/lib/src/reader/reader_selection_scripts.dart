@@ -618,6 +618,347 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
     };
   })();
 }
+// 高亮条一律一个字高（用户 2026-10-15：「所有字体都要一个字高」）。阅读器里的高亮原本各画各的底色：
+// ::highlight()（查词 / 收藏 / 搜索）只能设 background-color，铺满整个文字盒；元素背景（有声书当前句
+// wrapper、ruby 分流 class、旧 WebView 的包裹 span）同样按文字盒铺。盒厚 = 字体 ascent + descent，随字体变
+// （Hiragino 1.14em、Noto Sans JP 约 1.45em），收不窄。现在所有高亮的底色都由这里统一画：
+// - 来源：CSS.highlights 里登记的 Range，加上带高亮 class 的元素（见 GROUPS），逐文本节点（跳过 rt / rp
+//   注音与 VN 未显现的字）取行片段。各路径自己的底色一律透明（reader_content_styles.dart），字色、收藏
+//   下划线、墨水屏线式标记仍由原来的 ::highlight / class 规则负责。
+// - 形状：沿块方向居中、厚 1em 的窄条；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
+//   wrapper 时也不留缝、不叠色，取代逐缝补 box-shadow 的旧做法）。
+// - 位置：body 里一个 z-index:-1 的绝对定位层，在正文之下、body 背景之上（body 是层叠上下文与包含块），
+//   跟正文一起滚动 / 翻页；不切文本节点，拖选每帧重画也不碰正文 DOM。
+// - 书自带底色（BUG-3421）：同一层叠上下文里，块级元素的背景画在 z-index:-1 层之后，书里 `p { background }`
+//   之类的段落 / 块底色会把 body 层的窄条整片盖掉。落在这种元素里的字，窄条改画进该元素自己的一层：
+//   元素标 data-fushi-hl-backdrop（CSS 给 isolation:isolate，自成层叠上下文，不改包含块与几何），层是它的
+//   末尾子元素、同样 z-index:-1——于是画在它的底色之上、它的字之下。底色元素不能挂子层（ruby 内部、表格
+//   行 / 行组等）时挂到它下面最近的可挂元素（同样在底色之后画）；用完即撤，书的底色本身一律不动。
+// - 叠放自下而上：有声书当前句 → 收藏 → 搜索 → 查词（BUG-125：查词压过当前句）。颜色由 CSS 按 data-hl
+//   给（fushi-hl-lane[data-hl=...]）。
+// 重画时机：CSS.highlights 增删、高亮 class 增删（MutationObserver），同一任务内合批到微任务，赶在本帧
+// 绘制前；窗口尺寸变化、字体加载完、正文样式表被换、图片加载完（重排）、阅读器重锚落定、VN 换屏。
+if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
+  window.__fushiLanes = (function() {
+    var HOST = 'fushi-hl-lanes';
+    var LANE = 'fushi-hl-lane';
+    var LANE_EM = 1;
+    var GROUPS = [
+      { name: 'fushi-sentence-audio', join: 2,
+        selector: '.fushi-sentence-audio-cue.fushi-sentence-audio-active, ruby.fushi-sentence-audio-ruby-active, .fushi-active' }
+    ].concat(['yellow', 'green', 'blue', 'pink', 'purple'].map(function(c) {
+      return { name: 'fushi-hl-' + c, join: 0.5, selector: '.fushi-hl-' + c + ', ruby.fushi-hl-' + c + '-ruby-active' };
+    })).concat([
+      { name: 'fushi-search', join: 0.5, selector: null },
+      { name: 'fushi-selection', join: 0.5, selector: 'ruby.fushi-selection-ruby-active, .fushi-dict-highlight' }
+    ]);
+    var BACKDROP = 'data-fushi-hl-backdrop';
+    // 不能挂窄条层的元素：ruby 内部（插子元素会打乱注音排版）、表格结构（行 / 行组 / 列不是普通盒）、
+    // 自己没有盒的（contents / none），以及阅读器自己的包裹元素（会被拆掉）。
+    var NO_LAYER_TAG = /^(ruby|rb|rt|rp|rtc|table|thead|tbody|tfoot|tr|colgroup|col|br|wbr|img|svg|math|video|audio|canvas|iframe|object)$/;
+    var NO_LAYER_DISPLAY = /^(contents|none|table|inline-table|table-row|table-row-group|table-header-group|table-footer-group|table-column|table-column-group|ruby|ruby-base|ruby-text|ruby-base-container|ruby-text-container)$/;
+    var CLASS = /(^|\s)fushi-(sentence-audio-active|sentence-audio-ruby-active|active|hl-[a-z-]+|selection-ruby-active|dict-highlight)(\s|$)/;
+    var host = null;
+    // 书底色元素 → 它里面的窄条层（见文件头「书自带底色」）。
+    var backdrops = new Map();
+    // 单次重画内的计算样式缓存：元素 → 是否自带底色 / 能否挂层。
+    var paintsMemo = null;
+    var dirty = {};
+    var queued = false;
+    var registry = function() {
+      return typeof CSS !== 'undefined' && CSS.highlights && window.__fushiCssHighlightsSupported ? CSS.highlights : null;
+    };
+    var groupOf = function(name) {
+      for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].name === name) return GROUPS[i];
+      return null;
+    };
+    var hostEl = function() {
+      var body = document.body;
+      if (!body) return null;
+      if (!host || host.parentNode !== body) {
+        var stale = body.querySelectorAll(':scope > ' + HOST);
+        for (var i = 0; i < stale.length; i++) stale[i].remove();
+        host = makeLayer();
+        body.appendChild(host);
+      }
+      return host;
+    };
+    var makeLayer = function() {
+      var layer = document.createElement(HOST);
+      layer.setAttribute('aria-hidden', 'true');
+      GROUPS.forEach(function(g) {
+        var el = document.createElement(HOST + '-group');
+        el.setAttribute('data-hl-group', g.name);
+        layer.appendChild(el);
+      });
+      return layer;
+    };
+    var styleOf = function(el) {
+      var known = paintsMemo && paintsMemo.get(el);
+      if (known) return known;
+      var cs = getComputedStyle(el);
+      var bg = cs.backgroundColor || '';
+      var clear = bg === '' || bg === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\)$/.test(bg);
+      // 行内盒（display:inline）的底色随行内内容一起画，自成层叠上下文也压不住它（Chromium 实测：
+      // isolation / position+z-index / opacity 都一样），给它挂层没用，按没有底色处理、也不在它里面挂层。
+      var inline = cs.display === 'inline';
+      var info = {
+        paints: !inline && (!clear || (!!cs.backgroundImage && cs.backgroundImage !== 'none')),
+        layerable: !inline && !NO_LAYER_TAG.test(el.localName) && !NO_LAYER_DISPLAY.test(cs.display) &&
+            el.localName.indexOf('fushi-') !== 0 && !(el.classList && el.classList.contains('fushi-sentence-audio-cue'))
+      };
+      if (paintsMemo) paintsMemo.set(el, info);
+      return info;
+    };
+    // 文本所在的、自带底色的最近祖先（到 body 为止）里挂窄条层的元素；没有底色 = null（画在 body 层）。
+    var backdropOf = function(parent) {
+      var below = [];
+      for (var el = parent; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        var info = styleOf(el);
+        if (info.paints) {
+          if (info.layerable) return el;
+          for (var i = below.length - 1; i >= 0; i--) if (styleOf(below[i]).layerable) return below[i];
+          return null;
+        }
+        below.push(el);
+      }
+      return null;
+    };
+    var layerFor = function(owner) {
+      if (!owner) return hostEl();
+      var layer = backdrops.get(owner);
+      if (!layer || layer.parentNode !== owner) {
+        if (layer) layer.remove();
+        layer = makeLayer();
+        owner.setAttribute(BACKDROP, '');
+        owner.appendChild(layer);
+        backdrops.set(owner, layer);
+      }
+      return layer;
+    };
+    // 空了的 / 主人已离开文档的书底色层撤掉，标记一并撤。
+    var pruneBackdrops = function() {
+      backdrops.forEach(function(layer, owner) {
+        var live = owner.isConnected && layer.parentNode === owner;
+        var used = live && Array.prototype.some.call(layer.children, function(g) { return !!g.firstChild; });
+        if (used) return;
+        layer.remove();
+        if (owner.isConnected) owner.removeAttribute(BACKDROP);
+        backdrops.delete(owner);
+      });
+    };
+    // 横排时文字盒中线不是汉字的中线：盒 = 字体 ascent + descent，多数日文字体 ascent 偏大，盒中线
+    // 比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体实测，Noto Serif TC 墨迹下沿出条 0.05em）。
+    // 含 CJK 的片段按这款字体里「国」的墨迹中线居中（canvas measureText，按字体缓存，字体加载完清空）；
+    // 纯西文与竖排（中心基线，盒本来就对称）按盒中线。返回盒中线 → 墨迹中线的偏移，向下为正。
+    var CJK = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
+    var measureCtx = null;
+    var shiftCache = {};
+    var cjkShift = function(cs, text) {
+      if (!CJK.test(text)) return 0;
+      var font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      if (Object.prototype.hasOwnProperty.call(shiftCache, font)) return shiftCache[font];
+      var shift = 0;
+      try {
+        if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+        measureCtx.font = font;
+        var m = measureCtx.measureText('国');
+        if (m.fontBoundingBoxAscent > 0 && m.actualBoundingBoxAscent > 0) {
+          shift = ((m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) -
+              (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent)) / 2;
+        }
+      } catch (e) {}
+      shiftCache[font] = shift;
+      return shift;
+    };
+    // 一个文本节点 [start, end) 的行片段。
+    var nodeRects = function(node, start, end, seen, out) {
+      var parent = node.parentElement;
+      if (!parent || end <= start) return;
+      // VN 逐字显现时未显现的字（data-fushi-visual-novel-unrevealed）是 visibility:hidden 的，窄条不能先露出来。
+      if (parent.closest('rt, rp, [data-fushi-visual-novel-unrevealed], ' + HOST)) return;
+      if (seen) {
+        if (seen.indexOf(node) >= 0) return;
+        seen.push(node);
+      }
+      var r = document.createRange();
+      r.setStart(node, start);
+      r.setEnd(node, end);
+      var cs = getComputedStyle(parent);
+      var em = parseFloat(cs.fontSize) || 16;
+      var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+      var shift = vertical ? 0 : cjkShift(cs, node.data.slice(start, end));
+      var owner = backdropOf(parent);
+      var rects = r.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        if (rects[i].width > 0.5 && rects[i].height > 0.5) out.push({ r: rects[i], em: em, v: vertical, shift: shift, o: owner });
+      }
+    };
+    // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
+    // 所以逐文本节点取。
+    var rangeRects = function(range, out) {
+      var root = range.commonAncestorContainer;
+      if (!root || !root.isConnected) return;
+      var visit = function(node) {
+        var start = node === range.startContainer ? range.startOffset : 0;
+        var end = node === range.endContainer ? range.endOffset : node.data.length;
+        nodeRects(node, start, end, null, out);
+      };
+      if (root.nodeType === 3) { visit(root); return; }
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (range.intersectsNode(n)) visit(n);
+      }
+    };
+    var elementRects = function(el, seen, out) {
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) nodeRects(n, 0, n.data.length, seen, out);
+    };
+    // 行片段 → 块方向居中的 1em 窄条（盒本身比 1em 薄就按盒厚）。同一行（中线、厚度一致）里相隔不超过
+    // join 个字的片段并成一条。
+    var lanes = function(pieces, join) {
+      var items = pieces.map(function(p) {
+        var r = p.r;
+        var thick = p.v ? r.width : r.height;
+        return {
+          v: p.v, em: p.em,
+          lane: Math.min(thick, p.em * LANE_EM),
+          mid: p.v ? r.left + r.width / 2 : r.top + r.height / 2 + p.shift,
+          a: p.v ? r.top : r.left,
+          b: p.v ? r.bottom : r.right
+        };
+      });
+      items.sort(function(x, y) { return Math.abs(x.mid - y.mid) >= 1 ? x.mid - y.mid : x.a - y.a; });
+      var out = [];
+      items.forEach(function(it) {
+        var prev = out[out.length - 1];
+        if (prev && prev.v === it.v && Math.abs(prev.mid - it.mid) < 1 && Math.abs(prev.lane - it.lane) < 1 &&
+            it.a <= prev.b + join * it.em) {
+          prev.b = Math.max(prev.b, it.b);
+          return;
+        }
+        out.push(it);
+      });
+      return out;
+    };
+    var paintGroup = function(group, reg) {
+      var pieces = [];
+      var highlight = reg ? reg.get(group.name) : null;
+      if (highlight) highlight.forEach(function(range) { rangeRects(range, pieces); });
+      if (group.selector) {
+        var seen = [];
+        var els = document.body.querySelectorAll(group.selector);
+        for (var i = 0; i < els.length; i++) elementRects(els[i], seen, pieces);
+      }
+      // 按所在的层分开并条：书底色元素里的字进它自己的层，其余进 body 层。
+      var byLayer = new Map();
+      byLayer.set(hostEl(), []);
+      backdrops.forEach(function(layer) { byLayer.set(layer, []); });
+      pieces.forEach(function(p) {
+        var layer = layerFor(p.o);
+        if (!byLayer.has(layer)) byLayer.set(layer, []);
+        byLayer.get(layer).push(p);
+      });
+      byLayer.forEach(function(own, layer) {
+        var el = layer.querySelector(':scope > [data-hl-group="' + group.name + '"]');
+        if (!el) return;
+        var origin = own.length ? layer.getBoundingClientRect() : null;
+        var html = '';
+        lanes(own, group.join).forEach(function(l) {
+          var x = l.v ? l.mid - l.lane / 2 : l.a;
+          var y = l.v ? l.a : l.mid - l.lane / 2;
+          var w = l.v ? l.lane : l.b - l.a;
+          var h = l.v ? l.b - l.a : l.lane;
+          html += '<' + LANE + ' data-hl="' + group.name + '" style="left:' + (x - origin.left).toFixed(2) +
+              'px;top:' + (y - origin.top).toFixed(2) + 'px;width:' + w.toFixed(2) +
+              'px;height:' + h.toFixed(2) + 'px"></' + LANE + '>';
+        });
+        if (el.innerHTML !== html) el.innerHTML = html;
+      });
+    };
+    var flush = function() {
+      queued = false;
+      var names = dirty;
+      dirty = {};
+      if (!hostEl()) return;
+      var reg = registry();
+      paintsMemo = new Map();
+      try {
+        GROUPS.forEach(function(g) {
+          if (names[g.name]) paintGroup(g, reg);
+        });
+      } finally {
+        paintsMemo = null;
+      }
+      pruneBackdrops();
+    };
+    var schedule = function(name) {
+      if (name === undefined) {
+        GROUPS.forEach(function(g) { dirty[g.name] = true; });
+      } else if (groupOf(name)) {
+        dirty[name] = true;
+      } else {
+        return;
+      }
+      if (queued) return;
+      queued = true;
+      Promise.resolve().then(flush);
+    };
+    // 元素 class 变化 → 对应层重画。窄条层自己的变动不算。
+    var touched = function(node) {
+      if (!node || node.nodeType !== 1) return false;
+      if (CLASS.test(node.className && node.className.baseVal === undefined ? node.className : '')) return true;
+      return !!(node.querySelector && node.querySelector(
+          '.fushi-sentence-audio-active, .fushi-sentence-audio-ruby-active, .fushi-active, [class*="fushi-hl-"], ' +
+          '.fushi-selection-ruby-active, .fushi-dict-highlight'));
+    };
+    var onMutations = function(records) {
+      var hit = false;
+      for (var i = 0; i < records.length && !hit; i++) {
+        var rec = records[i];
+        if (rec.target && rec.target.closest && rec.target.closest(HOST)) continue;
+        if (rec.type === 'attributes') {
+          hit = CLASS.test(rec.oldValue || '') || touched(rec.target);
+        } else {
+          for (var a = 0; a < rec.addedNodes.length && !hit; a++) hit = touched(rec.addedNodes[a]);
+          for (var d = 0; d < rec.removedNodes.length && !hit; d++) hit = touched(rec.removedNodes[d]);
+        }
+      }
+      if (hit) schedule();
+    };
+    var reg = registry();
+    if (reg && !reg.__fushiLanesHooked) {
+      reg.__fushiLanesHooked = true;
+      var set = reg.set, del = reg.delete, clear = reg.clear;
+      reg.set = function(name, value) { var res = set.call(this, name, value); schedule(name); return res; };
+      reg.delete = function(name) { var res = del.call(this, name); schedule(name); return res; };
+      reg.clear = function() { var res = clear.call(this); schedule(); return res; };
+    }
+    var repaintAll = function() { schedule(); };
+    if (typeof window.addEventListener === 'function') window.addEventListener('resize', repaintAll);
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
+      document.fonts.addEventListener('loadingdone', function() { shiftCache = {}; repaintAll(); });
+    }
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('load', function(e) {
+        if (e.target && e.target.tagName === 'IMG') repaintAll();
+      }, true);
+    }
+    var observe = function() {
+      if (!window.MutationObserver || !document.body) return;
+      new MutationObserver(onMutations).observe(document.body, {
+        subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true
+      });
+      if (document.head) new MutationObserver(repaintAll).observe(document.head, { childList: true, characterData: true, subtree: true });
+      schedule();
+    };
+    if (typeof document !== 'undefined') {
+      if (document.body) observe();
+      else if (typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', observe);
+    }
+    return { repaint: function(name) { schedule(name); }, flush: flush, laneEm: LANE_EM };
+  })();
+}
 window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press selection anchor.

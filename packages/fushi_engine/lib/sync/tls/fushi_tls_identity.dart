@@ -143,7 +143,7 @@ class FushiTlsIdentityStore {
 
     final String commonName = Platform.localHostname.isNotEmpty
         ? Platform.localHostname
-        : 'hibiki-device';
+        : 'fushi-device';
     final List<String> ipv4 = await _localIpv4Addresses();
 
     final ({String certificatePem, String privateKeyPem}) generated =

@@ -426,7 +426,7 @@ class MangaOcrHostJobManager {
   }
 
   /// 卷名 → 文件系统安全的确定性目录 slug（FNV-1a 64 位十六进制，委托
-  /// hibiki_core 单一真相源；输出与历史手写副本逐字节一致——含负哈希带 `-`
+  /// fushi_core 单一真相源；输出与历史手写副本逐字节一致——含负哈希带 `-`
   /// 号的历史形态，slug 已固化进 `vol_<slug>` 断点缓存目录名，不得漂移）。
   static String _stableSlug(String title) => fnv1a64Hex(utf8.encode(title));
 

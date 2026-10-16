@@ -1,0 +1,12 @@
+## BUG-3370 · video-home-next-up-skips-open-only-episode
+- **报告**：2026-10-14（用户：K-ON! 合集看完一集后「继续观看」里没有它，只在「下一集」行显示「下一集 · 第 30 集」）
+- **真实性**：✅ 真 bug。本机库 collection 44（59 成员，含 S00 特典穿插）：S02E07 已完成，自动连播进 S02E08 后几秒退出，E08 只有观看时刻、进度 0、未完成。首页锚点 `latestPlayedSeriesIndex`（`fushi/lib/src/media/video/video_home_layout.dart`）把 E08 选为「最近播放」：`continueWatchingSeriesIndex` 因进度 0 返回 null → 整部从「继续观看」消失；`nextEpisodeAfterLatestPlayed` 一律取锚点 +1 → 跳到 E09（合集第 30 位）→ E08 在首页无入口。「已更新未看」行（`selectVideoSubscriptionUpdate`，`video_subscription_updates.dart`）取「锚点之后」第一集未看，同样跳过 E08。详情大卡 `continueMemberIndex`（`fushi/lib/src/media/collections/collection_continue.dart`）对同一状态停在 E08——三处给三个答案。
+- **判据（三处入口唯一口径）**：
+  - **锚点**（「最近播放」）只有一个实现 `latestPlayedMemberIndex`（`collection_continue.dart`）：`lastPlayedAt` 最大者（并列取靠后）；无任何时刻的旧库退回位置最靠后的有痕迹成员；全无痕迹 → null。**只打开过、进度 0、未完成**的成员同样是锚点——时刻是「用户刚才在看哪一集」的直接事实（BUG-1542）。首页 `latestPlayedSeriesIndex` 与大卡 `continueMemberIndex` 都委托它。
+  - **继续观看**：锚点未完成（有进度或只打开过）→ 锚点；已完成 → 下一集；整部看完 / 全无痕迹 → 不占行。与大卡同答案（大卡全无痕迹时给第 1 集，整部看完时停在最后一集，这两处是「不占行」与「大卡总有目标」的固有差别）。
+  - **下一集**：锚点已开始看（完成或有进度）→ 锚点 +1（没有就不占行）；锚点只打开过 → 锚点自身（它就是还没看的下一集）。
+  - **已更新未看**：从「下一集」目标起的第一集未看；之后没有 → 全合集第一集未看。
+  - 结果：相邻集（看完 7、8 只打开过）三处都是第 8 集；跳集（看完 7、跳到 12 几秒退出）三处都是第 12 集；只打开过第 1 集几秒 → 继续观看 / 下一集 / 大卡都是第 1 集（合集不再从首页消失）；全部未碰 → 首页两行不占，大卡从第 1 集起。
+- **[x] ① 已修复** — `c7fa686cbb` 初版让首页锚点跳过只打开过的集，导致与大卡分叉（跳集时大卡第 12 集、首页第 8 集）且只碰过一集的合集从首页消失；本轮改为上面的共享锚点 `latestPlayedMemberIndex` + 「下一集」对只打开过的锚点停在它自身 + 「已更新未看」从下一集目标起算；删掉无人使用的 `VideoSeriesPlaybackState.hasTrace`，新增 `VideoSeriesPlaybackState.progress` / `CollectionMemberProgress.hasStarted`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_home_layout_test.dart` group「三处入口同一答案 (BUG-3370)」（相邻集 / 跳集 / 仅一集 0 进度 / 全部未碰 / 有进度锚点，逐条断言继续观看、下一集、`continueMemberIndex` 同答案）；`fushi/test/media/video/video_subscription_updates_test.dart`「最近播放那集只打开过（进度 0）→ 目标是它自己」。
+- **备注**：E08 放了约 17 秒（study_segments 10-13 22:32:39–22:32:56）却存成进度 0，按代码路径看本地存进度没有最小阈值（`video_fushi_page.dart` `_persistPosition` → `updatePosition` 无条件写），不是有意设计；DB 已被今天再次打开覆盖，无法复原当时现场，未单独立案。

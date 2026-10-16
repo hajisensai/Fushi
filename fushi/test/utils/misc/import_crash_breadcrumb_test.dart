@@ -12,7 +12,7 @@ void main() {
   late Directory tmp;
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('hibiki_breadcrumb_test');
+    tmp = Directory.systemTemp.createTempSync('fushi_breadcrumb_test');
   });
 
   tearDown(() {

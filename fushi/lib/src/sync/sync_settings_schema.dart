@@ -125,7 +125,7 @@ SettingsDestination buildSyncBackupDestination() {
       // ── Group 1: Sync method — the backend + its own auth/config ──────
       // Each control is scoped to the backend it actually applies to:
       // OAuth account row for cloud backends; credential box for WebDAV/FTP/
-      // SFTP; URL list + LAN discovery for the Hibiki P2P backend.
+      // SFTP; URL list + LAN discovery for the Fushi P2P backend.
       SettingsSection(
         id: 'sync.method.section',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -158,7 +158,7 @@ SettingsDestination buildSyncBackupDestination() {
             child: _buildSyncServerSettingsPage,
           ),
           // 互联被选为同步方式时的指引行（BUG-1088）：连接配置（URL/token/配对/
-          // LAN 发现/host 开关）在独立的「Hibiki 互联」分类里，这里只指路不复制。
+          // LAN 发现/host 开关）在独立的「Fushi 互联」分类里，这里只指路不复制。
           SettingsStatusItem(
             id: 'sync.interconnect_config_note',
             title: t.sync_backend_fushi_server,
@@ -247,7 +247,7 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncVideoFilesEnabled(value);
             },
           ),
-          // 远端占位卡开关抽成共享 builder：同步内容分类与 Hibiki 互联分类共享同一份
+          // 远端占位卡开关抽成共享 builder：同步内容分类与 Fushi 互联分类共享同一份
           // 定义（占位卡渲染的是互联对端的远端条目，逻辑上属互联，故互联分类也提供）。
           buildShowRemoteEntriesItem(),
           // 书架上「仅从本机移除」的远端书找回列表（反馈 nvlhtczbro）：紧挨着
@@ -530,7 +530,7 @@ SettingsSection buildDataStorageLocationSection() {
   );
 }
 
-/// Hibiki 互联独立一级分类：设备直连（client 连接配置 + LAN 发现）与本机作为
+/// Fushi 互联独立一级分类：设备直连（client 连接配置 + LAN 发现）与本机作为
 /// 服务器（host 模式）。与 [buildSyncBackupDestination] 同库定义，共享
 /// `_syncSettings` 私有状态与全部互联 widget；配置区可见性仍以「互联被选为
 /// 同步方式」门控（与拆分前在同步分类内的行为一致，零行为变化），未启用时
@@ -910,7 +910,7 @@ SettingsDestination _buildInterconnectDevicesPage() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         items: <SettingsItem>[
           SettingsCustomItem(
-            id: 'sync.hibiki_server_config',
+            id: 'sync.fushi_server_config',
             icon: FushiIcons.devices,
             builder: (SettingsContext ctx) =>
                 _FushiServerConfigWidget(settingsContext: ctx),
@@ -1023,7 +1023,7 @@ SettingsDestination _buildInterconnectHostPage() {
   );
 }
 
-/// 远端占位卡开关。同步内容分类与 Hibiki 互联分类共享同一份定义（单一真相源）：
+/// 远端占位卡开关。同步内容分类与 Fushi 互联分类共享同一份定义（单一真相源）：
 /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4），书架/视频页主网格是否把「远端有、
 /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。纯显示偏好
 /// （PreferencesRepository），默认开；关闭时占位卡全部不渲染。离线/未配对/后端不可达
@@ -1095,7 +1095,7 @@ void resetSyncSettingsStateForTest() {
   _activeSyncOwner = null;
 }
 
-/// Whether this device is actively HOSTING a Hibiki interconnect server — the
+/// Whether this device is actively HOSTING a Fushi interconnect server — the
 /// only role with no outbound "sync now" / "compare" (BUG-084). Requires BOTH
 /// the persisted host flag AND interconnect being enabled: a stale serverEnabled
 /// left over from a past interconnect session must NOT gate manual sync when
@@ -1172,7 +1172,7 @@ class _SyncSettingsState {
   bool _loaded = false;
   bool _loading = false;
 
-  /// Bumped whenever the persisted Hibiki *client* config (URLs / token) is
+  /// Bumped whenever the persisted Fushi *client* config (URLs / token) is
   /// mutated from outside the client-config widget (e.g. LAN pairing). The
   /// client-config widget listens and reloads — this is the single source of
   /// truth replacing the previous "loaded once in initState" stale state.
@@ -1200,7 +1200,7 @@ class _SyncSettingsState {
     _settingsContext.refresh();
   }
 
-  /// Mutual-exclusion role state for the Hibiki interconnect: a device may be a
+  /// Mutual-exclusion role state for the Fushi interconnect: a device may be a
   /// host (server on, others connect to it) OR a client (connected outward to a
   /// peer), never both. The two flags below are the shared truth the server and
   /// client widgets read to gate each other; [roleRevision] notifies on change.

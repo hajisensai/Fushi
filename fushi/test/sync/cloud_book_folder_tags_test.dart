@@ -258,7 +258,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_cloud_book_tags_pp');
+        Directory.systemTemp.createTempSync('fushi_cloud_book_tags_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -278,7 +278,7 @@ void main() {
 
   Directory freshTemp() {
     final Directory d =
-        Directory.systemTemp.createTempSync('hibiki_cloud_book_tags_tmp');
+        Directory.systemTemp.createTempSync('fushi_cloud_book_tags_tmp');
     addTearDown(() {
       try {
         if (d.existsSync()) d.deleteSync(recursive: true);

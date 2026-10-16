@@ -31,7 +31,7 @@ void main() {
 
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
-    root = await Directory.systemTemp.createTemp('hibiki-import-segments-');
+    root = await Directory.systemTemp.createTemp('fushi-import-segments-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     await database.upsertMangaExtensionStore(
       MangaExtensionStoresCompanion.insert(

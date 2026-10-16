@@ -34,7 +34,6 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/ocr/baberu_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/ctc_column_ocr_recognizer.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
@@ -73,20 +72,18 @@ OcrPlatform resolveOcrPlatform(String operatingSystem) {
 
 /// 模型文件的绝对路径（isolate 参数，字段全 String 可跨 isolate 发送）。
 ///
-/// 块识别主路径二选一：[ctcRecPath] 非空 = 逐列 CTC；否则必须带 [baberu]。两者都
-/// 没有的路径组合在 isolate 里建会话时直接 [StateError]。
+/// 块识别主路径目前只有逐列 CTC：[ctcRecPath] 必须非空，空的路径组合在 isolate
+/// 里建会话时直接 [StateError]（2026-10 删除 Baberu 后不再有非 CTC 的块识别器）。
 class MangaOcrModelPaths {
   const MangaOcrModelPaths({
     required this.detectorPath,
     this.ppDetPath = '',
     this.ppRecPath = '',
     this.ppRecDictPath = '',
-    this.baberu,
     this.ctcRecPath = '',
   });
 
   final String detectorPath;
-  final BaberuOcrModelPaths? baberu;
 
   /// 逐列 CTC 的列识别 rec（漫画微调的 PP-OCRv6）；空 = 不是 CTC 模型。
   final String ctcRecPath;
@@ -95,20 +92,6 @@ class MangaOcrModelPaths {
   final String ppDetPath;
   final String ppRecPath;
   final String ppRecDictPath;
-}
-
-class BaberuOcrModelPaths {
-  const BaberuOcrModelPaths({
-    required this.visionPath,
-    required this.prefillPath,
-    required this.stepPath,
-    required this.vocabPath,
-  });
-
-  final String visionPath;
-  final String prefillPath;
-  final String stepPath;
-  final String vocabPath;
 }
 
 /// 整卷任务请求。
@@ -308,13 +291,11 @@ class OcrAccelerationPlan {
   MangaOcrAcceleration toAcceleration({
     required OcrExecutionProvider detection,
     required OcrExecutionProvider recognition,
-    OcrExecutionProvider? recognitionDecoder,
     List<String> runtimeDegradeReasons = const <String>[],
   }) {
     return MangaOcrAcceleration(
       detection: detection,
       recognition: recognition,
-      recognitionDecoder: recognitionDecoder,
       degradeReasons: List<String>.unmodifiable(<String>[
         ...degradeReasons,
         ...runtimeDegradeReasons,
@@ -390,7 +371,7 @@ int? ocrIntraOpNumThreads({
   required int processorCount,
 }) => platform == OcrPlatform.windows ? processorCount.clamp(1, 2) : null;
 
-/// isolate 内已建好的一套推理对象（检测 + 块识别器（逐列 CTC / Baberu）+
+/// isolate 内已建好的一套推理对象（检测 + 块识别器（逐列 CTC）+
 /// PP-OCRv6 行 det/rec + 路由识别器）。
 ///
 /// 字段在 [_openIsolateOcrEngine] 里**边建边赋值**：建到一半抛异常时，已建好的
@@ -407,7 +388,6 @@ class _IsolateOcrEngine {
   /// 补检（检测器弱候选复核，仅逐列 CTC 模式）：只引用 [lineDetector] /
   /// [columnRecognizer] 的会话，不另持有会话，关闭时置空即可。
   OcrPageTextSweeper? sweeper;
-  final List<OcrSession> baberuSessions = <OcrSession>[];
 
   /// 逐个关闭（幂等、吞单个关闭错误）：建到一半时 [recognizer] 还是 null，只关
   /// 它会漏掉已建好的会话，所以每个持有会话的对象各关各的。
@@ -422,12 +402,6 @@ class _IsolateOcrEngine {
     this.columnRecognizer = null;
     recognizer = null;
     sweeper = null;
-    for (final OcrSession session in baberuSessions) {
-      try {
-        await session.close();
-      } catch (_) {}
-    }
-    baberuSessions.clear();
     try {
       await detector?.close();
     } catch (_) {}
@@ -518,7 +492,6 @@ Future<void> _openIsolateOcrEngine(
       ),
     );
   }
-  final BaberuOcrModelPaths? baberu = modelPaths.baberu;
 
   // PP-OCRv6 det 与字典：横排行路径要用，逐列 CTC 的列检测也用同一个会话，所以
   // 按需建一次、两处共用。
@@ -540,88 +513,37 @@ Future<void> _openIsolateOcrEngine(
     ),
   );
 
-  late final OcrRecognizer primary;
-  if (modelPaths.ctcRecPath.isNotEmpty) {
-    // 逐列 CTC：整块交它的块逐列读（漫画微调的 PP-OCRv6 rec），每列的文本与列框
-    // 直接交回，不再按字格估算切分。
-    final PpOcrLineRecognizer columns = engine.columnRecognizer =
-        PpOcrLineRecognizer(
-          await plan.createSession(
-            factory,
-            modelPaths.ctcRecPath,
-            providers: recognitionProviders,
-            onProviderResolved: (OcrProviderResolution resolution) {
-              recognitionEffective = resolution.effective;
-              record('recognition ctc columns', resolution);
-            },
-          ),
-          vocab: await ppVocab(),
-        );
-    primary = CtcColumnOcrRecognizer(
-      lineDetector: await openLineDetector(),
-      lineRecognizer: columns,
-    );
-  } else if (baberu != null) {
-    // The fixed FP16 vision graph is verified on Windows DirectML. Decoder KV
-    // transfers made full-DML slower, so both decoder sessions stay on CPU.
-    final List<OcrExecutionProvider> visionProviders =
-        platform == OcrPlatform.windows &&
-            availableProviders.contains(OcrExecutionProvider.directml)
-        ? const <OcrExecutionProvider>[
-            OcrExecutionProvider.directml,
-            OcrExecutionProvider.cpu,
-          ]
-        : const <OcrExecutionProvider>[OcrExecutionProvider.cpu];
-    Future<OcrSession> openBaberu(
-      String path,
-      List<OcrExecutionProvider> providers,
-    ) async {
-      final OcrSession session = await plan.createSession(
-        factory,
-        path,
-        providers: providers,
-        onProviderResolved: (OcrProviderResolution resolution) {
-          if (path == baberu.visionPath) {
-            recognitionEffective = resolution.effective;
-          }
-          record(p.basename(path), resolution);
-        },
-      );
-      engine.baberuSessions.add(session);
-      return session;
-    }
-
-    final OcrSession vision = await openBaberu(
-      baberu.visionPath,
-      visionProviders,
-    );
-    final OcrSession prefill = await openBaberu(
-      baberu.prefillPath,
-      const <OcrExecutionProvider>[OcrExecutionProvider.cpu],
-    );
-    final OcrSession step = await openBaberu(
-      baberu.stepPath,
-      const <OcrExecutionProvider>[OcrExecutionProvider.cpu],
-    );
-    primary = BaberuOcrRecognizer(
-      visionSession: vision,
-      prefillSession: prefill,
-      stepSession: step,
-      vocabJson: await File(baberu.vocabPath).readAsString(),
-    );
-  } else {
+  if (modelPaths.ctcRecPath.isEmpty) {
     throw StateError(
       'manga OCR model paths name no block recognizer '
-      '(expected a CTC column rec or a Baberu graph set)',
+      '(expected a CTC column rec)',
     );
   }
+  // 逐列 CTC：整块交它的块逐列读（漫画微调的 PP-OCRv6 rec），每列的文本与列框
+  // 直接交回，不再按字格估算切分。
+  final PpOcrLineRecognizer columns = engine.columnRecognizer =
+      PpOcrLineRecognizer(
+        await plan.createSession(
+          factory,
+          modelPaths.ctcRecPath,
+          providers: recognitionProviders,
+          onProviderResolved: (OcrProviderResolution resolution) {
+            recognitionEffective = resolution.effective;
+            record('recognition ctc columns', resolution);
+          },
+        ),
+        vocab: await ppVocab(),
+      );
+  final OcrRecognizer primary = CtcColumnOcrRecognizer(
+    lineDetector: await openLineDetector(),
+    lineRecognizer: columns,
+  );
   // 横排行路径：PP-OCRv6 small det/rec 与块识别器同一组 provider（都是识别侧）；
   // 建会话时的降级同样经 record 留痕。
   final PpOcrLineDetector lineDetector = await openLineDetector();
-  final PpOcrLineRecognizer? columns = engine.columnRecognizer;
   // 横排行：逐列 CTC 的漫画 rec 与横排行共用同一个模型文件时直接复用那个会话。
   final PpOcrLineRecognizer lineRecognizer = engine.lineRecognizer =
-      columns != null && modelPaths.ppRecPath == modelPaths.ctcRecPath
+      modelPaths.ppRecPath == modelPaths.ctcRecPath
       ? columns
       : PpOcrLineRecognizer(
           await plan.createSession(
@@ -638,10 +560,10 @@ Future<void> _openIsolateOcrEngine(
     lineDetector: lineDetector,
     lineRecognizer: lineRecognizer,
   );
-  // 补检只在逐列 CTC 下开：补回的块靠识别置信度把关，只有漫画 CTC 权重对装饰字
+  // 补检用逐列 CTC 的漫画 rec：补回的块靠识别置信度把关，只有漫画 CTC 权重对装饰字
   // 读得可靠（用户真实页的「オキテ」，通用 PP rec 以高置信度读成「才半元」）。
   // 文字图会话没有检测器候选可复核，不建。
-  if (columns != null && !textImagesOnly) {
+  if (!textImagesOnly) {
     engine.sweeper = PpOcrPageTextSweeper(
       lineDetector: lineDetector,
       lineRecognizer: columns,
@@ -650,7 +572,6 @@ Future<void> _openIsolateOcrEngine(
   final MangaOcrAcceleration acceleration = plan.toAcceleration(
     detection: detectionEffective,
     recognition: recognitionEffective,
-    recognitionDecoder: baberu == null ? null : OcrExecutionProvider.cpu,
     runtimeDegradeReasons: runtimeDegradeReasons,
   );
   developer.log('manga OCR acceleration: $acceleration', name: kOcrLogName);
@@ -686,9 +607,8 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     // 缓存目录带上本机已安装模型的内容指纹：上游换模型后旧页缓存自然失效，
     // 不会与新模型的结果混进同一卷（BUG-1173）。指纹按 (size, mtime) 记忆化，
     // 常态只做几次 stat。
-    final MangaOcrLocalModel jobModel = args.modelPaths.ctcRecPath.isNotEmpty
-        ? MangaOcrLocalModel.mangaCtc
-        : MangaOcrLocalModel.baberu;
+    // 块识别器只剩逐列 CTC（[_openIsolateOcrEngine] 已拒绝没有 CTC rec 的路径）。
+    const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
     final String engineSignature =
         args.engineSignature ??
         await model_fp.resolveLocalMangaOcrEngineSignature(
@@ -1516,31 +1436,6 @@ class MangaOcrServiceImpl
             kPpOcrRecDictFileName,
           ),
           ctcRecPath: ctcRecPath,
-        );
-      case MangaOcrLocalModel.baberu:
-        return MangaOcrModelPaths(
-          detectorPath: pathOf(MangaOcrModelRole.detector, '.onnx'),
-          ppDetPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrDetFileName),
-          ppRecPath: pathOf(MangaOcrModelRole.recognizer, kPpOcrRecFileName),
-          ppRecDictPath: pathOf(
-            MangaOcrModelRole.recognizer,
-            kPpOcrRecDictFileName,
-          ),
-          baberu: BaberuOcrModelPaths(
-            visionPath: pathOf(
-              MangaOcrModelRole.recognizer,
-              'vision_fp16.onnx',
-            ),
-            prefillPath: pathOf(
-              MangaOcrModelRole.recognizer,
-              'decoder_prefill_int8.onnx',
-            ),
-            stepPath: pathOf(
-              MangaOcrModelRole.recognizer,
-              'decoder_step_int8.onnx',
-            ),
-            vocabPath: pathOf(MangaOcrModelRole.recognizer, 'vocab.json'),
-          ),
         );
     }
   }

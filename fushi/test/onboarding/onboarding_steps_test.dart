@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 
 List<OnboardingStepId> _steps(
@@ -6,13 +7,14 @@ List<OnboardingStepId> _steps(
   bool browserExtensionAvailable = false,
   bool globalLookupAvailable = false,
   bool ankiReady = false,
-}) =>
-    onboardingStepSequence(
-      selected: selected,
-      browserExtensionAvailable: browserExtensionAvailable,
-      globalLookupAvailable: globalLookupAvailable,
-      ankiReady: ankiReady,
-    );
+  bool srsEnabled = false,
+}) => onboardingStepSequence(
+  selected: selected,
+  browserExtensionAvailable: browserExtensionAvailable,
+  globalLookupAvailable: globalLookupAvailable,
+  ankiReady: ankiReady,
+  srsEnabled: srsEnabled,
+);
 
 void main() {
   group('onboardingStepSequence', () {
@@ -50,14 +52,11 @@ void main() {
     });
 
     test('empty selection yields fixed skeleton without lookup tutorials', () {
-      expect(
-        _steps(<OnboardingFeature>{}),
-        <OnboardingStepId>[
-          OnboardingStepId.welcome,
-          OnboardingStepId.features,
-          OnboardingStepId.finish,
-        ],
-      );
+      expect(_steps(<OnboardingFeature>{}), <OnboardingStepId>[
+        OnboardingStepId.welcome,
+        OnboardingStepId.features,
+        OnboardingStepId.finish,
+      ]);
     });
 
     test('fonts step follows its own selection like any capability', () {
@@ -130,12 +129,10 @@ void main() {
     });
 
     test('recommended pack and manual resources can both be selected', () {
-      final List<OnboardingStepId> result = _steps(
-        <OnboardingFeature>{
-          OnboardingFeature.recommendedPack,
-          OnboardingFeature.manualResources,
-        },
-      );
+      final List<OnboardingStepId> result = _steps(<OnboardingFeature>{
+        OnboardingFeature.recommendedPack,
+        OnboardingFeature.manualResources,
+      });
       expect(
         result,
         containsAllInOrder(<OnboardingStepId>[
@@ -316,5 +313,50 @@ void main() {
         });
       },
     );
+  });
+
+  // 复习（Fushi 内置 SRS）模块默认关、向导不提供它的方格：介绍步骤只在用户已经
+  // 自己打开模块时出现，而且不受任何勾选影响。
+  group('srs intro step', () {
+    test('module off (default): the step never appears', () {
+      for (final Set<OnboardingFeature> selected in <Set<OnboardingFeature>>[
+        <OnboardingFeature>{},
+        OnboardingFeature.values.toSet(),
+      ]) {
+        expect(_steps(selected), isNot(contains(OnboardingStepId.srs)));
+        expect(
+          _steps(selected, ankiReady: true, globalLookupAvailable: true),
+          isNot(contains(OnboardingStepId.srs)),
+        );
+      }
+    });
+
+    test('module on: the step appears once, right before finish', () {
+      for (final Set<OnboardingFeature> selected in <Set<OnboardingFeature>>[
+        <OnboardingFeature>{},
+        OnboardingFeature.values.toSet(),
+      ]) {
+        final List<OnboardingStepId> steps = _steps(
+          selected,
+          srsEnabled: true,
+          ankiReady: true,
+          globalLookupAvailable: true,
+        );
+        expect(
+          steps.where((OnboardingStepId s) => s == OnboardingStepId.srs),
+          hasLength(1),
+        );
+        expect(steps[steps.length - 2], OnboardingStepId.srs);
+        expect(steps.last, OnboardingStepId.finish);
+      }
+    });
+
+    test('the wizard offers no SRS checkbox and never writes the module', () {
+      expect(onboardingFeatureOfModule(ModuleId.srs), isNull);
+      expect(
+        OnboardingFeature.values.map(moduleOfOnboardingFeature),
+        isNot(contains(ModuleId.srs)),
+      );
+    });
   });
 }

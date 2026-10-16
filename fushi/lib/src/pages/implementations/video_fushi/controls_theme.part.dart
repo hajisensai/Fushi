@@ -92,7 +92,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 用户此刻全部注意力和指针操作都在弹窗里（点词、点发音、拖 resize 把手、滚正文），而控制条
       // 照常 2s 自动淡出 → fork 的控制条 MouseRegion（`mount=false` 分支）把整条视频列判成
       // `cursor:none`，鼠标悬在弹窗上时 OS 光标直接消失（查词浮层子树除右下角 resize 把手外不声明
-      // 任何 cursor，解析必然下穿到这层）。Hibiki 侧 [_buildCursorOverlay] 那层 `none` 已由
+      // 任何 cursor，解析必然下穿到这层）。Fushi 侧 [_buildCursorOverlay] 那层 `none` 已由
       // [_hasVideoOverlay] 纳入 [_lookupOverlayActive] 修掉，但**两层是独立的**：只修一层，另一层
       // 照样把光标吃掉，必须同时排除才有效。
       // ⚠️ 防哑火：本值依赖 [_subtitleListVisible] / [_episodeListVisible] / [_lookupOverlayActive]，
@@ -368,7 +368,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 移动默认 300ms，显式写出后改一处全部跟随）。
       controlsTransitionDuration: _videoControlsTransitionDuration,
       // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
-      // 唯一消费它，移动端不再用 Hibiki 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
+      // 唯一消费它，移动端不再用 Fushi 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
       // TODO-1059：把重启自动隐藏计时的信号接进 fork。fork 侧订阅它，在底部按钮栏
       // play / 快进 / 快退按下（经 [_pokeControlsVisible] → [_restartHideTimerSignal.poke]）
@@ -395,7 +395,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 等它完成才开始按「正常推进」判 seek 收场（seek 还在排队时旧内容照常推进）。
       onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
-      // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
+      // 调音量」手势，指示器由 Fushi 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（鼠标无此手势；触屏经 touch* 字段复用同一套口径，屏幕亮度桌面不可控只开音量）。横滑 seek
       // 见下方 [seekGesture] + [horizontalSeekResolver]（TODO-916 症状①；换算已在
       // BUG-1485 改成「拖过整屏 = 固定一段时长」的 [VideoHorizontalSeekGesture]，与
@@ -424,7 +424,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // player.seek，拖回原点（增量 0）自动取消。仅移动端 theme 启用；桌面
       // [_desktopControlsTheme] 不含此字段（鼠标拖进度条 + 键盘 seek 键，诚实降级）。
       seekGesture: true,
-      // BUG-1485：把像素→时间的换算从 fork 内建公式换成 Hibiki 侧纯函数。fork 默认
+      // BUG-1485：把像素→时间的换算从 fork 内建公式换成 Fushi 侧纯函数。fork 默认
       // `seconds = dragDx * duration / 1000` 让**每像素跨越的时间与总时长成正比**，
       // 2 小时的片子每像素 7.2 秒、拖满屏宽 = 48 分钟，用户「一拽就起飞」的根因。
       // [VideoHorizontalSeekGesture] 改成「拖过整屏 = 固定一段时长」（与总时长解耦）

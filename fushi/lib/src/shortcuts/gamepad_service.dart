@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 // Cross-platform controller plugin: GameInput on Windows, GameController on
 // iOS/macOS, evdev/SDL on Linux. Aliased because it also exports a
-// `GamepadButton` enum that would clash with Hibiki's.
+// `GamepadButton` enum that would clash with Fushi's.
 import 'package:gamepads/gamepads.dart' as gp;
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -291,7 +291,7 @@ class GamepadFrameBits {
   static const int axisMax = 32767;
 }
 
-/// Bridges physical game controllers into Hibiki's input pipeline on platforms
+/// Bridges physical game controllers into Fushi's input pipeline on platforms
 /// where the Flutter engine does NOT surface controller buttons as
 /// `LogicalKeyboardKey.gameButton*` key events.
 ///
@@ -843,7 +843,7 @@ TraversalDirection? arrowTraversalDirection(LogicalKeyboardKey key) {
 /// events continuously move focus — the move itself stays the caller's
 /// [gamepadMoveFocusInDirection], so KeyDown and KeyRepeat share one geometry/
 /// reading-order path (the framework's bare DirectionalFocusAction does NOT
-/// carry Hibiki's reading-order fallback, so relying on it for repeats would
+/// carry Fushi's reading-order fallback, so relying on it for repeats would
 /// dead-end at row/panel edges where the press edge advanced fine).
 TraversalDirection? arrowFocusMoveDirection(KeyEvent event) {
   if (event is! KeyDownEvent && event is! KeyRepeatEvent) return null;
@@ -877,7 +877,7 @@ EditableText? focusedEditableText() {
 ///    still progress: down/right = next, up/left = previous.
 ///
 ///
-/// With a Hibiki focus root the controller is the ONLY engine: its candidate
+/// With a Fushi focus root the controller is the ONLY engine: its candidate
 /// set covers registered targets and native focusables of the current focus
 /// scope alike, so when it finds nothing in [direction] the press only gets the
 /// edge-scroll takeover below and otherwise stops at the edge. There is no
@@ -992,7 +992,7 @@ bool _movePrimaryFocusInDirection(
   }
 }
 
-/// Pure, platform-free normalization of controller frames into Hibiki
+/// Pure, platform-free normalization of controller frames into Fushi
 /// [GamepadButton] presses and a single repeating directional signal.
 ///
 /// Frames use the [GamepadFrameBits] bitmask layout. Separated from the I/O so

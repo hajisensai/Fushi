@@ -383,7 +383,7 @@ String _preview(String line) {
 /// 用 `node --check` 真解析一份 JS；返回空串 = 语法合法，否则返回 node 的报错。
 Future<String> _nodeCheck(String nodeExe, String label, String js) async {
   final Directory dir =
-      await Directory.systemTemp.createTemp('hibiki_js_check_');
+      await Directory.systemTemp.createTemp('fushi_js_check_');
   try {
     final File file = File('${dir.path}/${label.replaceAll('.', '_')}.js');
     await file.writeAsString(js);

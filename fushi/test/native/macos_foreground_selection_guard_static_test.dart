@@ -15,8 +15,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  String read(String relativeToHibiki) {
-    final File file = File(relativeToHibiki);
+  String read(String relativeToFushi) {
+    final File file = File(relativeToFushi);
     expect(file.existsSync(), isTrue,
         reason: 'expected file at ${file.absolute.path}');
     return file.readAsStringSync();

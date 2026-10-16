@@ -1963,6 +1963,16 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 歌词模式宽屏左右互换（`lyrics_panel_mirrored`，默认 `false`）。只影响
+  /// Flutter 覆盖层的布局，歌词页不用重载。
+  bool get lyricsPanelMirrored =>
+      readerSettings?.lyricsPanelMirrored ??
+      getPreference<bool>(key: 'lyrics_panel_mirrored', defaultValue: false);
+  Future<void> setLyricsPanelMirrored(bool v) async {
+    await (readerSettings?.setLyricsPanelMirrored(v) ??
+        setPreference<bool>(key: 'lyrics_panel_mirrored', value: v));
+  }
+
   /// 歌词模式逐字跟读渐变（`lyrics_sweep`，默认 `true`）。热更走
   /// `onSettingsChangedLive` → `_updateLyricsStyleLive` 换 body class。
   bool get lyricsSweep =>

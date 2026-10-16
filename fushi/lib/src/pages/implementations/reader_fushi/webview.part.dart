@@ -135,14 +135,28 @@ extension _ReaderWebView on _ReaderFushiPageState {
       if (!fontFile.existsSync()) {
         return _notFound('font not found: $fontPath');
       }
-      final Uint8List data = await fontFile.readAsBytes();
-      if (!_isValidFontData(data)) {
-        return _notFound('font corrupted: $fontPath (${data.length} bytes)');
+      final Uint8List fileBytes = await fontFile.readAsBytes();
+      if (!_isValidFontData(fileBytes)) {
+        return _notFound(
+          'font corrupted: $fontPath (${fileBytes.length} bytes)',
+        );
       }
+      // Apple 竖排：错设「x = 0 是竖排基线」的字体整列偏出行盒半个字（见
+      // clearVerticalBaselineFlag），下发前清掉。按字体身份缓存、重活在后台 isolate
+      // （见 VerticalBaselineFontCache）。
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(
+              safeFontPath,
+              await fontFile.stat(),
+            ),
+            data: fileBytes,
+          );
+      final Uint8List data = fixed.data;
       debugPrint(
         '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
       );
-      final String mime = fallbackMimeType(safeFontPath);
+      final String mime = fixed.mime ?? fallbackMimeType(safeFontPath);
       return _ReaderResourceResponse(
         contentType: mime,
         contentEncoding: _contentEncodingForMime(mime),
@@ -212,7 +226,18 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // `application/xhtml+xml`：那会让渲染器切到严格 XML 解析，出版社 EPUB 常见的
     // well-formedness 瑕疵会变成整页 parse error，且 BUG-079 / BUG-737 的
     // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
-    final String mime = isHtmlDocument ? 'text/html' : extMime;
+    String mime = isHtmlDocument ? 'text/html' : extMime;
+
+    // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
+    if (_isFontMime(mime) || _isFontMime(declaredMime)) {
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(filePath, await file.stat()),
+            data: data,
+          );
+      data = fixed.data;
+      mime = fixed.mime ?? mime;
+    }
 
     if (mime == 'text/css') {
       // 插入后按插入序逐出最老条目（[_kSanitizedCssCacheLimit] 封顶，见字段注释）。
@@ -639,6 +664,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   static bool _isValidFontData(Uint8List data) => isValidFontData(data);
+
+  /// EPUB 里字体资源的 media-type：`font/*` 与历史上的 `application/font-*`、
+  /// `application/x-font-*`、`application/vnd.ms-opentype`。
+  static bool _isFontMime(String mime) {
+    final String m = mime.toLowerCase();
+    return m.startsWith('font/') ||
+        m.startsWith('application/font-') ||
+        m.startsWith('application/x-font') ||
+        m == 'application/vnd.ms-opentype';
+  }
 
   // 振假名四态（off / toggle / hidden / dimmed）不再装任何 JS 监听器：隐藏 / 淡显
   // 都由 CSS 承担，toggle 态的「点一个揭示一个」收进 fushiSelection.selectText
@@ -1556,7 +1591,8 @@ $kContinuousWheelScrollJs
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
     // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
     // JS 不再自持固定窗口 _wheelTimer；横向触控板 burst 由跨文档 Dart State 聚合，
-    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
+    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 管触摸/鼠标拖动与
+    // 触控板两指滑（BUG-3358），不管鼠标滚轮。
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
@@ -1905,7 +1941,7 @@ updateLive: function(patch) {
         ),
       ]),
       initialSettings: InAppWebViewSettings(
-        // BUG-468：Windows 上右键会同时弹两个菜单——Hibiki 自定义的 Flutter 菜单
+        // BUG-468：Windows 上右键会同时弹两个菜单——Fushi 自定义的 Flutter 菜单
         // （`_showReaderTextContextMenu`，经 onSecondaryTapDown）和 WebView2 原生菜单
         // （复制/打印/更多工具）。上面 `contextMenu` 的 `hideDefaultSystemContextMenuItems`
         // 是跨平台 ContextMenu API，在 WebView2 fork 上并不接到原生菜单开关；fork 里唯一
@@ -2328,8 +2364,9 @@ updateLive: function(patch) {
 
         // TODO-737: 分页滚轮翻页专用 handler。JS 回传主轴 delta 的符号
         // (forward = delta>0) 与轴、设备类型；方向由纯谓词 readerWheelTickIsForward
-        // 一处决定：纵向与鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死），
-        // 只有横向触控板（= 滑动翻页手势）按书写方向 + 该开关折算（反馈 794gISjvgV）。
+        // 一处决定：鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死）；触控板
+        // 两指滑（= 滑动翻页手势）横纵两轴都按该开关折算，横向另看书写方向
+        // （BUG-3358；纵向补漏后翻页与 VN 模式的两指上下滑也认开关）。
         // 横向触控板惯性先经跨 document 持久的
         // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(

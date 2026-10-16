@@ -62,6 +62,23 @@ String ttsParamLabel(String key) => switch (key) {
   _ => key,
 };
 
+/// GPT-SoVITS 语言代码的可读名称（`ja` 是「日语，夹杂的英文按英文读」，
+/// `all_ja` 是「整句都按日语读」——只显示代码的话用户分不清）。未知代码原样返回。
+String ttsLanguageLabel(String code) => switch (code) {
+  'ja' => t.audiobook_tts_lang_ja,
+  'all_ja' => t.audiobook_tts_lang_all_ja,
+  'zh' => t.audiobook_tts_lang_zh,
+  'all_zh' => t.audiobook_tts_lang_all_zh,
+  'en' => t.audiobook_tts_lang_en,
+  'ko' => t.audiobook_tts_lang_ko,
+  'all_ko' => t.audiobook_tts_lang_all_ko,
+  'yue' => t.audiobook_tts_lang_yue,
+  'all_yue' => t.audiobook_tts_lang_all_yue,
+  'auto' => t.audiobook_tts_lang_auto,
+  'auto_yue' => t.audiobook_tts_lang_auto_yue,
+  _ => code,
+};
+
 /// 参数下方的说明（没有返回 null）。
 String? ttsParamHint(String providerId, String key) =>
     switch ((providerId, key)) {

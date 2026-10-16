@@ -21,7 +21,7 @@ void main() {
     // 这里，每次 schema bump 都要跟着改：本行历史上已被动改过 63 -> 64 -> 65，
     // 第四次（65 -> 66，PR#663 的 collection_relations / episode_number）漏改
     // 直接把 develop 的 CI `Run package tests` 打红——因为本仓约定的本地全量
-    // 门只跑 `hibiki/` 那套，`packages/` 下的字面量拿不到同一次批量替换。
+    // 门只跑 `fushi/` 那套，`packages/` 下的字面量拿不到同一次批量替换。
     // 「当前 schema 恰好是第几版」的等值守卫属于迁移阶梯测试
     // （`fushi/test/database/migration_*.dart`），不属于这里。
     expect(database.schemaVersion, greaterThanOrEqualTo(65),

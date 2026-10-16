@@ -1,4 +1,4 @@
-/// 把 `fushi_asr_core` 装配到 Hibiki 上的**唯一入口**。
+/// 把 `fushi_asr_core` 装配到 Fushi 上的**唯一入口**。
 ///
 /// ASR 的算法层抽成了独立仓库（`fushi_asr_core`，纯 Dart、零 Flutter），它不自带 ONNX
 /// 后端、不知道数据根在哪、不知道出站要不要走代理。这些都做成了可替换的装配点，

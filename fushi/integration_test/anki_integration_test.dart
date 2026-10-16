@@ -6,9 +6,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 /// Real-device AnkiDroid integration (HBK-AUDIT-020/051).
 ///
-/// Requires: AnkiDroid installed with a collection, and Hibiki granted
+/// Requires: AnkiDroid installed with a collection, and Fushi granted
 /// `com.ichi2.anki.permission.READ_WRITE_DATABASE`. Exercises the real
-/// AnkiDroid ContentProvider IPC through Hibiki's native AnkiChannelHandler —
+/// AnkiDroid ContentProvider IPC through Fushi's native AnkiChannelHandler —
 /// the path the unit suite cannot cover.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +27,7 @@ void main() {
         result,
         isA<AnkiFetchSuccess>(),
         reason: 'AnkiDroid must be installed with a collection + the API '
-            'permission granted to Hibiki',
+            'permission granted to Fushi',
       );
       final AnkiFetchSuccess success = result as AnkiFetchSuccess;
       expect(success.decks, isNotEmpty); // the Default deck

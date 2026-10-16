@@ -109,9 +109,10 @@ class VideoSubscriptionUpdate {
 
 /// 选出合集的「已更新未看」事实；一集未看的都没有 → null（不占行）。
 ///
-/// 目标集：最近实际播放的那集**之后**的第一集未看（Next-Up 口径，与
-/// [nextEpisodeAfterLatestPlayed] 同源——用户跳着看时不把已跳过的旧集塞回来）；
-/// 之后没有未看（或从没播过）→ 整个合集里第一集未看。
+/// 目标集：「下一集」目标（[nextEpisodeAfterLatestPlayed]）起的第一集未看
+/// （Next-Up 口径——用户跳着看时不把已跳过的旧集塞回来；最近播放那集只打开过、
+/// 进度 0 时它自己就是起点，不再被跳过，BUG-3370）；之后没有未看（或从没播过）
+/// → 整个合集里第一集未看。
 ///
 /// [members] 与 [importedAtMs] 按合集稳定集序对齐、等长；入库时刻 null（远端旧
 /// host 不带）按 0 计。
@@ -123,7 +124,7 @@ VideoSubscriptionUpdate? selectVideoSubscriptionUpdate(
   int unwatched = 0;
   int latestImported = 0;
   int? firstUnwatched;
-  final int? latestPlayed = latestPlayedSeriesIndex(members);
+  final int? nextUp = nextEpisodeAfterLatestPlayed(members);
   int? firstUnwatchedAfterPlayed;
   for (int index = 0; index < members.length; index++) {
     final VideoSeriesPlaybackState state = members[index];
@@ -131,7 +132,7 @@ VideoSubscriptionUpdate? selectVideoSubscriptionUpdate(
     if (!isUnwatched) continue;
     unwatched++;
     firstUnwatched ??= index;
-    if (latestPlayed != null && index > latestPlayed) {
+    if (nextUp != null && index >= nextUp) {
       firstUnwatchedAfterPlayed ??= index;
     }
     final int imported = importedAtMs[index] ?? 0;

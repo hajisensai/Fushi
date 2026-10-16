@@ -117,7 +117,12 @@ class LyricsPlayerData {
     this.chapterLabel,
     this.sleepTimerMinutes,
     this.illustrations,
+    this.sidesMirrored = false,
   });
+
+  /// 宽屏双栏左右互换（偏好 `lyrics_panel_mirrored`）：true = 歌词在左、封面与
+  /// 播放卡在右。只换位置，两栏各自的宽度不变。窄屏不受影响。
+  final bool sidesMirrored;
 
   /// 书中插图（播放走过插图时封面位换成插图，见 lyrics_illustrations.dart）。
   /// null = 这本书没有可显示的插图（或还在探测），封面位照旧只显示封面。
@@ -197,7 +202,11 @@ class LyricsPlayerCallbacks {
     this.onSleepTimer,
     this.onOpenIllustration,
     this.onReplayCue,
+    this.onSwapSides,
   });
+
+  /// 宽屏左右整块互换（写偏好 `lyrics_panel_mirrored`）。null = 不显示该键。
+  final VoidCallback? onSwapSides;
 
   /// 打开插图大图浏览，从第 [index] 张看起。`returnToCover` = 关掉后插图位回到
   /// 封面（窄屏小封面入口：看完就算确认过了）。null = 不提供大图浏览。

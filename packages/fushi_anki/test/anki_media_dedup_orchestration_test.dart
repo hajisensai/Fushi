@@ -175,7 +175,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    mediaDir = Directory.systemTemp.createTempSync('hibiki_dedup_test');
+    mediaDir = Directory.systemTemp.createTempSync('fushi_dedup_test');
   });
 
   tearDown(() {
@@ -420,7 +420,7 @@ void main() {
   });
 
   test('媒体目录本机不存在（AnkiConnect 在远程） → 返回 null，不盲扫', () async {
-    final Directory gone = Directory.systemTemp.createTempSync('hibiki_gone');
+    final Directory gone = Directory.systemTemp.createTempSync('fushi_gone');
     gone.deleteSync();
     final _FakeAnkiConnectService service = _FakeAnkiConnectService(
       mediaDirPath: gone.path,

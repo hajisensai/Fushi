@@ -18,7 +18,7 @@ void main() {
     late Directory tmp;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_pack_test_');
+      tmp = Directory.systemTemp.createTempSync('fushi_pack_test_');
     });
 
     tearDown(() {

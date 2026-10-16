@@ -109,7 +109,7 @@ Future<String> importMangaPackageFile({
 /// 返回的目录。
 Future<Directory> extractMangaPackage(File zipFile) async {
   final Directory out =
-      await Directory.systemTemp.createTemp('hibiki_manga_pkg');
+      await Directory.systemTemp.createTemp('fushi_manga_pkg');
   InputFileStream? input;
   try {
     input = InputFileStream(zipFile.path);

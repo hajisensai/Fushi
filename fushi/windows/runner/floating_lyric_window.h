@@ -120,6 +120,14 @@ class FloatingLyricWindow {
     double corner_radius = 14.0;
     double window_width = 0.0;
     double window_height = 0.0;
+    // 多行上下文（有声书悬浮字幕）：当前句的字色。alpha 0 = 字段缺省，当前句沿用
+    // text_color（老 payload 逐像素不变）。
+    uint32_t current_line_color = 0;
+    // 多行上下文：非当前句相对 text_color 的不透明度（0..1）。历史固定 0.55。
+    double context_line_opacity = 0.55;
+    // 用户「竖排」偏好：只在 hook 台词模式（有声书悬浮字幕 / galgame 台词浮窗）
+    // 生效——字从上往下、行从右往左，溢出改为横向滚动。false = 老行为逐像素不变。
+    bool vertical_text = false;
   };
 
   struct Labels {
@@ -440,6 +448,12 @@ class FloatingLyricWindow {
     float hit_right = 0.0f;
   };
   ScrollBarGeometry ComputeScrollBar() const;
+  // 文本排版块在客户区里的绘制原点（物理 px）。横排：x = text_rect_.left，
+  // y = text_rect_.top - scroll_offset_px_（与引入竖排之前同一表达式）；竖排：
+  // x = text_rect_.left + vertical_flow_shift_px_ + scroll_offset_px_，y 恒为
+  // text_rect_.top。所有 DrawTextLayout / 高亮框 / catch fill / CharIndexAt 共用。
+  float TextOriginX() const;
+  float TextOriginY() const;
   // 客户区点是否落在滚动条命中带里（hook 模式且真有溢出时才可能为 true）。
   bool ScrollBarContains(float x, float y) const;
   // 从客户区 y 开始拖 thumb：按在 thumb 外先把 thumb 中心搬到指针下。返回 false
@@ -553,6 +567,12 @@ class FloatingLyricWindow {
   // TODO-708 P4: 块内当前行区间（UTF-16）。-1/0 = 无行标记（不 dim）。
   int current_line_start_ = -1;
   int current_line_length_ = 0;
+  // 多行上下文溢出视口时，每帧把当前句滚到视口中央（歌词模式式跟随）。新的一句
+  // 到来时置位；用户滚轮 / 拖滚动条手动翻看后清零，直到下一句再接管。窗口被拖高
+  // 拖矮时跟随照旧生效，所以拖大窗口就是「看到更多前后句」。
+  bool follow_current_line_ = false;
+  // 渲染目标已套上「清晰文字」渲染参数（重建渲染目标后重置）。
+  bool text_rendering_params_applied_ = false;
   Style style_;
   Labels labels_;
 
@@ -564,6 +584,17 @@ class FloatingLyricWindow {
   // 把偏移留在旧行程外。
   float scroll_offset_px_ = 0.0f;
   float scroll_max_px_ = 0.0f;
+  // 竖排模式是否**真的**生效：hook 模式 + style_.vertical_text + text_format_ /
+  // text_layout_ 的竖排方向设置成功。由 Render 在建 format / layout 时写入
+  // （失败即回退横排并保持 false），CharIndexAt / ComputeScrollBar 等 Render 之外
+  // 的读者只信它，不各自再判 style_.vertical_text。
+  //
+  // 竖排时滚动轴是 x：scroll_offset_px_ = 0 显示最右侧的开头（第一行贴视口右沿），
+  // 增大 = 内容右移、向左看后文；scroll_max_px_ = max(0, metrics.width - 视口宽)。
+  bool vertical_active_ = false;
+  // 竖排溢出时把「排版块右沿」对齐到视口右沿所需的 x 平移（layout 坐标 → 视口），
+  // 每帧由 Render 按实测 metrics 重算；不溢出 / 横排时恒 0。
+  float vertical_flow_shift_px_ = 0.0f;
   // BUG-1860 — 拖滚动条 thumb 的手势状态。与 pressed_ / dragging_ 互斥，同样由
   // CancelPointerGesture 统一终结。
   bool scroll_thumb_dragging_ = false;

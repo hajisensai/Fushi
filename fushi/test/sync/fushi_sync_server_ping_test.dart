@@ -11,7 +11,7 @@ void main() {
   late FushiSyncServer server;
 
   Future<void> startServer({String? deviceName}) async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_ping_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_ping_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0,
@@ -30,7 +30,7 @@ void main() {
   Uri pingUri() => Uri.parse('http://127.0.0.1:${server.port}/api/ping');
 
   test('GET /api/ping 无需鉴权即返回 fushi 标识 + v2 配对能力', () async {
-    await startServer(deviceName: 'Hibiki · mac');
+    await startServer(deviceName: 'Fushi · mac');
     // 故意不带 Authorization 头：ping 是配对前公开面。
     final http.Response resp = await http.get(pingUri());
     expect(resp.statusCode, 200);
@@ -39,7 +39,7 @@ void main() {
     expect(body['app'], 'fushi');
     expect((body['pairing'] as Map)['v2'], isTrue);
     expect((body['tls'] as Map)['enabled'], isFalse); // 无 securityContext。
-    expect(body['deviceName'], 'Hibiki · mac');
+    expect(body['deviceName'], 'Fushi · mac');
   });
 
   test('GET /api/ping 不泄漏 token', () async {

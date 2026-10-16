@@ -193,7 +193,7 @@ String? _decodeNameRecord(int platformId, Uint8List raw) {
 /// 从视频容器抽取内嵌字体附件、注册进 Flutter 引擎，供自绘字幕 overlay 按 ASS
 /// `Fontname` 命中真实字体（对齐 mpv/libass 的 attachment 字体加载）。
 ///
-/// 背景：Hibiki 自绘渲染字幕（为逐字查词，不走 libass），故不像 mpv 那样自动加载 MKV
+/// 背景：Fushi 自绘渲染字幕（为逐字查词，不走 libass），故不像 mpv 那样自动加载 MKV
 /// 内嵌字体 → 商用日文字体缺失时 fallback 替换、观感与 mpv 差。本加载器补上这条链路：
 /// ffprobe 枚举附件 → ffmpeg `-dump_attachment` 抽到临时目录 → 解析每个字体的 sfnt
 /// name 表拿 family 名 → [FontLoader] 注册。注册后 overlay 的 `_styleForGrapheme` 用
@@ -236,7 +236,7 @@ class SubtitleEmbeddedFontLoader {
         return families;
       }
       final Directory tempDir =
-          await Directory.systemTemp.createTemp('hibiki_subfonts_');
+          await Directory.systemTemp.createTemp('fushi_subfonts_');
       try {
         final List<File> extracted =
             await _dumpAttachments(videoPath, fonts, tempDir);

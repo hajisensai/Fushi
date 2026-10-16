@@ -1,6 +1,6 @@
 // Chromium Lens protobuf interoperability follows the Google OCR approach
 // used by 1Selxo/Mangatan (GPL-3.0), adapted through W1ght/Niratan's
-// MangaOCRService.swift for Hibiki's Dart manga overlay.
+// MangaOCRService.swift for Fushi's Dart manga overlay.
 library;
 
 import 'dart:convert';
@@ -506,7 +506,7 @@ class GoogleLensProtocol {
       for (int i = 0; i < characters.length; i++)
         GoogleLensTextRegion(
           // Match Niratan's visible hit-test contract after adapting its
-          // bottom-left AppKit canvas to Hibiki's top-left WebView: horizontal
+          // bottom-left AppKit canvas to Fushi's top-left WebView: horizontal
           // text is always left-to-right and vertical text top-to-bottom.
           // Using the raw rotation sign here reverses -90° vertical lines.
           normalizedBounds: isVertical

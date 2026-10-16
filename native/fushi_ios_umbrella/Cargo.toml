@@ -1,0 +1,28 @@
+[package]
+name = "fushi_ios_umbrella"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 只是把两个 crate 打成一个归档；各自许可见 native/fushi_p2p（MIT OR Apache-2.0）与
+# native/fushi_fsrs（GPL-3.0-only；fsrs-rs BSD-3-Clause、ruzstd MIT）。
+license = "GPL-3.0-only"
+
+# iOS 伞形静态库：一个 staticlib 同时导出 fp2p_*（互联 P2P 隧道）与 ffsrs_*（SRS 排程内核）。
+#
+# 为什么不各链各的：每个 Rust staticlib 都自带一整份 std / core / alloc，两个 .a 同时
+# -force_load 进 Runner 会撞重复符号；不 -force_load 又会被当无用成员丢掉。合成一个 crate
+# 编译，std 只有一份。见 native/fushi_fsrs/README.md「iOS」。
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+fushi_p2p = { path = "../fushi_p2p" }
+fushi_fsrs = { path = "../fushi_fsrs" }
+
+[profile.release]
+# 与 fushi_p2p 一致取 "s"：隧道要扛视频流，"z" 的 QUIC 包处理变慢不划算（见 fushi_p2p/README）。
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"

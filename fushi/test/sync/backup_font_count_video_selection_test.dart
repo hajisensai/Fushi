@@ -42,12 +42,9 @@ void main() {
   }
 
   Future<Archive> readZip(String zipPath) async {
-    final InputFileStream input = InputFileStream(zipPath);
-    try {
-      return ZipDecoder().decodeBuffer(input);
-    } finally {
-      await input.close();
-    }
+    // 整包读进内存再解：decodeBuffer(InputFileStream) 的条目内容是惰性的，流关掉后再取
+    // `.content`，超出 FileBuffer 1MB 缓冲的部分会读出负长度（v117 起空库已超 1MB）。
+    return ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
   }
 
   Future<FushiDatabase> openBackupDb(String zipPath, Directory into) async {

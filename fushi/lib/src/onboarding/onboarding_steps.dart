@@ -79,10 +79,10 @@ enum OnboardingFeature {
 /// 配置能力的默认教程选择；不控制服务启用，也不读取或修改已有账号。
 const Set<OnboardingFeature> kOnboardingDefaultCapabilities =
     <OnboardingFeature>{
-  OnboardingFeature.recommendedPack,
-  OnboardingFeature.anki,
-  OnboardingFeature.fonts,
-};
+      OnboardingFeature.recommendedPack,
+      OnboardingFeature.anki,
+      OnboardingFeature.fonts,
+    };
 
 /// [ModuleId] → 功能选择步骤里代表它的勾选项。**穷尽 switch**：加模块时编译器
 /// 强制在这里补齐，向导的模块方格、写回 `module_*_enabled` 的循环与下面的步骤
@@ -100,6 +100,9 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.games => OnboardingFeature.games,
       ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,
+      // 复习默认关、向导不问也不写（用户 2026-10-14）：它的引导步骤只在用户已在
+      // 设置里自己打开模块后出现（见 [onboardingStepSequence] 的 srsEnabled）。
+      ModuleId.srs => null,
       ModuleId.browserExtension => OnboardingFeature.browserExtension,
       ModuleId.listening => OnboardingFeature.listening,
       ModuleId.cardCreation => OnboardingFeature.cardCreation,
@@ -189,6 +192,10 @@ enum OnboardingStepId {
 
   /// 完成第一张 Anki 卡片（仅本次向导已验证连接并选好牌组/笔记类型时）。
   firstAnkiCard,
+
+  /// Fushi 内置复习（SRS）介绍。只在复习模块（`ModuleId.srs`，默认关）**已经开着**
+  /// 时出现；向导不替用户打开它。
+  srs,
   finish,
 }
 
@@ -216,11 +223,16 @@ enum OnboardingStepId {
 /// 点击/全局查词教程只有在两种资源准备路径至少选中一种时出现；全局查词还要求
 /// [globalLookupAvailable]（当前 Windows / Android）。第一张 Anki 卡教程再加一道
 /// [ankiReady] 门：本次向导真实连接成功，并且当前选择的牌组/笔记类型可用。
+///
+/// [srsEnabled]：复习模块（`ModuleId.srs`）此刻是否开着。它默认关、向导不提供它的
+/// 方格（[onboardingFeatureOfModule] 返回 null），所以由调用方读模块真值传进来：
+/// 开着才出 [OnboardingStepId.srs] 介绍步骤，关着整步不进序列。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
   required bool globalLookupAvailable,
   required bool ankiReady,
+  bool srsEnabled = false,
 }) {
   final bool resourcesSelected = selected.any(
     kOnboardingResourceFeatures.contains,
@@ -258,6 +270,7 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.globalLookup,
     if (resourcesSelected && ankiSelected && ankiReady)
       OnboardingStepId.firstAnkiCard,
+    if (srsEnabled) OnboardingStepId.srs,
     OnboardingStepId.finish,
   ];
 }
@@ -265,12 +278,11 @@ List<OnboardingStepId> onboardingStepSequence({
 /// Imported resources need only the operation tutorials, never setup preferences.
 List<OnboardingStepId> onboardingTutorialStepSequence({
   required bool globalLookupAvailable,
-}) =>
-    <OnboardingStepId>[
-      OnboardingStepId.clickLookup,
-      if (globalLookupAvailable) OnboardingStepId.globalLookup,
-      OnboardingStepId.finish,
-    ];
+}) => <OnboardingStepId>[
+  OnboardingStepId.clickLookup,
+  if (globalLookupAvailable) OnboardingStepId.globalLookup,
+  OnboardingStepId.finish,
+];
 
 /// Records explicit Next actions, not merely visiting a page or leaving via Skip.
 class OnboardingTutorialProgress {

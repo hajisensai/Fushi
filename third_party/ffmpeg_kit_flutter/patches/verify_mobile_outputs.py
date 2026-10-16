@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""静态校验 ffmpeg-kit 移动端产物（AAR / xcframework 目录）是否符合 Hibiki 配方。
+"""静态校验 ffmpeg-kit 移动端产物（AAR / xcframework 目录）是否符合 Fushi 配方。
 
 与 fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart 同一套判据（latin1 字节扫描，
 不执行二进制），供 CI 在上传 artifact 之前把关；vendor 回仓库后仍以 Dart 守卫为准。

@@ -20,7 +20,7 @@ import '../helpers/source_guard.dart';
 ///
 /// popup.js 有三份镜像（in-app 弹窗 + 两份浏览器扩展 vendor 副本；byte-parity 由
 /// browser_extension_popup_parity_guard 另锁），本守卫在三份上各自断言语义约束，
-/// 防止任何一份单独回退。flutter test cwd 是 hibiki 包根。
+/// 防止任何一份单独回退。flutter test cwd 是 fushi 包根。
 void main() {
   const Map<String, String> jsMirrors = <String, String>{
     'in-app popup': 'assets/popup/popup.js',

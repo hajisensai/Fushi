@@ -78,7 +78,7 @@ void main() {
     late Directory coverDir;
 
     setUp(() async {
-      root = await Directory.systemTemp.createTemp('hibiki_game_cover_test_');
+      root = await Directory.systemTemp.createTemp('fushi_game_cover_test_');
       gameDir = Directory(p.join(root.path, 'game'))..createSync();
       coverDir = Directory(p.join(root.path, 'covers'))..createSync();
     });

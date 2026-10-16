@@ -26,7 +26,7 @@ import 'temp_dir_cleanup.dart';
 /// 修法：v84 给 `preferences` 加 `updated_at`（LWW 比较键，存量行戳 0 =「时刻
 /// 未知」），三条通道（互联清单下发 / 下载后采纳 / 备份合并）统一成同一条裁决
 /// 规则「严格更新才写、平局保留本机、本机无该行则采纳」；push 方向按视频推送的
-/// `X-Hibiki-Video-Title` 先例加两个 additive header 把显示名 + 戳带上去。
+/// `X-Fushi-Video-Title` 先例加两个 additive header 把显示名 + 戳带上去。
 ///
 /// 变异实测（2026-08-11，逐条破坏 lib 确认转红后**反向替换**还原，零 lib 残留）：
 ///  - `database_prefs_media.part.dart` 的 `setPrefIfNewer` 判据
@@ -375,6 +375,12 @@ void main() {
       Uri.encodeComponent('本機改的名'),
     );
     expect(seen[kBookDisplayTitleAtHeader.toLowerCase()], '1700000000000');
+    // 改名前的 host 只读旧名：两个 header 都要以旧名再发一份。
+    expect(
+      seen['x-hibiki-book-display-title'],
+      Uri.encodeComponent('本機改的名'),
+    );
+    expect(seen['x-hibiki-book-display-title-at'], '1700000000000');
   });
 
   test('push：没改过名 → 一个 header 都不发（旧 host 字节不变）', () async {

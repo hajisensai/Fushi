@@ -22,7 +22,7 @@ class PortListenerInfo {
 }
 
 /// 桌面端「查找并结束占用端口的进程」工具。典型场景：Yomitan API 默认端口 19633
-/// 被浏览器经 native messaging 拉起的 yomitan-api 组件（Python 进程）占着，Hibiki
+/// 被浏览器经 native messaging 拉起的 yomitan-api 组件（Python 进程）占着，Fushi
 /// 起 server 失败；SnackBar 上的「结束进程并重试」按钮走这里直接结束占用者。
 ///
 /// 平台命令：Windows 用 `netstat -ano` + `tasklist` + `taskkill`；macOS/Linux 用
@@ -197,7 +197,7 @@ bool isProtectedSystemProcess({
       .contains(processName.trim().toLowerCase());
 }
 
-/// 判断占用者可执行路径是否与本进程同一文件（用于识别「hibiki 旧实例」）。
+/// 判断占用者可执行路径是否与本进程同一文件（用于识别「Fushi 自身旧实例」）。
 /// 分隔符与大小写不敏感（Windows 语义；POSIX 上同名不同大小写的自身实例
 /// 场景可忽略）。
 bool isSameExecutablePath(String? candidate, String selfPath) {

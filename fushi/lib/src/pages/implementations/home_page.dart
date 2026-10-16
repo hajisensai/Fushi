@@ -146,35 +146,25 @@ import 'package:fushi_core/fushi_core.dart'
 
 export 'package:fushi/src/models/home_tab.dart';
 
-/// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
-/// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
-/// 位置固定紧跟 video 之后（用户要求「底栏里把游戏移动到视频后面」，与书/漫画/视频/游戏
-/// 四类媒体入口连成一段）。提取成顶层函数便于单测条件插入与顺序，不必实例化整个
-/// [HomePage]。底栏/侧栏的位置索引由此列表导出。
+/// 纯函数：给定模块可见性快照，返回可见顶层 tab 的**视觉顺序**。底栏/侧栏的位置
+/// 索引由此列表导出，提取成顶层函数便于单测，不必实例化整个 [HomePage]。
+///
+/// 顺序是**用户自己排的**（设置 → 外观 → 功能模块 拖拽排序，存在
+/// [ModuleVisibility.order]）；没排过时按 [ModuleId] 枚举顺序，即首页 → 书架 →
+/// 漫画 → 视频 → 游戏 → 浏览 → 查词 → 浏览器扩展（与排序功能上线前写死的顺序
+/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在
+/// 且恒在最后，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它，也不参与排序）。
 ///
 /// 形参是**一个** [ModuleVisibility] 而不是一串 bool：此前这里收七个具名 bool，
 /// 调用方（`_activeTabs()` 与 main.dart 的 macOS 根侧栏）各手抄一份实参表，两份
 /// 已经漂移——macOS 那份漏传 `gamesEnabled`，靠缺省 false 恰好蒙对，注释还把漏写
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
-/// 一次，两个调用点各减七行，也不可能再漏配。
+/// 一次，顺序也随快照一起走，所有调用点不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  // 首页 2026-10-09 起可关（[ModuleId.home]，用户反馈「首页没用但偏偏不给关」）。
-  if (visibility.isEnabled(ModuleId.home)) HomeTab.home,
-  // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
-  // 设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它）。
-  if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
-  if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
-  if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
-  if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
-  // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
-  // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
-  // 视频/游戏之后。
-  if (visibility.isEnabled(ModuleId.browse)) HomeTab.browse,
-  if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
-  // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
-  // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
-  // [ModuleId.availableOn]），位置紧邻设置之前。
-  if (visibility.isEnabled(ModuleId.browserExtension)) HomeTab.browserExtension,
+  for (final ModuleId module in visibility.ordered)
+    if (homeTabOfModule(module) case final HomeTab tab
+        when visibility.isEnabled(module))
+      tab,
   HomeTab.settings,
 ];
 
@@ -273,6 +263,12 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
         icon: FushiIcons.lookup,
         selectedIcon: FushiIcons.filled(FushiIcons.lookup),
         label: t.nav_lookup,
+      );
+    case HomeTab.srs:
+      return AdaptiveNavItem(
+        icon: FushiIcons.repeat,
+        selectedIcon: FushiIcons.filled(FushiIcons.repeat),
+        label: t.nav_srs,
       );
     case HomeTab.games:
       return AdaptiveNavItem(
@@ -649,7 +645,7 @@ class _HomePageState extends BasePageState<HomePage>
         _maybeSyncLeaderboard();
       });
 
-      // Lapis 模板启动自动迁移：Hibiki 基线/客制化变了且 Anki 端仍是 Hibiki
+      // Lapis 模板启动自动迁移：Fushi 基线/客制化变了且 Anki 端仍是 Fushi
       // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
       // 运行静默跳过）。服务内部有每进程一次的闸门，HomePage 重建不会重跑。
       if (mounted) {
@@ -1706,7 +1702,11 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.games ||
     HomeTab.browse ||
     HomeTab.dictionaries => homeNavItemFor(tab).label,
-    HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
+    // 复习页自己画页头（标题 + 牌组动作），同浏览器扩展。
+    HomeTab.home ||
+    HomeTab.browserExtension ||
+    HomeTab.srs ||
+    HomeTab.settings => null,
   };
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
@@ -1944,7 +1944,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 含设置，BUG-3351）。
   bool _moduleSwipeEnabled() {
     if (!_inMobileLayout || isGlassDesign(context)) return false;
-    return homeModuleSwipeArmed(tabs: _activeTabs(), current: _visibleTab);
+    return homeModuleSwipeArmed(
+      tabs: _activeTabs(),
+      current: _visibleTab,
+      lookupInBar: appModel.navBarStyle.lookupInBar,
+    );
   }
 
   HomeTab? _moduleSwipeTarget({required bool fingerTowardStart}) =>
@@ -1954,6 +1958,7 @@ class _HomePageState extends BasePageState<HomePage>
         reversed: appModel.reverseNavigationBar,
         fingerTowardStart: fingerTowardStart,
         textDirection: Directionality.of(context),
+        lookupInBar: appModel.navBarStyle.lookupInBar,
       );
 
   Widget _buildMobileLayout() {
@@ -2028,6 +2033,7 @@ class _HomePageState extends BasePageState<HomePage>
             glassContentUnder: _appleChrome.contentUnderBottom,
             glassSearchIndex: glassSearchIndex,
             showLabels: appModel.navBarLabelsVisible,
+            barStyle: appModel.navBarStyle,
             materialFab: _shellPageFab(),
             // 反转底栏方向：查词钮 / FAB 跟着翻到左侧，整条底栏镜像。
             searchLeading: reversed,
@@ -3524,6 +3530,7 @@ class _HomePageState extends BasePageState<HomePage>
             ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
             : const HomeGamePage(),
       HomeTab.browserExtension => const BrowserExtensionPage(),
+      HomeTab.srs => const SrsDeckListPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
         // 返回键（否则冒泡到顶层 PopScope = 退出 app，见 BUG-236）。

@@ -24,7 +24,7 @@
 // 用途：injector 早注入（--launch）目标游戏、放着游戏出声后，用它旁路读共享内存，直观确认
 // DirectSound/XAudio2 捕获真的在工作——hooked=1、格式被 hook 填上、total_written 在涨、峰值
 // 振幅从 silent 变 SOUND。**只读**，不注入、不写共享内存，故不需与目标同位数：命名文件映射
-// （Local\HibikiVoiceHook_<pid>）跨 32/64 位可读，x64 reader 能读 32 位游戏里 hook 填的缓冲。
+// （Local\FushiVoiceHook_<pid>）跨 32/64 位可读，x64 reader 能读 32 位游戏里 hook 填的缓冲。
 //
 // 用法：fushi_voice_ring_probe <pid> [轮数=30] [间隔ms=500]
 //   <pid>    injector 建共享内存时用的目标进程 pid（injector 打印的 pid=）
@@ -1133,8 +1133,7 @@ bool ResolveRemotePeExportRva(HANDLE process,
 }
 
 bool IsExpectedHookModuleName(const std::wstring& name) {
-  return _wcsicmp(name.c_str(), L"fushi_voice_hook.dll") == 0 ||
-         _wcsicmp(name.c_str(), L"hibiki_voice_hook.dll") == 0;
+  return _wcsicmp(name.c_str(), L"fushi_voice_hook.dll") == 0;
 }
 
 bool FindRemoteXAudioTrace(HANDLE process, DWORD pid,
@@ -2371,7 +2370,7 @@ int main(int argc, char** argv) {
   const uint8_t* ring =
       reinterpret_cast<const uint8_t*>(header) + sizeof(SharedHeader);
 
-  // Diagnostic equivalent of Hibiki VoiceHookReader::SelectTextThread. This
+  // Diagnostic equivalent of Fushi VoiceHookReader::SelectTextThread. This
   // changes only the production IPC selector; text/resource events still have
   // to be produced by the live Luna/game hooks.
   if (select_text_thread) {

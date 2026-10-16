@@ -23,7 +23,7 @@ import io.flutter.plugin.common.MethodChannel
  * the first word.
  */
 object PopupEngineHolder {
-    const val ENGINE_ID: String = "hibiki_popup_engine"
+    const val ENGINE_ID: String = "fushi_popup_engine"
     private const val ENTRYPOINT: String = "popupMain"
 
     @Volatile

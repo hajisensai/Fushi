@@ -184,7 +184,7 @@ void main() {
     late Directory dir;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki_textio_');
+      dir = await Directory.systemTemp.createTemp('fushi_textio_');
     });
 
     tearDown(() async {
@@ -271,7 +271,7 @@ void main() {
     late Directory dir;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki_textio_e2e_');
+      dir = await Directory.systemTemp.createTemp('fushi_textio_e2e_');
     });
 
     tearDown(() async {

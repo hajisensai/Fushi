@@ -424,11 +424,9 @@ void main() {
 
   testWidgets('local models are engine choices; no separate model dropdown',
       (WidgetTester tester) async {
-    // Windows 上从 Baberu 起步，选 CTC 时模型偏好真的要被改写；别的平台只列
-    // CTC，起步值只能就是它。
-    String storedModel = Platform.isWindows
-        ? MangaOcrLocalModel.baberu.key
-        : MangaOcrLocalModel.mangaCtc.key;
+    // 从 2026-10 已删除的 Baberu 旧偏好起步：它经 fromKey 落回逐列 CTC，
+    // 弹层里不会再出现 Baberu。
+    String storedModel = 'baberu';
     String storedEngine = 'auto';
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(ready: true),
@@ -453,10 +451,9 @@ void main() {
     );
 
     await openEngineSheet(tester);
-    // Baberu 只在 Windows 列出；CTC 五端都有。
+    // 本机模型五端都只剩 CTC 一项。
     expect(find.text(engineLabel(MangaOcrLocalModel.mangaCtc)), findsWidgets);
-    expect(find.text(engineLabel(MangaOcrLocalModel.baberu)),
-        Platform.isWindows ? findsWidgets : findsNothing);
+    expect(find.textContaining('Baberu'), findsNothing);
     // 单一的「本地 ONNX」项已被逐模型项取代。
     expect(find.text(t.manga_ocr_engine_local_onnx), findsNothing);
     await tapVisible(
@@ -464,7 +461,8 @@ void main() {
       find.byKey(engineOptionKey(MangaOcrEnginePreference.localOnnx,
           localModel: MangaOcrLocalModel.mangaCtc)),
     );
-    expect(storedModel, 'manga_ctc');
+    // 旧 key 已解析成 CTC，选 CTC 不算换模型：偏好层不改写存量值。
+    expect(storedModel, 'baberu');
     expect(storedEngine, 'local_onnx');
     // 状态行说清楚是哪个模型。
     expect(find.textContaining(t.manga_ocr_ctc_model), findsWidgets);
@@ -484,9 +482,7 @@ void main() {
           localModelGetter: () => storedModel,
           localModelSetter: (String value) async => storedModel = value,
         ));
-    final MangaOcrLocalModel target = Platform.isWindows
-        ? MangaOcrLocalModel.baberu
-        : MangaOcrLocalModel.mangaCtc;
+    const MangaOcrLocalModel target = MangaOcrLocalModel.mangaCtc;
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
     await pickEngine(tester, engineLabel(target));
@@ -593,12 +589,9 @@ void main() {
     addTearDown(() {
       if (!events.isClosed) unawaited(events.close());
     });
-    // Windows 列得出两个本机模型：从 Baberu 的下载中换到 CTC，最能说明「下载
-    // 按模型归属全局登记表、换走了照跑」。其余平台只有 CTC，就换到云端引擎。
-    final bool twoModels = Platform.isWindows;
-    String storedModel = twoModels
-        ? MangaOcrLocalModel.baberu.key
-        : MangaOcrLocalModel.mangaCtc.key;
+    // 本机模型只有 CTC：下载中换到云端引擎，说明「下载
+    // 按模型归属全局登记表、换走了照跑」。
+    String storedModel = MangaOcrLocalModel.mangaCtc.key;
     String storedEngine = 'local_onnx';
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(downloadEvents: events),
@@ -616,14 +609,9 @@ void main() {
     await tester.ensureVisible(download);
     await tester.tap(download);
     await tester.pump();
-    if (twoModels) {
-      await pickEngine(tester, engineLabel(MangaOcrLocalModel.mangaCtc));
-      expect(storedModel, 'manga_ctc');
-      expect(storedEngine, 'local_onnx');
-    } else {
-      await pickEngine(tester, t.manga_ocr_engine_google_lens);
-      expect(storedEngine, 'google_lens');
-    }
+    await pickEngine(tester, t.manga_ocr_engine_google_lens);
+    expect(storedEngine, 'google_lens');
+    expect(storedModel, 'manga_ctc');
     // 原模型那条下载仍挂在全局登记表上。
     expect(events.hasListener, isTrue);
   });
@@ -1176,7 +1164,8 @@ void main() {
     ]);
   });
 
-  testWidgets('Baberu import dialog includes its recognizer and PP line models',
+  testWidgets(
+      'removed Baberu preference: import dialog lists the CTC files only',
       (WidgetTester tester) async {
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: _FakeOcrService(),
@@ -1194,15 +1183,12 @@ void main() {
     await tester.tap(importButton);
     await tester.pumpAndSettle();
     expect(find.text(t.manga_ocr_import_title), findsOneWidget);
+    // 2026-10 删除的 Baberu 旧 key 经 fromKey 落回逐列 CTC：导入清单是 CTC 的。
     for (final String name in <String>[
       'detector-v4-s_int8.onnx',
-      'vision_fp16.onnx',
-      'decoder_prefill_int8.onnx',
-      'decoder_step_int8.onnx',
-      'vocab.json',
       'ppocrv6_small_det.onnx',
-      'ppocrv6_small_rec.onnx',
       'ppocrv6_small_rec.yml',
+      'kellenok_manga_rec_v0.2.onnx',
     ]) {
       expect(find.textContaining(name), findsOneWidget);
     }
@@ -1210,10 +1196,14 @@ void main() {
       'encoder_model.onnx',
       'decoder_model.onnx',
       'vocab.txt',
+      'vision_fp16.onnx',
+      'decoder_prefill_int8.onnx',
+      'decoder_step_int8.onnx',
+      'vocab.json',
     ]) {
       expect(find.textContaining(obsolete), findsNothing);
     }
-  }, skip: !Platform.isWindows);
+  });
 
   testWidgets('设备自带 OCR：可用时弹层里那项可选', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
@@ -1279,6 +1269,8 @@ void main() {
       enginePreferenceSetter: (String value) async => storedEngine = value,
       pairedHostModelGetter: () => storedHostModel,
       pairedHostModelSetter: (String value) async => storedHostModel = value,
+      // 旧版服务端可能还报 2026-10 已删除的 'baberu'：本端不认识它，按原 key
+      // 列出（由服务端自己决定怎么跑），不冒充成本端的某个模型。
       remoteRunner: _FakeRemoteRunner(const <MangaOcrRemoteModel>[
         MangaOcrRemoteModel(key: 'baberu', ready: true),
         MangaOcrRemoteModel(key: 'manga_ctc', ready: false),
@@ -1287,7 +1279,10 @@ void main() {
     await tester.pumpAndSettle();
 
     await openEngineSheet(tester);
-    expect(find.text(hostLabel(MangaOcrLocalModel.baberu)), findsWidgets);
+    expect(
+      find.text(t.manga_ocr_engine_paired_host_model(model: 'baberu')),
+      findsWidgets,
+    );
     expect(find.text(hostLabel(MangaOcrLocalModel.mangaCtc)), findsWidgets);
     // 服务端没下好的那个模型如实说出来，而不是等整卷传完才报错。
     expect(

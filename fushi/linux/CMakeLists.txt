@@ -128,6 +128,16 @@ if(EXISTS "${FUSHI_P2P_SO}")
     COMPONENT Runtime)
 endif()
 
+# SRS 排程内核（fsrs-rs，copy-if-present）：native/fushi_fsrs/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_fsrs.so 则随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）；
+# 缺失时 SRS 原生内核判不可用，构建照常。与 fushi_p2p 同一语义。
+set(FUSHI_FSRS_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so")
+if(EXISTS "${FUSHI_FSRS_SO}")
+  install(FILES "${FUSHI_FSRS_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
 # -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进

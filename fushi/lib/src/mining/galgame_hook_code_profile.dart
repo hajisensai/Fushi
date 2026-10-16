@@ -41,7 +41,7 @@ final RegExp _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 ///    native 一个字也认不出，而这是纯粹的输入法噪声，不是用户意图。
 ///
 /// **刻意不碰码本身的结构**（不补/不删开头的 `/`、不改大小写、不重排 `@` 后的地址）：
-/// Hibiki 从头到尾把 hook code 当**不透明字符串**搬运，真正的词法解析在 LunaHost DLL
+/// Fushi 从头到尾把 hook code 当**不透明字符串**搬运，真正的词法解析在 LunaHost DLL
 /// 里（本仓 `third_party/lunahook/` 只有二进制，没有源码可复用）。在这里替 native
 /// 猜格式，就是开第二个真相源。
 String normalizeGalHookCode(String raw) {
@@ -145,6 +145,8 @@ List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
   final List<LunaHookCodeProfile> result = <LunaHookCodeProfile>[];
   for (final String rawLine in const LineSplitter().convert(input)) {
     final String line = rawLine.trimRight();
+    // 注释行（含首行版本说明）一律跳过、不校验文字：改名前写的
+    // `# Hibiki Luna hook-code profiles v1/v2` 与现在的 `# Fushi …` 同样能读。
     if (line.isEmpty ||
         line.startsWith('#') ||
         line.startsWith(_profileHeaderPrefix)) {
@@ -173,13 +175,13 @@ List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
 String encodeLunaHookCodeProfiles(Iterable<LunaHookCodeProfile> profiles) {
   final List<LunaHookCodeProfile> sorted = profiles.toList()
     ..sort((a, b) => a.identityKey.compareTo(b.identityKey));
-  // 没有任何一行用到 options 就照旧写 v1：绝大多数用户表按字节不变，旧版本 Hibiki
+  // 没有任何一行用到 options 就照旧写 v1：绝大多数用户表只有首行注释变化，旧版本
   // （只认六列）读自己的表不会炸。真有 options 要存时才升 v2——native 的解析器本来
   // 就同时吃 v1/v2。
   final bool needsOptions =
       sorted.any((LunaHookCodeProfile profile) => profile.options.isNotEmpty);
   return <String>[
-    '# Hibiki Luna hook-code profiles ${needsOptions ? 'v2' : 'v1'}. '
+    '# Fushi Luna hook-code profiles ${needsOptions ? 'v2' : 'v1'}. '
         'UTF-8, tab separated.',
     needsOptions ? _profileHeaderV2 : _profileHeaderV1,
     ...sorted.map((profile) => profile.toTsvRow(includeOptions: needsOptions)),

@@ -105,7 +105,7 @@ class OrtSessionOptions {
   // graph can be fused/compiled once at session creation instead of being
   // re-planned on every run (DirectML: 5-7x encoder throughput on zipformer).
   // Inputs must then be fed with exactly those dimensions. Only honoured on
-  // Windows (Hibiki fork); other platforms ignore the key.
+  // Windows (Fushi fork); other platforms ignore the key.
   final Map<String, int>? freeDimensionOverrides;
 
   OrtSessionOptions({

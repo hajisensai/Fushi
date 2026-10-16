@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:image/image.dart' as img;
@@ -603,7 +604,7 @@ void main() {
         isMangaOcrRelayoutPending(
           v4,
           localEngineSignature:
-              'local-onnx-baberu-v1-bicubic-$kMangaOcrPipelineRevision-36f475259340',
+              '${MangaOcrLocalModel.mangaCtc.cacheSignature}-36f475259340',
         ),
         isFalse,
       );

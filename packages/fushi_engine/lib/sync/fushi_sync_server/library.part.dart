@@ -220,18 +220,18 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: bookId,
       cacheKind: 'book',
       notFoundMessage: 'Book not found',
-      tempPrefix: 'hibiki_book_in',
+      tempPrefix: 'fushi_book_in',
       tempExtension: '.epub',
       export: () => svc.exportBook(bookId),
       // BUG-1503：body 是裸 .epub，推送方用户改的书名走 header 随行（视频推送的
-      // `X-Hibiki-Video-Title` 同一先例）。旧 client 不发 → 两参 null/0 → 与
+      // [kVideoTitleHeader] 同一先例）。旧 client 不发 → 两参 null/0 → 与
       // 原来的 `svc.importBook` tear-off 逐字同行为，故不必动
       // [_serveAssetPackage] 的四域共用签名。
       import: (File epubFile) => svc.importBook(
         epubFile,
         displayTitle: _decodeHeaderValue(request, kBookDisplayTitleHeader),
         displayTitleAt: int.tryParse(
-              request.headers[kBookDisplayTitleAtHeader] ?? '',
+              _interconnectHeaderValue(request, kBookDisplayTitleAtHeader) ?? '',
             ) ??
             0,
       ),
@@ -422,7 +422,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: displayName,
       cacheKind: 'localaudio',
       notFoundMessage: 'Local audio not found',
-      tempPrefix: 'hibiki_localaudio_in',
+      tempPrefix: 'fushi_localaudio_in',
       tempExtension: '.localaudio',
       export: () => svc.exportLocalAudio(displayName),
       import: svc.importLocalAudio,
@@ -608,7 +608,7 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
       id: bookKey,
       cacheKind: 'audiobook',
       notFoundMessage: 'Audiobook not found',
-      tempPrefix: 'hibiki_audiobook_in',
+      tempPrefix: 'fushi_audiobook_in',
       tempExtension: '.audiobook',
       export: () => svc.exportAudiobook(bookKey),
       import: (File tmp) => svc.importAudiobook(tmp, bookKeyOverride: bookKey),

@@ -417,7 +417,7 @@ std::wstring FushiShortcutInFolder(REFKNOWNFOLDERID folder_id,
 }
 
 // TODO-901: points the desktop + Start menu Fushi shortcuts at |icon_path|
-// (a freshly generated multi-size .ico). Installer (hibiki.iss) drops the .lnk
+// (a freshly generated multi-size .ico). Installer (fushi.iss) drops the .lnk
 // at {userdesktop}\Fushi (Desktop\Fushi.lnk) and {group}\Fushi, where
 // {group} = {autoprograms}\{DefaultGroupName=Fushi} -> Programs\Fushi\Fushi.lnk
 // (DisableProgramGroupPage only hides the wizard page; the Fushi subfolder
@@ -1090,6 +1090,12 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
   style.window_height =
       DoubleFromValue(args, "windowHeight", style.window_height);
+  style.current_line_color =
+      ArgbFromValue(args, "currentLineColor", style.current_line_color);
+  style.context_line_opacity = DoubleFromValue(
+      args, "contextLineOpacity", style.context_line_opacity);
+  // 竖排偏好：旧 payload 缺字段 = false（横排，逐像素不变）。
+  style.vertical_text = BoolFromValue(args, "verticalText", style.vertical_text);
   return style;
 }
 

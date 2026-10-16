@@ -8,7 +8,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
-/// 用户请求：一个键把 Hibiki 主窗置顶并直接显示查词页
+/// 用户请求：一个键把 Fushi 主窗置顶并直接显示查词页
 /// （[ShortcutAction.globalExternalOpenLookupPage]）。
 ///
 /// 它与既有的 [ShortcutAction.globalExternalLookup] 是**相反**的产品取舍：那条取
@@ -124,7 +124,7 @@ void main() {
 
   group('跨 scope 抢占检测', () {
     // globalExternal 的键盘绑定注册成 win32 RegisterHotKey，是全系统级吞键：命中时
-    // 连 Hibiki 自己的页面都收不到那次按键。所以给页面动作绑一个**已被 OS 热键占住**
+    // 连 Fushi 自己的页面都收不到那次按键。所以给页面动作绑一个**已被 OS 热键占住**
     // 的组合键必须报冲突，否则用户绑完只会发现「阅读器的这个键从此没反应了」，而设置
     // 页一声不吭。手柄侧早有同构处理（_gamepadPreemptingScopes），键盘侧此前是缺口。
     test('页面动作绑到 OS 热键已占的组合键 → 必须报冲突', () {

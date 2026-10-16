@@ -134,7 +134,7 @@ class WindowCaptionChannel {
   /// FLASHW_STOP）。
   ///
   /// `SetForegroundWindow`（`window_manager` 的 `show()`/`focus()`/
-  /// `setAlwaysOnTop()` 在前台锁定下会退化触发）会把 Hibiki 的任务栏按钮设为闪烁
+  /// `setAlwaysOnTop()` 在前台锁定下会退化触发）会把 Fushi 的任务栏按钮设为闪烁
   /// 请求注意态，用户得点一下才能消掉（TODO-341 / TODO-615）。判前台守卫在前台
   /// 判据抖动时仍可能漏判而留下残留高亮，所以唤前台路径无论如何在尾部主动 clear
   /// 一次：FLASHW_STOP 对一个本就没有 flash 的窗口是 no-op，纯幂等清除。

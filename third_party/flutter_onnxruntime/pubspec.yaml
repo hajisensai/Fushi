@@ -1,4 +1,4 @@
-# HIBIKI FORK of flutter_onnxruntime 1.8.3.
+# FUSHI FORK of flutter_onnxruntime 1.8.3.
 # All five plugin platforms (android/ios/linux/macos/windows) are upstream's.
 # Delta vs upstream: the two Apple `Package.swift` manifests are deleted so
 # Flutter builds this plugin through CocoaPods on both Apple platforms, and the

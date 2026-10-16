@@ -88,3 +88,17 @@ class TtsResult {
 5. 制作台：任务队列、host job、按章生成、入库。
 6. ASR 质检、单句重生成、发音词典。
 7. ffmpeg-min 章节组件 + m4b 导出。
+
+## 本机一键部署 GPT-SoVITS（2026-10-14）
+
+用户反馈「下模型、部署全在 app 外，太难用」。Windows 上改为 app 内完成：
+
+- 引擎层 `packages/fushi_engine/lib/tts/local/`：
+  - `GptSovitsInstaller`：从 HF 官方 / ModelScope 镜像清单取最新整合包 → `ResumableDownloader` 断点续传 + sha256 → 系统 `System32\tar.exe`（libarchive + liblzma）解 7z → 按内容找 `runtime/python.exe` + `api_v2.py` → 写 app 自己的 `fushi_tts_infer.yaml` 副本（api_v2 会回写 `-c` 指定的配置）→ 删包。
+  - `GptSovitsLocalServer`：经 `HelperProcessRegistry` 起 `runtime\python.exe -I api_v2.py -a 127.0.0.1 -p <port> -c <副本>`，`GET /openapi.json` 探活，端口上已有服务则借用，保留 200 行日志尾。
+  - `GptSovitsLocalEngine`：偏好 `tts_gpt_sovits_local`（设备本地）。RTX 50 系按 `nvidia-smi` 选 nvidia50x0 包；没有 N 卡用普通包，api_v2 自动降到 CPU。
+- 自动拉起：`TtsServices` 注册表里 GPT-SoVITS 换成 `AutoStartGptSovitsTtsDescriptor`（id / 参数 / 缓存键不变），指向托管端口的声音合成前先确保服务就绪；退出链停服务（Windows 不连坐子进程）。
+- UI：「本机 GPT-SoVITS」页（下载源 / 版本 / 安装位置 / 进度与取消 / 使用已解压的整合包 / 启停 / 日志 / 用本机服务新建声音 / 删除）。入口：添加声音对话框首项、GPT-SoVITS 声音编辑页、「设置 › 模型 › 语音合成」与「模型 › 模型文件」。
+- 设置整合：「模型 › 语音合成」从只写着系统引擎的说明页改为 TTS 的唯一主页（朗读声音 + 本机 GPT-SoVITS 状态 + 制卡兜底）；「模型文件」分区把 GPT-SoVITS 整合包与 OCR 模型并列；「阅读 › 有声书 › 朗读声音」保留为同一页的快捷入口。
+- 易用性：本机服务时参考音频可直接选文件（复制进 `<support>/tts_reference_audio/`，文件名含假名 / 汉字时预填参考文本）；语言代码显示可读名。
+- 未做：macOS / Linux（官方无免安装包，仍按外部服务手填地址）；切换自训练权重（`/set_*_weights`）。真实整合包（约 11 GB）的下载 → 解压 → 合成未在真机端到端跑过，状态 `implemented_unverified`。

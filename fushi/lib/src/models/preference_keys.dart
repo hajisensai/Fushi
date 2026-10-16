@@ -158,13 +158,36 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.system_y',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
+  // bool：悬浮字幕粗体（默认 true）。
+  'floating_lyric_bold',
   'floating_lyric_button_bg_opacity',
   'floating_lyric_click_lookup',
+  // int ARGB，0 = 跟随主题：底 / 非当前句字 / 当前句字 / 描边。
+  'floating_lyric_color_background',
+  'floating_lyric_color_current',
+  'floating_lyric_color_outline',
+  'floating_lyric_color_text',
+  // 旧「上下文行数 N」，只作 floating_lyric_visible_lines 未写时的迁移来源。
   'floating_lyric_context_lines',
+  // int 0..100：多行时非当前句不透明度。
+  'floating_lyric_context_opacity',
   'floating_lyric_corner_radius',
   'floating_lyric_font_size',
+  // double：字距 / 行高 / 描边宽。
+  'floating_lyric_letter_spacing',
+  'floating_lyric_line_height',
+  'floating_lyric_outline_width',
+  // int：水平对齐（0 居中 / 1 左）、文字内边距。
+  'floating_lyric_text_alignment',
   'floating_lyric_text_opacity',
+  'floating_lyric_text_padding',
+  // bool：竖排（Windows 原生窗）。
+  'floating_lyric_vertical',
+  // int 0..15：同时显示句数（0 = 按窗口高度自动）。
+  'floating_lyric_visible_lines',
   'floating_lyric_width',
+  // String JSON：Windows 悬浮字幕窗口矩形（物理 px）。
+  'floating_lyric_window_rect',
   'gal_card_lookup_independent_size',
   'gal_card_lookup_max_height',
   'gal_card_lookup_max_width',
@@ -306,6 +329,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
+  // String（默认 '' = flat）：手机底栏形态 flat / pager
+  // （AdaptiveNavBarStyle.prefValue）。
+  'nav_bar_style',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
   'nav_rail_expanded',
@@ -382,6 +408,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
+  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki / Fushi
+  // 复习 / 两者。模块关着时不读。非凭据、跨设备。
+  'srs_mining_target',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张
   // 投影表 + activity_events 学习行）归属哪个 Profile。由 v105 迁移一次性写下
@@ -397,6 +426,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'torrent_upload_intro_shown',
   // String：当前朗读声音预设 id（TtsPresetStore）。指向本机预设，设备本地。
   'tts_active_preset_id',
+  // JSON：本机一键部署的 GPT-SoVITS（GptSovitsLocalEngine）：整合包目录 / 端口 /
+  // 下载源 / 是否 app 所装。路径与端口只对这台电脑成立，设备本地。
+  'tts_gpt_sovits_local',
   // JSON：TTS 发音词典（写法 → 读法，TtsPronunciationStore），只改合成文本。
   'tts_pronunciation_rules',
   // double：TTS 朗读倍速（播放器本地倍速，服务端恒 1.0）。

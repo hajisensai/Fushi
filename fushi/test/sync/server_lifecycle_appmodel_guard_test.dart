@@ -11,7 +11,7 @@ import 'sync_settings_schema_source_corpus.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-/// BUG-085: the Hibiki LAN sync server must be owned app-wide by AppModel, not
+/// BUG-085: the Fushi LAN sync server must be owned app-wide by AppModel, not
 /// by the sync-settings page widget — leaving the page must not kill the host.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

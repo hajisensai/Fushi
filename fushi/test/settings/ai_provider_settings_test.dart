@@ -278,7 +278,7 @@ void main() {
 
     late Directory pathProviderDir;
     setUpAll(() {
-      pathProviderDir = Directory.systemTemp.createTempSync('hibiki_ai_pp');
+      pathProviderDir = Directory.systemTemp.createTempSync('fushi_ai_pp');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,
@@ -309,7 +309,7 @@ void main() {
       );
       prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
-      storeDir = Directory.systemTemp.createTempSync('hibiki_ai_settings');
+      storeDir = Directory.systemTemp.createTempSync('fushi_ai_settings');
       appModel = AppModel(testPlatformServices())
         ..wireLocalAudioForTesting(
           prefsRepo: prefs,

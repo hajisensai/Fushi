@@ -18,6 +18,19 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 
+/// Graph `driveItem` → [AssetEntry]。
+///
+/// 修改时间取**顶层** `lastModifiedDateTime`（服务端写入时刻，UTC `Z`），不取
+/// `fileSystemInfo.lastModifiedDateTime`——后者是客户端可自报的文件系统时间，不是服务器时间。
+AssetEntry oneDriveItemToAssetEntry(Map<String, dynamic> item) => AssetEntry(
+      id: item['id'] as String,
+      name: item['name'] as String,
+      isFolder: item.containsKey('folder'),
+      sizeBytes: (item['size'] as num?)?.toInt(),
+      modifiedAt: syncIsoTimestampMs(item['lastModifiedDateTime']),
+      revision: OneDriveSyncBackend._contentRevisionOf(item),
+    );
+
 /// OneDrive sync backend via Microsoft Graph API.
 ///
 /// Auth: OAuth 2.0 PKCE flow（外壳在 [PkceOAuthBackendMixin]）.
@@ -426,15 +439,7 @@ class OneDriveSyncBackend extends SyncBackend
   @override
   Future<List<AssetEntry>> listChildren(String namespaceId) async {
     final items = await _listChildren('/me/drive/items/$namespaceId/children');
-    return items
-        .map((item) => AssetEntry(
-              id: item['id'] as String,
-              name: item['name'] as String,
-              isFolder: item.containsKey('folder'),
-              sizeBytes: (item['size'] as num?)?.toInt(),
-              revision: _contentRevisionOf(item),
-            ))
-        .toList();
+    return items.map(oneDriveItemToAssetEntry).toList();
   }
 
   /// driveItem 的内容版本标记：优先内容哈希（个人版给 quickXorHash / sha1Hash，

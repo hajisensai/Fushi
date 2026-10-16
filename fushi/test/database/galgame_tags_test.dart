@@ -18,7 +18,7 @@ Future<FushiDatabase> _openDb() async {
 /// cascade 断言必须用这个（内存 forTesting 不开外键）。
 Future<FushiDatabase> _openRealDb() async {
   final Directory dir =
-      await Directory.systemTemp.createTemp('hibiki_galgame_tags_test_');
+      await Directory.systemTemp.createTemp('fushi_galgame_tags_test_');
   addTearDown(() async => dir.delete(recursive: true));
   final FushiDatabase db = FushiDatabase(dir.path);
   addTearDown(db.close);

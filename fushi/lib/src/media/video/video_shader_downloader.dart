@@ -188,7 +188,7 @@ final Anime4kPreset kAnime4kHqPreset =
 /// 大 pass 绑定 15~16 个纹理 → 需要 `vertex_texcoord0..15` + 顶点位置 = 17 个属性，**越过
 /// `GL_MAX_VERTEX_ATTRIBS`=16**（GL/GLES 通用下限）→ 链接失败（`shader link log status=0:
 /// Too many attributes (vertex_texcoord15)`）→ 该 pass 出不了帧 → **整屏黑**。该上限对 ra_gl
-/// 后端在**所有平台**都成立（非 Windows 独有），故 UL 在 hibiki 里根本无法渲染，全局弃用。
+/// 后端在**所有平台**都成立（非 Windows 独有），故 UL 在 fushi 里根本无法渲染，全局弃用。
 ///
 /// 极高 = 高档 VL 链 + 额外 `Restore_CNN_Soft_VL`：全为 VL 类文件（每 pass 属性数在 ANGLE
 /// 上限内，Windows 实机验证无 `Too many attributes`、正常出帧）；双重修复 → 强于高档。

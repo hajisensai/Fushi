@@ -10,7 +10,7 @@ void main() {
   late FushiSyncServer server;
 
   setUp(() async {
-    tempDir = Directory.systemTemp.createTempSync('hibiki_pair_test');
+    tempDir = Directory.systemTemp.createTempSync('fushi_pair_test');
     server = FushiSyncServer(
       syncDataDir: tempDir.path,
       port: 0, // ephemeral

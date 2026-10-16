@@ -59,7 +59,7 @@ class ReaderSettingsSideButton extends StatelessWidget {
     }
     final bool isLeft = scope.notifier!.value == ReaderSideSheetSide.left;
     return Semantics(
-      identifier: 'hibiki.reader.settings.move_side',
+      identifier: 'fushi.reader.settings.move_side',
       child: FushiIconButtonControl(
         key: const ValueKey<String>('reader_settings_side_toggle'),
         tooltip: isLeft

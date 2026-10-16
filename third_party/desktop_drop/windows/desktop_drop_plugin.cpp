@@ -24,7 +24,7 @@
 // with NO valid IDropTarget so drag-import shows the forbidden cursor app-wide
 // until restart. put_AllowExternalDrop(FALSE) in the WebView2 fork alone is
 // insufficient (applied after the controller already hijacked the registration).
-// The Hibiki app invokes the reinitialize method (below) after closing media to
+// The Fushi app invokes the reinitialize method (below) after closing media to
 // restore the registration regardless of which controller usurped it.
 
 namespace {

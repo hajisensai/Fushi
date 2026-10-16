@@ -42,7 +42,7 @@ void main() {
       );
       // It must still not steal keyboard focus.
       expect(createFlags.contains('WS_EX_NOACTIVATE'), isTrue);
-      // And it must float over every app, not just the Hibiki window.
+      // And it must float over every app, not just the Fushi window.
       expect(createFlags.contains('WS_EX_TOPMOST'), isTrue);
     });
 

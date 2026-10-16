@@ -38,14 +38,16 @@ import 'test_helpers.dart';
 /// （box-decoration-break: clone），同一列里相邻 wrapper 的接缝处两个圆角头对在一起；
 /// Blink 下长注音把基字盒撑到注音长度、压进两侧邻字，两层半透明底色叠出深色带。
 ///
+/// 2026-10-15（BUG-3369）起所有高亮的底色由窄条层画：每行一条 1em 窄条，wrapper
+/// 自身不铺底、不再有补缝阴影，接缝问题从结构上消失。
+///
 /// 本测试走生产路径：自造带振假名的竖排单章 EPUB 导入、挂静音音频 + 每句一条
 /// sasayaki 编码 cue、开书，依次在翻页 / 滚动 / VN 三种 view mode 下用有声书控制器
 /// [AudiobookPlayerController.skipToCueIndex] 逐句跳转（真实的跟读高亮路径），每句
 /// 在 WebView 里量当前句高亮的几何：
-///   - 同一列里相邻片段的接缝不得有圆角（notched）；
-///   - 接缝处不得留缝（unfilled）也不得叠色（overlap）；
-///   - 同一列各片段的横向范围一致（widthMismatch）；
-///   - 每一列的首尾片段保持圆角（roundEndsBad）；
+///   - 每一列恰好一条窄条（multiLane），盖住该列全部基字（uncovered）；
+///   - 窄条厚 1em（thickBad），沿块方向对正基字（offCenter）；
+///   - wrapper 不铺底（boxFill）、不带补缝阴影（shadow）；
 ///   - 高亮文字 = 该句正文（防空转：wrapper 数为 0 也算失败）。
 /// 每种模式抓一张带「幾重…橙…炸裂音」那句的 WebView 真像素截图。
 ///
@@ -190,65 +192,87 @@ $body</body>
 Future<Directory> _fixturesDir() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory dir = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki_fixtures_')
+      ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await dir.create(recursive: true);
   return dir;
 }
 
-/// 当前句高亮的几何度量（与本机 Chromium / Mac WKWebView 探针同一套判据）。
+/// 当前句高亮的几何度量（用户 2026-10-15「高亮一律一个字高」）：底色只由窄条层
+/// `fushi-hl-lane[data-hl="fushi-sentence-audio"]` 画，按基字文本（跳过 rt / rp）
+/// 量出每一行（竖排为列），每行应恰好一条、厚 1em、沿块方向对正基字、盖住整行。
 const String _kMeasureJs = r'''
 (function () {
-  var els = Array.from(document.querySelectorAll('.fushi-sentence-audio-active'));
+  if (window.__fushiLanes && window.__fushiLanes.flush) window.__fushiLanes.flush();
+  var els = Array.from(document.querySelectorAll('.fushi-sentence-audio-active, .fushi-active'));
   if (!els.length) return JSON.stringify({ wrappers: 0, text: '' });
-  var vertical = getComputedStyle(els[0]).writingMode.indexOf('vertical') === 0;
-  var px = function (v) { return parseFloat(v) || 0; };
-  var lineRects = function (el) {
-    return Array.from(el.getClientRects()).filter(function (x) { return x.width > 0.5 && x.height > 0.5; });
-  };
+  var cs0 = getComputedStyle(els[0]);
+  var vertical = cs0.writingMode.indexOf('vertical') === 0;
+  var em = parseFloat(cs0.fontSize) || 16;
   var sameLine = function (a, b) {
     return vertical ? (a.left < b.right && b.left < a.right) : (a.top < b.bottom && b.top < a.bottom);
   };
-  var trimOf = function (el) {
-    var bi = el.style.backgroundImage || '';
-    var m1 = /transparent ([0-9.]+)px/.exec(bi), m2 = /100% - ([0-9.]+)px/.exec(bi);
-    return { s: m1 ? parseFloat(m1[1]) : 0, e: m2 ? parseFloat(m2[1]) : 0 };
-  };
-  var frags = [];
   var text = '';
-  els.forEach(function (el) {
-    var cs = getComputedStyle(el);
-    var tr = trimOf(el);
+  var frags = [];
+  var out = { wrappers: els.length, frags: 0, lines: 0, joints: 0, lanes: 0, uncovered: 0,
+    multiLane: 0, thickBad: 0, offCenter: 0, shadow: 0, boxFill: 0, text: '', details: [] };
+  els.forEach(function (el, wi) {
+    if (el.style.boxShadow) { out.shadow++; out.details.push('shadow @' + wi); }
+    var bg = getComputedStyle(el).backgroundColor;
+    var m = /rgba?\(([^)]*)\)/.exec(bg);
+    var alpha = m ? (m[1].split(',')[3] === undefined ? 1 : parseFloat(m[1].split(',')[3])) : 0;
+    if (alpha > 0.01) { out.boxFill++; out.details.push('box bg ' + bg + ' @' + wi); }
     var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
     var t;
-    while ((t = tw.nextNode())) if (!t.parentElement.closest('rt,rp')) text += t.nodeValue;
-    lineRects(el).forEach(function (r) {
-      frags.push({ r: r, sr: px(cs.borderStartStartRadius) + px(cs.borderEndStartRadius),
-        er: px(cs.borderStartEndRadius) + px(cs.borderEndEndRadius), shadow: el.style.boxShadow,
-        ts: tr.s, te: tr.e });
-    });
-  });
-  var out = { wrappers: els.length, frags: frags.length, joints: 0, notched: 0, unfilled: 0,
-    overlap: 0, widthMismatch: 0, roundEndsBad: 0, text: text, details: [] };
-  for (var f = 0; f < frags.length; f++) {
-    var a = frags[f], b = frags[f + 1];
-    var prevSame = f > 0 && sameLine(frags[f - 1].r, a.r);
-    var nextSame = b && sameLine(a.r, b.r);
-    if (!prevSame && a.sr < 0.5) { out.roundEndsBad++; out.details.push('run-start square @' + f); }
-    if (!nextSame && a.er < 0.5) { out.roundEndsBad++; out.details.push('run-end square @' + f); }
-    if (!nextSame) continue;
-    out.joints++;
-    var gap = (vertical ? b.r.top - a.r.bottom : b.r.left - a.r.right) + a.te + b.ts;
-    if (a.er > 0.5 || b.sr > 0.5) { out.notched++; out.details.push('notch @' + f); }
-    if (gap > 0.5 && !a.shadow && !b.shadow) { out.unfilled++; out.details.push('gap ' + gap.toFixed(1)); }
-    if (gap < -0.5) { out.overlap++; out.details.push('overlap ' + gap.toFixed(1)); }
-    if (vertical
-        ? (Math.abs(a.r.left - b.r.left) > 0.5 || Math.abs(a.r.right - b.r.right) > 0.5)
-        : (Math.abs(a.r.top - b.r.top) > 0.5 || Math.abs(a.r.bottom - b.r.bottom) > 0.5)) {
-      out.widthMismatch++;
-      out.details.push('width @' + f);
+    while ((t = tw.nextNode())) {
+      if (t.parentElement.closest('rt,rp')) continue;
+      text += t.nodeValue;
+      var r = document.createRange();
+      r.selectNodeContents(t);
+      Array.from(r.getClientRects()).forEach(function (x) {
+        if (x.width > 0.5 && x.height > 0.5) frags.push({ r: x, w: wi });
+      });
     }
-  }
+  });
+  out.text = text;
+  out.frags = frags.length;
+  var lanes = Array.from(document.querySelectorAll('fushi-hl-lane[data-hl="fushi-sentence-audio"]'))
+    .map(function (l) { return l.getBoundingClientRect(); })
+    .filter(function (x) { return x.width > 0.5 && x.height > 0.5; });
+  out.lanes = lanes.length;
+  var lines = [];
+  frags.forEach(function (f) {
+    var line = lines.find(function (l) { return sameLine(l.box, f.r); });
+    if (!line) { lines.push({ box: f.r, frags: [f] }); return; }
+    line.frags.push(f);
+  });
+  out.lines = lines.length;
+  lines.forEach(function (line, li) {
+    var a = Infinity, b = -Infinity, mid = 0, wrappers = {};
+    line.frags.forEach(function (f) {
+      a = Math.min(a, vertical ? f.r.top : f.r.left);
+      b = Math.max(b, vertical ? f.r.bottom : f.r.right);
+      mid += vertical ? (f.r.left + f.r.right) / 2 : (f.r.top + f.r.bottom) / 2;
+      wrappers[f.w] = true;
+    });
+    mid /= line.frags.length;
+    if (Object.keys(wrappers).length > 1) out.joints++;
+    var mine = lanes.filter(function (l) {
+      var lm = vertical ? (l.left + l.right) / 2 : (l.top + l.bottom) / 2;
+      return Math.abs(lm - mid) < em * 0.5;
+    });
+    if (mine.length === 0) { out.uncovered++; out.details.push('no lane line ' + li); return; }
+    if (mine.length > 1) { out.multiLane++; out.details.push(mine.length + ' lanes line ' + li); }
+    var l = mine[0];
+    var thick = vertical ? l.width : l.height;
+    if (Math.abs(thick - em) > em * 0.1) { out.thickBad++; out.details.push('thick ' + (thick / em).toFixed(2) + 'em line ' + li); }
+    var lm = vertical ? (l.left + l.right) / 2 : (l.top + l.bottom) / 2;
+    // 横排 CJK 按字体墨迹中线对正，相对行盒中线允许 0.25em。
+    if (Math.abs(lm - mid) > em * (vertical ? 0.1 : 0.25)) { out.offCenter++; out.details.push('off ' + ((lm - mid) / em).toFixed(2) + 'em line ' + li); }
+    var la = Math.min.apply(null, mine.map(function (x) { return vertical ? x.top : x.left; }));
+    var lb = Math.max.apply(null, mine.map(function (x) { return vertical ? x.bottom : x.right; }));
+    if (la > a + 1 || lb < b - 1) { out.uncovered++; out.details.push('short line ' + li + ' ' + (a - la).toFixed(1) + '/' + (lb - b).toFixed(1)); }
+  });
   out.vertical = vertical;
   return JSON.stringify(out);
 })()
@@ -332,17 +356,19 @@ Future<List<String>> _runMode(
     splitJoints += (m['joints'] as num).toInt();
     debugPrint(
       '$tag cue $i wrappers=${m['wrappers']} frags=${m['frags']} '
-      'joints=${m['joints']} notched=${m['notched']} unfilled=${m['unfilled']} '
-      'overlap=${m['overlap']} widthMismatch=${m['widthMismatch']} '
-      'roundEndsBad=${m['roundEndsBad']} vertical=${m['vertical']} '
-      'details=${m['details']}',
+      'lines=${m['lines']} joints=${m['joints']} lanes=${m['lanes']} '
+      'uncovered=${m['uncovered']} multiLane=${m['multiLane']} '
+      'thickBad=${m['thickBad']} offCenter=${m['offCenter']} '
+      'shadow=${m['shadow']} boxFill=${m['boxFill']} '
+      'vertical=${m['vertical']} details=${m['details']}',
     );
     for (final String k in <String>[
-      'notched',
-      'unfilled',
-      'overlap',
-      'widthMismatch',
-      'roundEndsBad',
+      'uncovered',
+      'multiLane',
+      'thickBad',
+      'offCenter',
+      'shadow',
+      'boxFill',
     ]) {
       if ((m[k] as num) != 0) {
         failures.add('$tag cue $i 「$want」 $k=${m[k]} ${m['details']}');

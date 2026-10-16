@@ -76,7 +76,7 @@ void main() {
     late String dbPath;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_busy_vs_miss');
+      tmp = Directory.systemTemp.createTempSync('fushi_busy_vs_miss');
       dbPath = '${tmp.path}/audio.db';
       _seedDb(dbPath);
     });

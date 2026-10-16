@@ -81,13 +81,13 @@ public:
   std::unique_ptr<SessionManager> sessionManager_;
   std::unique_ptr<TensorManager> tensorManager_;
 
-  // Hibiki fork: replies are marshalled back here; heavy ORT work runs on the
+  // Fushi fork: replies are marshalled back here; heavy ORT work runs on the
   // two worker queues (declared after the dispatcher so they are joined before
   // the dispatcher window goes away).
   PlatformThreadDispatcher dispatcher_;
   WorkQueue gpuQueue_{"flutter_onnxruntime gpu"};
   WorkQueue cpuQueue_{"flutter_onnxruntime cpu"};
-  // Hibiki delta #11: every CPU session gets its own worker thread (created on
+  // Fushi delta #11: every CPU session gets its own worker thread (created on
   // first use, dropped after close) so independent CPU sessions run
   // concurrently — e.g. two greedy-search graphs each taking half of a batch.
   // ORT sessions are safe to Run from different threads; only GPU (DirectML)
@@ -538,7 +538,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
         session_options.SetInterOpNumThreads(std::get<int32_t>(inter_threads_it->second));
       }
 
-      // Hibiki: pin named free dimensions (see OrtSessionOptions.freeDimensionOverrides).
+      // Fushi: pin named free dimensions (see OrtSessionOptions.freeDimensionOverrides).
       auto free_dims_it = options_map.find(flutter::EncodableValue("freeDimensionOverrides"));
       if (free_dims_it != options_map.end() && std::holds_alternative<flutter::EncodableMap>(free_dims_it->second)) {
         const auto &free_dims = std::get<flutter::EncodableMap>(free_dims_it->second);
@@ -712,7 +712,7 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   }
 }
 
-// Hibiki: DXGI budget for adapter `deviceId` (default 0). Errors as
+// Fushi: DXGI budget for adapter `deviceId` (default 0). Errors as
 // UNAVAILABLE so the Dart side can treat "unknown" distinctly from a number.
 void FlutterOnnxruntimePlugin::HandleGetDeviceMemoryInfo(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,

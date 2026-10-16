@@ -30,7 +30,7 @@ void main() {
     prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory tempDir = Directory.systemTemp.createTempSync(
-      'hibiki_anidb_status_',
+      'fushi_anidb_status_',
     );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

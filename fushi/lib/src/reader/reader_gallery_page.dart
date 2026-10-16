@@ -1286,7 +1286,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           onPressed: () => _scrollToCurrentPosition(animate: true),
         ),
       Semantics(
-        identifier: 'hibiki.reader.gallery.close',
+        identifier: 'fushi.reader.gallery.close',
         child: FushiIconButtonControl(
           key: const ValueKey<String>('fushi_gallery_close'),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,

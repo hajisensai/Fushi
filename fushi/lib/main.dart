@@ -12,6 +12,7 @@ import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
@@ -32,6 +33,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_app_runtime.dart' show installSrsAppRuntime;
 import 'package:fushi/src/sync/interconnect_p2p_app.dart'
     show installInterconnectP2pClient;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
@@ -110,6 +112,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
@@ -141,11 +144,14 @@ import 'package:fushi_core/fushi_core.dart'
         BookFormat,
         EpubBookRow,
         FushiDatabaseFailureKind,
+        kLegacySchemaBridgeAppVersion,
+        kLegacySchemaBridgeReleaseUrl,
         ProfileMediaKind,
         VideoBookRow,
         VideoBooksCompanion;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
@@ -229,7 +235,7 @@ void popupMain() {
 ///
 /// [args] are the Dart entrypoint arguments. On Windows the runner forwards the
 /// process argv (minus the binary name) via `set_dart_entrypoint_arguments`, so
-/// opening a video with Hibiki (file association / drag-onto-exe / CLI) lands the
+/// opening a video with Fushi (file association / drag-onto-exe / CLI) lands the
 /// video path here. We stash the first supported video path for the widget tree
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
@@ -623,6 +629,10 @@ void main([List<String> args = const <String>[]]) {
         );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
+    // 复习模块（SRS，默认关）的常驻装配：模块开着时装上 AnkiConnect 兼容端点、同步
+    // 后置步骤与自动优化调度；关着时 provider 为 null，什么也不装（零开销）。开关切换
+    // 时 provider 随 srsModuleEnabledProvider 重建 / 销毁。
+    installSrsAppRuntime(container);
     // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
     // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
     unawaited(
@@ -734,7 +744,7 @@ void main([List<String> args = const <String>[]]) {
     }
 
     // galgame helper 与 Magpie 都只从 Windows 主包随附归档安装（BUG-1196 / BUG-1292）。
-    // 版本与 app 强绑定：要新组件就更新 Hibiki。不要恢复后台静默下载或旧包联网兜底。
+    // 版本与 app 强绑定：要新组件就更新 Fushi。不要恢复后台静默下载或旧包联网兜底。
 
     /// Capture Flutter framework errors with full details.
     FlutterError.onError = (details) {
@@ -835,7 +845,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   String? _openingCardSourceUrl;
 
   /// TODO-904 P0 回归：Windows 单实例守卫下，第二实例（文件关联 / 拖到 exe / CLI
-  /// `hibiki.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
+  /// `fushi.exe "%1"`）不会自己起窗口，而是把视频路径经 WM_COPYDATA 转交首实例
   /// （见 `windows/runner/external_video_handoff.*` + `flutter_window.cpp`）。首实例
   /// 经此 MethodChannel 收到 `openExternalVideo`，复用现有 [_openExternalVideo]
   /// 打开链路。Linux 同一条通道：GTK runner 以 GApplication 单实例注册到会话
@@ -947,7 +957,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
-    // ⌘Q / 菜单「退出 Hibiki」/ Dock 右键退出 走的是 NSApplication 的
+    // ⌘Q / 菜单「退出 Fushi」/ Dock 右键退出 走的是 NSApplication 的
     // applicationShouldTerminate:——它完全不经过 [onWindowClose]，于是整条
     // [_flushAndExitForWindowClose]（窗口几何落盘 → ExitFlushRegistry 把活跃
     // 阅读/听书/观看页尚未落库的位置与统计写穿 → 关书同步 drain → close
@@ -1282,6 +1292,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // （CLI 能认出残留，但少一次连不上的探测）。
       _guardedExitStep('ctl channel stop', () async {
         await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+      }),
+      // 本机 GPT-SoVITS：Windows 不连坐子进程，exit(0) 后服务会继续占着显存和端口，
+      // 解压中的 tar 也会继续往安装目录写。shutdown 同时停服务、取消安装（杀 tar）。
+      // 没起过时 [TtsServices.existing] 为 null，零成本。
+      _guardedExitStep('local tts server stop', () async {
+        await TtsServices.existing?.localGptSovits
+            .shutdown()
+            .timeout(const Duration(seconds: 2));
       }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
@@ -1944,7 +1962,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return null;
   }
 
-  /// 处理「从 app 外用 Hibiki 打开视频」：建/取一条外部视频 VideoBook（videoPath
+  /// 处理「从 app 外用 Fushi 打开视频」：建/取一条外部视频 VideoBook（videoPath
   /// 存外部绝对路径，不复制文件），然后用全局 navigator push [VideoFushiPage]
   /// 播放。bookUid 用 [externalVideoBookUid]（全路径 sha1）派生，幂等——同一文件
   /// 重复打开复用同条记录、保留上次进度。入库后书架视频分区自动出现该条目。
@@ -2253,7 +2271,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     // retrying re-runs init and fails identically; the DB is intentionally left
     // untouched). Checked BEFORE the generic init-error screen.
     final downgrade = appModel.downgradeError;
-    if (downgrade != null) {
+    // 最低 schema 门槛：库比本版本能升级的下限还老（或只有改名前的 hibiki.db）。
+    // 与降级同一块非重试专屏，只是文案换成「先装桥接版本打开一次，再更新」。
+    final legacySchema = appModel.legacySchemaError;
+    if (downgrade != null || legacySchema != null) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
       final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
@@ -2273,7 +2294,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     FushiIcon(Icons.system_update, size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
-                      t.db_downgrade_title,
+                      downgrade != null
+                          ? t.db_downgrade_title
+                          : t.db_legacy_schema_title,
                       style: fallbackTheme.textTheme.titleLarge?.copyWith(
                         color: cs.onSurface,
                       ),
@@ -2281,15 +2304,36 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      t.db_downgrade_message(
-                        dbVersion: downgrade.dbVersion,
-                        appVersion: downgrade.appSchemaVersion,
-                      ),
+                      downgrade != null
+                          ? t.db_downgrade_message(
+                              dbVersion: downgrade.dbVersion,
+                              appVersion: downgrade.appSchemaVersion,
+                            )
+                          : t.db_legacy_schema_message(
+                              version: kLegacySchemaBridgeAppVersion,
+                              url: kLegacySchemaBridgeReleaseUrl,
+                            ),
                       style: fallbackTheme.textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
                     ),
+                    // 门槛提示给出可执行出口：直接打开桥接版本的 Release 页。
+                    if (downgrade == null) ...[
+                      const SizedBox(height: 20),
+                      FushiFilledButton.icon(
+                        icon: const FushiIcon(FushiIcons.openInNew, size: 18),
+                        label: Text(
+                          t.db_legacy_schema_release_open(
+                            version: kLegacySchemaBridgeAppVersion,
+                          ),
+                        ),
+                        onPressed: () => launchUrl(
+                          Uri.parse(kLegacySchemaBridgeReleaseUrl),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2299,7 +2343,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     }
     // TODO-905: the DB could not be opened even after WAL/sidecar recovery —
-    // the main hibiki.db is corrupt. Show an actionable notice (the recovery
+    // the main fushi.db is corrupt. Show an actionable notice (the recovery
     // ladder already ran inside the open path, so a plain Retry would loop
     // forever against the same un-openable file). Checked BEFORE the generic
     // init-error screen so the user gets the corrupt-DB guidance, not a raw
@@ -2694,6 +2738,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           themeMode: themeMode,
           theme: lightTheme,
           darkTheme: darkTheme,
+          // 桌面端自动滚动条：外观不变，按偏一点也能抓住拇指拖、点轨道不再
+          // 整页乱跳（见 FushiScrollBehavior）。
+          scrollBehavior: const FushiScrollBehavior(),
           // 启动首帧从 fallback 主题切到持久化主题时不做过渡；首帧呈现后恢复
           // 正常的主题交叉过渡。墨水屏下始终关闭（中间灰帧每帧一次局部刷新）。
           themeAnimationStyle:

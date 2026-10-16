@@ -22,7 +22,7 @@ import 'package:fushi/src/mining/galgame_helper_installer.dart'
 void _log(String message) => debugPrint('[magpie] $message');
 
 /// fork 的上游基线版本（仅用于展示与问题定位，不参与任何判定；是否需要更新一律以 sha256
-/// 侧车与当前 Hibiki 随包归档为准）。
+/// 侧车与当前 Fushi 随包归档为准）。
 const String kMagpieUpstreamVersion = 'v0.12.1';
 
 /// 本客户端**已验证过**的 Magpie 配置 schema 版本（上游 `src/Magpie/AppSettings.cpp` 的
@@ -38,10 +38,10 @@ const String kMagpieMetadataName = 'hibiki-magpie.json';
 const String kMagpieConfigDirName = 'config';
 const String kMagpieConfigFileName = 'config.json';
 
-/// 安装目录名（落在 `Hibiki.exe` 同级）。
+/// 安装目录名（落在 `Fushi.exe` 同级）。
 const String kMagpieInstallDirName = 'magpie';
 
-/// Windows 主包内随附的 **精简版** Magpie 归档目录名（落在 `Hibiki.exe` 同级）。
+/// Windows 主包内随附的 **精简版** Magpie 归档目录名（落在 `Fushi.exe` 同级）。
 ///
 /// 与安装落点 [kMagpieInstallDirName] 刻意不同名：一个是「发行介质」，一个是「装好的
 /// 东西」，同名会让「装到一半」和「归档本身」在同一个目录里纠缠不清。范式同 galgame
@@ -54,7 +54,7 @@ String magpieBundledZipName(String arch) => 'Magpie-hibiki-slim-$arch.zip';
 
 /// 校验安装完整性用的根文件清单。**只列缩放真正必需的三个**：主程序、WinUI 运行时、资源
 /// 索引。上游包里另有 `TouchHelper.exe`（只服务触摸）与 `Updater.exe`（Magpie 自己的自更新
-/// 器，与 Hibiki 随包交付的版本边界冲突，fork 里随时可能剔除）—— 把它们列进必需清单只会在
+/// 器，与 Fushi 随包交付的版本边界冲突，fork 里随时可能剔除）—— 把它们列进必需清单只会在
 /// 我们精简产物时把客户端打红，故不列。
 const List<String> kMagpieRequiredRootFiles = <String>[
   'Magpie.exe',
@@ -166,7 +166,7 @@ enum MagpieInstallResult {
   /// 本轮从主包随附归档安装成功。
   installed,
 
-  /// 当前 Hibiki 构建缺少随包归档。用户应更新/重装 Hibiki，不允许联网补取。
+  /// 当前 Fushi 构建缺少随包归档。用户应更新/重装 Fushi，不允许联网补取。
   bundleMissing,
 
   /// **完整性校验失败**：随包 zip/侧车缺一，或 zip 与侧车摘要不符。
@@ -210,15 +210,15 @@ String magpieRequireVerifiedSha(String? sha, String arch) {
 /// Magpie（窗口超分）的随包安装器。
 ///
 /// 与 galgame helper 安装器同范式：只认主包随附 zip + sha256 侧车，经过 staging 校验和
-/// 换入式安装（旧文件 rename 让位）。缺包、损坏或旧构建一律提示更新 Hibiki，绝不联网。
-/// 落点是 `Hibiki.exe` 同级的 `magpie\`（安装器 `PrivilegesRequired=lowest`，此目录用户
+/// 换入式安装（旧文件 rename 让位）。缺包、损坏或旧构建一律提示更新 Fushi，绝不联网。
+/// 落点是 `Fushi.exe` 同级的 `magpie\`（安装器 `PrivilegesRequired=lowest`，此目录用户
 /// 可写、免提权）。
 class MagpieInstaller {
   MagpieInstaller({Directory? bundledDirectory, bool? isWindowsOverride})
       : _bundledDirectoryOverride = bundledDirectory,
         _isWindows = isWindowsOverride ?? Platform.isWindows;
 
-  /// 仅测试注入：主包随附归档目录（生产恒为 `Hibiki.exe` 同级的 `magpie_bundle/`）。
+  /// 仅测试注入：主包随附归档目录（生产恒为 `Fushi.exe` 同级的 `magpie_bundle/`）。
   final Directory? _bundledDirectoryOverride;
 
   /// 平台判定的**唯一**入口，仅测试注入（生产恒为 [Platform.isWindows]）。
@@ -239,7 +239,7 @@ class MagpieInstaller {
     return run;
   }
 
-  /// `Hibiki.exe` 同级的 `magpie\` 安装目录。
+  /// `Fushi.exe` 同级的 `magpie\` 安装目录。
   static Directory installDirectory() {
     final String exeDir = File(Platform.resolvedExecutable).parent.path;
     return Directory(p.join(exeDir, kMagpieInstallDirName));
@@ -259,7 +259,7 @@ class MagpieInstaller {
   static File _markerFile() =>
       File(p.join(installDirectory().path, magpieMarkerName()));
 
-  /// 主包内随附归档所在目录（`Hibiki.exe` 同级的 `magpie_bundle/`）。
+  /// 主包内随附归档所在目录（`Fushi.exe` 同级的 `magpie_bundle/`）。
   Directory _bundledDirectory() {
     final Directory? override = _bundledDirectoryOverride;
     if (override != null) return override;
@@ -381,7 +381,7 @@ class MagpieInstaller {
     required String sha,
   }) async {
     final Directory staging =
-        await Directory.systemTemp.createTemp('hibiki_magpie_staging_');
+        await Directory.systemTemp.createTemp('fushi_magpie_staging_');
     try {
       final Set<String> rootFiles = await _extractZip(zip, staging);
       final List<String> missingFromPackage = magpieMissingFiles(rootFiles);

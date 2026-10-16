@@ -11,7 +11,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 控制条避让恒加进默认 bottomPadding（字幕恒抬高、进度条隐藏时也留空白）。129 改成
 /// 「控制条出现时把字幕往上顶对应高度、隐藏落回」的动态避让。
 ///
-/// TODO-364 根因：旧实现 Hibiki 侧自建一份**镜像** `_videoControlsVisible` + **独立隐藏
+/// TODO-364 根因：旧实现 Fushi 侧自建一份**镜像** `_videoControlsVisible` + **独立隐藏
 /// Timer** `_videoControlsHideTimer`，与 media_kit 私有 `visible` + 私有 Timer 各自计时、
 /// 各入口（hover/移动 tap/键盘 poke）独立维护 → 与真实控制条相位会反（进度条起落时并发
 /// 操作字幕方向反）。修复：vendored media_kit_video fork 给两套控制主题加 `visibilityNotifier`，
@@ -60,10 +60,10 @@ void main() {
         reason: '派生 notifier 必须在 dispose 释放，避免泄漏');
   });
 
-  test('TODO-364 反退回：不再有 Hibiki 侧独立隐藏 Timer / 移动镜像 toggle', () {
+  test('TODO-364 反退回：不再有 Fushi 侧独立隐藏 Timer / 移动镜像 toggle', () {
     // 旧实现的镜像独立 Timer 与 media_kit 私有 Timer 相位反（根因），修复后删除。
     expect(src, isNot(contains('_videoControlsHideTimer')),
-        reason: '不应残留 Hibiki 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
+        reason: '不应残留 Fushi 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
     expect(src, isNot(contains('_toggleControlsVisibleForTap')),
         reason: '不应残留移动端镜像 toggle（移动 tap 由 media_kit onTap 决定并推送，TODO-364）');
   });
@@ -249,7 +249,7 @@ void main() {
     }
   });
 
-  test('移动端点画面 toggle 交给 media_kit onTap（不再 Hibiki 镜像旁路，TODO-364）', () {
+  test('移动端点画面 toggle 交给 media_kit onTap（不再 Fushi 镜像旁路，TODO-364）', () {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
     final int handlerEnd =
@@ -257,7 +257,7 @@ void main() {
     final String body = src.substring(handler, handlerEnd);
     expect(body, isNot(contains('_toggleControlsVisibleForTap()')),
         reason:
-            '移动端点画面不应再走 Hibiki 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
+            '移动端点画面不应再走 Fushi 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
   });
 
   test('锁定 / 沉浸 / 真 overlay 侧栏门控下派生强制不可见，但字幕列表不门控（BUG-371）', () {

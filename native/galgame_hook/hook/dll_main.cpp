@@ -397,7 +397,7 @@ void WriteMarkerFile(DWORD pid) {
   if (f == INVALID_HANDLE_VALUE) {
     return;
   }
-  const char msg[] = "hibiki voice hook attached\n";
+  const char msg[] = "fushi voice hook attached\n";
   DWORD written = 0;
   WriteFile(f, msg, sizeof(msg) - 1, &written, nullptr);
   CloseHandle(f);
@@ -611,8 +611,8 @@ inline void RecordVoiceClip(uint32_t ring_offset, uint32_t byte_len,
 
 // 通知 injector IPC 契约已经可用。必须在任何 MinHook/引擎探测之前调用：
 // 这些重型安装可能被目标进程里已有的 hook 拖慢，不能因此让 injector 超时并释放共享内存。
-bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
-  const std::wstring evt = ReadyEventName(pid, legacy_hibiki_ipc);
+bool SignalReady(DWORD pid) {
+  const std::wstring evt = ReadyEventName(pid);
   HANDLE ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, evt.c_str());
   if (ready == nullptr) return false;
   const bool signaled = SetEvent(ready) != FALSE;
@@ -643,19 +643,12 @@ bool SignalReady(DWORD pid, bool legacy_hibiki_ipc) {
 #include "adapter_registry.inc"
 
 // 工作线程：打开共享内存 -> 校验契约 -> 标记 hooked -> 由 registry 安装 adapter -> 通知 injector。
-DWORD WINAPI HookWorker(LPVOID module_context) {
+DWORD WINAPI HookWorker(LPVOID /*module_context*/) {
   const DWORD pid = GetCurrentProcessId();
   AdapterRegistry registry;
   WriteMarkerFile(pid);
 
-  wchar_t module_path[MAX_PATH] = {0};
-  const DWORD module_path_length = GetModuleFileNameW(
-      reinterpret_cast<HMODULE>(module_context), module_path, MAX_PATH);
-  const bool legacy_hibiki_ipc =
-      module_path_length > 0 && module_path_length < MAX_PATH &&
-      fushi_voice_hook::ComponentUsesLegacyHibikiIpc(
-          std::wstring(module_path, module_path_length));
-  const std::wstring shm = SharedMemoryName(pid, legacy_hibiki_ipc);
+  const std::wstring shm = SharedMemoryName(pid);
   g_mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, shm.c_str());
   if (g_mapping != nullptr) {
     g_header = static_cast<SharedHeader*>(
@@ -696,7 +689,7 @@ DWORD WINAPI HookWorker(LPVOID module_context) {
                                               registry.native_text_candidate());
   // 此时 DLL、共享内存与契约均已就绪，先让 injector 进入 hold 保住映射。
   // 后面的 MinHook/Siglus/KiriKiri 探测允许异步继续，不能阻塞 proof-of-life。
-  if (!SignalReady(pid, legacy_hibiki_ipc)) {
+  if (!SignalReady(pid)) {
     // This worker will never install hooks or advance Pending. A later helper
     // must not reuse its mapping as a live, ready injection session.
     fushi_voice_hook::AtomicStoreShared32(&g_header->hooked, 0u);

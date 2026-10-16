@@ -8,7 +8,7 @@ import java.util.Enumeration
 
 /**
  * Mirrors Mihon's private-extension loader order: boot/system classes first,
- * then extension classes, then Hibiki's host API. This lets an extension carry
+ * then extension classes, then Fushi's host API. This lets an extension carry
  * its multisrc implementation while keeping the source/network ABI unified.
  */
 internal class ChildFirstPathClassLoader(

@@ -853,7 +853,7 @@ void main() {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp)
       ..startError = StateError(
         'PlatformException(ORT_ERROR, Load model from '
-        r'D:\hibiki\support\asr_models\reazonspeech-k2-v2\'
+        r'D:\fushi\support\asr_models\reazonspeech-k2-v2\'
         'encoder-epoch-99-avg-1.onnx failed:Protobuf parsing failed., '
         'false, null)',
       );

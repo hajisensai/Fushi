@@ -17,17 +17,9 @@ void main() {
     for (final String signature in signatures) {
       expect(signature, endsWith('-$kMangaOcrPipelineRevision'));
     }
-    expect(
-      MangaOcrLocalModel.baberu.cacheSignature,
-      isNot('local-onnx-baberu-v1-bicubic'),
-    );
   });
 
-  test('Windows supports Baberu and unknown values retain the default', () {
-    expect(
-      MangaOcrLocalModel.forPlatform('baberu', operatingSystem: 'windows'),
-      MangaOcrLocalModel.baberu,
-    );
+  test('unknown values retain the default', () {
     expect(
       MangaOcrLocalModel.forPlatform('unknown', operatingSystem: 'windows'),
       kDefaultMangaOcrLocalModel,
@@ -37,16 +29,19 @@ void main() {
   test('default local model is the per-column CTC', () {
     expect(kDefaultMangaOcrLocalModel, MangaOcrLocalModel.mangaCtc);
     expect(MangaOcrLocalModel.values, <MangaOcrLocalModel>[
-      MangaOcrLocalModel.baberu,
       MangaOcrLocalModel.mangaCtc,
     ]);
   });
 
   test('removed model keys fall back to the default model', () {
-    // 2026-10 删除了 kha-white manga-ocr（`manga_ocr`）与 Windows 本地 Python +
-    // torch CUDA 档（`manga_ocr_cuda`）；旧偏好 / 备份 / 互联对端可能还带着这些
-    // key，必须落回默认模型而不是选到不存在的引擎。
-    for (final String removed in <String>['manga_ocr', 'manga_ocr_cuda']) {
+    // 2026-10 删除了 kha-white manga-ocr（`manga_ocr`）、Windows 本地 Python +
+    // torch CUDA 档（`manga_ocr_cuda`）与 Baberu（`baberu`）；旧偏好 / 备份 /
+    // 互联对端可能还带着这些 key，必须落回默认模型而不是选到不存在的引擎。
+    for (final String removed in <String>[
+      'manga_ocr',
+      'manga_ocr_cuda',
+      'baberu',
+    ]) {
       expect(
         MangaOcrLocalModel.values.map((MangaOcrLocalModel m) => m.key),
         isNot(contains(removed)),
@@ -69,7 +64,7 @@ void main() {
   });
 
   test(
-    'leftover manga-cuda directory is deleted, live models untouched',
+    'leftover manga-cuda / manga-baberu directories are deleted, CTC untouched',
     () async {
       final Directory root = Directory.systemTemp.createTempSync(
         'ocr-removed-models',
@@ -78,16 +73,29 @@ void main() {
       final Directory cuda = Directory(p.join(root.path, 'manga-cuda'));
       Directory(p.join(cuda.path, 'python', 'Lib')).createSync(recursive: true);
       File(p.join(cuda.path, 'torch.whl')).writeAsBytesSync(<int>[1, 2, 3]);
-      final List<Directory> live = <Directory>[
-        for (final String name in <String>['manga-ctc', 'manga-baberu'])
-          Directory(p.join(root.path, name))..createSync(),
-      ];
-
-      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 1);
-      expect(cuda.existsSync(), isFalse);
-      for (final Directory dir in live) {
-        expect(dir.existsSync(), isTrue, reason: dir.path);
+      // Baberu 目录里也有一份同名检测器：删的是整个 manga-baberu，CTC 那份不动。
+      final Directory baberu = Directory(p.join(root.path, 'manga-baberu'))
+        ..createSync();
+      for (final String name in <String>[
+        'detector-v4-s_int8.onnx',
+        'vision_fp16.onnx',
+        'decoder_prefill_int8.onnx',
+        'decoder_step_int8.onnx',
+        'vocab.json',
+        'vision_fp16.onnx.part',
+      ]) {
+        File(p.join(baberu.path, name)).writeAsBytesSync(<int>[1]);
       }
+      final Directory ctc = Directory(p.join(root.path, 'manga-ctc'))
+        ..createSync();
+      final File ctcDetector = File(p.join(ctc.path, 'detector-v4-s_int8.onnx'))
+        ..writeAsBytesSync(<int>[1]);
+
+      expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 2);
+      expect(cuda.existsSync(), isFalse);
+      expect(baberu.existsSync(), isFalse);
+      expect(ctc.existsSync(), isTrue);
+      expect(ctcDetector.existsSync(), isTrue);
       // 幂等：再调一次什么都不删。
       expect(await deleteRemovedMangaOcrModelDirs(ocrModelsRoot: root), 0);
     },
@@ -210,7 +218,6 @@ void main() {
       }
       const MangaOcrLocalModel ctc = MangaOcrLocalModel.mangaCtc;
       expect(ctc.availableOnAllPlatforms, isTrue);
-      expect(MangaOcrLocalModel.baberu.availableOnAllPlatforms, isFalse);
       expect(
         (await ctc.modelsDirectory()).path,
         p.join(root.path, 'ocr_models', 'manga-ctc'),
@@ -262,7 +269,7 @@ void main() {
 
   for (final String os in <String>['android', 'ios', 'macos', 'linux']) {
     test(
-      '$os restored Baberu preference imports into the default model',
+      '$os restored removed Baberu preference imports into the default model',
       () async {
         final EnginePaths previous = enginePaths;
         final Directory root = Directory(

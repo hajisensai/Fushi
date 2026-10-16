@@ -173,7 +173,7 @@ mixin _LocalLibraryHostAudiobooks
       throw StateError('audiobook not found for identity: $identity');
     }
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_audiobook_subs_export');
+        Directory.systemTemp.createTempSync('fushi_audiobook_subs_export');
     final File out = File(p.join(tmpDir.path, '$identity.fushisubs'));
     await _packages.exportAudioSubtitlePackage(
       srtBookUid: srt.uid,
@@ -191,7 +191,7 @@ mixin _LocalLibraryHostAudiobooks
     required String? bookKey,
   }) async {
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_audiobook_export');
+        Directory.systemTemp.createTempSync('fushi_audiobook_export');
     final File out = File(p.join(tmpDir.path, '$identity.fushiaudio'));
     await _packages.exportAudioDatabasePackage(
       srtBookUid: srtBookUid,

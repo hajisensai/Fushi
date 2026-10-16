@@ -1,5 +1,6 @@
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
@@ -34,6 +35,7 @@ class FushiApiServerManager {
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
+    SrsExtensionApi? Function()? srsApiProvider,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -54,7 +56,8 @@ class FushiApiServerManager {
         _onExtensionReport = onExtensionReport,
         _subtitleRegistryProvider = subtitleRegistryProvider,
         _extensionTestPageProvider = extensionTestPageProvider,
-        _fontApi = fontApi;
+        _fontApi = fontApi,
+        _srsApiProvider = srsApiProvider;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -95,8 +98,21 @@ class FushiApiServerManager {
   // 扩展字幕外观「字体」下拉框的真源（app 字体目录 + 推荐字体下载），透传给
   // [FushiApiServer] 的 /api/extension/fonts* 三路。
   final ExtensionFontApi? _fontApi;
+  // 复习（SRS）扩展端点供给器，透传给 [FushiApiServer]（模块关着时回 null → 404）。
+  final SrsExtensionApi? Function()? _srsApiProvider;
 
   FushiApiServer? _server;
+
+  /// AnkiConnect v6 兼容端点（Fushi SRS）。null = SRS 模块关闭，根路径 404。
+  /// 运行中切换立即作用到当前 server，下次 [start] 也带上。
+  SrsAnkiConnectEndpoint? _ankiConnectEndpoint;
+
+  SrsAnkiConnectEndpoint? get ankiConnectEndpoint => _ankiConnectEndpoint;
+
+  set ankiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _ankiConnectEndpoint = endpoint;
+    _server?.ankiConnectEndpoint = endpoint;
+  }
 
   bool get isRunning => _server?.isRunning ?? false;
   int? get port => _server?.port;
@@ -126,8 +142,10 @@ class FushiApiServerManager {
       subtitleRegistryProvider: _subtitleRegistryProvider,
       extensionTestPageProvider: _extensionTestPageProvider,
       fontApi: _fontApi,
+      srsApiProvider: _srsApiProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
+      ankiConnectEndpoint: _ankiConnectEndpoint,
     );
     await server.start();
     _server = server;

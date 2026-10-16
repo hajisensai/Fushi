@@ -21,7 +21,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 ///     路由，且经 reportJsError 桥上报——防回归把观测性摘掉。
 ///  ③ 源码守卫（Dart）：弹窗 WebView 注册 reportJsError handler 并调 logPopupJsError。
 ///
-/// flutter test cwd 为 hibiki 包根。
+/// flutter test cwd 为 fushi 包根。
 void main() {
   group('① 行为：JS 报错 → error_log 有记录（TODO-1392）', () {
     setUp(() async {

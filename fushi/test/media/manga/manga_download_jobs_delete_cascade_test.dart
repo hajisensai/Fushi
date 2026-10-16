@@ -71,7 +71,7 @@ void main() {
   late String bookKey;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-manga-cascade-');
+    root = await Directory.systemTemp.createTemp('fushi-manga-cascade-');
     EpubStorage.debugBaseDirectoryOverride = root.path;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     library = OnlineMangaLibraryService(

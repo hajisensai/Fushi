@@ -1425,6 +1425,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'srsTermStatus') {
+        // Fushi 复习词状态：POST {expression,reading} → server /api/srs/term-status，回
+        // {status: null | {...}}。app 的复习模块关着时 404（bridge-shim 据此退避）。
+        const r = await fetch(base + '/api/srs/term-status', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'srsOpenCard') {
+        // 点复习标记：让 app 打开那张卡。POST {cardId,noteId} → /api/srs/open，回 {opened:bool}。
+        const r = await fetch(base + '/api/srs/open', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ cardId: msg.cardId || '', noteId: msg.noteId || '' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'favorite') {
         // BUG-3141：弹窗 ☆/★ 收藏。POST {toggle,expression,reading,glossary,sentence}
         // → server /api/extension/favorite，与 app 外浮窗 favoriteEntry / favoriteCheck 两个桥

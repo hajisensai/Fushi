@@ -49,7 +49,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_popup_columns_');
+        Directory.systemTemp.createTempSync('fushi_popup_columns_');
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });

@@ -190,6 +190,18 @@ if(EXISTS "${FUSHI_P2P_DLL}")
     COMPONENT Runtime)
 endif()
 
+# === SRS 排程内核（fsrs-rs，copy-if-present）===
+# native/fushi_fsrs/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_fsrs.dll，
+# 存在则随包到 exe 同级（Dart 侧 packages/fushi_srs 的 FushiFsrs 按 exe 同级定位）。
+# 缺失时 SRS 原生内核判不可用，构建照常——与上面 fushi_p2p 同一语义；发布包的保证在
+# 流水线侧（先跑构建脚本，失败即红）。
+set(FUSHI_FSRS_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll")
+if(EXISTS "${FUSHI_FSRS_DLL}")
+  install(FILES "${FUSHI_FSRS_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be
 # produced while advertising an embedded backend that cannot open at runtime.

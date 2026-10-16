@@ -519,7 +519,7 @@ class ImmersionMiningRequest {
   /// 显式透传偏好。与 [animatedFormat] 的默认取法一致。
   final MiningClipFormat clipFormat;
 
-  /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Hibiki 主机的 https 流，这里带上
+  /// BUG-891：[mediaSource]/[audioSource] 若是远端自签 Fushi 主机的 https 流，这里带上
   /// 该 host 经 TOFU 钉扎的证书 SHA-256 指纹（`aa:bb:..`）。引擎把它透传给 ffmpeg 抽取器的
   /// `-tls_pin_sha256`，使自编 ffmpeg-kit（`--enable-gnutls` + pin 补丁）按指纹接受自签，
   /// 而非无条件放行。null = 本地源 / 公网有效证书源（YouTube 等），不钉扎、走 ffmpeg 默认。
@@ -558,7 +558,7 @@ class ImmersionMiningRequest {
   /// 它失败时本次制卡按失败结束（与改动前 await 写缓存抛错同一结局）。
   final Future<void>? fieldsMediaReady;
 
-  /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
+  /// BUG-1004：互联 host（LAN Fushi 库）远端流的句子音频改由 **host 端**裁好再下载——host
   /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
   /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
   /// BUG-891）。非空且 [audioSource]/[mediaSource] 命中远端 http(s) 时优先调用：返回裁好的

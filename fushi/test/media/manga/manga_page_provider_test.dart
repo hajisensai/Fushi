@@ -10,7 +10,7 @@ void main() {
   test('local reader session serves managed pages and blocks traversal',
       () async {
     final Directory root =
-        await Directory.systemTemp.createTemp('hibiki-local-manga-reader-');
+        await Directory.systemTemp.createTemp('fushi-local-manga-reader-');
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });
@@ -96,7 +96,7 @@ void main() {
     expect(await mangaImageDimensions(headerOnly), (width: 1600, height: 2400));
 
     final Directory root =
-        await Directory.systemTemp.createTemp('hibiki-local-manga-probe-');
+        await Directory.systemTemp.createTemp('fushi-local-manga-probe-');
     addTearDown(() async {
       if (await root.exists()) await root.delete(recursive: true);
     });

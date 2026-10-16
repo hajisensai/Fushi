@@ -497,6 +497,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       sleepTimerMinutes: AudiobookSleepTimer.of(ctrl).remainingMinutes,
       illustrations: _lyricsIllustrations,
+      sidesMirrored: ReaderFushiSource.instance.lyricsPanelMirrored,
     );
   }
 
@@ -527,6 +528,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           unawaited(
             _openLyricsIllustrationViewer(index, returnToCover: returnToCover),
           ),
+      onSwapSides: () => unawaited(_toggleLyricsSides()),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -612,6 +614,14 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     if (choice == null || !mounted) return;
     timer.start(choice == 0 ? null : choice);
     _rebuild(() {});
+  }
+
+  /// 宽屏左右整块互换（偏好 `lyrics_panel_mirrored`）。只换覆盖层布局：歌词
+  /// WebView 在 Stack 里的位置不变、只换矩形，不重建平台视图、不重载歌词页。
+  Future<void> _toggleLyricsSides() async {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    await src.setLyricsPanelMirrored(!src.lyricsPanelMirrored);
+    if (mounted) _rebuild(() {});
   }
 
   /// 👁：歌词遮罩（听力沉浸模糊，设置项 `lyrics_blur`）。与设置面板同一个偏好。
@@ -1182,34 +1192,13 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   // ② 桌面悬浮窗点词路由 [_lookupFromFloatingLyric]（attach 期注入，路由进 reader 弹窗）；
   // ③ 设置开关 [_toggleFloatingLyric] / [_toggleMediaNotification]（薄壳，委托 session）。
 
-  /// reader 主题悬浮窗样式（attach 期注入 session）。
+  /// reader 主题悬浮窗样式（attach 期注入 session）。M3E 配色取阅读器当前明暗下的
+  /// app 主题（context-free：`appModel.theme` / `darkTheme`，不碰 State.context），
+  /// 设置快照与 app 级构造点共用同一份（[buildFloatingLyricStyle]）。
   FloatingLyricStyle _readerFloatingLyricStyle({double? fontSize}) {
-    final Color bg = _themeBackgroundColor();
-    final Color fg = _themeTextColor();
-    final bool dark = _isReaderThemeDark;
-    final Color accent = _readerLyricAccentColor();
-    final int textOpacity = appModel.floatingLyricTextOpacity;
-    final int buttonBgOpacity = appModel.floatingLyricButtonBgOpacity;
-    final int bgOpacity = appModel.floatingLyricBgOpacity;
-    return FloatingLyricStyle(
-      fontSize: fontSize ?? appModel.floatingLyricFontSize,
-      // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
-      textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
-      bgColor: FloatingLyricStyle.scaleAlpha(
-        bg.withAlpha(dark ? 230 : 220).value,
-        bgOpacity,
-      ),
-      buttonTextColor: fg.value,
-      buttonBgColor: FloatingLyricStyle.scaleAlpha(
-        (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        buttonBgOpacity,
-      ),
-      highlightColor: accent.withAlpha(128).value,
-      activeColor: accent.value,
-      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
-      cornerRadius: appModel.floatingLyricCornerRadius,
-      windowWidth: appModel.floatingLyricWidth,
+    return buildFloatingLyricStyle(
+      theme: _isReaderThemeDark ? appModel.darkTheme : appModel.theme,
+      settings: appModel.floatingLyricStyleSettings(fontSize: fontSize),
     );
   }
 

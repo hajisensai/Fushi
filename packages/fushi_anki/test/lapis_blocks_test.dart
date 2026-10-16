@@ -1,6 +1,6 @@
 // 自定义区域纯函数层的守卫。
 //
-// 区域是「把已有字段摆到模板的另一个位置」，真相源在 Hibiki 侧、模板是产物，
+// 区域是「把已有字段摆到模板的另一个位置」，真相源在 Fushi 侧、模板是产物，
 // 所以这里盯的是三件事：锚点还在不在、无区域时零改动、以及拼进 handlebar 的
 // 字段名有没有被当成注入边界处理。
 import 'package:flutter_test/flutter_test.dart';
@@ -185,7 +185,7 @@ void main() {
   });
 
   group('以用户自己的 Lapis 为基线', () {
-    /// 一份「不是 Hibiki 内置那版」的用户模板：换了字体、结构也不同。
+    /// 一份「不是 Fushi 内置那版」的用户模板：换了字体、结构也不同。
     const String userBack = '<div id="lapis" lang="ja">\n'
         '    <main>\n'
         '        <div class="def-header">用户自己的头部</div>\n'
@@ -249,7 +249,7 @@ void main() {
       );
       expect(back, contains('用户自己的释义框'));
       expect(back, contains('data-hibiki-block="b1"'));
-      // 病根守卫：用户的模板不得被 Hibiki 内置副本顶掉。
+      // 病根守卫：用户的模板不得被 Fushi 内置副本顶掉。
       expect(back, isNot(contains('def-image')));
     });
 
@@ -299,7 +299,7 @@ void main() {
       );
     });
 
-    test('从没被 Hibiki 写过的 CSS，strip 后原样返回', () {
+    test('从没被 Fushi 写过的 CSS，strip 后原样返回', () {
       const String pristine = '.card { font-family: "别的字体"; }';
       expect(stripLapisUserSection(pristine), pristine);
     });
@@ -619,7 +619,7 @@ void main() {
         ),
       ]);
       expect(preview, contains('data-hibiki-block="b1"'));
-      expect(preview, contains('hibiki-preview-block-empty'));
+      expect(preview, contains('fushi-preview-block-empty'));
     });
 
     test('预览区域与真模板结构同形（样式 selector 才准）', () {

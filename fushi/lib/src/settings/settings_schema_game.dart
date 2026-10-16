@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
@@ -18,6 +17,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -629,132 +629,22 @@ SettingsCustomItem _galHookColorItem({
   required int Function(GalHookCaptionColors themed) themedColor,
   bool enableAlpha = false,
 }) {
-  return SettingsCustomItem(
+  // 跟随判据与台词窗下发同一个函数（galHookCaptionColorFollowsTheme / 主题配对
+  // 色），历史默认值即「跟随主题」。行与取色框是与有声书悬浮字幕共用的组件。
+  return overlayColorSettingItem(
     id: id,
+    title: title,
     icon: icon,
-    searchTitle: title,
-    // 「恢复默认」= 回到跟随主题；收在详情页的「恢复本页默认」里（判据与台词窗
-    // 下发同一个函数），行内不再画已改过标记。
-    reset: SettingsCustomReset(
-      isModified: (SettingsContext context) =>
-          !galHookCaptionColorFollowsTheme(value(context), defaultColor),
-      reset: (SettingsContext context) => _commitGalHookAppearance(
-        context,
-        () => onChanged(context, defaultColor),
-      ),
-      currentLabel: (SettingsContext context) {
-        final int stored = value(context);
-        return galHookCaptionColorFollowsTheme(stored, defaultColor)
-            ? t.theme_role_follows_theme
-            : '#${stored.toRadixString(16).padLeft(8, '0').toUpperCase()}';
-      },
-      defaultLabel: (SettingsContext context) => t.theme_role_follows_theme,
-    ),
-    builder: (SettingsContext settingsContext) {
-      final ThemeData theme = Theme.of(settingsContext.context);
-      final int stored = value(settingsContext);
-      // 没自定义过（未写 / 写的是历史默认）= 跟随主题：色样显示主题配对色，
-      // 副标题标明正在跟随（判据与台词窗下发同一个函数）。
-      final bool followsTheme =
-          galHookCaptionColorFollowsTheme(stored, defaultColor);
-      final Color current = Color(
-        followsTheme ? themedColor(galHookThemeCaptionColors(theme)) : stored,
-      );
-      final ColorScheme colors = theme.colorScheme;
-      return AdaptiveSettingsRow(
-        title: title,
-        subtitle: followsTheme ? t.theme_role_follows_theme : null,
-        icon: icon,
-        showIcon: true,
-        // M3E 色样：28 圆点 + outlineVariant 描边（浅色 / 透明色在卡片底上也
-        // 读得出边界）。
-        trailing: FushiColorSwatch(
-          color: current,
-          size: 28,
-          shape: FushiColorSwatchShape.dot,
-          borderColor: colors.outlineVariant,
-        ),
-        onTap: () => unawaited(() async {
-          final Color? selected = await _pickGalHookColor(
-            settingsContext.context,
-            title: title,
-            initial: current,
-            enableAlpha: enableAlpha,
-            followsTheme: followsTheme,
-            followThemeColor: Color(defaultColor),
-          );
-          // 跟随中直接按「完成」= 没改：不把此刻的主题色冻结成自定义值。
-          if (selected == null ||
-              selected.toARGB32() == stored ||
-              selected.toARGB32() == current.toARGB32()) {
-            return;
-          }
-          await _commitGalHookAppearance(
-            settingsContext,
-            () => onChanged(settingsContext, selected.toARGB32()),
-          );
-        }()),
-      );
-    },
+    followThemeValue: defaultColor,
+    followsTheme: (int stored) =>
+        galHookCaptionColorFollowsTheme(stored, defaultColor),
+    value: value,
+    themedColor: (ThemeData theme) =>
+        themedColor(galHookThemeCaptionColors(theme)),
+    commit: (SettingsContext context, int color) =>
+        _commitGalHookAppearance(context, () => onChanged(context, color)),
+    enableAlpha: enableAlpha,
   );
-}
-
-Future<Color?> _pickGalHookColor(
-  BuildContext context, {
-  required String title,
-  required Color initial,
-  required bool enableAlpha,
-  bool followsTheme = false,
-  Color? followThemeColor,
-}) async {
-  Color picked = initial;
-  bool confirmed = false;
-  bool follow = false;
-  await showAppDialog<void>(
-    context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog(
-      title: Text(title),
-      content: SingleChildScrollView(
-        child: ColorPicker(
-          pickerColor: initial,
-          onColorChanged: (Color color) {
-            picked = enableAlpha
-                ? color
-                : Color(0xFF000000 | (color.toARGB32() & 0x00FFFFFF));
-          },
-          portraitOnly: true,
-          enableAlpha: enableAlpha,
-          displayThumbColor: true,
-          hexInputBar: true,
-          labelTypes: const <ColorLabelType>[],
-        ),
-      ),
-      actions: <Widget>[
-        // 「跟随主题」= 写回历史默认值（台词窗把它解释成跟随主题配对色）。
-        if (followThemeColor != null && !followsTheme)
-          FushiTextButton(
-            onPressed: () {
-              follow = true;
-              Navigator.of(dialogContext).pop();
-            },
-            child: Text(t.theme_role_follows_theme),
-          ),
-        FushiTextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(t.dialog_cancel),
-        ),
-        FushiFilledButton(
-          onPressed: () {
-            confirmed = true;
-            Navigator.of(dialogContext).pop();
-          },
-          child: Text(t.dialog_done),
-        ),
-      ],
-    ),
-  );
-  if (follow) return followThemeColor;
-  return confirmed ? picked : null;
 }
 
 /// 本局游戏的查词准入快照。非 Windows 上恒为 [GalLookupAdmission.unknown]

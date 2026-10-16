@@ -16,7 +16,7 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 
 # ------------------------------------------------------------------------------
-# HIBIKI FORK (TODO-1172): upstream fetched these .7z archives from GitHub
+# FUSHI FORK (TODO-1172): upstream fetched these .7z archives from GitHub
 # at *configure* time via file(DOWNLOAD) and hard FATAL_ERROR'd on any
 # network/integrity hiccup, making Windows CI builds intermittently red.
 # TODO-1137 already mirrored libmpv to a permanent release to survive

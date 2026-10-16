@@ -667,7 +667,7 @@ typedef GalExe32BitProbe = Future<bool?> Function(String path);
 /// attach（捕获窗口 / 引擎重试）路径此前没有这条查询，于是
 /// [shouldUseLunaPcHooksForExecutable] 唯一的输入拿不到，两个调用点就把
 /// `lunaPcHooks` 直接写死成 `false`——**「判据取不到」被实现成了「判为否」**。
-/// 后果是 Unity/IL2CPP 与 Siglus 目标只要不是由 Hibiki 亲自拉起，就永远不补装
+/// 后果是 Unity/IL2CPP 与 Siglus 目标只要不是由 Fushi 亲自拉起，就永远不补装
 /// LunaHook 通用 PC hooks，文本线程一条都抓不到（injector 报 `text=0`）。
 /// exe 路径本来就能从 PID 拿到（`QueryFullProcessImageNameW`），补上这条查询即可
 /// 让两条路径共用同一套判据，而不是各自猜。
@@ -1123,7 +1123,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 本会话是否已有引擎 hook 台词计入统计。置位后外部 WS/剪贴板行不再计数——
   /// 同一游戏同时开着 LunaTranslator 等外部 hook 时，每句台词会从两条通道各到
   /// 一次，一个会话只允许一个计数源。引擎侧一直无文本时（仅用外部工具喂文本、
-  /// hibiki 只管音频的场景）外部行仍照常计数。
+  /// fushi 只管音频的场景）外部行仍照常计数。
   bool _engineTextCounted = false;
 
   /// 本会话的字数时钟：v92 统计域的唯一写入面 [StudyClock]，显式记账模式、只喂
@@ -1705,7 +1705,7 @@ class GalHookSessionController extends ChangeNotifier {
       final GalHookInjectorDiagnostics diagnostics = engine.lastFailure;
       // injector 在 CreateProcess 成功后即回报 `LAUNCH pid=`，这个 PID 与注入是否成功
       // 无关。拿得到它就说明**游戏已经在跑**：此时把整个会话判成「启动失败」是错的——
-      // 用户面前明明有个游戏窗口，Hibiki 却停在终态错误，只能手动去「捕获目标」重绑。
+      // 用户面前明明有个游戏窗口，Fushi 却停在终态错误，只能手动去「捕获目标」重绑。
       // 改为保留会话、降级到 Loopback，并按退避表重试附着。
       // A launcher (or an old/unknown role) is not a game target. In particular,
       // an exited Start with a surviving menu must not seed loopback/recovery.
@@ -1872,7 +1872,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       // BUG-1049：开场那 10 秒只是「窗口通常多快出现」的经验值，不是硬事实——带启动器 /
       // 壳解包 / 首次着色器编译的游戏常常更慢，而首帧一旦错过，旧实现就永久停在
-      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Hibiki 自己
+      // window_not_found，用户只能自己去点「捕获目标」条手动选窗口（明明是 Fushi 自己
       // 启动的进程）。绑定因此改成会话级监视：只要这条会话还活着且仍没有窗口，就继续
       // 按同一个 pid 找，找到即自动绑上。
     }
@@ -6373,8 +6373,8 @@ class GalHookSessionController extends ChangeNotifier {
   /// 退出 / 销毁前把超分收干净，并**等它真的收完**。
   ///
   /// 为什么必须显式登记进 [ExitFlushRegistry]：桌面点 X 走 `exit(0)` 快杀，[close] 在
-  /// fushi/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Hibiki
-  /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Hibiki**双击
+  /// fushi/lib 里一次都没被调用过。不接这一步，我们 detached 起的 Magpie 会活过 Fushi
+  /// 的死亡，配置里那条 `autoScale=Fullscreen` 也留着 —— 用户下次**不经 Fushi**双击
   /// 游戏就被自动全屏超分，那是我们没被授权做的事。
   Future<void> shutdownMagpieUpscaling() async {
     if (_magpieArmedHwnd != null) {

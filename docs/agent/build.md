@@ -6,7 +6,7 @@
 
 5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（社区维护）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
 
-**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / ffmpeg-min / Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
+**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_fsrs.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / ffmpeg-min / Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。发布资产名随之从 `fushi-<v>-macos.zip` 改为 `fushi-<v>-macos-arm64.zip`：已发出去的旧版（universal，可能跑在 Intel Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中 Intel 上启动不了的 arm64 包，代价是旧版在 Apple Silicon 上也跨不过这一版的应用内自动更新（判「无更新」），需要手动下载一次新版。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
 
 ## Linux 桌面（社区维护）
 
@@ -82,9 +82,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 ## 互联 P2P 隧道原生库 fushi_p2p（Rust / iroh）
 
 - 源码 `native/fushi_p2p/`（Rust crate，C ABI）+ 纯 Dart FFI 包 `packages/fushi_p2p/`。每端一个构建脚本，产物落 `native/fushi_p2p/prebuilt/<平台>/`（不入库）：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（只出 arm64）/ `build_ios_staticlib.sh`（staticlib + xcconfig 片段）。
-- **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_P2P_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
+- **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 链的是伞形静态库 `native/fushi_ios_umbrella`（fushi_p2p + fushi_fsrs 合一、Rust std 只有一份；两份单独 .a 同时 `-force_load` 会撞重复 std 符号），经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 它生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_IOS_NATIVE_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
 - **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS arm64 / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 里的 dylib 恰好是 arm64、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS 三个 app 端与 Linux 服务端 bundle（`linux-server`；Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试；改到 `native/fushi_p2p/**` 或 `packages/fushi_p2p/**` 时路径门四个 job 全开），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
 - 真隧道测试在库加载失败时**整组 skip 且退出码 0**，CI 因此额外断言日志里没有 skip 原因；`native/fushi_p2p/verify_abi.sh` 按 Dart 绑定 lookup 的 `fp2p_*` 名核对导出表。细节见 [native/fushi_p2p/README.md](../../native/fushi_p2p/README.md)。
+
+## SRS 排程内核原生库 fushi_fsrs（Rust / fsrs-rs）
+
+- 源码 `native/fushi_fsrs/`（Rust crate，C ABI）+ 纯 Dart FFI 在 `packages/fushi_srs/lib/src/ffi/`。构建脚本与 fushi_p2p 同形：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（只出 arm64），产物落 `native/fushi_fsrs/prebuilt/<平台>/`（不入库）。
+- **随包语义与 fushi_p2p 相同（copy-if-present）**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_fsrs.sh`；缺库 = SRS 原生内核判不可用，不是构建失败。
+- **iOS 暂未随包**：两份 Rust staticlib 同时 `-force_load` 会撞重复的 Rust std 符号，iOS 要改链伞形库 `native/fushi_ios_umbrella/`（`fp2p_*` + `ffsrs_*` 合一），Runner 尚未切换（步骤见 [native/fushi_fsrs/README.md](../../native/fushi_fsrs/README.md)「iOS」）；PR 上 `build-multiplatform.yml` 的 ios job 只核对伞形库能编过。
+- **发布包的保证在 CI**（同 fushi_p2p 口径）：`release.yml`（Android 三 ABI）、`release-desktop.yml`（Windows / macOS arm64）、`release-server.yml`（Linux / Windows）出包前跑 Rust 构建，**失败即 job 失败**，出包后核对库进了包（APK 每个带 `libflutter.so` 的 ABI 都有 `libfushi_fsrs.so`、Windows bundle 有 `fushi_fsrs.dll`、macOS Frameworks 里的 dylib 恰好是 arm64 且导出 `ffsrs_*`）。fushi_fsrs **不进原生产物持久库**（冷编便宜），只靠 `Swatinem/rust-cache`；Rust / cargo-ndk 版本读 `native-store-names` 的 `p2p_rust` / `cargo_ndk`，与 fushi_p2p 同源。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS（伞形库）/ `linux-server`，`native-fsrs-gate.yml` 补 Android 三 ABI 与 `cargo test`。
 
 ## 发布通道
 
@@ -157,7 +164,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   不得回潮。
 - **大合并后保证一次 TestFlight**（2026-10-14 用户拍板，CLAUDE.md「提交」节的硬规则）：
   批量合入多条 PR 或合入一条大型功能 PR 后，若该 push 的发布序列不能被 3 整除（或那条 push
-  run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/hibiki
+  run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
   --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
   不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是

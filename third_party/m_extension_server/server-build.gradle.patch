@@ -293,7 +293,7 @@ diff --git a/build.gradle.kts b/build.gradle.kts
 +        // content-filtered to org.jogamp so an outage of either host can no longer
 +        // poison resolution of unrelated coordinates (e.g. jitpack injekt-core,
 +        // which Gradle previously probed against jogamp.org).
-+        val vendoredJogamp = rootProject.file("hibiki-offline-maven/jogamp")
++        val vendoredJogamp = rootProject.file("fushi-offline-maven/jogamp")
 +        if (vendoredJogamp.isDirectory) {
 +            maven {
 +                url = vendoredJogamp.toURI()

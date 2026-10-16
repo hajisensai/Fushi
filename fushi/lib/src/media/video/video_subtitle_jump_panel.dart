@@ -2415,45 +2415,67 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          // 只两行（2026-10-14 用户：去掉图标与「字幕列表」标题腾出纵向空间）：
+          // 第一行 = 工具按钮组 + 关闭；第二行 = 「全部 / 收藏」分段（左）+ 收藏
+          // 计数与导出（右，仅收藏态出现，行高固定），状态切换不跳。
           Row(
             children: <Widget>[
-              // 图标徽标（M3E 饼干形容器）。
-              Container(
-                width: 36,
-                height: 36,
-                decoration: ShapeDecoration(
-                  color: cs.primaryContainer,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: FushiIcon(
-                  FushiIcons.subtitles,
-                  size: 20,
-                  color: cs.onPrimaryContainer,
-                ),
-              ),
-              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: cs.onSurface,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      toolButton(
+                        icon: _searchOpen
+                            ? FushiIcons.searchOff
+                            : FushiIcons.search,
+                        tooltip: t.video_subtitle_list_search,
+                        selected: _searchOpen,
+                        onPressed: () => _toggleSearch(),
+                      ),
+                      const SizedBox(width: 4),
+                      toolButton(
+                        icon: _autoScroll
+                            ? FushiIcons.alignCenterVertical
+                            : FushiIcons.pauseCircle,
+                        tooltip: t.video_subtitle_list_auto_scroll,
+                        selected: _autoScroll,
+                        onPressed: _toggleAutoScroll,
+                      ),
+                      if (widget.onLookupCue != null) ...<Widget>[
+                        const SizedBox(width: 4),
+                        KeyedSubtree(
+                          key: const ValueKey<String>(
+                            'video-subtitle-list-tap-lookup',
+                          ),
+                          child: toolButton(
+                            icon: _tapLookup
+                                ? FushiIcons.lookup
+                                : FushiIcons.touch,
+                            tooltip: t.video_subtitle_list_tap_lookup,
+                            selected: _tapLookup,
+                            onPressed: _toggleTapLookup,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      fontStepper,
+                    ],
                   ),
                 ),
               ),
+              const SizedBox(width: 4),
               FushiTooltip(
                 message: MaterialLocalizations.of(context).closeButtonTooltip,
                 child: FushiIconButtonControl(
                   onPressed: widget.onClose,
+                  // 与同一行工具按钮同尺寸（36）。
                   style: IconButton.styleFrom(
-                    fixedSize: const Size.square(40),
-                    minimumSize: const Size.square(40),
+                    fixedSize: const Size.square(36),
+                    minimumSize: const Size.square(36),
+                    padding: EdgeInsets.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     backgroundColor: FushiDesignTokens.of(
                       context,
@@ -2464,49 +2486,6 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          // 固定两行，状态切换不跳：第一行 = 工具按钮组；第二行 = 「全部 / 收藏」
-          // 分段（左）+ 收藏计数与导出（右，仅收藏态出现，行高固定）。
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                toolButton(
-                  icon: _searchOpen ? FushiIcons.searchOff : FushiIcons.search,
-                  tooltip: t.video_subtitle_list_search,
-                  selected: _searchOpen,
-                  onPressed: () => _toggleSearch(),
-                ),
-                const SizedBox(width: 4),
-                toolButton(
-                  icon: _autoScroll
-                      ? FushiIcons.alignCenterVertical
-                      : FushiIcons.pauseCircle,
-                  tooltip: t.video_subtitle_list_auto_scroll,
-                  selected: _autoScroll,
-                  onPressed: _toggleAutoScroll,
-                ),
-                if (widget.onLookupCue != null) ...<Widget>[
-                  const SizedBox(width: 4),
-                  KeyedSubtree(
-                    key: const ValueKey<String>(
-                      'video-subtitle-list-tap-lookup',
-                    ),
-                    child: toolButton(
-                      icon: _tapLookup ? FushiIcons.lookup : FushiIcons.touch,
-                      tooltip: t.video_subtitle_list_tap_lookup,
-                      selected: _tapLookup,
-                      onPressed: _toggleTapLookup,
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 4),
-                fontStepper,
-              ],
-            ),
           ),
           const SizedBox(height: 8),
           SizedBox(

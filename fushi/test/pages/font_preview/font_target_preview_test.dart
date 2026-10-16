@@ -50,6 +50,13 @@ void main() {
         <String>['Klee One'],
       );
     });
+
+    test('有声书悬浮字幕与游戏浮窗同一 native 窗：跳过 WOFF/WOFF2，只取第一款', () {
+      expect(
+        effectiveFontTargetFamilies(FontTarget.floatingLyric, chain),
+        <String>['Klee One'],
+      );
+    });
   });
 
   for (final FontTarget target in FontTarget.values) {

@@ -607,7 +607,6 @@ class AdminApi {
 
   static String _ocrModelName(String key) => switch (key) {
         'manga_ctc' => '漫画 CTC（快速）',
-        'baberu' => 'Baberu',
         _ => key,
       };
 

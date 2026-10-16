@@ -40,7 +40,7 @@ void main() {
   late File audio;
 
   setUp(() {
-    dir = Directory.systemTemp.createTempSync('hibiki_card_image_e2e');
+    dir = Directory.systemTemp.createTempSync('fushi_card_image_e2e');
     gif = File('${dir.path}/immersion_clip.gif')..writeAsBytesSync(gifBytes);
     audio = File('${dir.path}/sentence.aac')
       ..writeAsBytesSync(<int>[0x41, 0x44, 0x54, 0x53]);
@@ -56,7 +56,7 @@ void main() {
     availableNoteTypes: const <AnkiNoteType>[
       AnkiNoteType(
         id: 2,
-        name: 'Hibiki',
+        name: 'Fushi',
         fields: <String>['Expression', 'Picture'],
       ),
     ],

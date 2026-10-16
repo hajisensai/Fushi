@@ -9,6 +9,7 @@ import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
+import 'package:fushi/src/sync/paged_book_sync_position.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -277,7 +278,7 @@ class SyncManager {
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
     // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
     // scatters this book's progress_/statistics_/audioBook_ JSON (plus cover /
-    // epub) straight into `hibiki-data/` next to real book folders. Mirror the
+    // epub) straight into `fushi-data/` next to real book folders. Mirror the
     // LAN audiobook sweep, which already filters empty keys via
     // audiobookKeyFromPositionPrefKey — such a book is not syncable, skip it.
     if (sanitizeTtuFilename(book.title).isEmpty) {
@@ -319,7 +320,7 @@ class SyncManager {
     // HBK-AUDIT-047: compute the local progress fraction so a timestamp tie
     // can be broken by actual content instead of silently declaring 'synced'.
     final double? localProgress = localPosition != null
-        ? _localProgressFraction(localPosition, chapters)
+        ? _localProgressFraction(book, localPosition, chapters)
         : null;
 
     final int? remoteTimestamp = syncFiles.progress != null
@@ -527,9 +528,17 @@ class SyncManager {
   /// `(sectionIndex, normCharOffset)` 换算（旧的 ttuCharOffset 精确缓存列已删，合并到
   /// 单一阅读位置列；同步精度退化为 normCharOffset 的 0-10000 粒度，可接受）。
   double? _localProgressFraction(
+    EpubBookRow book,
     ReaderPositionRow localPosition,
     List<ChapterCharInfo> chapters,
   ) {
+    // 页式书（漫画 / PDF）没有字符表，按页折算（见 paged_book_sync_position）。
+    if (isPagedSyncBook(book)) {
+      return pagedProgressFraction(
+        pageIndex: localPosition.sectionIndex,
+        pageCount: pagedSyncPageCount(book),
+      );
+    }
     final int total = totalCharacterCount(chapters);
     if (total <= 0) return null;
     final int exploredChars = toExploredCharCount(
@@ -577,10 +586,20 @@ class SyncManager {
 
     // Import progress → (sectionIndex, normCharOffset)。BUG-162: 不再缓存精确
     // exploredCharCount（ttuCharOffset 列已删）；下次导出由 normCharOffset 重算。
-    final pos = fromExploredCharCount(
-      exploredCharCount: remoteProgress.exploredCharCount,
-      chapters: chapters,
-    );
+    // 页式书（漫画 / PDF）的 exploredCharCount 是 0-based 页码：走字符表换算会恒得
+    // 第 1 页，把读到一半的漫画重置回开头。
+    final pos = isPagedSyncBook(book)
+        ? (
+            sectionIndex: clampPagedSyncPageIndex(
+              remoteProgress.exploredCharCount,
+              pagedSyncPageCount(book),
+            ),
+            normCharOffset: 0,
+          )
+        : fromExploredCharCount(
+            exploredCharCount: remoteProgress.exploredCharCount,
+            chapters: chapters,
+          );
     await _db.upsertReaderPosition(ReaderPositionsCompanion(
       bookUid: Value(book.uid),
       sectionIndex: Value(pos.sectionIndex),
@@ -646,14 +665,26 @@ class SyncManager {
     if (localPosition != null) {
       // BUG-162: 由 (sectionIndex, normCharOffset) 直接换算（精确缓存列 ttuCharOffset
       // 已删，合并为单一阅读位置列）。
-      exploredChars = toExploredCharCount(
-        sectionIndex: localPosition.sectionIndex,
-        normCharOffset: localPosition.normCharOffset,
-        chapters: chapters,
-      );
-
-      final total = totalCharacterCount(chapters);
-      final progress = total > 0 ? exploredChars / total : 0.0;
+      // 页式书（漫画 / PDF）：exploredCharCount 写 0-based 页码、progress 写按页
+      // 分数（见 paged_book_sync_position）；字符表换算对它们恒为 0。
+      final double progress;
+      if (isPagedSyncBook(book)) {
+        exploredChars =
+            localPosition.sectionIndex < 0 ? 0 : localPosition.sectionIndex;
+        progress = pagedProgressFraction(
+              pageIndex: exploredChars,
+              pageCount: pagedSyncPageCount(book),
+            ) ??
+            0.0;
+      } else {
+        exploredChars = toExploredCharCount(
+          sectionIndex: localPosition.sectionIndex,
+          normCharOffset: localPosition.normCharOffset,
+          chapters: chapters,
+        );
+        final total = totalCharacterCount(chapters);
+        progress = total > 0 ? exploredChars / total : 0.0;
+      }
       final timestampMs = localPosition.updatedAt;
 
       final wireProgress = TtuProgress(
@@ -759,7 +790,7 @@ class SyncManager {
       final existing = await _backend.findContentFile(folderId, fileName);
       if (existing == null) {
         final Directory tmpDir =
-            Directory.systemTemp.createTempSync('hibiki_epub_export');
+            Directory.systemTemp.createTempSync('fushi_epub_export');
         final File epubTmp = File(p.join(tmpDir.path, fileName));
         try {
           // 漫画 → 书目录整树 zip（manga.json 标记 + 页图）；EPUB → 既有重打包。

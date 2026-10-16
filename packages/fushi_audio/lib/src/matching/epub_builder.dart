@@ -15,8 +15,10 @@ class EpubBuilder {
   /// Packs [chapterXhtmls] plus all container metadata into EPUB bytes.
   ///
   /// [uidPrefix] is embedded verbatim before the timestamp in the
-  /// `dc:identifier` (e.g. `'hibiki-'`, `'hibiki-text-'`); callers rely on it
-  /// for identity/dedup of generated books, so it must stay stable.
+  /// `dc:identifier` (e.g. `'fushi-'`, `'fushi-text-'`; books generated before
+  /// the Hibiki → Fushi rename carry `'hibiki-'` / `'hibiki-text-'`). Nothing
+  /// matches on the prefix (the importer only reads ISBNs out of
+  /// `dc:identifier`), it just marks where the generated book came from.
   static Uint8List assemble({
     required String title,
     required List<String> chapterXhtmls,
@@ -133,7 +135,7 @@ class EpubBuilder {
         '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"'
         ' version="2005-1">\n'
         '  <head>\n'
-        '    <meta name="dtb:uid" content="hibiki-toc"/>\n'
+        '    <meta name="dtb:uid" content="fushi-toc"/>\n'
         '    <meta name="dtb:depth" content="1"/>\n'
         '  </head>\n'
         '  <docTitle><text>${escXml(title)}</text></docTitle>\n'

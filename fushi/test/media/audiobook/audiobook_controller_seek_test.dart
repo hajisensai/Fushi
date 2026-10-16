@@ -160,7 +160,7 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-load-test.mp3');
+          File('${Directory.systemTemp.path}/fushi-audiobook-load-test.mp3');
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }
@@ -182,8 +182,8 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final List<File> audioFiles = <File>[
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-1.mp3'),
-        File('${Directory.systemTemp.path}/hibiki-audiobook-load-test-2.mp3'),
+        File('${Directory.systemTemp.path}/fushi-audiobook-load-test-1.mp3'),
+        File('${Directory.systemTemp.path}/fushi-audiobook-load-test-2.mp3'),
       ];
       for (final File audioFile in audioFiles) {
         if (!audioFile.existsSync()) {
@@ -212,7 +212,7 @@ void main() {
       final AudiobookPlayerController controller = AudiobookPlayerController();
       addTearDown(controller.dispose);
       final File audioFile =
-          File('${Directory.systemTemp.path}/hibiki-audiobook-skip-test.mp3');
+          File('${Directory.systemTemp.path}/fushi-audiobook-skip-test.mp3');
       if (!audioFile.existsSync()) {
         audioFile.writeAsBytesSync(const <int>[0]);
       }

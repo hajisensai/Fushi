@@ -153,7 +153,7 @@ function setup() {
     // 丢掉 place()（落点牵扯真实布局，这里只测滚动跟随）：host 停在 render 写下的 (0,0)。
     rafQueue.splice(0);
   };
-  const host = () => findById(body, 'hibiki-popup-host');
+  const host = () => findById(body, 'fushi-popup-host');
   const overlay = () => findById(body, 'fushi-highlight-overlay');
   return { sandbox, state, scroll, lookup, host, overlay, scrollListeners, rafQueue };
 }

@@ -28,7 +28,7 @@ import java.security.MessageDigest
 /**
  * A simple implementation for sources from a website.
  *
- * Hibiki host ABI: the union of extensions-lib 14 and extensions-lib 16 (as compiled
+ * Fushi host ABI: the union of extensions-lib 14 and extensions-lib 16 (as compiled
  * against by the yuzono / Anikku ecosystem and the Aniyomi main line). Every member
  * that one generation declares abstract and the other never heard of is `open` with
  * a throwing default here, otherwise the JVM would refuse to instantiate the other

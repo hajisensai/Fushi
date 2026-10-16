@@ -245,7 +245,7 @@ void extractOrtNative(
       throw OrtProvisionCorrupt('包里没有 $entryPath');
     }
     File(p.join(target.path, name))
-        // [Hibiki patch] `ArchiveFile.readBytes()` 是 archive 4.x 才有的 API，
+        // [Fushi patch] `ArchiveFile.readBytes()` 是 archive 4.x 才有的 API，
         // 而本仓全仓钉 archive ^3.6.1（升 4 是一次跨 76 个文件的迁移：12+ 处
         // `package:archive/archive_io.dart` 在 4.x 已被移除，多处 `entry.content`
         // 也要改写）。3.x 的等价物是 `content`，读出来同样是 List<int>。

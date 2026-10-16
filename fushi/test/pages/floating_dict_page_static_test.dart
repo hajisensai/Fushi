@@ -11,7 +11,7 @@ import '../helpers/test_platform_services.dart';
 void main() {
   test('floating dictionary page compiles with shared popup chrome', () {
     expect(
-      const FloatingDictPage(channel: MethodChannel('hibiki.test/floating')),
+      const FloatingDictPage(channel: MethodChannel('fushi.test/floating')),
       isA<FloatingDictPage>(),
     );
   });
@@ -25,7 +25,7 @@ void main() {
         ],
         child: const MaterialApp(
           home: FloatingDictPage(
-            channel: MethodChannel('hibiki.test/floating'),
+            channel: MethodChannel('fushi.test/floating'),
           ),
         ),
       ),

@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// base-config and only whitelisted `localhost`/`127.0.0.1`, so the Android
 /// platform layer rejected every `http://IP` connection (cleartext not
 /// permitted). The client probe swallowed the exception as "unreachable" → "No
-/// reachable Hibiki server address" → download failed. Desktop has no such gate,
+/// reachable Fushi server address" → download failed. Desktop has no such gate,
 /// hence the symptom was Android-only.
 ///
 /// Fix: base-config allows cleartext (restores API<=27 default; the LAN sync

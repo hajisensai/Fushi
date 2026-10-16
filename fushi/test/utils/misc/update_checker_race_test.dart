@@ -349,7 +349,7 @@ void main() {
     late Directory updatesDir;
 
     setUp(() async {
-      updatesDir = await Directory.systemTemp.createTemp('hibiki-update-race');
+      updatesDir = await Directory.systemTemp.createTemp('fushi-update-race');
     });
 
     tearDown(() async {

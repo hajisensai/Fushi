@@ -711,7 +711,7 @@ void main() {
   group('export strips device-local config (privacy)', () {
     test('no device-local key (incl. addresses/usernames) leaks into a backup',
         () async {
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_strip_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_strip_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       // Seed every device-local key with a sentinel value.
@@ -730,7 +730,7 @@ void main() {
         importedAt: DateTime.now().millisecondsSinceEpoch,
       ));
 
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_strip_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_strip_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -742,7 +742,7 @@ void main() {
 
       // Import into a FRESH dir: no current DB, so the backup is applied
       // verbatim with nothing preserved — exposing exactly what the ZIP holds.
-      final dstDir = await Directory.systemTemp.createTemp('hibiki_strip_dst_');
+      final dstDir = await Directory.systemTemp.createTemp('fushi_strip_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
@@ -789,7 +789,7 @@ void main() {
     test('non-sync_ credentials do not leak into a backup', () async {
       // Regression: the old export sweep was `key LIKE 'sync_%…'`, so every
       // credential owned by another subsystem travelled in the clear.
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_ns_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_ns_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       const Map<String, String> credentials = <String, String>{
@@ -807,7 +807,7 @@ void main() {
       // A plain setting with no credential shape must still travel.
       await srcDb.setPref('reader_font_size', '18');
 
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_ns_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_ns_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -817,7 +817,7 @@ void main() {
       ).createBackup(zipPath);
       await srcDb.close();
 
-      final dstDir = await Directory.systemTemp.createTemp('hibiki_ns_dst_');
+      final dstDir = await Directory.systemTemp.createTemp('fushi_ns_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
@@ -838,7 +838,7 @@ void main() {
       // on export — so deleting the rows from `preferences` alone shipped the
       // credentials in a second table. Simulates an upgrading device whose
       // snapshot was taken BEFORE the writer learned to skip credentials.
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_ps_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_ps_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       final int nowMs = DateTime.now().millisecondsSinceEpoch;
@@ -870,7 +870,7 @@ void main() {
         value: '22',
       ));
 
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_ps_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_ps_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -880,7 +880,7 @@ void main() {
       ).createBackup(zipPath);
       await srcDb.close();
 
-      final dstDir = await Directory.systemTemp.createTemp('hibiki_ps_dst_');
+      final dstDir = await Directory.systemTemp.createTemp('fushi_ps_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       await BackupRestoreService.restoreBackup(
           dbDirectory: dstDir.path, zipPath: zipPath);
@@ -905,11 +905,11 @@ void main() {
         () async {
       // Symmetry: broadening the strip without broadening the preserve would
       // wipe the importing device's own SFTP password / API keys.
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_sym_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_sym_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_font_size', '18');
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_sym_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_sym_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -920,7 +920,7 @@ void main() {
       await srcDb.close();
 
       // The importing device already has its own credentials configured.
-      final dstDir = await Directory.systemTemp.createTemp('hibiki_sym_dst_');
+      final dstDir = await Directory.systemTemp.createTemp('fushi_sym_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       final localDb = FushiDatabase(dstDir.path);
       const Map<String, String> localCredentials = <String, String>{
@@ -953,7 +953,7 @@ void main() {
     test('keeps local settings/profiles; content + audiobook pos from backup',
         () async {
       // ── This device: UI pref + profile + binding + sync + local book ──
-      final curDir = await Directory.systemTemp.createTemp('hibiki_keep_cur_');
+      final curDir = await Directory.systemTemp.createTemp('fushi_keep_cur_');
       addTearDown(() => cleanupTempDir(curDir));
       final curDb = FushiDatabase(curDir.path);
       await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
@@ -982,7 +982,7 @@ void main() {
       await curDb.close();
 
       // ── Backup from another device: different settings/profile/book ──
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_keep_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_keep_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
@@ -1000,7 +1000,7 @@ void main() {
       final String backupBookId =
           (await srcDb.getAllEpubBooks()).single.bookKey;
       await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_keep_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_keep_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -1061,7 +1061,7 @@ void main() {
     test('fresh install (no current DB) restores everything (toggle moot)',
         () async {
       // Backup with its own settings + content.
-      final srcDir = await Directory.systemTemp.createTemp('hibiki_fresh_src_');
+      final srcDir = await Directory.systemTemp.createTemp('fushi_fresh_src_');
       addTearDown(() => cleanupTempDir(srcDir));
       final srcDb = FushiDatabase(srcDir.path);
       await srcDb.setPref('reader_appearance', 'BACKUP');
@@ -1074,7 +1074,7 @@ void main() {
         chaptersJson: '[]',
         importedAt: 1,
       ));
-      final zipDir = await Directory.systemTemp.createTemp('hibiki_fresh_zip_');
+      final zipDir = await Directory.systemTemp.createTemp('fushi_fresh_zip_');
       addTearDown(() => cleanupTempDir(zipDir));
       final zipPath = '${zipDir.path}/b.zip';
       await BackupService(
@@ -1083,7 +1083,7 @@ void main() {
       await srcDb.close();
 
       // Import into an EMPTY dir (no current DB) with importSettings:false.
-      final dstDir = await Directory.systemTemp.createTemp('hibiki_fresh_dst_');
+      final dstDir = await Directory.systemTemp.createTemp('fushi_fresh_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       await BackupRestoreService.restoreBackup(
         dbDirectory: dstDir.path,
@@ -1106,7 +1106,7 @@ void main() {
     test(
         'recoverPendingRestore with a settings sidecar but missing bak is safe',
         () async {
-      final dir = await Directory.systemTemp.createTemp('hibiki_nobak_');
+      final dir = await Directory.systemTemp.createTemp('fushi_nobak_');
       addTearDown(() => cleanupTempDir(dir));
       final db = FushiDatabase(dir.path);
       await db.setPref('reader_appearance', 'INTACT');

@@ -44,11 +44,13 @@ void main() {
       // 鼠标位置。丢了这个参数卡片会退回跟着光标飘。
       //
       // 用正则而不是整段字面量 contains：这个签名在源码里是折行写的，行宽一变
-      // 字面量就不匹配，守卫会红在「格式变了」而不是「参数没了」。
+      // 字面量就不匹配，守卫会红在「格式变了」而不是「参数没了」。tall 格式会在
+      // 末参后补尾逗号再换行收括号，所以 `,?\s*` 也放过。
       expect(
-        RegExp(r'_lookupFromFloatingLyric\(\s*String text,\s*int index,\s*'
-                r'Rect\? wordRect\)')
-            .hasMatch(reader),
+        RegExp(
+          r'_lookupFromFloatingLyric\(\s*String text,\s*int index,\s*'
+          r'Rect\? wordRect,?\s*\)',
+        ).hasMatch(reader),
         isTrue,
         reason: 'Lookup handler must carry the tapped word rect so the card '
             'anchors to the word instead of the mouse.',

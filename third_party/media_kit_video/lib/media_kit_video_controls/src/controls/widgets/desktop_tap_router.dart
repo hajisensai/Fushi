@@ -1,4 +1,4 @@
-// Hibiki patch (touch on desktop, e.g. Microsoft Surface): route a tap on the
+// Fushi patch (touch on desktop, e.g. Microsoft Surface): route a tap on the
 // desktop controls surface by the pointer kind that produced it. See
 // third_party/media_kit_video/PATCHES.md.
 //

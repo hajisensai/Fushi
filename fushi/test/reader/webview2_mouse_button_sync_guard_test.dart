@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// BUG-1419 源码守卫：Windows fork 的鼠标键状态必须全量跟随 Flutter 的 `ev.buttons`
 /// 掩码，不得回到「按 pointer id 记单个 PointerButton」的粘滞增量实现。
 ///
-/// 为什么在 hibiki 侧做源码扫描：真值来源 `custom_platform_view.dart` 属 vendored fork
+/// 为什么在 fushi 侧做源码扫描：真值来源 `custom_platform_view.dart` 属 vendored fork
 /// （`packages/flutter_inappwebview_windows`），它自己的 test 目录不进 CI 的 unit test
 /// 门（真门是 Build Release APK 的 Run unit tests，只跑 `fushi/test`）。行为侧差分逻辑
 /// 已由该包的 `test/mouse_button_mask_diff_test.dart` 覆盖；这里钉死接线结构，防回退。

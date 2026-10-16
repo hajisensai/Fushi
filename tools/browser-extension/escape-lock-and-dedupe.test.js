@@ -144,7 +144,7 @@ function loadContent(opts) {
     get exits() { return exits; },
     setTerm(t) { nextTerm = t; },
     lookups: () => sent.filter((m) => m && m.type === 'lookup'),
-    popupOpen: () => !!findById(body, 'hibiki-popup-host'),
+    popupOpen: () => !!findById(body, 'fushi-popup-host'),
     flushLookups() { for (const fn of pendingCallbacks.splice(0)) fn(); },
     enterFullscreen() {
       // 全屏元素挂在 body 下：弹窗宿主会挂到 fullscreenElement 上，findById 要能找到。

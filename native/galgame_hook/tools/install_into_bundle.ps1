@@ -19,17 +19,17 @@
 
   Extracting at BUILD time removes the second copy entirely. The helper and the
   app are produced by one build and land through one installer, so they cannot
-  drift. hibiki.iss packages via `Source: "{#SourceDir}\*"` with recursesubdirs,
+  drift. fushi.iss packages via `Source: "{#SourceDir}\*"` with recursesubdirs,
   so this directory rides into the installer with no installer change at all.
 
   Integrity is not weakened, only moved earlier: the archive is verified against
   its sha256 sidecar HERE, at build time, and refuses to publish on mismatch. The
   old runtime check defended against a tampered *download*; for files that sit in
   the app directory it defended against an attacker who, by definition, could
-  equally well replace hibiki.exe itself.
+  equally well replace fushi.exe itself.
 
 .PARAMETER BundleDirectory
-  The built Flutter Windows bundle (the directory containing hibiki.exe).
+  The built Flutter Windows bundle (the directory containing fushi.exe).
 
 .PARAMETER DistDirectory
   Where build_distribution.ps1 wrote its archives. Defaults to the repo's

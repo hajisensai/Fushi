@@ -180,6 +180,10 @@ void main() {
     expect(customFontInitialTargets(FontTarget.gameLookup), <FontTarget, bool>{
       FontTarget.gameLookup: true,
     });
+    expect(
+      customFontInitialTargets(FontTarget.floatingLyric),
+      <FontTarget, bool>{FontTarget.floatingLyric: true},
+    );
   });
 
   test(

@@ -1,9 +1,9 @@
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 
-/// Normalizes a manually-entered Hibiki interconnect URL.
+/// Normalizes a manually-entered Fushi interconnect URL.
 ///
-/// Hibiki's LAN host mode is plain HTTP unless the host explicitly enables
+/// Fushi's LAN host mode is plain HTTP unless the host explicitly enables
 /// TLS. Manual entry therefore defaults bare `host:port` input to `http://`
 /// while preserving an explicit `https://` for pinned TLS hosts.
 String normalizeFushiInterconnectManualUrl(String rawUrl) {

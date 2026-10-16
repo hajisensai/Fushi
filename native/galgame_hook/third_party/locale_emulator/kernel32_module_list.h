@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
-// Hibiki modification to Locale Emulator Core, 2026-09-07.
+// Fushi modification to Locale Emulator Core, 2026-09-07.
 // Shared by the LGPL source patch and its regression test.
 #pragma once
 

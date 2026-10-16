@@ -153,7 +153,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    mediaDir = Directory.systemTemp.createTempSync('hibiki_dedup_batch');
+    mediaDir = Directory.systemTemp.createTempSync('fushi_dedup_batch');
   });
 
   tearDown(() {

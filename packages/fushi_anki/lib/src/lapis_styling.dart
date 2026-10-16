@@ -5,7 +5,7 @@
 /// 已有）+ **带标记的用户区段**（字号缩放变量覆写 + 用户自由 CSS）。用户客制化
 /// 只存在于用户区段，基线升级时区段原样重拼，迁移不需要猜哪些是用户改的。
 ///
-/// 全部纯函数，可单测；副作用（读写 Anki / 落盘备份）在 hibiki 应用层的
+/// 全部纯函数，可单测；副作用（读写 Anki / 落盘备份）在 fushi 应用层的
 /// LapisTemplateService。
 library;
 
@@ -15,7 +15,7 @@ import 'package:crypto/crypto.dart';
 
 import 'lapis_note_type.dart';
 
-/// 用户客制化区段起始标记。整段由 Hibiki 生成管理；用户在 Anki 里直接改
+/// 用户客制化区段起始标记。整段由 Fushi 生成管理；用户在 Anki 里直接改
 /// 标记内内容会在下次应用时被覆写（应用前有强制自动备份兜底）。
 const String lapisUserCssBeginMarker = '/* HIBIKI-LAPIS-USER BEGIN */';
 
@@ -33,7 +33,7 @@ const String _lapisVisualConfigPrefix = '/* HIBIKI-LAPIS-VISUAL-CONFIG ';
 /// `lapis_styling_test.dart`『布局保留键不与任何可视字段 wireName 相撞』。
 ///
 /// 用保留键而不是把 CONFIG 改成 `{fields: …, layout: …}` 两层结构，是为了让**旧
-/// 版本 Hibiki 打开新 CSS 时字段规则照样解析得出**（旧解析器逐条 `fromWireName`，
+/// 版本 Fushi 打开新 CSS 时字段规则照样解析得出**（旧解析器逐条 `fromWireName`，
 /// 认不出的键直接跳过）：降级最多丢布局，不会整块托管区段被当成损坏而降级成
 /// 自由 CSS。
 const String lapisVisualLayoutConfigKey = 'layout';
@@ -539,7 +539,7 @@ LapisVisualStyleSheet splitLapisVisualStyleSheet(String customCss) {
 /// 自由 CSS 在前、托管区段在后）。**保存动作不得移动用户 CSS 相对托管区段的
 /// 位置**：托管区段整块 `!important`，把用户写在后面的覆盖搬到前面就等于静默
 /// 推翻他的改动。自由 CSS 本身逐字节原样写回，首尾空白不再被 trim。
-/// [extraManagedCss]：由**别处的真相源**派生、但同样归 Hibiki 托管的规则（当前
+/// [extraManagedCss]：由**别处的真相源**派生、但同样归 Fushi 托管的规则（当前
 /// 是自定义区域的样式，真相源在 `AnkiSettings.lapisCustomBlocks`）。它们只进
 /// 托管区段正文、**不进 CONFIG**——CONFIG 是回读用的，把派生物也写进去就成了
 /// 双真相源，删区域时必然留孤儿。托管区段正文本来每次就整块重生成，所以回读时
@@ -717,22 +717,22 @@ List<String> _buildLapisVisualFieldCss(
 
 /// 可视化目标对应的真实 Lapis selector。
 ///
-/// **判据是 Hibiki 自产卡的真实 DOM，不是预览里好看的 mock。** 释义字段由
+/// **判据是 Fushi 自产卡的真实 DOM，不是预览里好看的 mock。** 释义字段由
 /// `popup.js` 的 `constructGlossaryHtml` / `constructSingleGlossaryHtml` 产出，
 /// 形状恒为：
 /// `#glossaries > div.yomitan-glossary > ol > li[data-dictionary] > (i + span)`
 /// （`#primary` 同形）。因此：
 /// * `#primary > div` / `#glossaries > div` 命中的是 `.yomitan-glossary` **整块
 ///   外壳**，不是单条词典条目 —— 条目锚点只能是 `li[data-dictionary]`；
-/// * `#primary > div > i` 是 Yomitan 老式「单词典无 ol」格式的路径，Hibiki 产物
+/// * `#primary > div > i` 是 Yomitan 老式「单词典无 ol」格式的路径，Fushi 产物
 ///   永远匹配不到（`<i>` 在 `li` 里）；
-/// * `li[data-details]` 是 JPMN 导入卡的特征（Lapis 模板脚本据此识别），Hibiki
+/// * `li[data-details]` 是 JPMN 导入卡的特征（Lapis 模板脚本据此识别），Fushi
 ///   从不产出；
 /// * `dict-group__*` 全部只存在于 vendored Lapis CSS 与旧预览 mock 中，产出侧
 ///   零处 —— 「词性」在真实产物里是拼进词典名那个 `<i>` 的纯文本
 ///   （`(vt, 明鏡国語辞典)`），**没有独立元素可选**，所以不提供该字段。
 ///
-/// 正面例句：Hibiki 卡型默认 `IsWordAndSentenceCard`，正面句子落在 `#hint`，
+/// 正面例句：Fushi 卡型默认 `IsWordAndSentenceCard`，正面句子落在 `#hint`，
 /// 只打 `.front-sentence` 会漏掉唯一的实际形态。
 ///
 /// 守卫见 `lapis_styling_test.dart`『每个可视字段绑定真实 Lapis selector 与字号
@@ -893,7 +893,7 @@ const List<int> kLapisFontScalePresets = <int>[80, 90, 100, 110, 125, 150];
 const int kLapisFontScaleMinPercent = 1;
 const int kLapisFontScaleMaxPercent = 400;
 
-/// 用户区段正文的拆分结果：Hibiki 生成的字号缩放块（还原成百分比）与其余
+/// 用户区段正文的拆分结果：Fushi 生成的字号缩放块（还原成百分比）与其余
 /// 用户自由 CSS。
 class LapisUserSectionSplit {
   const LapisUserSectionSplit({
@@ -901,7 +901,7 @@ class LapisUserSectionSplit {
     required this.customCss,
   });
 
-  /// 反解出的字号百分比；正文开头不是 Hibiki 生成的缩放块时 = 100。
+  /// 反解出的字号百分比；正文开头不是 Fushi 生成的缩放块时 = 100。
   final int fontScalePercent;
 
   /// 剥掉缩放块之后的用户自由 CSS（已 trim）。
@@ -912,7 +912,7 @@ class LapisUserSectionSplit {
 /// 的逆运算。
 ///
 /// **为什么必须反解**（PR#457 审查 §10-2，用户拍板方案甲）：从备份恢复时若把
-/// 整段正文（含 Hibiki 生成的缩放块）原样塞进 `lapisCustomCss` 并把百分比归
+/// 整段正文（含 Fushi 生成的缩放块）原样塞进 `lapisCustomCss` 并把百分比归
 /// 100，之后用户再调字号，新缩放块排在正文**之前**、旧缩放块排在**之后**，
 /// 两块特异性相同 → 后者胜出 → 字号选择器肉眼零效果。反解之后选择器显示的就是
 /// 备份当时的字号，且 `lapisCustomCss` 里不再残留缩放块，后续调节立即生效。
@@ -980,7 +980,7 @@ String composeLapisCss({
 }
 
 /// 从一份完整 styling 里提取用户区段正文（标记之间的内容，已 trim）。
-/// 没有成对标记时返回 null——调用方（备份恢复）据此把 Hibiki 侧客制化状态
+/// 没有成对标记时返回 null——调用方（备份恢复）据此把 Fushi 侧客制化状态
 /// 清空，而不是猜。
 String? extractLapisUserSectionBody(String css) {
   final int begin = css.indexOf(lapisUserCssBeginMarker);
@@ -991,15 +991,15 @@ String? extractLapisUserSectionBody(String css) {
   return css.substring(bodyStart, end).trim();
 }
 
-/// 从一份完整 styling 里剥掉 Hibiki 的用户区段，得到**用户自己的那份基线**。
+/// 从一份完整 styling 里剥掉 Fushi 的用户区段，得到**用户自己的那份基线**。
 ///
-/// 这是「以用户现有 Lapis 为基线」的地基（用户反馈：Hibiki 把别人的字体改了）。
+/// 这是「以用户现有 Lapis 为基线」的地基（用户反馈：Fushi 把别人的字体改了）。
 /// 病根不是我们写了 `font-family`，而是 [composeLapisCss] 把基线硬编码成
 /// vendored 的 [LapisNoteType.template.css]——推送 = vendored 全文 + 用户区段，
 /// 于是用户自己那份 Lapis（别的版本 / 自己调过字体）被整体顶掉。托管区段的标记
 /// 机制本来就是为了「只改我们那块、其余原样保留」，基线却被换掉，等于自相矛盾。
 ///
-/// 没有标记（用户从没被 Hibiki 写过）时原样返回——那整份就是他的基线。
+/// 没有标记（用户从没被 Fushi 写过）时原样返回——那整份就是他的基线。
 String stripLapisUserSection(String css) {
   final int begin = css.indexOf(lapisUserCssBeginMarker);
   if (begin < 0) return css;
@@ -1056,7 +1056,7 @@ bool ankiCssCarriesCurrentLapisBaseline(String ankiCss) =>
 
 /// 启动自动迁移的**基线闸门**（PR#457 审查 §10-3，用户拍板方案甲）。
 ///
-/// 语义：「迁移」只该在 Hibiki 自己的基线变了时发生。用户改了字号/自定义 CSS
+/// 语义：「迁移」只该在 Fushi 自己的基线变了时发生。用户改了字号/自定义 CSS
 /// 却没点「应用样式到 Anki」，不构成迁移理由——**Apply 是用户内容写进 Anki 的
 /// 唯一闸门**。
 ///
@@ -1077,7 +1077,7 @@ enum LapisStylingDecision {
   /// 与期望完全一致，无需动作。
   upToDate,
 
-  /// 可安全覆写：Anki 端内容是 Hibiki 已知的自有产物（上次应用的指纹，或
+  /// 可安全覆写：Anki 端内容是 Fushi 已知的自有产物（上次应用的指纹，或
   /// 从未被动过的出厂基线）。自动迁移只在此态下写入。
   safeUpdate,
 
@@ -1088,7 +1088,7 @@ enum LapisStylingDecision {
 
 /// 判定 Anki 端现有 [ankiCss] 相对期望 [expectedCss] 的处置方式。
 ///
-/// [lastAppliedSha] 是 Hibiki 上次成功推送的 styling 指纹
+/// [lastAppliedSha] 是 Fushi 上次成功推送的 styling 指纹
 /// （[lapisCssSha256]），null = 本机从未推送过。
 LapisStylingDecision decideLapisStylingAction({
   required String ankiCss,

@@ -150,7 +150,7 @@ void main() {
 
     test('onPositionWrite is wired for remote (not null)', () {
       final String region2 = region(
-        'controller.setPauseAtSubtitleEnd',
+        'controller.setSecondaryDelayMs(',
         'if (!mounted)',
       );
       expect(

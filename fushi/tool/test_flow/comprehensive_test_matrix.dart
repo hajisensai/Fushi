@@ -251,7 +251,7 @@ abstract final class TestScenarios {
       'flutter test test/sync/fushi_p2p_roundtrip_test.dart',
     ],
     assertions: <String>[
-      'local Hibiki sync server stores progress JSON',
+      'local Fushi sync server stores progress JSON',
       'client backend reads the uploaded progress JSON back',
     ],
     evidence: <String>['report.json', 'server log', 'client log'],

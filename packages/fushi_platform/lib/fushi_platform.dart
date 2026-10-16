@@ -1,4 +1,4 @@
-library hibiki_platform;
+library fushi_platform;
 
 // HBK-AUDIT-136: removed dead abstractions TtsEngine / PlatformIntegration /
 // StoragePaths — generated from the 2026-05-16 multiplatform-design spec but

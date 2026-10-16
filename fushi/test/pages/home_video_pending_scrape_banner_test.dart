@@ -53,7 +53,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir =
-        Directory.systemTemp.createTempSync('hibiki_pending_scrape_pp');
+        Directory.systemTemp.createTempSync('fushi_pending_scrape_pp');
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -84,7 +84,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir =
-        Directory.systemTemp.createTempSync('hibiki_pending_scrape_store');
+        Directory.systemTemp.createTempSync('fushi_pending_scrape_store');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
     controller = VideoSourceScrapeTaskController(_IdleRunner());

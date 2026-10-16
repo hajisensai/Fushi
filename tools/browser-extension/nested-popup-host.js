@@ -44,7 +44,7 @@
       fushiSentenceCtx = draft;
     }
   }
-  // 子层外观与第一层（#hibiki-popup-host 的 :host([data-fushi-glass])）同一套参数：同圆角
+  // 子层外观与第一层（#fushi-popup-host 的 :host([data-fushi-glass])）同一套参数：同圆角
   // （app 下发的 --fushi-radius-card）、同玻璃（blur 20px + saturate 1.4、黑/白 8% 描边）、
   // 同投影（0 10px 32px 22% 黑）、同填充（nested-popup.js 挂 .fushi-glass，走 content.css 第一层
   // 那两条亮 0.72 / 暗 0.62）。每一层都与第一层外观一致，不随层深变化（用户 2026-10-05 拍板）。
@@ -333,7 +333,7 @@
       // iframe 只负责承载内容：铺满外框、透明底，与 iframe 根同一 color-scheme。
       frame.style.cssText = 'display:block;width:100%;height:100%;border:0;margin:0;background:transparent;' +
         'color-scheme:' + scheme + ';';
-      // 外框（定位 / 圆角裁切 / 投影 / 玻璃模糊 / 入场动画都在这一层）：与第一层 #hibiki-popup-host
+      // 外框（定位 / 圆角裁切 / 投影 / 玻璃模糊 / 入场动画都在这一层）：与第一层 #fushi-popup-host
       // 同级挂在 body（全屏时 fullscreenElement）下，不嵌进第一层，祖先链上没有 Backdrop Root。
       const box = document.createElement('div');
       box.className = 'fushi-nested-layer';
@@ -366,7 +366,8 @@
     });
   }
   const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'listWordAudioSources', 'openLink', 'openInAnki',
-    'favoriteEntry', 'favoriteCheck', 'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview']);
+    'favoriteEntry', 'favoriteCheck', 'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview',
+    'srsTermStatus', 'srsOpenCard']);
   function receive(layer, message) {
     if (!layers.includes(layer) || !message || message.__fushiPopupFrame !== true) return;
     if (message.type === 'close') {

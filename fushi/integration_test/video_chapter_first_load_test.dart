@@ -33,7 +33,7 @@ const String _kBookUid = 'video/itest-chapter-first-load';
 Future<File> _generateChapteredMkv() async {
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   final Directory root = testRoot.isEmpty
-      ? await Directory.systemTemp.createTemp('hibiki-chapter-itest-')
+      ? await Directory.systemTemp.createTemp('fushi-chapter-itest-')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
   await root.create(recursive: true);
 

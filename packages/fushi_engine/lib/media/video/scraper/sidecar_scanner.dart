@@ -15,7 +15,7 @@ import 'package:xml/xml.dart';
 
 import 'package:fushi_engine/media/media_extensions.dart';
 
-/// 判断来源目录内的 sidecar 是否仍是 Hibiki 原样生成物。
+/// 判断来源目录内的 sidecar 是否仍是 Fushi 原样生成物。
 ///
 /// 实现必须同时校验持久化的 artifact 身份和文件当前内容；只有已登记路径且当前
 /// SHA-256 与登记值一致时才返回 true。不存在登记、文件已被用户修改或无法校验时
@@ -47,7 +47,7 @@ class SidecarResult {
   /// 命中的本地海报文件（按优先序取第一个存在的），无则 null。
   final File? posterFile;
 
-  /// 命中的海报是否为内容未变的 Hibiki 生成物。
+  /// 命中的海报是否为内容未变的 Fushi 生成物。
   ///
   /// true 时旧封面刮削不能把它登记成 `CoverOrigin.sidecar`，否则后续会把自产
   /// 图片误当用户资产永久保护。字段只表达归属，不隐藏 [posterFile]，便于调用方

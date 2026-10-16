@@ -165,7 +165,7 @@ abstract class _LocalLibraryHostBase
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
 }
 
-/// 用真实 Hibiki 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
+/// 用真实 Fushi 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
 ///
 /// 库变动经注入的 [runExclusive] 串行（生产传 `runExclusiveWithSync`），
 /// 并经 [refreshDictionaryCache] 刷新内存词典缓存。

@@ -52,7 +52,6 @@ void main() {
       'video.playback.lock_window_aspect',
       'video.playback.long_press_speed',
       'video.playback.seek_seconds',
-      'video.playback.pause_at_subtitle_end',
       // Image quality (mpv pure-pref subset)
       'video.quality.enhancement',
       'video.quality.sigmoid',

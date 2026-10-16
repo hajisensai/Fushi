@@ -1,7 +1,7 @@
 // PR#457 审查 §10-2（用户拍板方案甲）守卫：从备份恢复之后，字号选择器必须与
 // 卡片上实际生效的字号一致。
 //
-// 修复前：恢复把整段用户区段（含 Hibiki 生成的 `:root` 缩放块）塞进
+// 修复前：恢复把整段用户区段（含 Fushi 生成的 `:root` 缩放块）塞进
 // `lapisCustomCss` 并把百分比归 100。之后用户再调字号，新缩放块排在正文之前、
 // 旧缩放块排在之后，两块特异性相同 → 后者胜出 → 选择器成了死控件。
 //
@@ -54,7 +54,7 @@ void main() {
     expect(splitLapisUserSectionBody('').customCss, isEmpty);
   });
 
-  test('用户手写的 :root 块不会被误认成 Hibiki 缩放块', () {
+  test('用户手写的 :root 块不会被误认成 Fushi 缩放块', () {
     const String handWritten = ':root {\n  --pc-vocab-font-size: 99px;\n}';
     final LapisUserSectionSplit split = splitLapisUserSectionBody(handWritten);
     expect(split.fontScalePercent, 100);

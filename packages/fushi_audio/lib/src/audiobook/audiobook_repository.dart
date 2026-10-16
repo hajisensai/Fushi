@@ -132,7 +132,7 @@ class AudiobookRepository {
     if (audioChanged) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
-    fushiDebugPrint('[hibiki-audiobook] replaceAudio bookKey=$bookKey '
+    fushiDebugPrint('[fushi-audiobook] replaceAudio bookKey=$bookKey '
         'files=${audioPaths.length} audioChanged=$audioChanged');
   }
 
@@ -277,7 +277,7 @@ class AudiobookRepository {
     );
     if (rebased == current) return;
     await _db.setPrefTyped(posKey, rebased);
-    fushiDebugPrint('[hibiki-audiobook] rebase position key=$positionKey '
+    fushiDebugPrint('[fushi-audiobook] rebase position key=$positionKey '
         '$current -> $rebased (cue durations changed)');
   }
 
@@ -401,7 +401,7 @@ class AudiobookRepository {
       );
     } catch (e, stack) {
       fushiDebugPrint('AudiobookRepository.healthOverlay: $e\n$stack');
-      fushiDebugPrint('[hibiki-audiobook] readHealthOverlay parse failed: $e');
+      fushiDebugPrint('[fushi-audiobook] readHealthOverlay parse failed: $e');
       return null;
     }
   }

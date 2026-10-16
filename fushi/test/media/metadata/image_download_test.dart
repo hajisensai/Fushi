@@ -185,7 +185,7 @@ void main() {
     late Directory tempDir;
     setUp(() async {
       tempDir =
-          await Directory.systemTemp.createTemp('hibiki_img_download_test');
+          await Directory.systemTemp.createTemp('fushi_img_download_test');
     });
     tearDown(() async {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);

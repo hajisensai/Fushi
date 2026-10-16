@@ -10,7 +10,7 @@ void main() {
     late Directory dir;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki-resumable-dl');
+      dir = await Directory.systemTemp.createTemp('fushi-resumable-dl');
     });
 
     tearDown(() async {

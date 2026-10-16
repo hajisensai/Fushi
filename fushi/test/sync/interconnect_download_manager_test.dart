@@ -10,7 +10,7 @@ void main() {
     late InterconnectDownloadManager manager;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki-interconnect-mgr');
+      dir = await Directory.systemTemp.createTemp('fushi-interconnect-mgr');
       manager = InterconnectDownloadManager();
     });
 
@@ -336,7 +336,7 @@ void main() {
     late Directory dir;
 
     setUp(() async {
-      dir = await Directory.systemTemp.createTemp('hibiki-interconnect-thr');
+      dir = await Directory.systemTemp.createTemp('fushi-interconnect-thr');
     });
 
     tearDown(() async {

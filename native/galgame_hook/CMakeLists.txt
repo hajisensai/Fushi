@@ -3,7 +3,7 @@ project(fushi_voice_hook LANGUAGES C CXX)
 
 # galgame 一键制卡 C 阶段 —— 引擎级 voice hook 的隔离 helper 组件。
 #
-# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 hibiki.exe，保持独立
+# 部署边界（docs/specs/galgame-mining）：injector + hook DLL 不链接进 fushi.exe，保持独立
 # 子进程/DLL。`tools/build_distribution.ps1` 单独 configure/build；校验 zip 随 Windows 主包
 # 交付以支持离线首装，并同步发布到固定 release 供旧包/后台更新。
 #
@@ -838,7 +838,7 @@ target_include_directories(fushi_directsound_format_registry_test PRIVATE hook)
 add_test(NAME fushi_directsound_format_registry_test
   COMMAND fushi_directsound_format_registry_test)
 
-# 注入器（Hibiki 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
+# 注入器（Fushi 主进程把它当子进程拉起）。attach（--pid）+ launch（--launch；通常
 # CREATE_SUSPENDED 早注入，Siglus/Enigma 自动延迟附着）两种模式，各 arch 一份。
 add_executable(fushi_voice_injector
   "injector/injector_main.cpp"

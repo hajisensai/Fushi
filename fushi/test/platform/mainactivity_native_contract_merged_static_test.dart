@@ -17,7 +17,7 @@ void main() {
 
   /// BUG-195: Samsung OneUI 6.5 draws a system default focus rectangle on the
   /// FlutterView host (API 26+ `defaultFocusHighlightEnabled` defaults to
-  /// true), double-overlapping Hibiki's own focus ring. MainActivity must
+  /// true), double-overlapping Fushi's own focus ring. MainActivity must
   /// disable the Android system default focus highlight on the decorView,
   /// guarded by an API 26+ (Build.VERSION_CODES.O) version gate, while leaving
   /// the Flutter self-drawn focus ring untouched. Reverting any part turns

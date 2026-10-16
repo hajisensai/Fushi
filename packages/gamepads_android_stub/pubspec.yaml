@@ -1,7 +1,7 @@
 name: gamepads_android
 resolution: workspace
 description: >-
-  Local no-op Android implementation of the `gamepads` federated plugin. Hibiki
+  Local no-op Android implementation of the `gamepads` federated plugin. Fushi
   handles Android controllers through the engine's native key-event path (it
   already delivers gameButton*/arrow keys), so the real gamepads_android must
   NOT be registered: its onAttachedToActivity casts the host Activity to

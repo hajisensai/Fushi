@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -53,29 +54,29 @@ void main() {
     _FakeFetcher fetcher, {
     int pages = 10,
     int concurrency = 3,
-    int prefetchRadius = 2,
+    int prefetchAhead = 2,
+    int prefetchBehind = 2,
     String chapterKey = '/chapter/1',
     OnlineMangaPageMeasured? onPageMeasured,
-  }) =>
-      OnlineMangaReaderSession.open(
-        cacheRoot: cacheRoot,
-        bookKey: 'book-1',
-        chapterKey: chapterKey,
-        pageIdentities: <String>[
-          for (int i = 0; i < pages; i++) 'id-$i',
-        ],
-        fetchPage: fetcher.call,
-        maxConcurrentRequests: concurrency,
-        prefetchRadius: prefetchRadius,
-        onPageMeasured: onPageMeasured,
-      );
+  }) => OnlineMangaReaderSession.open(
+    cacheRoot: cacheRoot,
+    bookKey: 'book-1',
+    chapterKey: chapterKey,
+    pageIdentities: <String>[for (int i = 0; i < pages; i++) 'id-$i'],
+    fetchPage: fetcher.call,
+    maxConcurrentRequests: concurrency,
+    prefetchAhead: prefetchAhead,
+    prefetchBehind: prefetchBehind,
+    onPageMeasured: onPageMeasured,
+  );
 
   test('同页并发请求只取一次；字节、类型、真实尺寸都对，尺寸回调只报一次', () async {
     final _FakeFetcher fetcher = _FakeFetcher();
     final List<String> measured = <String>[];
     final OnlineMangaReaderSession session = await open(
       fetcher,
-      prefetchRadius: 0,
+      prefetchAhead: 0,
+      prefetchBehind: 0,
       onPageMeasured: (int index, int width, int height) =>
           measured.add('$index:${width}x$height'),
     );
@@ -132,7 +133,8 @@ void main() {
     final _FakeFetcher fetcher = _FakeFetcher()..failOnce.add(2);
     final OnlineMangaReaderSession session = await open(
       fetcher,
-      prefetchRadius: 0,
+      prefetchAhead: 0,
+      prefetchBehind: 0,
     );
     addTearDown(session.close);
 
@@ -175,7 +177,9 @@ void main() {
     addTearDown(first.close);
     expect(await stale.exists(), isFalse);
     expect(
-        await Directory(p.join(cacheRoot.path, 'deadbeef')).exists(), isFalse);
+      await Directory(p.join(cacheRoot.path, 'deadbeef')).exists(),
+      isFalse,
+    );
 
     final OnlineMangaReaderSession second = await open(
       _FakeFetcher(),
@@ -184,6 +188,62 @@ void main() {
     addTearDown(second.close);
     expect(await first.directory.exists(), isTrue, reason: '活会话目录不能被清');
     expect(await second.directory.exists(), isTrue);
+  });
+
+  test('默认往前预取 4 页、往回 1 页；跳页后窗口外还在排队的旧预取被丢掉，不再打源', () async {
+    final Completer<void> gate = Completer<void>();
+    final List<int> calls = <int>[];
+    final OnlineMangaReaderSession session =
+        await OnlineMangaReaderSession.open(
+          cacheRoot: cacheRoot,
+          bookKey: 'book-1',
+          chapterKey: '/chapter/stale',
+          pageIdentities: <String>[for (int i = 0; i < 20; i++) 'id-$i'],
+          fetchPage: (int index) async {
+            calls.add(index);
+            if (index == 0) await gate.future;
+            return _FakeFetcher.png;
+          },
+          maxConcurrentRequests: 1,
+        );
+    addTearDown(session.close);
+
+    // 第 0 页占着唯一名额；它的预取 1–4 排队。
+    final Future<MangaPageBytes> first = session.page(0);
+    await Future<void>.delayed(Duration.zero);
+    // 读者跳到第 10 页：1–4 落在 10 的预取窗口 [9, 14] 外，应被丢掉。
+    final Future<MangaPageBytes> jumped = session.page(10);
+    gate.complete();
+    await first;
+    await jumped;
+    await session.debugWaitForIdle();
+    expect(calls.first, 0);
+    expect(calls[1], 10, reason: '跳到的页排在一切预取前面');
+    expect(calls.where((int i) => i >= 1 && i <= 4), isEmpty);
+    expect(calls.toSet(), <int>{0, 9, 10, 11, 12, 13, 14});
+  });
+
+  test('close 把还在飞的页交给运行时取消', () async {
+    final Completer<Uint8List> never = Completer<Uint8List>();
+    final List<List<int>> cancelled = <List<int>>[];
+    final OnlineMangaReaderSession session =
+        await OnlineMangaReaderSession.open(
+          cacheRoot: cacheRoot,
+          bookKey: 'book-1',
+          chapterKey: '/chapter/cancel',
+          pageIdentities: <String>['id-0', 'id-1'],
+          fetchPage: (int index) => never.future,
+          prefetchAhead: 0,
+          prefetchBehind: 0,
+          cancelPages: (Iterable<int> indices) async =>
+              cancelled.add(indices.toList()),
+        );
+    unawaited(session.page(0).then<void>((_) {}, onError: (Object _) {}));
+    await Future<void>.delayed(Duration.zero);
+    await session.close();
+    expect(cancelled, <List<int>>[
+      <int>[0],
+    ]);
   });
 
   test('越界页号抛 RangeError，不打源', () async {

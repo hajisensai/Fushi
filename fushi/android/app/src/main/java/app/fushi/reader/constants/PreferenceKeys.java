@@ -1,7 +1,7 @@
 package app.fushi.reader.constants;
 
 /**
- * SharedPreferences file names and key constants for Hibiki services.
+ * SharedPreferences file names and key constants for Fushi services.
  *
  * <p><strong>Do not rename these values.</strong> They are persisted to disk;
  * renaming without a migration will silently lose stored data on existing

@@ -1,4 +1,9 @@
 /// 服务端对引擎装配点的一次性接线（与 app 的 `installEngineHostBindings()` 对偶）。
+///
+/// TODO(srs-ankiconnect): 服务端还没有 SRS 装配（没有「当前 profile」的 SrsDbStore），所以
+/// AnkiConnect v6 兼容层（`fushi_engine/srs/ankiconnect/`）目前只在 app 的 Fushi API 上挂。
+/// 服务端接 SRS 后，用配置里指定的 SRS profile 构造 `SrsAnkiConnectHandler`，经
+/// `SrsAnkiConnectEndpoint.handle` 挂到 Fushi API 根路径（鉴权由端点自己做，不经中间件）。
 library;
 
 import 'dart:io';

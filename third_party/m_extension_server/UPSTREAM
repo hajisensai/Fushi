@@ -18,10 +18,10 @@ directory instead of being cloned at build time.
 Layout
 ------
 upstream_src/               pristine upstream tree at the pinned commit,
-                            byte-for-byte, no Hibiki edits.
-overlay/                    Hibiki-modified source files; copied over
+                            byte-for-byte, no Fushi edits.
+overlay/                    Fushi-modified source files; copied over
                             upstream_src after the patch is applied.
-server-build.gradle.patch   Hibiki changes to upstream files that are too
+server-build.gradle.patch   Fushi changes to upstream files that are too
                             small to justify a full-file overlay.
 LICENSE / NOTICE            MPL-2.0 text and the modification notice.
 
@@ -87,7 +87,7 @@ ABI package override `hosterListParse` / the parsed selector pair?) whether to
 issue the lib-16 hoster request or wrap the legacy video list in a
 NO_HOSTER_LIST hoster -- never by issuing a request and watching it fail.
 
-overlay/.../animesource/host/AnimeVideoLoader.kt is Hibiki's (not part of any
+overlay/.../animesource/host/AnimeVideoLoader.kt is Fushi's (not part of any
 lib): the one entry point both hosts call for `getVideoList` -- hosters ->
 sortHosters -> per hoster `videoList ?: getVideoList(hoster)` -> sortVideos ->
 per video `resolveVideo` (when not initialized) -> lib-14 `getVideoUrl` (when
@@ -110,7 +110,7 @@ Everything else is vendored verbatim, including the Gradle wrapper JAR, the
 AndroidCompat Noto font resources (loaded by the static initialiser in
 AndroidCompat/src/main/java/android/graphics/Typeface.java, so dropping them
 would change the shipped JAR's behaviour) and upstream's own .gitattributes
-(same EOL policy as Hibiki's, so no normalisation drift).
+(same EOL policy as Fushi's, so no normalisation drift).
 
 Build
 -----
@@ -139,7 +139,7 @@ tree. Both scripts therefore set upstream's own `ProductRevision` escape
 hatch to the pinned commit's short SHA (ee55c65), so the produced JAR name
 and manifest point straight at the commit recorded above.
 
-Hibiki modifications
+Fushi modifications
 --------------------
 overlay/.../animesource/** (full-file replacements + FetchType.kt + host/):
   The lib 14 + lib 16 union anime ABI and the shared host video loader; see
@@ -305,17 +305,17 @@ Security boundary (must not be weakened)
 - Every request is checked against a per-process Bearer token before routing;
   the check sits in the single NanoHTTPD dispatch entry point, so no route can
   bypass it. The token is 256 bits from Dart's Random.secure(), handed to the
-  child only through the HIBIKI_MIHON_TOKEN environment variable, and the
+  child only through the FUSHI_MIHON_TOKEN environment variable, and the
   server refuses to start without it.
 - The child, not the host, chooses the listening port. It is started with port
-  0 and prints "HIBIKI_MIHON_READY port=<n>" on stdout once NanoHTTPD has
+  0 and prints "FUSHI_MIHON_READY port=<n>" on stdout once NanoHTTPD has
   bound; the host parses that line and only then sends its first authenticated
   request. Letting the host bind/close/hand over a port number instead is a
   TOCTOU: any local process can take the port in between, and the host would
   hand it the Bearer token. Both ends of this contract are guarded by
   fushi/test/build/mihon_vendored_server_guard_test.dart.
-- /inspect never loads the APK. It is called *before* Hibiki shows the "third
-  party extensions execute code with Hibiki permissions" trust dialog, so it
+- /inspect never loads the APK. It is called *before* Fushi shows the "third
+  party extensions execute code with Fushi permissions" trust dialog, so it
   stays on apksig plus PackageTools.getPackageInfo (zip + binary manifest
   parsing) and never touches MExtensionServerLoader, whose path runs dex2jar,
   Class.forName + newInstance on the extension main class and
@@ -336,7 +336,7 @@ Security boundary (must not be weakened)
   "the site tells the client where the image is" contract.
 - The upstream process identity is retained: Main.kt, ServerWindow.kt and
   MExtensionServerLoader are untouched; MihonImageProxy has a response-lifetime
-  overlay described above. The Hibiki
+  overlay described above. The Fushi
   host only ever terminates the Process handle it started (never a port or
   process-name scan). The upstream wire key __mangatan_bridge_context__ is
   deliberately kept; only the capability identifier is renamed to

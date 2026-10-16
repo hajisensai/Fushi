@@ -18,7 +18,7 @@ void main() {
   late Directory dir;
 
   setUp(() {
-    dir = Directory.systemTemp.createTempSync('hibiki_local_audio_mig');
+    dir = Directory.systemTemp.createTempSync('fushi_local_audio_mig');
   });
 
   tearDown(() => dir.deleteSync(recursive: true));

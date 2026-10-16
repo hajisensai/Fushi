@@ -133,11 +133,11 @@ void main() {
     );
   });
 
-  test('主库改名迁移是开库路径上的第一件事', () {
+  test('改名前旧主库的拒绝判定是开库路径上的第一件事', () {
     final String source = coreDatabase.readAsStringSync();
     expect(dartStringConst(source, 'legacyHibikiDatabaseFileName'),
         isNot(dartStringConst(source, 'fushiDatabaseFileName')),
-        reason: '新旧主库文件名必须不同，否则改名迁移是空操作。');
+        reason: '新旧主库文件名必须不同，否则「只有旧库」的判据永远不成立。');
 
     final int openDbIndex = source.indexOf('LazyDatabase _openDb(');
     expect(openDbIndex, greaterThan(0), reason: '找不到 _openDb —— 守卫已失效。');
@@ -152,10 +152,11 @@ void main() {
         .trim();
     expect(
       firstStatement,
-      'await _migrateLegacyDatabaseFileName(dbDirectory)',
-      reason: 'WAL 库的 -wal/-shm 与主文件名绑定，开着连接改名等于撕裂 sidecar。'
-          '旧名到新名的主库改名必须发生在任何 SQLite 连接打开之前，也就是 '
-          '_openDb 的 LazyDatabase 回调里的第一句。',
+      'await _rejectPreRenameDatabase(dbDirectory)',
+      reason: '只有改名前 hibiki.db 的目录必须在任何 SQLite 连接打开之前被拒绝'
+          '（UnsupportedLegacySchemaException）：一旦先走到开库，SQLite 会在旁边'
+          '建一个空 fushi.db，用户看到的是数据全没了，且下次启动判据不再命中。'
+          '所以它必须是 _openDb 的 LazyDatabase 回调里的第一句。',
     );
   });
 

@@ -6,7 +6,8 @@ publish = false
 license = "MIT OR Apache-2.0"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+# rlib：给 native/fushi_ios_umbrella（iOS 伞形 staticlib，与 fushi_fsrs 共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
 
 [features]
 default = ["dht"]

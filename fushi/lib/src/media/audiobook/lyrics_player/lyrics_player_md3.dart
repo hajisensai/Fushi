@@ -67,7 +67,26 @@ class _WideGeometry {
     required this.lyrics,
   });
 
-  factory _WideGeometry.of(Size size, EdgeInsets padding) {
+  /// [mirror] = 左右互换进度：0 = 封面栏在左、歌词底板在右；1 = 封面栏到右、
+  /// 歌词底板到左；中间值把两端几何逐矩形线性插值（换位动画途中）。两栏宽度与
+  /// 间距不变——换位置不会让歌词区变小。
+  factory _WideGeometry.of(Size size, EdgeInsets padding, {double mirror = 0}) {
+    if (mirror <= 0) return _WideGeometry._side(size, padding, mirrored: false);
+    if (mirror >= 1) return _WideGeometry._side(size, padding, mirrored: true);
+    final _WideGeometry a = _WideGeometry._side(size, padding, mirrored: false);
+    final _WideGeometry b = _WideGeometry._side(size, padding, mirrored: true);
+    return _WideGeometry._(
+      panel: Rect.lerp(a.panel, b.panel, mirror)!,
+      plate: Rect.lerp(a.plate, b.plate, mirror)!,
+      lyrics: Rect.lerp(a.lyrics, b.lyrics, mirror)!,
+    );
+  }
+
+  factory _WideGeometry._side(
+    Size size,
+    EdgeInsets padding, {
+    bool mirrored = false,
+  }) {
     final double hPad = (size.width * 0.04).clamp(20.0, 56.0);
     final double left = padding.left + hPad;
     final double right = size.width - padding.right - hPad;
@@ -82,13 +101,17 @@ class _WideGeometry {
       maxPanel,
     );
     final double gap = (contentWidth * 0.04).clamp(20.0, 64.0);
-    final Rect panel = Rect.fromLTRB(left, top, left + panelWidth, bottom);
-    final Rect plate = Rect.fromLTRB(
-      math.min(right - 1, panel.right + gap),
-      top,
-      right,
-      bottom,
-    );
+    final Rect panel = mirrored
+        ? Rect.fromLTRB(right - panelWidth, top, right, bottom)
+        : Rect.fromLTRB(left, top, left + panelWidth, bottom);
+    final Rect plate = mirrored
+        ? Rect.fromLTRB(left, top, math.max(left + 1, panel.left - gap), bottom)
+        : Rect.fromLTRB(
+            math.min(right - 1, panel.right + gap),
+            top,
+            right,
+            bottom,
+          );
     // 歌词矩形在底板里内缩：顶部留 64 给右上角关闭键（不让它压在首行上）。
     final Rect lyrics = Rect.fromLTRB(
       plate.left + 8,
@@ -202,9 +225,25 @@ double lyricsPlayerTapDimension(ThemeData theme) =>
     ? kMinInteractiveDimension
     : 40;
 
-/// 宽屏歌词底板（画在 mesh 背景里，WebView 在控件层下面）；窄屏不画。
+/// 宽屏歌词底板（画在 mesh 背景里，WebView 在控件层下面）；窄屏不画。两个顶层
+/// 函数而不是闭包：背景按解析器身份判断要不要重画。
 Rect? _widePlateRect(Size page, EdgeInsets padding) =>
     lyricsPlayerIsWide(page) ? _WideGeometry.of(page, padding).plate : null;
+
+Rect? _widePlateRectMirrored(Size page, EdgeInsets padding) =>
+    lyricsPlayerIsWide(page)
+    ? _WideGeometry.of(page, padding, mirror: 1).plate
+    : null;
+
+/// 底板解析器：停在两端时返回上面两个顶层函数（身份稳定，背景不重画）；换位
+/// 动画途中才返回按进度插值的闭包（每帧新身份 = 每帧重画，正是动画要的）。
+FushiMeshPlateResolver _widePlateResolver(double mirror) {
+  if (mirror <= 0) return _widePlateRect;
+  if (mirror >= 1) return _widePlateRectMirrored;
+  return (Size page, EdgeInsets padding) => lyricsPlayerIsWide(page)
+      ? _WideGeometry.of(page, padding, mirror: mirror).plate
+      : null;
+}
 
 /// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒：公共 [FushiTransportGroup] 接上歌词
 /// 页的回调。
@@ -254,12 +293,17 @@ Widget _relativeSeekButton(int seconds, ValueChanged<int> seekBy) =>
 // ---------------------------------------------------------------------------
 
 class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
-  const Md3LyricsPlayerDesign();
+  const Md3LyricsPlayerDesign({this.mirrorProgress = 0});
+
+  /// 宽屏左右互换进度（见 [LyricsPlayerData.sidesMirrored]）：0 = 封面栏在左、
+  /// 1 = 封面栏在右，中间值 = 换位动画途中（由 `ReaderLyricsPlayerOverlay` 按
+  /// `fushiMotionDuration` 驱动，墨水屏 / 减弱动态下直接跳到终值）。
+  final double mirrorProgress;
 
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _WideGeometry.of(size, padding).lyrics;
+      return _WideGeometry.of(size, padding, mirror: mirrorProgress).lyrics;
     }
     final _NarrowGeometry geometry = _NarrowGeometry.of(context, size, padding);
     final double top = padding.top + 8 + geometry.topBarHeight + 8;
@@ -277,7 +321,10 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
     BuildContext context,
     LyricsPlayerData data, {
     double bleedTop = 0,
-  }) => FushiMeshBackdrop(bleedTop: bleedTop, plateRect: _widePlateRect);
+  }) => FushiMeshBackdrop(
+    bleedTop: bleedTop,
+    plateRect: _widePlateResolver(mirrorProgress),
+  );
 
   @override
   Widget buildChrome(
@@ -289,7 +336,12 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
     required Rect lyricsRect,
   }) {
     if (lyricsPlayerIsWide(size)) {
-      final _WideGeometry geometry = _WideGeometry.of(size, padding);
+      final _WideGeometry geometry = _WideGeometry.of(
+        size,
+        padding,
+        mirror: mirrorProgress,
+      );
+      final VoidCallback? onSwap = callbacks.onSwapSides;
       return Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
@@ -297,13 +349,28 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             rect: geometry.panel,
             child: _WidePanel(data: data, callbacks: callbacks),
           ),
+          // 底板右上角：左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
           Positioned(
             top: geometry.plate.top + 12,
             right: size.width - geometry.plate.right + 12,
-            child: FushiIconButtonControl.filledTonal(
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-              onPressed: callbacks.onClose,
-              icon: const FushiIcon(FushiIcons.close),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (onSwap != null) ...<Widget>[
+                  FushiIconButtonControl.filledTonal(
+                    key: const ValueKey<String>('lyrics_swap_sides_button'),
+                    tooltip: t.lyrics_layout_swap_sides,
+                    onPressed: onSwap,
+                    icon: const FushiIcon(FushiIcons.swap),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                FushiIconButtonControl.filledTonal(
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: callbacks.onClose,
+                  icon: const FushiIcon(FushiIcons.close),
+                ),
+              ],
             ),
           ),
         ],
@@ -365,105 +432,115 @@ class _WidePanel extends StatelessWidget {
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
 
-  /// 封面以外的内容大约要的高度（播放卡：章名 / 书名 / chip / 进度 / 按钮两行 +
-  /// 内边距与间距）。
-  static const double _reservedHeight = 430;
+  /// 封面区与播放卡之间的间距。
+  static const double _gap = 16;
+
+  /// 封面区低于这个高度（横屏手机）就不放封面，免得挤成邮票。
+  static const double _minCoverExtent = 120;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
-        final double coverSide = math.min(
-          width,
-          constraints.maxHeight - _reservedHeight - 24,
-        );
-        // 太矮（横屏手机）就不放封面，免得封面挤成邮票。
-        final bool showCover = coverSide >= 120;
-        final Widget column = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            if (showCover) ...<Widget>[
-              _SpringEntrance(
-                child: Center(
-                  // 播放走过书中插图时封面位换成插图（见 lyrics_illustration_view）。
-                  child: LyricsIllustrationArtworkSlot(
-                    controller: data.illustrations,
-                    side: coverSide,
-                    borderRadius: _kLargeBorderRadius,
-                    onOpen: callbacks.onOpenIllustration == null
-                        ? null
-                        : (int index) => callbacks.onOpenIllustration!(
-                            index,
-                            returnToCover: false,
-                          ),
-                    cover: _CoverTile(
-                      cover: data.cover,
-                      side: coverSide,
-                      isPlaying: data.isPlaying,
-                    ),
+        // 播放卡按内容高度（紧凑排布），封面 / 插图吃掉剩下的全部高度：栏宽是
+        // 固定几何（[_WideGeometry]），封面变大只往竖向长，歌词区不受影响。
+        // 竖版书封 / 插图按原比例放进「栏宽 × 剩余高度」的框里，不再先裁成
+        // 正方形——以前竖图被正方形的高卡住，左右空出一大截。
+        final Widget card = _SpringEntrance(
+          delay: 0.18,
+          child: _PlayerCard(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _TitleBlock(
+                  title: data.title,
+                  chapterLabel: data.chapterLabel,
+                  large: true,
+                ),
+                const SizedBox(height: 8),
+                _StatsChips(clock: data.clock),
+                const SizedBox(height: 6),
+                FushiWavySeekBar(
+                  debugLabel: 'lyrics-md3-seek',
+                  clock: data.clock,
+                  isPlaying: data.isPlaying,
+                  onSeek: callbacks.onSeek,
+                  strokeWidth: 5,
+                  barHeight: 32,
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _TransportGroup(
+                    isPlaying: data.isPlaying,
+                    callbacks: callbacks,
+                    playSize: 68,
+                    sideSize: FushiIconButtonSize.s,
+                    sideWidth: FushiIconButtonWidth.standard,
                   ),
                 ),
-              ),
-              const SizedBox(height: 24),
-            ],
-            _SpringEntrance(
-              delay: 0.18,
-              child: _PlayerCard(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _TitleBlock(
-                      title: data.title,
-                      chapterLabel: data.chapterLabel,
-                      large: true,
-                    ),
-                    const SizedBox(height: 12),
-                    _StatsChips(clock: data.clock),
-                    const SizedBox(height: 14),
-                    FushiWavySeekBar(
-                      debugLabel: 'lyrics-md3-seek',
-                      clock: data.clock,
-                      isPlaying: data.isPlaying,
-                      onSeek: callbacks.onSeek,
-                      strokeWidth: 6,
-                      barHeight: 40,
-                    ),
-                    const SizedBox(height: 8),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: _TransportGroup(
-                        isPlaying: data.isPlaying,
-                        callbacks: callbacks,
-                        playSize: 88,
-                        sideSize: FushiIconButtonSize.m,
-                        sideWidth: FushiIconButtonWidth.standard,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: _SecondaryActions(
-                        data: data,
-                        callbacks: callbacks,
-                        full: true,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _SecondaryActions(
+                    data: data,
+                    callbacks: callbacks,
+                    full: true,
+                  ),
                 ),
+              ],
+            ),
+          ),
+        );
+        return Column(
+          children: <Widget>[
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints area) {
+                  final double height = area.maxHeight - _gap;
+                  if (height < _minCoverExtent) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: _gap),
+                    child: _SpringEntrance(
+                      child: Center(
+                        // 播放走过书中插图时封面位换成插图（见
+                        // lyrics_illustration_view）。
+                        child: LyricsIllustrationArtworkSlot(
+                          controller: data.illustrations,
+                          side: width,
+                          height: height,
+                          borderRadius: _kLargeBorderRadius,
+                          onOpen: callbacks.onOpenIllustration == null
+                              ? null
+                              : (int index) => callbacks.onOpenIllustration!(
+                                  index,
+                                  returnToCover: false,
+                                ),
+                          cover: _CoverTile(
+                            cover: data.cover,
+                            width: width,
+                            height: height,
+                            isPlaying: data.isPlaying,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            // 极端窗口比例 / 大字号下的兜底：播放卡等比缩小而不是溢出。
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: constraints.maxHeight),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: SizedBox(width: width, child: card),
               ),
             ),
           ],
-        );
-        // 极端窗口比例下的兜底：整栏等比缩小而不是溢出。
-        return Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: SizedBox(width: width, child: column),
-          ),
         );
       },
     );
@@ -510,7 +587,7 @@ class _TitleBlock extends StatelessWidget {
   final String title;
   final String? chapterLabel;
 
-  /// 宽屏大字（headlineSmall Emphasized、两行）/ 窄屏紧凑（一行）。
+  /// 宽屏大字（titleLarge Emphasized、两行）/ 窄屏紧凑（一行）。
   final bool large;
 
   @override
@@ -523,7 +600,7 @@ class _TitleBlock extends StatelessWidget {
         (large ? type.labelLargeEmphasized : type.labelMediumEmphasized)
             .copyWith(color: cs.primary);
     final TextStyle titleStyle =
-        (large ? type.headlineSmallEmphasized : type.titleSmallEmphasized)
+        (large ? type.titleLargeEmphasized : type.titleSmallEmphasized)
             .copyWith(color: cs.onSurface);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -608,18 +685,20 @@ class _SpringEntrance extends StatelessWidget {
   }
 }
 
-/// 大封面卡：按封面原比例放进 [side]×[side] 的方框。M3E 形状变形：播放中圆角 28、
+/// 大封面卡：按封面原比例放进 [width]×[height] 的框。M3E 形状变形：播放中圆角 28、
 /// 暂停时圆角弹到 48 并略缩小（与播放键「播放圆 / 暂停圆角方」同一根弹簧节奏）。
 /// 桌面悬停时朝指针轻微 3D 倾斜并上浮（阴影加深）。无封面画 9 瓣饼干形徽标。
 class _CoverTile extends StatefulWidget {
   const _CoverTile({
     required this.cover,
-    required this.side,
+    required this.width,
+    required this.height,
     required this.isPlaying,
   });
 
   final ImageProvider? cover;
-  final double side;
+  final double width;
+  final double height;
   final bool isPlaying;
 
   @override
@@ -712,9 +791,12 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final double side = widget.side;
-    final double w = _aspect >= 1 ? side : side * _aspect;
-    final double h = _aspect >= 1 ? side / _aspect : side;
+    final double boxW = widget.width;
+    final double boxH = widget.height;
+    // contain：宽高比比框更宽就贴宽，否则贴高。
+    final bool fitWidth = _aspect >= boxW / math.max(1, boxH);
+    final double w = fitWidth ? boxW : boxH * _aspect;
+    final double h = fitWidth ? boxW / _aspect : boxH;
     final ImageProvider? cover = widget.cover;
     final double badge = math.min(w, h) * 0.46;
     final Widget face = SizedBox(
@@ -763,8 +845,8 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
       onHover: _onHover,
       onExit: (_) => setState(() => _hover = null),
       child: SizedBox(
-        width: side,
-        height: side,
+        width: boxW,
+        height: boxH,
         child: Center(
           child: TweenAnimationBuilder<Offset>(
             tween: Tween<Offset>(end: tilt),
@@ -963,7 +1045,11 @@ class _SpeedButton extends StatelessWidget {
               speed: speed,
               onChanged: onSpeedChanged,
             ),
-            child: Text(formatLyricsSpeed(speed), style: style),
+            // 邻居被按下时本键按 M3E 设计让出宽度：标签缩一点而不是折成两行。
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(formatLyricsSpeed(speed), style: style, maxLines: 1),
+            ),
           ),
         ),
       ),

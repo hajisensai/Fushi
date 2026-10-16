@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///     读成同名全局（content.js 与 popup.js 同隔离世界共享 window）。
 /// popup.js 三份镜像把 factor 乘以该倍率。任一环断掉滑杆就变成哑设置，故逐环锁死。
 ///
-/// flutter test cwd 是 hibiki 包根。
+/// flutter test cwd 是 fushi 包根。
 void main() {
   const List<String> popupCopies = <String>[
     'assets/popup/popup.js', // in-app 渲染器（真源）

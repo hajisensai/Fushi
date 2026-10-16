@@ -99,8 +99,8 @@ void main() {
       // 空白覆盖视同无覆盖。
       expect(
         resolveFfmpegExecutableFrom(
-            override: '   ', bundledPath: r'C:\Hibiki\ffmpeg.exe'),
-        r'C:\Hibiki\ffmpeg.exe',
+            override: '   ', bundledPath: r'C:\Fushi\ffmpeg.exe'),
+        r'C:\Fushi\ffmpeg.exe',
       );
     });
 
@@ -123,13 +123,13 @@ void main() {
 
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: null,
-        bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+        bundledPath: r'C:\App\Fushi\ffmpeg.exe',
         isWindows: true,
         args: <String>['-version'],
         timeout: const Duration(seconds: 1),
         runner: (String executable, List<String> args, Duration timeout) async {
           calls.add(executable);
-          if (executable.endsWith(r'Hibiki\ffmpeg.exe')) {
+          if (executable.endsWith(r'Fushi\ffmpeg.exe')) {
             return const FfmpegRunResult(
               returnCode: -1073741701,
               output: 'STATUS_INVALID_IMAGE_FORMAT',
@@ -140,10 +140,10 @@ void main() {
       );
 
       expect(result.isSuccess, isTrue);
-      expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+      expect(calls, <String>[r'C:\App\Fushi\ffmpeg.exe', 'ffmpeg']);
       expect(result.executable, 'ffmpeg');
       expect(result.attemptedExecutables,
-          <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+          <String>[r'C:\App\Fushi\ffmpeg.exe', 'ffmpeg']);
       expect(result.fallbackReason, contains('STATUS_INVALID_IMAGE_FORMAT'));
     });
 
@@ -154,14 +154,14 @@ void main() {
       await expectLater(
         runCliFfmpegForTesting(
           override: null,
-          bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+          bundledPath: r'C:\App\Fushi\ffmpeg.exe',
           isWindows: true,
           args: <String>['-version'],
           timeout: const Duration(seconds: 1),
           runner:
               (String executable, List<String> args, Duration timeout) async {
             calls.add(executable);
-            if (executable.endsWith(r'Hibiki\ffmpeg.exe')) {
+            if (executable.endsWith(r'Fushi\ffmpeg.exe')) {
               return const FfmpegRunResult(
                 returnCode: -1073741701,
                 output: 'STATUS_INVALID_IMAGE_FORMAT',
@@ -175,7 +175,7 @@ void main() {
               .having(
                 (ProcessException e) => e.message,
                 'message',
-                contains(r'C:\App\Hibiki\ffmpeg.exe -> ffmpeg'),
+                contains(r'C:\App\Fushi\ffmpeg.exe -> ffmpeg'),
               )
               .having(
                 (ProcessException e) => e.message,
@@ -185,7 +185,7 @@ void main() {
         ),
       );
 
-      expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+      expect(calls, <String>[r'C:\App\Fushi\ffmpeg.exe', 'ffmpeg']);
     });
 
     test('explicit FUSHI_FFMPEG invalid image does not fall back', () async {
@@ -193,7 +193,7 @@ void main() {
 
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: r'D:\Custom\ffmpeg.exe',
-        bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+        bundledPath: r'C:\App\Fushi\ffmpeg.exe',
         isWindows: true,
         args: <String>['-version'],
         timeout: const Duration(seconds: 1),
@@ -225,14 +225,14 @@ void main() {
         final List<String> calls = <String>[];
         final FfmpegRunResult result = await runCliFfmpegForTesting(
           override: null,
-          bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+          bundledPath: r'C:\App\Fushi\ffmpeg.exe',
           isWindows: true,
           args: <String>['-hide_banner', '-i', r'C:\v\ep.mkv'],
           timeout: const Duration(seconds: 1),
           runner:
               (String executable, List<String> args, Duration timeout) async {
             calls.add(executable);
-            if (executable.endsWith(r'Hibiki\ffmpeg.exe')) {
+            if (executable.endsWith(r'Fushi\ffmpeg.exe')) {
               throw ProcessException(executable, args, 'launch failed', code);
             }
             return const FfmpegRunResult(returnCode: 1, output: 'Subtitle');
@@ -241,11 +241,11 @@ void main() {
 
         expect(result.output, contains('Subtitle'),
             reason: 'errorCode=$code 也应回退 PATH 取到字幕枚举输出');
-        expect(calls, <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg'],
+        expect(calls, <String>[r'C:\App\Fushi\ffmpeg.exe', 'ffmpeg'],
             reason: 'errorCode=$code 应先试 bundled 再回退 PATH');
         expect(result.executable, 'ffmpeg');
         expect(result.attemptedExecutables,
-            <String>[r'C:\App\Hibiki\ffmpeg.exe', 'ffmpeg']);
+            <String>[r'C:\App\Fushi\ffmpeg.exe', 'ffmpeg']);
         expect(result.fallbackReason, contains('launch failed'));
       }
     });
@@ -255,13 +255,13 @@ void main() {
       final List<String> calls = <String>[];
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: null,
-        bundledPath: '/app/Hibiki/ffmpeg',
+        bundledPath: '/app/Fushi/ffmpeg',
         isWindows: false,
         args: <String>['-hide_banner', '-i', '/v/ep.mkv'],
         timeout: const Duration(seconds: 1),
         runner: (String executable, List<String> args, Duration timeout) async {
           calls.add(executable);
-          if (executable == '/app/Hibiki/ffmpeg') {
+          if (executable == '/app/Fushi/ffmpeg') {
             // e.g. permission denied / not an executable on the bundled copy.
             throw ProcessException(executable, args, 'Permission denied', 13);
           }
@@ -270,7 +270,7 @@ void main() {
       );
 
       expect(result.output, contains('Subtitle'));
-      expect(calls, <String>['/app/Hibiki/ffmpeg', 'ffmpeg']);
+      expect(calls, <String>['/app/Fushi/ffmpeg', 'ffmpeg']);
     });
 
     test('explicit FUSHI_FFMPEG launch ProcessException still propagates',
@@ -279,7 +279,7 @@ void main() {
       await expectLater(
         runCliFfmpegForTesting(
           override: r'D:\Custom\ffmpeg.exe',
-          bundledPath: r'C:\App\Hibiki\ffmpeg.exe',
+          bundledPath: r'C:\App\Fushi\ffmpeg.exe',
           isWindows: true,
           args: <String>['-version'],
           timeout: const Duration(seconds: 1),
@@ -327,14 +327,14 @@ void main() {
         final List<String> calls = <String>[];
         final FfmpegRunResult result = await runCliFfmpegForTesting(
           override: null,
-          bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+          bundledPath: 'C:/App/Fushi/ffmpeg.exe',
           isWindows: true,
           args: <String>['-hide_banner', '-i', 'C:/v/ep.mkv'],
           timeout: const Duration(seconds: 1),
           runner:
               (String executable, List<String> args, Duration timeout) async {
             calls.add(executable);
-            if (executable == 'C:/App/Hibiki/ffmpeg.exe') {
+            if (executable == 'C:/App/Fushi/ffmpeg.exe') {
               // 进程起来了（无 ProcessException），但 DLL 缺失加载期崩：
               // 退出码非 0、stderr 完全为空。
               return FfmpegRunResult(returnCode: code, output: '');
@@ -348,11 +348,11 @@ void main() {
 
         expect(result.output, contains('Subtitle'),
             reason: 'returnCode=$code 空输出应回退 PATH 取到字幕枚举');
-        expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe', 'ffmpeg'],
+        expect(calls, <String>['C:/App/Fushi/ffmpeg.exe', 'ffmpeg'],
             reason: 'returnCode=$code 应先试 bundled 再回退 PATH');
         expect(result.executable, 'ffmpeg');
         expect(result.attemptedExecutables,
-            <String>['C:/App/Hibiki/ffmpeg.exe', 'ffmpeg']);
+            <String>['C:/App/Fushi/ffmpeg.exe', 'ffmpeg']);
         expect(result.fallbackReason, contains('no usable output'));
       }
     });
@@ -362,13 +362,13 @@ void main() {
       final List<String> calls = <String>[];
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: null,
-        bundledPath: '/app/Hibiki/ffmpeg',
+        bundledPath: '/app/Fushi/ffmpeg',
         isWindows: false,
         args: <String>['-hide_banner', '-i', '/v/ep.mkv'],
         timeout: const Duration(seconds: 1),
         runner: (String executable, List<String> args, Duration timeout) async {
           calls.add(executable);
-          if (executable == '/app/Hibiki/ffmpeg') {
+          if (executable == '/app/Fushi/ffmpeg') {
             // e.g. missing shared object: launched but exits non-zero, no stderr.
             return const FfmpegRunResult(returnCode: 127, output: '');
           }
@@ -380,7 +380,7 @@ void main() {
       );
 
       expect(result.output, contains('Subtitle'));
-      expect(calls, <String>['/app/Hibiki/ffmpeg', 'ffmpeg']);
+      expect(calls, <String>['/app/Fushi/ffmpeg', 'ffmpeg']);
     });
 
     test('normal -i enumeration (non-zero + full stderr) does NOT fall back',
@@ -394,7 +394,7 @@ void main() {
           'At least one output file must be specified';
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: null,
-        bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+        bundledPath: 'C:/App/Fushi/ffmpeg.exe',
         isWindows: true,
         args: <String>['-hide_banner', '-i', 'C:/v/ep.mkv'],
         timeout: const Duration(seconds: 1),
@@ -405,7 +405,7 @@ void main() {
       );
 
       expect(result.output, contains('Subtitle'));
-      expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe'],
+      expect(calls, <String>['C:/App/Fushi/ffmpeg.exe'],
           reason: '正常枚举只该调一次 bundled，不回退 PATH');
     });
 
@@ -416,7 +416,7 @@ void main() {
       final List<String> calls = <String>[];
       final FfmpegRunResult result = await runCliFfmpegForTesting(
         override: null,
-        bundledPath: 'C:/App/Hibiki/ffmpeg.exe',
+        bundledPath: 'C:/App/Fushi/ffmpeg.exe',
         isWindows: true,
         args: <String>['-hide_banner', '-i', 'C:/v/huge.mkv'],
         timeout: const Duration(seconds: 1),
@@ -427,7 +427,7 @@ void main() {
       );
 
       expect(result.returnCode, isNull);
-      expect(calls, <String>['C:/App/Hibiki/ffmpeg.exe'],
+      expect(calls, <String>['C:/App/Fushi/ffmpeg.exe'],
           reason: '超时不该回退 PATH（慢 IO 非坏二进制）');
     });
   });

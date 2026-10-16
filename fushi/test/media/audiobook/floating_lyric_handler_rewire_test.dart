@@ -37,7 +37,7 @@ void main() {
       // 门控重接线，从而漏接 handler。
       showFloatingLyric: () => false,
       showMediaNotification: () => false,
-      floatingLyricContextLines: () => 0,
+      floatingLyricVisibleLines: () => 1,
       floatingLyricStyle: () => style,
       floatingLyricClickLookup: () => false,
       onFloatingLyricLookup: appLevelLookup,

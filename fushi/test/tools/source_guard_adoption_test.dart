@@ -26,7 +26,7 @@ import '../helpers/scan_scale.dart';
 /// 豁免表放行少数合法用法。绝不反过来「用已迁移的文件集合取反算出应当被守的集合」
 /// ——那样新增文件天生落在集合外，守卫对它零覆盖。
 ///
-/// flutter test 的 cwd 是 hibiki 包根。
+/// flutter test 的 cwd 是 fushi 包根。
 void main() {
   /// 允许出现禁用形态的文件 → **具体**理由。
   ///

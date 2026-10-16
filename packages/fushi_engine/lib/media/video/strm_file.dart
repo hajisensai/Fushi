@@ -38,6 +38,18 @@ const Set<String> kNetworkStreamSchemes = <String>{
   'udp',
 };
 
+/// 来源库 SFTP 视频条目的稳定地址协议：`sftp://<host>:<port><远端路径>`（app 侧
+/// `sftp_stream_source.dart` 扫描时写入，起播时经回环中继换成 http 地址）。
+///
+/// **不在** [kNetworkStreamSchemes] 里：播放内核不直接开它，必须经来源的播放期
+/// 解析器换地址——放进那个集合会让 `.strm` 里写的 `sftp://` 被原样交给内核。
+const String kSourceLibrarySftpScheme = 'sftp';
+
+/// 纯函数：[path] 是不是来源库 SFTP 视频条目地址（[kSourceLibrarySftpScheme]）。
+bool isSourceLibrarySftpVideoPath(String? path) =>
+    path != null &&
+    path.trim().toLowerCase().startsWith('$kSourceLibrarySftpScheme://');
+
 /// 纯函数：[url] 是否是 [kNetworkStreamSchemes] 里的网络流地址（host 非空）。
 ///
 /// 与 app 侧 `isPlayableStreamUrl`（只认 http(s)，导入对话框的输入校验）的区别：
@@ -58,13 +70,15 @@ bool isNetworkStreamUrl(String url) {
 /// 判据的用途是「别把它当本地路径去碰文件系统」，宁可多认。
 ///
 /// 在线视频源入库集（[isAnimeSourceVideoPath]，`anime-source://`，起播时向扩展
-/// 取流）同样没有本地文件，一并算在内——全仓唯一一份判据，
+/// 取流）与来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，起播时经回环中继
+/// 取字节）同样没有本地文件，一并算在内——全仓唯一一份判据，
 /// `anime_source_video_path.dart` 只是转出它。`.strm` 不在其内：本地 `.strm` 是
 /// 磁盘上真实存在的文件（同目录 NFO / 海报 sidecar 照常可用），只是**没有媒体
 /// 字节**——需要媒体字节的门用 [lacksLocalMediaFile]。
 bool isNetworkOnlyVideoPath(String? path) {
   if (path == null) return false;
   if (isAnimeSourceVideoPath(path)) return true;
+  if (isSourceLibrarySftpVideoPath(path)) return true;
   final String trimmed = path.trim();
   final int sep = trimmed.indexOf('://');
   if (sep <= 0) return false;

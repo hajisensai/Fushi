@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 // TODO-062 / BUG-166:
-//  (1) Every Hibiki-mined card must carry the `fushi` tag, appended to the
+//  (1) Every Fushi-mined card must carry the `fushi` tag, appended to the
 //      user's configured tags (de-duped, order preserved); both backends behave
 //      identically.
 //  (2) The 6s slowness root cause was several independent media uploads chained
@@ -75,7 +75,7 @@ AnkiSettings _settingsWithTags(String tags) => AnkiSettings(
   selectedNoteTypeId: 2,
   availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
   availableNoteTypes: const <AnkiNoteType>[
-    AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression']),
+    AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
   ],
   fieldMappings: const <String, String>{'Expression': '{expression}'},
   tags: tags,
@@ -910,7 +910,7 @@ void main() {
           selectedNoteTypeId: 2,
           availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
           availableNoteTypes: const <AnkiNoteType>[
-            AnkiNoteType(id: 2, name: 'Hibiki', fields: <String>['Expression']),
+            AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
           ],
           fieldMappings: const <String, String>{'Expression': '{expression}'},
           allowDupes: true,

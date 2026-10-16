@@ -156,8 +156,8 @@ public class MainActivity extends AudioServiceActivity {
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
     // so when touch mode is exited the framework draws a system focus rectangle on
     // the currently focused View -- including the FlutterView host that hosts the
-    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Hibiki's
-    // own keyboard/gamepad focus ring drawn in Flutter (see hibiki_focus_ring.dart),
+    // whole UI. On some skins (Samsung OneUI 6.5) that system frame overlaps Fushi's
+    // own keyboard/gamepad focus ring drawn in Flutter (see fushi_focus_ring.dart),
     // giving a double highlight. We disable only the Android system default highlight
     // here; the Flutter self-drawn focus ring and focus navigation are untouched.
     // Done in code on the decorView (rather than only a theme attribute) because the
@@ -452,7 +452,7 @@ public class MainActivity extends AudioServiceActivity {
         // alive (onConfigurationChanged), but onResume is still a belt-and-braces
         // path for skins that re-attach the decorView and reset
         // defaultFocusHighlightEnabled back to true, re-exposing the system focus
-        // rectangle over Hibiki own focus ring. Re-applying here (and in
+        // rectangle over Fushi own focus ring. Re-applying here (and in
         // onConfigurationChanged) keeps it killed.
         disableSystemFocusHighlight();
         // BUG-427/TODO-852: belt-and-braces for OEMs whose settings page does
@@ -486,7 +486,7 @@ public class MainActivity extends AudioServiceActivity {
                 && context.getPackageManager().canRequestPackageInstalls();
         if (!granted) {
             installResult.error("INSTALL_PERMISSION_REQUIRED",
-                "Enable installing unknown apps for Hibiki, then retry", null);
+                "Enable installing unknown apps for Fushi, then retry", null);
             return;
         }
         if (apkPath == null || apkPath.isEmpty()) {
@@ -1066,7 +1066,7 @@ public class MainActivity extends AudioServiceActivity {
                                     if (!name.isEmpty()) families.add(name);
                                 }
                             } catch (Exception e) {
-                                android.util.Log.w("hibiki-fonts", "Failed to parse " + path, e);
+                                android.util.Log.w("fushi-fonts", "Failed to parse " + path, e);
                             }
                         }
                         List<Map<String, Object>> entries = new ArrayList<>(families.size());
@@ -1075,7 +1075,7 @@ public class MainActivity extends AudioServiceActivity {
                             entry.put("family", family);
                             entries.add(entry);
                         }
-                        android.util.Log.d("hibiki-fonts", "Found " + entries.size() + " font families");
+                        android.util.Log.d("fushi-fonts", "Found " + entries.size() + " font families");
                         new Handler(Looper.getMainLooper()).post(() -> result.success(entries));
                     });
                 } else {

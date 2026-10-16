@@ -30,7 +30,7 @@ void main() {
   }
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('hibiki_local_audio_test');
+    tmp = Directory.systemTemp.createTempSync('fushi_local_audio_test');
     cacheDir = Directory('${tmp.path}/cache')..createSync(recursive: true);
     dbPath = makeDb(Uint8List.fromList(<int>[1, 2, 3, 4, 5]));
   });

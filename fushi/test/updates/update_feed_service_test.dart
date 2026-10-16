@@ -218,7 +218,7 @@ void main() {
       const UpdateFeedDraft(
         kind: UpdateFeedKind.appRelease,
         targetKey: '2.3.1',
-        title: 'Hibiki 2.3.1',
+        title: 'Fushi 2.3.1',
       ),
     ]);
 

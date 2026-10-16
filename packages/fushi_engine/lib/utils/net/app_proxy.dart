@@ -547,7 +547,7 @@ String? resolveP2pProxyHostPort({required bool enabled}) =>
 /// http://127.0.0.1:8765/      -> PROXY 1.2.3.4:8080
 /// http://localhost:8765/      -> PROXY 1.2.3.4:8080
 /// http://192.168.1.34:5000/   -> PROXY 1.2.3.4:8080
-/// http://hibiki-pc.local:8080 -> PROXY 1.2.3.4:8080
+/// http://fushi-pc.local:8080 -> PROXY 1.2.3.4:8080
 /// ```
 /// Dart **不做任何隐式 loopback bypass**（浏览器和 Windows 的 `ProxyOverride`
 /// 默认值 `<local>` 都做），`no_proxy` 也只在用户自己设了才有；而 Windows 系统代理是从

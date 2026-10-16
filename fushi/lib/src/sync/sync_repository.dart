@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preferences_repository.dart'
     show
         kDownloadExecutionHostPrefKey,
+        kFloatingLyricWindowRectPrefKey,
         kGameStreamLookupLayoutPrefKey,
         kGameStreamRemoteLaunchPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -26,7 +27,7 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
 export 'package:fushi_engine/sync/sync_channel_scope.dart' show SyncChannelScope;
 
-/// 触达一台 Hibiki 同步服务器的一个候选地址。
+/// 触达一台 Fushi 同步服务器的一个候选地址。
 ///
 /// 同一台服务器通常可经多条路由触达（局域网、外网），按列表顺序尝试、第一个
 /// 可达者胜出。
@@ -890,7 +891,7 @@ class SyncRepository {
     await _setString(_keySftpPrivateKey, _encodeSecret(v));
   }
 
-  // ── Hibiki Server config ────────────────────────────────────────
+  // ── Fushi Server config ─────────────────────────────────────────
 
   static const _keyInterconnectEnabled = 'sync_interconnect_enabled';
 
@@ -926,7 +927,7 @@ class SyncRepository {
   static const _keyInterconnectP2pSecret = kInterconnectP2pSecretPref;
   static const _keyInterconnectP2pRelayUrls = kInterconnectP2pRelayUrlsPref;
 
-  /// Single source of truth for the default Hibiki sync-server port.
+  /// Single source of truth for the default Fushi sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
   /// clear of the crowded 8xxx dev-server band and the 49152+ ephemeral range,
   /// so initial bind conflicts are unlikely. Referenced everywhere the default
@@ -1252,7 +1253,7 @@ class SyncRepository {
     return null;
   }
 
-  // ── Hibiki Client (connect to another Hibiki instance) ─────────
+  // ── Fushi Client (connect to another Fushi instance) ───────────
 
   static const _keyFushiClientUrl = 'sync_hibiki_client_url';
   static const _keyFushiClientUrls = 'sync_hibiki_client_urls';
@@ -1488,7 +1489,7 @@ class SyncRepository {
   // ── Device-local key catalog ──────────────────────────────────────
 
   /// 导入备份时必须保留在本设备、不能被备份覆盖的 preference key：后端选择 +
-  /// 全部凭据/令牌 + 本机服务器配置 + Hibiki 客户端地址/令牌（含旧单地址键）。
+  /// 全部凭据/令牌 + 本机服务器配置 + 互联客户端地址/令牌（含旧单地址键）。
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
@@ -1532,6 +1533,9 @@ class SyncRepository {
     kGameStreamRemoteLaunchPrefKey,
     // 串流查词栏尺寸按这台设备的屏幕调：平板上调大的值恢复到手机上只会不合身。
     kGameStreamLookupLayoutPrefKey,
+    // Windows 悬浮字幕窗口矩形存的是本机物理像素坐标：换一台显示器布局 / DPI
+    // 不同的设备恢复，窗口会落到屏幕外或尺寸错位。
+    kFloatingLyricWindowRectPrefKey,
     // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
     // 同一张卡被两边各落一次。
     _keyPendingMineLandingClaimedAt,
@@ -1631,6 +1635,8 @@ class SyncRepository {
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
     'tts_voice_presets',
     'tts_active_preset_id',
+    // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
+    'tts_gpt_sovits_local',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

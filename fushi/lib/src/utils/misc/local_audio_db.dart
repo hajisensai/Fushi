@@ -496,7 +496,7 @@ class LocalAudioDb {
 /// 字节口径被喂宽单元，CJK 每字符扩散轮数 3→1），真实碰撞对如
 /// `jpod\n肌陒衎柚.mp3` 与 `jpod\n汅肘鹾圃.mp3` 同键 → 两个不同词条共用一个
 /// 缓存文件，后查的词永远播放先查词条的音频。UTF-8 逐字节口径与
-/// [AudiobookStorage] 一致（hibiki_core 单一真相源）。ASCII 键两口径同值，
+/// [AudiobookStorage] 一致（fushi_core 单一真相源）。ASCII 键两口径同值，
 /// 存量 ASCII 缓存零迁移；CJK 旧键由 [LocalAudioDb.extractBlob] 惰性 rename。
 String _localAudioCacheKey({required String file, required String source}) =>
     fnv1a32Hex(utf8.encode('$source\n$file'));

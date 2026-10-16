@@ -2216,6 +2216,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       if (pages.isEmpty) throw StateError('The chapter has no pages');
       if (!mounted) return true;
+      final OnlineMangaPageCancellable? cancellable =
+          adapter is OnlineMangaPageCancellable
+          ? adapter as OnlineMangaPageCancellable
+          : null;
       late final OnlineMangaReaderSession session;
       session = await OnlineMangaReaderSession.open(
         cacheRoot: Directory(
@@ -2229,6 +2233,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 '\u001f${pages[index].sourceUrl ?? ''}',
         ],
         fetchPage: (int index) => adapter.fetchChapterPage(pages[index]),
+        cancelPages: cancellable == null
+            ? null
+            : (Iterable<int> indices) => cancellable.cancelChapterPages(
+                <OnlineMangaPageRef>[for (final int i in indices) pages[i]],
+              ),
         onPageMeasured: (int index, int width, int height) =>
             _onStreamingPageMeasured(session, index, width, height),
       );
@@ -4107,12 +4116,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             pageFile: session.localFile,
             recognizer: recognizer,
             ai: ai,
-            onAiError: (Object error, StackTrace stack) =>
-                ErrorLogService.instance.log(
-                  'MangaFushiPage.streamOcrAi',
-                  error,
-                  stack,
-                ),
+            onAiError: (Object error, StackTrace stack) => ErrorLogService
+                .instance
+                .log('MangaFushiPage.streamOcrAi', error, stack),
             onPage: _applyStreamOcrPage,
             onBusyChanged: (bool busy) {
               if (mounted && _streamOcrBusy != busy) {
@@ -4497,8 +4503,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     Future<MangaCropSuggestions?> loadSuggestions() async {
       final Uint8List? bytes = await loadPage();
       if (bytes == null || !mounted) return null;
-      final ({int width, int height})? size =
-          await mangaPageOrientedSizeAsync(bytes);
+      final ({int width, int height})? size = await mangaPageOrientedSizeAsync(
+        bytes,
+      );
       if (size == null || !mounted) return null;
       final List<Rect> panels = await _miningPanels(pageIndex);
       return computeMangaCropSuggestions(
@@ -5067,9 +5074,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         stack,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(t.manga_reader_save_failed)),
+        );
       }
       return false;
     }
@@ -5441,9 +5448,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         stack,
       );
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          FushiSnackBar(content: Text(t.manga_reader_save_failed)),
+        );
       }
     }
 
@@ -5686,61 +5693,62 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final Offset anchor = overlay.globalToLocal(Offset(x, y));
-    final _MangaContextAction? action = await showFushiMenu<_MangaContextAction>(
-      context: context,
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: <PopupMenuEntry<_MangaContextAction>>[
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.previous,
-          child: Text(t.manga_previous_page),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.next,
-          child: Text(t.manga_next_page),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.jump,
-          child: Text(t.manga_jump_to_page),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.direction,
-          child: Text(
-            _spreadDirection == 'rtl'
-                ? t.manga_direction_ltr
-                : t.manga_direction_rtl,
+    final _MangaContextAction? action =
+        await showFushiMenu<_MangaContextAction>(
+          context: context,
+          position: RelativeRect.fromRect(
+            Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
+            Offset.zero & overlay.size,
           ),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.zoomIn,
-          enabled: _zoomPercent < kMangaZoomMaxPercent,
-          child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.zoomOut,
-          enabled: _zoomPercent > kMangaZoomMinPercent,
-          child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.copyImage,
-          child: Text(t.manga_page_copy),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.shareImage,
-          child: Text(t.manga_page_share),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.saveImage,
-          child: Text(t.manga_page_save),
-        ),
-        PopupMenuItem<_MangaContextAction>(
-          value: _MangaContextAction.setCover,
-          child: Text(t.manga_page_set_cover),
-        ),
-      ],
-    );
+          items: <PopupMenuEntry<_MangaContextAction>>[
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.previous,
+              child: Text(t.manga_previous_page),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.next,
+              child: Text(t.manga_next_page),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.jump,
+              child: Text(t.manga_jump_to_page),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.direction,
+              child: Text(
+                _spreadDirection == 'rtl'
+                    ? t.manga_direction_ltr
+                    : t.manga_direction_rtl,
+              ),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.zoomIn,
+              enabled: _zoomPercent < kMangaZoomMaxPercent,
+              child: Text('${t.manga_zoom} + ($_zoomPercent%)'),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.zoomOut,
+              enabled: _zoomPercent > kMangaZoomMinPercent,
+              child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.copyImage,
+              child: Text(t.manga_page_copy),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.shareImage,
+              child: Text(t.manga_page_share),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.saveImage,
+              child: Text(t.manga_page_save),
+            ),
+            PopupMenuItem<_MangaContextAction>(
+              value: _MangaContextAction.setCover,
+              child: Text(t.manga_page_set_cover),
+            ),
+          ],
+        );
     if (!mounted || action == null) return;
     switch (action) {
       case _MangaContextAction.previous:
@@ -6734,8 +6742,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 alignment: WrapAlignment.center,
                 children: <Widget>[
                   FushiFilledButton.icon(
-                    key: const ValueKey<String>('manga_reader_enqueue_download'),
-                    onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
+                    key: const ValueKey<String>(
+                      'manga_reader_enqueue_download',
+                    ),
+                    onPressed: () =>
+                        unawaited(_enqueueCurrentChapterDownload()),
                     icon: const FushiIcon(Icons.download),
                     label: Text(t.manga_chapter_download_action),
                   ),
@@ -6780,6 +6791,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           MangaFushiPage.kMangaResourceScheme,
         ],
         transparentBackground: true,
+        // BUG-3356 同款：WKWebView 的 `allowsBackForwardNavigationGestures` 在
+        // inappwebview 里默认 true，屏幕边缘横滑是 WebView 自己的历史前进 / 后退。
+        // spread 模式每越出窗口就重新 `loadData` 一份窗口文档，历史里堆着旧窗口，
+        // 侧滑会把画面退回旧 spread 窗口（宿主的 `_currentSpread` 却没动）。翻页 / 跨章
+        // 完全由宿主拥有，WebView 历史不对应任何阅读动作，关掉。只作用于 iOS / macOS。
+        allowsBackForwardNavigationGestures: false,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;

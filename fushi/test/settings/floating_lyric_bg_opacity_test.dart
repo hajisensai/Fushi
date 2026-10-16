@@ -4,8 +4,11 @@ import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 import '../helpers/source_guard.dart';
 
@@ -83,29 +86,50 @@ void main() {
   });
 
   group('source guards: bar background reads the bg-opacity preference', () {
-    test('both floating-lyric style builders scale bgColor by bgOpacity', () {
-      // app 级（无 reader）样式：app_model._appLevelFloatingLyricStyle。
-      final String appModel = File(
-        'lib/src/models/app_model.dart',
-      ).readAsStringSync();
-      // reader 级样式：reader_fushi_page._readerFloatingLyricStyle。
-      final String reader = readReaderPageSource();
+    test(
+      'both floating-lyric style builders go through buildFloatingLyricStyle',
+      () {
+        // app 级（无 reader）样式：app_model._appLevelFloatingLyricStyle。
+        final String appModel = File(
+          'lib/src/models/app_model.dart',
+        ).readAsStringSync();
+        // reader 级样式：reader_fushi_page._readerFloatingLyricStyle。
+        final String reader = readReaderPageSource();
 
-      for (final String src in <String>[appModel, reader]) {
-        // bgColor 不再裸用 `bg.withAlpha(...).value`，而是经 scaleAlpha 包一层
-        // bgOpacity——否则背景透明度设置不生效（用户的根因缺口）。
-        expect(
-          RegExp(
-            r'bgColor:\s*FloatingLyricStyle\.scaleAlpha\(\s*'
-            r'bg\.withAlpha\(dark \? 230 : 220\)\.value,\s*'
-            r'bgOpacity,',
-          ).hasMatch(src),
-          isTrue,
-          reason:
-              '悬浮条 bgColor 必须经 scaleAlpha(bgOpacity) 缩放，'
-              '否则背景透明度设置不吃。',
-        );
-      }
+        // 两处都必须经同一个构造函数（它负责 scaleAlpha(bgOpacity)，见下面的行为
+        // 测试）；任何一处另起炉灶自己拼 bgColor，背景透明度设置就会在那一处失效。
+        for (final String src in <String>[appModel, reader]) {
+          expect(src.contains('buildFloatingLyricStyle('), isTrue);
+          expect(src.contains('floatingLyricStyleSettings('), isTrue);
+        }
+      },
+    );
+
+    test('buildFloatingLyricStyle scales the background by bgOpacity', () {
+      final ColorScheme scheme = ColorScheme.fromSeed(seedColor: Colors.teal);
+      FloatingLyricStyle build(int bgOpacity) => buildFloatingLyricStyle(
+        theme: buildFushiThemeData(
+          scheme: scheme,
+          textTheme: const TextTheme(),
+        ),
+        settings: FloatingLyricStyleSettings(
+          fontSize: 20,
+          textOpacity: 100,
+          buttonBgOpacity: 100,
+          bgOpacity: bgOpacity,
+          cornerRadius: 24,
+          windowWidth: 0,
+        ),
+      );
+      int alphaOf(int argb) => (argb >> 24) & 0xFF;
+      expect(alphaOf(build(100).bgColor), 0xFF);
+      expect(alphaOf(build(70).bgColor), (255 * 0.7).round());
+      expect(alphaOf(build(0).bgColor), 0);
+      // 跟随主题：底 = M3E surfaceContainerHigh。
+      expect(
+        build(100).bgColor & 0x00FFFFFF,
+        scheme.surfaceContainerHigh.toARGB32() & 0x00FFFFFF,
+      );
     });
 
     test('settings schema exposes the bar background opacity stepper', () {
@@ -124,12 +148,27 @@ void main() {
       );
       final int end = schema.indexOf("id: '", start + 5);
       final String item = maskComments(schema.substring(start, end));
-      // 改值后立即重绘原生悬浮窗（与文字/按钮透明度一致）。
+      // 改值后立即重绘原生悬浮窗（与文字/按钮透明度一致）：写偏好 → 经
+      // _commitFloatingLyricStyle（内含 applyFloatingLyricStyle）。
+      expect(item.contains('setFloatingLyricBgOpacity('), isTrue);
+      String fnBody(String signature) {
+        final int at = schema.indexOf(signature);
+        expect(at, greaterThan(0), reason: '$signature must exist');
+        // 顶层函数体收尾 = 行首 `}` 独占一行；只找 `\n}` 会停在命名参数表的
+        // `\n}) {` 上，切出来的只有参数表。
+        return schema.substring(at, schema.indexOf('\n}\n', at));
+      }
+
       expect(
-        RegExp(
-          r'setFloatingLyricBgOpacity\(\s*value\.round\(\)\s*,?\s*\);[\s\S]*?'
-          r'applyFloatingLyricStyle\(\)',
-        ).hasMatch(item),
+        fnBody(
+          'Future<void> _commitFloatingLyricStyle(',
+        ).contains('applyFloatingLyricStyle()'),
+        isTrue,
+      );
+      expect(
+        fnBody(
+          'SettingsStepperItem _floatingLyricPercentItem(',
+        ).contains('_commitFloatingLyricStyle('),
         isTrue,
       );
     });

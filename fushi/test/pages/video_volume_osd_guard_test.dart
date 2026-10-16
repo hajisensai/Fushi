@@ -8,7 +8,7 @@ import 'video_fushi_page_source_corpus.dart';
 ///
 /// The real volume keys are owned by media_kit and platform input, so this
 /// locks the video page invariant: volume and brightness changes must use the
-/// Hibiki page-level level HUD for about 1.6s. Non-volume/brightness OSDs stay
+/// Fushi page-level level HUD for about 1.6s. Non-volume/brightness OSDs stay
 /// on the legacy top-left mpv-style channel.
 void main() {
   final File overlays = File('lib/src/media/video/video_volume_overlays.dart');

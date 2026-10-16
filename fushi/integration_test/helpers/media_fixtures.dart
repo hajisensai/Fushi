@@ -90,8 +90,8 @@ String cuesToVtt(List<AudioCue> cues) {
 /// LRC 不携带 endMs（由下一条 startMs 推导），故只写入每条 cue 的 start。
 String cuesToLrc(List<AudioCue> cues) {
   final StringBuffer sb = StringBuffer();
-  sb.writeln('[ti:Hibiki Fixture]');
-  sb.writeln('[ar:Hibiki]');
+  sb.writeln('[ti:Fushi Fixture]');
+  sb.writeln('[ar:Fushi]');
   sb.writeln();
   for (final AudioCue c in cues) {
     sb.writeln('[${_lrcTimecode(c.startMs)}]${c.text}');
@@ -106,7 +106,7 @@ String cuesToLrc(List<AudioCue> cues) {
 String cuesToAss(List<AudioCue> cues) {
   final StringBuffer sb = StringBuffer();
   sb.writeln('[Script Info]');
-  sb.writeln('Title: Hibiki Fixture');
+  sb.writeln('Title: Fushi Fixture');
   sb.writeln('ScriptType: v4.00+');
   sb.writeln();
   sb.writeln('[V4+ Styles]');
@@ -132,7 +132,7 @@ Future<Uint8List> buildAudiobookEpubBytes({
   required String title,
   required List<AudioCue> cues,
 }) async {
-  final Directory dir = await Directory.systemTemp.createTemp('hibiki_fixture');
+  final Directory dir = await Directory.systemTemp.createTemp('fushi_fixture');
   try {
     final String outPath = '${dir.path}/fixture.epub';
     final File epub = await CuesToEpub.convert(

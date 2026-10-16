@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please search [existing issues](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) first. English or Chinese are both fine.
-        提交前请先搜索[已有 issue](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue)。中英文均可。
+        Please search [existing issues](https://github.com/hajisensai/fushi/issues?q=is%3Aissue) first. English or Chinese are both fine.
+        提交前请先搜索[已有 issue](https://github.com/hajisensai/fushi/issues?q=is%3Aissue)。中英文均可。
   - type: textarea
     id: problem
     attributes:

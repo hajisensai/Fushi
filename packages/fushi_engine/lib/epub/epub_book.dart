@@ -1274,7 +1274,7 @@ String normalizeHref(String href) => href
 
 /// manifest 未声明 mediaType 时按扩展名兜底的 MIME（阅读器 WebView 拦截器 / 分享用）。
 ///
-/// 命名统一轮 G8：收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
+/// 命名统一轮 G8：收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]（旧本地副本
 /// 缺 `.webp` 等，EPUB 内 webp 插图曾被按 octet-stream 提供）。保留旧名薄 shim。
 String fallbackMimeType(String path) => mimeTypeForFilePath(path);
 

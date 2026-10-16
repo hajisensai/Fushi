@@ -234,7 +234,7 @@ void main() {
         expect(
           hostJs.contains('var FRAME_CONTENT_TOP = 0;'),
           isTrue,
-          reason: 'Hibiki iframe fills its shell -> content-top offset is 0 '
+          reason: 'Fushi iframe fills its shell -> content-top offset is 0 '
               '(not hoshi 74); explicit + testable per plan section 8',
         );
       },

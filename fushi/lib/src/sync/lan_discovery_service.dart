@@ -6,7 +6,7 @@ import 'package:meta/meta.dart';
 
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// A peer Hibiki instance discovered on the LAN.
+/// A peer Fushi instance discovered on the LAN.
 class FushiDevice {
   FushiDevice({
     required this.name,
@@ -68,7 +68,7 @@ class FushiDevice {
   }
 }
 
-/// Browses the LAN for peer Hibiki sync servers advertised via [serviceType].
+/// Browses the LAN for peer Fushi sync servers advertised via [serviceType].
 class LanDiscoveryService {
   LanDiscoveryService({required this.deviceId});
 

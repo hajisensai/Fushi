@@ -56,24 +56,27 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
           final childHref = '$normPath$childName${isDir ? '/' : ''}';
           // BUG-908(b)：文件长度用异步 stat（await for 循环里安全 await，不打乱 XML
           // 组装顺序）；目录不必取长度。
-          final length = isDir ? 0 : (await (child as File).stat()).size;
+          // 修改时间与长度取自同一次 stat：客户端（SRS 同步）拿它当服务器时间。
+          final FileStat? st = isDir ? null : await (child as File).stat();
           entries.add(_DavEntry(
             href: childHref,
             isCollection: isDir,
             displayName: childName,
-            contentLength: length,
+            contentLength: st?.size ?? 0,
+            modified: st?.modified,
           ));
         }
       }
     } else {
       final file = File(fsPath);
       // BUG-908(b)：单文件长度也用异步 stat。
-      final int fileLength = (await file.stat()).size;
+      final FileStat st = await file.stat();
       entries.add(_DavEntry(
         href: davPath,
         isCollection: false,
         displayName: p.basename(fsPath),
-        contentLength: fileLength,
+        contentLength: st.size,
+        modified: st.modified,
       ));
     }
 
@@ -93,6 +96,12 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
       if (!entry.isCollection) {
         xml.write(
             '<d:getcontentlength>${entry.contentLength}</d:getcontentlength>\n');
+      }
+      final DateTime? modified = entry.modified;
+      if (modified != null) {
+        // RFC 1123（HttpDate.format 总是输出 GMT）。
+        xml.write(
+            '<d:getlastmodified>${HttpDate.format(modified)}</d:getlastmodified>\n');
       }
       xml
         ..write('</d:prop>\n')

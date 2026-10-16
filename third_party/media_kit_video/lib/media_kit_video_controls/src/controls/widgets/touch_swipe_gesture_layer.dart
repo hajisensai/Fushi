@@ -1,4 +1,4 @@
-// Hibiki patch (touch on desktop, e.g. Microsoft Surface): the mobile controls'
+// Fushi patch (touch on desktop, e.g. Microsoft Surface): the mobile controls'
 // swipe gestures — horizontal drag to seek, left-half vertical drag for
 // brightness, right-half vertical drag for volume — as a standalone layer the
 // desktop controls mount for touch / stylus pointers only. See

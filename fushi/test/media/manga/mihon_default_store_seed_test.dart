@@ -25,7 +25,7 @@ void main() {
   late FushiDatabase database;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-seed-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-seed-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
   });
 

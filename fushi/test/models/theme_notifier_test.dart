@@ -795,7 +795,7 @@ void main() {
           driftRuntimeOptions.dontWarnAboutMultipleDatabases;
       driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
       final Directory tempDirectory =
-          await Directory.systemTemp.createTemp('hibiki-design-cas-');
+          await Directory.systemTemp.createTemp('fushi-design-cas-');
       final File databaseFile = File(
         '${tempDirectory.path}${Platform.pathSeparator}preferences.sqlite',
       );

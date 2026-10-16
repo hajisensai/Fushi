@@ -147,7 +147,7 @@ void main() {
     expect(find.text(t.browser_extension_enable_server_first), findsOneWidget);
   });
 
-  testWidgets('port conflict explains how to hand 19633 from Yomitan to Hibiki',
+  testWidgets('port conflict explains how to hand 19633 from Yomitan to Fushi',
       (WidgetTester tester) async {
     await pumpSteps(
       tester,

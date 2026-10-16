@@ -5,6 +5,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 
 void main() {
   late FushiDatabase database;
@@ -65,13 +66,20 @@ void main() {
     reopened.dispose();
   });
 
-  test('本地模型默认逐列 CTC，Baberu 与切回选择都持久化', () async {
+  test('本地模型默认逐列 CTC，存量 Baberu 偏好原样保留但解析回 CTC', () async {
     expect(preferences.mangaOcrLocalModel, 'manga_ctc');
+    // Baberu 已于 2026-10 删除：老用户偏好里还存着 'baberu'，偏好层不改写存量
+    // 值，消费方经 MangaOcrLocalModel.fromKey 落回默认的逐列 CTC。
     for (final String selected in <String>['baberu', 'manga_ctc']) {
       await preferences.setMangaOcrLocalModel(selected);
       final PreferencesRepository reopened = PreferencesRepository(database);
       await reopened.loadFromDb();
       expect(reopened.mangaOcrLocalModel, selected);
+      expect(
+        MangaOcrLocalModel.fromKey(reopened.mangaOcrLocalModel),
+        MangaOcrLocalModel.mangaCtc,
+        reason: selected,
+      );
       reopened.dispose();
     }
   });

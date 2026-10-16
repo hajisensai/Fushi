@@ -372,7 +372,7 @@ class _Fixture {
     final File script =
         File(p.join(workspace.path, 'tool', 'publish_update_manifest.sh'));
     final Directory root =
-        await Directory.systemTemp.createTemp('hibiki_manifest_race_');
+        await Directory.systemTemp.createTemp('fushi_manifest_race_');
 
     final Directory origin = Directory(p.join(root.path, 'origin.git'));
     await _git(root, <String>['init', '-q', '--bare', origin.path]);

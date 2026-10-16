@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -178,6 +179,26 @@ void main() {
       find.byKey(const ValueKey<String>('video-subtitle-jump-panel-surface')),
     );
     expect(surface, panel);
+  });
+
+  testWidgets('页头只两行：无标题 / 图标，关闭键与工具按钮同一行（2026-10-14）', (tester) async {
+    final VideoPlayerController c = VideoPlayerController();
+    addTearDown(c.dispose);
+    c.setCues(<AudioCue>[for (int i = 0; i < 5; i++) _cue(i)]);
+    await tester.pumpWidget(_host(c, show: true));
+    await tester.pump();
+    expect(find.text('Subtitle list'), findsNothing, reason: '不再画标题');
+    expect(find.byIcon(FushiIcons.subtitles), findsNothing, reason: '不再画徽标');
+    final Rect close = tester.getRect(find.byIcon(FushiIcons.close));
+    final Rect search = tester.getRect(find.byIcon(FushiIcons.search));
+    expect(close.center.dy, closeTo(search.center.dy, 0.5));
+    // 第二行是「全部 / 收藏」分段，紧接着就是列表：首行字幕离面板顶不超过
+    // 两行控件（36 + 40）加上下内边距与行距。
+    final Rect panel = tester.getRect(find.byType(VideoSubtitleJumpPanel));
+    final Rect firstRow = tester.getRect(
+      find.text('line 0 of the subtitle track', findRichText: true),
+    );
+    expect(firstRow.top - panel.top, lessThan(120));
   });
 
   testWidgets('右侧 / 顶部安全区：底色铺进安全区，只有内容让位', (tester) async {

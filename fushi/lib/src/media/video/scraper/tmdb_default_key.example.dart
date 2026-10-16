@@ -10,7 +10,7 @@ export 'package:fushi_engine/media/media_pref_keys.dart'
 // 真值只留本地、不显示 dirty、永不提交。
 //
 // 真值来源：https://www.themoviedb.org/settings/api → Developer Plan（免费，非商业）
-//   - 应用名称：Hibiki
+//   - 应用名称：Fushi
 //   - 应用网址：https://github.com/hajisensai/fushi
 //   - 使用类型：按实际分发面选 Desktop / Mobile Application（**不要选 Personal**，
 //     本项目是公开分发的应用，不是个人自用）

@@ -549,10 +549,9 @@ class VideoPlayerController extends ChangeNotifier
   double _volumeBeforeMute = 100.0;
 
   bool _muted = false;
-  bool _pauseAtSubtitleEnd = false;
-  Future<void> Function()? _pauseAtSubtitleEndOverride;
-  bool Function()? _pauseAtSubtitleEndIsPlayingOverride;
-  Future<void> Function(int positionMs)? _pauseAtSubtitleEndSeekOverride;
+  Future<void> Function()? _subtitleEndHoldPauseOverride;
+  bool Function()? _subtitleEndHoldIsPlayingOverride;
+  Future<void> Function(int positionMs)? _subtitleEndHoldSeekOverride;
 
   /// 测试注入：[replayCue] 的起播出口（生产为 null，走真 [play]）。无 [_player] 的
   /// 纯单测里 [play] 是 no-op，靠它断言「重播确实起播了」。
@@ -562,11 +561,8 @@ class VideoPlayerController extends ChangeNotifier
   /// 「只播这一句就停」的一次性目标 cue 下标（[replayCue] 置，句尾停下即消耗）；
   /// null = 无一次性请求。
   ///
-  /// **与全局偏好 [_pauseAtSubtitleEnd] 正交**，故必须是独立字段而不是「临时把开关
-  /// 打开、停下再关」：后者一旦停不下来（用户中途 seek 走 / 换片）就把用户的真实偏好
-  /// 永久写反了。两者经 [_holdEnabledForCue] 汇成同一个句尾判定，句尾暂停的时序、
-  /// seek 回句尾的落点、防重复停（[_lastSubtitleEndPauseCueIndex]）全部共用一套代码，
-  /// 不产生第二条平行路径。
+  /// 经 [_holdEnabledForCue] 进入句尾判定，句尾暂停的时序、seek 回句尾的落点、防重复停
+  /// （[_lastSubtitleEndPauseCueIndex]）只有一套实现。
   ///
   /// **生命周期绝不能挂进 [_clearSeekTargetSnap]**（那是「主动跳转快照」的复位点）：
   /// 该方法在**自然播放越过目标句**时会被 [_applySeekTargetSnap] 自行调用，而那一刻
@@ -1529,7 +1525,7 @@ class VideoPlayerController extends ChangeNotifier
   /// （`paused-for-cache`），页面据 [hasFirstFrame] 提前挂载 [Video] 后，media_kit
   /// 自带缓冲圈接着盖住画面——正是 TODO-1276 想消除的「第二个圈」，而进度条的
   /// 已缓冲填充（`demuxer-cache-time`）此刻已可见，用户看到「进度条显示已经缓冲了、
-  /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Hibiki 页级
+  /// 但还在加载」（TODO-1297）。故首开就绪必须叠加 [isBuffering] 取反：让 Fushi 页级
   /// 上下文加载层（[VideoLoadingOverlay]，带返回按钮、绝不困死用户）覆盖整个
   /// 解码 + 缓冲窗口，直到有稳定帧且缓冲结束再让位给 media_kit，杜绝冗余第二个圈。
   ///
@@ -3197,11 +3193,11 @@ class VideoPlayerController extends ChangeNotifier
     // 为随后（本方法内、seek/play 之前）外挂的 audio-only 音轨设全局属性（TODO-1280）。
     // 根治 BUG-801：libmpv 默认 `sub-auto=exact` 会在 `open()` 加载文件时**自动加载与视频
     // 同名的 sidecar 外挂字幕**（用户放在视频旁的 `<video>.ass/.srt`），把它选成字幕轨、
-    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 .ass 得到的可点
+    // 经 media_kit 的原生 `SubtitleView` 渲染，与 Fushi 自己解析同一 .ass 得到的可点
     // [VideoSubtitleOverlay] **叠成两条同句字幕**（原生较小钉底、overlay 较大随控制条避让）。
     // 抑制属性（下面 open 之后的 [buildSubtitleSuppressionProperties]）设 `sub-auto=no` 已**太迟**
     // ——sidecar 在 `open()` 那一刻就已随 `sub-auto=exact` 自动加载并选中。故必须在 **open 之前**
-    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Hibiki 自己的解析
+    // 下发 `sub-auto=no`，让 libmpv 从一开始就不自动加载 sidecar；字幕一律走 Fushi 自己的解析
     // （sidecar/内嵌文本轨抽成 cue 走 overlay，图形 PGS 轨由 [selectEmbeddedGraphicTrack]
     // 显式选轨渲染，均不受 `sub-auto=no` 影响）。open 后仍再下发一次做兜底（内嵌轨 open 后异步
     // 就绪的重选竞态，BUG-190）。仅 libmpv 后端生效，非 libmpv 静默 no-op（见 helper）。
@@ -3918,12 +3914,7 @@ class VideoPlayerController extends ChangeNotifier
     if (untilMs == null || positionMs < untilMs) return;
     if (!_isPlayingForSubtitleEnd()) return;
     _oneShotHoldUntilMs = null;
-    // 终点常落在句尾之后（尾部留白）。停下的同一拍里全局「字幕结束暂停」重新生效，
-    // 会把刚走完的那句当成「越过句尾」再停一次并 seek 回句尾——试听已经停了，不该再
-    // 挪播放头。按「这句已经停过」记账（落在句中时由 [_rearmSubtitleEndPauseIfNeeded]
-    // 自动复位，之后自然续播照常在句尾停）。
-    if (_currentCueIndex >= 0) _lastSubtitleEndPauseCueIndex = _currentCueIndex;
-    unawaited(_runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause));
+    unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {
@@ -4585,17 +4576,15 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   @visibleForTesting
-  void debugSetPauseAtSubtitleEndForTesting({
-    required bool enabled,
+  void debugSetSubtitleEndHoldHooksForTesting({
     bool Function()? isPlaying,
     required Future<void> Function() onPause,
     Future<void> Function(int positionMs)? onSeek,
     Future<void> Function()? onPlay,
   }) {
-    _pauseAtSubtitleEnd = enabled;
-    _pauseAtSubtitleEndOverride = onPause;
-    _pauseAtSubtitleEndIsPlayingOverride = isPlaying;
-    _pauseAtSubtitleEndSeekOverride = onSeek;
+    _subtitleEndHoldPauseOverride = onPause;
+    _subtitleEndHoldIsPlayingOverride = isPlaying;
+    _subtitleEndHoldSeekOverride = onSeek;
     _replayPlayOverride = onPlay;
     _lastSubtitleEndPauseCueIndex = null;
   }
@@ -5303,22 +5292,8 @@ class VideoPlayerController extends ChangeNotifier
     notifyListeners();
   }
 
-  void setPauseAtSubtitleEnd(bool enabled) {
-    _pauseAtSubtitleEnd = enabled;
-    if (!enabled) {
-      _lastSubtitleEndPauseCueIndex = null;
-    }
-  }
-
-  /// 第 [cueIndex] 句是否该在句尾停：全局偏好开着（每句都停）**或**它正是一次性
-  /// [replayCue] 的目标句。两个来源在此汇成单一判定，句尾时序只有一套实现。
-  ///
-  /// 毫秒级试听（[_oneShotHoldUntilMs]）进行中时全局偏好不生效：试听区间带首尾留白、
-  /// 可能跨多句，全局「每句都停」会在第一句句尾把它截断（还会 seek 回句尾，永远到不了
-  /// 区间终点）。用户要听的就是那一整段。
-  bool _holdEnabledForCue(int cueIndex) =>
-      (_pauseAtSubtitleEnd && _oneShotHoldUntilMs == null) ||
-      _oneShotHoldCueIndex == cueIndex;
+  /// 第 [cueIndex] 句是否该在句尾停：只有一次性 [replayCue] 的目标句会停。
+  bool _holdEnabledForCue(int cueIndex) => _oneShotHoldCueIndex == cueIndex;
 
   /// 消耗一次性 hold（仅当它正指向 [cueIndex]）。停下即用完，避免用户之后自然播回
   /// 同一句时被再停一次。
@@ -5332,7 +5307,7 @@ class VideoPlayerController extends ChangeNotifier
     final int endedCueIndex = _currentCueIndex;
     if (!_holdEnabledForCue(endedCueIndex)) return;
     _consumeOneShotHold(endedCueIndex);
-    unawaited(_runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause));
+    unawaited(_runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause));
   }
 
   bool _shouldHoldAtSubtitleEnd(int nextCueIndex, int effectiveMs) {
@@ -5349,7 +5324,7 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   bool _isPlayingForSubtitleEnd() {
-    final bool Function()? override = _pauseAtSubtitleEndIsPlayingOverride;
+    final bool Function()? override = _subtitleEndHoldIsPlayingOverride;
     if (override != null) return override();
     final Player? player = _player;
     if (player == null) return true;
@@ -5360,9 +5335,9 @@ class VideoPlayerController extends ChangeNotifier
     _lastSubtitleEndPauseCueIndex = cueIndex;
     _consumeOneShotHold(cueIndex);
     unawaited(() async {
-      await _runSubtitleEndHold(_pauseAtSubtitleEndOverride ?? pause);
+      await _runSubtitleEndHold(_subtitleEndHoldPauseOverride ?? pause);
       final Future<void> Function(int positionMs) seekToEnd =
-          _pauseAtSubtitleEndSeekOverride ?? seekMs;
+          _subtitleEndHoldSeekOverride ?? seekMs;
       await _runSubtitleEndHold(
         () => seekToEnd(
           cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
@@ -5572,15 +5547,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 供查词浮层顶栏「重播本句」使用（听不清就地重听，不必手动倒回再按暂停）。
   ///
   /// 与 [skipToCue] 的差别只有两点：本方法会**主动起播**，并给这一句挂一次性
-  /// [_oneShotHoldCueIndex]。句尾停下的判定、落点与防重复停完全复用「字幕结束暂停」
-  /// 那套（[_shouldHoldAtSubtitleEnd] / [_pauseAndSeekForSubtitleEnd]），因此倍速、
+  /// [_oneShotHoldCueIndex]。句尾停下的判定、落点与防重复停走同一套句尾判定
+  /// （[_shouldHoldAtSubtitleEnd] / [_pauseAndSeekForSubtitleEnd]），因此倍速、
   /// 字幕延迟（[_delayMs]）、关键帧吸附、seek 在途 lag 全部自动吃到同一份处理——
   /// **不是**在 UI 层按 `endMs - startMs` 起个定时器等句长（那种做法会被倍速、缓冲、
   /// 用户中途 seek 逐一打穿）。
   ///
   /// 一次性 hold 的作废由 [seekMs] / [_rawSeekMs] / [setCues] 负责：用户中途拖进度、
-  /// 跳去别的句或换片，都立刻放弃「停在本句尾」的意图。全局偏好
-  /// `字幕结束暂停`（[setPauseAtSubtitleEnd]）与本方法正交，互不改写。
+  /// 跳去别的句或换片，都立刻放弃「停在本句尾」的意图。
   ///
   /// [until] 非空时从 [cue] 句首一直播到 [until] 句尾才停（制卡「调整上下文」试听
   /// 多句合并区间用）：一次性 hold 挂在 [until] 上，中间各句照常走过。
@@ -5591,8 +5565,8 @@ class VideoPlayerController extends ChangeNotifier
     final int? targetIndex = _resolveCueIndex(until ?? cue);
     if (targetIndex != null) {
       _oneShotHoldCueIndex = targetIndex;
-      // 这一句可能刚被句尾暂停过（全局开关开着时）。不清防重复记号的话，重播到句尾会
-      // 被 [_shouldHoldAtSubtitleEnd] 的「停过就不再停」挡掉、直接播进下一句。
+      // 这一句可能刚被上一次重播停过。不清防重复记号的话，重播到句尾会被
+      // [_shouldHoldAtSubtitleEnd] 的「停过就不再停」挡掉、直接播进下一句。
       _lastSubtitleEndPauseCueIndex = null;
     }
     // targetIndex == null（目标不在当前 cue 列表，换轨/换片竞态）：仍已 seek 到位，

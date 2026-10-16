@@ -38,7 +38,7 @@ class ProfileExport {
     required this.settings,
   });
 
-  /// 文件类型魔数：辨识这是 Hibiki 配置方案导出，而非任意 JSON / 整库备份。
+  /// 文件类型魔数：辨识这是 Fushi 配置方案导出，而非任意 JSON / 整库备份。
   static const String fileType = 'hibiki.profile';
 
   /// 当前导出文件格式版本。结构变化时 +1；导入按此判兼容。

@@ -95,9 +95,7 @@ class _TextSegmentationDialogPage
   Widget buildContent() {
     return SizedBox(
       width: double.maxFinite,
-      child: RawScrollbar(
-        thickness: 3,
-        thumbVisibility: true,
+      child: FushiScrollbar(
         controller: _scrollController,
         child: SingleChildScrollView(
           controller: _scrollController,

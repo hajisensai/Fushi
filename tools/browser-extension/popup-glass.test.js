@@ -61,7 +61,7 @@ function loadSandbox() {
   return sandbox;
 }
 
-// 弹窗根 #entries-container 与其 shadow 宿主 #hibiki-popup-host 的最小替身。
+// 弹窗根 #entries-container 与其 shadow 宿主 #fushi-popup-host 的最小替身。
 function fakePopup() {
   const attrs = {};
   const hostAttrs = {};

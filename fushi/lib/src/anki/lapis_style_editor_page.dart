@@ -55,7 +55,7 @@ class LapisVisualEditorResult {
 
   final String customCss;
 
-  /// Anki 字段名 → Hibiki 占位符。只含**本次被改过**的字段，调用方逐条写回即可。
+  /// Anki 字段名 → Fushi 占位符。只含**本次被改过**的字段，调用方逐条写回即可。
   final Map<String, String> fieldMappings;
 
   /// 自定义区域的**完整**列表（不是 diff）：区域的增删改都在这一份里表达，
@@ -96,9 +96,9 @@ class LapisStyleEditorPage extends StatefulWidget {
   /// 已配置的自定义区域。
   final List<LapisCustomBlock> initialBlocks;
 
-  /// 预览用的**基线样式**：用户 Anki 里现有的 Lapis CSS（剥掉 Hibiki 托管区段）。
+  /// 预览用的**基线样式**：用户 Anki 里现有的 Lapis CSS（剥掉 Fushi 托管区段）。
   ///
-  /// null = 拿不到（未连接 Anki / 卡型不存在），退回 Hibiki 内置的 vendored 副本。
+  /// null = 拿不到（未连接 Anki / 卡型不存在），退回 Fushi 内置的 vendored 副本。
   /// 传真实值才能让编辑器里看到的卡片与他真卡一致——用户反馈「调整器里默认的
   /// Lapis 和默认的 Lapis 不一样」正是因为这里一直注入内置副本。
   final String? baseCss;

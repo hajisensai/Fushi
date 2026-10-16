@@ -167,6 +167,68 @@ void main() {
       expect(presses, 1);
     });
 
+    // 胶囊与胶囊里的按钮跟随 app 的日间 / 深色模式：日间浅底深字、深色深底白字
+    // （2026-10-14 用户：播放器不吃日间 / 深色模式）。
+    for (final Brightness appBrightness in Brightness.values) {
+      testWidgets('floating pill and icon button follow app '
+          '${appBrightness.name} mode', (WidgetTester tester) async {
+        final ColorScheme scheme = ColorScheme.fromSeed(
+          seedColor: const Color(0xFF6750A4),
+          brightness: appBrightness,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(colorScheme: scheme),
+            home: Scaffold(
+              body: Center(
+                child: VideoM3eFloatingSurface(
+                  enabled: true,
+                  child: VideoM3eIconButton(
+                    icon: const Icon(Icons.subtitles),
+                    onPressed: () {},
+                    extent: 44,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final ShapeDecoration pill =
+            tester
+                    .widget<DecoratedBox>(
+                      find
+                          .descendant(
+                            of: find.byType(VideoM3eFloatingSurface),
+                            matching: find.byType(DecoratedBox),
+                          )
+                          .first,
+                    )
+                    .decoration
+                as ShapeDecoration;
+        expect(pill.color, videoM3eFloatingColor(scheme));
+        final Color opaquePill = pill.color!.withValues(alpha: 1);
+        final Color glyph = tester
+            .widget<IconTheme>(
+              find
+                  .ancestor(
+                    of: find.byIcon(Icons.subtitles),
+                    matching: find.byType(IconTheme),
+                  )
+                  .first,
+            )
+            .data
+            .color!;
+        expect(glyph, videoM3eForeground(scheme));
+        if (appBrightness == Brightness.light) {
+          expect(opaquePill.computeLuminance(), greaterThan(0.6));
+          expect(glyph.computeLuminance(), lessThan(0.05));
+        } else {
+          expect(opaquePill.computeLuminance(), lessThan(0.1));
+          expect(glyph, Colors.white);
+        }
+      });
+    }
+
     testWidgets('play button morphs and Enter toggles', (
       WidgetTester tester,
     ) async {

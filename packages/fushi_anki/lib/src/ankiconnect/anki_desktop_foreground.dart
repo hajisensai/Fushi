@@ -14,7 +14,7 @@ import 'package:flutter/foundation.dart';
 ///   - 「浏览」窗口**已在后台开着**：走复用路径，只是 raise + activate 一个**已
 ///     存在**的窗口 → 被前台锁定拒绝，只剩任务栏闪烁。
 ///
-/// 有权解开这个锁的只有当时的前台进程，也就是用户刚点下按钮的 Hibiki 自己，所以
+/// 有权解开这个锁的只有当时的前台进程，也就是用户刚点下按钮的 Fushi 自己，所以
 /// 修复必须落在这一侧，分两步：
 ///   1. 发 `guiBrowse` **前**用 [grantForegroundToAnki] 把前台权限**定向**让渡给
 ///      Anki 进程（`AllowSetForegroundWindow(ankiPid)`；不用 `ASFW_ANY` 放开给

@@ -39,7 +39,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_cover_menu_');
+        Directory.systemTemp.createTempSync('fushi_game_cover_menu_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -179,7 +179,7 @@ void main() {
 
   testWidgets('有封面文件时卡片渲染封面图而非占位图标', (WidgetTester tester) async {
     final Directory dir =
-        Directory.systemTemp.createTempSync('hibiki_game_cover_render_');
+        Directory.systemTemp.createTempSync('fushi_game_cover_render_');
     addTearDown(() {
       try {
         dir.deleteSync(recursive: true);

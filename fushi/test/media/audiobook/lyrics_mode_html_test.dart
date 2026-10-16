@@ -323,10 +323,11 @@ void main() {
 
       test('vertical wheel is projected onto horizontal scroll', () {
         final String html = build(vertical: true);
-        expect(html,
-            contains('if (__lyricsVertical) {\n  window.addEventListener'));
+        // 竖排：纵向滚轮取反投影到横轴（往下滚 = 往后读 = scrollLeft 变小）。
+        expect(html, contains('raw = -e.deltaY;'));
+        expect(html, contains('if (__lyricsVertical) s.scrollLeft = v;'));
         // BUG-3282：投影量累加进目标位置、按帧平滑逼近（不再一格瞬移）。
-        expect(html, contains('_lyWheelTarget -= px;'));
+        expect(html, contains('_lyWheelTarget += px;'));
       });
 
       // BUG-3282：滚轮平滑的逐帧函数在真 JS 引擎里跑：单调逼近、有限帧内精确
@@ -466,6 +467,38 @@ void main() {
         final String html = buildHtml();
         expect(html, contains("window.addEventListener('resize'"));
         expect(html, contains('__lyricsFitCues()'));
+      });
+
+      // BUG-3416：iOS 一进歌词模式就是竖排时不显示。歌词 WKWebView 在就绪前被
+      // Flutter 设为透明，视口是 0×0；旧的逐句「清空→测量」让每句都强制一次整页
+      // 布局，竖排零视口下每字一列，600 句卡死 WebContent 主线程十几秒（真机更久），
+      // 就绪握手 / resize / 切横排的 loadData 全排在它后面。真 JS 里跑：零视口不量
+      // 不写不定位；有视口时常数次强制布局；初始居中等到真实视口才做且只做一次。
+      test('fit pass skips a zero viewport and batches reads (BUG-3416)',
+          () async {
+        final String? node = _resolveNode();
+        if (node == null) {
+          markTestSkipped('node not found on PATH');
+          return;
+        }
+        final String html = buildHtml(vertical: true);
+        final String fns = <String>[
+          'function __lyricsHasViewport(',
+          'function _lyricsFitCue(',
+          'function __lyricsFitCues(',
+          'function _lyInitialPosition(',
+        ].map((String sig) => '$sig${_fnSource(html, sig)}').join('\n');
+        final Directory dir =
+            Directory.systemTemp.createTempSync('lyrics_fit_viewport');
+        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+          ..writeAsStringSync('$_fitHarnessPrelude\n$fns\n$_fitHarness');
+        try {
+          final ProcessResult r = await Process.run(node, <String>[js.path]);
+          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+          expect('${r.stdout}', contains('FIT_OK'));
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
       });
     });
 
@@ -639,23 +672,39 @@ String? _resolveNode() {
   return null;
 }
 
-/// 从 0 起分别逼近 -300 / +300：每帧都更靠近、从不越过，30 帧内精确落位，
-/// 且第一帧就有明显位移（不是迟滞）。
+/// 从 0 起分别逼近 -300 / +300（60Hz 帧）：每帧都更靠近、从不越过，1 秒内精确
+/// 落位，第一帧就有明显位移（不是迟滞）；同一时刻 120Hz 与 60Hz 走过的距离几乎
+/// 相同（缓动按真实时间、与刷新率无关）；一格（100px）在 80ms 后仍未停稳——
+/// 相邻两格的间隔里不会停顿，连续滚动是一段不停的滑行（「无极」）。
 const String _wheelHarness = r"""
+var TAU = 90;
 var ok = 0;
 [-300, 300].forEach(function(target) {
   var cur = 0, frames = 0, prevGap = Math.abs(target);
   while (cur !== target) {
-    var next = __lyricsWheelStep(cur, target);
+    var next = __lyricsWheelStep(cur, target, 1000 / 60, TAU);
     var gap = Math.abs(target - next);
     if (gap >= prevGap) throw new Error('not converging ' + next);
     if ((target - next) * target < 0) throw new Error('overshoot ' + next);
-    if (frames === 0 && Math.abs(next) < 50) throw new Error('sluggish ' + next);
+    if (frames === 0 && Math.abs(next) < 20) throw new Error('sluggish ' + next);
     prevGap = gap; cur = next;
-    if (++frames > 30) throw new Error('too slow ' + cur);
+    if (++frames > 60) throw new Error('too slow ' + cur);
   }
   ok++;
 });
+function after(ms, hz, target) {
+  var cur = 0, t = 0;
+  while (t + 1e-9 < ms) {
+    cur = __lyricsWheelStep(cur, target, 1000 / hz, TAU);
+    t += 1000 / hz;
+  }
+  return cur;
+}
+if (Math.abs(after(100, 60, 300) - after(100, 120, 300)) > 3) {
+  throw new Error('rate dependent');
+}
+var notch = after(80, 60, 100);
+if (notch >= 99) throw new Error('settles between notches ' + notch);
 console.log('WHEEL_OK ' + ok);
 """;
 
@@ -695,6 +744,60 @@ for (var name in conventions) {
 var d = __lyricsCenterDeltaFor({ left: 0, width: 10, top: 500, height: 100 }, viewW, viewH, false, 0.5);
 if (d !== 200) throw new Error('horizontal anchor ' + d);
 console.log('CENTER_OK ' + ok);
+""";
+
+/// 假 DOM：写 style 置脏，脏状态下读 offset* 记一次强制同步布局（与浏览器同义）。
+const String _fitHarnessPrelude = r"""
+var window = { innerWidth: 0, innerHeight: 0 };
+var layouts = 0, dirty = true, writes = 0, scrolls = 0;
+function makeCue(extent) {
+  var style = {}, fs = '';
+  Object.defineProperty(style, 'fontSize', {
+    get: function() { return fs; },
+    set: function(v) { fs = v; dirty = true; writes++; },
+  });
+  function read() { if (dirty) { layouts++; dirty = false; } return extent; }
+  return {
+    style: style,
+    get offsetHeight() { return read(); },
+    get offsetWidth() { return read(); },
+  };
+}
+var _cues = [];
+for (var k = 0; k < 600; k++) _cues.push(makeCue(k % 3 === 0 ? 900 : 300));
+var __lyricsVertical = true;
+var __LYRICS_MIN_FONT_PX = 12;
+var _currentIdx = 5;
+var document = { getElementById: function() { return {}; } };
+function _lyricsBaseFontPx() { return 24; }
+function _lyricsAvailExtent() { return Math.max(1, window.innerHeight - 40); }
+function _lyricsCenterDelta(el) { return 10; }
+function _lyricsScrollByAxis(d) { scrolls++; }
+// 竖排逐列扫过（BUG-3366）在 fit 末尾为当前句重铺一次；这里只计数，不计入 fit
+// 自身的强制布局次数。
+var sweeps = 0;
+function _lyLayoutSweepColumns(el) { sweeps++; }
+var _lyInitPending = true;
+""";
+
+const String _fitHarness = r"""
+// 零视口：不量、不写、不定位。
+__lyricsFitCues();
+_lyInitialPosition();
+if (layouts !== 0 || writes !== 0) throw new Error('zero viewport measured: layouts=' + layouts + ' writes=' + writes);
+if (scrolls !== 0) throw new Error('zero viewport positioned');
+// 真实视口到达（resize）：600 句只允许常数次强制布局。
+window.innerWidth = 402; window.innerHeight = 471;
+__lyricsFitCues();
+_lyInitialPosition();
+if (layouts > 2) throw new Error('per-cue forced layouts: ' + layouts);
+// 900 > avail(431) 的句子被缩小，300 的保持基准。
+if (_cues[0].style.fontSize === '' || _cues[1].style.fontSize !== '') throw new Error('fit result wrong');
+if (scrolls !== 1) throw new Error('initial position count ' + scrolls);
+// 之后的 resize 不再重复初始定位。
+_lyInitialPosition();
+if (scrolls !== 1) throw new Error('initial position repeated');
+console.log('FIT_OK layouts=' + layouts);
 """;
 
 AudioCue _cue(int index) {

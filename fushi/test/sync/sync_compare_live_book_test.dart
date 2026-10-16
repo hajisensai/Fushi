@@ -85,7 +85,7 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
   @override
   Future<File> exportBook(String title) async {
     final Directory tmp =
-        Directory.systemTemp.createTempSync('hibiki_compare_live_book');
+        Directory.systemTemp.createTempSync('fushi_compare_live_book');
     final File file = File('${tmp.path}/book.epub');
     final Archive archive = Archive();
     archive
@@ -232,12 +232,12 @@ Future<InterconnectSyncBackend> _buildLiveBackend({
 
 void main() {
   test(
-      'Hibiki interconnect compare lists remote-only live book as downloadable',
+      'Fushi interconnect compare lists remote-only live book as downloadable',
       () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_compare_live_tmp');
+        Directory.systemTemp.createTempSync('fushi_compare_live_tmp');
     addTearDown(() {
       try {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
@@ -270,14 +270,14 @@ void main() {
     expect(liveEntry.remoteFolderId, isNull,
         reason: 'live library book does not live in the WebDAV book folder');
     expect(liveEntry.isDownloadableRemoteOnly, isTrue,
-        reason: 'Hibiki 互联 compare 必须读取 live /api/library/books');
+        reason: 'Fushi 互联 compare 必须读取 live /api/library/books');
   });
 
   test('远端独有的互联漫画同样可下载（hasContent 恒 false，判据须并上 hasMangaContent）', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     final Directory tempDir =
-        Directory.systemTemp.createTempSync('hibiki_compare_live_manga');
+        Directory.systemTemp.createTempSync('fushi_compare_live_manga');
     addTearDown(() {
       try {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

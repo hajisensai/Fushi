@@ -11,7 +11,7 @@ void main() {
     late Directory tmp;
 
     setUp(() {
-      tmp = Directory.systemTemp.createTempSync('hibiki_cover_resolve');
+      tmp = Directory.systemTemp.createTempSync('fushi_cover_resolve');
     });
 
     tearDown(() {

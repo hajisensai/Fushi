@@ -32,7 +32,7 @@ void main() {
     setUpAll(() {
       // AppModel 的 DefaultCacheManager 在构造时经 path_provider 打开缓存目录。
       pathProviderDir =
-          Directory.systemTemp.createTempSync('hibiki_path_provider_locale');
+          Directory.systemTemp.createTempSync('fushi_path_provider_locale');
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,

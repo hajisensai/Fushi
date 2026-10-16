@@ -30,12 +30,12 @@ if ([IO.Path]::GetPathRoot($resolvedOutput) -eq $resolvedOutput) {
 }
 
 if ([string]::IsNullOrWhiteSpace($DownloadCache)) {
-    $DownloadCache = Join-Path ([IO.Path]::GetTempPath()) "hibiki-mihon-downloads"
+    $DownloadCache = Join-Path ([IO.Path]::GetTempPath()) "fushi-mihon-downloads"
 }
 $resolvedCache = [IO.Path]::GetFullPath($DownloadCache)
 [IO.Directory]::CreateDirectory($resolvedCache) | Out-Null
 
-$workingRoot = Join-Path ([IO.Path]::GetTempPath()) ("hibiki-mihon-build-" + [Guid]::NewGuid().ToString("N"))
+$workingRoot = Join-Path ([IO.Path]::GetTempPath()) ("fushi-mihon-build-" + [Guid]::NewGuid().ToString("N"))
 [IO.Directory]::CreateDirectory($workingRoot) | Out-Null
 $sourceRoot = Join-Path $workingRoot "M-Extension-Server"
 $stagingRoot = Join-Path $workingRoot "output"
@@ -78,7 +78,7 @@ try {
     Copy-Tree $vendoredSourceRoot $sourceRoot
 
     # `git apply` 在非 git 目录下同样可用（实测 exit 0），补丁与 overlay 的应用
-    # 顺序和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Hibiki 的
+    # 顺序和语义与 clone 时代完全一致：先打 build/上游逻辑补丁，再用 Fushi 的
     # 安全 overlay 覆盖同名文件。
     #
     # 补丁必须带上下文，这里也**绝不能**加回 `--unidiff-zero`（BUG-1428）：零上下文
@@ -96,7 +96,7 @@ try {
     Copy-Tree (Join-Path $overlayRoot "overlay") $sourceRoot
 
     # 把 vendored 的 org.jogamp 离线 Maven 仓库搬进构建树。补丁后的 build.gradle.kts
-    # 用 `rootProject.file("hibiki-offline-maven/jogamp")` 找它，目录在就离线解析、
+    # 用 `rootProject.file("fushi-offline-maven/jogamp")` 找它，目录在就离线解析、
     # 不在就回落到两个远端镜像（见 third_party/jogamp/UPSTREAM：那两个主机分别在
     # 2026-08-09 和 2026-08-25 把 CI 弄红过，而 Maven Central 根本没有 2.5.0）。
     # 路径必须与补丁里的字面量一致，守卫 fushi/test/build/mihon_vendored_jogamp_guard_test.dart。
@@ -104,7 +104,7 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $jogampRepo "org\jogamp\jogl\jogl-all\2.5.0\jogl-all-2.5.0.jar") -PathType Leaf)) {
         throw "Vendored org.jogamp repository is missing at $jogampRepo"
     }
-    Copy-Tree (Join-Path $jogampRepo "org") (Join-Path $sourceRoot "hibiki-offline-maven\jogamp\org")
+    Copy-Tree (Join-Path $jogampRepo "org") (Join-Path $sourceRoot "fushi-offline-maven\jogamp\org")
 
     $archivePath = Join-Path $resolvedCache $temurinArchive
     if (-not (Test-Path -LiteralPath $archivePath)) {

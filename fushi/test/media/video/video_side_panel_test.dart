@@ -3,6 +3,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderPanelSwitcher;
@@ -31,17 +32,17 @@ void main() {
           .ancestor(of: find.text('Speed'), matching: find.byType(Material))
           .first,
     );
-    // M3E：面板读以 app 主色为种子的深色着色方案（2026-10-14 去灰：与阅读器侧板
-    // 同一套表面层级），底色是该方案的 surfaceContainerLow @86%；画面靠面板四周
-    // 的留白与面板宽度露出。
+    // M3E：面板读以 app 主色为种子、与 app 同亮度的着色方案（2026-10-14 去灰：与
+    // 阅读器侧板同一套表面层级），底色是该方案的 surfaceContainerLow（半透明档）；
+    // 画面靠面板四周的留白与面板宽度露出。
     final ColorScheme appScheme = Theme.of(
       tester.element(find.byType(VideoTranslucentSidePanel)),
     ).colorScheme;
     expect(material.color, videoM3ePanelSurfaceColor(appScheme, opaque: false));
-    // 面板内容读深色着色主题：浅色 app 主题下标题也是浅色字（不是黑压黑）。
+    // 面板内容跟随 app 的日间 / 深色模式（默认 MaterialApp 是日间 → 浅色面板）。
     final BuildContext ctx = tester.element(find.text('Speed'));
     final ColorScheme panelScheme = Theme.of(ctx).colorScheme;
-    expect(panelScheme.brightness, Brightness.dark);
+    expect(panelScheme.brightness, appScheme.brightness);
     expect(panelScheme.onSurface, videoM3ePanelScheme(appScheme).onSurface);
     expect(find.text('Speed'), findsOneWidget);
     expect(find.text('1.5x'), findsOneWidget);
@@ -267,6 +268,100 @@ void main() {
     await tester.pump();
     expect(selected, <String>['subtitle']);
   });
+
+  // 播放器面板 + 面板切换竖条跟随 app 的日间 / 深色模式，且二者同一份配色
+  // （2026-10-14 用户：日间模式下设置面板是固定深色、旁边的竖条却是浅色）。
+  for (final Brightness appBrightness in Brightness.values) {
+    testWidgets(
+      'panel and switcher rail both follow app ${appBrightness.name} mode',
+      (WidgetTester tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(1280, 720);
+        addTearDown(tester.view.reset);
+        final ValueNotifier<String> current = ValueNotifier<String>('settings');
+        addTearDown(current.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: const Color(0xFF6750A4),
+                brightness: appBrightness,
+              ),
+            ),
+            home: VideoTranslucentSidePanel(
+              width: 400,
+              switcher: switcherFor(current, <String>[]),
+              child: const Text('Panel content'),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final ColorScheme appScheme = Theme.of(
+          tester.element(find.byType(VideoTranslucentSidePanel)),
+        ).colorScheme;
+        final ColorScheme panelScheme = Theme.of(
+          tester.element(find.text('Panel content')),
+        ).colorScheme;
+        final ColorScheme railScheme = Theme.of(
+          tester.element(
+            find.byKey(const ValueKey<String>('video_panel_switch_audio')),
+          ),
+        ).colorScheme;
+        expect(panelScheme.brightness, appBrightness);
+        expect(railScheme.brightness, appBrightness);
+        // 竖条与面板读的是同一份方案（不是一份面板方案 + 一份 app 方案）。
+        expect(railScheme, panelScheme);
+        expect(panelScheme, videoM3ePanelScheme(appScheme));
+      },
+    );
+  }
+
+  test(
+    'panel / chrome schemes are cached per brightness, not just primary',
+    () {
+      // 同一主色：浅色 app 主题拿到浅色方案、深色拿深色方案；先后调用不串缓存。
+      const Color seed = Color(0xFF386A20);
+      final ColorScheme light = ColorScheme.fromSeed(seedColor: seed);
+      final ColorScheme dark = ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: Brightness.dark,
+      );
+      final ColorScheme sameLight = light.copyWith(primary: dark.primary);
+      final ColorScheme sameDark = dark;
+      expect(videoM3ePanelScheme(sameDark).brightness, Brightness.dark);
+      expect(videoM3ePanelScheme(sameLight).brightness, Brightness.light);
+      expect(videoM3eChromeScheme(sameLight).brightness, Brightness.light);
+      expect(videoM3eChromeScheme(sameDark).brightness, Brightness.dark);
+      expect(
+        videoM3eNeutralChromeScheme(sameLight).brightness,
+        Brightness.light,
+      );
+      expect(videoM3eNeutralChromeScheme(sameDark).brightness, Brightness.dark);
+      // 日间：浅底深字；深色：深底白字（与旧实现一致）。
+      expect(videoM3eForeground(sameDark), Colors.white);
+      expect(videoM3eForeground(sameLight).computeLuminance(), lessThan(0.05));
+      expect(
+        videoM3eFloatingColor(
+          sameLight,
+        ).withValues(alpha: 1).computeLuminance(),
+        greaterThan(0.6),
+      );
+      expect(
+        videoM3eFloatingColor(sameDark).withValues(alpha: 1).computeLuminance(),
+        lessThan(0.1),
+      );
+      expect(
+        videoM3ePanelSurfaceColor(sameLight, opaque: true).computeLuminance(),
+        greaterThan(0.6),
+      );
+      expect(videoM3ePanelBackdrop(sameDark), Colors.black);
+      expect(
+        videoM3ePanelBackdrop(sameLight).computeLuminance(),
+        greaterThan(0.6),
+      );
+    },
+  );
 
   testWidgets('a single-item switcher draws no rail', (
     WidgetTester tester,

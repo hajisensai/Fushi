@@ -17,7 +17,7 @@ void main() {
   late Directory tempRoot;
 
   setUp(() {
-    tempRoot = Directory.systemTemp.createTempSync('hibiki_dict_precheck_');
+    tempRoot = Directory.systemTemp.createTempSync('fushi_dict_precheck_');
   });
 
   tearDown(() {

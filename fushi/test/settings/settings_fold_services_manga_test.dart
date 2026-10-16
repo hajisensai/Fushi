@@ -115,7 +115,7 @@ void main() {
       final PreferencesRepository prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
       final Directory tempDir = Directory.systemTemp.createTempSync(
-        'hibiki_settings_fold_',
+        'fushi_settings_fold_',
       );
       addTearDown(() {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

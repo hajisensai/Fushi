@@ -435,7 +435,7 @@ void main() {
         body.contains('DWMWA_COLOR_DEFAULT'),
         isTrue,
         reason:
-            'an ordinary windowed Hibiki must keep its normal border — this '
+            'an ordinary windowed Fushi must keep its normal border — this '
             'is a state-dependent policy, not a permanent window attribute.',
       );
       expect(

@@ -8,7 +8,7 @@ import '../helpers/workspace_pubspec.dart';
 ///
 /// Root cause: upstream `media_kit_video` 2.0.1's `MaterialDesktopSeekBarState`
 /// calls `controller(context)` (which dereferences `State.context`) inside both
-/// `onPointerUp()` and `onPointerMove()` with no `mounted` guard. Hibiki tears
+/// `onPointerUp()` and `onPointerMove()` with no `mounted` guard. Fushi tears
 /// down the controls subtree on fullscreen enter/exit and episode switch
 /// (VideoControlsFocusGate), so releasing the seek bar drag right then lands on
 /// a disposed State and crashes with

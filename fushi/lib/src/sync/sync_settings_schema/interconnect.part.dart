@@ -1,7 +1,7 @@
 // GENERATED-NOTE: extracted from sync_settings_schema.dart (TODO-585).
 part of '../sync_settings_schema.dart';
 
-// Hibiki P2P interconnect: client config, host server mode, LAN discovery.
+// Fushi P2P interconnect: client config, host server mode, LAN discovery.
 // Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState); moved verbatim.
 
 /// 互联自绘块里的小节标题（「已保存的连接」「局域网设备」）：MD3 = titleSmall；
@@ -156,7 +156,7 @@ class _InterconnectSecretCard extends StatelessWidget {
   }
 }
 
-// ── Hibiki server config widget (connect to another Hibiki instance) ─
+// ── Fushi server config widget (connect to another Fushi instance) ───
 
 class _FushiServerConfigWidget extends StatefulWidget {
   const _FushiServerConfigWidget({required this.settingsContext});
@@ -511,7 +511,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
 
     // TODO-963 M2: 新增/重加地址后走「探测 → 配对」。手动输入 IP 也能发起配对（不再只挂
     // mDNS 发现设备）：ping 探测可达 + 取指纹做 TOFU → 双确认 → pair/v2 → 自动落
-    // token + 指纹（免手粘 token）。探测失败 / 非 hibiki 时静默保留地址（向后兼容：
+    // token + 指纹（免手粘 token）。探测失败 / 非 Fushi 时静默保留地址（向后兼容：
     // 用户仍可手填 token）。
     if (shouldPair) {
       await _attemptManualPair(normalizedResult);
@@ -553,7 +553,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         capturedFingerprint = tofu.fingerprint;
       }
 
-      // /api/ping 探测：确认 hibiki + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
+      // /api/ping 探测：确认是 Fushi + 支持 v2 + 取展示名/指纹（https 用捕获指纹钉扎读）。
       final FushiPingOutcome outcome = await probeFushiPing(
         baseUrl,
         pinnedFingerprint: capturedFingerprint,
@@ -582,7 +582,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         return;
       }
       if (!ping.supportsPairV2) {
-        // 连上了、确实是 Hibiki，只是版本太旧——与「找不到设备」是两回事。
+        // 连上了、确实是 Fushi，只是版本太旧——与「找不到设备」是两回事。
         _showSnackBar(context, t.sync_pair_unavailable);
         return;
       }
@@ -1154,7 +1154,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
 
   /// BUG-1741：把**配对前探测**的失败分型翻成人话。
   ///
-  /// 探测层此前把「证书对不上」「超时」「端口没人」「不是 Hibiki」全压成一个
+  /// 探测层此前把「证书对不上」「超时」「端口没人」「不是 Fushi」全压成一个
   /// null，UI 只能一律说「此地址未找到 Fushi 设备」——对着一台明明在线、只是证书
   /// 换了的机器说「这里没有设备」，用户的排查方向从第一步就是错的。
   ///

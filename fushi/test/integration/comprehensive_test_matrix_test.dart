@@ -115,7 +115,7 @@ void main() {
     test('dry-run report writes json and markdown with blocked macos status',
         () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_comprehensive_');
+          await Directory.systemTemp.createTemp('fushi_comprehensive_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -179,7 +179,7 @@ void main() {
     test('execution report records pass fail statuses and log evidence',
         () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_comprehensive_exec_');
+          await Directory.systemTemp.createTemp('fushi_comprehensive_exec_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -233,7 +233,7 @@ void main() {
 
     test('execution report keeps child output quiet by default', () async {
       final Directory dir = await Directory.systemTemp
-          .createTemp('hibiki_comprehensive_quiet_exec_');
+          .createTemp('fushi_comprehensive_quiet_exec_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -263,7 +263,7 @@ void main() {
 
     test('execution report can opt into verbose child output', () async {
       final Directory dir = await Directory.systemTemp
-          .createTemp('hibiki_comprehensive_verbose_exec_');
+          .createTemp('fushi_comprehensive_verbose_exec_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -295,7 +295,7 @@ void main() {
     test('execution fails when a zero-exit command lacks required output',
         () async {
       final Directory dir = await Directory.systemTemp
-          .createTemp('hibiki_comprehensive_missing_output_');
+          .createTemp('fushi_comprehensive_missing_output_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -422,7 +422,7 @@ void main() {
     test('fixture generator writes required comprehensive test files',
         () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_comprehensive_fx_');
+          await Directory.systemTemp.createTemp('fushi_comprehensive_fx_');
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);

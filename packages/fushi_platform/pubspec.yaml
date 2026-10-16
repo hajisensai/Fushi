@@ -1,6 +1,6 @@
 name: fushi_platform
 resolution: workspace
-description: Platform service abstractions for Hibiki
+description: Platform service abstractions for Fushi
 publish_to: none
 
 

@@ -247,7 +247,7 @@ abstract final class BookFormatRebuild {
     void Function(int done, int total)? onProgress,
   }) async {
     final Directory staging =
-        await Directory.systemTemp.createTemp('hibiki_book_convert_');
+        await Directory.systemTemp.createTemp('fushi_book_convert_');
     try {
       switch (sourceFormat) {
         case BookFormat.pdf:

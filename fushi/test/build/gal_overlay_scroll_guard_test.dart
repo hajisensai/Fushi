@@ -56,20 +56,25 @@ void main() {
   });
 
   test('② 滚动 = 绘制原点上移，裁剪框不动', () {
+    // 竖排改造后原点收进 TextOriginX/Y（竖排时滚动作用在 x 轴）；横排公式不变。
     expect(
-      src.contains(
-          'const float text_origin_y = text_rect_.top - scroll_offset_px_;'),
+      RegExp(
+        r'float FloatingLyricWindow::TextOriginY\(\) const \{[\s\S]{0,200}?'
+        r':\s*text_rect_\.top - scroll_offset_px_;',
+      ).hasMatch(src),
       isTrue,
       reason: '分层窗没有第二个渲染目标，滚动只能靠移动绘制原点',
     );
+    expect(src.contains('const float text_origin_y = TextOriginY();'), isTrue);
     expect(
-      src.contains('D2D1::Point2F(text_rect_.left, text_origin_y)'),
+      RegExp(r'D2D1::Point2F\(text_origin_x, text_origin_y\)').hasMatch(src),
       isTrue,
       reason: '正文必须按滚动后的原点画',
     );
     expect(
       src.contains(
-          'D2D1::RectF(text_rect_.left + m.left, text_origin_y + m.top,'),
+        'D2D1::RectF(text_origin_x + m.left, text_origin_y + m.top,',
+      ),
       isTrue,
       reason: '高亮底框必须跟着一起滚，否则滚动后高亮会留在原地',
     );
@@ -159,8 +164,11 @@ void main() {
     final String geometry = _functionSource(src,
         'FloatingLyricWindow::ScrollBarGeometry FloatingLyricWindow::ComputeScrollBar()');
     expect(
-      geometry
-          .contains('g.visible = hook_text_mode_ && scroll_max_px_ > 0.0f;'),
+      // 竖排时滚动在 x 轴，竖向滚动条不画（多一个 `&& !vertical_active_`）。
+      RegExp(
+        r'g\.visible = hook_text_mode_ && scroll_max_px_ > 0\.0f'
+        r'( && !vertical_active_)?;',
+      ).hasMatch(geometry),
       isTrue,
       reason: '没有溢出就一个像素都不画、一次命中都不算（不滚动时逐像素不变）',
     );

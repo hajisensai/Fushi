@@ -706,7 +706,7 @@ hello async vtt
     late File imported;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_todo016_menu_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_todo016_menu_');
       video = File(p.join(tempDir.path, 'Miss Kobayashi S01E01.mkv'))
         ..writeAsStringSync('fake video bytes');
       imported = File(p.join(
@@ -883,7 +883,7 @@ BUG-2094 secondary import.
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_prewarm_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_vsub_prewarm_');
     });
 
     tearDown(() {
@@ -1061,7 +1061,7 @@ BUG-2094 secondary import.
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_enum_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_vsub_enum_');
     });
 
     tearDown(() {
@@ -1165,7 +1165,7 @@ At least one output file must be specified
     late Directory tempDir;
 
     setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('hibiki_vsub_default_');
+      tempDir = Directory.systemTemp.createTempSync('fushi_vsub_default_');
     });
 
     tearDown(() {

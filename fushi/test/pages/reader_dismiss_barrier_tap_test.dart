@@ -247,8 +247,10 @@ void main() {
       final String body = corpus.substring(idx, idx + 900);
       // 歌词覆盖层（独立 WebView）在场时用户点的是歌词文档：钥匙走
       // _surfaceWebViewKey（歌词态 → 歌词 WebView，否则 → 正文 _webViewKey）。
+      // dart format 可能在 `?.` 前断行，比对时去空白。
       expect(
-          body.contains('_surfaceWebViewKey.currentContext?.findRenderObject()'),
+          body.replaceAll(RegExp(r'\s+'), '').contains(
+              '_surfaceWebViewKey.currentContext?.findRenderObject()'),
           isTrue,
           reason: 'reader must map global -> WebView local via its RenderBox');
       expect(

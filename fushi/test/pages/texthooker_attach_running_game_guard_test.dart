@@ -2,7 +2,7 @@
 //
 // 背景：injector 的 `--pid` attach 与 GalHookSessionController.startAttachedCapture
 // 的完整注入编排一直都在，但唯一 UI 入口是「更多」溢出菜单里那个叫「外部窗口挖矿」的
-// 模式开关——名字看不出是「附着到已经在跑的游戏」，用户只能每次都让 Hibiki 把游戏拉起来
+// 模式开关——名字看不出是「附着到已经在跑的游戏」，用户只能每次都让 Fushi 把游戏拉起来
 // 才能捕获。这里钉住三条：
 //  ① 工具栏一级按钮存在（与「启动并捕获」并列，不再退回溢出菜单）；
 //  ② 附着动作直接走 startAttachedCapture，**不得**改回「bindWindow +

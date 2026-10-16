@@ -18,7 +18,7 @@ void main() {
   late MihonManager anime;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-kind-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-kind-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _KindRuntime();
     manga = MihonManager(

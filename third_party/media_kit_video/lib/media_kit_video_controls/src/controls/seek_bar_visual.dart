@@ -1,4 +1,4 @@
-// Hibiki patch (M3 Expressive video chrome): a host-supplied seek-bar track
+// Fushi patch (M3 Expressive video chrome): a host-supplied seek-bar track
 // visual. The fork keeps every gesture / seek / callback path of its seek bars
 // and only hands the *painting* of the track to the host when the theme sets
 // `seekBarTrackBuilder`. Null (upstream default) = the upstream track, pixel

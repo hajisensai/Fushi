@@ -199,7 +199,7 @@ void MediaKitVideoPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(std::monostate{}));
   } else if (method_call.method_name().compare(
                  "VideoOutputManager.SetHdrOutput") == 0) {
-    // HIBIKI FORK (HDR in the Flutter compositor): replies with whether the
+    // FUSHI FORK (HDR in the Flutter compositor): replies with whether the
     // half-float texture is active afterwards (false on S/W rendering or when
     // ANGLE lacks what it needs).
     auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());

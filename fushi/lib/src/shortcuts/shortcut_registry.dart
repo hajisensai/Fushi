@@ -276,7 +276,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
     // 版本号仍然 bump 到 11（已发出去的快照会写 11，不能回退），只是循环体为空。
     // 若将来真要清理无效绑定，判据必须是「弹窗桥也解析不到」，不是「通道没开」。
     //
-    // v11 -> v12（用户请求「一个键把 Hibiki 置顶并显示查词页」）：新增
+    // v11 -> v12（用户请求「一个键把 Fushi 置顶并显示查词页」）：新增
     // globalExternalOpenLookupPage（globalExternal scope，桌面默认 Ctrl+Alt+F /
     // macOS Meta+Alt+F、移动端空）。**全新 action**，老快照里根本没有它的 key ——
     // [loadDefaults] 已为它播种平台默认、[_loadFromJson] 只覆盖快照里显式出现的
@@ -657,7 +657,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
   /// 键盘冲突检测**额外**扫 `globalExternal`，理由与
   /// [_gamepadPreemptingScopes] 同构、而且更强：这个 scope 的键盘绑定由
   /// `GlobalLookupController` 注册成 win32 `RegisterHotKey`，是**全系统级**吞键
-  /// ——命中时前台程序（包括 Hibiki 自己的页面）根本收不到那次按键。于是用户把
+  /// ——命中时前台程序（包括 Fushi 自己的页面）根本收不到那次按键。于是用户把
   /// app 外热键改成某个 app 内已用组合键（比如 Ctrl+F）后，阅读器 / 首页的
   /// Ctrl+F 会在全 app 静默失效，而设置页一声不吭。
   ///

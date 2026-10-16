@@ -31,14 +31,14 @@ Flutter plugin for running ONNX models with the native ONNX Runtime, supporting 
   # 1.23.0: last ORT without the KleidiAI conv memory regression of 1.24.x
   # (microsoft/onnxruntime#29538); bump both pins together once ORT >= 1.28 ships.
   s.dependency 'onnxruntime-objc', '1.23.0'
-  # HIBIKI FORK: `onnxruntime-c` / `onnxruntime-objc` ship static binaries, and
-  # Hibiki's Podfile uses `use_frameworks!`. Without this, CocoaPods aborts with
+  # FUSHI FORK: `onnxruntime-c` / `onnxruntime-objc` ship static binaries, and
+  # Fushi's Podfile uses `use_frameworks!`. Without this, CocoaPods aborts with
   # "target has transitive dependencies that include statically linked binaries".
   # Upstream never hit it because their example project only builds via SwiftPM
   # (there is no example Podfile in the published package at all).
   s.static_framework = true
 
-  # HIBIKI FORK: upstream declares 14.0 because its Package.swift pulls
+  # FUSHI FORK: upstream declares 14.0 because its Package.swift pulls
   # onnxruntime-swift-package-manager (manifest `.macOS(.v14)`). This fork
   # deletes the Apple Package.swift manifests and builds through CocoaPods, so
   # the real floor is the `onnxruntime-objc` 1.23.0 pod: osx 13.4.

@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -26,6 +27,7 @@ import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
@@ -45,6 +47,8 @@ import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -70,6 +74,7 @@ import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -229,7 +234,9 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -666,7 +673,7 @@ class AppModel with ChangeNotifier {
         .distinct(),
   );
 
-  /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
+  /// App 级 Fushi LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
   /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
   /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
@@ -1348,45 +1355,41 @@ class AppModel with ChangeNotifier {
   /// 当前书元数据，常驻执行 cue→悬浮窗/媒体通知/位置落库同步，脱离 reader 页生命周期。
   /// reader 在场时经 [AudiobookSession.attachReader] 注册 WebView 侧回调。
   late final AudiobookSession audiobookSession = AudiobookSession(
-    audioHandler: () => audioCtrl.audioHandler,
-    showFloatingLyric: () => showFloatingLyric,
-    showMediaNotification: () => showMediaNotification,
-    floatingLyricStyle: _appLevelFloatingLyricStyle,
-    floatingLyricContextLines: () => floatingLyricContextLines,
-    floatingLyricClickLookup: () => floatingLyricClickLookup,
-    onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
-      // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
-      // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
-      // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
-      // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
-      // reader 的点词处理器。
-      unawaited(() async {
-        if (await tryFloatingLyricGlobalLookup(
-          appModel: this,
-          text: text,
-          index: index,
-          wordRect: wordRect,
-        )) {
-          return;
-        }
-        FloatingLyricLookupNotifier.instance.requestLookup(text, index);
-      }());
-    },
-    controlStreams: AudioControlStreams(
-      playIntentStream: audioCtrl.playIntentStream,
-      seekStream: audioCtrl.seekStream,
-      skipNextStream: audioCtrl.skipNextStream,
-      skipPreviousStream: audioCtrl.skipPreviousStream,
-      toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream,
-    ),
-    // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
-    // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
-    // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
-    database: () => isDatabaseReady ? database : null,
-    studyIdleTimeout: () => readingIdleTimeout,
-  )
+      audioHandler: () => audioCtrl.audioHandler,
+      showFloatingLyric: () => showFloatingLyric,
+      showMediaNotification: () => showMediaNotification,
+      floatingLyricStyle: _appLevelFloatingLyricStyle,
+      floatingLyricVisibleLines: () => floatingLyricVisibleLines,
+      floatingLyricClickLookup: () => floatingLyricClickLookup,
+      onFloatingLyricLookup: (String text, int index, Rect? wordRect) {
+        // app 级（无 reader attach）桌面悬浮窗点词：Windows 优先弹 867 app 外全局
+        // 查词覆盖窗（TODO-872，主窗最小化/被遮挡也看得见）；覆盖窗不可用才回落
+        // 常驻主窗口的 in-app 查词宿主 [FloatingLyricLookupHost]（main.dart 根
+        // builder 挂载），不依赖进任何书（TODO-354 ①）。reader attach 时会换成
+        // reader 的点词处理器。
+        unawaited(() async {
+          if (await tryFloatingLyricGlobalLookup(
+              appModel: this, text: text, index: index, wordRect: wordRect)) {
+            return;
+          }
+          FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+        }());
+      },
+      controlStreams: AudioControlStreams(
+          playIntentStream: audioCtrl.playIntentStream,
+          seekStream: audioCtrl.seekStream,
+          skipNextStream: audioCtrl.skipNextStream,
+          skipPreviousStream: audioCtrl.skipPreviousStream,
+          toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream),
+      // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
+      // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
+      // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
+      database: () => isDatabaseReady ? database : null,
+      studyIdleTimeout: () => readingIdleTimeout)
     ..skipActionSeconds = (() => ReaderFushiSource.instance.skipActionSeconds)
     ..onFloatingLyricClosePersist = (() => setShowFloatingLyric(false))
+    ..floatingLyricWindowRect = _floatingLyricWindowRect
+    ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
   late DictionaryImportManager _dictImportManager;
 
@@ -1521,7 +1524,7 @@ class AppModel with ChangeNotifier {
   String? _initError;
 
   /// Non-null when init was refused because the on-disk DB was created by a
-  /// NEWER build of Hibiki than this one (downgrade protection). The UI shows a
+  /// NEWER build of Fushi than this one (downgrade protection). The UI shows a
   /// dedicated "update your app" notice with NO retry button — retry would fail
   /// identically and this is not a transient error. The DB file is left intact.
   FushiDatabaseDowngradeException? get downgradeError => _downgradeError;
@@ -1529,13 +1532,20 @@ class AppModel with ChangeNotifier {
 
   /// Non-null when init failed because the database could NOT be opened even
   /// after the full WAL/sidecar recovery ladder (TODO-905) — i.e. the main
-  /// `hibiki.db` itself is corrupt, not just a stale `-wal`/`-shm`. The UI shows
+  /// `fushi.db` itself is corrupt, not just a stale `-wal`/`-shm`. The UI shows
   /// an actionable "restore a backup / clear data" notice; a plain Retry would
   /// loop forever (the very bug TODO-905 fixes), so recovery already ran inside
   /// the open path and a fresh open of the same corrupt file would fail again.
   FushiDatabaseUnrecoverableException? get unrecoverableDbError =>
       _unrecoverableDbError;
   FushiDatabaseUnrecoverableException? _unrecoverableDbError;
+
+  /// 非 null 表示库的 schema 低于本版本能升级的下限（[kMinSupportedSchemaVersion]，
+  /// 或目录里只有改名前的 `hibiki.db`）：迁移阶梯的那一段已删除，开库被拒、库文件
+  /// 原样保留。UI 显专屏提示先装 [kLegacySchemaBridgeAppVersion] 打开一次再更新；
+  /// 不给重试——重试会以同样的方式失败。
+  UnsupportedLegacySchemaException? get legacySchemaError => _legacySchemaError;
+  UnsupportedLegacySchemaException? _legacySchemaError;
 
   /// BUG-815：非 null 表示桌面**配置了自定义数据根、但本次启动它不可达**（休眠 / 掉线 /
   /// 拔出的盘）。UI 据此显「数据位置未响应」逃生屏（重试 / 显式用默认位置启动），而**不**
@@ -1598,6 +1608,7 @@ class AppModel with ChangeNotifier {
     _initError = null;
     _downgradeError = null;
     _unrecoverableDbError = null;
+    _legacySchemaError = null;
     _dataRootUnavailable = null;
     _isInitialised = false;
     notifyListeners();
@@ -3004,6 +3015,10 @@ class AppModel with ChangeNotifier {
       // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
       // Unicode Character Database 生成，Unicode License V3 要求随附许可。
       'unicode-data',
+      // 复习（SRS）排程内核 native/fushi_fsrs 静态链进的两个 Rust crate：
+      // fsrs-rs（BSD-3-Clause，open-spaced-repetition）与 ruzstd（MIT，Anki 新格式包解压）。
+      'fsrs-rs',
+      'ruzstd',
     ];
 
     for (String packageName in packageNames) {
@@ -3046,7 +3061,7 @@ class AppModel with ChangeNotifier {
     // TODO-935 E0：三个数据根经唯一入口 [AppPaths] 解析（内部已honor测试分支
     // [fushiTestDirectory]，故行为与旧的 test/production 双分支逐字节等价）。
     _appPaths = await AppPaths.resolve();
-    // TODO-1236：把上游 `hibiki_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
+    // TODO-1236：把上游 `fushi_audio` 的有声书持久根解析接到 `AppPaths`（它无法 import
     // AppPaths）。这样桌面自定义数据根生效后，有声书新导入落数据根下的 `audiobooks/`
     // （与 TODO-1226 迁移白名单一致），而不是落回平台 Documents。
     AudiobookStorage.documentsRootResolver = AppPaths.documentsRootDirectory;
@@ -3556,9 +3571,18 @@ class AppModel with ChangeNotifier {
       _downgradeError = e;
       _initError = '$e';
       notifyListeners();
+    } on UnsupportedLegacySchemaException catch (e, stack) {
+      // 库比本版本能升级的下限还老（低于最低 schema 门槛，或只有改名前的
+      // hibiki.db）。开库在任何迁移语句之前被拒，文件原样保留。与降级同理：专屏、
+      // 不重试、不继续 init、绝不删库重建。
+      debugPrint('[Fushi] init REFUSED (legacy schema): $e\n$stack');
+      ErrorLogService.instance.log('AppModel.initialise.legacySchema', e, stack);
+      _legacySchemaError = e;
+      _initError = '$e';
+      notifyListeners();
     } on FushiDatabaseUnrecoverableException catch (e, stack) {
       // TODO-905: the WAL/sidecar recovery ladder already ran inside the open
-      // path and exhausted — the main hibiki.db is corrupt. Surface a dedicated,
+      // path and exhausted — the main fushi.db is corrupt. Surface a dedicated,
       // actionable notice (restore backup / clear data) instead of looping the
       // generic Retry button forever against the same un-openable file.
       debugPrint('[Fushi] init FAILED (DB unrecoverable): $e\n$stack');
@@ -5060,8 +5084,8 @@ class AppModel with ChangeNotifier {
   ///
   /// BUG-1053：以前是在 [startAnimeDownloadService] 里对**所有桌面用户无条件**
   /// 创建——而创建 = 起一个 libtorrent session（绑 6881 TCP+UDP + 默认开 DHT）。
-  /// 于是没有任何下载任务的用户，只要 Hibiki 开着就一直在跑全球 DHT，路由器
-  /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Hibiki 即恢复。
+  /// 于是没有任何下载任务的用户，只要 Fushi 开着就一直在跑全球 DHT，路由器
+  /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Fushi 即恢复。
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
@@ -6456,6 +6480,9 @@ class AppModel with ChangeNotifier {
   bool get navBarLabelsVisible => prefsRepo.navBarLabelsVisible;
   Future<void> setNavBarLabelsVisible(bool value) =>
       prefsRepo.setNavBarLabelsVisible(value);
+  AdaptiveNavBarStyle get navBarStyle => prefsRepo.navBarStyle;
+  Future<void> setNavBarStyle(AdaptiveNavBarStyle value) =>
+      prefsRepo.setNavBarStyle(value);
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;
@@ -7308,7 +7335,7 @@ class AppModel with ChangeNotifier {
     );
     final bool launched = await launchUrl(uri);
     if (!launched) {
-      debugPrint('[hibiki] Failed to launch popup dictionary for: $trimmed');
+      debugPrint('[fushi] Failed to launch popup dictionary for: $trimmed');
     }
   }
 
@@ -7591,39 +7618,51 @@ class AppModel with ChangeNotifier {
 
   // ── 进程级常驻有声书会话编排（TODO-291 阶段2） ─────────────────────────
 
-  /// app 级（无 reader）悬浮窗样式：用全局主题色，背景跟随当前明暗。reader attach
-  /// 时会用 reader 主题样式覆盖。
+  /// app 级（无 reader）悬浮窗样式：M3E 配色取当前 app 明暗下的配色方案。reader
+  /// attach 时会用 reader 明暗的同一套构造覆盖（`_readerFloatingLyricStyle`）。
   FloatingLyricStyle _appLevelFloatingLyricStyle() {
-    final Brightness brightness =
-        themeMode == ThemeMode.dark ? Brightness.dark : Brightness.light;
-    final ColorScheme scheme = buildColorScheme(brightness);
-    final bool dark = brightness == Brightness.dark;
-    final Color bg = scheme.surface;
-    final Color fg = scheme.onSurface;
-    final Color accent = scheme.primary;
-    final int textOpacity = floatingLyricTextOpacity;
-    final int buttonBgOpacity = floatingLyricButtonBgOpacity;
-    final int bgOpacity = floatingLyricBgOpacity;
-    return FloatingLyricStyle(
-      fontSize: floatingLyricFontSize,
-      // TODO-370: 文字 / 按钮底色透明度按设置缩放 alpha（默认 100=保持原观感）。
-      textColor: FloatingLyricStyle.scaleAlpha(fg.value, textOpacity),
-      // TODO-576: 条背景透明度按设置缩放 alpha（默认 70=更不挡视野）。
-      bgColor: FloatingLyricStyle.scaleAlpha(
-        bg.withAlpha(dark ? 230 : 220).value,
-        bgOpacity,
-      ),
-      buttonTextColor: fg.value,
-      buttonBgColor: FloatingLyricStyle.scaleAlpha(
-        (dark ? const Color(0x33FFFFFF) : const Color(0x1A000000)).value,
-        buttonBgOpacity,
-      ),
-      highlightColor: accent.withAlpha(128).value,
-      activeColor: accent.value,
-      // TODO-708 P2: 圆角半径 / 窗宽（dp，0=平台原生默认观感）。
-      cornerRadius: floatingLyricCornerRadius,
-      windowWidth: floatingLyricWidth,
-    );
+    return buildFloatingLyricStyle(
+        theme: themeMode == ThemeMode.dark ? darkTheme : theme,
+        settings: floatingLyricStyleSettings());
+  }
+
+  /// 悬浮字幕设置快照（两个样式构造点共用；[fontSize] 供快捷设置即时预览覆盖）。
+  FloatingLyricStyleSettings floatingLyricStyleSettings({double? fontSize}) =>
+      FloatingLyricStyleSettings.fromPreferences(prefsRepo,
+          fontSize: fontSize, font: _floatingLyricNativeFont());
+
+  /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
+  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  ({String family, String? path})? _floatingLyricNativeFont() {
+    if (!Platform.isWindows) return null;
+    final ReaderSettings? settings = ReaderFushiSource.readerSettings;
+    if (settings == null) return null;
+    return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,
+        allowedDirectories: <String>[
+          path.join(appDirectory.path, 'custom_fonts')
+        ]);
+  }
+
+  FloatingLyricWindowRect? _floatingLyricWindowRect() {
+    final String raw = prefsRepo.floatingLyricWindowRect;
+    if (raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<Object?, Object?>) return null;
+      return FloatingLyricWindowRect.fromMap(decoded);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 用户拖动 / 拖角缩放后记住矩形。拖出来的宽度就是用户要的宽度，所以「宽度」
+  /// 偏好回到 0（= 不再强制改窗宽），否则下一次样式推送会把窗宽弹回旧值。
+  Future<void> _persistFloatingLyricWindowRect(
+      FloatingLyricWindowRect rect) async {
+    await prefsRepo.setFloatingLyricWindowRect(jsonEncode(rect.toMap()));
+    if (prefsRepo.floatingLyricWidth != 0) {
+      await prefsRepo.setFloatingLyricWidth(0);
+    }
   }
 
   /// 通知栏「悬浮字幕」custom action / 设置开关翻转悬浮窗（含偏好读写）。返回 false
@@ -7860,20 +7899,41 @@ class AppModel with ChangeNotifier {
 
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
-  /// 偏好仓库还没装配好时**一律判开**（fail-open）。模块门控读得比 `initialise()`
+  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]：除复习外都开，
+  /// fail-open；复习默认关，未就绪时同样不该露出）。模块门控读得比 `initialise()`
   /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
   /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
   /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
   /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
   bool moduleEnabled(ModuleId module) =>
-      isPreferencesReady ? prefsRepo.moduleEnabled(module) : true;
+      isPreferencesReady
+      ? prefsRepo.moduleEnabled(module)
+      : module.defaultEnabled;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await prefsRepo.setModuleEnabled(module, value);
+    // SRS 的「今天」与统计页共用日界 stats_day_reset_hour（设计铁律 G）。SRS 默认凌晨 4 点（与 Anki 一致），
+    // 但它是默认关闭的模块：只在用户第一次打开 SRS、且从没自己设过日界时把它设为 4，
+    // 不改动没开 SRS 的用户的统计口径（历史段不重分桶，只影响之后写入）。
+    if (module == ModuleId.srs &&
+        value &&
+        prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
+      await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
+    }
     // 设置 schema 树按 locale 记忆化，两张投影表（阅读器/视频快捷面板）也惰性缓存。
     // 模块可见性会改变这些树的过滤结果，故翻转开关必须丢弃快照，否则快捷面板会
     // 继续发已被关掉模块的设置项（settings_schema.dart 的 `_SettingsSchemaCache`）。
     resetSettingsSchemaCache();
+    notifyListeners();
+  }
+
+  /// 「功能模块」的用户排序（底栏 / 侧栏 tab 顺序，见 [ModuleVisibility.order]）。
+  /// 偏好仓库没装配好时按枚举顺序，理由同 [moduleEnabled]。
+  List<ModuleId> get moduleOrder =>
+      isPreferencesReady ? prefsRepo.moduleOrder : const <ModuleId>[];
+
+  Future<void> setModuleOrder(List<ModuleId> order) async {
+    await prefsRepo.setModuleOrder(order);
     notifyListeners();
   }
 
@@ -7887,6 +7947,7 @@ class AppModel with ChangeNotifier {
   /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
         prefOf: moduleEnabled,
+        order: moduleOrder,
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
         isIOS: platformServices.isIOS,
@@ -8179,6 +8240,13 @@ class AppModel with ChangeNotifier {
   // 又避免早读崩溃。
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
+
+  // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
+  // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
+  SrsMiningTarget get srsMiningTarget =>
+      SrsMiningTarget.fromWire(_prefsRepo?.srsMiningTarget);
+  Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
+      prefsRepo.setSrsMiningTarget(target.wire);
 
   // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
@@ -8680,7 +8748,7 @@ class AppModel with ChangeNotifier {
       ).lookupAudioUrl(expression: expression, reading: reading);
     } on RemoteLookupUnreachableError catch (e, stack) {
       // 全部配对候选传输层不可达：记一次日志后 rethrow，让 WordAudioResolver 把
-      // hibiki-remote 源计入 45s 失败冷却（冷却窗内短路，不再重入、不刷屏）。
+      // fushi-remote 源计入 45s 失败冷却（冷却窗内短路，不再重入、不刷屏）。
       // 「可达但无音频」不走这里，仍正常返回 null。
       ErrorLogService.instance.log('remoteAudioLookup', e, stack);
       rethrow;
@@ -8798,8 +8866,22 @@ class AppModel with ChangeNotifier {
       _browserVideoStudyBridge ??=
           BrowserVideoStudyBridge(database: () => database);
 
+  /// 复习模块（SRS）的 AnkiConnect v6 兼容端点：模块开着时由 `srs_app_runtime.dart`
+  /// 注入，关着时为 null（Fushi API 根路径 404，不暴露）。运行中切换立即作用到在跑的
+  /// server，下次启动也带上。
+  SrsAnkiConnectEndpoint? _srsAnkiConnectEndpoint;
+
+  SrsAnkiConnectEndpoint? get srsAnkiConnectEndpoint => _srsAnkiConnectEndpoint;
+
+  set srsAnkiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _srsAnkiConnectEndpoint = endpoint;
+    _yomitanServerManager?.ankiConnectEndpoint = endpoint;
+  }
+
   FushiApiServerManager _ensureYomitanManager() {
-    return _yomitanServerManager ??= FushiApiServerManager(
+    final FushiApiServerManager? existing = _yomitanServerManager;
+    if (existing != null) return existing;
+    return _yomitanServerManager = FushiApiServerManager(
       lookupService: createRemoteLookupService(),
       // BUG-530：注入挖词/历史，让浏览器扩展在 yomitan-api server 上查词+制卡真正可用
       // （扩展被安装助手自动配置指向本 server 的 port/token）。
@@ -8862,6 +8944,8 @@ class AppModel with ChangeNotifier {
       // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
       // FontDownloadService，扩展装的字体在 app 里立刻可用。
       fontApi: BrowserExtensionFontCatalog(this),
+      // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
+      srsApiProvider: () => SrsAppHost.current,
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';
@@ -8869,7 +8953,7 @@ class AppModel with ChangeNotifier {
             FushiDicts.instance.lookup(w, maxResults: 1);
         return r.isEmpty ? '' : r.first.term.reading;
       },
-    );
+    )..ankiConnectEndpoint = _srsAnkiConnectEndpoint;
   }
 
   /// BUG-3141：浏览器扩展查词弹窗收藏的 app 侧实现（`/api/extension/favorite`）。
@@ -9264,10 +9348,10 @@ class AppModel with ChangeNotifier {
   Future<void> setFloatingLyricWidth(int value) =>
       prefsRepo.setFloatingLyricWidth(value);
 
-  // TODO-708 P4: 悬浮字幕上下文行数（对称单值，0=只当前行=今天）。
-  int get floatingLyricContextLines => prefsRepo.floatingLyricContextLines;
-  Future<void> setFloatingLyricContextLines(int value) =>
-      prefsRepo.setFloatingLyricContextLines(value);
+  // 悬浮字幕同时显示句数（1..15；0 = 按窗口高度自动）。
+  int get floatingLyricVisibleLines => prefsRepo.floatingLyricVisibleLines;
+  Future<void> setFloatingLyricVisibleLines(int value) =>
+      prefsRepo.setFloatingLyricVisibleLines(value);
 
   void _setupFloatingDictHandlers() {
     FloatingDictChannel.setEventHandlers(

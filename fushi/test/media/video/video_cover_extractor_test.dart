@@ -179,7 +179,7 @@ void main() {
       }
 
       final Directory dir =
-          Directory.systemTemp.createTempSync('hibiki_vcover_test');
+          Directory.systemTemp.createTempSync('fushi_vcover_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final String ff = resolveFfmpegExecutable();
       final String coverPng = '${dir.path}/cover.png';

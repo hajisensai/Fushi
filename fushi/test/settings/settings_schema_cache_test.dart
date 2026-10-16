@@ -41,7 +41,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tempDir = Directory.systemTemp.createTempSync(
-      'hibiki_schema_cache_',
+      'fushi_schema_cache_',
     );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);

@@ -95,7 +95,7 @@ void main() {
     expect(await repo.isAutoSyncEnabled(), isFalse);
   });
 
-  group('hibiki client url list', () {
+  group('interconnect client url list', () {
     test('round-trips order and enabled flags', () async {
       final FushiDatabase db = _testDb();
       addTearDown(db.close);
@@ -194,12 +194,12 @@ void main() {
       final List<FushiClientUrl> result = await repo.addFushiClientUrl(
         'https://host:38765',
         fingerprint: 'aa:bb:cc',
-        deviceName: 'Hibiki · mac',
+        deviceName: 'Fushi · mac',
       );
 
       expect(result, hasLength(1));
       expect(result.first.fingerprintSha256, 'aa:bb:cc');
-      expect(result.first.deviceName, 'Hibiki · mac');
+      expect(result.first.deviceName, 'Fushi · mac');
       // 落盘后回读一致。
       final List<FushiClientUrl> reread = await repo.getFushiClientUrls();
       expect(reread.first.fingerprintSha256, 'aa:bb:cc');

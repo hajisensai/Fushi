@@ -123,7 +123,8 @@ void main() {
           reason: 'PROPFIND 类型判定必须用 await FileSystemEntity.type');
       // 正向：确实改成了异步 stat。
       expect(body.contains('await FileSystemEntity.type('), isTrue);
-      expect(body.contains('.stat()).size'), isTrue);
+      // 长度与修改时间（getlastmodified）取自同一次异步 stat。
+      expect(RegExp(r'await \(?[\w ]+\)?\.stat\(\)').hasMatch(body), isTrue);
     });
   });
 

@@ -7,7 +7,7 @@ import eu.kanade.tachiyomi.util.lang.awaitSingle
 import rx.Observable
 
 /**
- * Hibiki host ABI: lib 14 catalogue surface plus the Anikku/KMK related-anime
+ * Fushi host ABI: lib 14 catalogue surface plus the Anikku/KMK related-anime
  * members (all defaulted; the host never calls them, they only have to link).
  */
 interface AnimeCatalogueSource : AnimeSource {

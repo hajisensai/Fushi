@@ -88,6 +88,14 @@ void main() {
       'lib/src/pages/implementations/video_remote/video_remote_transcript_view.dart',
       'lib/src/pages/implementations/video_remote/video_remote_favorites_view.dart',
       'lib/src/pages/implementations/video_remote/video_remote_scaffold.dart',
+      // 2026-10-14 复习模块（Fushi 内置 SRS）：牌组列表 / 浏览 / 编辑 / 牌组设置 /
+      // 同步冲突 / 复习完成页。
+      'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
+      'lib/src/pages/implementations/srs/srs_browse_page.dart',
+      'lib/src/pages/implementations/srs/srs_note_editor_page.dart',
+      'lib/src/pages/implementations/srs/srs_deck_settings_page.dart',
+      'lib/src/pages/implementations/srs/srs_conflicts_page.dart',
+      'lib/src/pages/implementations/srs/srs_review_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

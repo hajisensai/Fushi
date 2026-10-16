@@ -1,4 +1,4 @@
-// Hibiki fork: off-platform-thread execution for ONNX Runtime work.
+// Fushi fork: off-platform-thread execution for ONNX Runtime work.
 //
 // Upstream runs every `runInference` / `createSession` synchronously inside the
 // method-call handler, i.e. on the Flutter platform (UI) thread. A DirectML

@@ -18,7 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - #6 content.fushiMaybeResumeNetflixBatch 外层 finally 兜底发 nfStopCapture（原来只在
 ///   正常路径停录；批量抛错时 tabCapture 流不释放 → M7375 + 流泄漏）。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
+  // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
   final File assetsOffscreen = File('assets/browser_extension/offscreen.js');

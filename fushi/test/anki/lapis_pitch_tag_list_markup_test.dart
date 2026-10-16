@@ -29,7 +29,7 @@ import '../helpers/source_guard.dart';
 /// 之间**一个空白都没有**，行内流因此没有任何换行机会。
 ///
 /// popup.js 三镜像的字节一致由 browser_extension_popup_parity_guard_test 锁定，
-/// 本文件只扫 app 侧真身。flutter test cwd 是 hibiki 包根。
+/// 本文件只扫 app 侧真身。flutter test cwd 是 fushi 包根。
 void main() {
   group('制卡侧 pitch 字段用 <ul>（BUG-2151）', () {
     final String src = File('assets/popup/popup.js').readAsStringSync();
@@ -106,7 +106,7 @@ void main() {
     }
 
     // 断言目标必须是 `template.css`（= vendored `css` + `fushiCssOverride`），
-    // 不是裸的 `css`：Hibiki 的 delta 按 lapis_note_type.dart 文件头的规矩只能写在
+    // 不是裸的 `css`：Fushi 的 delta 按 lapis_note_type.dart 文件头的规矩只能写在
     // override 里（`css` 逐字节 vendored 自 donkuri/lapis 1.7.0，重新 vendor 会
     // 把写进去的补丁静默冲掉，且会让原版 Lapis 用户被 lapis_styling 的 pristine
     // 集合判成「手改过」）。而 `template.css` 才是真正推给 Anki 的那份。

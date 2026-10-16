@@ -170,7 +170,7 @@ void main() {
       // set_osd_msg_va 里直接丢弃 level>osd-level 的消息：不抬到 1，
       // mp.osd_message 永远不可见。
       expect(props['osd-level'], '1');
-      // Hibiki 有自己的进度条；mpv 默认 osd-on-seek=bar 会在每次 seek 叠一条。
+      // Fushi 有自己的进度条；mpv 默认 osd-on-seek=bar 会在每次 seek 叠一条。
       expect(props['osd-on-seek'], 'no');
       expect(props.length, 2);
     });

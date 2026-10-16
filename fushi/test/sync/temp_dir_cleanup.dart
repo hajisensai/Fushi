@@ -6,7 +6,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 /// Windows transient FS-busy race. A `FushiDatabase` opens its sqlite
 /// connection via `NativeDatabase.createInBackground` (a background isolate);
 /// on Windows the OS / Defender / search-indexer can keep a handle on the
-/// just-written `hibiki.db` (or its `-wal`/`-shm` sidecars) open for a brief
+/// just-written `fushi.db` (or its `-wal`/`-shm` sidecars) open for a brief
 /// window after `close()` returns, so a raw `Directory.delete(recursive: true)`
 /// in `addTearDown` intermittently throws `ERROR_DIR_NOT_EMPTY(145)` /
 /// `ERROR_SHARING_VIOLATION(32)` / `ERROR_ACCESS_DENIED(5)` and fails the test

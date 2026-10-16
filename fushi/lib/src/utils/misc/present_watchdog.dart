@@ -67,15 +67,15 @@ class PresentWatchdog {
 }
 
 /// present 楔死取证落盘 + 自动重启 marker（仿 `WgcCaptureLog`，路径固定在
-/// `%LOCALAPPDATA%\Hibiki\`，不依赖 `AppModel.initialise()` —— 楔死可能发生在初始化完成
+/// `%LOCALAPPDATA%\Fushi\`，不依赖 `AppModel.initialise()` —— 楔死可能发生在初始化完成
 /// 之前，此刻数据根尚未解析）。全部纯逻辑（注入 file/now），便于单测。
 class PresentStallLog {
   PresentStallLog._();
 
-  static const String logRelative = r'Hibiki\present_stall.log';
-  static const String markerRelative = r'Hibiki\present_stall.marker';
+  static const String logRelative = r'Fushi\present_stall.log';
+  static const String markerRelative = r'Fushi\present_stall.marker';
 
-  /// 解析 `%LOCALAPPDATA%\Hibiki\<relative>`（仅 Windows；非 Windows / 无 LOCALAPPDATA
+  /// 解析 `%LOCALAPPDATA%\Fushi\<relative>`（仅 Windows；非 Windows / 无 LOCALAPPDATA
   /// 返回 null）。
   @visibleForTesting
   static File? resolveFile(

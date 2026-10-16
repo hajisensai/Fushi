@@ -32,6 +32,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
   HomeTab.video => ModuleId.video,
   HomeTab.browse => ModuleId.browse,
   HomeTab.dictionaries => ModuleId.lookup,
+  HomeTab.srs => ModuleId.srs,
   HomeTab.games => ModuleId.games,
   HomeTab.browserExtension => ModuleId.browserExtension,
 };
@@ -50,6 +51,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.video => HomeTab.video,
   ModuleId.browse => HomeTab.browse,
   ModuleId.lookup => HomeTab.dictionaries,
+  ModuleId.srs => HomeTab.srs,
   ModuleId.games => HomeTab.games,
   ModuleId.browserExtension => HomeTab.browserExtension,
   ModuleId.listening ||

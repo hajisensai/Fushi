@@ -112,7 +112,7 @@ void main() {
 
     Future<void> startServer() async {
       tempDir =
-          Directory.systemTemp.createTempSync('hibiki_peer_name_guard_test');
+          Directory.systemTemp.createTempSync('fushi_peer_name_guard_test');
       registrations = <FushiPairedPeerRegistration>[];
       server = FushiSyncServer(
         syncDataDir: tempDir.path,

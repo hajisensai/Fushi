@@ -1,6 +1,6 @@
 /// 截图合成：把字幕层叠回截下来的那一帧上。
 ///
-/// 为什么需要这一层：Hibiki 的字幕**不在画面里**——libmpv 侧 `sub-visibility=no`
+/// 为什么需要这一层：Fushi 的字幕**不在画面里**——libmpv 侧 `sub-visibility=no`
 /// （`video_mpv_config.dart` 的 `buildSubtitleSuppressionProperties`），字幕全部由
 /// Flutter overlay 画在视频之上。于是 `Player.screenshot()` 拿到的永远是**裸画面**，
 /// 想要「带字幕的截图」就得在 Dart 侧把字幕画回去。

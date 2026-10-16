@@ -370,7 +370,6 @@ class HighlightBridge {
         var groups = _buildGroups(map, hl.offset, hl.length);
         if (groups.length === 0) continue;
         var color = hl.color || 'yellow';
-        var highlightColor = _hlColor(color);
         var markColor = _hlMarkColor(color);
         var rubyElements = [];
         for (var g = groups.length - 1; g >= 0; g--) {
@@ -383,8 +382,8 @@ class HighlightBridge {
             var span = document.createElement('span');
             span.setAttribute('data-highlight-id', hl.id);
             span.className = 'fushi-hl fushi-hl-' + color;
-            span.style.backgroundColor = highlightColor;
-            span.style.borderRadius = '2px';
+            // 底色不写在 span 上：阅读器的窄条层（__fushiLanes）按 .fushi-hl-<色> 画一个字高的
+            // 窄条（用户 2026-10-15）；span 背景会铺满整个文字盒，随字体变粗。
             span.style.textDecorationLine = 'underline';
             span.style.textDecorationColor = markColor;
             span.style.textDecorationThickness = '0.12em';

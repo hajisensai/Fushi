@@ -33,7 +33,7 @@ void main() {
   late Directory pathProviderDir;
   setUpAll(() {
     pathProviderDir = Directory.systemTemp.createTempSync(
-      'hibiki_remote_multiselect_pp',
+      'fushi_remote_multiselect_pp',
     );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -62,7 +62,7 @@ void main() {
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
     final Directory storeDir = Directory.systemTemp.createTempSync(
-      'hibiki_remote_multiselect_store',
+      'fushi_remote_multiselect_store',
     );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)

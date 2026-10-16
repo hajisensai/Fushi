@@ -17,7 +17,7 @@ void main() {
   late FushiDatabase db;
 
   setUp(() async {
-    docsDir = await Directory.systemTemp.createTemp('hibiki_replace_audio_');
+    docsDir = await Directory.systemTemp.createTemp('fushi_replace_audio_');
     // ensurePersistDir/deletePersistDir 经 getApplicationDocumentsDirectory()
     // 解析持久根，测试把它指向临时目录。
     // 持久根直接经 fushi_audio 的装配点指向临时目录（本包纯 Dart，不再经

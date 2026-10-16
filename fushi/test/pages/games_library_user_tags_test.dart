@@ -40,7 +40,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_games_user_tags_');
+        Directory.systemTemp.createTempSync('fushi_games_user_tags_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

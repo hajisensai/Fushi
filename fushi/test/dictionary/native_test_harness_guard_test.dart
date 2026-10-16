@@ -14,8 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///   * the existing macOS ctypes create/destroy dylib smoke is NOT touched
 ///     (so the deep-gate addition is not mistaken for a regression of it).
 void main() {
-  String read(String relativeToHibiki) {
-    final File file = File(relativeToHibiki);
+  String read(String relativeToFushi) {
+    final File file = File(relativeToFushi);
     expect(file.existsSync(), isTrue,
         reason: 'expected file at ${file.absolute.path}');
     return file.readAsStringSync();

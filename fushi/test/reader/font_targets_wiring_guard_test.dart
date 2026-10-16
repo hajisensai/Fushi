@@ -26,24 +26,40 @@ void main() {
     // The appUi target consumes the WHOLE ordered list (fallback chain), so it
     // must go through resolveAndLoadAll — resolveAndLoad drops every entry after
     // the first, which silently kills the user's own fallback order.
-    expect(src.contains('resolveAndLoadAll(settings.appUiFonts)'), isTrue);
+    // 去空白 + 去尾逗号再比：dart format 会把长调用拆成多行带尾逗号。
+    final String flat = src
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(',)', ')');
+    expect(flat.contains('resolveAndLoadAll(settings.appUiFonts)'), isTrue);
     expect(
-        src.contains('resolveAndLoadAll(readerSettings.appUiFonts)'), isTrue);
+      flat.contains('resolveAndLoadAll(readerSettings.appUiFonts)'),
+      isTrue,
+    );
     // It must NOT be fed the body list any more.
     expect(src.contains('resolveAndLoad(settings.customFonts)'), isFalse);
     expect(src.contains('resolveAndLoad(readerSettings.customFonts)'), isFalse);
   });
 
-  test('video subtitle font is resolved from the videoSubtitleFonts target',
-      () {
-    final String src = read('lib/src/models/app_model.dart');
-    // Both the live refresh and the init path must feed videoSubtitleFonts.
-    expect(src.contains('resolveAndLoad(settings.videoSubtitleFonts)'), isTrue);
-    expect(src.contains('resolveAndLoad(readerSettings.videoSubtitleFonts)'),
-        isTrue);
-    // app_model exposes the dedicated family getter.
-    expect(src.contains('String? get subtitleFontFamily'), isTrue);
-  });
+  test(
+    'video subtitle font is resolved from the videoSubtitleFonts target',
+    () {
+      final String src = read('lib/src/models/app_model.dart');
+      // Both the live refresh and the init path must feed videoSubtitleFonts.
+      final String flat = src
+          .replaceAll(RegExp(r'\s+'), '')
+          .replaceAll(',)', ')');
+      expect(
+        flat.contains('resolveAndLoad(settings.videoSubtitleFonts)'),
+        isTrue,
+      );
+      expect(
+        flat.contains('resolveAndLoad(readerSettings.videoSubtitleFonts)'),
+        isTrue,
+      );
+      // app_model exposes the dedicated family getter.
+      expect(src.contains('String? get subtitleFontFamily'), isTrue);
+    },
+  );
 
   test('video subtitle overlay binds to subtitleFontFamily, not appFontFamily',
       () {
@@ -137,6 +153,10 @@ void main() {
     // TODO-864: video subtitle font key is equally ironclad (backward-compat).
     expect(src.contains("fontKeyVideoSubtitle = 'video_sub_fonts'"), isTrue);
     expect(src.contains("fontKeyGameLookup = 'game_lookup_fonts'"), isTrue);
+    expect(
+      src.contains("fontKeyFloatingLyric = 'floating_lyric_fonts'"),
+      isTrue,
+    );
   });
 
   test('native game lookup overlay consumes only the gameLookup font target',

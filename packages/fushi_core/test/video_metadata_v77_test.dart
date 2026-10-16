@@ -444,7 +444,7 @@ void main() {
     expect(recovered.updatedAt, recovered.finishedAt);
   });
 
-  test('v68 -> v77 creates all metadata tables without touching old rows',
+  test('v76 -> v77 creates all metadata tables without touching old rows',
       () async {
     final FushiDatabase db = FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -494,7 +494,7 @@ CREATE TABLE video_books (
             "INSERT INTO media_collections (id, name, created_at) "
             "VALUES (9, 'Existing collection', 1)",
           );
-          raw.execute('PRAGMA user_version = 68');
+          raw.execute('PRAGMA user_version = 76');
           raw.execute('PRAGMA foreign_keys = ON');
         },
       ),
@@ -505,7 +505,7 @@ CREATE TABLE video_books (
         (await db.customSelect('PRAGMA user_version').getSingle())
             .read<int>('user_version');
     expect(version, db.schemaVersion);
-    expect(db.schemaVersion, greaterThanOrEqualTo(69));
+    expect(db.schemaVersion, greaterThanOrEqualTo(77));
 
     final int workId = await db.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(

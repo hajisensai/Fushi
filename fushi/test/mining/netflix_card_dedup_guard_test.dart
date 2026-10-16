@@ -7,12 +7,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// - Bug A：卡里字幕重复两次。根因 = `extractNetflixCueText` 把 Netflix「外层定位 span >
 ///   内层样式 span」嵌套里的**每一层** span 的 textContent 都拼进来，父子重复。修复只取叶子
 ///   span（无后代 span）。
-/// - Bug B：制卡录进的 GIF 混入了 Hibiki 自己的「生成中」浮层(#fushi-toast) + Netflix 顶部
+/// - Bug B：制卡录进的 GIF 混入了 Fushi 自己的「生成中」浮层(#fushi-toast) + Netflix 顶部
 ///   返回按钮/举报旗帜。修复把它们一并加进批量隐藏样式。
 /// - Bug C：GIF/音频少了一点开头。根因 = seek 到 cueStart-200 后用固定 warmup sleep 播掉这段
 ///   头部提前量才 beginClip。修复改成一旦确认在播立刻开录。
 ///
-/// flutter test cwd 是 hibiki 包根目录。
+/// flutter test cwd 是 fushi 包根目录。
 void main() {
   const List<String> roots = <String>[
     'assets/browser_extension',
@@ -35,7 +35,7 @@ void main() {
         final String src = File('$root/content.js').readAsStringSync();
         expect(
             src.contains('#fushi-toast{visibility:hidden!important}'), isTrue,
-            reason: '$root content.js hideStyle 未隐藏 Hibiki 自己的生成中浮层（Bug B）');
+            reason: '$root content.js hideStyle 未隐藏 Fushi 自己的生成中浮层（Bug B）');
         expect(src.contains('.watch-video--back-container'), isTrue,
             reason: '$root content.js hideStyle 未隐藏 Netflix 返回按钮（Bug B）');
         expect(src.contains('.watch-video--flag-container'), isTrue,

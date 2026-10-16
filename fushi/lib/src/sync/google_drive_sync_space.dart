@@ -11,7 +11,7 @@ import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 
 /// Google Drive 同步的「存储空间 + OAuth scope」配置。
 ///
-/// Hibiki 的 Drive 同步有两种物理落点，本类把两者收敛成一个不可变值对象，让
+/// Fushi 的 Drive 同步有两种物理落点，本类把两者收敛成一个不可变值对象，让
 /// [GoogleDriveAuth]（决定 scope）与 [GoogleDriveHandler]（决定 spaces / 根文件夹）
 /// 直接读字段，而不是在每个 `files.list` 调用点散落 `if (hoshiCompat)` 分支——
 /// 消除特例，两条路径共用同一套代码。
@@ -48,7 +48,8 @@ class GoogleDriveSyncSpace {
   /// 同步根文件夹名。
   final String rootFolderName;
 
-  /// 默认：隐藏 appDataFolder / `hibiki-data`。老用户云端数据原地不动。
+  /// 默认：隐藏 appDataFolder / `fushi-data`（[kSyncRootFolderName]；改名前的旧根
+/// `hibiki-data` 由首次连接时的远端改名迁移接走）。老用户云端数据原地不动。
   static const GoogleDriveSyncSpace appData = GoogleDriveSyncSpace(
     id: 'appdata',
     scope: 'https://www.googleapis.com/auth/drive.appdata',

@@ -1,7 +1,7 @@
 /// 本地 sidecar 视频封面维护服务。
 ///
 /// 本服务只识别视频同目录下的 `poster.jpg` / `folder.jpg` / `<name>-poster.*`，
-/// 并把用户提供的图片复制到 Hibiki 封面目录。它没有标题匹配、候选、别名缓存、
+/// 并把用户提供的图片复制到 Fushi 封面目录。它没有标题匹配、候选、别名缓存、
 /// 图片下载或外部元数据源；动画在线元数据统一由 `VideoSourceScrapeCoordinator`
 /// 走 AniDB → TMDB。
 library;

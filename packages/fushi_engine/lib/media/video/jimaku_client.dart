@@ -61,7 +61,7 @@ JimakuEntryFlags parseJimakuEntryFlags(Object? raw) {
 
 /// 按 Jimaku 的 TMDB ID 编码拼串：`tv:<id>` / `movie:<id>`。
 ///
-/// 编码来自服务端 schema 的 `pattern = (tv|movie):(\d+)`；Hibiki 侧的 TMDB 元数据
+/// 编码来自服务端 schema 的 `pattern = (tv|movie):(\d+)`；Fushi 侧的 TMDB 元数据
 /// （`TmdbVideoMetadataProvider`）只给出裸数字 id + 媒体种类，需经此函数转换。
 /// TMDB 的电影与剧集是两个独立号段，种类必须一起编码，否则会张冠李戴。
 String jimakuTmdbId({required bool movie, required int tmdbId}) =>
@@ -131,7 +131,7 @@ class JimakuFile {
 /// 一个 Jimaku 条目下可供 UI 预览的文本字幕清单。
 ///
 /// 合集批量下载弹窗在用户真正点「下载全部」前先列一次条目文件，用这份清单回答两个
-/// 关键问题：这个来源到底有什么字幕、合集里的哪几集能精确匹配。只统计 Hibiki 能解析
+/// 关键问题：这个来源到底有什么字幕、合集里的哪几集能精确匹配。只统计 Fushi 能解析
 /// 的文本字幕；压缩包/图片字幕不会被误报成「可用」。
 class JimakuFileInventory {
   JimakuFileInventory._(this.files)

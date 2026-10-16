@@ -219,14 +219,24 @@ String? _extractVideoId(String reqPath, String suffix) {
 
 /// 从请求 header 读一个 URL-encoded 值并解码（HTTP header 只收 ASCII，非 ASCII 值
 /// 由 client 端 [Uri.encodeComponent] 编码）。缺失/空返回 null；解码失败退回原文。
+/// 先读新名，读不到再读改名前的旧名（[interconnectHeaderNameCandidates]）。
 String? _decodeHeaderValue(shelf.Request request, String name) {
-  final String? raw = request.headers[name];
-  if (raw == null || raw.isEmpty) return null;
+  final String? raw = _interconnectHeaderValue(request, name);
+  if (raw == null) return null;
   try {
     return Uri.decodeComponent(raw);
   } catch (_) {
     return raw;
   }
+}
+
+/// 读互联自定义 header 的原文：新名优先，缺失/空时回退改名前的旧名。
+String? _interconnectHeaderValue(shelf.Request request, String name) {
+  for (final String candidate in interconnectHeaderNameCandidates(name)) {
+    final String? raw = request.headers[candidate];
+    if (raw != null && raw.isNotEmpty) return raw;
+  }
+  return null;
 }
 
 File? _coverFile(String? path) {
@@ -235,7 +245,7 @@ File? _coverFile(String? path) {
   return file.existsSync() ? file : null;
 }
 
-/// MIME 推断收敛到 hibiki_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
+/// MIME 推断收敛到 fushi_core 单一映射表 [mimeTypeForFilePath]（命名统一轮 G8）。
 /// 旧本地 switch 副本缺 `.webp` → webp 封面按 application/octet-stream 下发，
 /// 对端 WebView 拒绝内联渲染（BUG-1122）；查共享表后随表修复。保留薄 shim 供
 /// 本文件既有调用方。
@@ -342,6 +352,10 @@ class FushiSyncServer {
   /// 结果来自本机时，对端弹窗也必须用本机的词典样式渲染——对端未必装了同名词典，
   /// 装了也可能是另一个版本。null = 端点 404（老调用方 / 单测不接线）。
   final Map<String, String> Function()? _dictionaryStylesProvider;
+
+  /// `/api/lookup/dictionary` 的 `stylesRevision` 门控用的样式快照（BUG-3425），按
+  /// [_dictionaryStylesProvider] 返回的 map **身份**复用：词典集合不变就不重算指纹。
+  RemotePopupDictionaryCss? _peerPopupDictionaryCss;
   final FushiRemoteGameStreamService? _gameStreamService;
   final VideoRemoteService? _videoRemoteService;
 
@@ -535,7 +549,7 @@ class FushiSyncServer {
     // collection) instead of a 404. The client's reachability probe PROPFINDs
     // the root and gates every other op — including the MKCOL that would
     // otherwise lazily create this dir — so without this a reachable,
-    // correctly-authenticating host is reported as "No reachable Hibiki server
+    // correctly-authenticating host is reported as "No reachable Fushi server
     // address", a chicken-and-egg deadlock that never bootstraps (BUG-035).
     // Deliberately outside the bind try/catch below: a read-only/permission
     // failure here should fail-fast and bubble to the caller's error handling
@@ -1257,7 +1271,7 @@ class ExportPackageCache {
   int _seq = 0;
 
   Directory get _dir =>
-      _root ??= Directory.systemTemp.createTempSync('hibiki_export_cache');
+      _root ??= Directory.systemTemp.createTempSync('fushi_export_cache');
 
   /// 取 (kind,id) 的缓存导出文件；TTL 内直接命中，否则经 [export] 重新打包。
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
@@ -1358,12 +1372,16 @@ class _DavEntry {
     required this.isCollection,
     required this.displayName,
     required this.contentLength,
+    this.modified,
   });
 
   final String href;
   final bool isCollection;
   final String displayName;
   final int contentLength;
+
+  /// 文件在 host 上的修改时间（host 的时钟 = 互联的服务器时间）；目录不填。
+  final DateTime? modified;
 }
 
 /// 视频流短时 token（P4-2）。

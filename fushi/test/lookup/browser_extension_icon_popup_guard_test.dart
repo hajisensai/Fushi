@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 不被回退。两份镜像（随 app 打包的 assets/ 与真源 tools/）都守。byte-identical 由
 /// browser_extension_installer_test 的漂移守卫另行保证。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。
+  // flutter test 的 cwd 是 fushi 包根。
   final Map<String, String> mirrors = <String, String>{
     'assets': 'assets/browser_extension',
     'tools': '../tools/browser-extension',

@@ -512,7 +512,7 @@ void main() {
     late Directory root;
 
     setUp(() {
-      root = Directory.systemTemp.createTempSync('hibiki_video_scan_');
+      root = Directory.systemTemp.createTempSync('fushi_video_scan_');
     });
 
     tearDown(() {

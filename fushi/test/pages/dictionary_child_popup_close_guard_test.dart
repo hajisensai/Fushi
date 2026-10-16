@@ -14,11 +14,12 @@ void main() {
 
     expect(layer, contains('final VoidCallback? onBack;'));
     expect(layer, contains('Icons.close'));
-    // 2026-10 体验优化：命中区按平台取值（桌面 36、移动端 44 触控下限），
-    // 仍由唯一的 dictionaryPopupTopActionExtent 统一给所有顶栏按钮。
+    // BUG-3412：边长按平台取值（桌面 36、移动端 44 触控下限），仍由唯一的
+    // dictionaryPopupTopActionExtent 统一给所有顶栏按钮；图标尺寸同样只有
+    // kDictionaryPopupTopActionIconSize 一个来源。
     expect(layer, contains('mobile ? 44 : 36'));
     expect(layer, contains('BoxConstraints.tightFor('));
-    expect(layer, contains('size: 20'));
+    expect(layer, contains('size: kDictionaryPopupTopActionIconSize'));
     expect(layer, contains('onTap: onBack'));
     expect(layer, contains('onTap: onClose'));
   });

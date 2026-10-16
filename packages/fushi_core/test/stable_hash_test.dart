@@ -8,7 +8,7 @@ import 'package:fushi_core/src/utils/stable_hash.dart';
 ///
 /// 全部向量在收敛**之前**用当时散落各处的手写实现现算固化——这些哈希值已持久化
 /// 在云端备份资产名（video_manifest / deletion_propagation）、漫画 OCR 断点缓存
-/// 目录名（hibiki_manga_ocr_host）、有声书持久目录名（audiobook_storage）与本地
+/// 目录名（fushi_manga_ocr_host）、有声书持久目录名（audiobook_storage）与本地
 /// 音频缓存文件名（local_audio_db）里，任何输出漂移都等于孤儿化用户已有数据。
 /// 三种输入（ASCII / CJK / 含代理对 emoji）足以区分「UTF-16 码元」「UTF-8 字节」
 /// 「码元拆高低字节」三种口径：ASCII 下三者同值，CJK / emoji 下全部分岔。
@@ -62,7 +62,7 @@ void main() {
     });
   });
 
-  group('fnv1a64Hex(utf8) — hibiki_manga_ocr_host 口径', () {
+  group('fnv1a64Hex(utf8) — fushi_manga_ocr_host 口径', () {
     test('golden vectors（含历史负号形态，勿「修正」）', () {
       // Dart VM 有符号 64 位：哈希为负时 toRadixString(16) 带 '-'（17 字符），
       // 该形态已固化进 vol_<slug> 断点缓存目录名。

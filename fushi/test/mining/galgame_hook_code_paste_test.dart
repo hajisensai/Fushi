@@ -11,7 +11,7 @@ import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 /// 中间那层转换分两半：洗噪声（[normalizeGalHookCode]）+ 补身份列拼成 profile 行
 /// （由 texthooker 页的「粘贴特殊码」入口完成，那里能拿到当前运行游戏的 exe）。
 ///
-/// 归一化的红线是**不碰码本身的结构**：Hibiki 从头到尾把 hook code 当不透明字符串
+/// 归一化的红线是**不碰码本身的结构**：Fushi 从头到尾把 hook code 当不透明字符串
 /// 搬运，真正的词法解析在 LunaHost DLL 里（本仓 third_party 只有二进制，没有源码
 /// 可复用）。在 Dart 侧替 native 猜格式 = 开第二个真相源。
 void main() {

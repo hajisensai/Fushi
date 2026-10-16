@@ -187,6 +187,8 @@
   // 超时竞速保证 Promise 一定 settle（值取 > app 冷查询 P99；超时按失败处理，UI 显示可重试的
   // 失败文案而不是无限转圈）。
   var RUNTIME_MESSAGE_TIMEOUT_MS = 8000;
+  // 复习模块关着（/api/srs/term-status 404）后的退避截止时刻。
+  var srsDisabledUntil = 0;
   function sendRuntime(message) {
     return new Promise(function (resolve) {
       var settled = false;
@@ -736,6 +738,30 @@
           type: 'duplicate', expression: duplicate.expression || '', reading: duplicate.reading || '',
         }).then(function (response) {
           return !!(response && response.ok && response.data && response.data.duplicate === true);
+        });
+      }
+      if (name === 'srsTermStatus') {
+        // Fushi 复习词状态（与 bridge-shim 同契约）：回 null 或状态对象；app 的复习模块关着
+        // 时服务端 404 → 记住一段时间不再问。
+        if (Date.now() < srsDisabledUntil) return Promise.resolve(null);
+        var srsReq = args[0] || {};
+        return sendRuntime({
+          type: 'srsTermStatus', expression: srsReq.expression || '', reading: srsReq.reading || '',
+        }).then(function (response) {
+          if (response && response.status === 404) {
+            srsDisabledUntil = Date.now() + 60000;
+            return null;
+          }
+          var status = response && response.ok && response.data ? response.data.status : null;
+          return status && typeof status === 'object' ? status : null;
+        });
+      }
+      if (name === 'srsOpenCard') {
+        var srsOpen = args[0] || {};
+        return sendRuntime({
+          type: 'srsOpenCard', cardId: srsOpen.cardId || '', noteId: srsOpen.noteId || '',
+        }).then(function (response) {
+          return !!(response && response.ok && response.data && response.data.opened === true);
         });
       }
       if (name === 'openInAnki') {

@@ -29,6 +29,7 @@ String fontTargetLabel(FontTarget target) => switch (target) {
   FontTarget.dictionary => t.font_target_dictionary,
   FontTarget.videoSubtitle => t.font_target_video_subtitle,
   FontTarget.gameLookup => t.font_target_game_lookup,
+  FontTarget.floatingLyric => t.font_target_floating_lyric,
 };
 
 /// 样张卡上用途徽标的短名。
@@ -38,6 +39,7 @@ String fontTargetShortLabel(FontTarget target) => switch (target) {
   FontTarget.dictionary => t.font_target_dictionary_short,
   FontTarget.videoSubtitle => t.font_target_video_subtitle_short,
   FontTarget.gameLookup => t.font_target_game_lookup_short,
+  FontTarget.floatingLyric => t.font_target_floating_lyric_short,
 };
 
 /// 用途图标（徽标与详情页按钮共用）。
@@ -47,9 +49,11 @@ IconData fontTargetIcon(FontTarget target) => switch (target) {
   FontTarget.dictionary => FushiIcons.dictionary,
   FontTarget.videoSubtitle => FushiIcons.subtitles,
   FontTarget.gameLookup => FushiIcons.games,
+  FontTarget.floatingLyric => FushiIcons.subtitles,
 };
 
-/// 本平台真有消费端的用途（gameLookup 只有 Windows 的 native 分层窗消费）。
+/// 本平台真有消费端的用途（gameLookup / floatingLyric 只有 Windows 的 native
+/// 分层窗消费）。
 /// 只影响**显示**：回写仍按 `FontTarget.values` 全量，跨平台同步来的勾选不丢。
 List<FontTarget> get visibleFontTargets => <FontTarget>[
   for (final FontTarget target in FontTarget.values)

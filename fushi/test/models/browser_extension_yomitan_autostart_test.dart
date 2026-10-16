@@ -1,6 +1,6 @@
 // TODO-1266：浏览器扩展「装完即用」守卫。
 //
-// 用户诉求：安装 Hibiki 浏览器扩展时，app 侧的 yomitan-api server 应默认开启，省得装完
+// 用户诉求：安装 Fushi 浏览器扩展时，app 侧的 yomitan-api server 应默认开启，省得装完
 // 连不上 401。实现落在 `AppModel.ensureFushiApiServerForBrowserExtension()`，由设置页
 // 「安装浏览器扩展」动作在解压/注入扩展前调用。本测试锁死其安全 + 幂等契约：
 //  1. server 之前关闭 → 置位 enabled 并真启动 server（返回 true）。
@@ -8,7 +8,7 @@
 //  3. **绝不覆盖**已有非空 token（覆盖会踢掉扩展已保存的 token → 401）。
 //  4. server 已启用 → 跳过不重启（不打断在跑的连接）。
 //  5. 生产接线守卫：设置页安装入口必须在注入扩展前调用该方法，且方法只在 token 为空时播种。
-//  6. 子系统隔离：装扩展只开 yomitan-api（查词 API），绝不启动 Hibiki 互联/同步 server。
+//  6. 子系统隔离：装扩展只开 yomitan-api（查词 API），绝不启动 Fushi 互联/同步 server。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -31,7 +31,7 @@ Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
-      Directory.systemTemp.createTempSync('hibiki_ext_yomitan_');
+      Directory.systemTemp.createTempSync('fushi_ext_yomitan_');
   addTearDown(() {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
@@ -102,11 +102,11 @@ void main() {
     expect(appModel.fushiApiServerEnabled, isTrue);
   });
 
-  // 用户诉求核心（TODO-1266 复核）：装扩展走 yomitan-api（查词 API），与「Hibiki 互联/
+  // 用户诉求核心（TODO-1266 复核）：装扩展走 yomitan-api（查词 API），与「Fushi 互联/
   // 同步」是两个独立子系统。装扩展只能开 yomitan-api server，绝不能连带启动互联/同步
   // server（FushiSyncServerController）。本测试锁死子系统隔离，防止把「装扩展默认开」
   // 误绑到互联子系统。
-  test('装扩展只开 yomitan-api server，绝不启动 Hibiki 互联/同步 server', () async {
+  test('装扩展只开 yomitan-api server，绝不启动 Fushi 互联/同步 server', () async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
     final AppModel appModel = await _prefsBackedAppModel(db);
@@ -116,7 +116,7 @@ void main() {
 
     // 前置：互联/同步 server（FushiSyncServerController）未启动。
     expect(appModel.syncServerController.isRunning, isFalse,
-        reason: '前置：Hibiki 互联/同步 server 应处于未启动');
+        reason: '前置：Fushi 互联/同步 server 应处于未启动');
 
     final bool ready =
         await appModel.ensureFushiApiServerForBrowserExtension();
@@ -127,7 +127,7 @@ void main() {
         reason: '装扩展应开启 yomitan-api server（扩展查词走此 API）');
     // 互联/同步 server 全程未被触碰——装扩展与设备互联无关。
     expect(appModel.syncServerController.isRunning, isFalse,
-        reason: '装扩展绝不能连带启动 Hibiki 互联/同步 server（两者是独立子系统）');
+        reason: '装扩展绝不能连带启动 Fushi 互联/同步 server（两者是独立子系统）');
   });
 
   test('生产接线守卫：安装入口在注入扩展前自动开启 server，且只在 token 为空时播种', () async {

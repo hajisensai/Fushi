@@ -3352,7 +3352,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 安全区交给面板只给内容让位（[VideoSubtitleJumpPanel.safeAreaInsets]）。以前整列
     // 套 `SafeArea`，刘海在右时面板右边空出一大条黑（2026-10-14 用户反馈）。列宽
     // 因此 = 内容宽 + 右侧安全区；拖拽改的仍是内容宽。
-    final EdgeInsets systemPadding = MediaQuery.paddingOf(context);
+    // iOS 横屏左右对称上报灵动岛深度：只有灵动岛真在右侧时内容才给右边让位，
+    // 在左侧（被画面那边吃掉）时右侧不再空出一条（2026-10-14 用户反馈）。
+    final EdgeInsets systemPadding = obstructedSafeInsets(
+      MediaQuery.paddingOf(context),
+      // 页面 State 监听它、变了就重建（横屏左 ↔ 右翻转 180° 时窗口尺寸与对称
+      // 的安全区都不变，只有外壳边变了），见 _onSensorHousingEdgeChanged。
+      sensorHousingEdge.value,
+    );
     final EdgeInsets panelSafeInsets = EdgeInsets.only(
       top: systemPadding.top,
       right: systemPadding.right,
@@ -3641,9 +3648,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
   bool get _canResolveSubtitleAlignAudio =>
       _canResolveSubtitleTimingAudio || _streamAlignAudioSource != null;
 
+  /// 本次波形 / 自动对轴的探测上界：整集音源（本地文件 / 互联 host）读
+  /// [kSubtitleAutoAlignProbeLimitMs]；只能读流时只拉前 [kStreamSubtitleAlignProbeLimitMs]，
+  /// 抽音、`-t`、cue 栅格化上界与波形时间窗都取它（见 [subtitleAlignProbeLimitMs]）。
+  int get _subtitleAlignProbeLimitMs => subtitleAlignProbeLimitMs(
+    fromStream: !_canResolveSubtitleTimingAudio,
+  );
+
   /// 波形 / 自动对轴的音频输入。整集音源优先；否则从流里只裁出这两者实际会看的
-  /// 前 [kSubtitleAutoAlignProbeLimitMs]（时间轴与本地视频完全同源，波形窗口不变），
-  /// 不必拉整集。按「流 + 音轨」缓存，失败不缓存。
+  /// 前 [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。
   Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio() async {
     if (_canResolveSubtitleTimingAudio) return _resolveSubtitleTimingAudio();
     final VideoPlayerController? controller = _controller;
@@ -3657,7 +3670,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       () => _fetchStreamAlignAudio(
         controller,
         source,
-        endMs: math.min(durationMs, kSubtitleAutoAlignProbeLimitMs),
+        endMs: math.min(durationMs, _subtitleAlignProbeLimitMs),
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: controller.realAudioStreamCount,
       ),
@@ -3804,10 +3817,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 性能截断（TODO-413）：cue 栅格化上界与 [extractAudioEnergyEnvelope] 的 ffmpeg `-t`
     // 取同一上界（前 N 分钟），两侧栅格都从 t=0 同 binMs 起、截到同一上界，相位一致不偏；
     // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
-    final int effectiveDurationMs = math.min(
-      rawDurationMs,
-      kSubtitleAutoAlignProbeLimitMs,
-    );
+    final int probeLimitMs = _subtitleAlignProbeLimitMs;
+    final int effectiveDurationMs = math.min(rawDurationMs, probeLimitMs);
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -3824,7 +3835,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             windowMs: kSubtitleAutoAlignBinMs,
             audioStreamIndex: audio.audioStreamIndex,
             audioStreamCount: audio.audioStreamCount,
-            limitMs: kSubtitleAutoAlignProbeLimitMs,
+            limitMs: probeLimitMs,
           );
     if (!mounted) return null;
 
@@ -3887,7 +3898,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         windowMs: kSubtitleWaveformWindowMs,
         audioStreamIndex: audio.audioStreamIndex,
         audioStreamCount: audio.audioStreamCount,
-        limitMs: kSubtitleAutoAlignProbeLimitMs,
+        limitMs: _subtitleAlignProbeLimitMs,
       ),
     );
   }
@@ -3924,10 +3935,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 与 _SubtitleWaveformAlignPanelState._windowEndMs 同一算式，保证键盘直达路径与
     // 面板入口路径画出的时间轴一致。
     final int durationMs = controller.durationMs ?? 0;
-    final int windowEndMs =
-        (durationMs > 0 && durationMs < kSubtitleAutoAlignProbeLimitMs)
+    final int probeLimitMs = _subtitleAlignProbeLimitMs;
+    final int windowEndMs = (durationMs > 0 && durationMs < probeLimitMs)
         ? durationMs
-        : kSubtitleAutoAlignProbeLimitMs;
+        : probeLimitMs;
     final bool canAutoAlign = cues.isNotEmpty;
     if (!context.mounted) return;
     // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径

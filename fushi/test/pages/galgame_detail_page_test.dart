@@ -36,7 +36,7 @@ void main() {
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_game_detail_');
+        Directory.systemTemp.createTempSync('fushi_game_detail_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -175,6 +175,25 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (Widget w) => w is SelectableText && w.data == 'アルファ',
+      ),
+      findsOneWidget,
+    );
+    // Hero 标题 / 开发商与资料网格文本值同样可选择复制（反馈 2DmrXg-wtD 补漏）。
+    final SelectableText heroTitle = tester.widget<SelectableText>(
+      find.byKey(const ValueKey<String>('galgame-hero-title')),
+    );
+    expect(heroTitle.data, isNotEmpty);
+    expect(
+      tester
+          .widget<SelectableText>(
+            find.byKey(const ValueKey<String>('galgame-hero-developer')),
+          )
+          .data,
+      'Studio A',
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is SelectableText && w.data == '2026-01-01',
       ),
       findsOneWidget,
     );

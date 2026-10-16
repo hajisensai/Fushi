@@ -2699,7 +2699,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         if (widget.onToggleLyricsMode != null)
           Expanded(
             child: Semantics(
-              identifier: 'hibiki.reader.quick_settings.lyrics_toggle',
+              identifier: 'fushi.reader.quick_settings.lyrics_toggle',
               child: _actionBtn(
                 context,
                 key: const ValueKey<String>('fushi_lyrics_mode_toggle'),

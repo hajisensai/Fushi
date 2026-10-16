@@ -11,7 +11,7 @@ void main() {
   late String dbPath;
 
   setUp(() {
-    dir = Directory.systemTemp.createTempSync('hibiki_local_audio');
+    dir = Directory.systemTemp.createTempSync('fushi_local_audio');
     dbPath = '${dir.path}/audio.db';
     final Database db = sqlite3.open(dbPath);
     db.execute(

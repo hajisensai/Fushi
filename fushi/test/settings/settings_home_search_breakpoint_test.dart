@@ -28,8 +28,8 @@ class _SearchTestAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-    appName: 'Hibiki',
-    packageName: 'jp.hibiki.test',
+    appName: 'Fushi',
+    packageName: 'jp.fushi.test',
     version: '1.0.0',
     buildNumber: '1',
   );
@@ -46,7 +46,7 @@ Future<AppModel> _buildAppModel(String designSystem) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir = Directory.systemTemp.createTempSync(
-    'hibiki_settings_search_',
+    'fushi_settings_search_',
   );
   addTearDown(() => tempDir.deleteSync(recursive: true));
   final ThemeNotifier notifier = ThemeNotifier(db, () => const TextTheme())

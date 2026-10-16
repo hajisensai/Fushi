@@ -1,4 +1,4 @@
-library hibiki_audio;
+library fushi_audio;
 
 // 本包已不依赖 Flutter SDK（2026-09-30）：全 barrel 与 `fushi_audio_core.dart`
 // 导出同一份纯 Dart 面。原先只由这里导出的三个重文件（just_audio 播放控制器、

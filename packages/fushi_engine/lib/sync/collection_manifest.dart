@@ -264,7 +264,7 @@ class CollectionManifestEntry {
 
 /// 清单里的一个合集成员。
 ///
-/// 命名统一 Phase 3.3：[mediaType] / [entryKey] 与 hibiki_core 的 [MediaRef]
+/// 命名统一 Phase 3.3：[mediaType] / [entryKey] 与 fushi_core 的 [MediaRef]
 /// 同构，但**存储保持裸字符串**——wire 契约要求原样透传对端未来新增的未知
 /// 种类（强类型化会在 [fromJson] 丢值）；需要类型化身份时走 [mediaRef] 委托。
 class CollectionManifestMember {

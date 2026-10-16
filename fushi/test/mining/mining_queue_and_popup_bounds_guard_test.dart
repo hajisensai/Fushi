@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// TODO-1185：查词弹窗撑满全屏 —— 根因是 `#entries-container` 只有 position/z-index 无宽高
 ///   约束。修复：content.css 给 `#entries-container` 补 width/max-height/overflow-y 有界约束。
 void main() {
-  // flutter test 的 cwd 是 hibiki 包根。两份镜像分别在 assets/ 与 ../tools/。
+  // flutter test 的 cwd 是 fushi 包根。两份镜像分别在 assets/ 与 ../tools/。
   final File assetsContent = File('assets/browser_extension/content.js');
   final File toolsContent = File('../tools/browser-extension/content.js');
   final File assetsActionPopup =

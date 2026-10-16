@@ -9,7 +9,7 @@ import 'package:http/testing.dart';
 ///
 /// 现象分两半（用户实测）：Anki 的「浏览」窗口没开时能跳出来；已在后台开着时只闪。
 /// 原因是后者走 Anki 内部「raise 一个已存在窗口」的路径，被 Windows 前台锁定降级
-/// 成闪任务栏。解锁权只属于当时的前台进程（Hibiki），所以 [AnkiConnectRepository]
+/// 成闪任务栏。解锁权只属于当时的前台进程（Fushi），所以 [AnkiConnectRepository]
 /// 必须在 guiBrowse **前**把前台权限让渡给 Anki 进程、**后**再兜底强拉一次。
 ///
 /// 这里钉的是编排（顺序 / loopback 门 / fail-soft），真实 Win32 调用由

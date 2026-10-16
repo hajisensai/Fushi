@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -20,6 +21,7 @@ import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
+import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -46,7 +48,7 @@ const List<String> _apiKeyParameterNames = <String>[
   'yomitan_api_key',
 ];
 
-/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Hibiki 浏览器扩展
+/// 兼容 `Kuuuube/yomitan-api` 的独立 HTTP server（宽松兼容），同时是 Fushi 浏览器扩展
 /// （Netflix 等流媒体查词/制卡）的 API surface。只接受 POST；可选 API key 鉴权（支持
 /// x-api-key / Bearer / 裸 Authorization / query / body，也支持扩展用的
 /// `Basic base64('fushi:'+key)`）。端点：serverVersion/yomitanVersion/termEntries/tokenize
@@ -63,6 +65,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/duplicate',
   '/api/anki/open',
   '/api/extension/favorite',
+  '/api/srs/term-status',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -117,6 +120,16 @@ class ExtensionFavoriteRequest {
 typedef ExtensionFavoriteHandler =
     Future<bool> Function(ExtensionFavoriteRequest request);
 
+/// 复习（Fushi SRS）给浏览器扩展弹窗的两个端点（`/api/srs/term-status`、
+/// `/api/srs/open`）。复习模块关着时供给器回 null → 两个端点 404。
+abstract interface class SrsExtensionApi {
+  /// 词状态回包（null = 复习库里没有这个词）。形状见 srs_term_status_bridge.dart。
+  Future<Map<String, Object?>?> termStatus(String expression, String reading);
+
+  /// 在 app 里打开这张卡。
+  Future<bool> openCard({required String cardId, String? noteId});
+}
+
 class FushiApiServer {
   static final RegExp _lookupTraceIdPattern = RegExp(
     r'^[A-Za-z0-9._:-]{1,64}$',
@@ -145,9 +158,14 @@ class FushiApiServer {
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
+    SrsExtensionApi? Function()? srsApiProvider,
     String? apiKey,
     bool allowLan = false,
+    SrsAnkiConnectEndpoint? ankiConnectEndpoint,
+    int? ankiConnectCompatPort,
   }) : _requestedPort = port,
+       _ankiConnect = ankiConnectEndpoint,
+       _ankiConnectCompatPort = ankiConnectCompatPort,
        _lookup = lookupService,
        _mining = miningService,
        _history = historyService,
@@ -169,6 +187,7 @@ class FushiApiServer {
        _subtitleRegistryProvider = subtitleRegistryProvider,
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
+       _srsApiProvider = srsApiProvider,
        _apiKey = apiKey,
        _allowLan = allowLan;
 
@@ -235,10 +254,69 @@ class FushiApiServer {
   /// 扩展字幕外观「字体」下拉框的真源：app 字体目录 + 推荐字体下载
   /// （`/api/extension/fonts` / `fonts/file` / `fonts/download`）。未注入时三路 404。
   final ExtensionFontApi? _fontApi;
+
+  /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
+  final SrsExtensionApi? Function()? _srsApiProvider;
   final String? _apiKey;
   final bool _allowLan;
 
   HttpServer? _server;
+
+  /// AnkiConnect v6 兼容端点（Fushi SRS）：挂在根路径 `/`。null（SRS 模块关闭）时根路径照旧 404、
+  /// 不暴露。端点自己做 Origin 白名单 / 回环限制 / key 校验，所以根路径**不经** [_authMiddleware]
+  /// （中间件的 401 纯文本会挡掉 CORS 预检，也不是 AnkiConnect 客户端认得的错误形状）。
+  SrsAnkiConnectEndpoint? _ankiConnect;
+
+  /// 「同时监听 AnkiConnect 默认端口（8765）」的预留参数：非 null 且端点已注入时，在回环地址
+  /// 上另起一个只服务兼容端点的监听；端口被占（真 Anki 开着）就不监听、只记日志。
+  final int? _ankiConnectCompatPort;
+  HttpServer? _ankiConnectCompatServer;
+
+  SrsAnkiConnectEndpoint? get ankiConnectEndpoint => _ankiConnect;
+
+  /// 注入 / 卸下兼容端点（SRS 模块开关由 app 侧 provider 驱动）。运行中切换立即生效。
+  set ankiConnectEndpoint(SrsAnkiConnectEndpoint? endpoint) {
+    _ankiConnect = endpoint;
+    if (endpoint == null) {
+      unawaited(_stopAnkiConnectCompatListener());
+    } else if (_server != null) {
+      unawaited(_startAnkiConnectCompatListener());
+    }
+  }
+
+  /// 兼容端口上实际在监听的端口（没监听为 null）。
+  int? get ankiConnectCompatListenPort => _ankiConnectCompatServer?.port;
+
+  Future<void> _startAnkiConnectCompatListener() async {
+    final int? port = _ankiConnectCompatPort;
+    if (port == null || _ankiConnect == null) return;
+    if (_ankiConnectCompatServer != null) return;
+    try {
+      _ankiConnectCompatServer = await shelf_io.serve(
+        (shelf.Request request) async {
+          final SrsAnkiConnectEndpoint? endpoint = _ankiConnect;
+          if (endpoint == null || request.url.path.isNotEmpty) {
+            return shelf.Response.notFound('Not Found');
+          }
+          return endpoint.handle(request);
+        },
+        InternetAddress.loopbackIPv4,
+        port,
+      );
+    } on SocketException catch (e) {
+      debugPrint(
+        'FushiApiServer: AnkiConnect compat port $port unavailable '
+        '(${isAddressInUseError(e) ? 'in use — is Anki running?' : e.message}); '
+        'not listening',
+      );
+    }
+  }
+
+  Future<void> _stopAnkiConnectCompatListener() async {
+    final HttpServer? s = _ankiConnectCompatServer;
+    _ankiConnectCompatServer = null;
+    await s?.close(force: true);
+  }
 
   // 搜索候选按 handle 暂存（download 要交回候选对象本身：OpenSubtitles 的 fileId、
   // Jimaku/AJATT 的下载 URL 都只活在候选里，裸 handle 串重建不出来）；插入序 LRU。
@@ -286,9 +364,11 @@ class FushiApiServer {
       }
       rethrow;
     }
+    await _startAnkiConnectCompatListener();
   }
 
   Future<void> stop() async {
+    await _stopAnkiConnectCompatListener();
     await _server?.close(force: true);
     _server = null;
     _subtitleCandidates.clear();
@@ -303,6 +383,10 @@ class FushiApiServer {
         // 「试一试」页是浏览器地址栏直接打开的裸 GET（无 Authorization），且只吐一张
         // 静态说明页（例句 + 操作步骤，无任何用户数据）→ 与音频文件端点同策略放行。
         if ('/${request.url.path}' == kBrowserExtensionTestPagePath) {
+          return inner(request);
+        }
+        // AnkiConnect 兼容端点自带鉴权（见 [_ankiConnect]）；未注入时照常走鉴权后 404。
+        if (request.url.path.isEmpty && _ankiConnect != null) {
           return inner(request);
         }
         final String? key = _apiKey;
@@ -417,6 +501,12 @@ class FushiApiServer {
         dictionary: true,
       );
     }
+    // AnkiConnect 兼容端点（根路径）：OPTIONS 预检与 GET 探活都要在 405 门之前处理。
+    if (path == '/') {
+      final SrsAnkiConnectEndpoint? endpoint = _ankiConnect;
+      if (endpoint == null) return shelf.Response.notFound('Unknown endpoint');
+      return endpoint.handle(request);
+    }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
@@ -463,6 +553,10 @@ class FushiApiServer {
         return _handleExtensionStudy(request);
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
+      case '/api/srs/term-status':
+        return _handleSrsTermStatus(request);
+      case '/api/srs/open':
+        return _handleSrsOpen(request);
       case '/api/extension/status':
         return _handleExtensionStatus(request);
       case '/api/extension/site-cookies':
@@ -851,6 +945,43 @@ class FushiApiServer {
     }
     final bool state = await handler(favorite);
     return jsonResponse(<String, dynamic>{'favorite': state});
+  }
+
+  /// 复习词状态（扩展弹窗的复习标记）：body `{expression, reading}` → `{status: null | {...}}`。
+  /// 复习模块关着时 404（扩展 shim 据此退避，不再每次查词都问）。
+  Future<shelf.Response> _handleSrsTermStatus(shelf.Request request) async {
+    final SrsExtensionApi? api = _srsApiProvider?.call();
+    if (api == null) return shelf.Response.notFound('SRS module off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? expression = body['expression'];
+    final Object? reading = body['reading'];
+    if (expression is! String || expression.trim().isEmpty) {
+      return shelf.Response(400, body: 'Missing expression');
+    }
+    final Map<String, Object?>? status = await api.termStatus(
+      expression,
+      reading is String ? reading : '',
+    );
+    return jsonResponse(<String, dynamic>{'status': status});
+  }
+
+  /// 扩展里点复习标记：body `{cardId, noteId?}` → `{opened: bool}`。模块关着时 404。
+  Future<shelf.Response> _handleSrsOpen(shelf.Request request) async {
+    final SrsExtensionApi? api = _srsApiProvider?.call();
+    if (api == null) return shelf.Response.notFound('SRS module off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? cardId = body['cardId'];
+    final Object? noteId = body['noteId'];
+    if (cardId is! String || cardId.isEmpty) {
+      return shelf.Response(400, body: 'Missing cardId');
+    }
+    final bool opened = await api.openCard(
+      cardId: cardId,
+      noteId: noteId is String && noteId.isNotEmpty ? noteId : null,
+    );
+    return jsonResponse(<String, dynamic>{'opened': opened});
   }
 
   Future<shelf.Response> _handleTermEntries(shelf.Request request) async {

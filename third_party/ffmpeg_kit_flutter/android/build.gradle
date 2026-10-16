@@ -9,7 +9,7 @@ buildscript {
     }
 }
 
-// Hibiki: 冻结「本插件 libs 目录」绝对路径——在 allprojects 闭包里 project.projectDir
+// Fushi: 冻结「本插件 libs 目录」绝对路径——在 allprojects 闭包里 project.projectDir
 // 会被每个消费工程（含 :app）各自求值成自己的 libs，导致找不到 AAR；此处先抓住插件
 // 自身目录。
 def ffmpegKitVendorLibs = "${projectDir}/libs"
@@ -18,9 +18,9 @@ rootProject.allprojects {
     repositories {
         google()
         mavenCentral()
-        // Hibiki: 自编最小 ffmpeg-kit AAR（arthenica 源码 NDK r25 重编，修 API36 崩溃）。
+        // Fushi: 自编最小 ffmpeg-kit AAR（arthenica 源码 NDK r25 重编，修 API36 崩溃）。
         // TODO-2357 起带 --enable-gpl --enable-x264（片段导出全平台 H.264），产物有效许可
-        // 为 GPLv3（与 Hibiki 自身一致）；重编流程见 ../patches/README.md，能力守卫见
+        // 为 GPLv3（与 Fushi 自身一致）；重编流程见 ../patches/README.md，能力守卫见
         // fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart
         flatDir { dirs ffmpegKitVendorLibs }
     }
@@ -59,7 +59,7 @@ android {
 
 dependencies {
     implementation 'androidx.annotation:annotation:1.5.0'
-    // Hibiki: 用本地自编 AAR 替代上游 maven 预编译 ffmpeg-kit 依赖
+    // Fushi: 用本地自编 AAR 替代上游 maven 预编译 ffmpeg-kit 依赖
     // （旧 NDK 预编译在 Android16 JNI_OnLoad 崩溃，见 BUG-122）。
     implementation(name: 'ffmpeg-kit', ext: 'aar')
     // ffmpeg-kit 的 Java 类依赖 smart-exception（原 maven AAR 传递带入，换自编 AAR 后需显式声明）

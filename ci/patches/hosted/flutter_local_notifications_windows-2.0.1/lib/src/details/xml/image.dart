@@ -20,7 +20,7 @@ extension ImageToXml on WindowsImage {
     );
   }
 
-  /// Hibiki patch (BUG-2499): the Windows toast renderer does **not** decode
+  /// Fushi patch (BUG-2499): the Windows toast renderer does **not** decode
   /// percent-encoded non-ASCII characters in a `file:///` `src` — a cover at
   /// `D:\...\video_グロウアップショウ.jpg` serialised by `Uri.file` becomes
   /// `file:///D:/.../video_%E3%82%B0....jpg` and the image is silently dropped

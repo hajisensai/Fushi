@@ -66,7 +66,7 @@ void main() {
     addTearDown(themeNotifier.dispose);
 
     final Directory tmpDir =
-        Directory.systemTemp.createTempSync('hibiki_shortcut_entry_');
+        Directory.systemTemp.createTempSync('fushi_shortcut_entry_');
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);

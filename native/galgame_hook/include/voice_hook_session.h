@@ -7,7 +7,7 @@
 
 namespace fushi_voice_hook {
 
-// 同一游戏进程内，hook DLL 会持有共享内存直到游戏退出。host/injector 被 Hibiki 停掉后
+// 同一游戏进程内，hook DLL 会持有共享内存直到游戏退出。host/injector 被 Fushi 停掉后
 // 再连接时，CreateFileMapping 会返回既有映射；此时绝不能 memset，否则 DLL 的工作线程
 // 不会重新执行，hooked 会永久被清成 0。
 enum class MappingSessionAction {

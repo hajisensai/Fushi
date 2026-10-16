@@ -24,7 +24,7 @@ void main() {
   late FushiDatabase db;
 
   setUp(() {
-    tmp = Directory.systemTemp.createTempSync('hibiki_font_heal_');
+    tmp = Directory.systemTemp.createTempSync('fushi_font_heal_');
     fontsDir = Directory(p.join(tmp.path, 'documents', 'custom_fonts'))
       ..createSync(recursive: true);
     final Directory dbDir = Directory(p.join(tmp.path, 'db'))

@@ -33,10 +33,38 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3055 条。点号进各自文件。
+> 共 3083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3428](bugs/BUG-3428-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
+| [BUG-3427](bugs/BUG-3427-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
+| [BUG-3426](bugs/BUG-3426-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
+| [BUG-3425](bugs/BUG-3425-game-stream-card-missing-host-dict-styles.md) | ✅ | ✅ | game-stream-card-missing-host-dict-styles |
+| [BUG-3424](bugs/BUG-3424-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |
+| [BUG-3423](bugs/BUG-3423-stream-subtitle-align-probe-too-long.md) | ✅ | ✅ | 媒体服务器 / 在线源视频字幕波形调轴要等太久（流只需前 3 分钟） |
+| [BUG-3422](bugs/BUG-3422-anime-download-seed-year-suffix.md) | ✅ | ✅ | anime-download-seed-year-suffix |
+| [BUG-3421](bugs/BUG-3421-reader-highlight-lanes-under-book-paragraph-background.md) | ✅ | ✅ | 书自带段落底色盖住高亮窄条 |
+| [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
+| [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
+| [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
+| [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
+| [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
+| [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
+| [BUG-3414](bugs/BUG-3414-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |
+| [BUG-3413](bugs/BUG-3413-video-chrome-brightness.md) | ✅ | ✅ | 视频播放器 chrome 与面板不跟随日间/深色模式 |
+| [BUG-3412](bugs/BUG-3412-lookup-toolbar-size.md) | ✅ | ✅ | 阅读器查词框顶栏三组按钮尺寸不统一 |
+| [BUG-3411](bugs/BUG-3411-ios-landscape-subtitle-list-safe-area.md) | ✅ | ✅ | iOS 横屏视频字幕列表侧栏右侧整条安全区空着 |
+| [BUG-3410](bugs/BUG-3410-manga-crop-done-capsule.md) | ✅ | ✅ | 手机漫画高级制卡全屏框选页右上角「完成」在动作胶囊里偏左 |
+| [BUG-3395](bugs/BUG-3395-vn-merged-image-hides-sentence.md) | ✅ | ✅ | VN 图文合并屏插图铺满整屏，同屏句子被挤出屏外 |
+| [BUG-3389](bugs/BUG-3389-floating-lyric-quick-font-size-resets-style.md) | ✅ | ✅ | 阅读器快捷设置改悬浮字幕字号会清空圆角与窗宽 |
+| [BUG-3388](bugs/BUG-3388-floating-lyric-context-outline-dim.md) | ✅ | ✅ | 悬浮字幕多句时上下文行描边被降亮字色覆盖 |
+| [BUG-3387](bugs/BUG-3387-manga-ai-ocr-drops-lens-columns.md) | ✅ | ✅ | 大模型OCR回写丢失Lens列几何致查词错位 |
+| [BUG-3386](bugs/BUG-3386-android-mihon-image-url-unresolved.md) | ✅ | 🚧 | Android在线漫画不解析逐页图片地址 |
+| [BUG-3385](bugs/BUG-3385-manga-online-failed-page-never-retried.md) | ✅ | ✅ | 在线直读取页失败后该页永久白屏 |
+| [BUG-3371](bugs/BUG-3371-sync-compare-manga-zero-progress.md) | ✅ | ✅ | sync-compare-manga-zero-progress |
+| [BUG-3370](bugs/BUG-3370-video-home-next-up-skips-open-only-episode.md) | ✅ | ✅ | video-home-next-up-skips-open-only-episode |
+| [BUG-3369](bugs/BUG-3369-reader-highlight-one-em-lanes.md) | ✅ | ✅ | 阅读器高亮条太粗：所有字体都要一个字高 |
 | [BUG-3368](bugs/BUG-3368-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |

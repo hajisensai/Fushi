@@ -9,7 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 退出重开书时音量能从 DB 恢复（运行期接线由源码守卫测试兜底）。
 Future<FushiDatabase> _openDb() async {
   final Directory dir =
-      await Directory.systemTemp.createTemp('hibiki_volume_test_');
+      await Directory.systemTemp.createTemp('fushi_volume_test_');
   addTearDown(() async {
     await dir.delete(recursive: true);
   });

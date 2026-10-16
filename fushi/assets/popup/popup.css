@@ -260,7 +260,7 @@ html.global-lookup {
 /* TODO-1065 -- mobile / external floating-subtitle popup (popup_main host) ONLY:
    same washout root cause as .global-lookup above, different host chrome. The
    external popup runs inside a TRANSPARENT floating window whose rounded card is
-   a Flutter `HibikiPopupSurface` (Material radius/border/fill), NOT drawn by the
+   a Flutter `FushiPopupSurface` (Material radius/border/fill), NOT drawn by the
    iframe. Left alone, the `<html>` documentElement fills the whole WebView
    viewport with the opaque near-white --background-color (set inline by
    dictionary_popup_webview / popup_settings_injection), which paints OVER the
@@ -1342,7 +1342,7 @@ html[data-theme="dark"] .gloss-image-link[data-appearance="monochrome"] img.glos
    (.glossary-group) 逐字对齐 Niratan Features/Popup/popup.css `.glossary-group` ——
    描边卡而非填充玻璃卡：1px 半透明描边(rgba 0,0,0,.14) + 顶部 inset 白高光 + 薄贴地投影，
    无 background 填充，观感更扁平、与 Niratan 一致。padding 6px 8px、radius 8px 亦照抄
-   (Niratan 的 calc(8px*--popup-scale) 在 Hibiki 走 documentElement.zoom 整体缩放，故直接 8px)。
+   (Niratan 的 calc(8px*--popup-scale) 在 Fushi 走 documentElement.zoom 整体缩放，故直接 8px)。
    皮肤纯 CSS，不改 DOM/JS，四端(in-app 弹窗 + 两 vendor)共用一处。TODO-776 的 grid 行距模型不变：
    行距仍走 margin-top(grid 不折叠 item margin，父只设 column-gap)，padding 是 border-box 内边距
    不撑 grid track。暗色变体：描边转白(rgba 255,255,255,.09) + 加深贴地投影(照抄 Niratan 暗色分支)。 */
@@ -2594,6 +2594,74 @@ html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
     transform: none;
     opacity: 0.55;
     background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
+}
+
+/* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：小号 tonal 胶囊，文案
+   （「复习中 · 3天后」/「新卡」/「已暂停」）由宿主本地化后下发。复习模块关着时 popup.js
+   根本不渲染它。M3E：按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
+   用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰胶囊 + 强调色文字。
+   墨水屏由 html.eink 通配压平圆角 / 动效。 */
+.srs-status-badge {
+    box-sizing: border-box;
+    height: 24px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 24px;
+    white-space: nowrap;
+    color: var(--md-primary, var(--primary-color));
+    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 14%, transparent);
+    opacity: 1;
+    outline: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.15s ease;
+}
+
+.srs-status-badge.srs-status-hidden {
+    display: none;
+}
+
+.srs-status-badge:hover,
+.srs-status-badge:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 22%, transparent);
+}
+
+.srs-status-badge:focus-visible {
+    box-shadow: 0 0 0 2px var(--md-primary, var(--primary-color));
+}
+
+.srs-status-badge.srs-status-learning {
+    color: var(--md-sys-color-tertiary, var(--md-primary, var(--primary-color)));
+    background-color: color-mix(in srgb, var(--md-sys-color-tertiary, var(--md-primary, var(--primary-color))) 14%, transparent);
+}
+
+.srs-status-badge.srs-status-new {
+    color: var(--md-sys-color-secondary, var(--text-color));
+    background-color: color-mix(in srgb, var(--md-sys-color-secondary, var(--text-color)) 12%, transparent);
+}
+
+.srs-status-badge.srs-status-suspended {
+    color: var(--text-color);
+    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
+    opacity: 0.7;
+}
+
+html.fushi-glass-host.fushi-apple .srs-status-badge {
+    color: var(--md-primary, var(--primary-color));
+    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple .srs-status-badge:hover {
+    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple .srs-status-badge.srs-status-suspended {
+    color: var(--text-color);
 }
 
 /* =====================================================================

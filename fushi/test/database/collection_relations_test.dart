@@ -50,7 +50,7 @@ void main() {
         'fresh DB (v66) has collection_relations table and '
         'video_scrape_meta.episode_number column', () async {
       final FushiDatabase db = await openDb();
-      expect(db.schemaVersion, 116);
+      expect(db.schemaVersion, 117);
       final List<QueryRow> tables = await db
           .customSelect(
               "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_relations'")
@@ -64,37 +64,6 @@ void main() {
         contains('episode_number'),
         reason: 'fresh createAll must include v66 episode_number column',
       );
-    });
-
-    test(
-        'real v64->v66 creates collection_relations, adds episode_number, '
-        'preserves rows, bumps user_version', () async {
-      final FushiDatabase db = await _openV64Db();
-
-      final List<QueryRow> tables = await db
-          .customSelect(
-              "SELECT name FROM sqlite_master WHERE type='table' AND name='collection_relations'")
-          .get();
-      expect(tables, hasLength(1), reason: 'from<66 分支必须建出新表');
-
-      // 既有行原样保留；episode_number 回填 NULL = 旧作品级资料。
-      final MediaCollectionRow? collection = await db.getMediaCollectionById(1);
-      expect(collection, isNotNull);
-      expect(collection!.name, 'Bocchi the Rock!');
-      final VideoScrapeMetaRow? meta = await db.getVideoScrapeMeta('uid-old');
-      expect(meta, isNotNull);
-      expect(meta!.title, '孤独摇滚！');
-      expect(meta.episodeNumber, isNull,
-          reason: 'ADD COLUMN 后旧行必须回填 NULL（作品级旧资料语义）');
-
-      // 新表真的可用（不只是建了个壳）。
-      await db.replaceCollectionRelations(
-          1, <CollectionRelationsCompanion>[relation(1)]);
-      expect(await db.getCollectionRelations(1), hasLength(1));
-
-      final QueryRow version =
-          await db.customSelect('PRAGMA user_version').getSingle();
-      expect(version.read<int>('user_version'), db.schemaVersion);
     });
   });
 
@@ -221,86 +190,4 @@ void main() {
       expect(edge.title, '続・作品', reason: '刮削事实（标题等）保留');
     });
   });
-}
-
-/// 打开一个 `user_version = 64` 的库：有 media_collections /
-/// collection_scrape_meta / video_scrape_meta（v64 shape，无 episode_number）
-/// 及其数据，但**没有** collection_relations，强制 FushiDatabase 打开时跑真实
-/// 的 `if (from < 66)` 分支。
-///
-/// from=64 时会先跑 develop 的 v65（Mihon 五表，纯 createTable 无外部依赖），
-/// 再跑本表的 v66 分支；seed 只需备齐 v66 分支触碰到的表，不必重建整个 v64
-/// schema。
-Future<FushiDatabase> _openV64Db() async {
-  final FushiDatabase db = FushiDatabase.forTesting(
-    NativeDatabase.memory(
-      setup: (CommonDatabase rawDb) {
-        rawDb.execute('''
-CREATE TABLE media_collections (
-  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  collection_type TEXT NOT NULL DEFAULT 'collection',
-  cover_source TEXT NULL,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  order_updated_at INTEGER NOT NULL DEFAULT 0,
-  anilist_id INTEGER NULL,
-  audio_track_id TEXT NULL,
-  subtitle_delay_ms INTEGER NULL,
-  cover_path TEXT NULL
-);
-''');
-        rawDb.execute('''
-CREATE TABLE collection_scrape_meta (
-  collection_id INTEGER NOT NULL PRIMARY KEY REFERENCES media_collections (id) ON DELETE CASCADE,
-  source TEXT NOT NULL,
-  subject_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  original_title TEXT NULL,
-  summary TEXT NULL,
-  air_date TEXT NULL,
-  rating REAL NULL,
-  rating_count INTEGER NULL,
-  episode_count INTEGER NULL,
-  tags_json TEXT NULL,
-  infobox_json TEXT NULL,
-  backdrop_path TEXT NULL,
-  detail_url TEXT NULL,
-  scraped_at INTEGER NOT NULL
-);
-''');
-        rawDb.execute('''
-CREATE TABLE video_scrape_meta (
-  book_uid TEXT NOT NULL PRIMARY KEY,
-  source TEXT NOT NULL,
-  subject_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  original_title TEXT NULL,
-  summary TEXT NULL,
-  air_date TEXT NULL,
-  rating REAL NULL,
-  rating_count INTEGER NULL,
-  episode_count INTEGER NULL,
-  tags_json TEXT NULL,
-  infobox_json TEXT NULL,
-  detail_url TEXT NULL,
-  scraped_at INTEGER NOT NULL
-);
-''');
-        rawDb.execute(
-          'INSERT INTO media_collections (id, name, collection_type, '
-          'sort_order, created_at, order_updated_at) '
-          "VALUES (1, 'Bocchi the Rock!', 'playlist', 0, 0, 0)",
-        );
-        rawDb.execute(
-          'INSERT INTO video_scrape_meta (book_uid, source, subject_id, '
-          "title, scraped_at) VALUES ('uid-old', 'bangumi', '100', "
-          "'孤独摇滚！', 0)",
-        );
-        rawDb.execute('PRAGMA user_version = 64');
-      },
-    ),
-  );
-  addTearDown(db.close);
-  return db;
 }

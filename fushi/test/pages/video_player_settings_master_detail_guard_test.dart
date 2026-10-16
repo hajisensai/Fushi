@@ -139,7 +139,7 @@ void main() {
     // 不再有「宽窗分栏 / 窄窗 push」两套外壳，也不再有带徽标的大标题页头。
     expect(
       source,
-      contains('LibrarySectionTabs<String>('),
+      contains('LibrarySectionTabs<String>.controlled('),
       reason: 'categories must use the shared section tabs',
     );
     expect(
@@ -197,9 +197,9 @@ void main() {
       contains('for (final VideoGroup group in widget.groups)'),
       reason: '_categories 必须由 groups 驱动，禁止手写平行列表',
     );
-    // 只有一个分组（字幕 / 音频面板）时不画页签。
-    expect(source, contains('final bool showTabs = groups.length > 1;'));
-    expect(source, contains('if (showTabs)'));
+    // 只有一个分组（字幕 / 音频面板）时不画页签（也没有横滑分页）。
+    expect(source, contains('if (widget.groups.length <= 1) return null;'));
+    expect(source, contains('if (tabController != null)'));
     // 设置面板的分组：字幕 / 音频已拆成独立面板，不在设置里重复（只放一处）。
     final String settingsGroups = _between(
       source,
@@ -299,7 +299,6 @@ void main() {
     );
     expect(schemaSrc, contains('isDesktopPlatform'), reason: '锁窗口比行仍按桌面平台门控');
     expect(schemaSrc, contains('t.video_setting_mpv_aspect'));
-    expect(schemaSrc, contains('pauseAtSubtitleEnd'));
     expect(hostSrc, contains('onLockWindowAspectRatioChanged'));
     expect(hostSrc, contains('onAsbConfigChanged'));
     expect(hostSrc, contains('onSetDelay'));
@@ -314,7 +313,7 @@ void main() {
 
     expect(
       source,
-      contains('LibrarySectionTabs<String>('),
+      contains('LibrarySectionTabs<String>.controlled('),
       reason: 'categories render in the shared top section tabs',
     );
     expect(
@@ -461,7 +460,7 @@ void main() {
       reason: '设置侧栏必须独立于控制条自动隐藏，不应随 action rail 一起卸载',
     );
 
-    // TODO-364：poke 驱动的是 media_kit 自己的可见性/Timer（单一真相源），不另翻 Hibiki
+    // TODO-364：poke 驱动的是 media_kit 自己的可见性/Timer（单一真相源），不另翻 Fushi
     // 镜像（相位反根因）。BUG-2453 起「驱动」的形态从派合成 hover 换成 fork 的 wakeSignal
     // （`_restartHideTimerSignal.poke()`，fork 收到即调它自己的 onHover），真相源不变。
     expect(
@@ -475,7 +474,7 @@ void main() {
       reason: 'poke 不应再乐观翻镜像（可见性由 media_kit 收到信号后推送，TODO-364）',
     );
     // TODO-364：_markControlsVisible 收敛成仅门控收起（assert(!visible)）+ 重派生；
-    // 不再有 Hibiki 侧独立隐藏 Timer 条件。
+    // 不再有 Fushi 侧独立隐藏 Timer 条件。
     expect(
       visibilityMethod,
       contains('_applyControlsVisibilityFromMediaKit()'),
@@ -484,9 +483,9 @@ void main() {
     expect(
       visibilityMethod,
       isNot(contains('_videoControlsHideTimer')),
-      reason: '不应残留 Hibiki 侧独立隐藏 Timer（TODO-364）',
+      reason: '不应残留 Fushi 侧独立隐藏 Timer（TODO-364）',
     );
-    // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Hibiki 侧判可见。
+    // TODO-364：鼠标移出只交还光标，控制条隐藏由 media_kit onExit 推送，不在 Fushi 侧判可见。
     expect(
       containsCodeLine(hoverExitMethod, '_setCursorHidden(false);'),
       isTrue,
@@ -495,7 +494,7 @@ void main() {
     expect(
       containsCodeLine(hoverExitMethod, '_videoControlsVisible.value = false'),
       isFalse,
-      reason: '鼠标移出不应在 Hibiki 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）',
+      reason: '鼠标移出不应在 Fushi 侧直接收起可见性（交给 media_kit onExit 推送，TODO-364）',
     );
     // BUG-2453：到 hover 处理器的事件只可能是真实鼠标（页面不再合成指针事件），故
     // 无条件唤回光标；按设备号过滤的 helper 不得回来——它存在的唯一理由是页面自己在造

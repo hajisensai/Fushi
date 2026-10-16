@@ -52,7 +52,7 @@ void main() {
     'production wheel listener routes VN through the shared paged handler',
     () {
       final Directory temp = Directory.systemTemp.createTempSync(
-        'hibiki-vn-wheel-',
+        'fushi-vn-wheel-',
       );
       final File payload = File('${temp.path}/payload.json')
         ..writeAsStringSync(jsonEncode(<String, String>{'body': wheelBody}));

@@ -342,7 +342,10 @@ window.__fushiHighlightSentenceAudioCueById = function(key, reveal, pauseEnabled
         anchor, reveal, pauseEnabled, fromChapterStart);
   }
   // 跨过插图且需 reveal 时：让 reader 只高亮不自动滚（已滚到插图）；否则正常 reveal。
-  r.highlightSentenceAudioCue(key, revealedImage ? false : reveal);
+  // BUG-3395：后两个参数只有 VN 读——VN 的插图是独立一屏、不在当前 DOM 里，上面
+  // __fushiImagePauseAdvance 看不见它，由 VN 自己判「跟随跨过了图片屏」并停在图上。
+  r.highlightSentenceAudioCue(key, revealedImage ? false : reveal,
+      pauseEnabled, fromChapterStart);
   return true;
 };
 ''';
@@ -428,7 +431,9 @@ window.__fushiAnnotate = function(chapterHref) {
   }) async {
     final String css = _buildCss(primaryColor);
     final String cssJsonStr = jsonEncode(css);
-    await controller.evaluateJavascript(source: '''
+    await controller.evaluateJavascript(
+      source:
+          '''
 (function() {
   var existing = document.getElementById('__fushi_audio_css');
   if (existing) existing.remove();
@@ -440,7 +445,8 @@ window.__fushiAnnotate = function(chapterHref) {
     parent.appendChild(s);
   }
 })();
-''');
+''',
+    );
 
     await controller.evaluateJavascript(source: _highlightFn);
     await controller.evaluateJavascript(source: _cueClickFn);
@@ -480,7 +486,8 @@ window.__fushiAnnotate = function(chapterHref) {
     // TODO-724：pauseEnabled = imagePauseSec>0；仅它为真时跨图才滚到插图。
     if (frag != null) {
       await controller.evaluateJavascript(
-        source: 'if(typeof __fushiHighlightSentenceAudioCueById!=="undefined")'
+        source:
+            'if(typeof __fushiHighlightSentenceAudioCueById!=="undefined")'
             'window.__fushiHighlightSentenceAudioCueById('
             '${jsonEncode(raw)}, $reveal, $pauseEnabled, $fromChapterStart);',
       );
@@ -492,10 +499,11 @@ window.__fushiAnnotate = function(chapterHref) {
     // VN 实现了 highlightSelectorCue（选择器 → 字符偏移 → 翻屏），优先用它；
     // 分页/连续模式没有这个方法，回落原路径，行为零变化。
     await controller.evaluateJavascript(
-      source: 'if(window.fushiReader&&'
+      source:
+          'if(window.fushiReader&&'
           'typeof window.fushiReader.highlightSelectorCue==="function"){'
           'window.fushiReader.highlightSelectorCue('
-          '${jsonEncode(raw)}, $reveal);'
+          '${jsonEncode(raw)}, $reveal, $pauseEnabled, $fromChapterStart);'
           '}else if(typeof __fushiHighlight!=="undefined"){'
           '__fushiHighlight(${jsonEncode(raw)}, $reveal, $pauseEnabled, '
           '$fromChapterStart);}',
@@ -512,7 +520,8 @@ window.__fushiAnnotate = function(chapterHref) {
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiResetPrevHighlight!=="undefined")'
+      source:
+          'if(typeof __fushiResetPrevHighlight!=="undefined")'
           '__fushiResetPrevHighlight();',
     );
   }
@@ -525,7 +534,8 @@ window.__fushiAnnotate = function(chapterHref) {
     InAppWebViewController controller,
   ) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiRevealAllBlurred!=="undefined")'
+      source:
+          'if(typeof __fushiRevealAllBlurred!=="undefined")'
           '__fushiRevealAllBlurred();',
     );
   }
@@ -536,7 +546,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required String selector,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiHighlight!=="undefined")'
+      source:
+          'if(typeof __fushiHighlight!=="undefined")'
           '__fushiHighlight(${jsonEncode(selector)});',
     );
   }
@@ -558,8 +569,9 @@ window.__fushiAnnotate = function(chapterHref) {
   ) {
     final List<Map<String, dynamic>> payload = <Map<String, dynamic>>[];
     for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        cue.textFragmentId,
+      );
       if (frag == null) {
         continue;
       }
@@ -582,8 +594,10 @@ window.__fushiAnnotate = function(chapterHref) {
     required int sectionIndex,
     required List<AudioCue> cues,
   }) async {
-    final List<Map<String, dynamic>> payload =
-        buildSentenceAudioPayload(cues, sectionIndex);
+    final List<Map<String, dynamic>> payload = buildSentenceAudioPayload(
+      cues,
+      sectionIndex,
+    );
     if (payload.isEmpty) {
       return;
     }
@@ -600,7 +614,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required String chapterHref,
   }) async {
     await controller.evaluateJavascript(
-      source: 'if(typeof __fushiAnnotate!=="undefined")'
+      source:
+          'if(typeof __fushiAnnotate!=="undefined")'
           '__fushiAnnotate(${jsonEncode(chapterHref)});',
     );
   }
@@ -611,7 +626,8 @@ window.__fushiAnnotate = function(chapterHref) {
     required int sectionIndex,
   }) async {
     await controller.evaluateJavascript(
-      source: '''
+      source:
+          '''
 (async function(){
   if (typeof __sentenceAudioRequestNav !== "undefined") {
     await __sentenceAudioRequestNav($sectionIndex);
@@ -716,9 +732,7 @@ window.__fushiAnnotate = function(chapterHref) {
   }
 
   static Future<({int sectionIndex, int sectionCharOffset})?>
-      getReaderCharOffset(
-    InAppWebViewController controller,
-  ) async {
+  getReaderCharOffset(InAppWebViewController controller) async {
     return null;
   }
 
@@ -763,23 +777,28 @@ List<BookSearchResult> _searchIsolate(_SearchParams params) {
       if (idx < 0) break;
 
       final int ctxStart = (idx - contextRadius).clamp(0, domText.length);
-      final int ctxEnd =
-          (idx + query.length + contextRadius).clamp(0, domText.length);
+      final int ctxEnd = (idx + query.length + contextRadius).clamp(
+        0,
+        domText.length,
+      );
       final String rawCtx = domText.substring(ctxStart, ctxEnd);
       final String rawMatch = domText.substring(idx, idx + query.length);
 
       // Fold whitespace in context for display, recalculate matchStart.
       final String context = rawCtx.replaceAll(collapseWs, ' ');
       final String matchWord = rawMatch.replaceAll(collapseWs, ' ');
-      final int matchStart =
-          context.toLowerCase().indexOf(matchWord.toLowerCase());
+      final int matchStart = context.toLowerCase().indexOf(
+        matchWord.toLowerCase(),
+      );
 
-      results.add(BookSearchResult(
-        sectionIndex: i,
-        charOffset: idx,
-        context: context,
-        matchStart: matchStart >= 0 ? matchStart : 0,
-      ));
+      results.add(
+        BookSearchResult(
+          sectionIndex: i,
+          charOffset: idx,
+          context: context,
+          matchStart: matchStart >= 0 ? matchStart : 0,
+        ),
+      );
 
       if (results.length >= maxResults) return results;
       start = idx + 1;
@@ -913,14 +932,14 @@ class TtuReaderSettings {
   ];
 
   static Map<String, String> get themeLabels => <String, String>{
-        'light-theme': t.reader_theme_light,
-        'ecru-theme': t.reader_theme_ecru,
-        'water-theme': t.reader_theme_water,
-        'eyecare-theme': t.reader_theme_eyecare,
-        'gray-theme': t.reader_theme_gray,
-        'dark-theme': t.reader_theme_dark,
-        'black-theme': t.reader_theme_black,
-      };
+    'light-theme': t.reader_theme_light,
+    'ecru-theme': t.reader_theme_ecru,
+    'water-theme': t.reader_theme_water,
+    'eyecare-theme': t.reader_theme_eyecare,
+    'gray-theme': t.reader_theme_gray,
+    'dark-theme': t.reader_theme_dark,
+    'black-theme': t.reader_theme_black,
+  };
 }
 
 /// 用户在 WebView 中点击有声书句子所产生的事件。

@@ -10,7 +10,7 @@ void main() {
   late Directory tmp;
 
   setUp(() async {
-    tmp = await Directory.systemTemp.createTemp('hibiki_cover_meta_');
+    tmp = await Directory.systemTemp.createTemp('fushi_cover_meta_');
   });
 
   tearDown(() async {

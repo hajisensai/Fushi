@@ -19,7 +19,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-mihon-manager-');
+    root = await Directory.systemTemp.createTemp('fushi-mihon-manager-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _InstallRuntime();
     manager = MihonManager(

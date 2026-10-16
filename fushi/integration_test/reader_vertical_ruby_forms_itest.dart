@@ -238,7 +238,7 @@ void main() {
 
     // Phase 2: book CSS present + reader CSS last (real cascade order),
     // for the forms that carry rb/rtc (books style them like legacy WebKit).
-    await injectStyle('hibiki-book-style', '''
+    await injectStyle('fushi-book-style', '''
       rb { display: inline-block; }
       rtc { display: block; }
       ruby rt { display: inline-block; }
@@ -252,7 +252,7 @@ void main() {
     ''');
     final Map<String, dynamic> withBook =
         await probe('BOOK rb/rtc/rt overrides + reader CSS last');
-    await injectStyle('hibiki-book-style', '');
+    await injectStyle('fushi-book-style', '');
 
     // Assertions: under the current reader CSS every form must keep EVERY
     // annotation out of the base column and on the correct side (right of the

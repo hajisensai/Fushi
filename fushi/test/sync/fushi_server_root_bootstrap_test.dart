@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// `<syncDataDir>/sync-data` as its WebDAV root, and the client's reachability
 /// probe (PROPFIND on '/') gates EVERY other op. If `start()` does not create
 /// that directory, the probe gets a 404 and reports the (reachable, correctly
-/// authenticating) host as "No reachable Hibiki server address" — and the only
+/// authenticating) host as "No reachable Fushi server address" — and the only
 /// op that would lazily create the dir (MKCOL) is itself gated behind the
 /// probe, so it can never bootstrap. The server must materialise its root on
 /// start.
@@ -24,7 +24,7 @@ void main() {
       'a freshly started server (no pre-created sync-data) is reachable by the '
       'client probe', () async {
     final Directory tempDir =
-        await Directory.systemTemp.createTemp('hibiki_root_bootstrap_');
+        await Directory.systemTemp.createTemp('fushi_root_bootstrap_');
     addTearDown(() => tempDir.delete(recursive: true));
 
     final Directory servedRoot = Directory('${tempDir.path}/sync-data');
@@ -62,7 +62,7 @@ void main() {
     expect(await backend.restoreAuth(repo), isTrue,
         reason: 'configured client should report authenticated');
     // The reachability probe runs here. Before the fix it throws
-    // SyncBackendError('No reachable Hibiki server address') because the probe
+    // SyncBackendError('No reachable Fushi server address') because the probe
     // PROPFIND returns 404 on the missing served root.
     await backend.ensureResolved();
     expect(backend.activeBaseUrl, 'http://127.0.0.1:${server.port}',

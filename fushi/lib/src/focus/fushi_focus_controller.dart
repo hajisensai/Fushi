@@ -100,7 +100,7 @@ class _FocusCandidate {
 class FushiFocusController extends ChangeNotifier {
   FushiFocusController()
     : fallbackNode = FocusNode(
-        debugLabel: 'hibiki-focus-fallback',
+        debugLabel: 'fushi-focus-fallback',
         skipTraversal: true,
       );
 

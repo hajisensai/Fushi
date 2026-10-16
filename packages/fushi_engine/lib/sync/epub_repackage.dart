@@ -9,7 +9,7 @@ import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
 /// Re-package an extracted book directory back into a single `.epub` at
-/// [outputPath]. Hibiki stores imported books EXTRACTED (the extract dir is a
+/// [outputPath]. Fushi stores imported books EXTRACTED (the extract dir is a
 /// valid EPUB layout: `mimetype` + `META-INF/` + OPF + content) and keeps no
 /// standalone `.epub` on disk, so content sync must rebuild one to upload
 /// (BUG-088). Entries are rooted at the zip top (`includeDirName: false`) so

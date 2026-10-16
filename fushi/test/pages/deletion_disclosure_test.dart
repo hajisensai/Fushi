@@ -195,7 +195,7 @@ void main() {
     test('deleteBookDir wipes the extract tree and spares files outside it',
         () async {
       final Directory root =
-          Directory.systemTemp.createTempSync('hibiki_disclosure_');
+          Directory.systemTemp.createTempSync('fushi_disclosure_');
       addTearDown(() {
         if (root.existsSync()) root.deleteSync(recursive: true);
       });

@@ -215,6 +215,7 @@ import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_episode_panel.dart';
+import 'package:fushi/src/media/video/video_fullscreen_back_scope.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
@@ -293,6 +294,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
+import 'package:fushi/src/platform/sensor_housing_edge.dart';
 import 'package:fushi/src/platform/windows_ime_space_channel.dart';
 import 'package:fushi/src/platform/windows_ime_space_dispatch.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -847,7 +849,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
 /// 移动端底部按钮栏的 play / 快进 / 快退按钮各按自己的 `onPressed` 执行，media_kit
 /// fork 的隐藏 `Timer` 只在整屏 tap 与 seek 时重置，按按钮不重置 → 用户还在按按钮，
 /// 控制条已到点自动隐藏，手指落到按钮下方的画面上（误触，用户报「持续点按钮仍自动
-/// 隐藏易误触」）。Hibiki 在这些按钮按下时 [poke]，fork 侧订阅本信号（经
+/// 隐藏易误触」）。Fushi 在这些按钮按下时 [poke]，fork 侧订阅本信号（经
 /// `MaterialVideoControlsThemeData.restartHideTimerSignal`），在控制条可见时取消并重排
 /// 隐藏 Timer，续命一个 `controlsHoverDuration`。是 [ChangeNotifier] 的极薄包装：
 /// [poke] 仅 `notifyListeners()`，不携带状态，纯边沿触发。
@@ -1413,12 +1415,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Color _videoChromeAccent(ColorScheme cs) =>
       _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
-  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、画面上的单钮、media_kit 自带
-  /// 按钮）：两套设计系统都是纯白，与 [VideoM3eIconButton] 同一前景。强调色只留给
-  /// 播放键、进度已播段 / 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点
-  /// 怪」：传输簇的绿字绿图标与两侧白字胶囊不统一）。
-  Color _videoChromeButtonForeground(ColorScheme cs) =>
-      videoChromeNeutralForeground;
+  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、media_kit 自带按钮——都在悬浮
+  /// 胶囊里）：与 [VideoM3eIconButton] 同一前景。M3E 走胶囊前景
+  /// （[videoM3eChromeForegroundOf]：深色近白、日间近黑、墨水屏白，跟随 app 的
+  /// 日间 / 深色模式，2026-10-14）；Apple 恒白（玻璃 + 白字）。强调色只留给播放键、
+  /// 进度已播段 / 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点怪」）。
+  /// 直接压在画面上、没有胶囊垫底的裸图标不走这里（见 layout.part 的侧浮单钮）。
+  Color _videoChromeButtonForeground(ColorScheme cs) => _appleChrome
+      ? videoChromeNeutralForeground
+      : videoM3eChromeForegroundOf(context);
 
   /// 音量 / 倍速浮层的配色：M3E（非墨水屏）取无色相中性方案
   /// （[videoM3eNeutralChromeScheme]，与悬浮胶囊同一表面）；Apple / 墨水屏仍跟主题。
@@ -1444,7 +1449,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           letterSpacing: -0.2,
         )
       : TextStyle(
-          color: _videoChromeNeutralFg,
+          // M3E：标题在顶栏胶囊里，前景跟胶囊走（日间近黑、深色近白）。
+          color: videoM3eChromeForegroundOf(context),
           fontSize: _videoControlTitleFontSize,
         );
 
@@ -1458,10 +1464,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       kDefaultSubtitleBackgroundColor;
   double get _videoUiScale => appModel.appUiScale;
 
-  Color _osdSurfaceColor(ColorScheme cs) =>
-      cs.inverseSurface.withValues(alpha: 0.82);
+  /// OSD（音量 / 亮度 / 通知卡、横滑跳转提示、制卡队列角标、小窗圆钮）的底色。
+  ///
+  /// M3E（非墨水屏）与悬浮胶囊同一枚与 app 同亮度的表面（[videoM3eFloatingColor]）
+  /// ——此前取 inverseSurface，日间模式下是深色、深色模式下反而是浅色，和旁边的
+  /// 胶囊 / 面板正好反着来（2026-10-14 用户：播放器不吃日间 / 深色模式）。
+  /// Apple / 墨水屏保持 inverseSurface 自配对。
+  Color _osdSurfaceColor(ColorScheme cs) => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eFloatingColor(cs)
+      : cs.inverseSurface.withValues(alpha: 0.82);
 
-  Color _osdTextColor(ColorScheme cs) => cs.onInverseSurface;
+  /// OSD 前景，与 [_osdSurfaceColor] 同一判据自配对。
+  Color _osdTextColor(ColorScheme cs) => _m3eChrome && !isEinkTheme(context)
+      ? videoM3eForeground(cs)
+      : cs.onInverseSurface;
 
   @override
   int? get debugPositionMs => _controller?.positionMs;
@@ -2015,7 +2031,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 控制条 State 在每次 `visible` 变化时推进来。
   ///
   /// 历史根因（TODO-129 旧实现）：media_kit 把控制条可见性 `visible` 与隐藏 `Timer` 藏在
-  /// 私有 State，旧 Hibiki 侧另建一份 **镜像** [_videoControlsVisible] + 一个独立隐藏
+  /// 私有 State，旧 Fushi 侧另建一份 **镜像** [_videoControlsVisible] + 一个独立隐藏
   /// `Timer`（已删）复刻同一套触发源喂给字幕避让。两套 `Timer` 各自计时、
   /// 各入口（hover / 移动 tap / 键盘 poke）独立维护 → 镜像与真实控制条 **相位会反**：
   /// 进度条起落动画中又来一次操作时，镜像翻成与真实可见态相反，字幕避让方向就反了
@@ -2087,7 +2103,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// OS 鼠标光标是否应隐藏的单一真相源（TODO-318 / BUG-258）。
   ///
   /// 根因：media_kit 自己用 `MouseRegion(cursor: none)`（`hideMouseOnControlsRemoval`）在
-  /// 控制条淡出时隐藏光标，但 hibiki 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
+  /// 控制条淡出时隐藏光标，但 fushi 把 overlay chrome（锁按钮 rail / OSD / 字幕跳转面板等）
   /// 叠在 media_kit 之上 → 最上层 MouseRegion 的 cursor 解析胜出 → 鼠标放到这些 chrome 上时
   /// 光标重现；沉浸锁态下 [IgnorePointer] 又剥了 media_kit 的 region，光标更无人隐藏。
   ///
@@ -2976,6 +2992,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
   String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
 
+  void _onSensorHousingEdgeChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2988,6 +3008,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
+    // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
+    sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
@@ -5048,7 +5070,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    final CardSourceLink? source = widget.sourceReview;
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
+    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     if (source != null) {
       bool matches = false;
       try {
@@ -5197,7 +5221,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.setDelayMs(_delayMs);
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
     controller.setSecondaryDelayMs(_secondaryDelayMs);
-    controller.setPauseAtSubtitleEnd(_asbConfig.pauseAtSubtitleEnd);
     // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
     controller.onPositionWrite = _isRemote
         ? _persistRemotePosition
@@ -5639,13 +5662,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       input.replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_');
 
   String _remoteSubtitleTempFileName(String videoId, String? hostFileName) {
-    final String fallback = 'hibiki_remote_${_safeFileName(videoId)}.srt';
+    final String fallback = 'fushi_remote_${_safeFileName(videoId)}.srt';
     if (hostFileName == null || hostFileName.trim().isEmpty) return fallback;
     final String baseName = p.basename(hostFileName.trim());
     if (subtitleFormatForPath(baseName) == null) return fallback;
     final String stem = _safeFileName(p.basenameWithoutExtension(baseName));
     final String safeStem = stem.isEmpty ? _safeFileName(videoId) : stem;
-    return 'hibiki_remote_$safeStem${p.extension(baseName)}';
+    return 'fushi_remote_$safeStem${p.extension(baseName)}';
   }
 
   /// 翻转锁定 / 沉浸模式（TODO-101；锁屏按钮 / Shift+L 快捷键 / 常驻解锁按钮共用）。
@@ -5714,6 +5737,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
@@ -6111,7 +6135,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               key: const Key('video_popup_replay_cue_button'),
               tooltip: t.video_subtitle_replay,
               icon: Icons.replay,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabled: hasCue,
@@ -6122,7 +6146,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               // 复用字幕跳转列表行尾 ▶ 的图标与文案：同一动作同一表征，不造第二套说法。
               tooltip: t.video_subtitle_list_jump,
               icon: Icons.play_arrow,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabled: hasCue,
@@ -6135,7 +6159,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   key: const Key('video_popup_copy_sentence_button'),
                   tooltip: copied ? t.copied : t.copy,
                   icon: copied ? Icons.check : Icons.content_copy_outlined,
-                  size: 20,
+                  size: kDictionaryPopupTopActionIconSize,
                   constraints: actionBox,
                   padding: EdgeInsets.zero,
                   onTap: () {
@@ -6152,7 +6176,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               icon: _currentVideoSentenceIsFavorited
                   ? Icons.star
                   : Icons.star_border,
-              size: 20,
+              size: kDictionaryPopupTopActionIconSize,
               constraints: actionBox,
               padding: EdgeInsets.zero,
               enabledColor: _currentVideoSentenceIsFavorited
@@ -7432,7 +7456,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
   /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
-  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。全屏期间经
+  /// `Navigator.maybePop` 到达的返回由全屏路由里的 [VideoFullscreenBackScope] 接住，
+  /// 走同一份 [_dismissTopForegroundLayer]（BUG-3423）。
   void _handleVideoEscapeAction() {
     if (_dismissTopForegroundLayer()) return;
     final BuildContext? ctx = _videoControlsContext;
@@ -8420,7 +8446,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     overflow: TextOverflow.ellipsis,
                     textAlign: textAlign,
                     style: TextStyle(
-                      color: _videoChromeNeutralFg.withValues(alpha: 0.7),
+                      color: videoM3eChromeForegroundOf(
+                        context,
+                      ).withValues(alpha: 0.7),
                       fontSize: 12 * scale,
                       height: 1.3,
                       fontWeight: FontWeight.w500,
@@ -8465,7 +8493,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// MD3 Expressive 浮动标题胶囊里的作品名字样（播放顶栏与原盘菜单顶栏共用）。
   TextStyle _m3eTopBarTitleStyle() => TextStyle(
-    color: _videoChromeNeutralFg,
+    color: videoM3eChromeForegroundOf(context),
     fontSize: 16 * _videoUiScale * _controlsDensityScale,
     height: 1.25,
     fontWeight: FontWeight.w600,
@@ -8797,7 +8825,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// the real top bar, so the buttons are injected into the same [topButtonBar]
   /// array as the back / title / track-track chrome — they inherit the theme's
   /// `buttonBarButtonColor` / `buttonBarButtonSize` and fade in / out with the
-  /// rest of the controls (a plain Hibiki [IconButton] would not).
+  /// rest of the controls (a plain Fushi [IconButton] would not).
   ///
   /// Renders **every** chip-renderable item in the slot ([_slotChipItems]), not
   /// just the five learning keys: the customization editor's palette
@@ -10086,7 +10114,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Future<void> _setAsbConfig(VideoAsbplayerConfig config) async {
     _asbConfig = config;
-    _controller?.setPauseAtSubtitleEnd(config.pauseAtSubtitleEnd);
     await appModel.setVideoAsbplayerConfig(VideoAsbplayerConfig.encode(config));
     if (mounted) setState(() {});
   }
@@ -10530,6 +10557,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
+      subtitleProbeLimitMs: _subtitleAlignProbeLimitMs,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
               _canResolveSubtitleAlignAudio
@@ -11319,11 +11347,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
 
-    // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Hibiki 侧另做镜像
+    // 移动端点画面（非控制条按钮）的控制条显隐 toggle 不再在 Fushi 侧另做镜像
     // （TODO-364）：本外层 [Listener] 是 translucent，同一次点击会继续命中下方 media_kit
     // 移动控制条自己的手势层 → 其 `onTap` 翻 `visible` 并推送 [_mediaKitControlsVisible]，
     // 字幕避让由 [_applyControlsVisibilityFromMediaKit] 派生，与真实控制条同相位（旧实现在此
-    // 用 Hibiki 镜像独立 toggle，与 media_kit 各自计时 → 并发操作时方向反，是本 BUG 根因）。
+    // 用 Fushi 镜像独立 toggle，与 media_kit 各自计时 → 并发操作时方向反，是本 BUG 根因）。
 
     final DateTime now = DateTime.now();
     final DateTime? lastAt = _lastVideoPointerUpAt;

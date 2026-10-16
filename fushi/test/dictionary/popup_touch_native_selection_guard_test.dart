@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 处理器化解（有选区先 removeAllRanges 再 return，点一下取消选择、再点才关窗），本守卫一并
 /// 钉死该机制存在，防止两头回归。
 ///
-/// flutter test cwd = hibiki 包根。无头测试照不到真实 WebView，用源码扫描钉死接线。
+/// flutter test cwd = fushi 包根。无头测试照不到真实 WebView，用源码扫描钉死接线。
 void main() {
   String read(String rel) {
     final File f = File(rel);

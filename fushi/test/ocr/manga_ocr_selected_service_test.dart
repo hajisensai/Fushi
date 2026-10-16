@@ -10,7 +10,7 @@ const MangaOcrModelStatus _mangaStatus = MangaOcrModelStatus(
   diskBytes: 100,
   totalBytes: 100,
 );
-const MangaOcrModelStatus _baberuStatus = MangaOcrModelStatus(
+const MangaOcrModelStatus _otherStatus = MangaOcrModelStatus(
   detectorReady: false,
   recognizerReady: false,
   diskBytes: 25,
@@ -109,20 +109,20 @@ class _Service extends MangaOcrService {
 
 void main() {
   late _Service manga;
-  late _Service baberu;
+  late _Service other;
   late MangaOcrService selected;
   late SelectedMangaOcrService service;
 
   setUp(() {
     manga = _Service(supported: true, status: _mangaStatus);
-    baberu = _Service(supported: false, status: _baberuStatus);
+    other = _Service(supported: false, status: _otherStatus);
     selected = manga;
     service = SelectedMangaOcrService(() => selected);
   });
 
   tearDown(() {
     manga.dispose();
-    baberu.dispose();
+    other.dispose();
   });
 
   test(
@@ -132,16 +132,16 @@ void main() {
     final Future<MangaOcrModelStatus> previousStatus = service.modelStatus();
     final Future<int> previousDelete = service.deleteModels();
 
-    selected = baberu;
+    selected = other;
     expect(service.isSupportedPlatform, isFalse);
     expect(await previousStatus, same(_mangaStatus));
     expect(await previousDelete, 100);
-    expect(await service.modelStatus(), same(_baberuStatus));
+    expect(await service.modelStatus(), same(_otherStatus));
     expect(await service.deleteModels(), 25);
     expect(manga.statusCalls, 1);
     expect(manga.deleteCalls, 1);
-    expect(baberu.statusCalls, 1);
-    expect(baberu.deleteCalls, 1);
+    expect(other.statusCalls, 1);
+    expect(other.deleteCalls, 1);
 
     selected = manga;
     expect(await service.modelStatus(), same(_mangaStatus));
@@ -152,7 +152,7 @@ void main() {
       'download selected before listening stays with that model and forwards cancel',
       () async {
     final Stream<MangaOcrDownloadEvent> previous = service.downloadModels();
-    selected = baberu;
+    selected = other;
     final Stream<MangaOcrDownloadEvent> current = service.downloadModels();
     final List<MangaOcrDownloadEvent> previousEvents =
         <MangaOcrDownloadEvent>[];
@@ -167,12 +167,12 @@ void main() {
       totalBytes: 100,
     );
     const MangaOcrDownloadEvent newProgress = MangaOcrDownloadEvent(
-      fileName: 'vision_fp16.onnx',
+      fileName: 'model.onnx',
       receivedBytes: 10,
       totalBytes: 70,
     );
     manga.downloads.single.controller.add(oldProgress);
-    baberu.downloads.single.controller.add(newProgress);
+    other.downloads.single.controller.add(newProgress);
     expect(previousEvents, <MangaOcrDownloadEvent>[oldProgress]);
     expect(currentEvents, <MangaOcrDownloadEvent>[newProgress]);
 
@@ -182,7 +182,7 @@ void main() {
     });
     await Future<void>.value();
     expect(manga.downloads.single.cancelled, isTrue);
-    expect(baberu.downloads.single.cancelled, isFalse);
+    expect(other.downloads.single.cancelled, isFalse);
     expect(cancelled, isFalse,
         reason: 'cancel must await the old download teardown');
     manga.downloads.single.release();
@@ -190,9 +190,9 @@ void main() {
     expect(cancelled, isTrue);
 
     selected = manga;
-    baberu.downloads.single.release();
+    other.downloads.single.release();
     await currentSub.cancel();
-    expect(baberu.downloads.single.cancelled, isTrue);
+    expect(other.downloads.single.cancelled, isTrue);
   });
 
   test(
@@ -204,7 +204,7 @@ void main() {
     );
     final List<MangaOcrVolumeEvent> previousEvents = <MangaOcrVolumeEvent>[];
     final List<Object> errors = <Object>[];
-    selected = baberu;
+    selected = other;
     final StreamSubscription<MangaOcrVolumeEvent> previousSub = previous.listen(
       previousEvents.add,
       onError: (Object error, StackTrace stack) => errors.add(error),
@@ -216,10 +216,10 @@ void main() {
     expect(manga.folders.single.directory, 'D:/books/previous');
     expect(manga.folders.single.title, 'Previous volume');
     expect(manga.folders.single.startPage, 0);
-    expect(baberu.folders.single.directory, 'D:/books/current');
-    expect(baberu.folders.single.title, isNull);
+    expect(other.folders.single.directory, 'D:/books/current');
+    expect(other.folders.single.title, isNull);
     // 阅读器的「当前页优先」起点必须原样转发给被选中的模型实现。
-    expect(baberu.folders.single.startPage, 7);
+    expect(other.folders.single.startPage, 7);
 
     const MangaOcrVolumeEvent progress = MangaOcrVolumeEvent.page(
       pagesDone: 1,
@@ -233,7 +233,7 @@ void main() {
     manga.folders.single.source.controller.add(progress);
     manga.folders.single.source.controller
         .addError(failure, StackTrace.current);
-    baberu.folders.single.source.controller.add(finished);
+    other.folders.single.source.controller.add(finished);
     expect(previousEvents, <MangaOcrVolumeEvent>[progress]);
     expect(currentEvents, <MangaOcrVolumeEvent>[finished]);
     expect(errors.single, same(failure));
@@ -244,15 +244,15 @@ void main() {
     });
     await Future<void>.value();
     expect(manga.folders.single.source.cancelled, isTrue);
-    expect(baberu.folders.single.source.cancelled, isFalse);
+    expect(other.folders.single.source.cancelled, isFalse);
     expect(cancelled, isFalse,
         reason: 'cancel must await the old OCR teardown');
     manga.folders.single.source.release();
     await cancellation;
 
     selected = manga;
-    baberu.folders.single.source.release();
+    other.folders.single.source.release();
     await currentSub.cancel();
-    expect(baberu.folders.single.source.cancelled, isTrue);
+    expect(other.folders.single.source.cancelled, isTrue);
   });
 }

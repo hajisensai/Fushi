@@ -31,7 +31,7 @@ void main() {
       final int takenPort = blocker.port;
 
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_ctl_persist_');
+          await Directory.systemTemp.createTemp('fushi_ctl_persist_');
       addTearDown(() => dir.delete(recursive: true));
 
       final FushiDatabase db = _memDb();
@@ -105,7 +105,7 @@ void main() {
 
     test('successful bind writes serverEnabled=true', () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_ctl_ok_');
+          await Directory.systemTemp.createTemp('fushi_ctl_ok_');
       addTearDown(() => dir.delete(recursive: true));
 
       final FushiDatabase db = _memDb();
@@ -134,7 +134,7 @@ void main() {
 
     test('stop(persistDisabled:true) clears serverEnabled intent', () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_ctl_stop_');
+          await Directory.systemTemp.createTemp('fushi_ctl_stop_');
       addTearDown(() => dir.delete(recursive: true));
 
       final FushiDatabase db = _memDb();
@@ -163,7 +163,7 @@ void main() {
 
     test('stop() without persistDisabled preserves intent', () async {
       final Directory dir =
-          await Directory.systemTemp.createTemp('hibiki_ctl_transient_');
+          await Directory.systemTemp.createTemp('fushi_ctl_transient_');
       addTearDown(() => dir.delete(recursive: true));
 
       final FushiDatabase db = _memDb();

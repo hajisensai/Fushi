@@ -1103,7 +1103,7 @@ class _HomeDashboardPageState
     _videoDurationMsByPath = s.videoDurationMsByPath;
   }
 
-  /// 「继续也走 hibiki 互联」：互联启用且已配对时，从 host 拉取书清单（内联
+  /// 「继续也走 fushi 互联」：互联启用且已配对时，从 host 拉取书清单（内联
   /// 阅读进度）/ 视频清单（内联播放断点），把本地没有的在读书、在看视频补进
   /// 「继续」（display-only 不落库）。任何失败静默保持纯本地视图（离线/老 host
   /// 不致崩）。2026-10 精简删掉活动时间轴后不再拉远端活动流。

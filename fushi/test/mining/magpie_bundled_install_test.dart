@@ -87,7 +87,7 @@ void main() {
   });
 
   group('随包安装的校验强度', () {
-    test('没有随包归档 → 返回 false，由调用方提示更新 Hibiki，不抛', () async {
+    test('没有随包归档 → 返回 false，由调用方提示更新 Fushi，不抛', () async {
       final MagpieInstaller installer =
           MagpieInstaller(bundledDirectory: bundleDir);
       expect(await installer.installBundledMagpieForTesting('x64'), isFalse);

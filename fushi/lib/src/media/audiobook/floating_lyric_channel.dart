@@ -253,8 +253,12 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
     bool hoverAutoLookup = false,
     List<String>? slotTooltips,
     FloatingLyricWindowRect? rect,
+    // 扩展样式字段（字体 / 排版 / 描边 / 当前句色 / M3E 工具条配色），见
+    // [FloatingLyricStyle.nativeStyleArgs]。Android 读不到，no-op。
+    Map<String, Object?> styleExtras = const <String, Object?>{},
   }) {
     final Map<String, Object?> arguments = <String, Object?>{
+      ...styleExtras,
       'fontSize': fontSize,
       'textColor': textColor,
       'bgColor': bgColor,
@@ -380,9 +384,11 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
     // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。0 = 平台原生默认。
     int cornerRadius = 0,
     int windowWidth = 0,
+    Map<String, Object?> styleExtras = const <String, Object?>{},
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', {
+      ...styleExtras,
       'fontSize': fontSize,
       'textColor': textColor,
       'bgColor': bgColor,

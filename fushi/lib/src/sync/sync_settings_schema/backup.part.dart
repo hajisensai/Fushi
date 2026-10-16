@@ -38,6 +38,8 @@ String backupCategoryLabel(BackupCategory category) {
       return t.backup_category_settings;
     case BackupCategory.profiles:
       return t.backup_category_profiles;
+    case BackupCategory.srs:
+      return t.backup_category_srs;
   }
 }
 
@@ -67,6 +69,8 @@ String backupCategoryDescription(BackupCategory category) {
       return t.backup_category_settings_desc;
     case BackupCategory.profiles:
       return t.backup_category_profiles_desc;
+    case BackupCategory.srs:
+      return t.backup_category_srs_desc;
   }
 }
 
@@ -96,6 +100,8 @@ IconData backupCategoryIcon(BackupCategory category) {
       return FushiIcons.settings;
     case BackupCategory.profiles:
       return FushiIcons.profiles;
+    case BackupCategory.srs:
+      return FushiIcons.repeat;
   }
 }
 
@@ -116,7 +122,19 @@ const Set<BackupCategory> importSelectableCategories = <BackupCategory>{
   BackupCategory.games,
   BackupCategory.progress,
   BackupCategory.statistics,
+  // 复习：只有备份里带 SRS 数据时才出开关（确认框只列 summary.has 的）。覆盖模式下
+  // 它依赖配置档案的 uid——没同时导入设置与配置档案时走 SRS 专用合并，见
+  // [BackupRestoreService.restoreBackup]。
+  BackupCategory.srs,
 };
+
+/// 导出分类勾选框里要不要列出 [category]。复习（SRS）是默认关闭的模块：本机没有
+/// SRS 数据（无用户笔记、媒体目录为空）时整行不出现，普通用户的备份界面不会多出一项。
+/// 其余分类恒列出（没有内容时只是不带计数）。
+bool backupCategoryShownInExport(
+  BackupCategory category,
+  BackupContentSummary summary,
+) => category != BackupCategory.srs || summary.has(BackupCategory.srs);
 
 /// Merge uses the same full selectable set as overwrite now.
 const Set<BackupCategory> importMergeSelectableCategories =
@@ -288,8 +306,8 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     // nested per-item picker glued DIRECTLY beneath them (not
                     // floated to the list bottom) so "选择书籍/选择视频" reads as a
                     // sub-option of its category instead of a duplicate top row.
-                    for (final BackupCategory c
-                        in BackupCategory.values) ...<Widget>[
+                    for (final BackupCategory c in BackupCategory.values)
+                      if (backupCategoryShownInExport(c, summary)) ...<Widget>[
                       FushiStaggeredEntrance(
                         index: c.index,
                         child: AdaptiveSettingsSwitchRow(
@@ -1028,6 +1046,21 @@ Future<void> runBackupImportFlowForFile({
         appModel,
         overlay,
         t.backup_schema_newer(version: validated.schemaVersion.toString()),
+      );
+      return;
+    }
+    // 最低 schema 门槛：清单版本低于下限的老备份在关库之前就拒绝（活库零改动）。
+    // 清单可能与包里的库不一致，restoreBackup / mergeRestoreBackup 自己还会按
+    // 库文件头再判一次。
+    if (validated.schemaVersion > 0 &&
+        validated.schemaVersion < kMinSupportedSchemaVersion) {
+      await _endValidatingThenSnack(
+        appModel,
+        overlay,
+        t.backup_legacy_schema(
+          version: kLegacySchemaBridgeAppVersion,
+          url: kLegacySchemaBridgeReleaseUrl,
+        ),
       );
       return;
     }

@@ -156,7 +156,7 @@ void main() {
           availableNoteTypes: <AnkiNoteType>[
             AnkiNoteType(
               id: 2,
-              name: 'Hibiki',
+              name: 'Fushi',
               fields: <String>['Expression', 'Reading'],
             ),
           ],

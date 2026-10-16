@@ -86,7 +86,7 @@ enum class LocaleThreadResumePolicy {
 // Locale Emulator always creates the target suspended. Launch strategies that
 // must observe a window or child process cannot wait on that suspended target;
 // they resume immediately and retain their existing delayed-attach behavior.
-// Normal launch keeps the primary thread suspended until Hibiki's early hook is
+// Normal launch keeps the primary thread suspended until Fushi's early hook is
 // installed, preserving the KiriKiri startup boundary.
 inline LocaleThreadResumePolicy SelectLocaleThreadResumePolicy(
     bool locale_launched, bool delayed_attach, bool follow_child_processes) {

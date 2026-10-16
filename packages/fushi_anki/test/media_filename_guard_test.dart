@@ -64,7 +64,7 @@ const AnkiSettings _settings = AnkiSettings(
   availableNoteTypes: <AnkiNoteType>[
     AnkiNoteType(
       id: 2,
-      name: 'Hibiki',
+      name: 'Fushi',
       fields: <String>['Expression', 'Audio', 'SentenceAudio'],
     ),
   ],
@@ -85,7 +85,7 @@ void main() {
     late File audio;
 
     setUp(() {
-      dir = Directory.systemTemp.createTempSync('hibiki_anki_media_names');
+      dir = Directory.systemTemp.createTempSync('fushi_anki_media_names');
       audio = File('${dir.path}/local_audio.mp3');
     });
 

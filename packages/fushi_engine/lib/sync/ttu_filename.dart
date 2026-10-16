@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 /// 文件名格式: `{type}_1_6_{timestamp}_{metrics}.json`
 /// 文件夹名: sanitized book title（与 ッツ web 实现一致）。
 ///
-/// 注意：hibiki_core 有一份逐字节等价的私有副本（`src/utils/ttu_sanitize.dart`），
+/// 注意：fushi_core 有一份逐字节等价的私有副本（`src/utils/ttu_sanitize.dart`），
 /// 供 v38 拆集迁移在 core 内派生视频每集 bookUid（core 不能依赖 app 层）。两份由
 /// `video_book_uid_core_parity_test` 守卫；本函数是 app 侧真相源，改了必须同步那份。
 String sanitizeTtuFilename(String title) {
@@ -72,7 +72,7 @@ String audioBookFileName(int timestampMs, double positionSec) =>
 /// Both are orphaned spill; their timestamp filenames churn every export and the
 /// single-file `findSyncFileByPrefix` dedup only tracks one, so copies pile up
 /// into many (`丢很多份`, TODO-1340). The `type_1_6[._]` marker is specific
-/// enough that only Hibiki's per-book files carry it, so the pattern is matched
+/// enough that only Fushi's per-book files carry it, so the pattern is matched
 /// ANYWHERE in the name (not just anchored) to also catch the title-prefixed
 /// shape. Used to detect and sweep that residue — callers MUST additionally
 /// require the entry to be a non-folder direct child of the root (a book's own

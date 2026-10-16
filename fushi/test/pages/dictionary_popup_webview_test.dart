@@ -853,7 +853,7 @@ void main() {
       // 设计系统重做后 Flutter showMenu 换成共享的 showFushiMenu（同样吃
       // RelativeRect 锚点、在同一 Overlay 里弹出），守卫钉新入口。
       expect(body.contains('showFushiMenu<_PopupContextMenuAction>('), isTrue,
-          reason: '用 Flutter 菜单（showFushiMenu）弹 Hibiki 自绘菜单');
+          reason: '用 Flutter 菜单（showFushiMenu）弹 Fushi 自绘菜单');
     });
 
     test('症状②：Flutter 菜单含「查词」+「复制」两项（复制走 BUG-402 范式）', () {

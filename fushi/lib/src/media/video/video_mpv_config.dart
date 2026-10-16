@@ -874,10 +874,10 @@ Future<void> applyNetworkCachePropertiesToPlayer(
 /// `setSubtitleTrack(SubtitleTrack.no())` 不够——libmpv 字幕轨列表是 `player.open` 后
 /// **异步**解析就绪的，而 mpv 默认 `sub-auto=exact` 会在轨就绪后**自动重新选中**内嵌
 /// 字幕轨，覆盖掉先前的 `no()`。被重选的轨经 `sub-visibility=yes` 渲染成画面像素字幕，
-/// 与 media_kit 的内置 `SubtitleView`（也监听 `player.state.subtitle`）一起叠在 Hibiki
+/// 与 media_kit 的内置 `SubtitleView`（也监听 `player.state.subtitle`）一起叠在 Fushi
 /// 可点 [VideoSubtitleOverlay] 之上 → 字幕透明随机、点字幕穿透落空、横竖屏残留黑底。
 ///
-/// 字幕在 Hibiki 一律走可点 overlay（外挂 sidecar 解析成 cue、内嵌文本轨经
+/// 字幕在 Fushi 一律走可点 overlay（外挂 sidecar 解析成 cue、内嵌文本轨经
 /// `_loadEmbeddedSubtitleIfNeeded` 抽取成 cue），libmpv 不该自己渲染任何字幕：
 /// - `sub-auto=no`：禁止 libmpv 自动加载/选择字幕轨——根治「轨就绪后被自动重选」竞态。
 /// - `sub-visibility=no`：即便某轨仍被选中（含图形 PGS 轨的画面渲染），也不渲染画面字幕。

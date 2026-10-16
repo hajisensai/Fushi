@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting! Please search [existing issues](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) first to avoid duplicates. English or Chinese are both fine.
-        感谢反馈！提交前请先搜索[已有 issue](https://github.com/hajisensai/hibiki/issues?q=is%3Aissue) 避免重复。中英文均可。
+        Thanks for reporting! Please search [existing issues](https://github.com/hajisensai/fushi/issues?q=is%3Aissue) first to avoid duplicates. English or Chinese are both fine.
+        感谢反馈！提交前请先搜索[已有 issue](https://github.com/hajisensai/fushi/issues?q=is%3Aissue) 避免重复。中英文均可。
   - type: input
     id: version
     attributes:

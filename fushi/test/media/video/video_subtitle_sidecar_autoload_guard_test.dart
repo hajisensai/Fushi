@@ -6,7 +6,7 @@ import '../../helpers/source_guard.dart';
 
 /// BUG-801 守卫（源码扫描）：libmpv 默认 `sub-auto=exact` 会在 `player.open()` 加载文件时
 /// 自动加载与视频**同名的 sidecar 外挂字幕**（`<video>.ass/.srt`），把它选成字幕轨经
-/// media_kit 原生 `SubtitleView` 渲染，与 Hibiki 自己解析同一 sidecar 得到的可点
+/// media_kit 原生 `SubtitleView` 渲染，与 Fushi 自己解析同一 sidecar 得到的可点
 /// [VideoSubtitleOverlay] 叠成两条同句字幕（安卓等价 SubtitleView 尤其明显）。
 ///
 /// 根治：字幕抑制（`sub-auto=no`）必须在 `player.open()` **之前**下发——open 之后再设已太迟

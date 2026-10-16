@@ -7,7 +7,7 @@ import 'package:fushi/src/utils/misc/update_handoff.dart';
 
 Future<File> _markerFile() async {
   final Directory dir =
-      await Directory.systemTemp.createTemp('hibiki-update-handoff-test');
+      await Directory.systemTemp.createTemp('fushi-update-handoff-test');
   addTearDown(() async {
     if (dir.existsSync()) await dir.delete(recursive: true);
   });

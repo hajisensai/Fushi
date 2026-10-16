@@ -6,7 +6,6 @@ void main() {
   test('defaults mirror asbplayer playback preferences', () {
     expect(VideoAsbplayerConfig.defaults.seekSeconds, 3);
     expect(VideoAsbplayerConfig.defaults.speedStep, 0.1);
-    expect(VideoAsbplayerConfig.defaults.pauseAtSubtitleEnd, isFalse);
     expect(VideoAsbplayerConfig.defaults.longPressSpeed, 2.0);
     // TODO-173/BUG-231: 双击行为默认 0=关（向后兼容，双击仍走暂停/全屏，不分区）。
     expect(VideoAsbplayerConfig.defaults.doubleTapSeekSeconds, 0);
@@ -103,7 +102,6 @@ void main() {
     const VideoAsbplayerConfig config = VideoAsbplayerConfig(
       seekSeconds: 5,
       speedStep: 0.2,
-      pauseAtSubtitleEnd: true,
       doubleTapSeekSeconds: 10,
       longPressSpeed: 2.5,
       dragSeekSensitivity: VideoSeekSensitivity.low,
@@ -118,7 +116,6 @@ void main() {
 
     expect(decoded.seekSeconds, 5);
     expect(decoded.speedStep, 0.2);
-    expect(decoded.pauseAtSubtitleEnd, isTrue);
     expect(decoded.doubleTapSeekSeconds, 10);
     expect(decoded.longPressSpeed, 2.5);
     expect(decoded.dragSeekSensitivity, VideoSeekSensitivity.low);
@@ -126,6 +123,17 @@ void main() {
     expect(decoded.doubleTapTogglesPlayback, isFalse);
     expect(decoded.brightnessSwipeGesture, isFalse);
     expect(decoded.volumeSwipeGesture, isFalse);
+  });
+
+  test('已删除的「字幕暂停播放模式」：旧档里的键被忽略，encode 不再写出', () {
+    final VideoAsbplayerConfig legacy = VideoAsbplayerConfig.decode(
+      '{"seekSeconds":5,"pauseAtSubtitleEnd":true}',
+    );
+    expect(legacy.seekSeconds, 5, reason: '旧键不得让整份配置回落默认');
+    expect(
+      VideoAsbplayerConfig.encode(legacy),
+      isNot(contains('pauseAtSubtitleEnd')),
+    );
   });
 
   test('BUG-1485: 旧档（无 dragSeekSensitivity 键）与脏值都回落默认档', () {
@@ -166,7 +174,6 @@ void main() {
 
     expect(decoded.seekSeconds, 1);
     expect(decoded.speedStep, 0.5);
-    expect(decoded.pauseAtSubtitleEnd, isTrue);
     expect(decoded.longPressSpeed, 2.0);
     // 旧档无 doubleTapSeekSeconds 键 → 回默认 0=关。
     expect(decoded.doubleTapSeekSeconds, 0);

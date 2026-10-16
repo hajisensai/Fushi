@@ -16,7 +16,7 @@
 /// 本表取 6 份覆盖面的**并集**（6 份之间无互相矛盾的映射）。前 5 份已改为直接查本表；
 /// fushi_anki 是无 fushi_core 依赖的独立模块，其副本改为本表的**镜像**，由
 /// `fushi/test/sync/mime_types_test.dart` 守卫锁定逐项一致。单词音频语境的
-/// `kAudioMimeByExtension`（hibiki `utils/misc/audio_mime.dart`，
+/// `kAudioMimeByExtension`（fushi `utils/misc/audio_mime.dart`，
 /// `.mp4/.aac/.webm → audio/*` 是刻意收窄，`audio_mime_test.dart` 锁定与本表的
 /// 分歧集合）与 manga 页 jpeg 兜底的图片服务不属本表，见各自注释。
 library;

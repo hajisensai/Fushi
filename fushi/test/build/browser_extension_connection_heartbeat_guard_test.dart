@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///    失效，用户必须手动刷新才恢复。reload 前置 fushiReinjectPending，reload 后由新 SW
 ///    把 content script 重新注入已打开网页（需 scripting 权限 + 放宽 host_permissions）。
 ///
-/// flutter test cwd is the hibiki package root. background.js / manifest.json 的两镜像
+/// flutter test cwd is the fushi package root. background.js / manifest.json 的两镜像
 /// 字节一致由 browser_extension_dict_media_mirror_guard_test.dart 守卫，这里只锁行为存在性。
 /// 「`fushiHeartbeat` 这条分支里调了 `checkVersionOnStartup()`」——心跳真的会去 ping
 /// 服务器刷 last-seen 的不变式。刻意只锁「命中判断 → 调用」的先后，不锁单行/多行、

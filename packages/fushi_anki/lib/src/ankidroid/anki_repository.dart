@@ -318,7 +318,7 @@ class AnkiRepository extends BaseAnkiRepository {
       fieldsForNoteType(noteType, fields),
     );
     if (rejected != null) return rejected;
-    // TODO-062: append the `hibiki` tag (de-duped, order preserved) to the
+    // TODO-062: append the `fushi` tag (de-duped, order preserved) to the
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
     final tags = buildNoteTags(

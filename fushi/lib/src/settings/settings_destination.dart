@@ -45,7 +45,7 @@ enum SettingsDestinationId {
   // Anime4K 着色器删除恢复）+ 随包组件展示（构建函数在 settings_schema_storage.dart）。
   storage,
   system,
-  // Hibiki P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
+  // Fushi P2P 互联（设备直连 + 本机作为服务器）；从 syncBackup 拆出的
   // 独立一级分类（构建函数在 sync_settings_schema.dart 同库，共享私有状态）。
   interconnect,
   // Synthetic destination for the reader quick-settings dialog; its own id so
@@ -694,6 +694,7 @@ class SettingsCustomItem extends SettingsItem {
     required this.builder,
     super.title = '',
     this.searchTitle,
+    this.searchKeywords,
     this.reset,
     super.subtitle,
     super.icon,
@@ -712,6 +713,7 @@ class SettingsCustomItem extends SettingsItem {
     required SettingsItemRowsBuilder this.rowsBuilder,
     super.title = '',
     this.searchTitle,
+    this.searchKeywords,
     super.subtitle,
     super.icon,
     super.visible,
@@ -733,6 +735,11 @@ class SettingsCustomItem extends SettingsItem {
   /// 默认不可搜。声明本字段后该行以此标题进入设置搜索（展平/打分/结果展示均用它，
   /// 见 settingsItemSearchTitle）；不影响渲染。
   final String? searchTitle;
+
+  /// 自绘正文里的子项名（渲染时求值）：搜其中任何一个都命中本行，结果行露出
+  /// 命中的那个词（与分段控件的选项标签同一套，见 settings_search 的
+  /// `_optionLabelsOf`）。只在声明了 [searchTitle] 时生效。
+  final SettingsValueGetter<List<String>>? searchKeywords;
 
   /// 自绘行的「恢复默认」元数据：声明后该行参与详情页的「恢复本页默认」
   /// （settings_kit 的 settingsResetSpecFor），与声明了 defaultValue 的开关 /

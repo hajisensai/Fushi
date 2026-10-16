@@ -52,7 +52,7 @@ void main() {
 
   test('游戏内查词离屏卡片窗的预热同样是 nullptr owner', () {
     // 离屏卡片窗是懒建的第三个 GlobalLookupWindow 实例，建出来就立刻预热一次。
-    // 它挂上主窗当 owner 的话，游戏全屏时会把 Hibiki 主窗一起拉到前台——那正是
+    // 它挂上主窗当 owner 的话，游戏全屏时会把 Fushi 主窗一起拉到前台——那正是
     // BUG-741 在游戏内查词上的同形复发。
     final String seg =
         callArgs(cpp, 'gal_lookup_card_window_->PrewarmWebView(');

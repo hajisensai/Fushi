@@ -6,7 +6,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart';
 /// 游玩状态（契约 §1.5）。数值**故意对齐 Bangumi 收藏 type**，省掉一层映射；
 /// [value] 直接落 `galgames.playStatus` 列，**不可随意改**。
 enum GalgamePlayStatus {
-  /// 未设置（Hibiki 新增，旧数据迁移后的默认值）。
+  /// 未设置（Fushi 新增，旧数据迁移后的默认值）。
   unset(0),
 
   /// 想玩。
@@ -425,7 +425,7 @@ GalgameEntry? findGalgameForActivity(
 /// - 引号内紧跟的第二个 `"` 产生一个字面引号并留在引号内（`""` 转义）。
 ///
 /// 这是纯函数，不做 trim 以外的「智能」修正：用户写错的参数应当原样传给游戏并由
-/// 游戏报错，而不是被 Hibiki 猜着改。
+/// 游戏报错，而不是被 Fushi 猜着改。
 List<String> parseGameLaunchArguments(String raw) {
   final List<String> tokens = <String>[];
   final StringBuffer current = StringBuffer();

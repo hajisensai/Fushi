@@ -245,7 +245,7 @@ class FushiCard extends StatefulWidget {
 class _FushiCardState extends State<FushiCard>
     with SingleTickerProviderStateMixin {
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
-    'hibiki-card-${identityHashCode(this)}',
+    'fushi-card-${identityHashCode(this)}',
   );
 
   /// M3E 交互形变 / 抬升的弹簧：0 静止、1 悬停、2 按下 / 选中。只在需要时
@@ -624,7 +624,7 @@ class FushiListItem extends StatefulWidget {
 
 class _FushiListItemState extends State<FushiListItem> {
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
-    'hibiki-list-item-${identityHashCode(this)}',
+    'fushi-list-item-${identityHashCode(this)}',
   );
 
   /// 按下中：M3E 列表行按下 / 选中时高亮块形变到 corner-large（16）。
@@ -1038,7 +1038,7 @@ class FushiSearchField extends StatelessWidget {
     final EdgeInsets padding = large
         ? const EdgeInsets.all(12)
         : const EdgeInsets.all(4);
-    final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
+    final Widget? inputSuffix = _fushiTextFieldInputSuffix(
       context: context,
       controller: controller,
       onChanged: onChanged,
@@ -1665,7 +1665,7 @@ class FushiTextField extends StatefulWidget {
 
 class _FushiTextFieldState extends State<FushiTextField> {
   late final FocusNode _ownedFocusNode = FocusNode(
-    debugLabel: widget.hintText ?? widget.labelText ?? 'hibiki-text-field',
+    debugLabel: widget.hintText ?? widget.labelText ?? 'fushi-text-field',
   );
 
   FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
@@ -1698,7 +1698,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
     final bool compact = widget.size != null;
     final double? iconSize = compact ? 20 : null;
     final EdgeInsets? padding = compact ? const EdgeInsets.all(6) : null;
-    final Widget? assist = _hibikiTextFieldInputSuffix(
+    final Widget? assist = _fushiTextFieldInputSuffix(
       context: context,
       controller: editable ? controller : null,
       onChanged: widget.onChanged,
@@ -1893,7 +1893,7 @@ double fushiInputSizeHeight(FushiInputSize size) => switch (size) {
 /// [iconSize] / [padding] 为空时保持 [FushiIconButton] 的默认尺寸（[FushiTextField]
 /// 等常规输入框沿用原样）；[FushiSearchField] 传紧凑值，否则默认按钮会撑破 40 高的
 /// 搜索框内容区。
-Widget? _hibikiTextFieldInputSuffix({
+Widget? _fushiTextFieldInputSuffix({
   required BuildContext context,
   required TextEditingController? controller,
   ValueChanged<String>? onChanged,
@@ -2219,7 +2219,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
   /// default — Stateful (not Stateless) so identityHashCode is stable across
   /// rebuilds. Mirrors FushiCard / FushiListItem.
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
-    'hibiki-tag-chip-${identityHashCode(this)}',
+    'fushi-tag-chip-${identityHashCode(this)}',
   );
 
   @override
@@ -5599,7 +5599,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
   final GlobalKey<PopupMenuButtonState<T>> _menuKey =
       GlobalKey<PopupMenuButtonState<T>>();
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
-    'hibiki-overflow-menu-${identityHashCode(this)}',
+    'fushi-overflow-menu-${identityHashCode(this)}',
   );
 
   @override
@@ -6225,7 +6225,7 @@ bool logSelectionScrollDecision({
 
 class _LogSelectionScrollController extends ScrollController {
   _LogSelectionScrollController()
-    : super(debugLabel: 'hibiki-log-selection-scroll');
+    : super(debugLabel: 'fushi-log-selection-scroll');
 
   // 拖拽选区是否激活。这是 [logSelectionScrollDecision] 唯一需要的状态——
   // TODO-822 简化判据后不再追踪指针几何 / 手动滚动标志（边缘自动滚动整条拿掉，
@@ -6363,7 +6363,7 @@ class FushiEditorPanel extends StatelessWidget {
               top: tokens.spacing.gap,
               right: tokens.spacing.gap,
               child:
-                  _hibikiTextFieldInputSuffix(
+                  _fushiTextFieldInputSuffix(
                     context: context,
                     controller: controller,
                   ) ??
@@ -6915,7 +6915,7 @@ class FushiCompactSearchRow extends StatelessWidget {
     final String closeTooltip = MaterialLocalizations.of(
       context,
     ).closeButtonTooltip;
-    final Widget? keyboardSuffix = _hibikiTextFieldInputSuffix(
+    final Widget? keyboardSuffix = _fushiTextFieldInputSuffix(
       context: context,
       controller: controller,
     );

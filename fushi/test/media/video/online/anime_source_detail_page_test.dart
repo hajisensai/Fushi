@@ -34,7 +34,7 @@ void main() {
   late MihonManager manager;
 
   setUp(() async {
-    root = await Directory.systemTemp.createTemp('hibiki-anime-detail-');
+    root = await Directory.systemTemp.createTemp('fushi-anime-detail-');
     database = FushiDatabase.forTesting(NativeDatabase.memory());
     runtime = _AnimeRuntime();
     await database.upsertMangaExtension(
