@@ -1931,14 +1931,10 @@ class _ShelfBatchDeleteProgressDialog extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
                 SizedBox(height: tokens.spacing.gap),
-                if (isGlassDesign(context))
-                  FushiLinearProgressIndicator(
-                    value: total == 0 ? null : done / total,
-                  )
-                else
-                  LinearProgressIndicator(
-                    value: total == 0 ? null : done / total,
-                  ),
+                // 设计系统分派版：MD3 走 M3E 波浪轨道，Apple 走细轨。
+                FushiLinearProgressIndicator(
+                  value: total == 0 ? null : done / total,
+                ),
               ],
             );
           },

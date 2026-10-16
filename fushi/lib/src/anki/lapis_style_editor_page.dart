@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
+import 'package:fushi/src/anki/anki_view_model.dart' show AnkiViewModel;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
@@ -61,6 +62,19 @@ class LapisVisualEditorResult {
   /// 自定义区域的**完整**列表（不是 diff）：区域的增删改都在这一份里表达，
   /// 调用方整份覆盖存回即可。
   final List<LapisCustomBlock> blocks;
+}
+
+/// 把编辑器的保存结果落盘（设置页保存与控制通道 `lapis_visual_editor` 共用）：
+/// CSS、区域整份覆盖，字段映射逐条写回。只落 Fushi 偏好，推到 Anki 另走「应用样式」。
+Future<void> applyLapisVisualEditorResult(
+  AnkiViewModel vm,
+  LapisVisualEditorResult result,
+) async {
+  await vm.setLapisCustomCss(result.customCss);
+  await vm.setLapisCustomBlocks(result.blocks);
+  for (final MapEntry<String, String> entry in result.fieldMappings.entries) {
+    await vm.updateFieldMapping(entry.key, entry.value);
+  }
 }
 
 /// Lapis 卡片的可视化编辑入口：样式 + 区块位置 + 字段映射。

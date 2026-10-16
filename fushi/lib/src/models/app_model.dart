@@ -641,6 +641,14 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Test seam：注入带假 Bangumi API 的 [MediaTrackingService]（控制通道 /
+  /// 设置页测试不能打真网络）。
+  @visibleForTesting
+  void wireMediaTrackingServiceForTesting(MediaTrackingService service) {
+    _mediaTrackingService?.dispose();
+    _mediaTrackingService = service;
+  }
+
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
   /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
@@ -5986,6 +5994,7 @@ class AppModel with ChangeNotifier {
           subtitlePath: subtitlePath,
           audioPaths: job.audioPaths,
           contentPath: job.contentPath,
+          targetBookKey: job.targetBookKey,
           title: job.title,
         ),
       );

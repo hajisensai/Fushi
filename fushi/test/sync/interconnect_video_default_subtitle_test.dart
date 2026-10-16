@@ -650,9 +650,19 @@ void main() {
     }
 
     test('远端导入字幕在应用成功后上传 host', () {
+      // 按路径导入抽成了 _importRemoteSubtitleFile（文件选择器与桌面 CLI
+      // `video sub-import` 共用）：选择器必须经它导入，上传在它里面、应用成功之后。
       expect(
         body(part, 'Future<void> _pickAndImportRemoteSubtitle('),
-        contains('_uploadRemoteSubtitleToHost('),
+        contains('_importRemoteSubtitleFile(controller, path)'),
+      );
+      final String importBody = body(
+        part,
+        'Future<bool> _importRemoteSubtitleFile(',
+      );
+      expect(
+        importBody,
+        contains('if (applied) await _uploadRemoteSubtitleToHost(applyPath);'),
       );
       final String upload = body(
         part,
@@ -736,7 +746,8 @@ void main() {
       );
       expect(
         body(part, 'Future<void> _retimeSubtitleWithSpeechModel('),
-        contains('_transcribeVideoSpeech(controller)'),
+        // 可透传调用方的 `transcribe:`（桌面 CLI 无界面转录），音轨准备仍是同一条。
+        matches(RegExp(r'_transcribeVideoSpeech\(\s*controller\b')),
         reason: '重定时与生成字幕共用当前音轨转录，再经统一音源解析',
       );
       expect(

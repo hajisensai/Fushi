@@ -20,6 +20,22 @@ typedef AudiobookAlignmentProgress = void Function(
   String message,
 );
 
+/// 对齐 / 重新导入在**写盘之前**的检查点上发现已被取消。
+///
+/// 只在提交点之前抛：持久目录同步（会删旧音频）与写库一旦开始就做完，绝不半途
+/// 停下留下「库指着已删文件」的残局。抛出时库与持久目录都还没动。
+class AudiobookAlignmentCancelled implements Exception {
+  const AudiobookAlignmentCancelled();
+
+  @override
+  String toString() => 'AudiobookAlignmentCancelled';
+}
+
+/// [isCancelled] 为真时抛 [AudiobookAlignmentCancelled]（null 视为永不取消）。
+void throwIfAlignmentCancelled(bool Function()? isCancelled) {
+  if (isCancelled?.call() ?? false) throw const AudiobookAlignmentCancelled();
+}
+
 /// EPUB + 字幕 + 可选音频 -> 有声书 对齐落库的可复用结果。
 @immutable
 class AudiobookAlignmentResult {
@@ -272,6 +288,10 @@ Future<List<AudioCue>> parseCuesForFormat(
 /// [autoWindow] / [searchWindow] / [similarityThreshold] 与对话框同名字段语义
 /// 一致。[onProgress] 替代 reportProgress，[messages] 注入步骤文案；二者皆可
 /// 省略（扫描器不需要 UI 进度）。返回 [AudiobookAlignmentResult]。
+///
+/// [isCancelled]：在读章节 / 解析字幕 / 跑 matcher 这几步之间检查，为真时抛
+/// [AudiobookAlignmentCancelled]；matcher 本身在 isolate 里跑、不可中断，所以取消
+/// 在当前步骤结束后生效。开始持久化（0.8）之后不再检查——那之后是提交阶段。
 Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   required FushiDatabase db,
   required SrtBookRepository repo,
@@ -286,9 +306,11 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   AudiobookAlignmentProgress? onProgress,
   AudiobookAlignmentMessages messages = const AudiobookAlignmentMessages(),
+  bool Function()? isCancelled,
 }) async {
   void report(double f, String m) => onProgress?.call(f, m);
 
+  throwIfAlignmentCancelled(isCancelled);
   report(0.35, messages.readingIdb);
   List<EpubSection> sections = const <EpubSection>[];
   try {
@@ -299,6 +321,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     engineLog.log('AudiobookAlignmentService.parseEpub', e, stack);
     fushiDebugPrint('[fushi-import] parseFromExtracted failed: $e');
   }
+  throwIfAlignmentCancelled(isCancelled);
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();
   List<AudioCue> cues = await parseCuesForFormat(
@@ -314,6 +337,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
   AudiobookHealth health;
   final bool runMatcher = SubtitleRematchPolicy.supportedFormats.contains(ext);
+  throwIfAlignmentCancelled(isCancelled);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
     report(0.55, messages.matching);
     MatchResult? matchResult;
@@ -362,6 +386,8 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     );
   }
 
+  // 最后一个检查点：之后是提交阶段（同步持久目录 + 写库），不再中断。
+  throwIfAlignmentCancelled(isCancelled);
   report(0.8, messages.persisting);
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final String persistedSrt = await AudiobookStorage.persistFileWithProgress(

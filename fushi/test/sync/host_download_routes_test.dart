@@ -47,8 +47,11 @@ class _RecordingHost implements HostDownloadHost {
   @override
   Future<void> retryJob(String jobId) async {}
 
+  final List<(String, bool?)> deleted = <(String, bool?)>[];
+
   @override
-  Future<void> deleteJob(String jobId) async {}
+  Future<void> deleteJob(String jobId, {bool? deleteFiles}) async =>
+      deleted.add((jobId, deleteFiles));
 }
 
 Future<shelf.Response> _post(
@@ -423,6 +426,26 @@ void main() {
     expect(jsonDecode(await known.readAsString()),
         <String, Object?>{'subtitles': <Object?>[]});
     expect((await get('ghost')).statusCode, 404);
+  });
+
+  test('BUG-3417：DELETE 的 deleteFiles 查询参数原样到达 host；缺省 null；非法 400',
+      () async {
+    final _RecordingHost host = _RecordingHost();
+    Future<shelf.Response> delete(String query) => handleHostDownloadRequest(
+          host,
+          shelf.Request('DELETE', Uri.parse('http://h/api/downloads/j1$query')),
+          'DELETE',
+          '/api/downloads/j1',
+        );
+    expect((await delete('?deleteFiles=true')).statusCode, 200);
+    expect((await delete('?deleteFiles=false')).statusCode, 200);
+    expect((await delete('')).statusCode, 200);
+    expect((await delete('?deleteFiles=maybe')).statusCode, 400);
+    expect(host.deleted, <(String, bool?)>[
+      ('j1', true),
+      ('j1', false),
+      ('j1', null),
+    ]);
   });
 }
 

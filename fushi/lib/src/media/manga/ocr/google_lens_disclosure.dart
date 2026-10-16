@@ -42,6 +42,23 @@ enum GoogleLensDisclosureScene {
   };
 }
 
+/// 本设备是否已同意把 [scene] 的内容上传给 Google Lens（当前版本的同意书）。
+Future<bool> hasGoogleLensDisclosure({
+  GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,
+}) async {
+  final SharedPreferences preferences = await SharedPreferences.getInstance();
+  return preferences.getInt(scene.preferenceKey) == kGoogleLensDisclosureVersion;
+}
+
+/// 记下本设备对 [scene] 当前版本同意书的同意——与同意框点「同意」写同一个键同一个
+/// 值。桌面控制通道 `ocr start --consent-upload` 是用户在命令行里显式表态。
+Future<void> recordGoogleLensDisclosureAccepted({
+  GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,
+}) async {
+  final SharedPreferences preferences = await SharedPreferences.getInstance();
+  await preferences.setInt(scene.preferenceKey, kGoogleLensDisclosureVersion);
+}
+
 /// Device-local, versioned privacy gate for full-page Google Lens OCR.
 ///
 /// SharedPreferences is intentional: Drift preferences participate in profile
@@ -54,10 +71,7 @@ Future<bool> ensureGoogleLensDisclosure(
   BuildContext context, {
   GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,
 }) async {
-  final SharedPreferences preferences = await SharedPreferences.getInstance();
-  if (preferences.getInt(scene.preferenceKey) == kGoogleLensDisclosureVersion) {
-    return true;
-  }
+  if (await hasGoogleLensDisclosure(scene: scene)) return true;
   if (!context.mounted) {
     return false;
   }
@@ -72,6 +86,6 @@ Future<bool> ensureGoogleLensDisclosure(
   if (!accepted) {
     return false;
   }
-  await preferences.setInt(scene.preferenceKey, kGoogleLensDisclosureVersion);
+  await recordGoogleLensDisclosureAccepted(scene: scene);
   return true;
 }

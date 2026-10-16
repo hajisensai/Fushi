@@ -62,6 +62,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
+import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -2382,19 +2383,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     await _reload();
   }
 
-  PopupMenuItem<_CollectionManageAction> _manageMenuItem(
-    _CollectionManageAction action,
-    IconData icon,
-    String label, {
-    bool enabled = true,
-  }) {
-    return PopupMenuItem<_CollectionManageAction>(
-      value: action,
-      enabled: enabled,
-      child: _menuItemRow(icon, label),
-    );
-  }
-
   /// 菜单项「图标 + 文字」行。2026-10 体验优化：文字包 [Flexible] + 省略号，
   /// 长译文（德 / 俄等）在窄菜单里不再横向溢出。
   Widget _menuItemRow(IconData icon, String label) {
@@ -2435,120 +2423,140 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             onPressed: () => unawaited(_togglePosterLayout()),
           ),
         _buildSortMenu(),
-        FushiPopupMenuButton<_CollectionManageAction>(
-          icon: const FushiIcon(FushiIcons.more),
-          onSelected: (_CollectionManageAction action) =>
-              unawaited(_handleManageAction(action)),
-          itemBuilder: (BuildContext context) =>
-              <PopupMenuEntry<_CollectionManageAction>>[
-                _manageMenuItem(
-                  _CollectionManageAction.setCover,
-                  FushiIcons.image,
-                  t.collection_cover_set,
-                ),
-                if (widget.onPickOnlineCover != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.setCoverOnline,
-                    FushiIcons.imageSearch,
-                    t.video_cover_online_search,
-                  ),
-                if (_collection.coverPath?.isNotEmpty ?? false)
-                  _manageMenuItem(
-                    _CollectionManageAction.resetCover,
-                    FushiIcons.undo,
-                    t.collection_cover_reset,
-                  ),
-                // 重刮入口只在库页注入了 controller 时存在（详情页不自造 controller）。
-                if (widget.onRescrapeCollection != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.rescrape,
-                    FushiIcons.refresh,
-                    t.collection_rescrape,
-                  ),
-                // TMDB 备选排序只对已刮出剧集作品行的合集有意义。
-                if (widget.onChooseTmdbOrdering != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.tmdbOrdering,
-                    FushiIcons.sort,
-                    t.collection_tmdb_ordering,
-                    enabled: _canonicalWork?.mediaType == 'tv',
-                  ),
-                const PopupMenuDivider(),
-                _manageMenuItem(
-                  _CollectionManageAction.sortBySeason,
-                  FushiIcons.filterList,
-                  t.collection_sort_by_season,
-                  enabled: _slots.isNotEmpty,
-                ),
-                _manageMenuItem(
-                  _CollectionManageAction.subtitles,
-                  FushiIcons.subtitles,
-                  t.video_jimaku_batch_title,
-                  enabled: _members.isNotEmpty,
-                ),
-                _manageMenuItem(
-                  _CollectionManageAction.renameEpisodes,
-                  FushiIcons.edit,
-                  t.collection_episode_rename,
-                  enabled: _members.isNotEmpty,
-                ),
-                // 「补齐缺集」与「标签」是 hero 上常驻的次按钮，菜单里不再重复
-                // （BUG-3190：右上角与左侧按钮重复）。
-                // 合集整体下载（#6）：把只在对端的成员整批拉到本机。与「补齐缺集」
-                // （torrent 下载中心）是两条不同的路，入口分开、文案分开。
-                if (widget.remote?.downloadMembers != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.downloadRemote,
-                    FushiIcons.cloudDownload,
-                    t.remote_collection_download_members,
-                    enabled: _remoteMembers.isNotEmpty,
-                  ),
-                // 互联刮削（7a / 7b）。
-                if (widget.remote?.scrapeOnHost != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.scrapeOnHost,
-                    FushiIcons.cloudSync,
-                    t.remote_collection_scrape_on_host,
-                  ),
-                if (widget.remote?.scrapeForHost != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.scrapeForHost,
-                    FushiIcons.cloudUpload,
-                    t.remote_collection_scrape_push_to_host,
-                  ),
-                if (widget.remote?.chooseTmdbOrderingOnHost != null)
-                  _manageMenuItem(
-                    _CollectionManageAction.tmdbOrderingOnHost,
-                    FushiIcons.sort,
-                    t.remote_collection_tmdb_ordering_on_host,
-                  ),
-                _manageMenuItem(
-                  _CollectionManageAction.splitBySeason,
-                  FushiIcons.swap,
-                  t.collection_split_by_season,
-                  enabled: _hasSeasonTabs,
-                ),
-                const PopupMenuDivider(),
-                _manageMenuItem(
-                  _CollectionManageAction.lockFields,
-                  FushiIcons.lock,
-                  t.video_work_locked_fields,
-                  enabled: _canonicalWork != null,
-                ),
-                _manageMenuItem(
-                  _CollectionManageAction.rename,
-                  FushiIcons.rename,
-                  t.rename_collection,
-                ),
-                _manageMenuItem(
-                  _CollectionManageAction.delete,
-                  FushiIcons.delete,
-                  t.delete_collection,
-                ),
-              ],
+        // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」
+        // （用户 2026-10-06「默认展开，空间不足才收起」）。保底宽度扣掉返回钮、标题
+        // 与前面的布局切换 / 排序钮。
+        FushiAdaptiveActionStrip(
+          key: const ValueKey<String>('collection-detail-manage-actions'),
+          moreKey: const ValueKey<String>('collection-detail-manage-more'),
+          reservedWidth:
+              FushiAdaptiveActionStrip.titleBarReservedWidth + 48 * 2,
+          actions: _manageActions(),
         ),
       ],
     );
+  }
+
+  /// 合集管理动作（优先级 = 顺序，最后一个最低，放不下先收进「⋯」）。
+  List<FushiAdaptiveAction> _manageActions() {
+    FushiAdaptiveAction action(
+      _CollectionManageAction a,
+      IconData icon,
+      String label, {
+      bool enabled = true,
+      bool dividerBefore = false,
+    }) => FushiAdaptiveAction(
+      icon: icon,
+      label: label,
+      onPressed: enabled ? () => unawaited(_handleManageAction(a)) : null,
+      foldedDividerBefore: dividerBefore,
+    );
+    return <FushiAdaptiveAction>[
+      action(
+        _CollectionManageAction.setCover,
+        FushiIcons.image,
+        t.collection_cover_set,
+      ),
+      if (widget.onPickOnlineCover != null)
+        action(
+          _CollectionManageAction.setCoverOnline,
+          FushiIcons.imageSearch,
+          t.video_cover_online_search,
+        ),
+      if (_collection.coverPath?.isNotEmpty ?? false)
+        action(
+          _CollectionManageAction.resetCover,
+          FushiIcons.undo,
+          t.collection_cover_reset,
+        ),
+      // 重刮入口只在库页注入了 controller 时存在（详情页不自造 controller）。
+      if (widget.onRescrapeCollection != null)
+        action(
+          _CollectionManageAction.rescrape,
+          FushiIcons.refresh,
+          t.collection_rescrape,
+        ),
+      // TMDB 备选排序只对已刮出剧集作品行的合集有意义。
+      if (widget.onChooseTmdbOrdering != null)
+        action(
+          _CollectionManageAction.tmdbOrdering,
+          FushiIcons.sort,
+          t.collection_tmdb_ordering,
+          enabled: _canonicalWork?.mediaType == 'tv',
+        ),
+      action(
+        _CollectionManageAction.sortBySeason,
+        FushiIcons.filterList,
+        t.collection_sort_by_season,
+        enabled: _slots.isNotEmpty,
+        dividerBefore: true,
+      ),
+      action(
+        _CollectionManageAction.subtitles,
+        FushiIcons.subtitles,
+        t.video_jimaku_batch_title,
+        enabled: _members.isNotEmpty,
+      ),
+      action(
+        _CollectionManageAction.renameEpisodes,
+        FushiIcons.edit,
+        t.collection_episode_rename,
+        enabled: _members.isNotEmpty,
+      ),
+      // 「补齐缺集」与「标签」是 hero 上常驻的次按钮，这里不再重复
+      // （BUG-3190：右上角与左侧按钮重复）。
+      // 合集整体下载（#6）：把只在对端的成员整批拉到本机。与「补齐缺集」
+      // （torrent 下载中心）是两条不同的路，入口分开、文案分开。
+      if (widget.remote?.downloadMembers != null)
+        action(
+          _CollectionManageAction.downloadRemote,
+          FushiIcons.cloudDownload,
+          t.remote_collection_download_members,
+          enabled: _remoteMembers.isNotEmpty,
+        ),
+      // 互联刮削（7a / 7b）。
+      if (widget.remote?.scrapeOnHost != null)
+        action(
+          _CollectionManageAction.scrapeOnHost,
+          FushiIcons.cloudSync,
+          t.remote_collection_scrape_on_host,
+        ),
+      if (widget.remote?.scrapeForHost != null)
+        action(
+          _CollectionManageAction.scrapeForHost,
+          FushiIcons.cloudUpload,
+          t.remote_collection_scrape_push_to_host,
+        ),
+      if (widget.remote?.chooseTmdbOrderingOnHost != null)
+        action(
+          _CollectionManageAction.tmdbOrderingOnHost,
+          FushiIcons.sort,
+          t.remote_collection_tmdb_ordering_on_host,
+        ),
+      action(
+        _CollectionManageAction.splitBySeason,
+        FushiIcons.swap,
+        t.collection_split_by_season,
+        enabled: _hasSeasonTabs,
+      ),
+      action(
+        _CollectionManageAction.lockFields,
+        FushiIcons.lock,
+        t.video_work_locked_fields,
+        enabled: _canonicalWork != null,
+        dividerBefore: true,
+      ),
+      action(
+        _CollectionManageAction.rename,
+        FushiIcons.rename,
+        t.rename_collection,
+      ),
+      action(
+        _CollectionManageAction.delete,
+        FushiIcons.delete,
+        t.delete_collection,
+      ),
+    ];
   }
 
   @override

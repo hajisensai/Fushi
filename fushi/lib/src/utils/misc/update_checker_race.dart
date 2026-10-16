@@ -333,7 +333,7 @@ Future<List<String>?> raceSelectFastestCandidate({
 /// [HttpClient]（见 release part `_downloadAndInstall`），故只需登记一次；回调内的
 /// `client.close(force: true)` 与 finally 的 `client.close()` 关两次幂等、不报错。
 /// 放在 race part：与竞速探针 drain 的取消语义（R1）同家，且让 download part 不越结构守卫。
-@visibleForTesting
+/// 控制通道（`fushi_cli update cancel`，`app_update_cli.dart`）与下载浮层共用同一个令牌。
 class UpdateDownloadCancellation {
   bool _cancelled = false;
   void Function()? _abort;

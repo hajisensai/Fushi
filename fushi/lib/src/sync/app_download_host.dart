@@ -144,13 +144,13 @@ class AppDownloadHost implements HostDownloadHost {
   Future<void> retryJob(String jobId) => _requirePipeline.retryJob(jobId);
 
   @override
-  Future<void> deleteJob(String jobId) =>
-      // **不删磁盘文件**：host 是用户自己的机器，`listJobs` 返回的是本机全表
-      //（含 host 主人自己加的任务），对端在「远端任务」卡片上点一下删除就把
-      // 主人已经下载好的文件删了是不可接受的。无头 `fushi_server` 那边整台机器
-      // 本就是为对端服务的，语义不同。对端要的是「别再占我的列表」，落盘文件的
-      // 去留归 host 主人在本机下载中心决定。
-      _requirePipeline.deleteJob(jobId, deleteFiles: false);
+  Future<void> deleteJob(String jobId, {bool? deleteFiles}) =>
+      // [deleteFiles] 是对端用户在删除确认框里的显式勾选（BUG-3417），按字面执行。
+      // 缺省（旧客户端不带参数）**不删磁盘文件**：host 是用户自己的机器，
+      // `listJobs` 返回的是本机全表（含 host 主人自己加的任务），没问过就把主人
+      // 已经下载好的文件删了是不可接受的。无头 `fushi_server` 那边整台机器本就是
+      // 为对端服务的，缺省语义不同。
+      _requirePipeline.deleteJob(jobId, deleteFiles: deleteFiles ?? false);
 }
 
 /// 每次调用都按当下的 registry / service 重建一份 [PipelineSubscriptionHost]：

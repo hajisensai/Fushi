@@ -24,6 +24,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
+import 'package:fushi/src/updates/app_update_cli.dart' show checkAppUpdateForCli;
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -161,6 +162,12 @@ SettingsDestination buildSystemDestination() {
             id: 'system.check_update_now',
             title: t.settings_check_update_now,
             icon: Icons.system_update_outlined,
+            // 检查不弹对话框、只回结果；下载 / 安装是后面两步：
+            // `fushi_cli update download` / `update install --yes`（见 app_update_cli.dart）。
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> _) =>
+                  checkAppUpdateForCli(c.appModel),
+            ),
             onTap: _checkUpdateNow,
           ),
           // TODO-1310：应用内查看更新日志。推 ChangelogPage，在线拉本仓库 GitHub
@@ -320,6 +327,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.website',
             title: t.options_website,
             icon: Icons.language_outlined,
+            cli: const SettingsCliAction.tap(),
             onTap: (_) async {
               await openOfficialWebsite();
             },
@@ -328,6 +336,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.github',
             title: t.options_github,
             icon: Icons.public_outlined,
+            cli: const SettingsCliAction.tap(),
             onTap: (_) async {
               await launchUrl(
                 Uri.parse('https://github.com/hajisensai/fushi'),
@@ -339,6 +348,7 @@ SettingsDestination buildSystemDestination() {
             id: 'system.github_sponsors',
             title: t.options_github_sponsors,
             icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
             onTap: (_) async {
               await launchUrl(
                 Uri.parse(kGitHubSponsorsUrl),
@@ -695,6 +705,11 @@ SettingsDestination buildSystemDestination() {
             title: t.settings_study_diag_export,
             subtitle: t.settings_study_diag_export_hint,
             icon: Icons.save_alt_outlined,
+            cli: SettingsCliAction(
+              params: _kDiagExportParams,
+              run: (SettingsContext c, Map<String, String> args) async =>
+                  _writeDiagExport(args, await _buildStudyDiagLog(c.appModel)),
+            ),
             onTap: _exportStudyDiagLog,
           ),
           // 用户 2026-09-22：「视频模块加入日志用于分析视频为什么卡顿、查词为什么
@@ -719,6 +734,11 @@ SettingsDestination buildSystemDestination() {
             icon: Icons.save_alt_outlined,
             // 开关关着也留着导出：复现完先关掉再导出是很自然的顺序，此时流水仍在
             // （[VideoDiagLog.setEnabled] 只停止记录、不清空）。
+            cli: SettingsCliAction(
+              params: _kDiagExportParams,
+              run: (SettingsContext c, Map<String, String> args) async =>
+                  _writeDiagExport(args, await _buildVideoDiagLog(c.appModel)),
+            ),
             onTap: _exportVideoDiagLog,
           ),
         ],
@@ -727,15 +747,39 @@ SettingsDestination buildSystemDestination() {
   );
 }
 
+/// 诊断导出在控制通道上的参数：CLI 给目标文件（代替保存对话框 / 系统分享）。
+const List<SettingsCliParam> _kDiagExportParams = <SettingsCliParam>[
+  SettingsCliParam('value', help: '导出到的文件（绝对路径）', path: true),
+  SettingsCliParam('overwrite', help: 'true = 目标已存在时覆盖', required: false),
+];
+
+/// 控制通道导出：写到给定路径；已存在且没要求覆盖时拒绝。
+Future<Object?> _writeDiagExport(Map<String, String> args, String log) async {
+  final File file = File(args['value']!);
+  if (file.existsSync() && args['overwrite'] != 'true') {
+    throw ArgumentError('${file.path} 已存在；覆盖请加 --arg overwrite=true');
+  }
+  await file.parent.create(recursive: true);
+  await file.writeAsString(log);
+  return <String, Object?>{'path': file.path, 'bytes': await file.length()};
+}
+
+Future<String> _buildStudyDiagLog(AppModel appModel) => buildStudyDiagExport(
+  appModel.database,
+  appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
+  readingIdleTimeoutMinutes: appModel.readingIdleTimeoutMinutes,
+  statDayResetHour: appModel.statDayResetHour,
+);
+
+Future<String> _buildVideoDiagLog(AppModel appModel) =>
+    buildVideoDiagExportFromDisk(
+      appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
+      lowMemoryMode: appModel.lowMemoryMode,
+    );
+
 /// 设置 › 诊断 › 导出统计诊断日志（正文见 [buildStudyDiagExport]）。
 Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
-  final AppModel appModel = settingsContext.appModel;
-  final String log = await buildStudyDiagExport(
-    appModel.database,
-    appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
-    readingIdleTimeoutMinutes: appModel.readingIdleTimeoutMinutes,
-    statDayResetHour: appModel.statDayResetHour,
-  );
+  final String log = await _buildStudyDiagLog(settingsContext.appModel);
   if (!settingsContext.context.mounted) return;
   await saveLogToFile(
     context: settingsContext.context,
@@ -748,11 +792,7 @@ Future<void> _exportStudyDiagLog(SettingsContext settingsContext) async {
 /// 设置 › 诊断 › 导出视频诊断日志（正文见 [buildVideoDiagExportFromDisk]）。
 /// 三段：头信息（含小内存模式 / 热槽状态）+ 统一时间轴 + libmpv 原始日志尾部。
 Future<void> _exportVideoDiagLog(SettingsContext settingsContext) async {
-  final AppModel appModel = settingsContext.appModel;
-  final String log = await buildVideoDiagExportFromDisk(
-    appVersion: resolveCurrentAppVersion(appModel.packageInfo.version),
-    lowMemoryMode: appModel.lowMemoryMode,
-  );
+  final String log = await _buildVideoDiagLog(settingsContext.appModel);
   if (!settingsContext.context.mounted) return;
   await saveLogToFile(
     context: settingsContext.context,

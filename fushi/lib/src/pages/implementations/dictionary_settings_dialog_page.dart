@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, mapEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -21,6 +21,7 @@ import 'package:fushi/src/pages/implementations/dict_style_visual_editor.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
+import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/utils.dart';
 
 @visibleForTesting
@@ -53,16 +54,9 @@ class AudioSourcesDialog extends StatefulWidget {
 
   /// 自定义远端音频 URL 合法性：必须是 http(s) 链接，且至少含一个
   /// `{term}` / `{reading}` 占位符（否则播放时无法代入查词参数）。
+  /// 规则与控制通道共用 [isValidRemoteAudioUrl]。
   @visibleForTesting
-  static bool isValidRemoteUrl(String text) {
-    // 折全角后再判：否则合法模板会被拒，而错误提示只说「地址无效」，
-    // 用户完全看不出问题出在标点上（BUG-1807）。
-    final String value = normalizeUrlInput(text);
-    final Uri? uri = Uri.tryParse(value);
-    if (uri == null || !uri.hasAuthority) return false;
-    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
-    return value.contains('{term}') || value.contains('{reading}');
-  }
+  static bool isValidRemoteUrl(String text) => isValidRemoteAudioUrl(text);
 
   @override
   State<AudioSourcesDialog> createState() => _AudioSourcesDialogState();
@@ -418,9 +412,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
             children: <Widget>[
               // 编辑态下不再暴露「加入 Fushi 互联源」——那是新增动作，与当前正在改的
               // 那一行无关，混在一起只会让 ✓ 的语义变模糊。
-              if (!editing &&
-                  !_sources.any((AudioSourceConfig s) =>
-                      s.kind == AudioSourceKind.fushiRemote))
+              if (!editing && !hasFushiRemoteAudioSource(_sources))
                 FushiIconButton(
                   icon: FushiIcons.hub,
                   tooltip: t.audio_source_fushi_interconnect,
@@ -591,21 +583,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     setState(() {
       // 整表重建 → 编辑目标不再属于新列表，编辑态必须一起清掉。
       _cancelEdit();
-      final bool hadFushiRemote = _sources
-          .any((AudioSourceConfig s) => s.kind == AudioSourceKind.fushiRemote);
-      final List<AudioSourceConfig> locals = _sources
-          .where((AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio)
-          .toList();
-      _sources = <AudioSourceConfig>[
-        if (hadFushiRemote) AudioSourceConfig.fushiRemote(),
-        // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
-        AudioSourceConfig.remoteAudio(
-          url: AppModel.ankiLocalAudioUrl,
-          label: 'Anki',
-          enabled: false,
-        ),
-        ...locals,
-      ];
+      // Anki 本地音频服务器内置预设：重置默认后也在列（默认关闭，与新装一致）。
+      _sources = resetAudioSourcesToDefaults(
+        _sources,
+        ankiLocalAudioUrl: AppModel.ankiLocalAudioUrl,
+      );
     });
   }
 
@@ -706,6 +688,31 @@ class _DictCssDraftSession {
   ///
   /// null = 本次会话还没碰过可视化页，保存时也就不该覆写已存规则。
   List<DictStyleRule>? styleRules;
+
+  /// [styleRules] 上次与磁盘对齐时的规则快照（[dictStyleRulesSnapshot]）。
+  ///
+  /// 规则表也会被对话框之外改（`fushi_cli config items lookup.custom_css.cli.visual_rules`）。
+  /// 以前保存是「按草稿整份覆盖」，对话框开着时别处的改动会被陈旧草稿悄悄抹掉。
+  /// 有了基线才分得清哪几条是本地改过的：没改过的跟随磁盘刷新，保存只写改过的
+  /// （[overlayDirtyDictStyleRules]）。与 [styleRules] 同时为 null / 非 null。
+  Map<String, String>? styleRulesBaseline;
+
+  /// 把磁盘上别处写入的变化并进规则草稿（没碰过可视化页时什么都不做）。
+  /// 返回草稿是否变了。
+  bool rebaseStyleRules(List<DictStyleRule> persisted) {
+    final List<DictStyleRule>? rules = styleRules;
+    final Map<String, String>? baseline = styleRulesBaseline;
+    if (rules == null || baseline == null) return false;
+    final Map<String, String> now = dictStyleRulesSnapshot(persisted);
+    if (mapEquals(now, baseline)) return false;
+    styleRules = overlayDirtyDictStyleRules(
+      draft: rules,
+      baseline: baseline,
+      persisted: persisted,
+    );
+    styleRulesBaseline = now;
+    return true;
+  }
 
   /// 可视化页当前选中的部位，跨 tab 切换保持。
   DictStylePart selectedPart = DictStylePart.glossaryContent;
@@ -821,10 +828,20 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     }
     _draft.selectedDictionaryName = _selectedDictionaryName;
     _cssController = TextEditingController(text: _currentDraftCss);
+    // 复用的会话草稿在对话框关着期间没人监听：先对齐一次磁盘，再开始监听。
+    _draft.rebaseStyleRules(_appModel.dictStyleRules);
+    _appModel.addListener(_onAppModelChanged);
+  }
+
+  /// 规则表落盘后 `AppModel.saveDictStyleRules` 会通知：没改过的规则跟随刷新。
+  void _onAppModelChanged() {
+    if (!mounted || _draftFinalized) return;
+    if (_draft.rebaseStyleRules(_appModel.dictStyleRules)) setState(() {});
   }
 
   @override
   void dispose() {
+    _appModel.removeListener(_onAppModelChanged);
     if (!_draftFinalized) {
       _stashCurrentScope();
     }
@@ -1076,8 +1093,19 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           // null = 本次没碰过可视化页。不能拿 `?? []` 兜底——那会把用户已存的
           // 规则在「只改了手写 CSS 就保存」时整份清空。
           final List<DictStyleRule>? rules = _draft.styleRules;
-          if (rules != null) {
-            await _appModel.saveDictStyleRules(rules);
+          final Map<String, String>? baseline = _draft.styleRulesBaseline;
+          if (rules != null && baseline != null) {
+            // 按条合并：以磁盘当前表为底，只写本地改过的规则——对话框开着时
+            // 别处（CLI）写入的、本地没碰过的规则不被陈旧草稿覆盖。
+            final List<DictStyleRule> merged = overlayDirtyDictStyleRules(
+              draft: rules,
+              baseline: baseline,
+              persisted: _appModel.dictStyleRules,
+            );
+            // 先推进基线再写：写入会同步通知 [_onAppModelChanged]。
+            _draft.styleRules = merged;
+            _draft.styleRulesBaseline = dictStyleRulesSnapshot(merged);
+            await _appModel.saveDictStyleRules(merged);
           }
         },
       );
@@ -1125,8 +1153,13 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   }
 
   /// 规则表草稿。首次读时从 AppModel 惰性取一份副本。
-  List<DictStyleRule> get _currentDraftRules =>
-      _draft.styleRules ??= _appModel.dictStyleRules;
+  List<DictStyleRule> get _currentDraftRules {
+    final List<DictStyleRule>? existing = _draft.styleRules;
+    if (existing != null) return existing;
+    final List<DictStyleRule> persisted = _appModel.dictStyleRules;
+    _draft.styleRulesBaseline = dictStyleRulesSnapshot(persisted);
+    return _draft.styleRules = persisted;
+  }
 
   String get _currentDraftCss {
     return _draft.cssByDictionary.putIfAbsent(

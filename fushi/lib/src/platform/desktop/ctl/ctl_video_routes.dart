@@ -45,6 +45,7 @@ import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_video_player_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_support.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 
@@ -69,6 +70,14 @@ List<CtlRoute> buildVideoCtlRoutes(DesktopCtlContext context) {
     CtlRoute.get('/api/admin/video/scrape', ctl.scrapeStatus),
     CtlRoute.post('/api/admin/video/scrape', ctl.scrape),
     CtlRoute.post('/api/admin/video/scrape/cancel', ctl.cancelScrape),
+    CtlRoute.get(
+      '/api/admin/video/scrape/confirmation',
+      ctl.pendingConfirmation,
+    ),
+    CtlRoute.post(
+      '/api/admin/video/scrape/confirmation',
+      ctl.answerConfirmation,
+    ),
     // ── 发现 ──────────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/video/discovery/search', ctl.discover),
     CtlRoute.get(
@@ -76,6 +85,8 @@ List<CtlRoute> buildVideoCtlRoutes(DesktopCtlContext context) {
       ctl.searchResources,
     ),
     CtlRoute.post('/api/admin/video/discovery/acquire', ctl.acquire),
+    // ── 播放页（音量 / 音轨 / 字幕 / 字幕生成 / 制卡 / 片段 / 暂存队列） ──────
+    ...buildVideoPlayerCtlRoutes(context),
   ];
 }
 
@@ -385,12 +396,16 @@ class _VideoCtl {
         }
         final bool allowOverwrite = call.optBool('allowOverwrite') == true;
         if (allowOverwrite) _requireConfirm(call, '覆盖受保护的外部 NFO / 图片');
+        // 交互式 = 库页「刮削此来源」：歧义作品暂停批次等确认（app 内确认框与
+        // `video confirm` 回答同一个待决状态），而不是直接进待确认清单。
+        final bool interactive = call.optBool('interactive') == true;
         if (controller.isBusy) {
           throw const CtlFailure.conflict('已有刮削批次或来源扫描在进行（video status 查看）');
         }
         final Future<SourceScrapeReport> task = runtime.observe(
           controller.scrapeSource(
             source,
+            interactive: interactive,
             allowProtectedOverwrite: allowOverwrite,
           ),
         );
@@ -398,6 +413,7 @@ class _VideoCtl {
           'sourceId': source.id,
           'source': source.label,
           'mode': 'source',
+          if (interactive) 'interactive': true,
         };
         if (!wait) {
           unawaited(
@@ -476,6 +492,7 @@ class _VideoCtl {
       'pendingConfirmation': confirmation == null
           ? null
           : <String, Object?>{
+              'id': ctlVideoConfirmationId(confirmation),
               'work': confirmation.localWorkTitle,
               'source': confirmation.sourceLabel,
               'candidates': confirmation.candidates.length,
@@ -509,6 +526,48 @@ class _VideoCtl {
     }
     controller.cancel();
     return <String, Object?>{'cancelled': true};
+  }
+
+  // ── 待确认（交互式批次里的歧义作品） ────────────────────────────────────
+
+  /// `video confirm`（不带回答）：当前等待确认的作品与候选。`wait=true` 时等到出现
+  /// 待确认项或批次结束（`timeout` 秒，缺省 60、上限 600）。
+  Future<Object?> pendingConfirmation(CtlCall call) async {
+    final VideoSourceScrapeTaskController? controller =
+        _runtime().currentController;
+    VideoSourceScrapeConfirmation? confirmation =
+        controller?.pendingConfirmation;
+    if (controller != null &&
+        confirmation == null &&
+        call.optBool('wait') == true) {
+      final int seconds = (call.optInt('timeout') ?? 60).clamp(1, 600);
+      confirmation = await waitForCtlVideoConfirmation(
+        controller,
+        Duration(seconds: seconds),
+      );
+    }
+    return <String, Object?>{
+      'busy': controller?.isBusy ?? false,
+      'pending': confirmation == null
+          ? null
+          : ctlVideoConfirmationJson(confirmation),
+    };
+  }
+
+  /// `video confirm <序号> | --provider/--id | --skip`：回答当前待确认项，与 app
+  /// 内确认框是同一个待决状态（谁先答算谁的），回答后暂停的批次继续。
+  Future<Object?> answerConfirmation(CtlCall call) async {
+    final VideoSourceScrapeTaskController? controller =
+        _runtime().currentController;
+    if (controller == null) {
+      throw const CtlFailure.conflict('当前没有等待确认的刮削作品');
+    }
+    return answerCtlVideoConfirmation(
+      controller,
+      CtlVideoConfirmationAnswer.parse(call),
+      expectedId: call.optString('id'),
+      sourceById: (int id) => _db.getMediaSourceById(id),
+    );
   }
 
   // ── 发现 ────────────────────────────────────────────────────────────────
