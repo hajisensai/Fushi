@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 132158 (7774 per locale)
+/// Strings: 132175 (7775 per locale)
 ///
-/// Built on 2026-10-15 at 03:29 UTC
+/// Built on 2026-10-16 at 04:16 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11232,6 +11232,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get backup_category_srs => 'Review';
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -30030,6 +30031,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -49218,6 +49221,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -68465,6 +68470,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -87793,6 +87800,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -106774,6 +106783,8 @@ class _StringsId extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -125921,6 +125932,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -144068,6 +144081,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -162251,6 +162266,8 @@ class _StringsKo extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -181346,6 +181363,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -200510,6 +200529,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -219619,6 +219640,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -238406,6 +238429,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -257397,6 +257422,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -276315,6 +276342,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 // Path: <root>
@@ -293582,6 +293611,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       '复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案';
+  @override
+  String get video_setting_subtitle_no_outline => '无描边';
 }
 
 // Path: <root>
@@ -311170,6 +311201,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get video_setting_subtitle_no_outline => 'No outline';
 }
 
 /// Flat map(s) containing all translations.
@@ -327298,6 +327331,8 @@ extension on _StringsEn {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -343421,6 +343456,8 @@ extension on _StringsAr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -359620,6 +359657,8 @@ extension on _StringsDe {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -375801,6 +375840,8 @@ extension on _StringsEs {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -392000,6 +392041,8 @@ extension on _StringsFr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -408143,6 +408186,8 @@ extension on _StringsId {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -424322,6 +424367,8 @@ extension on _StringsIt {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -440374,6 +440421,8 @@ extension on _StringsJa {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -456434,6 +456483,8 @@ extension on _StringsKo {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -472608,6 +472659,8 @@ extension on _StringsNl {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -488774,6 +488827,8 @@ extension on _StringsPtBr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -504945,6 +505000,8 @@ extension on _StringsRu {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -521072,6 +521129,8 @@ extension on _StringsTh {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -537230,6 +537289,8 @@ extension on _StringsTr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -553371,6 +553432,8 @@ extension on _StringsVi {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }
@@ -569328,6 +569391,8 @@ extension on _StringsZhCn {
         return '复习';
       case 'backup_category_srs_desc':
         return '复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案';
+      case 'video_setting_subtitle_no_outline':
+        return '无描边';
       default:
         return null;
     }
@@ -585325,6 +585390,8 @@ extension on _StringsZhHk {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       default:
         return null;
     }

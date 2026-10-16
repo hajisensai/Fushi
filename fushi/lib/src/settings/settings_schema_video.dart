@@ -757,6 +757,19 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 字幕**文字**颜色调色盘行（TODO-1326）。四个颜色行全局设置页也显示
+          // （PM-iIH9G0b，此前 host 门控只在播放页出现）：builder 无 host 时经拖动
+          // 预览态驱动分组顶部的样式预览、关闭时直接落 pref，不依赖播放器。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_text_color',
+            searchTitle: t.video_setting_subtitle_text_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 90,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleTextColorRow,
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.shadow',
             title: t.video_setting_subtitle_shadow,
@@ -788,6 +801,17 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
               );
             },
+          ),
+          // 字幕阴影颜色调色盘行（#xif6-gtSz7），紧跟阴影粗细滑条。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_shadow_color',
+            searchTitle: t.video_setting_subtitle_shadow_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 101,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleShadowColorRow,
           ),
           // 字幕描边粗细（#xif6-gtSz7）：沿字形轮廓的真描边，与上面的柔和投影是两层。
           // 0 = 不描边（默认）。只作用于统一外观，「尊重 .ass 自带样式」时由文件决定。
@@ -822,6 +846,17 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: VideoSubtitleStyle.defaults.outlineThickness,
           ),
+          // 字幕描边颜色调色盘行（#xif6-gtSz7），紧跟描边粗细滑条；对话框带「无描边」。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_outline_color',
+            searchTitle: t.video_setting_subtitle_outline_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 103,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleOutlineColorRow,
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.bg_opacity',
             title: t.video_setting_subtitle_bg_opacity,
@@ -849,6 +884,17 @@ SettingsDestination buildVideoDestination() {
               );
             },
             defaultValue: VideoSubtitleStyle.defaults.backgroundOpacity,
+          ),
+          // 字幕背景颜色调色盘行（TODO-1059），紧跟背景不透明度滑条。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_bg_color',
+            searchTitle: t.video_setting_subtitle_bg_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 130,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            builder: buildVideoSubtitleBgColorRow,
           ),
           // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
           // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
@@ -2043,38 +2089,6 @@ SettingsDestination buildVideoDestination() {
             ),
             builder: buildVideoSubtitleSyncRow,
           ),
-          // 字幕**文字**颜色调色盘行（TODO-1326）。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_text_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 90,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleTextColorRow,
-          ),
-          // 字幕阴影 / 描边颜色调色盘行（#xif6-gtSz7），紧跟各自的粗细滑条。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_shadow_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 101,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleShadowColorRow,
-          ),
-          SettingsCustomItem(
-            id: 'video.player.subtitle_outline_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 103,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleOutlineColorRow,
-          ),
           // 一键无背景：与相邻 bg_opacity 滑到 0 等效的便捷动作，全局设置页有意不
           // 单列（冗余），播放页快捷面板保留。
           SettingsActionItem(
@@ -2094,17 +2108,6 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
               );
             },
-          ),
-          // TODO-1059：字幕背景颜色调色盘行。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_bg_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 130,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleBgColorRow,
           ),
           SettingsActionItem(
             id: 'video.player.subtitle_style_reset',

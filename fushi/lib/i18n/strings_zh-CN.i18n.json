@@ -7772,5 +7772,6 @@
   "srs_settings_reset_params_done": "已恢复默认参数",
   "srs_ankiconnect_title": "AnkiConnect（Fushi 复习）",
   "backup_category_srs": "复习",
-  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案"
+  "backup_category_srs_desc": "复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案",
+  "video_setting_subtitle_no_outline": "无描边"
 }

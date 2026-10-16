@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -113,20 +113,14 @@ Future<_OverlayColorChoice?> _pickOverlayColor(
     context: context,
     builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(title),
-      content: SingleChildScrollView(
-        child: ColorPicker(
-          pickerColor: initial,
-          onColorChanged: (Color color) {
-            picked = enableAlpha
-                ? color
-                : Color(0xFF000000 | (color.toARGB32() & 0x00FFFFFF));
-          },
-          portraitOnly: true,
-          enableAlpha: enableAlpha,
-          displayThumbColor: true,
-          hexInputBar: true,
-          labelTypes: const <ColorLabelType>[],
-        ),
+      content: FushiDialogColorPicker(
+        pickerColor: initial,
+        onColorChanged: (Color color) {
+          picked = enableAlpha
+              ? color
+              : Color(0xFF000000 | (color.toARGB32() & 0x00FFFFFF));
+        },
+        enableAlpha: enableAlpha,
       ),
       actions: <Widget>[
         if (offerFollowTheme)

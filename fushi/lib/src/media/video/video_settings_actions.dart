@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
@@ -495,8 +495,8 @@ Widget buildVideoSubtitleSyncRow(SettingsContext context) {
 }
 
 /// 一行「点开调色盘取任意色」的字幕颜色设置行（TODO-1326 文字色 / TODO-1059 背景
-/// 色）。行尾显示当前色色块，点整行开对话框内嵌 [ColorPicker]：拖动经 [onPreview]
-/// 实时预览背后字幕，关闭时经 [onCommit] 落盘一次。
+/// 色）。行尾显示当前色色块，点整行开对话框内嵌 [FushiDialogColorPicker]：拖动经
+/// [onPreview] 实时预览背后字幕，关闭时经 [onCommit] 落盘一次。
 Widget _buildSubtitleColorRow(
   SettingsContext context, {
   required String title,
@@ -504,6 +504,7 @@ Widget _buildSubtitleColorRow(
   required Color current,
   required void Function(Color color) onPreview,
   required void Function(Color color) onCommit,
+  _SubtitleColorClearAction? clearAction,
 }) {
   final BuildContext buildContext = context.context;
   return AdaptiveSettingsRow(
@@ -515,50 +516,73 @@ Widget _buildSubtitleColorRow(
       size: 24,
       borderColor: Theme.of(buildContext).dividerColor,
     ),
-    onTap: () => unawaited(_pickSubtitleColor(
-      buildContext,
-      title: title,
-      initial: current,
-      onPreview: onPreview,
-      onCommit: onCommit,
-    )),
+    onTap: () => unawaited(
+      _pickSubtitleColor(
+        buildContext,
+        title: title,
+        initial: current,
+        onPreview: onPreview,
+        onCommit: onCommit,
+        clearAction: clearAction,
+      ),
+    ),
   );
 }
 
-/// 弹字幕颜色对话框：内嵌 [ColorPicker] 取任意色。字幕文字/背景色都存**不透明**
-/// ARGB（背景实际可见透明度另由 backgroundOpacity 滑条控制），故这里强制不透明、
-/// 关闭 alpha 通道。拖动经 [onPreview] 实时预览（不落盘），点「完成」或关闭时经
-/// [onCommit] 落盘一次（避免拖动过程每帧写 DB）。
+/// 取色对话框里的「关掉这一层」动作（如「无描边」）：点了不落颜色，改走 [onClear]。
+class _SubtitleColorClearAction {
+  const _SubtitleColorClearAction({required this.label, required this.onClear});
+
+  final String label;
+  final Future<void> Function() onClear;
+}
+
+/// 弹字幕颜色对话框：内嵌 [FushiDialogColorPicker] 取任意色。字幕文字/背景色都存
+/// **不透明** ARGB（背景实际可见透明度另由 backgroundOpacity 滑条控制），故这里强制
+/// 不透明、关闭 alpha 通道。拖动经 [onPreview] 实时预览（不落盘），点「完成」或关闭时
+/// 经 [onCommit] 落盘一次（避免拖动过程每帧写 DB）。
+///
+/// 只有用户**真的选过色**才 commit（PM-iIH9G0b）：描边 / 背景的 commit 会把粗细 /
+/// 透明度从 0 顶到可见基线，若「打开看一眼就关」也 commit，用户刚滑到 0 关掉的描边
+/// 会被悄悄重新打开。给了 [clearAction] 时多一个「关掉」按钮（如「无描边」）。
 Future<void> _pickSubtitleColor(
   BuildContext context, {
   required String title,
   required Color initial,
   required void Function(Color color) onPreview,
   required void Function(Color color) onCommit,
+  _SubtitleColorClearAction? clearAction,
 }) async {
   Color picked = initial;
+  bool changed = false;
+  bool cleared = false;
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       return FushiAlertDialog(
-        icon: const FushiIcon(FushiIcons.appearance),
+        // 矮屏（手机横屏）省掉 hero 图标，纵向空间全给取色器。
+        icon: FushiDialogColorPicker.compactHeight(dialogContext)
+            ? null
+            : const FushiIcon(FushiIcons.appearance),
         title: Text(title),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: initial,
-            onColorChanged: (Color c) {
-              // 强制不透明：字幕文字透明无意义；背景透明度另由滑条控制。
-              picked = Color(0xFF000000 | (c.toARGB32() & 0xFFFFFF));
-              onPreview(picked);
-            },
-            portraitOnly: true,
-            enableAlpha: false,
-            displayThumbColor: true,
-            hexInputBar: true,
-            labelTypes: const <ColorLabelType>[],
-          ),
+        content: FushiDialogColorPicker(
+          pickerColor: initial,
+          onColorChanged: (Color c) {
+            // 强制不透明：字幕文字透明无意义；背景透明度另由滑条控制。
+            picked = Color(0xFF000000 | (c.toARGB32() & 0xFFFFFF));
+            changed = true;
+            onPreview(picked);
+          },
         ),
         actions: <Widget>[
+          if (clearAction != null)
+            FushiDialogAction(
+              label: clearAction.label,
+              onPressed: () {
+                cleared = true;
+                Navigator.of(dialogContext).pop();
+              },
+            ),
           FushiDialogAction(
             label: t.dialog_done,
             kind: FushiDialogActionKind.primary,
@@ -569,7 +593,11 @@ Future<void> _pickSubtitleColor(
       );
     },
   );
-  onCommit(picked);
+  if (cleared) {
+    await clearAction!.onClear();
+    return;
+  }
+  if (changed) onCommit(picked);
 }
 
 /// 字幕**文字**颜色取色行（TODO-1326）。与「尊重 .ass 自带样式」协调：respect 开且
@@ -642,10 +670,21 @@ Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
       context,
       (VideoSubtitleStyle s) => applyColor(s, c),
     ),
-    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
-      context,
-      (VideoSubtitleStyle s) => applyColor(s, c),
-    )),
+    onCommit: (Color c) => unawaited(
+      commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => applyColor(s, c),
+      ),
+    ),
+    // PM-iIH9G0b：描边可以直接在取色对话框里关掉（粗细归 0 = 无描边，颜色保留，
+    // 下次拉起粗细仍是这个颜色）。
+    clearAction: _SubtitleColorClearAction(
+      label: t.video_setting_subtitle_no_outline,
+      onClear: () => commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => s.copyWith(outlineThickness: 0),
+      ),
+    ),
   );
 }
 
