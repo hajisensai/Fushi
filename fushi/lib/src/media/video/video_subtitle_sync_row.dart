@@ -772,7 +772,14 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
             ? pill
             : FushiTooltip(
                 message: widget.tooltip,
-                child: FushiFocusable(onTap: _startEditing, child: pill),
+                // 胶囊自带不透明底色与 cardRadius：焦点环必须同形并画在上面，
+                // 否则被底色盖住、只在圆角处漏出残角（BUG-3420）。
+                child: FushiFocusable(
+                  onTap: _startEditing,
+                  borderRadius: FushiM3eShape.cardRadius,
+                  ringPosition: DecorationPosition.foreground,
+                  child: pill,
+                ),
               ),
       ),
     );
