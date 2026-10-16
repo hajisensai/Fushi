@@ -75,6 +75,9 @@ class ProfileKeys {
     // 「工具栏样式强制悬浮」一次性迁移标记：同族（迁移本身会改写各 Profile 快照
     // 里的 reader_toolbar_style，标记只描述本安装）。
     PreferencesRepository.readerToolbarStyleFloatingMigratedKey,
+    // 「挖词目标」出厂默认（兼一次性判定标记）：描述本安装是老用户还是新用户，同族。
+    // 进快照的话切到判定前建的老 Profile 会把它删掉，判定重跑。
+    PreferencesRepository.srsMiningTargetInstallDefaultKey,
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index
@@ -203,23 +206,23 @@ class ProfileKeys {
   }
 
   static Map<String, String> ankiSettingsToMap(AnkiSettings s) => {
-        'selectedDeckId': s.selectedDeckId?.toString() ?? '',
-        'selectedDeckName': s.selectedDeckName ?? '',
-        'selectedNoteTypeId': s.selectedNoteTypeId?.toString() ?? '',
-        'selectedNoteTypeName': s.selectedNoteTypeName ?? '',
-        'fieldMappings': jsonEncode(s.fieldMappings),
-        'tags': s.tags,
-        'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
-        'tagIncludeCategory': s.tagIncludeCategory.toString(),
-        'allowDupes': s.allowDupes.toString(),
-        'compactGlossaries': s.compactGlossaries.toString(),
-        'embedMedia': s.embedMedia.toString(),
-        // 两个范围单选必须进快照：[mapToAnkiSettings] 重建的是一个全新
-        // AnkiSettings，不在这里的字段会在切 Profile 时静默回默认值
-        // （overwriteScope 原本就漏了，顺手一并补上）。
-        'overwriteScope': s.overwriteScope.name,
-        'duplicateScope': s.duplicateScope.name,
-      };
+    'selectedDeckId': s.selectedDeckId?.toString() ?? '',
+    'selectedDeckName': s.selectedDeckName ?? '',
+    'selectedNoteTypeId': s.selectedNoteTypeId?.toString() ?? '',
+    'selectedNoteTypeName': s.selectedNoteTypeName ?? '',
+    'fieldMappings': jsonEncode(s.fieldMappings),
+    'tags': s.tags,
+    'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
+    'tagIncludeCategory': s.tagIncludeCategory.toString(),
+    'allowDupes': s.allowDupes.toString(),
+    'compactGlossaries': s.compactGlossaries.toString(),
+    'embedMedia': s.embedMedia.toString(),
+    // 两个范围单选必须进快照：[mapToAnkiSettings] 重建的是一个全新
+    // AnkiSettings，不在这里的字段会在切 Profile 时静默回默认值
+    // （overwriteScope 原本就漏了，顺手一并补上）。
+    'overwriteScope': s.overwriteScope.name,
+    'duplicateScope': s.duplicateScope.name,
+  };
 
   static AnkiSettings mapToAnkiSettings(
     Map<String, String> m,
@@ -239,8 +242,10 @@ class ProfileKeys {
       'selectedDeckName': nonEmpty(m['selectedDeckName']),
       'selectedNoteTypeId': parseInt(m['selectedNoteTypeId']),
       'selectedNoteTypeName': nonEmpty(m['selectedNoteTypeName']),
-      'fieldMappings':
-          _parseFieldMappings(m['fieldMappings'], current.fieldMappings),
+      'fieldMappings': _parseFieldMappings(
+        m['fieldMappings'],
+        current.fieldMappings,
+      ),
       'tags': m['tags'] ?? '',
       'tagIncludeHibiki': m.containsKey('tagIncludeHibiki')
           ? m['tagIncludeHibiki'] == 'true'
@@ -250,8 +255,9 @@ class ProfileKeys {
           : true,
       'allowDupes': m['allowDupes'] == 'true',
       'compactGlossaries': m['compactGlossaries'] == 'true',
-      'embedMedia':
-          m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
+      'embedMedia': m.containsKey('embedMedia')
+          ? m['embedMedia'] == 'true'
+          : true,
       // 旧快照没有这两个键 → 保留当前值（而不是回默认），否则一次切
       // Profile 就把用户已选的范围抹掉。
       if (m.containsKey('overwriteScope'))
@@ -274,7 +280,8 @@ class ProfileKeys {
       final dynamic decoded = jsonDecode(raw);
       if (decoded is Map) {
         return decoded.map(
-            (dynamic k, dynamic v) => MapEntry(k.toString(), v.toString()));
+          (dynamic k, dynamic v) => MapEntry(k.toString(), v.toString()),
+        );
       }
     } catch (_) {
       // Fall through to the fallback below.

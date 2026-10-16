@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -136,6 +137,8 @@ void main() {
     });
   }
 
+  _srsOnboardingScenes(out);
+
   testWidgets('shortcut labels on macOS', (WidgetTester tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     try {
@@ -151,6 +154,132 @@ void main() {
     }
   });
 }
+
+/// 新手引导「复习方式」两条路径的关键页（所有者 2026-10-16）：窄 390 / 宽 1280，
+/// MD3 与 Apple 两套设计系统，中文界面。
+///
+///   FUSHI_PREVIEW_OUT=../.codex-test/srs-onboarding FUSHI_PREVIEW_SUFFIX=after \
+///     flutter test --no-pub test/onboarding/onboarding_pixel_preview_test.dart \
+///     --plain-name 'srs onboarding'
+void _srsOnboardingScenes(Directory out) {
+  const List<(String, Size)> sizes = <(String, Size)>[
+    ('390', Size(390, 844)),
+    ('1280', Size(1280, 800)),
+  ];
+  final Map<String, Widget Function()> scenes = <String, Widget Function()>{
+    // Fushi 复习路径：复习方式（默认 Fushi，Anki 收起）→ 复习介绍 → 完成页下一步。
+    'fushi_1_review_method': () => _wizardFrame(
+      current: 3,
+      step: _stepList(<Widget>[
+        OnboardingStepHero(
+          icon: FushiIcons.repeat,
+          title: t.onboarding_review_method_title,
+          body: t.onboarding_review_method_body,
+        ),
+        const SizedBox(height: 16),
+        OnboardingReviewMethodChooser(
+          method: OnboardingReviewMethod.fushi,
+          ankiExpanded: false,
+          onSelect: (_) {},
+          onToggleAnki: () {},
+        ),
+      ]),
+    ),
+    'fushi_2_srs_intro': () => _wizardFrame(
+      current: 6,
+      step: OnboardingOperationTutorialView(
+        icon: FushiIcons.repeat,
+        title: t.onboarding_srs_title,
+        body: t.onboarding_srs_body,
+        items: srsOnboardingTutorialItems(),
+        actions: <OnboardingAction>[
+          OnboardingAction(
+            icon: FushiIcons.add,
+            label: t.onboarding_srs_action,
+            description: t.onboarding_srs_action_desc,
+            necessity: OnboardingActionNecessity.recommended,
+            onPressed: () {},
+          ),
+        ],
+      ),
+    ),
+    'fushi_3_finish': () => _wizardFrame(
+      current: 8,
+      step: _stepList(<Widget>[
+        OnboardingStepHero(
+          icon: FushiIcons.success,
+          title: t.onboarding_finish_title,
+          body: t.onboarding_finish_body,
+        ),
+        const SizedBox(height: 24),
+        OnboardingSectionLabel(title: t.onboarding_finish_next_title),
+        const SizedBox(height: 8),
+        for (int i = 0; i < fushiReviewFinishNextSteps().length; i++)
+          OnboardingTutorialStep(
+            number: i + 1,
+            item: fushiReviewFinishNextSteps()[i],
+            isLast: i == fushiReviewFinishNextSteps().length - 1,
+          ),
+      ]),
+    ),
+    // Anki 路径：展开「改用 Anki…」并选中 Anki（之后进入原有的 Anki 配置步骤）。
+    'anki_1_review_method_expanded': () => _wizardFrame(
+      current: 3,
+      step: _stepList(<Widget>[
+        OnboardingStepHero(
+          icon: FushiIcons.repeat,
+          title: t.onboarding_review_method_title,
+          body: t.onboarding_review_method_body,
+        ),
+        const SizedBox(height: 16),
+        OnboardingReviewMethodChooser(
+          method: OnboardingReviewMethod.anki,
+          ankiExpanded: true,
+          onSelect: (_) {},
+          onToggleAnki: () {},
+        ),
+      ]),
+    ),
+  };
+  for (final bool apple in <bool>[false, true]) {
+    for (final (String width, Size size) in sizes) {
+      for (final MapEntry<String, Widget Function()> scene in scenes.entries) {
+        final String name =
+            'srs_onboarding_${scene.key}_${apple ? 'apple' : 'md3'}_$width';
+        testWidgets('srs onboarding $name', (WidgetTester tester) async {
+          LocaleSettings.setLocale(AppLocale.zhCn);
+          try {
+            await _capture(
+              tester,
+              File('${out.path}/${name}_$_suffix.png'),
+              size: size,
+              apple: apple,
+              child: scene.value(),
+            );
+          } finally {
+            LocaleSettings.setLocale(AppLocale.en);
+          }
+        });
+      }
+    }
+  }
+}
+
+/// 向导正文列表的预览替身（真页的 `_OnboardingStepList` 是私有的）：同样的页边距。
+Widget _stepList(List<Widget> children) => Builder(
+  builder: (BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.card + MediaQuery.paddingOf(context).top,
+        tokens.spacing.page,
+        tokens.spacing.card,
+      ),
+      children: children,
+    );
+  },
+);
 
 /// 与 [OnboardingWizardPage.build] 同构的骨架：浮动页头 + 进度条，正文是真页用的
 /// [OnboardingWizardBody]。
@@ -303,12 +432,14 @@ String? _flutterRoot() {
   return null;
 }
 
-ThemeData _theme() {
+ThemeData _theme({bool apple = false}) {
   final ThemeData base = buildFushiThemeData(
     scheme: buildFushiColorScheme(
       seedColor: kFushiDefaultSeed,
       brightness: Brightness.dark,
     ),
+    designSystem: apple ? FushiDesignSystem.cupertino : FushiDesignSystem.auto,
+    glassDesign: apple,
     textTheme: FushiTypeScale.buildTextTheme(
       const TextStyle(
         fontFamily: _latinFamily,
@@ -324,6 +455,7 @@ Future<void> _capture(
   File file, {
   required Widget child,
   Size size = const Size(720, 480),
+  bool apple = false,
   double dpr = 2,
 }) async {
   tester.view.devicePixelRatio = dpr;
@@ -333,7 +465,7 @@ Future<void> _capture(
   await tester.pumpWidget(
     MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: _theme(),
+      theme: _theme(apple: apple),
       // 与真 app 一样：桌面自绘标题行把 32px 顶部 padding 交给整棵 Navigator。
       builder: (BuildContext context, Widget? app) => MediaQuery(
         data: MediaQuery.of(

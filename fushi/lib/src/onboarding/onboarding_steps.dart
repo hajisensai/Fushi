@@ -5,6 +5,7 @@
 library;
 
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 
 /// 功能选择步骤里可勾选的项，分两类：
 ///
@@ -44,7 +45,7 @@ enum OnboardingFeature {
   /// 听书：有声书播放/导入、语音转录、悬浮歌词（模块）。
   listening,
 
-  /// 制卡：Anki 集成（模块）。门控下面的 [anki] 配置步骤。
+  /// 制卡（模块）。门控下面的 [anki] 配置能力（复习方式 + Anki 配置步骤）。
   cardCreation,
 
   /// 在线服务与媒体追踪（模块）。
@@ -60,7 +61,8 @@ enum OnboardingFeature {
   /// 手动补充资源：导入词典，并按需导入有声书/配置发音来源；可与推荐包同时选。
   manualResources,
 
-  /// Anki 制卡（AnkiConnect / AnkiDroid）。
+  /// 制卡与复习：先选复习方式（[OnboardingReviewMethod]），选 Anki 再出 Anki 配置步骤。
+  /// 枚举名沿用 `anki`（只活在内存里，不持久化）。
   anki,
 
   /// 在线服务账号与 API 配置总览；默认不选，仅展示配置教程。
@@ -100,8 +102,8 @@ OnboardingFeature? onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.games => OnboardingFeature.games,
       ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,
-      // 复习默认关、向导不问也不写（用户 2026-10-14）：它的引导步骤只在用户已在
-      // 设置里自己打开模块后出现（见 [onboardingStepSequence] 的 srsEnabled）。
+      // 复习不出方格：开关由「复习方式」一步写入（选 Fushi 复习 = 开、选 Anki = 关，
+      // 见 [OnboardingReviewMethod]），不让用户在两个地方回答同一个问题。
       ModuleId.srs => null,
       ModuleId.browserExtension => OnboardingFeature.browserExtension,
       ModuleId.listening => OnboardingFeature.listening,
@@ -160,6 +162,55 @@ bool onboardingAnkiSelectionReady({
       availableNoteTypeIds.contains(selectedNoteTypeId);
 }
 
+/// 「复习方式」：查词制出的卡在哪里复习（所有者 2026-10-16）。
+///
+/// [fushi] 是主路径、默认选中、直接呈现；[anki] 收在「改用 Anki」折叠里（所有者：
+/// 「anki 放到折叠里面，或者次级显示」）。两者不加「推荐」之类的比较用语。
+enum OnboardingReviewMethod {
+  /// Fushi 内置复习：开复习模块、挖词目标 = Fushi 复习、笔记类型用默认（Fushi 卡片）。
+  /// 不出任何 Anki 专属步骤。
+  fushi,
+
+  /// 发往 Anki：沿用原有的 Anki 配置步骤（连接 / 牌组 / 笔记类型 / Lapis / FSRS 教程）
+  /// 与「第一张 Anki 卡」教程。
+  anki,
+}
+
+/// 「复习方式」一步的初值 = 用户此刻的真实状态：复习模块开着**且**挖词目标是 Fushi
+/// 复习才算 [OnboardingReviewMethod.fushi]。全新安装两者的出厂默认正是如此（模块默认
+/// 开、挖词目标默认 srs）；老用户从设置里重开向导看到的是 Anki（照旧）。
+OnboardingReviewMethod onboardingReviewMethodOf({
+  required bool srsModuleEnabled,
+  required SrsMiningTarget miningTarget,
+}) => srsModuleEnabled && miningTarget == SrsMiningTarget.srs
+    ? OnboardingReviewMethod.fushi
+    : OnboardingReviewMethod.anki;
+
+/// 用户在「复习方式」一步点选后立即写入（跳过向导也不丢）。
+///
+/// - [OnboardingReviewMethod.fushi]：开复习模块、挖词目标 = Fushi 复习。笔记类型不写：
+///   没选过（空 id）就是内置 Fushi 卡片，选过的不替用户改。
+/// - [OnboardingReviewMethod.anki]：挖词目标 = Anki、关复习模块（与升级上来的老用户
+///   同一形态：只在设置里能找到 Fushi 复习）。
+///
+/// 写入经两个回调（生产是 `AppModel.setModuleEnabled` / `AppModel.setSrsMiningTarget`），
+/// 便于单测断言不起整个 AppModel。
+Future<void> applyOnboardingReviewMethod(
+  OnboardingReviewMethod method, {
+  required Future<void> Function(ModuleId module, bool enabled)
+  setModuleEnabled,
+  required Future<void> Function(SrsMiningTarget target) setMiningTarget,
+}) async {
+  switch (method) {
+    case OnboardingReviewMethod.fushi:
+      await setMiningTarget(SrsMiningTarget.srs);
+      await setModuleEnabled(ModuleId.srs, true);
+    case OnboardingReviewMethod.anki:
+      await setMiningTarget(SrsMiningTarget.anki);
+      await setModuleEnabled(ModuleId.srs, false);
+  }
+}
+
 /// 向导步骤身份（枚举身份而非整数索引，插入/裁剪步骤不会打乱路由判断）。
 enum OnboardingStepId {
   /// 欢迎 + 界面语言/明暗主题（复用外观设置的行选择器）。
@@ -173,6 +224,11 @@ enum OnboardingStepId {
 
   /// 手动导入词典、有声书与发音来源。
   manualResources,
+
+  /// 复习方式（Fushi 复习 / Anki），制卡相关步骤的第一步。
+  reviewMethod,
+
+  /// Anki 配置（仅复习方式选了 Anki）。
   anki,
   onlineServices,
   backup,
@@ -193,8 +249,8 @@ enum OnboardingStepId {
   /// 完成第一张 Anki 卡片（仅本次向导已验证连接并选好牌组/笔记类型时）。
   firstAnkiCard,
 
-  /// Fushi 内置复习（SRS）介绍。只在复习模块（`ModuleId.srs`，默认关）**已经开着**
-  /// 时出现；向导不替用户打开它。
+  /// Fushi 内置复习（SRS）介绍：复习方式选了 Fushi 复习时出现；没走复习方式一步
+  /// （制卡没勾）时，复习模块已经开着也出现。
   srs,
   finish,
 }
@@ -202,7 +258,7 @@ enum OnboardingStepId {
 /// 给定勾选集合与平台能力，返回向导要走的步骤序列。
 ///
 /// 恒以 [OnboardingStepId.welcome]、[OnboardingStepId.features] 开头，
-/// [OnboardingStepId.finish] 固定收尾；中间配置步骤按固定顺序（资源准备 → Anki →
+/// [OnboardingStepId.finish] 固定收尾；中间配置步骤按固定顺序（资源准备 → 复习方式 / Anki →
 /// 备份 → 互联 → 扩展 → 字体）出现：能力步骤（含字体）只保留被勾选的，
 /// 浏览器扩展安装引导步骤 = [browserExtensionAvailable]（桌面平台）**且**扩展
 /// 模块被勾选。模块勾选自身不产生步骤。
@@ -210,7 +266,8 @@ enum OnboardingStepId {
 /// **模块是本模块名下配置步骤的总闸**（用户拍板的「关一个模块 = 关掉它的全部
 /// 入口」在向导里的落法）：这里是这四条深链唯一的装配处，漏掉一条就等于用户在
 /// 上一步刚把模块关掉、下一步向导又把它的配置页推到脸上。
-/// - [OnboardingFeature.cardCreation] 关 → 不出 [OnboardingStepId.anki]，
+/// - [OnboardingFeature.cardCreation] 关 → 不出 [OnboardingStepId.reviewMethod] /
+///   [OnboardingStepId.anki]，
 ///   也不出 [OnboardingStepId.firstAnkiCard]；
 /// - [OnboardingFeature.sync] 关 → 不出 [OnboardingStepId.backup] /
 ///   [OnboardingStepId.interconnect]；
@@ -224,23 +281,36 @@ enum OnboardingStepId {
 /// [globalLookupAvailable]（当前 Windows / Android）。第一张 Anki 卡教程再加一道
 /// [ankiReady] 门：本次向导真实连接成功，并且当前选择的牌组/笔记类型可用。
 ///
-/// [srsEnabled]：复习模块（`ModuleId.srs`）此刻是否开着。它默认关、向导不提供它的
-/// 方格（[onboardingFeatureOfModule] 返回 null），所以由调用方读模块真值传进来：
-/// 开着才出 [OnboardingStepId.srs] 介绍步骤，关着整步不进序列。
+/// **复习方式**（[reviewMethod]）：制卡相关步骤以 [OnboardingStepId.reviewMethod] 开头。
+/// 选 [OnboardingReviewMethod.fushi] 时**跳过全部 Anki 专属步骤**——
+/// [OnboardingStepId.anki]（后端 / AnkiConnect 插件 / AnkiDroid 权限与安装 / 牌组与
+/// 笔记类型 / Lapis / 词频重排 / Anki 里开 FSRS 的教程）和
+/// [OnboardingStepId.firstAnkiCard]——改出 [OnboardingStepId.srs] 介绍；两边通用的
+/// 点击查词教程（含「点 + 制卡」）照常保留。选 [OnboardingReviewMethod.anki] 则与原
+/// 流程逐步一致。
+///
+/// [srsEnabled]：复习模块（`ModuleId.srs`）此刻是否开着。只在**没有**复习方式一步时
+/// （制卡模块或制卡能力没勾）决定要不要出 [OnboardingStepId.srs] 介绍。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
   required bool globalLookupAvailable,
   required bool ankiReady,
+  OnboardingReviewMethod reviewMethod = OnboardingReviewMethod.fushi,
   bool srsEnabled = false,
 }) {
   final bool resourcesSelected = selected.any(
     kOnboardingResourceFeatures.contains,
   );
   // 配置能力 + 它所属模块，两道门都过才出步骤。
-  final bool ankiSelected =
+  final bool cardReviewSelected =
       selected.contains(OnboardingFeature.anki) &&
       selected.contains(OnboardingFeature.cardCreation);
+  final bool ankiSelected =
+      cardReviewSelected && reviewMethod == OnboardingReviewMethod.anki;
+  final bool srsIntro = cardReviewSelected
+      ? reviewMethod == OnboardingReviewMethod.fushi
+      : srsEnabled;
   final bool syncModuleOn = selected.contains(OnboardingFeature.sync);
   return <OnboardingStepId>[
     OnboardingStepId.welcome,
@@ -249,6 +319,7 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.recommendedPack,
     if (selected.contains(OnboardingFeature.manualResources))
       OnboardingStepId.manualResources,
+    if (cardReviewSelected) OnboardingStepId.reviewMethod,
     if (ankiSelected) OnboardingStepId.anki,
     // 「在线服务」配置步骤同受它所属模块的总闸约束（与 anki/backup/interconnect
     // 同一范式）：模块都关了，向导不该再把它的配置页推到用户脸上。
@@ -270,7 +341,7 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.globalLookup,
     if (resourcesSelected && ankiSelected && ankiReady)
       OnboardingStepId.firstAnkiCard,
-    if (srsEnabled) OnboardingStepId.srs,
+    if (srsIntro) OnboardingStepId.srs,
     OnboardingStepId.finish,
   ];
 }
