@@ -39,16 +39,22 @@
 |---|:--:|:--:|---|
 | [BUG-3417](bugs/BUG-3417-game-stream-card-missing-host-dict-styles.md) | ✅ | ✅ | game-stream-card-missing-host-dict-styles |
 > 共 3073 条。点号进各自文件。
+> 共 3076 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3421](bugs/BUG-3421-reader-highlight-lanes-under-book-paragraph-background.md) | ✅ | ✅ | 书自带段落底色盖住高亮窄条 |
+| [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
+| [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
+| [BUG-3418](bugs/BUG-3418-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
+| [BUG-3417](bugs/BUG-3417-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |
+> 共 3075 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3423](bugs/BUG-3423-stream-subtitle-align-probe-too-long.md) | ✅ | ✅ | 媒体服务器 / 在线源视频字幕波形调轴要等太久（流只需前 3 分钟） |
+| [BUG-3422](bugs/BUG-3422-anime-download-seed-year-suffix.md) | ✅ | ✅ | anime-download-seed-year-suffix |
 | [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
-| [BUG-3417](bugs/BUG-3417-stream-subtitle-align-probe-too-long.md) | ✅ | ✅ | 媒体服务器 / 在线源视频字幕波形调轴要等太久（流只需前 3 分钟） |
-> 共 3072 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3417](bugs/BUG-3417-anime-download-seed-year-suffix.md) | ✅ | ✅ | anime-download-seed-year-suffix |
 | [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |

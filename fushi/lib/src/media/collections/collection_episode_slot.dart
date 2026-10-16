@@ -1,3 +1,5 @@
+import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
+    show CollectionMemberVisibility;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart'
     show
@@ -161,6 +163,30 @@ Future<List<CollectionEpisodeSlot>> loadCollectionEpisodeSlots({
     }
   }
   return slots;
+}
+
+/// 视频域合集成员行在详情页（[loadCollectionEpisodeSlots]）里是否占一槽的**同步**
+/// 判据，交给「加入合集」弹窗计数（[CollectionMemberVisibility]，BUG-3361 跨域补漏）。
+///
+/// 与 [loadCollectionEpisodeSlots] 同一规则：
+///  * 非 video 行（混合合集里的书 / 游戏）不占槽；
+///  * 本机有这行视频（[localBookUids]）→ 占槽；
+///  * 本机没有：只在远端清单里（[remoteOnlyIds]）且未被本机同一集归并
+///    （[mirroredRemoteIds]，[remoteEpisodesMirroredLocally] 的结果）时才占槽——
+///    离线 / 未配对 / 关掉「显示远端条目」时远端清单为空，占位行一律不数，与详情页
+///    「解析不到本地行的成员照旧丢弃」一致；
+///  * 已删除视频留下的孤儿行（两边都没有）不占槽。
+CollectionMemberVisibility videoCollectionMemberVisibility({
+  required Set<String> localBookUids,
+  required Set<String> remoteOnlyIds,
+  Set<String> mirroredRemoteIds = const <String>{},
+}) {
+  return (String mediaType, String entryKey) {
+    if (mediaType != MediaKind.video.dbValue) return false;
+    if (localBookUids.contains(entryKey)) return true;
+    return remoteOnlyIds.contains(entryKey) &&
+        !mirroredRemoteIds.contains(entryKey);
+  };
 }
 
 /// 跨来源的分集身份：季号（解析不出视作第 1 季，与分季分组同口径）+ 集号。
