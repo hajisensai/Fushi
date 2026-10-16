@@ -1,7 +1,8 @@
 /// 复习模块主页：牌组列表（底栏 / 侧栏「复习」tab，见 `HomeTab.srs`）。
 ///
-/// 每行：牌组名按层级缩进 + 新卡 / 学习 / 到期三色计数；新卡被自动缩减时多一行
-/// 小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认牌组不可删）。
+/// 每行：牌组名（子牌组前面按层级画细竖线）+ 新卡 / 学习 / 到期三色计数；新卡被自动
+/// 缩减时多一行小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认
+/// 牌组不可删；空着又没有子牌组时不显示，见 [srsVisibleDecks]）。
 /// 顶栏动作默认平铺、放不下才按优先级收进「⋯」（MD3 = [FushiFloatingTopBar] 的
 /// 自适应溢出；Apple = 导航栏动作，由 [FushiPageHeader] 自己收）。
 library;
@@ -456,18 +457,15 @@ class _DeckRow extends StatelessWidget {
         count: count,
         onTap: () => onOpen(deck),
         child: FushiListItem(
-          leading: Padding(
-            // 层级缩进：子牌组每深一层右移一格。
-            padding: EdgeInsetsDirectional.only(
-              start: deck.depth * tokens.spacing.card,
-            ),
-            child: FushiListLeadingIcon(
-              deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
-              tone: deck.reviewCount + deck.learnCount > 0
-                  ? FushiCardTone.primary
-                  : FushiCardTone.neutral,
-            ),
-          ),
+          // 行首不放图标：窄屏上图标 + 每层一整格缩进会把名字挤没（三级以下只剩数字）。
+          // 层级改由细竖线表示，名字拿到尽量多的宽度。
+          leading: deck.depth == 0
+              ? null
+              : SrsDeckIndentGuides(
+                  key: ValueKey<String>('srs-deck-indent-${deck.deck.id}'),
+                  depth: deck.depth,
+                  active: deck.reviewCount + deck.learnCount > 0,
+                ),
           title: FushiTooltip(
             message: deck.fullName,
             child: Text(deck.deck.name),
@@ -510,6 +508,65 @@ class _DeckRow extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 子牌组的层级指示：每深一层一条细竖线（取代原来的「图标 + 每层一整格缩进」）。
+///
+/// 每层只占 [step] 宽，四级子牌组也只让出约 30 逻辑像素，名字照样看得见；最深那条
+/// 在牌组有学习 / 到期卡时用主色（接替原来图标的着色信号）。
+@visibleForTesting
+class SrsDeckIndentGuides extends StatelessWidget {
+  const SrsDeckIndentGuides({
+    super.key,
+    required this.depth,
+    required this.active,
+  });
+
+  /// 每层的水平步长。
+  static const double step = 10;
+
+  /// 竖线粗细。
+  static const double stroke = 2;
+
+  /// 竖线高度（单行列表行内容区 40 里留上下余量）。
+  static const double height = 28;
+
+  final int depth;
+  final bool active;
+
+  /// 总宽：前 depth-1 层各占一步，最后一层只占线宽（后面 FushiListItem 自带行首间距）。
+  static double widthFor(int depth) =>
+      depth <= 0 ? 0 : (depth - 1) * step + stroke;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: widthFor(depth),
+      height: height,
+      child: Stack(
+        children: <Widget>[
+          for (int level = 0; level < depth; level++)
+            PositionedDirectional(
+              start: level * step,
+              top: 0,
+              bottom: 0,
+              width: stroke,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: level == depth - 1 && active
+                      ? scheme.primary
+                      : scheme.outlineVariant,
+                  borderRadius: const BorderRadius.all(
+                    Radius.circular(stroke / 2),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

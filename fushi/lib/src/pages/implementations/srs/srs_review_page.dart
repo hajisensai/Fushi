@@ -6,6 +6,8 @@
 ///   [Focus.onKeyEvent] 更近、先消费，所以空格只在复习页有「翻面 / 良好」的含义。
 /// - WebView 卡面持有键盘焦点时，按键经键盘桥（[srsReviewKeyBridgeScript]）交回本页
 ///   同一个处理入口；焦点回收走 [PageFocusOwnership]（不裸调 requestFocus）。
+/// - 卡面音频：开了「自动播放音频」时，出题 / 翻面自动按顺序播卡上的音频；「重播音频」
+///   随时手动再播（规则见 srs_card_autoplay.dart，对齐 Anki）。
 /// - 撤销栈是会话级：撤评分调 [SrsDbStore.undo]（别的设备已复习过这张卡时返回
 ///   false，提示后丢掉这一步）；撤暂停 / 埋卡 / 旗标 / 移牌组 / 编辑 = 再写一次
 ///   改回原值。
@@ -26,6 +28,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -92,6 +95,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   final List<_UndoStep> _undo = <_UndoStep>[];
 
+  /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
+  late final SrsCardAudioSequencer _audio = SrsCardAudioSequencer(
+    ref.read(srsCardAudioOutputProvider),
+  );
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +111,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void dispose() {
     srsActiveReviewSessions.value--;
+    srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
     _focusNode.dispose();
     super.dispose();
   }
@@ -147,6 +156,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _rendered = null;
           _preview = null;
         });
+        srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
         return;
       }
       final SrsCardDetail? detail = await store.cardDetail(id);
@@ -169,6 +179,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _answerClock
         ..reset()
         ..start();
+      _autoplayAudio();
       _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
@@ -199,6 +210,43 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   void _showAnswer() {
     if (_detail == null || _showingAnswer) return;
     setState(() => _showingAnswer = true);
+    _autoplayAudio();
+  }
+
+  // ------------------------------------------------------------------ 卡面音频
+
+  /// 当前这一面的音频要不要自动播：开关关着时只打断上一张卡还在播的序列。
+  void _autoplayAudio() {
+    final SrsRenderedCard? rendered = _rendered;
+    if (rendered == null || !ref.read(srsReviewAutoplayAudioProvider)) {
+      srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+      return;
+    }
+    final List<String> names = srsAutoplaySounds(
+      questionHtml: rendered.question,
+      answerHtml: rendered.answer,
+      answerSide: _showingAnswer,
+    );
+    srsRunLogged('SrsReviewPage.autoplay', () => _audio.play(names));
+  }
+
+  /// 手动「重播音频」该播的那几段（这一面没有音频时为空）。
+  List<String> _replayNames({required bool includeQuestion}) {
+    final SrsRenderedCard? rendered = _rendered;
+    if (rendered == null) return const <String>[];
+    return srsReplaySounds(
+      questionHtml: rendered.question,
+      answerHtml: rendered.answer,
+      answerSide: _showingAnswer,
+      includeQuestion: includeQuestion,
+    );
+  }
+
+  void _replayAudio() {
+    final List<String> names = _replayNames(
+      includeQuestion: ref.read(srsReviewReplayQuestionAudioProvider),
+    );
+    srsRunLogged('SrsReviewPage.replay', () => _audio.play(names));
   }
 
   void _rate(int rating) {
@@ -546,6 +594,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         selected: true,
         onPressed: _openPendingNote,
       ),
+    if (_detail != null &&
+        _replayNames(
+          includeQuestion: ref.watch(srsReviewReplayQuestionAudioProvider),
+        ).isNotEmpty)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_replay_audio'),
+        icon: FushiIcons.replay,
+        label: t.srs_review_replay_audio,
+        onPressed: _replayAudio,
+      ),
     if (_detail != null)
       FushiToolbarItem(
         key: const ValueKey<String>('srs_review_edit'),
@@ -588,7 +646,39 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             label: t.srs_note_delete,
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
+          ..._audioSettingItems(),
         ];
+
+  /// 卡面音频的两个开关（勾选态 = 开着；点了立即生效、写进按 profile 的偏好）。
+  List<FushiToolbarItem> _audioSettingItems() {
+    final bool autoplay = ref.watch(srsReviewAutoplayAudioProvider);
+    final bool replayQuestion = ref.watch(srsReviewReplayQuestionAudioProvider);
+    return <FushiToolbarItem>[
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_autoplay_audio'),
+        icon: FushiIcons.volumeUp,
+        label: t.srs_review_autoplay_audio,
+        selected: autoplay,
+        onPressed: () => srsRunLogged('SrsReview.autoplayAudio', () async {
+          await ref.read(appProvider).setSrsReviewAutoplayAudio(!autoplay);
+          // 刚打开：当前这一面立刻按新设置播；刚关掉：停掉正在自动播的。
+          if (mounted) _autoplayAudio();
+        }),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_replay_question_audio'),
+        icon: FushiIcons.audio,
+        label: t.srs_review_replay_question_audio,
+        selected: replayQuestion,
+        onPressed: () => srsRunLogged(
+          'SrsReview.replayQuestionAudio',
+          () => ref
+              .read(appProvider)
+              .setSrsReviewReplayQuestionAudio(!replayQuestion),
+        ),
+      ),
+    ];
+  }
 
   Widget _buildTopBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);

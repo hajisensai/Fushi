@@ -2924,6 +2924,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页：显示一面卡时自动播放卡上的音频（对齐 Anki「自动播放音频」）。默认关。
+  bool get srsReviewAutoplayAudio =>
+      getPref('srs_review_autoplay_audio', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewAutoplayAudio(bool value) async {
+    await setPref('srs_review_autoplay_audio', value);
+    notifyListeners();
+  }
+
+  // 复习页：答案面上手动重播时先播问题面音频（Anki 默认；关 = 只播答案音频）。默认开。
+  bool get srsReviewReplayQuestionAudio =>
+      getPref('srs_review_replay_question_audio', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewReplayQuestionAudio(bool value) async {
+    await setPref('srs_review_replay_question_audio', value);
+    notifyListeners();
+  }
+
   // 复习模块（SRS）的「挖词目标」：'anki'（默认）/ 'srs' / 'both'（见 SrsMiningTarget）。
   // 只有复习模块开着时才被读取；模块关着时制卡链路不看它。
   String get srsMiningTarget =>

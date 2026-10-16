@@ -415,6 +415,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki / Fushi
   // 复习 / 两者。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
+  // bool（默认 false）：复习页显示问题面 / 翻到答案面时自动播放卡上的音频（对齐 Anki
+  // 「自动播放音频」）；答案面只播 {{FrontSide}} 之外新出现的音频。非凭据、跨设备。
+  'srs_review_autoplay_audio',
+  // bool（默认 true）：答案面上手动「重播」时先播问题面音频（关 = Anki 的「重播答案时
+  // 跳过问题」）。非凭据、跨设备。
+  'srs_review_replay_question_audio',
   // bool：旧开关「启动时打开查词」，已由 startup_module 取代；只读不写，
   // startup_module 从未写过时据此迁移（PreferencesRepository.startupModule）。
   'startup_default_dictionary_tab',

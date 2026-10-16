@@ -98,6 +98,20 @@ final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =
 /// 进入复习页时取消在跑的优化（见 srs_optimization_scheduler.dart）。
 final ValueNotifier<int> srsActiveReviewSessions = ValueNotifier<int>(0);
 
+/// 复习页是否自动播放卡面音频（按 profile 的偏好，默认关）。
+final Provider<bool> srsReviewAutoplayAudioProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewAutoplayAudio),
+  ),
+);
+
+/// 答案面上手动重播时是否先播问题面音频（默认开，同 Anki）。
+final Provider<bool> srsReviewReplayQuestionAudioProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewReplayQuestionAudio),
+  ),
+);
+
 /// 本机写操作后的刷新信号（单调递增）。
 final StateProvider<int> srsRevisionProvider = StateProvider<int>(
   (Ref ref) => 0,
@@ -128,13 +142,46 @@ class SrsDeckListData {
   );
 }
 
+/// 牌组列表实际显示哪些牌组：照 Anki 的惯例把**空的默认牌组**藏起来。
+///
+/// 默认牌组不能删（制卡 / 导入 / 删牌组时卡片都以它为兜底落点，见
+/// `SrsDbStore.deleteDeck`），但它常年空着摆在列表顶上又删不掉。Anki 的做法
+/// （rslib `decks/tree.rs` 的 `hide_default_deck`）：默认牌组里没有卡、也没有
+/// 子牌组时不显示；唯一的顶层牌组就是它时照常显示（不然列表是空的，也没处加卡）。
+/// 只影响牌组列表页；选牌组的对话框、移卡、制卡目标照常能选到它。
+List<SrsDeckSummary> srsVisibleDecks(
+  List<SrsDeckSummary> decks, {
+  required String defaultDeckId,
+}) {
+  final SrsDeckSummary? def = decks
+      .where((SrsDeckSummary d) => d.deck.id == defaultDeckId)
+      .firstOrNull;
+  if (def == null || def.totalCards > 0) return decks;
+  final String childPrefix = '${def.fullName}::';
+  final bool hasChildren = decks.any(
+    (SrsDeckSummary d) => d.fullName.startsWith(childPrefix),
+  );
+  if (hasChildren) return decks;
+  final bool onlyTopLevel =
+      def.depth == 0 &&
+      !decks.any((SrsDeckSummary d) => d.depth == 0 && d != def);
+  if (onlyTopLevel) return decks;
+  return <SrsDeckSummary>[
+    for (final SrsDeckSummary d in decks)
+      if (d != def) d,
+  ];
+}
+
 /// 牌组列表（订阅 [srsRevisionProvider]，写操作后自动重读）。模块关着时为 null。
 final FutureProvider<SrsDeckListData?> srsDeckListProvider =
     FutureProvider<SrsDeckListData?>((Ref ref) async {
       ref.watch(srsRevisionProvider);
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
-      final List<SrsDeckSummary> decks = await store.deckSummaries();
+      final List<SrsDeckSummary> decks = srsVisibleDecks(
+        await store.deckSummaries(),
+        defaultDeckId: store.defaultDeckId,
+      );
       final int conflicts = (await store.syncConflicts()).length;
       final int pending = (await store.notesPendingDecision()).length;
       return SrsDeckListData(

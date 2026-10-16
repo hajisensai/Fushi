@@ -3,6 +3,8 @@
 // 内存库 + 确定性假排程内核（真实数值由 packages/fushi_srs 的 FFI 测试覆盖）；
 // widget 测试里没有 WebView，卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
+import 'dart:async';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +18,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -156,8 +161,10 @@ Future<void> _pumpPage(
   required SrsDbStore store,
   required bool apple,
   required Widget page,
+  List<Override> overrides = const <Override>[],
+  Size size = const Size(1100, 900),
 }) async {
-  tester.view.physicalSize = const Size(1100, 900);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final AppModel appModel = AppModel(testPlatformServices());
@@ -170,6 +177,7 @@ Future<void> _pumpPage(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
         ),
+        ...overrides,
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -393,6 +401,192 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('牌组列表：空的默认牌组在有别的顶层牌组时隐藏（Anki hide_default_deck）', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    final String jp = (await tester.runAsync(() => store.createDeck('JP')))!;
+    Future<List<String>> visibleIds() async => (await tester.runAsync(
+      () async => srsVisibleDecks(
+        await store.deckSummaries(),
+        defaultDeckId: store.defaultDeckId,
+      ).map((SrsDeckSummary d) => d.deck.id).toList(),
+    ))!;
+
+    expect(await visibleIds(), <String>[jp], reason: '空、无子牌组、另有顶层牌组');
+    await _pumpPage(
+      tester,
+      store: store,
+      apple: false,
+      page: const SrsDeckListPage(),
+    );
+    expect(
+      find.byKey(ValueKey<String>('srs-deck-${store.defaultDeckId}')),
+      findsNothing,
+    );
+    expect(find.byKey(ValueKey<String>('srs-deck-$jp')), findsOneWidget);
+    await _unmount(tester);
+
+    // 默认牌组里有卡：照常显示。
+    await _addLapis(tester, store, '食べる');
+    expect(await visibleIds(), containsAll(<String>[store.defaultDeckId, jp]));
+    final String noteId = (await tester.runAsync(
+      () async => (await store.listNotes()).single.id,
+    ))!;
+    await tester.runAsync(() => store.deleteNote(noteId));
+    expect(await visibleIds(), <String>[jp]);
+
+    // 默认牌组有子牌组：照常显示。
+    await tester.runAsync(
+      () => store.createDeck('Child', parentId: store.defaultDeckId),
+    );
+    expect(await visibleIds(), contains(store.defaultDeckId));
+  });
+
+  testWidgets('牌组列表：手机宽度下多级子牌组的名字仍有宽度，行首不放图标', (WidgetTester tester) async {
+    final SrsDbStore store = await _openStore(tester);
+    final List<String> ids = (await tester.runAsync(() async {
+      final List<String> out = <String>[];
+      String? parent;
+      for (final String name in <String>[
+        'Spark',
+        'JP-Mining-Long-Deck-Name',
+        'Vocabulary',
+        'Chapter Twelve',
+        'Kanji Drill',
+      ]) {
+        parent = await store.createDeck(name, parentId: parent);
+        out.add(parent);
+      }
+      return out;
+    }))!;
+    await _pumpPage(
+      tester,
+      store: store,
+      apple: false,
+      page: const SrsDeckListPage(),
+      size: const Size(360, 780),
+    );
+    expect(find.byType(FushiListLeadingIcon), findsNothing);
+    for (int depth = 0; depth < ids.length; depth++) {
+      final Finder row = find.byKey(ValueKey<String>('srs-deck-${ids[depth]}'));
+      expect(row, findsOneWidget);
+      final Finder indent = find.byKey(
+        ValueKey<String>('srs-deck-indent-${ids[depth]}'),
+      );
+      expect(indent, depth == 0 ? findsNothing : findsOneWidget);
+      if (depth > 0) {
+        expect(
+          tester.getSize(indent).width,
+          SrsDeckIndentGuides.widthFor(depth),
+        );
+      }
+      final Finder name = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is Text &&
+              w.data != null &&
+              RegExp(r'[A-Za-z]').hasMatch(w.data!),
+        ),
+      );
+      expect(
+        tester.getSize(name.first).width,
+        greaterThan(60),
+        reason: '第 $depth 层的名字至少留出几个字的宽度（原来三级以下宽度为 0）',
+      );
+    }
+    // 三色计数列在各层对齐（行尾宽度不随层级变）。
+    final Set<double> rights = <double>{
+      for (final String id in ids)
+        tester
+            .getTopRight(
+              find.descendant(
+                of: find.byKey(ValueKey<String>('srs-deck-$id')),
+                matching: find.byType(SrsCountTriple),
+              ),
+            )
+            .dx,
+    };
+    expect(rights, hasLength(1));
+    await _unmount(tester);
+  });
+
+  group('复习页卡面音频', () {
+    Future<String> addWithAudio(WidgetTester tester, SrsDbStore store) async =>
+        (await tester.runAsync(
+          () => store.createNote(
+            noteTypeId: store.lapisNoteTypeId,
+            fieldsById: <String, String>{
+              srsLapisFieldId(_kProfile, 'Expression'): '食べる',
+              srsLapisFieldId(_kProfile, 'MainDefinition'): 'to eat',
+              srsLapisFieldId(_kProfile, 'ExpressionAudio'): '[sound:word.mp3]',
+              srsLapisFieldId(_kProfile, 'SentenceAudio'): '[sound:sent.mp3]',
+            },
+          ),
+        ))!;
+
+    testWidgets('开了自动播放：翻到答案面按顺序播单词 / 句子音频；关着不播；重播都能用', (
+      WidgetTester tester,
+    ) async {
+      for (final bool autoplay in <bool>[true, false]) {
+        final SrsDbStore store = await _openStore(tester);
+        await addWithAudio(tester, store);
+        final _RecordingAudio audio = _RecordingAudio();
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+          overrides: <Override>[
+            srsCardAudioOutputProvider.overrideWithValue(audio),
+            srsReviewAutoplayAudioProvider.overrideWithValue(autoplay),
+          ],
+        );
+        expect(audio.played, isEmpty, reason: 'Lapis 问题面没有音频');
+        await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+        await _settle(tester);
+        expect(
+          audio.played,
+          autoplay ? <String>['word.mp3', 'sent.mp3'] : isEmpty,
+          reason: 'autoplay=$autoplay',
+        );
+        // 「重播音频」：答案面上不管开关都能手动播。
+        audio.played.clear();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_review_replay_audio')).first,
+        );
+        await _settle(tester);
+        expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+        await _unmount(tester);
+      }
+    });
+
+    testWidgets('评分换卡时打断还在播的序列', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio(holdOpen: true);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+          srsReviewAutoplayAudioProvider.overrideWithValue(true),
+        ],
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3'], reason: '第一段还没播完');
+      await tester.tap(find.byKey(const ValueKey<String>('srs-rate-3')));
+      await _settle(tester);
+      expect(audio.stops, greaterThanOrEqualTo(1));
+      expect(audio.played, <String>['word.mp3'], reason: '被打断后不再播第二段');
+      await _unmount(tester);
+    });
+  });
+
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(() => tester.runAsync(db.close));
@@ -439,4 +633,31 @@ void main() {
       expect(find.text(item.title), findsOneWidget);
     }
   });
+}
+
+/// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
+class _RecordingAudio implements SrsCardAudioOutput {
+  _RecordingAudio({this.holdOpen = false});
+
+  final bool holdOpen;
+  final List<String> played = <String>[];
+  final List<Completer<bool>> _open = <Completer<bool>>[];
+  int stops = 0;
+
+  @override
+  Future<bool> playToEnd(String name) {
+    played.add(name);
+    if (!holdOpen) return Future<bool>.value(true);
+    final Completer<bool> c = Completer<bool>();
+    _open.add(c);
+    return c.future;
+  }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    for (final Completer<bool> c in _open) {
+      if (!c.isCompleted) c.complete(false);
+    }
+  }
 }
