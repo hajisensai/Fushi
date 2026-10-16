@@ -1583,7 +1583,8 @@ $kContinuousWheelScrollJs
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
     // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
     // JS 不再自持固定窗口 _wheelTimer；横向触控板 burst 由跨文档 Dart State 聚合，
-    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
+    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 管触摸/鼠标拖动与
+    // 触控板两指滑（BUG-3358），不管鼠标滚轮。
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
@@ -2355,8 +2356,9 @@ updateLive: function(patch) {
 
         // TODO-737: 分页滚轮翻页专用 handler。JS 回传主轴 delta 的符号
         // (forward = delta>0) 与轴、设备类型；方向由纯谓词 readerWheelTickIsForward
-        // 一处决定：纵向与鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死），
-        // 只有横向触控板（= 滑动翻页手势）按书写方向 + 该开关折算（反馈 794gISjvgV）。
+        // 一处决定：鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死）；触控板
+        // 两指滑（= 滑动翻页手势）横纵两轴都按该开关折算，横向另看书写方向
+        // （BUG-3358；纵向补漏后翻页与 VN 模式的两指上下滑也认开关）。
         // 横向触控板惯性先经跨 document 持久的
         // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(
