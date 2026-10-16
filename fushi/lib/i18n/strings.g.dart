@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 132158 (7774 per locale)
+/// Strings: 132464 (7792 per locale)
 ///
-/// Built on 2026-10-16 at 06:54 UTC
+/// Built on 2026-10-16 at 09:19 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -825,7 +825,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_subtitle_source_title => 'Subtitle source';
   String get audiobook_subtitle_source_transcribe_hint =>
       'Generate from the selected audio with the on-device speech model';
-  String get audiobook_transcribe_accel_auto => 'Auto (GPU when available)';
+  String get audiobook_transcribe_accel_auto => 'Auto';
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   String get audiobook_transcribe_accel_cpu => 'CPU only';
   String get audiobook_transcribe_accel_label => 'Acceleration';
@@ -10806,6 +10806,36 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  String get import_subtitle_source_local => 'Local file';
+  String get import_subtitle_source_transcribe => 'Transcribe';
   String get sync_position_conflict_title => 'Playback position conflict';
   String get sync_position_conflict_message =>
       'These items were played on both this device and the paired device since the last sync. Choose which position to keep.';
@@ -12299,8 +12329,7 @@ class _StringsAr extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'إنشاؤها من الصوت المحدد باستخدام نموذج الكلام على الجهاز';
   @override
-  String get audiobook_transcribe_accel_auto =>
-      'تلقائي (وحدة معالجة الرسومات عند توفرها)';
+  String get audiobook_transcribe_accel_auto => 'تلقائي';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -29309,6 +29338,54 @@ class _StringsAr extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -31120,8 +31197,7 @@ class _StringsDe extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Aus dem ausgewählten Audio mit dem Sprachmodell auf dem Gerät erzeugen';
   @override
-  String get audiobook_transcribe_accel_auto =>
-      'Automatisch (GPU, wenn verfügbar)';
+  String get audiobook_transcribe_accel_auto => 'Automatisch';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -48497,6 +48573,54 @@ class _StringsDe extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -50316,7 +50440,7 @@ class _StringsEs extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Generar a partir del audio seleccionado con el modelo de voz del dispositivo';
   @override
-  String get audiobook_transcribe_accel_auto => 'Auto (GPU si está disponible)';
+  String get audiobook_transcribe_accel_auto => 'Auto';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -67744,6 +67868,54 @@ class _StringsEs extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -69569,7 +69741,7 @@ class _StringsFr extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Générer à partir de l\'audio sélectionné avec le modèle vocal sur l\'appareil';
   @override
-  String get audiobook_transcribe_accel_auto => 'Auto (GPU si disponible)';
+  String get audiobook_transcribe_accel_auto => 'Auto';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -87072,6 +87244,54 @@ class _StringsFr extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -88875,7 +89095,7 @@ class _StringsId extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Buat dari audio yang dipilih dengan model suara di perangkat';
   @override
-  String get audiobook_transcribe_accel_auto => 'Otomatis (GPU jika tersedia)';
+  String get audiobook_transcribe_accel_auto => 'Otomatis';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -106053,6 +106273,54 @@ class _StringsId extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -107860,7 +108128,7 @@ class _StringsIt extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Genera dall\'audio selezionato con il modello vocale sul dispositivo';
   @override
-  String get audiobook_transcribe_accel_auto => 'Auto (GPU se disponibile)';
+  String get audiobook_transcribe_accel_auto => 'Auto';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -125200,6 +125468,54 @@ class _StringsIt extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -126952,7 +127268,7 @@ class _StringsJa extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'デバイス上の音声モデルで、選択した音声から生成します';
   @override
-  String get audiobook_transcribe_accel_auto => '自動（利用可能なら GPU）';
+  String get audiobook_transcribe_accel_auto => '自動';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML（FP32）';
   @override
@@ -143347,6 +143663,54 @@ class _StringsJa extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -145094,7 +145458,7 @@ class _StringsKo extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       '기기 내 음성 모델로 선택한 오디오에서 생성';
   @override
-  String get audiobook_transcribe_accel_auto => '자동(가능하면 GPU)';
+  String get audiobook_transcribe_accel_auto => '자동';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -161530,6 +161894,54 @@ class _StringsKo extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -163337,8 +163749,7 @@ class _StringsNl extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Genereren uit de geselecteerde audio met het spraakmodel op het apparaat';
   @override
-  String get audiobook_transcribe_accel_auto =>
-      'Automatisch (GPU indien beschikbaar)';
+  String get audiobook_transcribe_accel_auto => 'Automatisch';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -180625,6 +181036,54 @@ class _StringsNl extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -182441,8 +182900,7 @@ class _StringsPtBr extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Gerar a partir do áudio selecionado com o modelo de fala no dispositivo';
   @override
-  String get audiobook_transcribe_accel_auto =>
-      'Automático (GPU quando disponível)';
+  String get audiobook_transcribe_accel_auto => 'Automático';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -199789,6 +200247,54 @@ class _StringsPtBr extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -201595,7 +202101,7 @@ class _StringsRu extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Создать из выбранного аудио с помощью речевой модели на устройстве';
   @override
-  String get audiobook_transcribe_accel_auto => 'Авто (GPU, если доступен)';
+  String get audiobook_transcribe_accel_auto => 'Авто';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -218898,6 +219404,54 @@ class _StringsRu extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -220682,7 +221236,7 @@ class _StringsTh extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'สร้างจากเสียงที่เลือกด้วยโมเดลเสียงพูดบนอุปกรณ์';
   @override
-  String get audiobook_transcribe_accel_auto => 'อัตโนมัติ (ใช้ GPU เมื่อมี)';
+  String get audiobook_transcribe_accel_auto => 'อัตโนมัติ';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -237685,6 +238239,54 @@ class _StringsTh extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -239484,7 +240086,7 @@ class _StringsTr extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Seçilen sesten cihaz üzerindeki konuşma modeliyle oluştur';
   @override
-  String get audiobook_transcribe_accel_auto => 'Otomatik (varsa GPU)';
+  String get audiobook_transcribe_accel_auto => 'Otomatik';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -256676,6 +257278,54 @@ class _StringsTr extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -258471,7 +259121,7 @@ class _StringsVi extends _StringsEn {
   String get audiobook_subtitle_source_transcribe_hint =>
       'Tạo từ âm thanh đã chọn bằng mô hình giọng nói trên thiết bị';
   @override
-  String get audiobook_transcribe_accel_auto => 'Tự động (GPU nếu có)';
+  String get audiobook_transcribe_accel_auto => 'Tự động';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML (FP32)';
   @override
@@ -275594,6 +276244,54 @@ class _StringsVi extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -277296,7 +277994,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get audiobook_subtitle_source_transcribe_hint => '用设备端语音模型从已选音频生成';
   @override
-  String get audiobook_transcribe_accel_auto => '自动（有 GPU 则用）';
+  String get audiobook_transcribe_accel_auto => '自动';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML（FP32）';
   @override
@@ -292929,6 +293627,53 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       '本次播放未装载（重新打开视频后生效）';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA（NVIDIA）';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU 加速环境';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      '加速转录。不随安装包附带，下载语音模型时按显卡自动一起下载。';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      '检测到 ${name}：使用 CUDA（最快）';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      '没有支持 CUDA 的 NVIDIA 显卡：使用 DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none => '没有可用的显卡：只用 CPU';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      '当前显卡或驱动无法运行所选环境（CUDA 需要 NVIDIA RTX 20 系及以上显卡、驱动 580+）。';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => '自动';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => '关闭';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => '下载 ${name}（${size}）';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      '移除 ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => '重启后生效';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU 环境不可用：${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      '当前会用 CPU 转录；下载 ${name} 环境即可用上显卡。';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      '下载 ${name} 环境，这张显卡上转录会更快。';
+  @override
+  String get import_subtitle_source_local => '本地文件';
+  @override
+  String get import_subtitle_source_transcribe => '转录';
+  @override
   String get sync_position_conflict_title => '播放进度冲突';
   @override
   String get sync_position_conflict_message =>
@@ -294567,7 +295312,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get audiobook_subtitle_source_transcribe_hint => '用裝置端語音模型從已選音頻生成';
   @override
-  String get audiobook_transcribe_accel_auto => '自動（有 GPU 則用）';
+  String get audiobook_transcribe_accel_auto => '自動';
   @override
   String get audiobook_transcribe_accel_coreml => 'CoreML（FP32）';
   @override
@@ -310452,6 +311197,54 @@ class _StringsZhHk extends _StringsEn {
   String get video_setting_mpv_lua_scripts_status_pending =>
       'Not loaded in this playback (reopen the video)';
   @override
+  String get audiobook_transcribe_accel_directml => 'DirectML';
+  @override
+  String get audiobook_transcribe_accel_cuda => 'CUDA (NVIDIA)';
+  @override
+  String get audiobook_transcribe_gpu_title => 'GPU acceleration';
+  @override
+  String get audiobook_transcribe_gpu_description =>
+      'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_detected_cuda({required Object name}) =>
+      'Detected ${name}: CUDA (fastest)';
+  @override
+  String get audiobook_transcribe_gpu_detected_directml =>
+      'No CUDA-capable NVIDIA card: DirectML';
+  @override
+  String get audiobook_transcribe_gpu_detected_none =>
+      'No usable graphics card: CPU only';
+  @override
+  String get audiobook_transcribe_gpu_unsupported =>
+      'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+  @override
+  String get audiobook_transcribe_gpu_pref_auto => 'Auto';
+  @override
+  String get audiobook_transcribe_gpu_pref_off => 'Off';
+  @override
+  String audiobook_transcribe_gpu_download({
+    required Object name,
+    required Object size,
+  }) => 'Download ${name} (${size})';
+  @override
+  String audiobook_transcribe_gpu_remove({required Object name}) =>
+      'Remove ${name}';
+  @override
+  String get audiobook_transcribe_gpu_restart => 'Restart to apply';
+  @override
+  String audiobook_transcribe_gpu_failed({required Object reason}) =>
+      'GPU runtime unavailable: ${reason}';
+  @override
+  String audiobook_transcribe_gpu_offer_cpu({required Object name}) =>
+      'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+  @override
+  String audiobook_transcribe_gpu_offer_faster({required Object name}) =>
+      'Download the ${name} runtime for faster transcription on this graphics card.';
+  @override
+  String get import_subtitle_source_local => 'Local file';
+  @override
+  String get import_subtitle_source_transcribe => 'Transcribe';
+  @override
   String get sync_position_conflict_title => 'Playback position conflict';
   @override
   String get sync_position_conflict_message =>
@@ -312041,7 +312834,7 @@ extension on _StringsEn {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Generate from the selected audio with the on-device speech model';
       case 'audiobook_transcribe_accel_auto':
-        return 'Auto (GPU when available)';
+        return 'Auto';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -326676,6 +327469,46 @@ extension on _StringsEn {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -328169,7 +329002,7 @@ extension on _StringsAr {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'إنشاؤها من الصوت المحدد باستخدام نموذج الكلام على الجهاز';
       case 'audiobook_transcribe_accel_auto':
-        return 'تلقائي (وحدة معالجة الرسومات عند توفرها)';
+        return 'تلقائي';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -342799,6 +343632,46 @@ extension on _StringsAr {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -344304,7 +345177,7 @@ extension on _StringsDe {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Aus dem ausgewählten Audio mit dem Sprachmodell auf dem Gerät erzeugen';
       case 'audiobook_transcribe_accel_auto':
-        return 'Automatisch (GPU, wenn verfügbar)';
+        return 'Automatisch';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -358998,6 +359871,46 @@ extension on _StringsDe {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -360497,7 +361410,7 @@ extension on _StringsEs {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Generar a partir del audio seleccionado con el modelo de voz del dispositivo';
       case 'audiobook_transcribe_accel_auto':
-        return 'Auto (GPU si está disponible)';
+        return 'Auto';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -375179,6 +376092,46 @@ extension on _StringsEs {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -376682,7 +377635,7 @@ extension on _StringsFr {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Générer à partir de l\'audio sélectionné avec le modèle vocal sur l\'appareil';
       case 'audiobook_transcribe_accel_auto':
-        return 'Auto (GPU si disponible)';
+        return 'Auto';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -391378,6 +392331,46 @@ extension on _StringsFr {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -392876,7 +393869,7 @@ extension on _StringsId {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Buat dari audio yang dipilih dengan model suara di perangkat';
       case 'audiobook_transcribe_accel_auto':
-        return 'Otomatis (GPU jika tersedia)';
+        return 'Otomatis';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -407521,6 +408514,46 @@ extension on _StringsId {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -409019,7 +410052,7 @@ extension on _StringsIt {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Genera dall\'audio selezionato con il modello vocale sul dispositivo';
       case 'audiobook_transcribe_accel_auto':
-        return 'Auto (GPU se disponibile)';
+        return 'Auto';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -423700,6 +424733,46 @@ extension on _StringsIt {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -425188,7 +426261,7 @@ extension on _StringsJa {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'デバイス上の音声モデルで、選択した音声から生成します';
       case 'audiobook_transcribe_accel_auto':
-        return '自動（利用可能なら GPU）';
+        return '自動';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML（FP32）';
       case 'audiobook_transcribe_accel_cpu':
@@ -439753,6 +440826,46 @@ extension on _StringsJa {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -441239,7 +442352,7 @@ extension on _StringsKo {
       case 'audiobook_subtitle_source_transcribe_hint':
         return '기기 내 음성 모델로 선택한 오디오에서 생성';
       case 'audiobook_transcribe_accel_auto':
-        return '자동(가능하면 GPU)';
+        return '자동';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -455812,6 +456925,46 @@ extension on _StringsKo {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -457309,7 +458462,7 @@ extension on _StringsNl {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Genereren uit de geselecteerde audio met het spraakmodel op het apparaat';
       case 'audiobook_transcribe_accel_auto':
-        return 'Automatisch (GPU indien beschikbaar)';
+        return 'Automatisch';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -471986,6 +473139,46 @@ extension on _StringsNl {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -473485,7 +474678,7 @@ extension on _StringsPtBr {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Gerar a partir do áudio selecionado com o modelo de fala no dispositivo';
       case 'audiobook_transcribe_accel_auto':
-        return 'Automático (GPU quando disponível)';
+        return 'Automático';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -488152,6 +489345,46 @@ extension on _StringsPtBr {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -489655,7 +490888,7 @@ extension on _StringsRu {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Создать из выбранного аудио с помощью речевой модели на устройстве';
       case 'audiobook_transcribe_accel_auto':
-        return 'Авто (GPU, если доступен)';
+        return 'Авто';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -504323,6 +505556,46 @@ extension on _StringsRu {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -505817,7 +507090,7 @@ extension on _StringsTh {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'สร้างจากเสียงที่เลือกด้วยโมเดลเสียงพูดบนอุปกรณ์';
       case 'audiobook_transcribe_accel_auto':
-        return 'อัตโนมัติ (ใช้ GPU เมื่อมี)';
+        return 'อัตโนมัติ';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -520450,6 +521723,46 @@ extension on _StringsTh {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -521950,7 +523263,7 @@ extension on _StringsTr {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Seçilen sesten cihaz üzerindeki konuşma modeliyle oluştur';
       case 'audiobook_transcribe_accel_auto':
-        return 'Otomatik (varsa GPU)';
+        return 'Otomatik';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -536608,6 +537921,46 @@ extension on _StringsTr {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -538104,7 +539457,7 @@ extension on _StringsVi {
       case 'audiobook_subtitle_source_transcribe_hint':
         return 'Tạo từ âm thanh đã chọn bằng mô hình giọng nói trên thiết bị';
       case 'audiobook_transcribe_accel_auto':
-        return 'Tự động (GPU nếu có)';
+        return 'Tự động';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML (FP32)';
       case 'audiobook_transcribe_accel_cpu':
@@ -552749,6 +554102,46 @@ extension on _StringsVi {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':
@@ -554233,7 +555626,7 @@ extension on _StringsZhCn {
       case 'audiobook_subtitle_source_transcribe_hint':
         return '用设备端语音模型从已选音频生成';
       case 'audiobook_transcribe_accel_auto':
-        return '自动（有 GPU 则用）';
+        return '自动';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML（FP32）';
       case 'audiobook_transcribe_accel_cpu':
@@ -568719,6 +570112,43 @@ extension on _StringsZhCn {
         return '播放视频时装载 mpv_scripts 目录里的全部 .lua 脚本。删除脚本在下次打开视频时生效。';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return '本次播放未装载（重新打开视频后生效）';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA（NVIDIA）';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU 加速环境';
+      case 'audiobook_transcribe_gpu_description':
+        return '加速转录。不随安装包附带，下载语音模型时按显卡自动一起下载。';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => '检测到 ${name}：使用 CUDA（最快）';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return '没有支持 CUDA 的 NVIDIA 显卡：使用 DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return '没有可用的显卡：只用 CPU';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return '当前显卡或驱动无法运行所选环境（CUDA 需要 NVIDIA RTX 20 系及以上显卡、驱动 580+）。';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return '自动';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return '关闭';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            '下载 ${name}（${size}）';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => '移除 ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return '重启后生效';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) => 'GPU 环境不可用：${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) => '当前会用 CPU 转录；下载 ${name} 环境即可用上显卡。';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) => '下载 ${name} 环境，这张显卡上转录会更快。';
+      case 'import_subtitle_source_local':
+        return '本地文件';
+      case 'import_subtitle_source_transcribe':
+        return '转录';
       case 'sync_position_conflict_title':
         return '播放进度冲突';
       case 'sync_position_conflict_message':
@@ -570190,7 +571620,7 @@ extension on _StringsZhHk {
       case 'audiobook_subtitle_source_transcribe_hint':
         return '用裝置端語音模型從已選音頻生成';
       case 'audiobook_transcribe_accel_auto':
-        return '自動（有 GPU 則用）';
+        return '自動';
       case 'audiobook_transcribe_accel_coreml':
         return 'CoreML（FP32）';
       case 'audiobook_transcribe_accel_cpu':
@@ -584704,6 +586134,46 @@ extension on _StringsZhHk {
         return 'Every .lua file in the mpv_scripts folder loads when a video plays. Deleting a script takes effect the next time you open a video.';
       case 'video_setting_mpv_lua_scripts_status_pending':
         return 'Not loaded in this playback (reopen the video)';
+      case 'audiobook_transcribe_accel_directml':
+        return 'DirectML';
+      case 'audiobook_transcribe_accel_cuda':
+        return 'CUDA (NVIDIA)';
+      case 'audiobook_transcribe_gpu_title':
+        return 'GPU acceleration';
+      case 'audiobook_transcribe_gpu_description':
+        return 'Speeds up transcription. Not bundled with the app: it is downloaded together with a speech model, matched to your graphics card.';
+      case 'audiobook_transcribe_gpu_detected_cuda':
+        return ({required Object name}) => 'Detected ${name}: CUDA (fastest)';
+      case 'audiobook_transcribe_gpu_detected_directml':
+        return 'No CUDA-capable NVIDIA card: DirectML';
+      case 'audiobook_transcribe_gpu_detected_none':
+        return 'No usable graphics card: CPU only';
+      case 'audiobook_transcribe_gpu_unsupported':
+        return 'This graphics card or driver can\'t run the selected runtime (CUDA needs an NVIDIA RTX 20 series or newer card and driver 580+).';
+      case 'audiobook_transcribe_gpu_pref_auto':
+        return 'Auto';
+      case 'audiobook_transcribe_gpu_pref_off':
+        return 'Off';
+      case 'audiobook_transcribe_gpu_download':
+        return ({required Object name, required Object size}) =>
+            'Download ${name} (${size})';
+      case 'audiobook_transcribe_gpu_remove':
+        return ({required Object name}) => 'Remove ${name}';
+      case 'audiobook_transcribe_gpu_restart':
+        return 'Restart to apply';
+      case 'audiobook_transcribe_gpu_failed':
+        return ({required Object reason}) =>
+            'GPU runtime unavailable: ${reason}';
+      case 'audiobook_transcribe_gpu_offer_cpu':
+        return ({required Object name}) =>
+            'Transcription will run on the CPU. Download the ${name} runtime to use your graphics card.';
+      case 'audiobook_transcribe_gpu_offer_faster':
+        return ({required Object name}) =>
+            'Download the ${name} runtime for faster transcription on this graphics card.';
+      case 'import_subtitle_source_local':
+        return 'Local file';
+      case 'import_subtitle_source_transcribe':
+        return 'Transcribe';
       case 'sync_position_conflict_title':
         return 'Playback position conflict';
       case 'sync_position_conflict_message':

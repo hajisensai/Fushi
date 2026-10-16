@@ -16,11 +16,7 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 
 /// 下拉里的一项。
 class AsrEngineOption {
-  const AsrEngineOption({
-    required this.id,
-    required this.label,
-    this.pack,
-  });
+  const AsrEngineOption({required this.id, required this.label, this.pack});
 
   /// [AsrModelPack.id]，或系统语音的保留 id [kAppleSpeechEngineId]。
   final String id;
@@ -58,7 +54,14 @@ List<AsrEngineOption> asrEngineOptions({
       registry,
       profile: profile,
     ))
-      AsrEngineOption(id: pack.id, label: pack.displayName, pack: pack),
+      AsrEngineOption(
+        id: pack.id,
+        // 非宽松许可（Kitsune 是 CC BY-NC）直接写进选项名，选之前就看得见。
+        label: pack.license == null
+            ? pack.displayName
+            : '${pack.displayName} · ${pack.license}',
+        pack: pack,
+      ),
     if (systemSpeechAvailable)
       AsrEngineOption(id: kAppleSpeechEngineId, label: systemSpeechLabel),
   ];

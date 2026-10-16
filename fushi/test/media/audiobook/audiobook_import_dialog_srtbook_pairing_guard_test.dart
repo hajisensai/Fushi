@@ -39,7 +39,10 @@ void main() {
         reason: '配对 SrtBook 必须发生在有声书行落地之后');
 
     // 判据必须与 v29/v37 backfill 同源：EPUB-backed（epub_books 存在）且非 audioOnly。
-    expect(code.contains('getEpubBook(widget.bookKey)'), isTrue,
+    // 允许 dart format 把实参折到下一行（tall 风格补尾逗号）。
+    expect(
+        code.contains(RegExp(r'getEpubBook\(\s*widget\.bookKey,?\s*\)')),
+        isTrue,
         reason: '配对判据必须是 epub_books 存在（等价 backfill 的 '
             'audiobooks JOIN epub_books），避免给 standalone 有声书造孤儿行');
     expect(code.contains('!widget.audioOnly'), isTrue,

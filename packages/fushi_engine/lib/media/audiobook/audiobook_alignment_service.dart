@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -15,10 +16,8 @@ import 'package:meta/meta.dart';
 
 /// 非 UI 进度回调（替代对话框的 reportProgress）。[fraction] 0..1，[message]
 /// 是给用户看的步骤文案（service 不持有 i18n，文案由调用方喂）。
-typedef AudiobookAlignmentProgress = void Function(
-  double fraction,
-  String message,
-);
+typedef AudiobookAlignmentProgress =
+    void Function(double fraction, String message);
 
 /// EPUB + 字幕 + 可选音频 -> 有声书 对齐落库的可复用结果。
 @immutable
@@ -88,9 +87,9 @@ Future<bool> attachAsrCueTokenTiming(
 ) async {
   final List<AsrCueTokenTiming>? rows =
       await AsrTranscriptionService.readCueTokenTimings(
-    subtitlePath,
-    expectedCount: cues.length,
-  );
+        subtitlePath,
+        expectedCount: cues.length,
+      );
   if (rows == null) return false;
   if (rows.length != cues.length) return false;
   for (int i = 0; i < cues.length; i++) {
@@ -111,6 +110,14 @@ const String kAsrAlignedTranscriptFileName = 'transcript.aligned.srt';
 String asrAlignedTranscriptPathFor(String srtPath) =>
     p.join(p.dirname(srtPath), kAsrAlignedTranscriptFileName);
 
+/// 对齐版旁边的「非正文语音」：转录到了、却不是书里正文的 cue（念出来的人物介绍
+/// 图片页、片头片尾的出版社与朗读者、旁白外的念白），保留听写原文与时间。
+const String kAsrSpeechTranscriptFileName = 'transcript.speech.srt';
+
+/// 匹配健康时（命中率不低于此值）对齐版只放命中正文的 cue，其余另写
+/// [kAsrSpeechTranscriptFileName]；低于此值多半是配错了书，对齐版退回全量。
+const double kAsrAlignedBookOnlyMinMatchRate = 0.5;
+
 /// 「导出 SRT」该拷哪个文件：对齐版存在就是它，否则原始听写稿。第一次导出
 /// 发生在「使用字幕」之前（对齐还没跑），拿到的必然是原始稿；这不是 bug。
 String preferredTranscriptExportPath(String srtPath) {
@@ -128,6 +135,11 @@ String preferredTranscriptExportPath(String srtPath) {
 /// 4. 转录产物把对齐后的 cue 另写成 [kAsrAlignedTranscriptFileName]，供「导出
 ///    SRT」优先拷——之前替换后的文本只活在 DB 里，用户导出拿到的永远是没标点的
 ///    听写稿。写盘失败只记日志：它是导出的便利品，不是落库链路的一部分。
+///    对齐版**只放命中正文的 cue**（见 [kAsrAlignedBookOnlyMinMatchRate]）：导出
+///    的消费方是 Hoshi 这类按文本单调游标对齐的阅读器，一条未命中的听写短句
+///    （人物介绍页念的「趣味」）会被它在 2000 字窗口里匹配到后文、游标一跳过去，
+///    其后整本正文全部失配（春物 2 卷整本 Hoshi 口径覆盖 3% → 只放命中 99.7%）。
+///    未命中的 cue 写进 [kAsrSpeechTranscriptFileName]，DB 里照旧全部保留。
 Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
   required List<EpubSection> sections,
   required List<AudioCue> cues,
@@ -144,20 +156,50 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
     cues = resegmented.cues;
     result = resegmented.result;
   }
-  final bool asrGenerated =
-      AsrTranscriptionService.isAsrGeneratedSubtitlePath(subtitlePath);
+  final bool asrGenerated = AsrTranscriptionService.isAsrGeneratedSubtitlePath(
+    subtitlePath,
+  );
   if (asrGenerated) {
     replaceMatchedCueTextWithBookText(
       sections: sections,
       cues: cues,
       result: result,
     );
+    // 句界吸到真实停顿上：转录时顺手写下的能量包络（旧任务没有就跳过）。
+    final Int8List? energy = readAsrEnergyTimeline(
+      Directory(p.dirname(subtitlePath)),
+    );
+    if (energy != null) {
+      const CueEnergySnapper snapper = CueEnergySnapper();
+      final int moved = snapper.snap(cues, energy);
+      final int edges = snapper.refineEdges(cues, energy);
+      fushiDebugPrint(
+        '[fushi-import] energy snap: $moved boundaries, $edges edges',
+      );
+    }
   }
   SubtitleRematchCodec.applyToCues(cues: cues, result: result);
   if (asrGenerated) {
     try {
-      await File(asrAlignedTranscriptPathFor(subtitlePath))
-          .writeAsString(serializeAudioCuesToSrt(cues));
+      final bool bookOnly =
+          result.matches.length == cues.length &&
+          result.matchRate >= kAsrAlignedBookOnlyMinMatchRate;
+      final List<AudioCue> book = <AudioCue>[];
+      final List<AudioCue> speech = <AudioCue>[];
+      for (int i = 0; i < cues.length; i++) {
+        (!bookOnly || result.matches[i].matched ? book : speech).add(cues[i]);
+      }
+      await File(
+        asrAlignedTranscriptPathFor(subtitlePath),
+      ).writeAsString(serializeAudioCuesToSrt(book));
+      final File speechFile = File(
+        p.join(p.dirname(subtitlePath), kAsrSpeechTranscriptFileName),
+      );
+      if (speech.isNotEmpty) {
+        await speechFile.writeAsString(serializeAudioCuesToSrt(speech));
+      } else if (speechFile.existsSync()) {
+        await speechFile.delete();
+      }
     } catch (e, stack) {
       engineLog.log('AudiobookAlignmentService.writeAlignedSrt', e, stack);
     }
@@ -175,8 +217,10 @@ String serializeAudioCuesToSrt(List<AudioCue> cues) {
     if (cue.text.isEmpty) continue;
     sb
       ..writeln(index++)
-      ..writeln('${formatSrtTimestamp(cue.startMs)} --> '
-          '${formatSrtTimestamp(cue.endMs)}')
+      ..writeln(
+        '${formatSrtTimestamp(cue.startMs)} --> '
+        '${formatSrtTimestamp(cue.endMs)}',
+      )
       ..writeln(cue.text.replaceAll('\n', ' '))
       ..writeln();
   }
@@ -244,17 +288,29 @@ Future<List<AudioCue>> parseCuesForFormat(
   switch (ext) {
     case 'lrc':
       return LrcParser.parse(
-          lrcFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
+        lrcFile: file,
+        bookKey: bookKey,
+        audioFileIndex: audioFileIndex,
+      );
     case 'vtt':
       return VttParser.parse(
-          vttFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
+        vttFile: file,
+        bookKey: bookKey,
+        audioFileIndex: audioFileIndex,
+      );
     case 'ass':
     case 'ssa':
       return AssParser.parse(
-          assFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
+        assFile: file,
+        bookKey: bookKey,
+        audioFileIndex: audioFileIndex,
+      );
     default:
       return SrtParser.parse(
-          srtFile: file, bookKey: bookKey, audioFileIndex: audioFileIndex);
+        srtFile: file,
+        bookKey: bookKey,
+        audioFileIndex: audioFileIndex,
+      );
   }
 }
 
@@ -307,11 +363,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     0,
   );
   // 转录产物：把 sidecar 里的逐 token 时间挂上（非产物 / 缺失时 false）。
-  final bool hasTokenTiming =
-      await attachAsrCueTokenTiming(
-    cues,
-    subtitlePath,
-  );
+  final bool hasTokenTiming = await attachAsrCueTokenTiming(cues, subtitlePath);
   AudiobookHealth health;
   final bool runMatcher = SubtitleRematchPolicy.supportedFormats.contains(ext);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
@@ -337,12 +389,12 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     );
     final ({List<AudioCue> cues, MatchResult result}) finalized =
         await finalizeAlignedCues(
-      sections: sections,
-      cues: cues,
-      result: matchResult,
-      subtitlePath: subtitlePath,
-      hasTokenTiming: hasTokenTiming,
-    );
+          sections: sections,
+          cues: cues,
+          result: matchResult,
+          subtitlePath: subtitlePath,
+          hasTokenTiming: hasTokenTiming,
+        );
     cues = finalized.cues;
     matchResult = finalized.result;
     final int pct = (matchResult.matchRate * 100).round();
@@ -375,10 +427,10 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
   final List<String> persistedAudioPaths =
       await AudiobookStorage.syncAudioFiles(
-    persistDir,
-    audioPaths,
-    onFile: (String name) => report(0.85, messages._copying(name)),
-  );
+        persistDir,
+        audioPaths,
+        onFile: (String name) => report(0.85, messages._copying(name)),
+      );
 
   report(0.9, messages.saving);
   // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
@@ -402,14 +454,8 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     srtPath: persistedSrt,
     audioPaths: persistedAudioPaths,
   );
-  await audiobookRepo.saveCues(
-    bookKey: bookKey,
-    cues: cues,
-  );
-  await audiobookRepo.updateHealthOverlay(
-    bookKey: bookKey,
-    health: health,
-  );
+  await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
+  await audiobookRepo.updateHealthOverlay(bookKey: bookKey, health: health);
   report(1, messages.done);
 
   return AudiobookAlignmentResult(

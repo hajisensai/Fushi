@@ -17,11 +17,13 @@ import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
+import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
-export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart' show FushiAsrFfmpegBackend;
+export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart'
+    show FushiAsrFfmpegBackend;
 
 /// 在后台转录 isolate 里建 ONNX 会话工厂。
 ///
@@ -53,8 +55,9 @@ void fushiAsrIsolateBootstrap(Object arg) {
   }
   final Object? catalogPath = payload.length > 1 ? payload[1] : null;
   if (catalogPath is String && catalogPath.isNotEmpty) {
-    asr.asrModelRegistry =
-        buildAsrModelRegistry(readAsrModelCatalogSync(File(catalogPath)));
+    asr.asrModelRegistry = buildAsrModelRegistry(
+      readAsrModelCatalogSync(File(catalogPath)),
+    );
   }
 }
 
@@ -71,13 +74,10 @@ void fushiAsrIsolateBootstrap(Object arg) {
 /// 只出乱码。路径是常量，内容每次起 isolate 时现读，而 [saveAsrModelCatalog] 是
 /// 先落盘再改本进程状态，所以盘上永远不落后于内存。
 asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
-      buildFactory: buildFushiOnnxFactory,
-      bootstrap: fushiAsrIsolateBootstrap,
-      bootstrapArg: <Object?>[
-        RootIsolateToken.instance,
-        _asrModelCatalogPath,
-      ],
-    );
+  buildFactory: buildFushiOnnxFactory,
+  bootstrap: fushiAsrIsolateBootstrap,
+  bootstrapArg: <Object?>[RootIsolateToken.instance, _asrModelCatalogPath],
+);
 
 /// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
 ///
@@ -164,6 +164,12 @@ asr.AsrTranscriptionService createAsrTranscriptionService({
     asr.AsrTranscriptionService(
       audioProfile: audioProfile,
       backend: fushiAsrBackend(),
+      // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
+      // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
+      // 再来一遍。
+      loader: asr.AsrEngineLoader(
+        factory: GpuAwareOnnxSessionFactory(buildFushiOnnxFactory()),
+      ),
       pcm: asr.FfmpegAsrPcmSource(backend: const FushiAsrFfmpegBackend()),
       openStore: openAsrModelStore,
     );
@@ -184,11 +190,37 @@ asr.AsrTranscriptionService createAsrTranscriptionService({
 Future<asr.AsrModelStore> openAsrModelStore(
   asr.AsrLanguage language,
   asr.AsrAudioProfile profile,
+) => openAsrModelStoreForPack(asr.asrModelPackFor(language, profile: profile));
+
+/// 打开**某个具体包**的模型目录（手动接入的本地包认用户自己的文件夹）。
+///
+/// 设置页一行一个包，同一语言可能有好几行（默认包、视频专用的 Parakeet、可选的
+/// Kitsune、自带包），只有当前选中的那个才是 [openAsrModelStore] 给的；其余行
+/// 按语言查会照抄选中包的状态，点下载 / 删除也落到选中包上。
+Future<asr.AsrModelStore> openAsrModelStoreForPack(
+  asr.AsrModelPack pack,
 ) async {
-  final asr.AsrModelPack pack = asr.asrModelPackFor(language, profile: profile);
   final Directory? local = localAsrModelDirectory(pack);
   if (local != null) return asr.AsrModelStore(local, pack);
   return asr.AsrModelStore.openPack(pack);
+}
+
+/// 本机是否已下好（或手动接入了）任一语音模型包。老用户补 GPU 环境的判据
+/// （`backfillGpuRuntimeForExistingModels`）。
+///
+/// 按注册表里的**每个包**查，而不是按「语言 → 当前选中的包」：只下过视频用的
+/// Parakeet、或下了 Kitsune 却没选它的用户，按语言（有声书口径）查到的是另一个
+/// 没下过的包，会被判成「没有模型」而漏补 GPU 环境。注册表在 `main()` 里
+/// `loadAsrModelCatalog()` 之后才调这里，自带包也已在内。
+Future<bool> hasDownloadedAsrModel() async {
+  final Set<String> seen = <String>{};
+  for (final asr.AsrModelPack pack in asr.asrModelRegistry.packs) {
+    // 窄包置顶时同一个包会出现两次（同 id 同目录）。
+    if (!seen.add(pack.id)) continue;
+    final asr.AsrModelStore store = await openAsrModelStoreForPack(pack);
+    if (asr.AsrEncoderVariant.values.any(store.isReady)) return true;
+  }
+  return false;
 }
 
 /// 本平台是否具备设备端转录能力（= 本地 ONNX Runtime 随包）。

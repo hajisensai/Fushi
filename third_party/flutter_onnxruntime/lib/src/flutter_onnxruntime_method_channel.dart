@@ -55,6 +55,46 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
     }
   }
 
+  @override
+  Future<Map<String, dynamic>?> probeCuda() async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('probeCuda');
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> selectRuntime(String path) async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('selectRuntime', {'path': path});
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getRuntimeInfo() async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('getRuntimeInfo');
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>?> registerCudaRuntime(String dir) async {
+    try {
+      final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('registerCudaRuntime', {'dir': dir});
+      return result == null ? null : _convertMapToStringDynamic(result);
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
   /// Get the available providers
   @override
   Future<List<String>> getAvailableProviders() async {

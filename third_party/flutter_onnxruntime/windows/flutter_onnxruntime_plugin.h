@@ -44,6 +44,15 @@ private:
   void HandleGetDeviceMemoryInfo(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                                  std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
+  // Fushi fork: CUDA driver probe / CUDA plugin EP registration.
+  void HandleProbeCuda(const flutter::MethodCall<flutter::EncodableValue> &method_call,
+                       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void HandleSelectRuntime(const flutter::MethodCall<flutter::EncodableValue> &method_call,
+                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
+  void HandleRegisterCudaRuntime(const flutter::MethodCall<flutter::EncodableValue> &method_call,
+                                 std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+
   void HandleRunInference(const flutter::MethodCall<flutter::EncodableValue> &method_call,
                           std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
