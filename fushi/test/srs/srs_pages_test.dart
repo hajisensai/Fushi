@@ -334,6 +334,18 @@ void main() {
         ),
         isFalse,
       );
+
+      // 整个行首（缩进 + 箭头 + 牌组图标）都是展开 / 收起的命中区：点图标只收起子牌组，
+      // 不会打开复习（用户 2026-10-16：只有箭头能折叠时太容易误触开始复习）。
+      final Finder leading = find.byKey(
+        ValueKey<String>('srs-deck-leading-toggle-$parent'),
+      );
+      expect(leading, findsOneWidget);
+      final Rect leadingRect = tester.getRect(leading);
+      await tester.tapAt(Offset(leadingRect.right - 4, leadingRect.center.dy));
+      await _settle(tester);
+      expect(childHeight(), 0, reason: '点行首图标收起后代');
+      expect(find.byType(SrsReviewPage), findsNothing, reason: '没有进入复习');
       await _unmount(tester);
     });
 

@@ -641,6 +641,39 @@ class _DeckRow extends StatelessWidget {
     return KeyEventResult.handled;
   }
 
+  /// 行首：缩进 + 展开 / 收起箭头 + 牌组图标。有子牌组时整块都是展开 / 收起的
+  /// 命中区（用户 2026-10-16：只有箭头那 48 方框能折叠，旁边的缩进留白和图标一点
+  /// 就开始复习，太容易误触）；没有子牌组的行首照旧跟随整行打开牌组。
+  Widget _leading(FushiDesignTokens tokens) {
+    final Widget row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        // 层级缩进：子牌组每深一层右移一格。
+        SizedBox(width: deck.depth * tokens.spacing.card),
+        if (hasTree)
+          _CollapseToggle(
+            deckId: deck.deck.id,
+            visible: hasChildren,
+            collapsed: collapsed,
+            onPressed: () => onSetCollapsed(!collapsed),
+          ),
+        FushiListLeadingIcon(
+          deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
+          tone: deck.reviewCount + deck.learnCount > 0
+              ? FushiCardTone.primary
+              : FushiCardTone.neutral,
+        ),
+      ],
+    );
+    if (!hasChildren) return row;
+    return GestureDetector(
+      key: ValueKey<String>('srs-deck-leading-toggle-${deck.deck.id}'),
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onSetCollapsed(!collapsed),
+      child: row,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -660,26 +693,7 @@ class _DeckRow extends StatelessWidget {
             count: count,
             onTap: () => onOpen(deck),
             child: FushiListItem(
-              leading: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  // 层级缩进：子牌组每深一层右移一格。
-                  SizedBox(width: deck.depth * tokens.spacing.card),
-                  if (hasTree)
-                    _CollapseToggle(
-                      deckId: deck.deck.id,
-                      visible: hasChildren,
-                      collapsed: collapsed,
-                      onPressed: () => onSetCollapsed(!collapsed),
-                    ),
-                  FushiListLeadingIcon(
-                    deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
-                    tone: deck.reviewCount + deck.learnCount > 0
-                        ? FushiCardTone.primary
-                        : FushiCardTone.neutral,
-                  ),
-                ],
-              ),
+              leading: _leading(tokens),
               title: FushiTooltip(
                 message: deck.fullName,
                 child: Text(deck.deck.name),
