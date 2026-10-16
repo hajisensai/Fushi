@@ -3,6 +3,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/audio_source_list_edit.dart';
 import 'package:fushi/src/settings/audio_sources_cli.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
 
@@ -71,7 +72,12 @@ class _AppModel extends AppModel {
   }
 }
 
-const String _url = 'https://audio.example/?term={term}&reading={reading}';
+/// 当前宿主平台上的绝对路径（CI 跑 Linux、本机跑 Windows）。CLI 的 `path`
+/// 判据按宿主 `p.isAbsolute`，写死 Windows 盘符路径在 Linux 上会被当成相对路径拒掉。
+String _absPath(List<String> parts) =>
+    p.joinAll(<String>[p.rootPrefix(p.current), 'fushi_cli_test', ...parts]);
+
+const String _url ='https://audio.example/?term={term}&reading={reading}';
 
 void main() {
   group('编辑规则（对话框与 CLI 共用）', () {
@@ -151,19 +157,22 @@ void main() {
 
     test('add local：导入库文件（尊重 reference），坏文件给可读错误', () async {
       final _AppModel app = _AppModel(<AudioSourceConfig>[]);
+      final String dbPath = _absPath(<String>['audio', 'android.db']);
       final Map<String, Object?> added = await addAudioSourceForCli(
         app,
         <String, String>{
-          'path': r'C:\audio\android.db',
+          'path': dbPath,
           'reference': 'true',
           'position': '5',
         },
       );
       expect(added['kind'], 'local');
       expect(added['enabled'], isTrue);
-      expect(app.imported.single, r'C:\audio\android.db|true');
+      expect(app.imported.single, '$dbPath|true');
       await expectLater(
-        addAudioSourceForCli(app, <String, String>{'path': r'C:\a\b.zip'}),
+        addAudioSourceForCli(app, <String, String>{
+          'path': _absPath(<String>['a', 'b.zip']),
+        }),
         throwsArgumentError,
       );
       await expectLater(
@@ -191,7 +200,7 @@ void main() {
       final Map<String, Object?> replaced = await updateAudioSourceForCli(
         app,
         'local:old.db',
-        <String, String>{'path': r'C:\new.db'},
+        <String, String>{'path': _absPath(<String>['new.db'])},
       );
       final String newPath = replaced['path']! as String;
       expect(newPath, isNot('old.db'));
