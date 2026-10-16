@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/media/video/audio_energy_probe.dart'
+    show kSubtitleAutoAlignProbeLimitMs;
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -39,6 +41,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
+    this.subtitleProbeLimitMs = kSubtitleAutoAlignProbeLimitMs,
     this.onPlaySubtitleCue,
     this.subtitleIsPlaying,
     this.onToggleSubtitlePlayPause,
@@ -130,6 +133,9 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   final List<AudioCue> subtitleWaveformCues;
   final int videoDurationMs;
   final Future<List<double>> Function()? loadSubtitleWaveform;
+
+  /// 波形 / 自动对轴探测上界（毫秒），流音源比整集音源短，见 [subtitleAlignProbeLimitMs]。
+  final int subtitleProbeLimitMs;
   final Future<void> Function(int startMs)? onPlaySubtitleCue;
   final bool Function()? subtitleIsPlaying;
   final Future<void> Function()? onToggleSubtitlePlayPause;

@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "أبقِ هذا مفعّلًا مع قفل الموضع إن كنت لا تزال تريد البحث عن الكلمات.",
   "floating_lyric_close": "إغلاق",
   "floating_lyric_corner_radius": "نصف قطر زوايا الترجمة العائمة",
-  "floating_lyric_corner_radius_hint": "0 يحتفظ بالزوايا الافتراضية لكل منصة؛ ارفعه لتدوير الشريط والأزرار أكثر",
+  "floating_lyric_corner_radius_hint": "0 يعني زوايا قائمة؛ ارفعه لتدوير الشريط والأزرار أكثر (الافتراضي 24)",
   "floating_lyric_font_size": "حجم خط الترجمة العائمة",
   "floating_lyric_hint": "عرض الجملة الحالية فوق التطبيقات الأخرى.",
   "floating_lyric_lock": "قفل",

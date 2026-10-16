@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -455,6 +456,9 @@ Future<void> _pumpPointerPage(
 }
 
 class _Lookup implements GameStreamDictionaryLookup {
+  @override
+  DictionaryPopupResourceSource? get popupResources => null;
+
   final List<String> terms = <String>[];
 
   @override

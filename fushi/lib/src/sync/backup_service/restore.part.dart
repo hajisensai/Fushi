@@ -1736,6 +1736,10 @@ class BackupRestoreService {
         await db.customStatement(
             'INSERT INTO preferences SELECT * FROM bak.preferences '
             'WHERE $_keepDeviceSettingsPrefPredicate');
+        // 制卡映射归 settings（[backupTableRules]）：保留本机设置时一并保留。
+        await db.customStatement('DELETE FROM anki_mappings');
+        await db.customStatement(
+            'INSERT INTO anki_mappings SELECT * FROM bak.anki_mappings');
         // profiles before its FK dependents.
         for (final String t in _settingsLayerTables) {
           await db.customStatement('DELETE FROM $t');
@@ -1789,6 +1793,10 @@ class BackupRestoreService {
           await db.customStatement(
               'INSERT INTO preferences SELECT * FROM setbak.preferences '
               'WHERE $settingsPrefPredicate');
+          // 制卡映射归 settings（[backupTableRules]）：导出侧整表剥离，这里对称回灌。
+          await db.customStatement('DELETE FROM anki_mappings');
+          await db.customStatement(
+              'INSERT INTO anki_mappings SELECT * FROM setbak.anki_mappings');
         }
         if (reapplyProfiles) {
           // Child-first DELETE so an enforced FK to `profiles` never blocks the

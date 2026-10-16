@@ -47,6 +47,7 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
     required this.cues,
     required this.durationMs,
     required this.loadWaveform,
+    this.probeLimitMs = kSubtitleAutoAlignProbeLimitMs,
     this.onCommitDelay,
     this.onAutoAlign,
     this.onSnapDelayToCue,
@@ -69,6 +70,10 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
 
   /// 视频总时长（毫秒）。<=0 时波形时间窗退化到探测上界（降级）。
   final int durationMs;
+
+  /// 本次探测的时间上界（毫秒）：流音源只拉前几分钟，波形时间窗必须与实际抽到的
+  /// 音频同长（页面的 `_subtitleAlignProbeLimitMs`）。
+  final int probeLimitMs;
 
   /// 抽音频能量包络（原始逐帧 dB 序列）。由页面提供（经 extractAudioEnergyEnvelope）；
   /// 返回空列表 = 拿不到波形（降级态，入口内联提示不可用、不隐藏）。TODO-1315 起
@@ -138,7 +143,7 @@ class _SubtitleWaveformAlignPanelState
   /// 波形时间窗上界（毫秒）：与 extractAudioEnergyEnvelope 的探测上界同源
   /// （前 N 分钟截断），取 min(durationMs, probeLimit)；durationMs 未知时用探测上界。
   int get _windowEndMs {
-    const int limit = kSubtitleAutoAlignProbeLimitMs;
+    final int limit = widget.probeLimitMs;
     if (widget.durationMs <= 0) return limit;
     return widget.durationMs < limit ? widget.durationMs : limit;
   }
