@@ -37,6 +37,7 @@ add_executable(${BINARY_NAME} WIN32
   "global_lookup_window.cpp"
   "global_mouse_trigger.cpp"
   "hang_watchdog.cpp"
+  "hdr_desktop_capture.cpp"
   "hdr_video_host_window.cpp"
   "hook_toolbar_window.cpp"
   "ime_association_guard.cpp"
@@ -540,6 +541,21 @@ add_custom_target(fushi_windows_screen_ocr_logic_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_screen_ocr_logic_gate)
+
+# 截屏识字在 HDR 显示器上的 scRGB(FP16) → 8bit sRGB 色调映射（hdr_tone_map.h）：
+# SDR 内容必须逐级还原（否则整屏发白 / 发灰），HDR 高光平滑压缩不能断层。
+add_executable(fushi_windows_hdr_tone_map_test
+  "tests/hdr_tone_map_test.cpp"
+)
+apply_standard_settings(fushi_windows_hdr_tone_map_test)
+target_compile_definitions(fushi_windows_hdr_tone_map_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_hdr_tone_map_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_hdr_tone_map_test>"
+  DEPENDS fushi_windows_hdr_tone_map_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_hdr_tone_map_gate)
 
 # Rolling window recording for galgame video cards: the fps keep decision, the
 # max_seconds / byte-cap eviction, the export range (to<=0 = now) and the box

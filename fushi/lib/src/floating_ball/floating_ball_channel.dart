@@ -344,9 +344,10 @@ class DesktopScreenOcrCapture {
   const DesktopScreenOcrCapture.success({
     required Uint8List this.png,
     required Rect this.screen,
+    this.diagnostic,
   }) : error = null;
 
-  const DesktopScreenOcrCapture.failure(String this.error)
+  const DesktopScreenOcrCapture.failure(String this.error, {this.diagnostic})
     : png = null,
       screen = null;
 
@@ -355,16 +356,28 @@ class DesktopScreenOcrCapture {
     if (raw == null) {
       return const DesktopScreenOcrCapture.failure(captureFailed);
     }
+    final Object? rawDiagnostic = raw['diagnostic'];
+    final String? diagnostic =
+        rawDiagnostic is String && rawDiagnostic.isNotEmpty
+        ? rawDiagnostic
+        : null;
     final Object? error = raw['error'];
     if (error is String && error.isNotEmpty) {
-      return DesktopScreenOcrCapture.failure(error);
+      return DesktopScreenOcrCapture.failure(error, diagnostic: diagnostic);
     }
     final Object? png = raw['png'];
     final Rect? screen = FloatingBallChannel._rect(raw['screen']);
     if (png is! Uint8List || png.isEmpty || screen == null || screen.isEmpty) {
-      return const DesktopScreenOcrCapture.failure(captureFailed);
+      return DesktopScreenOcrCapture.failure(
+        captureFailed,
+        diagnostic: diagnostic,
+      );
     }
-    return DesktopScreenOcrCapture.success(png: png, screen: screen);
+    return DesktopScreenOcrCapture.success(
+      png: png,
+      screen: screen,
+      diagnostic: diagnostic,
+    );
   }
 
   /// 没有屏幕录制权限（macOS）：原生已弹系统授权请求。
@@ -375,4 +388,8 @@ class DesktopScreenOcrCapture {
   final Uint8List? png;
   final Rect? screen;
   final String? error;
+
+  /// 原生取帧路径的诊断（Windows：HDR 显示器走了 DXGI scRGB 取帧，或为什么回落
+  /// GDI）；普通 SDR 截屏为 null。只进诊断日志，不影响流程。
+  final String? diagnostic;
 }

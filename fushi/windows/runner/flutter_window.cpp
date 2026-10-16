@@ -2429,6 +2429,24 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   const HMONITOR monitor =
       MonitorFromPoint(POINT{probe.x, probe.y}, MONITOR_DEFAULTTONEAREST);
 
+  // HDR 显示器：藏窗口**之前**建好 duplication——它只交付建好之后合成过的帧，
+  // 下面藏球 / 关旧层那次合成就是要取的那帧（hdr_desktop_capture.h）。
+  ScreenOcrOverlay::Capture capture;
+  fushi::HdrMonitorDuplication hdr;
+  {
+    std::string note;
+    switch (hdr.Open(monitor, &note)) {
+      case fushi::HdrMonitorDuplication::OpenResult::kOpened:
+        break;
+      case fushi::HdrMonitorDuplication::OpenResult::kFailed:
+        capture.diagnostic = "hdr capture failed, fell back to gdi: " + note;
+        break;
+      case fushi::HdrMonitorDuplication::OpenResult::kNotHdr:
+        if (!note.empty()) capture.diagnostic = "hdr probe skipped: " + note;
+        break;
+    }
+  }
+
   // 上一层还开着（重复点）：先关掉，不回调；它与球都不能入镜。
   screen_ocr_overlay_->Close();
   floating_ball_window_->HideForCapture();
@@ -2437,14 +2455,20 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   DwmFlush();
   DwmFlush();
 
-  ScreenOcrOverlay::Capture capture;
-  if (!ScreenOcrOverlay::CaptureMonitor(monitor, &capture)) {
+  if (!ScreenOcrOverlay::CaptureMonitor(
+          monitor, hdr.is_open() ? &hdr : nullptr, &capture)) {
     floating_ball_window_->RestoreAfterCapture();
-    return failure("capture_failed");
+    flutter::EncodableValue reply = failure("capture_failed");
+    if (!capture.diagnostic.empty()) {
+      std::get<flutter::EncodableMap>(reply)[flutter::EncodableValue(
+          "diagnostic")] = flutter::EncodableValue(capture.diagnostic);
+    }
+    return reply;
   }
   const RECT screen = capture.screen;
   const int width = capture.width;
   const int height = capture.height;
+  std::string diagnostic = capture.diagnostic;
   // 先盖冻结层（画面立刻「定格」并显示「识别中」），再编 PNG。
   if (!screen_ocr_overlay_->Show(std::move(capture), style)) {
     floating_ball_window_->RestoreAfterCapture();
@@ -2464,11 +2488,17 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
       flutter::EncodableValue(static_cast<int32_t>(screen.right)),
       flutter::EncodableValue(static_cast<int32_t>(screen.bottom)),
   };
-  return flutter::EncodableValue(flutter::EncodableMap{
+  flutter::EncodableMap reply{
       {flutter::EncodableValue("png"), flutter::EncodableValue(std::move(png))},
       {flutter::EncodableValue("screen"),
        flutter::EncodableValue(std::move(screen_rect))},
-  });
+  };
+  // HDR 显示器的取帧路径 / 回落原因：Dart 记进诊断日志（不影响结果）。
+  if (!diagnostic.empty()) {
+    reply[flutter::EncodableValue("diagnostic")] =
+        flutter::EncodableValue(std::move(diagnostic));
+  }
+  return flutter::EncodableValue(std::move(reply));
 }
 
 void FlutterWindow::StopScreenOcr() {

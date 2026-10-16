@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 #include "window_activation_policy.h"
 
@@ -49,7 +50,9 @@ ScreenOcrOverlay::~ScreenOcrOverlay() {
 
 // ── 截屏 ────────────────────────────────────────────────────────────────────
 
-bool ScreenOcrOverlay::CaptureMonitor(HMONITOR monitor, Capture* out) {
+bool ScreenOcrOverlay::CaptureMonitor(HMONITOR monitor,
+                                      fushi::HdrMonitorDuplication* hdr,
+                                      Capture* out) {
   if (out == nullptr || monitor == nullptr) {
     return false;
   }
@@ -66,6 +69,20 @@ bool ScreenOcrOverlay::CaptureMonitor(HMONITOR monitor, Capture* out) {
       static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4 >
           128ull * 1024 * 1024) {
     return false;
+  }
+  // HDR 显示器上 BitBlt 拿到的是被抬亮又没还原的 8bit 帧（整屏发白）：先取 scRGB 帧。
+  if (hdr != nullptr && hdr->is_open()) {
+    fushi::HdrMonitorCapture frame = hdr->Capture(screen);
+    if (frame.status == fushi::HdrMonitorCapture::Status::kCaptured) {
+      out->bgra = std::move(frame.bgra);
+      out->monitor = monitor;
+      out->screen = screen;
+      out->width = width;
+      out->height = height;
+      out->diagnostic = std::move(frame.detail);
+      return true;
+    }
+    out->diagnostic = "hdr capture failed, fell back to gdi: " + frame.detail;
   }
   HDC screen_dc = GetDC(nullptr);
   if (screen_dc == nullptr) {

@@ -860,6 +860,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           },
           colors: colors,
         );
+    // 原生取帧路径的诊断（HDR 显示器走 scRGB 取帧 / 为什么回落 GDI，BUG-3451）。
+    final String? captureDiagnostic = capture.diagnostic;
+    if (captureDiagnostic != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_capture',
+        captureDiagnostic,
+      );
+    }
     final Uint8List? png = capture.png;
     final Rect? screen = capture.screen;
     if (png == null || screen == null) {

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "hdr_desktop_capture.h"
 #include "screen_ocr_logic.h"
 
 // 桌面应用外悬浮球「截屏识字」的冻结层（Windows）。
@@ -44,6 +45,9 @@ class ScreenOcrOverlay {
     int width = 0;
     int height = 0;
     std::vector<uint8_t> bgra;
+    // 取帧路径的诊断（HDR 显示器走了哪条路、为什么回落），空 = 普通 SDR BitBlt。
+    // 经通道回给 Dart 记进诊断日志。
+    std::string diagnostic;
   };
 
   using TapCallback = std::function<void(int x, int y)>;
@@ -60,9 +64,13 @@ class ScreenOcrOverlay {
     on_dismiss_ = std::move(callback);
   }
 
-  // GDI BitBlt（CAPTUREBLT，含分层窗）截 |monitor| 整块。调用方负责先把不该入镜的
-  // 窗口藏好并 DwmFlush。
-  static bool CaptureMonitor(HMONITOR monitor, Capture* out);
+  // 截 |monitor| 整块。调用方负责先把不该入镜的窗口藏好并 DwmFlush。
+  // |hdr| 是藏窗口**之前**已 Open 成功的 duplication（显示器开了 HDR）：取 scRGB 帧
+  // 再色调映射（hdr_desktop_capture.h），失败回落 BitBlt 并把原因写进
+  // |out->diagnostic|。|hdr| 为空（SDR 显示器）：GDI BitBlt（CAPTUREBLT，含分层窗），
+  // 与改动前完全一致。|out->diagnostic| 里调用方预先写的内容保留。
+  static bool CaptureMonitor(HMONITOR monitor,
+                             fushi::HdrMonitorDuplication* hdr, Capture* out);
 
   // 显示冻结层（已显示则先关掉旧的，不回调），提示条显示 style.recognizing。
   // 成功时 |capture| 的像素被本类接管。
