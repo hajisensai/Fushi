@@ -75,9 +75,6 @@ class ProfileKeys {
     // 「工具栏样式强制悬浮」一次性迁移标记：同族（迁移本身会改写各 Profile 快照
     // 里的 reader_toolbar_style，标记只描述本安装）。
     PreferencesRepository.readerToolbarStyleFloatingMigratedKey,
-    // 「挖词目标」出厂默认（兼一次性判定标记）：描述本安装是老用户还是新用户，同族。
-    // 进快照的话切到判定前建的老 Profile 会把它删掉，判定重跑。
-    PreferencesRepository.srsMiningTargetInstallDefaultKey,
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index

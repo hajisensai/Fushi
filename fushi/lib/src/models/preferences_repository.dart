@@ -2915,14 +2915,17 @@ class PreferencesRepository extends ChangeNotifier
 
   /// 本安装「挖词目标」的出厂默认（'anki' / 'srs'），兼一次性判定的已跑标记。
   ///
-  /// 不随 Profile 走（`ProfileKeys` 排除）：它描述的是**本安装**属于老用户还是新用户。
+  /// 设备本地（`SyncRepository.installScopedPrefKeys`）：它描述的是**本安装**属于老用户
+  /// 还是新用户，不进 Profile 快照 / 分享。
   /// 用它而不是把判定结果写进 `srs_mining_target` 本身，是因为 Profile 快照里**没有**
   /// 某键时，切 Profile 会把 live 键删掉（`ProfileRepository.applyProfile` 的 prune）——
   /// 老用户切到一份 SRS 之前建的快照、或导入一份旧的 Profile 分享，键一删就回落默认；
   /// 回落值取这里，老用户落回 'anki'，新用户落回 'srs'，不会被新默认误切。
   ///
-  /// 随备份走（普通设置键）：整层恢复一份没有本键的老备份后标记随之消失，下次启动重新
-  /// 判定（老备份必然带着老用户信号 → 'anki'）；判定前读取按 'anki'（见 [srsMiningTarget]）。
+  /// 也不随备份 / 推荐包走：导出时剔除，导入时外来值一律丢弃、本机已判定的值原样保留
+  /// （维护者用装了新版的机器打推荐包会带上 'anki'，新用户一导入就会被误判成老 Anki
+  /// 用户）。本机还没判定过时导入后仍缺着，下次启动照常判定；判定前读取按 'anki'
+  /// （见 [srsMiningTarget]）。
   static const String srsMiningTargetInstallDefaultKey =
       'srs_mining_target_install_default';
 

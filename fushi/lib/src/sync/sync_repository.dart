@@ -6,7 +6,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         kDownloadExecutionHostPrefKey,
         kFloatingLyricWindowRectPrefKey,
         kGameStreamLookupLayoutPrefKey,
-        kGameStreamRemoteLaunchPrefKey;
+        kGameStreamRemoteLaunchPrefKey,
+        PreferencesRepository;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1504,9 +1505,24 @@ class SyncRepository {
   /// 编译错误而是静默泄漏——基线会随备份跨设备携带，正是拆键前就有的老毛病。
   static final List<String> deviceLocalPrefKeys = <String>[
     ..._deviceLocalFixedKeys,
+    ...installScopedPrefKeys,
     for (final String base in _perChannelDeviceLocalBases)
       for (final SyncChannelScope scope in SyncChannelScope.all)
         scope.key(base),
+  ];
+
+  /// 设备本地键里更严的一类：描述**本次安装**的一次性判定 / 迁移结论。
+  ///
+  /// 和其余设备本地键一样导出时剔除、覆盖恢复时保留本机值；此外导入侧还要
+  /// **丢掉外来值**——哪怕本机还没有这个键（全新安装直接恢复、或本机判定尚未落盘），
+  /// 也绝不采信备份 / 推荐包带进来的那份，否则判定会被另一台机器的结论顶替且不再
+  /// 重跑（标记即「已判定」）。旧版本导出的、还带着这些键的包也靠这一步兜住。
+  ///
+  /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
+  ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
+  ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
+  static const List<String> installScopedPrefKeys = <String>[
+    PreferencesRepository.srsMiningTargetInstallDefaultKey,
   ];
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。

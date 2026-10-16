@@ -1158,6 +1158,9 @@ class BackupRestoreService {
         if (preservedSync.isNotEmpty) {
           await _applyPreservedConfig(dbDirectory, preservedSync);
         }
+        // 本安装的一次性判定键：外来值一律不采信，本机没有就让它缺着、下次启动重判
+        // （全新安装 haveCurrent=false 时 preservedSync 为空，也必须走这一步）。
+        await _dropForeignInstallScopedPrefs(dbDirectory, preservedSync);
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
         await _reapplySettingsLayer(dbDirectory);
@@ -1669,6 +1672,7 @@ class BackupRestoreService {
             (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+        await _dropForeignInstallScopedPrefs(dbDirectory, prefs);
       }
       sidecarStateApplied = true;
     } on FormatException catch (e, st) {
@@ -1910,6 +1914,41 @@ class BackupRestoreService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// 导入侧对 [SyncRepository.installScopedPrefKeys] 的最后一道：导入库里这些键
+  /// 只能是本机原值（[preserved] 里有的），备份 / 推荐包带进来的外来值一律删掉。
+  ///
+  /// [_applyPreservedConfig] 只会「用本机值覆盖」，覆盖不到本机**没有**的键——全新
+  /// 安装直接恢复（没有活库可读）或本机判定还没落盘时，外来值会原样留下，而这些键
+  /// 本身就是「已判定」标记，留下即判定永不重跑。导出侧早已剔除，这里兜的是旧版本
+  /// 打出来的包。
+  static Future<void> _dropForeignInstallScopedPrefs(
+    String dbDirectory,
+    Map<String, String> preserved,
+  ) async {
+    final List<String> foreign = SyncRepository.installScopedPrefKeys
+        .where((String key) => !preserved.containsKey(key))
+        .toList(growable: false);
+    if (foreign.isEmpty) return;
+    FushiDatabase? db;
+    try {
+      db = FushiDatabase(dbDirectory);
+      await (db.delete(db.preferences)..where((t) => t.key.isIn(foreign))).go();
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, st) {
+      // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，
+      // 不因这一步把整次恢复判失败——那样的库本来就读不出任何偏好。
+      debugPrint(
+        'BackupRestoreService._dropForeignInstallScopedPrefs failed: $e\n$st',
+      );
+    } finally {
+      try {
+        await db?.close();
+      } catch (_) {
+        /* db may have failed to open */
+      }
     }
   }
 
