@@ -163,6 +163,10 @@ Future<String?> importDiscoverySubtitleAudiobook({
 
 /// 设备端转录出字幕之后的入库：有正文走对齐（听写有误差，阈值按转录产物
 /// 放宽，同书导入对话框选「转录」后的做法），没有就成独立字幕书。
+///
+/// [targetBookKey] 非 null = 挂到库里已有的这本书上：与「导入书 + 字幕 + 音频」
+/// 同一个对齐落库函数 [alignAndPersistAudiobook]（首次挂有声书与换字幕都走它），
+/// 返回该 bookKey；书已被删则抛 [StateError]（任务落 failed，不悄悄新建书）。
 Future<String?> importTranscribedAudiobook({
   required FushiDatabase db,
   required SrtBookRepository srtBookRepo,
@@ -170,8 +174,27 @@ Future<String?> importTranscribedAudiobook({
   required String subtitlePath,
   required List<String> audioPaths,
   String? contentPath,
+  String? targetBookKey,
   required String title,
-}) {
+}) async {
+  if (targetBookKey != null) {
+    final EpubBookRow? row = await db.getEpubBook(targetBookKey);
+    if (row == null) {
+      throw StateError('target book is gone: $targetBookKey');
+    }
+    await alignAndPersistAudiobook(
+      db: db,
+      repo: srtBookRepo,
+      audiobookRepo: audiobookRepo,
+      bookKey: targetBookKey,
+      title: row.title,
+      author: row.author,
+      subtitlePath: subtitlePath,
+      audioPaths: audioPaths,
+      similarityThreshold: kAsrSuggestedSimilarityThreshold,
+    );
+    return targetBookKey;
+  }
   if (contentPath != null) {
     return importDiscoveryAudiobook(
       db: db,

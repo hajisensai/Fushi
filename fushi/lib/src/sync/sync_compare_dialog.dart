@@ -645,6 +645,386 @@ Future<String> _ensureRoot(
   return backend.findOrCreateRootFolder();
 }
 
+/// 比较用的后端：同步真正会跑的通道里第一条认证通过的（云通道在前、互联在后）；
+/// 一条都没有 = 没配过同步。设置页对话框与控制通道（`fushi_cli sync compare`）共用。
+/// 理由见 [showSyncCompareDialog] 里的 BUG-1566 / BUG-047 / BUG-083 注释。
+Future<SyncBackend?> resolveSyncCompareBackend(SyncRepository repo) =>
+    runExclusiveWithSync<SyncBackend?>(() async {
+    for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+      try {
+        await channel.backend.restoreAuth(repo);
+        if (await channel.backend.isAuthenticated) return channel.backend;
+      } catch (e) {
+        // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
+        developer.log(
+          'Compare channel auth failed (interconnect=${channel.isInterconnect})',
+          error: e,
+          name: 'SyncCompare',
+        );
+      }
+    }
+    return null;
+  });
+
+/// 拉一次对比数据（书 + 词典）。在同步互斥锁下跑：它会重新列远端并改写单例后端的
+/// 文件夹缓存，与在途同步并发会搅乱同步的视图（BUG-083）。
+Future<({List<SyncCompareEntry> books, List<SyncDictEntry> dicts})>
+    loadSyncCompareData(FushiDatabase db, SyncBackend backend) async {
+  final results = await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
+        _fetchCompareData(db, backend),
+        _fetchDictEntries(db, backend),
+      ]));
+  return (
+    books: results[0] as List<SyncCompareEntry>,
+    dicts: results[1] as List<SyncDictEntry>,
+  );
+}
+
+/// 每本书的默认选择（按 [SyncCompareEntry.title] 索引）：两端已一致 / 远端独有默认
+/// 跳过，其余（含真分叉）按 [SyncCompareEntry.autoDirection] 取时间戳较新的一侧。
+Map<String, SyncChoice> defaultSyncCompareChoices(
+  List<SyncCompareEntry> entries,
+) {
+  final choices = <String, SyncChoice>{};
+  for (final e in entries) {
+    if (e.bookKey == null) {
+      // remote-only 书改成行内点击下载，不再默认纳入 Apply 批量对账。
+      // 只剩同步元数据的孤儿也保持 skip，避免无法完成的幽灵下载（BUG-049）。
+      choices[e.title] = SyncChoice.skip;
+    } else if (e.isSynced) {
+      choices[e.title] = SyncChoice.skip;
+    } else if (e.autoDirection == SyncDirection.importFromTtu) {
+      choices[e.title] = SyncChoice.useRemote;
+    } else if (e.autoDirection == SyncDirection.exportToTtu) {
+      choices[e.title] = SyncChoice.useLocal;
+    } else {
+      choices[e.title] = SyncChoice.skip;
+    }
+  }
+  return choices;
+}
+
+/// [applySyncCompareChoices] 的结果。
+class SyncCompareApplyResult {
+  const SyncCompareApplyResult({required this.applied, required this.errors});
+
+  /// 真正写了东西的书数。
+  final int applied;
+
+  /// 失败的书名。
+  final List<String> errors;
+}
+
+/// 按 [choices]（书名 → 选择）应用 [actionable] 里的书：选本地 = 推本机这份过去，
+/// 选远端 = 拉远端这份回来（[SyncManager.syncBook]）；互联 live 行再按选择落一次书
+/// 进度（BUG-2506）。整段在同步互斥锁下跑（真实网络读写，BUG-083）。
+///
+/// [onProgress]：`(总进度 0..1 或 null, 当前书标签或 null = 不变)`。
+/// [decisions]：跨通道裁决簿（见 [SyncCompareDialog.decisions]），null = 不记。
+Future<SyncCompareApplyResult> applySyncCompareChoices({
+  required FushiDatabase db,
+  required SyncBackend backend,
+  required List<SyncCompareEntry> actionable,
+  required Map<String, SyncChoice> choices,
+  required Directory tempDir,
+  Map<String, SyncChoice>? decisions,
+  void Function(double? progress, String? label)? onProgress,
+}) {
+  final total = actionable.length;
+  return runExclusiveWithSync(() async {
+    final repo = SyncRepository(db);
+    // BUG-988：手动「解决冲突并应用」与自动同步走**同一份** [resolveChannelSyncFlags]。
+    // 原来只有 content 在这里做了分通道三元式，统计仍读云备份的 sync_stats_enabled
+    // ——用户关掉互联「共享统计」后，手动应用一本书仍会把它的 `statistics_*.json`
+    // 推给互联 host 再 merge 回本地。整份 flags 一起解析就没有漏项可言。
+    final ChannelSyncFlags flags = await resolveChannelSyncFlags(
+      repo,
+      isInterconnect: backend is InterconnectSyncBackend,
+    );
+    final bool syncStats = flags.syncStats;
+    final bool syncAudioBook = flags.syncAudioBookPosition;
+    final bool syncContent = flags.syncContent;
+
+    var done = 0;
+    // Blend per-file transfer fraction into the overall book progress so the
+    // bar advances smoothly during large content downloads/uploads.
+    final manager = SyncManager(
+      db: db,
+      backend: backend,
+      onContentProgress: (double fraction, [int? _]) {
+        if (total > 0) {
+          onProgress?.call((done + fraction.clamp(0.0, 1.0)) / total, null);
+        }
+      },
+    );
+
+    int applied = 0;
+    final errors = <String>[];
+    for (final entry in actionable) {
+      final choice = choices[entry.title]!;
+
+      if (entry.bookKey == null) {
+        // remote-only：下载并导入本地（显式用户动作，不受 syncContent 门控）。
+        onProgress?.call(done / total, '(${done + 1}/$total) ${entry.title}');
+        try {
+          final bool imported = await importRemoteBookFolder(
+            db: db,
+            backend: backend,
+            folderId: entry.remoteFolderId!,
+            tempDir: tempDir,
+          );
+          if (imported) applied++;
+        } on DuplicateImportCancelledException {
+          // 良性：本机已有同名书，跳过。
+        } catch (e) {
+          errors.add(entry.title);
+          developer.log(
+            'Failed to download "${entry.title}"',
+            error: e,
+            name: 'SyncCompare',
+          );
+        }
+        done++;
+        onProgress?.call(done / total, null);
+        continue;
+      }
+
+      final book = await db.getEpubBook(entry.bookKey!);
+      if (book == null) {
+        done++;
+        continue;
+      }
+
+      onProgress?.call(done / total, '(${done + 1}/$total) ${entry.title}');
+
+      final direction = choice == SyncChoice.useLocal
+          ? SyncDirection.exportToTtu
+          : SyncDirection.importFromTtu;
+      // 记到跨通道裁决簿的是用户的**真实选择**（见 [SyncCompareDialog
+      // .decisions]）：「用本地」对后续通道一律推本机；「用远端」只是采纳了
+      // 这一条通道的远端，后续通道的远端若自己动过仍要问用户。
+      decisions?[entry.bookKey!] = choice;
+
+      SyncApplyOutcome outcome;
+      try {
+        final result = await manager.syncBook(
+          book: book,
+          direction: direction,
+          syncStats: syncStats,
+          statsSyncMode: StatisticsSyncMode.merge,
+          syncAudioBook: syncAudioBook,
+          syncContent: syncContent,
+        );
+        outcome = classifySyncApply(result);
+      } catch (e) {
+        outcome = SyncApplyOutcome.failed;
+        developer.log(
+          'Failed to sync "${entry.title}"',
+          error: e,
+          name: 'SyncCompare',
+        );
+      }
+      // BUG-2506：互联 live 行的**书进度**按用户的选择经 live 端点落地
+      // （host DB ↔ 本机 reader_positions），并记下新的位置基线。放在
+      // SyncManager 之后——它对互联仍会把文件箱里 client 自己的旧进度导回
+      // 本机，这里最后一步用用户选的那一侧把它盖正；也不依赖它成败——文件箱
+      // 那步对互联是 dead weight，它失败不该把用户刚做的选择判成失败。
+      //
+      // 门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
+      // 「加载期那次 live 探测成功」（[liveAction]）：`_fetchLiveProgress`
+      // 一次 GET 失败会把这一行静默降级成文件箱行，若只按 liveAction 放行，
+      // 用户选的「本地」就只写进 host 上谁都不读的文件箱、host DB 原样不动，
+      // 下一轮 sweep 的 live 三方判定照旧报同一条冲突——弹窗解决不掉、反复弹
+      // （用户报告 2026-09-22）。这里改成只要 host 有书就推，推不动才是真失败。
+      if (backend is InterconnectSyncBackend &&
+          (entry.liveAction != null || entry.remoteLiveTitle != null)) {
+        try {
+          if (await _applyLiveProgressChoice(
+            db: db,
+            backend: backend,
+            book: book,
+            useLocal: choice == SyncChoice.useLocal,
+          )) {
+            outcome = SyncApplyOutcome.applied;
+          }
+        } catch (e) {
+          outcome = SyncApplyOutcome.failed;
+          developer.log(
+            'Failed to apply live progress for "${entry.title}"',
+            error: e,
+            name: 'SyncCompare',
+          );
+        }
+      }
+      switch (outcome) {
+        case SyncApplyOutcome.applied:
+          applied++;
+        case SyncApplyOutcome.failed:
+          errors.add(entry.title);
+        case SyncApplyOutcome.noop:
+          // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
+          break;
+      }
+      done++;
+      onProgress?.call(done / total, null);
+    }
+    return SyncCompareApplyResult(applied: applied, errors: errors);
+  });
+}
+
+/// 互联 live 行的书进度按用户选择落地（BUG-2506）：选本机 → 推给 host（时间戳
+/// 抬到严格新于 host，见 [InterconnectBookProgressSync.pushLocal]）；选远端 →
+/// host 进度落回本机。两者都记下新的位置基线，这本书不再以同一分叉重复弹出。
+/// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
+Future<bool> _applyLiveProgressChoice({
+  required FushiDatabase db,
+  required InterconnectSyncBackend backend,
+  required EpubBookRow book,
+  required bool useLocal,
+}) async {
+  final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
+    db: db,
+    backend: backend,
+  );
+  final RemoteBookProgress local = await sync.localProgress(book);
+  final RemoteBookProgress remote = await sync.remoteProgress(book);
+  if (useLocal) {
+    if (local.updatedAtMs <= 0) return false;
+    await sync.pushLocal(book, local: local, remote: remote);
+    return true;
+  }
+  if (remote.updatedAtMs <= 0) return false;
+  await sync.applyRemote(book, remote);
+  return true;
+}
+
+/// 750a：互联下载远端独有书时补下其有声书包（若有）。
+///
+/// 远端有声书键 = host 清单里该书的真实 [RemoteAudiobookInfo.bookKey]（按
+/// `title == entry.title` 匹配），不再按书名重算 ttu 文件名：书名重名/迁移时算出
+/// 的 key 在 host `Audiobooks` 表不存在会 404（BUG-414）。先查
+/// host 有声书清单确认存在（避免对没声书的书发无意义请求），再下载 `.fushiaudio` 经
+/// [SyncAssetPackageService.importAudioDatabasePackage] 用本地 [localBookKey] 作
+/// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
+/// 时跳过有声书补下，只保留 EPUB（旧行为）。
+Future<void> _downloadLiveAudiobookFor(
+  FushiDatabase db,
+  InterconnectSyncBackend backend,
+  SyncCompareEntry entry,
+  String localBookKey, {
+  required Directory tempDir,
+  required Directory? audioRoot,
+}) async {
+  if (audioRoot == null) return;
+
+  final List<RemoteAudiobookInfo> remote =
+      await backend.listRemoteAudiobooks();
+  // host 清单条目带真实 bookKey（= Audiobooks.bookKey）+ title（= srt.title）。
+  // 按 title 找到该书，用其真实 bookKey 下载——不要按书名重算 ttu 文件名（BUG-414）。
+  String? remoteBookKey;
+  for (final RemoteAudiobookInfo a in remote) {
+    // 只匹配 srt-backed（bookKey 非空）：本函数是给 EPUB 书补音频，纯 SRT
+    // standalone 项（bookKey 空、身份=uid）不参与，避免同名误匹配到空 bookKey。
+    if (a.bookKey.isNotEmpty && a.title == entry.title) {
+      remoteBookKey = a.bookKey;
+      break;
+    }
+  }
+  if (remoteBookKey == null) return;
+
+  final Directory dir = tempDir;
+  if (!dir.existsSync()) dir.createSync(recursive: true);
+  final File audioTmp = File(
+    p.join(
+      dir.path,
+      'fushi-compare-audio-'
+      '${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
+    ),
+  );
+  try {
+    await backend.getRemoteAudiobook(remoteBookKey, audioTmp);
+    await SyncAssetPackageService(db: db).importAudioDatabasePackage(
+      packageFile: audioTmp,
+      audioDatabaseRoot: audioRoot,
+      bookKeyOverride: localBookKey,
+    );
+  } finally {
+    try {
+      if (audioTmp.existsSync()) audioTmp.deleteSync();
+    } catch (_) {
+      // best-effort temp cleanup
+    }
+  }
+}
+
+/// 下载并导入一本远端独有的书（同对话框行内「下载」；互联 live 书连带补下有声书）。
+/// 返回是否导入了；本机已有同名书时抛 [DuplicateImportCancelledException]。
+/// 调用方负责持有同步互斥锁（[runExclusiveWithSync]）。
+Future<bool> downloadSyncCompareRemoteOnly({
+  required FushiDatabase db,
+  required SyncBackend backend,
+  required SyncCompareEntry entry,
+  required Directory tempDir,
+  Directory? audioDatabaseRoot,
+}) async {
+  if (!entry.isDownloadableRemoteOnly) return false;
+  if (entry.remoteLiveTitle != null && backend is InterconnectSyncBackend) {
+    final Directory dir = tempDir;
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final File tmp = File(
+      p.join(
+        dir.path,
+        'fushi-compare-${DateTime.now().microsecondsSinceEpoch}.epub',
+      ),
+    );
+    try {
+      await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
+      // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
+      // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
+      // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
+      // raw title（bookKey 由它派生），不用本地临时文件名。
+      final String localBookKey = (await isMangaPackage(tmp))
+          ? await importMangaPackageFile(
+              db: db,
+              file: tmp,
+              title: entry.remoteLiveTitle,
+            )
+          : await EpubImporter.importFromPath(
+              db: db,
+              filePath: tmp.path,
+              fileName: '${entry.title}.epub',
+            );
+      // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
+      // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
+      await _downloadLiveAudiobookFor(
+        db,
+        backend,
+        entry,
+        localBookKey,
+        tempDir: tempDir,
+        audioRoot: audioDatabaseRoot,
+      );
+      return true;
+    } finally {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync();
+      } catch (_) {
+        // best-effort temp cleanup
+      }
+    }
+  }
+  final String? folderId = entry.remoteFolderId;
+  if (folderId == null) return false;
+  return importRemoteBookFolder(
+    db: db,
+    backend: backend,
+    folderId: folderId,
+    tempDir: tempDir,
+    // 云后端下载远端书时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
+    audioDatabaseRoot: audioDatabaseRoot,
+  );
+}
+
 Future<void> showSyncCompareDialog(
   BuildContext context,
   FushiDatabase db, {
@@ -665,23 +1045,7 @@ Future<void> showSyncCompareDialog(
   // "set up sync first" (mobile google_sign_in / desktop refresh) (BUG-047).
   // Do it under the sync mutex so the auth restore (which can reconnect/clear a
   // backend's cache) never races an in-flight sync (BUG-083).
-  final SyncBackend? backend =
-      await runExclusiveWithSync<SyncBackend?>(() async {
-    for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
-      try {
-        await channel.backend.restoreAuth(repo);
-        if (await channel.backend.isAuthenticated) return channel.backend;
-      } catch (e) {
-        // 单条通道鉴权炸了只算它自己没通过：云盘令牌失效不得挡住互联通道被选中。
-        developer.log(
-          'Compare channel auth failed (interconnect=${channel.isInterconnect})',
-          error: e,
-          name: 'SyncCompare',
-        );
-      }
-    }
-    return null;
-  });
+  final SyncBackend? backend = await resolveSyncCompareBackend(repo);
   if (backend == null) {
     if (!context.mounted) return;
     // The compare precondition is "a sync target is configured" — not an
@@ -789,29 +1153,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       // and rewrites the singleton backend's folder-id cache, so running it
       // concurrently with an in-flight sync corrupted the sync's view and made
       // this load contend on the same connection (slow / timeout) (BUG-083).
-      final results =
-          await runExclusiveWithSync(() => Future.wait(<Future<Object>>[
-                _fetchCompareData(widget.db, widget.backend),
-                _fetchDictEntries(widget.db, widget.backend),
-              ]));
-      final entries = results[0] as List<SyncCompareEntry>;
-      final dicts = results[1] as List<SyncDictEntry>;
-      final choices = <String, SyncChoice>{};
-      for (final e in entries) {
-        if (e.bookKey == null) {
-          // remote-only 书改成行内点击下载，不再默认纳入 Apply 批量对账。
-          // 只剩同步元数据的孤儿也保持 skip，避免无法完成的幽灵下载（BUG-049）。
-          choices[e.title] = SyncChoice.skip;
-        } else if (e.isSynced) {
-          choices[e.title] = SyncChoice.skip;
-        } else if (e.autoDirection == SyncDirection.importFromTtu) {
-          choices[e.title] = SyncChoice.useRemote;
-        } else if (e.autoDirection == SyncDirection.exportToTtu) {
-          choices[e.title] = SyncChoice.useLocal;
-        } else {
-          choices[e.title] = SyncChoice.skip;
-        }
-      }
+      final data = await loadSyncCompareData(widget.db, widget.backend);
+      final entries = data.books;
+      final dicts = data.dicts;
+      final choices = defaultSyncCompareChoices(entries);
       // 跨通道裁决簿：前一条通道已裁决过的书直接沿用（见 [SyncCompareDialog
       // .decisions]）。
       final Map<String, SyncChoice>? decided = widget.decisions;
@@ -908,165 +1253,32 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     });
     try {
       // Apply runs real network writes (downloads/uploads/deletes) on the shared
-      // singleton backend, so it must be serialized against any in-flight sync —
-      // same contention that interrupted sync and timed out the load (BUG-083).
-      await runExclusiveWithSync(() async {
-        final repo = SyncRepository(widget.db);
-        // BUG-988：手动「解决冲突并应用」与自动同步走**同一份** [resolveChannelSyncFlags]。
-        // 原来只有 content 在这里做了分通道三元式，统计仍读云备份的 sync_stats_enabled
-        // ——用户关掉互联「共享统计」后，手动应用一本书仍会把它的 `statistics_*.json`
-        // 推给互联 host 再 merge 回本地。整份 flags 一起解析就没有漏项可言。
-        final ChannelSyncFlags flags = await resolveChannelSyncFlags(
-          repo,
-          isInterconnect: widget.backend is InterconnectSyncBackend,
-        );
-        final bool syncStats = flags.syncStats;
-        final bool syncAudioBook = flags.syncAudioBookPosition;
-        final bool syncContent = flags.syncContent;
-
-        var done = 0;
-        // Blend per-file transfer fraction into the overall book progress so the
-        // bar advances smoothly during large content downloads/uploads.
-        final manager = SyncManager(
-          db: widget.db,
-          backend: widget.backend,
-          onContentProgress: (double fraction, [int? _]) {
-            if (mounted && total > 0) {
-              setState(
-                  () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
-            }
-          },
-        );
-
-        int applied = 0;
-        final errors = <String>[];
-        for (final entry in actionable) {
-          final choice = _choices[entry.title]!;
-
-          if (entry.bookKey == null) {
-            // remote-only：下载并导入本地（显式用户动作，不受 syncContent 门控）。
-            if (mounted) {
-              setState(() {
-                _progressLabel = '(${done + 1}/$total) ${entry.title}';
-                _progress = done / total;
-              });
-            }
-            try {
-              final bool imported = await importRemoteBookFolder(
-                db: widget.db,
-                backend: widget.backend,
-                folderId: entry.remoteFolderId!,
-                tempDir: _resolveTempDir(),
-              );
-              if (imported) applied++;
-            } on DuplicateImportCancelledException {
-              // 良性：本机已有同名书，跳过。
-            } catch (e) {
-              errors.add(entry.title);
-              developer.log(
-                'Failed to download "${entry.title}"',
-                error: e,
-                name: 'SyncCompare',
-              );
-            }
-            done++;
-            if (mounted) setState(() => _progress = done / total);
-            continue;
-          }
-
-          final book = await widget.db.getEpubBook(entry.bookKey!);
-          if (book == null) {
-            done++;
-            continue;
-          }
-
-          if (mounted) {
-            setState(() {
-              _progressLabel = '(${done + 1}/$total) ${entry.title}';
-              _progress = done / total;
-            });
-          }
-
-          final direction = choice == SyncChoice.useLocal
-              ? SyncDirection.exportToTtu
-              : SyncDirection.importFromTtu;
-          // 记到跨通道裁决簿的是用户的**真实选择**（见 [SyncCompareDialog
-          // .decisions]）：「用本地」对后续通道一律推本机；「用远端」只是采纳了
-          // 这一条通道的远端，后续通道的远端若自己动过仍要问用户。
-          widget.decisions?[entry.bookKey!] = choice;
-
-          SyncApplyOutcome outcome;
-          try {
-            final result = await manager.syncBook(
-              book: book,
-              direction: direction,
-              syncStats: syncStats,
-              statsSyncMode: StatisticsSyncMode.merge,
-              syncAudioBook: syncAudioBook,
-              syncContent: syncContent,
-            );
-            outcome = classifySyncApply(result);
-          } catch (e) {
-            outcome = SyncApplyOutcome.failed;
-            developer.log(
-              'Failed to sync "${entry.title}"',
-              error: e,
-              name: 'SyncCompare',
-            );
-          }
-          // BUG-2506：互联 live 行的**书进度**按用户的选择经 live 端点落地
-          // （host DB ↔ 本机 reader_positions），并记下新的位置基线。放在
-          // SyncManager 之后——它对互联仍会把文件箱里 client 自己的旧进度导回
-          // 本机，这里最后一步用用户选的那一侧把它盖正；也不依赖它成败——文件箱
-          // 那步对互联是 dead weight，它失败不该把用户刚做的选择判成失败。
-          //
-          // 门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
-          // 「加载期那次 live 探测成功」（[liveAction]）：`_fetchLiveProgress`
-          // 一次 GET 失败会把这一行静默降级成文件箱行，若只按 liveAction 放行，
-          // 用户选的「本地」就只写进 host 上谁都不读的文件箱、host DB 原样不动，
-          // 下一轮 sweep 的 live 三方判定照旧报同一条冲突——弹窗解决不掉、反复弹
-          // （用户报告 2026-09-22）。这里改成只要 host 有书就推，推不动才是真失败。
-          if (widget.backend is InterconnectSyncBackend &&
-              (entry.liveAction != null || entry.remoteLiveTitle != null)) {
-            try {
-              if (await _applyLiveProgressChoice(
-                book: book,
-                useLocal: choice == SyncChoice.useLocal,
-              )) {
-                outcome = SyncApplyOutcome.applied;
-              }
-            } catch (e) {
-              outcome = SyncApplyOutcome.failed;
-              developer.log(
-                'Failed to apply live progress for "${entry.title}"',
-                error: e,
-                name: 'SyncCompare',
-              );
-            }
-          }
-          switch (outcome) {
-            case SyncApplyOutcome.applied:
-              applied++;
-            case SyncApplyOutcome.failed:
-              errors.add(entry.title);
-            case SyncApplyOutcome.noop:
-              // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
-              break;
-          }
-          done++;
-          if (mounted) setState(() => _progress = done / total);
+      // singleton backend, so it is serialized against any in-flight sync inside
+      // [applySyncCompareChoices] (BUG-083).
+      final SyncCompareApplyResult result = await applySyncCompareChoices(
+        db: widget.db,
+        backend: widget.backend,
+        actionable: actionable,
+        choices: _choices,
+        decisions: widget.decisions,
+        tempDir: _resolveTempDir(),
+        onProgress: (double? progress, String? label) {
+          if (!mounted) return;
+          setState(() {
+            if (label != null) _progressLabel = label;
+            _progress = progress;
+          });
+        },
+      );
+      if (mounted) {
+        if (result.errors.isNotEmpty) {
+          showSyncMessage(
+            context,
+            t.sync_error(message: result.errors.join(', ')),
+          );
         }
-
-        if (mounted) {
-          if (errors.isNotEmpty) {
-            showSyncMessage(
-              context,
-              t.sync_error(message: errors.join(', ')),
-            );
-          }
-          Navigator.pop(context, applied);
-        }
-      });
+        Navigator.pop(context, result.applied);
+      }
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -1075,142 +1287,6 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         });
       }
     }
-  }
-
-  /// 互联 live 行的书进度按用户选择落地（BUG-2506）：选本机 → 推给 host（时间戳
-  /// 抬到严格新于 host，见 [InterconnectBookProgressSync.pushLocal]）；选远端 →
-  /// host 进度落回本机。两者都记下新的位置基线，这本书不再以同一分叉重复弹出。
-  /// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
-  Future<bool> _applyLiveProgressChoice({
-    required EpubBookRow book,
-    required bool useLocal,
-  }) async {
-    final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
-      db: widget.db,
-      backend: widget.backend as InterconnectSyncBackend,
-    );
-    final RemoteBookProgress local = await sync.localProgress(book);
-    final RemoteBookProgress remote = await sync.remoteProgress(book);
-    if (useLocal) {
-      if (local.updatedAtMs <= 0) return false;
-      await sync.pushLocal(book, local: local, remote: remote);
-      return true;
-    }
-    if (remote.updatedAtMs <= 0) return false;
-    await sync.applyRemote(book, remote);
-    return true;
-  }
-
-  /// 750a：互联下载远端独有书时补下其有声书包（若有）。
-  ///
-  /// 远端有声书键 = host 清单里该书的真实 [RemoteAudiobookInfo.bookKey]（按
-  /// `title == entry.title` 匹配），不再按书名重算 ttu 文件名：书名重名/迁移时算出
-  /// 的 key 在 host `Audiobooks` 表不存在会 404（BUG-414）。先查
-  /// host 有声书清单确认存在（避免对没声书的书发无意义请求），再下载 `.fushiaudio` 经
-  /// [SyncAssetPackageService.importAudioDatabasePackage] 用本地 [localBookKey] 作
-  /// `bookKeyOverride` 解包落盘。[audioDatabaseRoot] 为 null（调用方未注入根目录）
-  /// 时跳过有声书补下，只保留 EPUB（旧行为）。
-  Future<void> _downloadLiveAudiobookFor(
-    InterconnectSyncBackend backend,
-    SyncCompareEntry entry,
-    String localBookKey,
-  ) async {
-    final Directory? audioRoot = widget.audioDatabaseRoot;
-    if (audioRoot == null) return;
-
-    final List<RemoteAudiobookInfo> remote =
-        await backend.listRemoteAudiobooks();
-    // host 清单条目带真实 bookKey（= Audiobooks.bookKey）+ title（= srt.title）。
-    // 按 title 找到该书，用其真实 bookKey 下载——不要按书名重算 ttu 文件名（BUG-414）。
-    String? remoteBookKey;
-    for (final RemoteAudiobookInfo a in remote) {
-      // 只匹配 srt-backed（bookKey 非空）：本函数是给 EPUB 书补音频，纯 SRT
-      // standalone 项（bookKey 空、身份=uid）不参与，避免同名误匹配到空 bookKey。
-      if (a.bookKey.isNotEmpty && a.title == entry.title) {
-        remoteBookKey = a.bookKey;
-        break;
-      }
-    }
-    if (remoteBookKey == null) return;
-
-    final Directory dir = _resolveTempDir();
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    final File audioTmp = File(
-      p.join(
-        dir.path,
-        'fushi-compare-audio-'
-        '${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
-      ),
-    );
-    try {
-      await backend.getRemoteAudiobook(remoteBookKey, audioTmp);
-      await SyncAssetPackageService(db: widget.db).importAudioDatabasePackage(
-        packageFile: audioTmp,
-        audioDatabaseRoot: audioRoot,
-        bookKeyOverride: localBookKey,
-      );
-    } finally {
-      try {
-        if (audioTmp.existsSync()) audioTmp.deleteSync();
-      } catch (_) {
-        // best-effort temp cleanup
-      }
-    }
-  }
-
-  Future<bool> _downloadRemoteOnlyBook(SyncCompareEntry entry) async {
-    if (!entry.isDownloadableRemoteOnly) return false;
-    if (entry.remoteLiveTitle != null &&
-        widget.backend is InterconnectSyncBackend) {
-      final InterconnectSyncBackend backend =
-          widget.backend as InterconnectSyncBackend;
-      final Directory dir = _resolveTempDir();
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final File tmp = File(
-        p.join(
-          dir.path,
-          'fushi-compare-${DateTime.now().microsecondsSinceEpoch}.epub',
-        ),
-      );
-      try {
-        await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-        // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
-        // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
-        // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
-        // raw title（bookKey 由它派生），不用本地临时文件名。
-        final String localBookKey = (await isMangaPackage(tmp))
-            ? await importMangaPackageFile(
-                db: widget.db,
-                file: tmp,
-                title: entry.remoteLiveTitle,
-              )
-            : await EpubImporter.importFromPath(
-                db: widget.db,
-                filePath: tmp.path,
-                fileName: '${entry.title}.epub',
-              );
-        // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
-        // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
-        await _downloadLiveAudiobookFor(backend, entry, localBookKey);
-        return true;
-      } finally {
-        try {
-          if (tmp.existsSync()) tmp.deleteSync();
-        } catch (_) {
-          // best-effort temp cleanup
-        }
-      }
-    }
-    final String? folderId = entry.remoteFolderId;
-    if (folderId == null) return false;
-    return importRemoteBookFolder(
-      db: widget.db,
-      backend: widget.backend,
-      folderId: folderId,
-      tempDir: _resolveTempDir(),
-      // 云后端下载远端书时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
-      audioDatabaseRoot: widget.audioDatabaseRoot,
-    );
   }
 
   Future<void> _downloadRemoteOnlyFromRow(SyncCompareEntry entry) async {
@@ -1223,7 +1299,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     try {
       bool imported = false;
       await runExclusiveWithSync(() async {
-        imported = await _downloadRemoteOnlyBook(entry);
+        imported = await downloadSyncCompareRemoteOnly(
+          db: widget.db,
+          backend: widget.backend,
+          entry: entry,
+          tempDir: _resolveTempDir(),
+          audioDatabaseRoot: widget.audioDatabaseRoot,
+        );
       });
       if (!mounted) return;
       setState(() {

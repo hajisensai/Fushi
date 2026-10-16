@@ -79,15 +79,27 @@ void main() {
     });
 
     test('showSyncCompareDialog 遍历所有启用通道取第一条已认证后端', () {
+      final String source = _readSource('lib/src/sync/sync_compare_dialog.dart');
+      // 后端解析抽成 resolveSyncCompareBackend（对话框与控制通道 `sync compare`
+      // 共用），守卫跟着钉在它身上，对话框只许经它解析。
+      final String resolver = _functionSource(
+        source,
+        'Future<SyncBackend?> resolveSyncCompareBackend(',
+        '/// 拉一次对比数据',
+      );
       final String body = _functionSource(
-        _readSource('lib/src/sync/sync_compare_dialog.dart'),
+        source,
         'Future<void> showSyncCompareDialog(',
         '/// 同步对比对话框：',
       );
 
-      expect(body, contains('enabledSyncChannelBackends'),
+      expect(resolver, contains('enabledSyncChannelBackends'),
           reason: '只开互联的用户必须能进比较对话框（BUG-1566 根因B）');
-      expect(body, isNot(contains('resolveSyncBackend')),
+      expect(resolver, isNot(contains('resolveSyncBackend')),
+          reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」');
+      expect(body, contains('resolveSyncCompareBackend('),
+          reason: '对话框必须走同一个多通道解析');
+      expect(body, isNot(contains('resolveSyncBackend(')),
           reason: '单通道解析 = 云后端没配过时恒报「请先设置同步」');
       expect(body, contains('sync_compare_unavailable'),
           reason: '一条通道都没认证过时仍应如实报「没配同步」，不得静默打开空对话框');

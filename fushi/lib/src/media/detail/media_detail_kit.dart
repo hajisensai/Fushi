@@ -875,6 +875,16 @@ class MediaDetailMoreButton extends StatefulWidget {
   State<MediaDetailMoreButton> createState() => _MediaDetailMoreButtonState();
 }
 
+/// 详情页图标钮的实际尺寸（[FushiIconButtonSize.m]）：测宽与实际渲染取同一个值，
+/// 不再按顶栏的 48 估（实测 6 个动作 340px 预算全展开需要 376px，会溢出）。
+final double _kInlineButtonExtent = fushiExpressiveIconButtonExtent(
+  FushiIconButtonSize.m,
+  FushiIconButtonWidth.standard,
+).width;
+
+/// 平铺钮之间的间距（[MediaDetailMoreButton.build] 里的 SizedBox 宽度）。
+const double _kInlineButtonGap = 8;
+
 class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
   /// 平铺颗数决策（带展开回差），与 [FushiFloatingTopBar] 同一份实现。
   final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
@@ -896,6 +906,10 @@ class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
         ],
       ],
       budget: maxWidth,
+      // n 颗 = n * 钮宽 + (n - 1) * 间距：槽宽含一个间距，首尾共少一个，
+      // 用负的两端内边距抵掉。
+      slotWidth: _kInlineButtonExtent + _kInlineButtonGap,
+      padding: -_kInlineButtonGap,
     );
   }
 
@@ -971,11 +985,11 @@ class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             for (int i = 0; i < shown.length; i++) ...<Widget>[
-              if (i > 0) const SizedBox(width: 8),
+              if (i > 0) const SizedBox(width: _kInlineButtonGap),
               _inlineButton(shown[i]),
             ],
             if (hidden.isNotEmpty) ...<Widget>[
-              if (shown.isNotEmpty) const SizedBox(width: 8),
+              if (shown.isNotEmpty) const SizedBox(width: _kInlineButtonGap),
               _moreButton(hidden),
             ],
           ],

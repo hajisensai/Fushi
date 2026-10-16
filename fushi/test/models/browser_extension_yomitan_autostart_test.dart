@@ -132,13 +132,18 @@ void main() {
 
   test('生产接线守卫：安装入口在注入扩展前自动开启 server，且只在 token 为空时播种', () async {
     // TODO-1266 复核：安装入口已从查词设置迁到桌面专属页 BrowserExtensionPage，接线契约不变。
+    // 准备步骤抽进 browser_extension_setup.dart（页面与控制通道共用），页面只调它。
     final File page =
         File('lib/src/pages/implementations/browser_extension_page.dart');
     expect(page.existsSync(), isTrue, reason: '浏览器扩展页文件应存在');
-    final String pageSrc = page.readAsStringSync();
+    expect(page.readAsStringSync(),
+        contains('prepareBrowserExtensionForInstall(appModel)'),
+        reason: '页面的「准备扩展」必须走共用的 prepareBrowserExtensionForInstall');
+    final String pageSrc =
+        File('lib/src/lookup/browser_extension_setup.dart').readAsStringSync();
     final int callIdx =
         pageSrc.indexOf('ensureFushiApiServerForBrowserExtension(');
-    final int prepareIdx = pageSrc.indexOf('prepareBundledBrowserExtension(');
+    final int prepareIdx = pageSrc.indexOf('await extract(');
     expect(callIdx, greaterThanOrEqualTo(0),
         reason: '安装入口必须调用 ensureFushiApiServerForBrowserExtension');
     expect(prepareIdx, greaterThanOrEqualTo(0));

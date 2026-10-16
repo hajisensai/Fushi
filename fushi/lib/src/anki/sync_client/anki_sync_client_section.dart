@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_client_actions.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
@@ -35,8 +36,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
   bool _relogin = false;
 
-  AnkiSyncSession? get _session =>
-      ref.read(platformServicesProvider).ankiSyncSession;
+  AnkiSyncSession? get _session => ankiSyncClientSessionOf(ref);
 
   @override
   void initState() {
@@ -236,13 +236,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   /// 切后端的唯一落地路径：持久化 → 运行时选择 → 重建仓库 provider（与移动端
   /// 「改用 AnkiConnect」同一顺序，三步缺一步就是存储与运行时不一致）。
   Future<void> _setEnabled(bool value) async {
-    final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
-    final PlatformServices platform = ref.read(platformServicesProvider);
     setState(() => _switching = true);
     try {
-      await vm.updateUseAnkiSyncClient(value);
-      platform.setUseAnkiSyncClient(value);
-      ref.invalidate(ankiRepositoryProvider);
+      await setAnkiSyncClientEnabled(ref, value);
     } finally {
       if (mounted) setState(() => _switching = false);
     }
@@ -255,7 +251,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     final String? endpoint = server.isEmpty ? null : server;
     if (endpoint == null && !await _confirmAnkiWeb()) return;
     try {
-      await session.signIn(
+      await signInAnkiSyncClient(
+        ref,
+        session,
         endpoint: endpoint,
         username: _username.text.trim(),
         password: _password.text,
@@ -263,8 +261,6 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       _password.clear();
       if (mounted) setState(() => _relogin = false);
       await _loadAccount();
-      // 登录后库在本地了：顺手刷新牌组 / 笔记类型，设置页的选择器立刻可用。
-      unawaited(ref.read(ankiViewModelProvider.notifier).fetchConfiguration());
     } on AnkiSyncHasUnsyncedNotes catch (e) {
       _toast(t.anki_sync_client_has_unsynced(count: e.count));
     } catch (e) {

@@ -5,6 +5,8 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         EpubBookRow,
+        MangaDownloadJobRow,
+        MangaDownloadJobStatus,
         MangaExtensionRow,
         MangaExtensionStoreRow,
         MangaOnlineSourceRow;
@@ -25,6 +27,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
@@ -32,6 +35,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_updates.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -51,10 +55,18 @@ import 'package:fushi/src/pages/implementations/download_actions.dart'
     show startDiscoveryItemDownload;
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeActiveTabs, homeShellTabNotifier;
+import 'package:fushi/src/platform/desktop/ctl/ctl_ai_download_routes.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_online_downloads.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_online_filters.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_online_support.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
-import 'package:fushi/src/sync/interconnect_download_manager.dart'
-    show interconnectDownloadManagerProvider;
+import 'package:fushi/src/media/video/video_library_delete.dart'
+    show VideoLibraryDeleteResult;
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart'
+    show
+        canDeleteCompletedDownloadFiles,
+        deleteCompletedInterconnectDownloadFiles;
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/utils.dart' show createAppHttpClient, t;
 
 /// online 域控制通道路由（CLI 侧命令见 `packages/fushi_cli/lib/src/commands/online_commands.dart`）。
@@ -74,6 +86,7 @@ List<CtlRoute> buildOnlineCtlRoutes(DesktopCtlContext context) {
     CtlRoute.post('/api/admin/extensions/install', ctl.installExtension),
     CtlRoute.post('/api/admin/extensions/update', ctl.updateExtensions),
     CtlRoute.delete('/api/admin/extensions/:id', ctl.removeExtension),
+    CtlRoute.post('/api/admin/extensions/:id/enabled', ctl.setExtensionEnabled),
     // ── 在线源 ────────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/sources', ctl.listSources),
     CtlRoute.get('/api/admin/sources/:sourceId/search', ctl.searchSource),
@@ -82,6 +95,60 @@ List<CtlRoute> buildOnlineCtlRoutes(DesktopCtlContext context) {
     CtlRoute.post('/api/admin/sources/:sourceId/downloads', ctl.downloadWork),
     CtlRoute.get('/api/admin/online/tasks', ctl.listTasks),
     CtlRoute.get('/api/admin/online/tasks/:id', ctl.getTask),
+    CtlRoute.post('/api/admin/online/tasks/:id/cancel', ctl.cancelTask),
+    // ── 在线源下载任务：漫画章节队列 / 视频源剧集 ──────────────────────────
+    CtlRoute.get('/api/admin/online/manga-downloads', ctl.listMangaDownloads),
+    CtlRoute.delete(
+      '/api/admin/online/manga-downloads',
+      ctl.clearMangaDownloads,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/manga-downloads/:id/cancel',
+      ctl.cancelMangaDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/manga-downloads/:id/retry',
+      ctl.retryMangaDownload,
+    ),
+    CtlRoute.delete(
+      '/api/admin/online/manga-downloads/:id',
+      ctl.removeMangaDownload,
+    ),
+    CtlRoute.get(
+      '/api/admin/online/episode-downloads',
+      ctl.listEpisodeDownloads,
+    ),
+    CtlRoute.get(
+      '/api/admin/online/episode-downloads/:id',
+      ctl.getEpisodeDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/episode-downloads/:id/pause',
+      ctl.pauseEpisodeDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/episode-downloads/:id/resume',
+      ctl.resumeEpisodeDownload,
+    ),
+    CtlRoute.delete(
+      '/api/admin/online/episode-downloads/:id',
+      ctl.removeEpisodeDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/sources/:sourceId/settings',
+      ctl.setSourceSettings,
+    ),
+    CtlRoute.get(
+      '/api/admin/sources/:sourceId/preferences',
+      ctl.listPreferences,
+    ),
+    CtlRoute.post(
+      '/api/admin/sources/:sourceId/preferences',
+      ctl.setPreference,
+    ),
+    CtlRoute.delete('/api/admin/sources/:sourceId/data', ctl.clearSourceData),
+    CtlRoute.get('/api/admin/sources/:sourceId/filters', ctl.listFilters),
+    CtlRoute.post('/api/admin/sources/:sourceId/browse', ctl.browseSource),
     // ── 发现 ──────────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/discovery/sources', ctl.listDiscoverySources),
     CtlRoute.get('/api/admin/discovery/search', ctl.searchDiscovery),
@@ -94,6 +161,8 @@ List<CtlRoute> buildOnlineCtlRoutes(DesktopCtlContext context) {
     // ── 页面导航 ──────────────────────────────────────────────────────────
     CtlRoute.get('/api/admin/navigation', ctl.listNavigation),
     CtlRoute.post('/api/admin/navigation', ctl.navigate),
+    // ── AI 下载会话 ───────────────────────────────────────────────────────
+    ...buildAiDownloadCtlRoutes(context),
   ];
 }
 
@@ -599,6 +668,17 @@ class _OnlineCtl {
   /// `sourceId` 或 `扩展包名:sourceId`（同一 sourceId 出现在多个扩展里时用后者）。
   /// 只认已启用的源：停用的源在 UI 里也进不去。
   MangaOnlineSourceRow _mihonSourceRow(MihonManager manager, String raw) {
+    final MangaOnlineSourceRow row = _mihonSourceRowAny(manager, raw);
+    if (!enabledMangaOnlineSources(manager).any(
+      (MangaOnlineSourceRow r) => _mihonSourceKey(r) == _mihonSourceKey(row),
+    )) {
+      throw CtlFailure.rejected('源 $raw 或其扩展已停用');
+    }
+    return row;
+  }
+
+  /// 同 [_mihonSourceRow]，但不看启用状态（启停 / 置顶 / 偏好这些管理动作用）。
+  MangaOnlineSourceRow _mihonSourceRowAny(MihonManager manager, String raw) {
     final int split = raw.lastIndexOf(':');
     final String? package = split > 0 ? raw.substring(0, split) : null;
     final String sourceId = split > 0 ? raw.substring(split + 1) : raw;
@@ -615,13 +695,7 @@ class _OnlineCtl {
         '${hits.map(_mihonSourceKey).join(' / ')}',
       );
     }
-    final MangaOnlineSourceRow row = hits.single;
-    if (!enabledMangaOnlineSources(manager).any(
-      (MangaOnlineSourceRow r) => _mihonSourceKey(r) == _mihonSourceKey(row),
-    )) {
-      throw CtlFailure.rejected('源 $raw 或其扩展已停用');
-    }
-    return row;
+    return hits.single;
   }
 
   Future<MihonSourceContext> _mihonContext(MihonManager manager, String raw) =>
@@ -1090,6 +1164,8 @@ class _OnlineCtl {
           'kind': kind.name,
           'title': client.anime.title,
           'queued': ids.length,
+          // 任务键 = 剧集 id（`source anime-dl get/pause/resume/rm` 用）。
+          'taskIds': ids,
           'episodes': <String>[for (final int i in picked) videos[i].title],
         };
     }
@@ -1114,36 +1190,13 @@ class _OnlineCtl {
     final List<LnReaderChapter> chapters = <LnReaderChapter>[
       for (final int i in picked) novel.chapters[i],
     ];
-    final CtlOnlineTaskRegistry registry = CtlOnlineTaskRegistry.instance;
-    final CtlOnlineTask task = registry.start(
-      kind: OnlineCtlKind.novel.name,
-      title: novel.name,
-      total: chapters.length,
-    );
-    unawaited(() async {
-      try {
-        final String bookKey = await _lnReaderDownload(manager).run(
-          plugin: plugin,
-          novel: novel,
-          chapters: chapters,
-          policy: const DuplicatePolicy.suffix(),
-          onProgress: (int done, int total) => task.done = done,
-        );
-        _refreshBookShelf();
-        registry.finish(task, status: 'done', resultKey: bookKey);
-      } on LnReaderDownloadCancelled {
-        registry.finish(task, status: 'cancelled');
-      } on LnReaderChapterDownloadException catch (error) {
-        registry.finish(
-          task,
-          status: 'failed',
-          error: '${error.chapter.name}: ${error.cause}',
-        );
-      } on Object catch (error) {
-        registry.finish(task, status: 'failed', error: '$error');
-      }
-    }());
-    return task.toJson();
+    return startCtlNovelDownloadTask(
+      download: _lnReaderDownload(manager),
+      plugin: plugin,
+      novel: novel,
+      chapters: chapters,
+      onShelfChanged: _refreshBookShelf,
+    ).toJson();
   }
 
   Future<Object?> listTasks(CtlCall call) async => <String, Object?>{
@@ -1158,6 +1211,549 @@ class _OnlineCtl {
     final CtlOnlineTask? task = CtlOnlineTaskRegistry.instance.byId(id);
     if (task == null) throw CtlFailure.notFound('没有这个任务：$id');
     return task.toJson();
+  }
+
+  /// 取消 CLI 发起的小说下载：与下载对话框「取消」同一个检查点（章节之间）。
+  Future<Object?> cancelTask(CtlCall call) async =>
+      CtlOnlineTaskRegistry.instance.cancel(call.params['id']!).toJson();
+
+  // ── 漫画章节下载队列（下载页「漫画」分区，MangaDownloadService）──────────
+
+  void _requireMangaDownloads() {
+    if (!StoreRestrictedCapability.onlineMangaSource.isAvailable) {
+      throw const CtlFailure.rejected('本平台构建不提供在线漫画源（商店合规）');
+    }
+  }
+
+  Future<MangaDownloadJobRow> _requireMangaJob(String id) async {
+    final MangaDownloadJobRow? row = await appModel.database
+        .getMangaDownloadJob(id);
+    if (row == null) throw CtlFailure.notFound('没有这个漫画下载任务：$id');
+    return row;
+  }
+
+  Future<Object?> listMangaDownloads(CtlCall call) async {
+    _requireMangaDownloads();
+    final Set<String> statuses = call.stringList('status').toSet();
+    final String? book = call.optString('book');
+    final List<MangaDownloadJobRow> rows = await appModel.mangaDownloadService
+        .listJobs(statuses: statuses);
+    return <String, Object?>{
+      'jobs': <Map<String, Object?>>[
+        for (final MangaDownloadJobRow row in rows)
+          if (book == null || row.bookKey == book) ctlMangaDownloadJobJson(row),
+      ],
+    };
+  }
+
+  /// 下载页漫画任务行「取消」：排队的直接改状态，正在下的中止并删半成品目录。
+  Future<Object?> cancelMangaDownload(CtlCall call) async {
+    _requireMangaDownloads();
+    final String id = call.params['id']!;
+    final MangaDownloadJobRow row = await _requireMangaJob(id);
+    if (row.status != MangaDownloadJobStatus.queued &&
+        row.status != MangaDownloadJobStatus.running) {
+      throw CtlFailure.conflict('任务已结束，不能取消（当前：${row.status}）');
+    }
+    await appModel.mangaDownloadService.cancel(id);
+    return ctlMangaDownloadJobJson(await _requireMangaJob(id));
+  }
+
+  /// 下载页漫画任务行「重试」：只对 failed / cancelled 成立。
+  Future<Object?> retryMangaDownload(CtlCall call) async {
+    _requireMangaDownloads();
+    final String id = call.params['id']!;
+    final MangaDownloadJobRow row = await _requireMangaJob(id);
+    if (row.status != MangaDownloadJobStatus.failed &&
+        row.status != MangaDownloadJobStatus.cancelled) {
+      throw CtlFailure.conflict('只有失败 / 已取消的任务能重试（当前：${row.status}）');
+    }
+    await appModel.mangaDownloadService.retry(id);
+    return ctlMangaDownloadJobJson(await _requireMangaJob(id));
+  }
+
+  /// 删任务行（正在下的先取消）；不删已下载的章节内容。
+  Future<Object?> removeMangaDownload(CtlCall call) async {
+    _requireMangaDownloads();
+    final String id = call.params['id']!;
+    _requireConfirm(call, '删除漫画下载任务');
+    await _requireMangaJob(id);
+    await appModel.mangaDownloadService.remove(id);
+    return null;
+  }
+
+  /// 下载页「清除已完成」：删掉 done / failed / cancelled 的任务行。
+  Future<Object?> clearMangaDownloads(CtlCall call) async {
+    _requireMangaDownloads();
+    if (call.optBool('finished') != true) {
+      throw const CtlFailure.badRequest('只支持清除已结束的任务（finished=true）');
+    }
+    _requireConfirm(call, '清除已结束的漫画下载任务');
+    await appModel.mangaDownloadService.clearFinished();
+    return null;
+  }
+
+  // ── 视频源剧集下载（下载页「扩展源」分区，InterconnectDownloadManager）────
+
+  InterconnectDownloadManager _episodeManager() {
+    if (!StoreRestrictedCapability.downloads.isAvailable) {
+      throw const CtlFailure.rejected('本平台构建不提供下载中心（商店合规）');
+    }
+    return context.ref.read(interconnectDownloadManagerProvider);
+  }
+
+  Map<String, Object?> _episodeJson(
+    InterconnectDownloadManager manager,
+    InterconnectDownloadTask task,
+  ) => ctlEpisodeDownloadTaskJson(
+    task,
+    canPause: manager.canPause(task.id),
+    canRestart: manager.canRestart(task.id),
+  );
+
+  InterconnectDownloadTask _requireEpisode(
+    InterconnectDownloadManager manager,
+    String id,
+  ) => manager.taskFor(id) ?? (throw CtlFailure.notFound('没有这个剧集下载任务：$id'));
+
+  /// 缺省只列视频扩展源的剧集；`all=true` 连同互联设备 / 媒体服务器拉取的任务。
+  Future<Object?> listEpisodeDownloads(CtlCall call) async {
+    final InterconnectDownloadManager manager = _episodeManager();
+    final bool all = call.optBool('all') ?? false;
+    final List<InterconnectDownloadTask> tasks =
+        manager.tasks.values
+            .where(
+              (InterconnectDownloadTask t) =>
+                  all || t.origin == InterconnectDownloadOrigin.extension,
+            )
+            .toList()
+          ..sort(
+            (InterconnectDownloadTask a, InterconnectDownloadTask b) =>
+                (b.startedAt ?? 0).compareTo(a.startedAt ?? 0),
+          );
+    return <String, Object?>{
+      'tasks': <Map<String, Object?>>[
+        for (final InterconnectDownloadTask t in tasks)
+          _episodeJson(manager, t),
+      ],
+    };
+  }
+
+  Future<Object?> getEpisodeDownload(CtlCall call) async {
+    final InterconnectDownloadManager manager = _episodeManager();
+    return _episodeJson(manager, _requireEpisode(manager, call.params['id']!));
+  }
+
+  /// 下载页「暂停」：中止传输、保留 `.part`，之后 resume 续传。
+  Future<Object?> pauseEpisodeDownload(CtlCall call) async {
+    final InterconnectDownloadManager manager = _episodeManager();
+    final String id = call.params['id']!;
+    final InterconnectDownloadTask task = _requireEpisode(manager, id);
+    if (!manager.canPause(id)) {
+      throw CtlFailure.conflict('任务不能暂停（当前：${task.status.name}）');
+    }
+    manager.pause(id);
+    return _episodeJson(manager, _requireEpisode(manager, id));
+  }
+
+  /// 下载页「继续」/「重试」：同一个 [InterconnectDownloadManager.resume]，它的
+  /// future 要到任务结束才完成，所以不等；进度用 `source anime-dl get` 查。
+  Future<Object?> resumeEpisodeDownload(CtlCall call) async {
+    final InterconnectDownloadManager manager = _episodeManager();
+    final String id = call.params['id']!;
+    final InterconnectDownloadTask task = _requireEpisode(manager, id);
+    if (!manager.canRestart(id)) {
+      throw CtlFailure.conflict('任务不能继续（当前：${task.status.name}）');
+    }
+    unawaited(manager.resume(id));
+    return _episodeJson(manager, _requireEpisode(manager, id));
+  }
+
+  /// 下载页「删除」：未完成任务 = 放弃（`deleteFiles` 时连 `.part` 删掉，否则只移出
+  /// 列表、`.part` 留着续传）；已完成任务只清记录（成品删除走媒体库删除，那条链
+  /// 还要处理库行与播放句柄）。在下的任务先暂停。
+  Future<Object?> removeEpisodeDownload(CtlCall call) async {
+    final InterconnectDownloadManager manager = _episodeManager();
+    final String id = call.params['id']!;
+    _requireConfirm(call, '删除剧集下载任务');
+    final InterconnectDownloadTask task = _requireEpisode(manager, id);
+    final bool deleteFiles = call.optBool('deleteFiles') ?? false;
+    if (task.isRunning) {
+      throw const CtlFailure.conflict('任务还在下载，先 pause 再删除');
+    }
+    if (task.status == InterconnectDownloadStatus.completed) {
+      if (!deleteFiles) {
+        manager.clearTask(id);
+        return null;
+      }
+      if (!canDeleteCompletedDownloadFiles(task)) {
+        throw const CtlFailure.badRequest(
+          '这条已完成任务没有可删的成品（只有视频扩展源剧集可连文件删除），'
+          '去掉 --delete-files 只清记录',
+        );
+      }
+      // 下载页「删除并删文件」同一条：按文件找库行走媒体库删除链 / 只删孤儿文件，
+      // 删掉了才移出记录；删不掉把原因回给 CLI。
+      VideoLibraryDeleteResult? outcome;
+      final bool done = await deleteCompletedInterconnectDownloadFiles(
+        database: appModel.database,
+        pipeline: appModel.videoDownloadPipelineService,
+        manager: manager,
+        task: task,
+        report: (VideoLibraryDeleteResult result) => outcome = result,
+      );
+      if (!done) {
+        throw CtlFailure.conflict(
+          '成品没删掉，任务保留：${describeCtlVideoDeleteFailure(outcome)}',
+        );
+      }
+      return <String, Object?>{
+        'id': id,
+        'deletedRows': outcome?.deleted ?? 0,
+        'deletedFile': task.destPath,
+      };
+    }
+    if (deleteFiles) {
+      await manager.discard(id);
+    } else {
+      manager.clearTask(id);
+    }
+    return null;
+  }
+
+  // ── 扩展启停 / 源启停 · 置顶 · 偏好 · 筛选浏览 ───────────────────────────
+
+  /// 扩展页扩展行的启用开关：Mihon `setExtensionEnabled`；LNReader 一个插件就是
+  /// 一个源，开关落在插件上（`setEnabled`）。
+  Future<Object?> setExtensionEnabled(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    final String id = call.params['id']!;
+    final bool? enabled = call.optBool('enabled');
+    if (enabled == null) throw const CtlFailure.badRequest('enabled 缺失');
+    if (kind == OnlineCtlKind.novel) {
+      final LnReaderManager manager = await _lnReader();
+      final LnReaderInstalledPlugin? plugin = manager.installedById(id);
+      if (plugin == null) throw CtlFailure.notFound('没有安装这个插件：$id');
+      await manager.setEnabled(plugin, enabled);
+      return <String, Object?>{'kind': kind.name, 'id': id, 'enabled': enabled};
+    }
+    final MihonManager manager = await _mihon(kind);
+    final MangaExtensionRow? row = manager.installed
+        .where((MangaExtensionRow r) => r.packageName == id)
+        .firstOrNull;
+    if (row == null) throw CtlFailure.notFound('没有安装这个扩展：$id');
+    await manager.setExtensionEnabled(row, enabled);
+    return <String, Object?>{'kind': kind.name, 'id': id, 'enabled': enabled};
+  }
+
+  /// 「来源」列表一行的启用开关与置顶（Mihon `updateSourceSettings`；LNReader
+  /// `setEnabled` / `setPinned`）。只给其中一项时另一项不动。
+  Future<Object?> setSourceSettings(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    final String sourceId = call.params['sourceId']!;
+    final bool? enabled = call.optBool('enabled');
+    final bool? pinned = call.optBool('pinned');
+    if (enabled == null && pinned == null) {
+      throw const CtlFailure.badRequest('enabled / pinned 至少给一项');
+    }
+    if (kind == OnlineCtlKind.novel) {
+      final LnReaderManager manager = await _lnReader();
+      final LnReaderInstalledPlugin? plugin = manager.installedById(sourceId);
+      if (plugin == null) throw CtlFailure.notFound('没有安装这个插件：$sourceId');
+      if (enabled != null) await manager.setEnabled(plugin, enabled);
+      if (pinned != null) {
+        await manager.setPinned(
+          manager.installedById(sourceId) ?? plugin,
+          pinned,
+        );
+      }
+      final LnReaderInstalledPlugin updated =
+          manager.installedById(sourceId) ?? plugin;
+      return <String, Object?>{
+        'kind': kind.name,
+        'id': updated.id,
+        'enabled': updated.enabled,
+        'pinned': updated.pinned,
+      };
+    }
+    final MihonManager manager = await _mihon(kind);
+    final MangaOnlineSourceRow row = _mihonSourceRowAny(manager, sourceId);
+    await manager.updateSourceSettings(row, enabled: enabled, pinned: pinned);
+    final MangaOnlineSourceRow updated =
+        manager.sources
+            .where(
+              (MangaOnlineSourceRow r) =>
+                  _mihonSourceKey(r) == _mihonSourceKey(row),
+            )
+            .firstOrNull ??
+        row;
+    return <String, Object?>{
+      'kind': kind.name,
+      'id': updated.sourceId,
+      'extension': updated.extensionPackage,
+      'enabled': updated.enabled,
+      'pinned': updated.pinned,
+    };
+  }
+
+  void _requireMihonPreferences(OnlineCtlKind kind) {
+    if (kind == OnlineCtlKind.novel) {
+      throw const CtlFailure.unsupported(
+        'LNReader 插件没有源偏好（筛选见 source filters，登录态清除见 source clear-data）',
+      );
+    }
+  }
+
+  /// 偏好弹窗打开时的读取（`MihonManager.getPreferences`：运行时定义 + 已存值）。
+  Future<Object?> listPreferences(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    _requireMihonPreferences(kind);
+    final String sourceId = call.params['sourceId']!;
+    final MihonManager manager = await _mihon(kind);
+    final MangaOnlineSourceRow row = _mihonSourceRowAny(manager, sourceId);
+    final List<MihonPreference> preferences = await _mihonErrors(
+      () => manager.getPreferences(row),
+    );
+    return <String, Object?>{
+      'kind': kind.name,
+      'source': sourceId,
+      'preferences': ctlMihonPreferencesJson(preferences),
+    };
+  }
+
+  /// 偏好弹窗改一项（`MihonManager.setPreference`，写穿运行时与数据库）。
+  Future<Object?> setPreference(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    _requireMihonPreferences(kind);
+    final String sourceId = call.params['sourceId']!;
+    final String key = call.requireString('key');
+    final Object? rawValue = call.body['value'] ?? call.query['value'];
+    if (rawValue == null) throw const CtlFailure.badRequest('value 缺失');
+    final MihonManager manager = await _mihon(kind);
+    final MangaOnlineSourceRow row = _mihonSourceRowAny(manager, sourceId);
+    final List<MihonPreference> current = await _mihonErrors(
+      () => manager.getPreferences(row),
+    );
+    final MihonPreference changed = ctlMihonPreferenceWithValue(
+      findCtlMihonPreference(current, key),
+      '$rawValue',
+    );
+    final List<MihonPreference> updated = await _mihonErrors(
+      () => manager.setPreference(row, changed),
+    );
+    return <String, Object?>{
+      'kind': kind.name,
+      'source': sourceId,
+      'key': key,
+      'preferences': ctlMihonPreferencesJson(updated),
+    };
+  }
+
+  /// 「清除源数据」：Mihon `clearSourceData`（运行时数据 + 已存偏好）；LNReader
+  /// `clearData`（插件的 `@libs/storage`：登录态 / token）。
+  Future<Object?> clearSourceData(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    final String sourceId = call.params['sourceId']!;
+    _requireConfirm(call, '清除源数据');
+    if (kind == OnlineCtlKind.novel) {
+      final LnReaderManager manager = await _lnReader();
+      final LnReaderInstalledPlugin? plugin = manager.installedById(sourceId);
+      if (plugin == null) throw CtlFailure.notFound('没有安装这个插件：$sourceId');
+      await manager.clearData(plugin);
+      return null;
+    }
+    final MihonManager manager = await _mihon(kind);
+    final MangaOnlineSourceRow row = _mihonSourceRowAny(manager, sourceId);
+    await _mihonErrors(() => manager.clearSourceData(row));
+    return null;
+  }
+
+  /// 源浏览页「筛选」按钮背后的定义：Mihon `getFilters` / `getAnimeFilters`
+  /// （只作用于搜索）；LNReader 插件自报的 `filters`（只作用于热门 / 最新）。
+  Future<Object?> listFilters(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    final String sourceId = call.params['sourceId']!;
+    if (kind == OnlineCtlKind.novel) {
+      final LnReaderManager manager = await _lnReader();
+      final LnReaderInstalledPlugin plugin = _lnReaderPlugin(manager, sourceId);
+      final LnReaderPluginInfo info = await manager.load(plugin);
+      return <String, Object?>{
+        'kind': kind.name,
+        'source': plugin.id,
+        'appliesTo': 'listing',
+        'filters': ctlLnReaderFiltersJson(info.filters),
+      };
+    }
+    final MihonManager manager = await _mihon(kind);
+    final MihonSourceContext ctx = await _mihonContext(manager, sourceId);
+    return <String, Object?>{
+      'kind': kind.name,
+      'source': sourceId,
+      'appliesTo': 'search',
+      'filters': ctlMihonFiltersJson(await _mihonDefaultFilters(manager, ctx)),
+    };
+  }
+
+  Future<List<MihonFilter>> _mihonDefaultFilters(
+    MihonManager manager,
+    MihonSourceContext ctx,
+  ) => _mihonErrors(
+    () => manager.kind == MihonMediaKind.anime
+        ? manager.animeRuntime.getAnimeFilters(
+            ctx.extension,
+            ctx.source,
+            preferences: ctx.preferences,
+          )
+        : manager.runtime.getFilters(
+            ctx.extension,
+            ctx.source,
+            preferences: ctx.preferences,
+          ),
+  );
+
+  static Map<String, String> _filterAssignments(CtlCall call) {
+    final Object? raw = call.body['filters'];
+    if (raw == null) return const <String, String>{};
+    if (raw is! Map) {
+      throw const CtlFailure.badRequest('filters 必须是 {筛选: 取值} 对象');
+    }
+    return <String, String>{
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        '${e.key}': '${e.value ?? ''}',
+    };
+  }
+
+  /// 源浏览页的一页：热门 / 最新 / 搜索 + 筛选，与 `_MihonCatalog.fetch` /
+  /// `_LnReaderCatalog.fetch` 同一套调用。筛选只用在该生态允许的列表上：Mihon 只
+  /// 作用于搜索（给了筛选没给关键词 = 空关键词搜索，同 UI 改筛选后的效果），
+  /// LNReader 只作用于热门 / 最新。
+  Future<Object?> browseSource(CtlCall call) async {
+    final OnlineCtlKind kind = _kind(call);
+    final String sourceId = call.params['sourceId']!;
+    final String? listing = call.optString('listing')?.toLowerCase();
+    final String? query = call.optString('query');
+    final int page = call.optInt('page') ?? 1;
+    if (page < 1) throw const CtlFailure.badRequest('page 从 1 开始');
+    if (listing != null && listing != 'popular' && listing != 'latest') {
+      throw CtlFailure.badRequest('未知 listing：$listing（popular | latest）');
+    }
+    if (listing != null && query != null) {
+      throw const CtlFailure.badRequest('listing 与 query 二选一');
+    }
+    final Map<String, String> assignments = _filterAssignments(call);
+    if (kind == OnlineCtlKind.novel) {
+      if (query != null && assignments.isNotEmpty) {
+        throw const CtlFailure.badRequest('LNReader 的筛选只作用于热门 / 最新，不能与关键词同用');
+      }
+      final LnReaderManager manager = await _lnReader();
+      final LnReaderInstalledPlugin plugin = _lnReaderPlugin(manager, sourceId);
+      final LnReaderPluginInfo info = await manager.load(plugin);
+      final List<LnReaderNovelItem> items = query != null
+          ? await manager.runtime.search(plugin.id, query: query, page: page)
+          : await manager.runtime.popular(
+              plugin.id,
+              page: page,
+              latest: listing == 'latest',
+              // 与浏览页同口径：没动过筛选时让插件用它自己的默认值。
+              filters: assignments.isEmpty
+                  ? null
+                  : lnReaderFilterValues(
+                      applyCtlLnReaderFilters(info.filters, assignments),
+                    ),
+            );
+      return <String, Object?>{
+        'kind': kind.name,
+        'source': plugin.id,
+        'listing': query != null ? 'search' : (listing ?? 'popular'),
+        'page': page,
+        // LNReader 插件不报「还有下一页」：与浏览页同口径，一页有条目就认为还有。
+        'hasNextPage': items.isNotEmpty,
+        'items': <Map<String, Object?>>[
+          for (final LnReaderNovelItem item in items)
+            <String, Object?>{
+              'url': item.path,
+              'title': item.name,
+              'cover': item.cover,
+            },
+        ],
+      };
+    }
+    if (listing != null && assignments.isNotEmpty) {
+      throw const CtlFailure.badRequest('Mihon 的筛选只作用于搜索，不能与热门 / 最新同用');
+    }
+    final MihonManager manager = await _mihon(kind);
+    final MihonSourceContext ctx = await _mihonContext(manager, sourceId);
+    final bool search = query != null || assignments.isNotEmpty;
+    final List<MihonFilter> filters = search
+        ? applyCtlMihonFilters(
+            await _mihonDefaultFilters(manager, ctx),
+            assignments,
+          )
+        : const <MihonFilter>[];
+    final String text = query ?? '';
+    final List<MihonCatalogueEntry> items;
+    final bool hasNextPage;
+    if (kind == OnlineCtlKind.anime) {
+      final AnimeMihonRuntime runtime = manager.animeRuntime;
+      final MihonAnimePage response = await _mihonErrors(
+        () => search
+            ? runtime.searchAnime(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                query: text,
+                filters: filters,
+                preferences: ctx.preferences,
+              )
+            : listing == 'latest'
+            ? runtime.getLatestAnime(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                preferences: ctx.preferences,
+              )
+            : runtime.getPopularAnime(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                preferences: ctx.preferences,
+              ),
+      );
+      items = response.items;
+      hasNextPage = response.hasNextPage;
+    } else {
+      final MihonRuntime runtime = manager.runtime;
+      final MihonMangaPage response = await _mihonErrors(
+        () => search
+            ? runtime.search(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                query: text,
+                filters: filters,
+                preferences: ctx.preferences,
+              )
+            : listing == 'latest'
+            ? runtime.getLatest(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                preferences: ctx.preferences,
+              )
+            : runtime.getPopular(
+                ctx.extension,
+                ctx.source,
+                page: page,
+                preferences: ctx.preferences,
+              ),
+      );
+      items = response.items;
+      hasNextPage = response.hasNextPage;
+    }
+    return <String, Object?>{
+      ..._catalogueJson(kind, sourceId, page, items, hasNextPage),
+      'listing': search ? 'search' : (listing ?? 'popular'),
+    };
   }
 
   // ── 发现 ────────────────────────────────────────────────────────────────
@@ -1279,12 +1875,18 @@ class _OnlineCtl {
     if (buildContext == null || !buildContext.mounted) {
       throw const CtlFailure.conflict('主窗口尚未就绪');
     }
-    final bool started = await startDiscoveryItemDownload(
+    final DownloadStartResult result = await startDiscoveryItemDownload(
       context: buildContext,
       appModel: appModel,
       item: item,
     );
-    return <String, Object?>{'id': id, 'title': item.title, 'started': started};
+    return <String, Object?>{
+      'id': id,
+      'title': item.title,
+      'started': result.started,
+      if (result.started && result.summary != null) 'message': result.summary,
+      if (result.failureReason != null) 'reason': result.failureReason,
+    };
   }
 
   // ── 播放遥控 ────────────────────────────────────────────────────────────
@@ -1521,4 +2123,52 @@ AnimeOnlinePosition? readCtlAnimeOnlinePosition(AppModel appModel, String id) {
     positionMs: positionMs,
     playedAt: readInt(videoRemotePositionEpisodeAtPrefKey(id, 0)),
   );
+}
+
+/// CLI 发起的 LNReader 整本下载：与作品页下载对话框同一个 [LnReaderBookDownload.run]，
+/// 只是没有对话框承载进度——登记进 [CtlOnlineTaskRegistry]，`source task` 查进度、
+/// `source task <id> --cancel` 取消（章节之间的检查点，同对话框「取消」）。重名按
+/// 程序化入库口径留副本（[DuplicatePolicy.suffix]，与「加入书架」的占位书一致）。
+///
+/// `source dl --kind novel` 与 AI 下载会话里确认的小说候选共用这一处。
+CtlOnlineTask startCtlNovelDownloadTask({
+  required LnReaderBookDownload download,
+  required LnReaderInstalledPlugin plugin,
+  required LnReaderNovel novel,
+  required List<LnReaderChapter> chapters,
+  required void Function() onShelfChanged,
+  CtlOnlineTaskRegistry? registry,
+}) {
+  final CtlOnlineTaskRegistry tasks =
+      registry ?? CtlOnlineTaskRegistry.instance;
+  final CtlOnlineTask task = tasks.start(
+    kind: OnlineCtlKind.novel.name,
+    title: novel.name,
+    total: chapters.length,
+  );
+  unawaited(() async {
+    try {
+      final String bookKey = await download.run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.suffix(),
+        onProgress: (int done, int total) => task.done = done,
+        isCancelled: () => task.cancelRequested,
+      );
+      onShelfChanged();
+      tasks.finish(task, status: 'done', resultKey: bookKey);
+    } on LnReaderDownloadCancelled {
+      tasks.finish(task, status: 'cancelled');
+    } on LnReaderChapterDownloadException catch (error) {
+      tasks.finish(
+        task,
+        status: 'failed',
+        error: '${error.chapter.name}: ${error.cause}',
+      );
+    } on Object catch (error) {
+      tasks.finish(task, status: 'failed', error: '$error');
+    }
+  }());
+  return task;
 }

@@ -58,12 +58,13 @@ void main() {
     });
 
     test('app-side seen window widened past a single heartbeat period', () {
+      // 时间窗随连接判据抽进 browser_extension_setup.dart（页面与控制通道共用）。
       final String src =
-          File('lib/src/pages/implementations/browser_extension_page.dart')
+          File('lib/src/lookup/browser_extension_setup.dart')
               .readAsStringSync();
       expect(src.contains('Duration(seconds: 150)'), isTrue,
           reason:
-              'browser_extension_page.dart _seenWindow must widen to 150s so a '
+              'kBrowserExtensionSeenWindow must widen to 150s so a '
               'single missed 60s heartbeat does not flip the status to '
               '"未连接" (BUG-1045)');
     });

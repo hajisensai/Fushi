@@ -198,6 +198,208 @@ void main() {
     });
   });
 
+  group('dict 推荐词典 / 改名 / 语言', () {
+    test('recommended', () {
+      final CtlRequestSpec plain = _build('dict', 'recommended', <String>[]);
+      expect(
+        (plain.method, plain.path, plain.query),
+        ('GET', '/api/admin/dictionaries/recommended', null),
+      );
+      expect(
+        _build('dict', 'recommended', <String>[
+          '--learning',
+          'en',
+          '--gloss',
+          'zh',
+        ]).query,
+        <String, String>{'learning': 'en', 'gloss': 'zh'},
+      );
+    });
+
+    test('install', () {
+      expect(
+        () => _build('dict', 'install', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec install = _build('dict', 'install', <String>[
+        'jmdict',
+        'kanjidic',
+        '--gloss',
+        'en',
+        '--wait',
+      ]);
+      expect(
+        (install.method, install.path),
+        ('POST', '/api/admin/dictionaries/install'),
+      );
+      expect(install.body, <String, Object?>{
+        'names': <String>['jmdict', 'kanjidic'],
+        'gloss': 'en',
+        'wait': true,
+      });
+      expect(
+        _build('dict', 'install', <String>['--defaults']).body,
+        <String, Object?>{'names': <String>[], 'defaults': true},
+      );
+    });
+
+    test('rename', () {
+      expect(
+        () => _build('dict', 'rename', <String>['JMdict']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        () => _build('dict', 'rename', <String>[
+          'JMdict',
+          '--to',
+          'x',
+          '--reset',
+        ]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec rename = _build('dict', 'rename', <String>[
+        'JMdict',
+        '--to',
+        '日英辞典',
+      ]);
+      expect(rename.method, 'PUT');
+      expect(rename.path, '/api/admin/dictionaries/JMdict');
+      expect(rename.body, <String, Object?>{'displayName': '日英辞典'});
+      expect(
+        _build('dict', 'rename', <String>['JMdict', '--reset']).body,
+        <String, Object?>{'resetDisplayName': true},
+      );
+    });
+
+    test('lang', () {
+      expect(
+        () => _build('dict', 'lang', <String>['JMdict']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec lang = _build('dict', 'lang', <String>[
+        'My Dict',
+        'ja',
+      ]);
+      expect(lang.method, 'PUT');
+      expect(lang.path, '/api/admin/dictionaries/My%20Dict');
+      expect(lang.body, <String, Object?>{'language': 'ja'});
+    });
+
+    test('pack 系列命令', () {
+      final CtlRequestSpec status = _build('dict', 'pack', <String>[]);
+      expect(
+        (status.method, status.path),
+        ('GET', '/api/admin/dictionary-pack'),
+      );
+      final CtlRequestSpec dl = _build('dict', 'pack-download', <String>[
+        '--wait',
+      ]);
+      expect(
+        (dl.method, dl.path),
+        ('POST', '/api/admin/dictionary-pack/download'),
+      );
+      expect(dl.body, <String, Object?>{'wait': true});
+      expect(
+        _build('dict', 'pack-cancel', <String>[]).path,
+        '/api/admin/dictionary-pack/cancel',
+      );
+      // 导入：必须显式二选一 + --yes。
+      for (final List<String> bad in <List<String>>[
+        <String>['--yes'],
+        <String>['--merge', '--replace', '--yes'],
+        <String>['--merge'],
+        <String>['--merge', '--import-settings', '--yes'],
+      ]) {
+        expect(
+          () => _build('dict', 'pack-import', bad),
+          throwsA(isA<CtlUsageError>()),
+          reason: '$bad',
+        );
+      }
+      final CtlRequestSpec merge = _build('dict', 'pack-import', <String>[
+        '--merge',
+        '--category',
+        'dictionary,books',
+        '--yes',
+      ]);
+      expect(merge.path, '/api/admin/dictionary-pack/import');
+      expect(merge.body, <String, Object?>{
+        'confirm': true,
+        'mode': 'merge',
+        'categories': <String>['dictionary', 'books'],
+      });
+      expect(
+        _build('dict', 'pack-import', <String>[
+          '--replace',
+          '--import-settings',
+          '--yes',
+        ]).body,
+        <String, Object?>{
+          'confirm': true,
+          'mode': 'replace',
+          'importSettings': true,
+        },
+      );
+      expect(
+        () => _build('dict', 'pack-discard', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec discard = _build('dict', 'pack-discard', <String>[
+        '--yes',
+      ]);
+      expect(
+        (discard.method, discard.path),
+        ('DELETE', '/api/admin/dictionary-pack'),
+      );
+      expect(discard.query, <String, String>{'confirm': 'true'});
+    });
+
+    test('pack 渲染', () {
+      final String Function(Object?) render = _spec('dict', 'pack').render!;
+      final String text = render(<String, Object?>{
+        'stage': 'paused',
+        'progress': 0.34,
+        'receivedBytes': 3 * 1024 * 1024 * 1024,
+        'error': 'boom',
+      });
+      expect(text, allOf(contains('已暂停'), contains('34%'), contains('boom')));
+      expect(
+        render(<String, Object?>{'stage': 'downloaded', 'progress': 0}),
+        contains('pack-import'),
+      );
+    });
+
+    test('install / job 渲染', () {
+      final String Function(Object?) render = _spec('dict', 'install').render!;
+      final String text = render(<String, Object?>{
+        'id': 3,
+        'finished': true,
+        'results': <Object?>[
+          <String, Object?>{'key': 'jmdict', 'status': 'installed'},
+          <String, Object?>{
+            'key': 'kanji',
+            'status': 'failed',
+            'stage': 'download',
+            'error': 'boom',
+          },
+        ],
+      });
+      expect(text, allOf(contains('已安装'), contains('下载阶段'), contains('boom')));
+      final String job = _spec('dict', 'job').render!(<String, Object?>{
+        'busy': false,
+        'last': <String, Object?>{
+          'id': 3,
+          'kind': 'install',
+          'finished': true,
+          'results': <Object?>[
+            <String, Object?>{'key': 'jmdict', 'status': 'cancelled'},
+          ],
+        },
+      });
+      expect(job, allOf(contains('安装'), contains('已取消')));
+    });
+  });
+
   group('anki', () {
     test('status / decks / models / sync', () {
       final CtlRequestSpec status = _build('anki', 'status', <String>[]);
@@ -284,6 +486,99 @@ void main() {
       expect(
         () => _build('anki', 'duplicate', <String>[]),
         throwsA(isA<CtlUsageError>()),
+      );
+    });
+
+    test('pending / send / retry / discard', () {
+      expect(
+        _build('anki', 'pending', <String>['--status', 'failed']).query,
+        <String, String>{'status': 'failed'},
+      );
+      expect(
+        () => _build('anki', 'pending', <String>['--status', 'nope']),
+        throwsA(isA<ArgParserException>()),
+      );
+      final CtlRequestSpec all = _build('anki', 'send', <String>[]);
+      expect((all.method, all.path), ('POST', '/api/admin/anki/pending/send'));
+      expect(all.body, <String, Object?>{});
+      expect(_build('anki', 'send', <String>['ab12']).body, <String, Object?>{
+        'id': 'ab12',
+      });
+      final CtlRequestSpec retry = _build('anki', 'retry', <String>['ab12']);
+      expect(
+        (retry.method, retry.path),
+        ('POST', '/api/admin/anki/pending/ab12/retry'),
+      );
+      expect(
+        () => _build('anki', 'retry', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        () => _build('anki', 'discard', <String>['ab12']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        () => _build('anki', 'discard', <String>['--yes']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec one = _build('anki', 'discard', <String>[
+        'ab12',
+        '--yes',
+      ]);
+      expect(
+        (one.method, one.path),
+        ('DELETE', '/api/admin/anki/pending/ab12'),
+      );
+      expect(one.query, <String, String>{'confirm': 'true'});
+      final CtlRequestSpec failed = _build('anki', 'discard', <String>[
+        '--failed',
+        '--yes',
+      ]);
+      expect(
+        (failed.method, failed.path),
+        ('POST', '/api/admin/anki/pending/discard-failed'),
+      );
+      expect(failed.body, <String, Object?>{'confirm': true});
+    });
+
+    test('pending 渲染', () {
+      final String Function(Object?) render = _spec('anki', 'pending').render!;
+      expect(render(<String, Object?>{'pending': <Object?>[]}), contains('空'));
+      expect(
+        render(<String, Object?>{
+          'pending': <Object?>[
+            <String, Object?>{
+              'id': 'ab12',
+              'status': 'failed',
+              'attempts': 2,
+              'expression': '猫',
+              'reading': 'ねこ',
+              'lastError': 'bad field',
+            },
+          ],
+        }),
+        allOf(contains('ab12'), contains('bad field')),
+      );
+      final String Function(Object?) send = _spec('anki', 'send').render!;
+      expect(
+        send(<String, Object?>{
+          'delivered': 3,
+          'failed': 1,
+          'remaining': 0,
+          'unreachable': false,
+          'skipped': false,
+          'awaitingConfirmation': false,
+        }),
+        allOf(contains('送达 3'), contains('失败 1')),
+      );
+      expect(
+        send(<String, Object?>{
+          'delivered': 0,
+          'failed': 0,
+          'remaining': 5,
+          'unreachable': true,
+        }),
+        contains('不可达'),
       );
     });
 

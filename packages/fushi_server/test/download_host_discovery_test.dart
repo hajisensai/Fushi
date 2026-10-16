@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
@@ -147,6 +148,57 @@ void main() {
     final List<EpubBookRow> books = await db.getAllEpubBooks();
     expect(books, hasLength(1));
     expect(books.single.title, '吾輩は猫である');
+  });
+
+  test('BUG-3417：deleteJob 显式 deleteFiles 按字面执行；缺省（旧客户端）保持连文件一起删', () async {
+    host = await build(<(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)]);
+    Future<File> seed(String jobId) async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final File file = File(p.join(tmp.path, '$jobId.mkv'))..writeAsStringSync('payload');
+      await db.upsertVideoDownloadJob(
+        VideoDownloadJobsCompanion.insert(
+          jobId: jobId,
+          resourceProvider: 'nyaa:test',
+          selectedResourceId: 'r1',
+          mediaKind: 'tv',
+          title: 'Frieren',
+          backendKind: 'embedded',
+          fingerprint: 'fp',
+          lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+          stage: const Value<String>(VideoDownloadJobStage.import),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await db.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: const Value<int?>(0),
+          originalRelativePath: p.basename(file.path),
+          currentRelativePath: p.basename(file.path),
+          finalAbsolutePath: Value<String?>(file.path),
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      return file;
+    }
+
+    final File kept = await seed('job-keep');
+    await host.deleteJob('job-keep', deleteFiles: false);
+    expect(await db.getVideoDownloadJob('job-keep'), isNull);
+    expect(kept.existsSync(), isTrue, reason: '对端没勾「同时删除文件」就不能删');
+
+    final File dropped = await seed('job-drop');
+    await host.deleteJob('job-drop', deleteFiles: true);
+    expect(dropped.existsSync(), isFalse);
+
+    final File legacy = await seed('job-legacy');
+    await host.deleteJob('job-legacy');
+    expect(await db.getVideoDownloadJob('job-legacy'), isNull);
+    expect(legacy.existsSync(), isFalse, reason: '旧客户端不带参数：服务端历史缺省连数据一起删');
   });
 
   test('小说包里的 PDF：服务端接不了，任务带 unsupportedOnThisHost 挡下、书库不动', () async {

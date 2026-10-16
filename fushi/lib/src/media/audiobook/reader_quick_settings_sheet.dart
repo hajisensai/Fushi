@@ -1592,7 +1592,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   ),
                 ),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: _doSearch,
                 child: Text(t.retry),
               ),
@@ -2963,7 +2963,7 @@ class _InBookFavoriteUndoRow extends StatelessWidget {
             ),
           ),
           SizedBox(width: tokens.spacing.gap),
-          TextButton(
+          FushiTextButton(
             onPressed: onUndo,
             child: Text(t.undo),
           ),

@@ -156,7 +156,9 @@ void main() {
       final String body = methodBody(source, 'Future<void> _pickCustomIcon(');
       final int pickAt = body.indexOf('FilePicker.platform.pickFiles(');
       final int cropAt = body.indexOf('showCropImageDialog(');
-      final int persistAt = body.indexOf('persistCustomIconFile(');
+      // 落盘（persistCustomIconFile）抽进 app_icon_apply.dart 的 applyCustomAppIcon
+      // （设置页与控制通道共用），页面里落盘点 = 调它的位置，传的必须是裁剪结果。
+      final int persistAt = body.indexOf('applyCustomAppIcon(iconPath)');
       expect(pickAt, isNonNegative);
       expect(cropAt, isNonNegative, reason: '用户要求「做一个截取图片的步骤」。');
       expect(persistAt, isNonNegative);

@@ -50,6 +50,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3417](bugs/BUG-3417-remote-download-delete-files-ignored.md) | ✅ | ✅ | 远端代下载任务删除时「同时删除已下载文件」勾选被丢弃 |
 | [BUG-3417](bugs/BUG-3417-galgame-skip-backlog-chars-counted.md) | ✅ | ✅ | galgame-skip-backlog-chars-counted |
 | [BUG-3417](bugs/BUG-3417-reader-highlight-lane-latin-ink.md) | ✅ | ✅ | 小说高亮条瘦身后西文上伸 / 下延字母没被包住 |
 | [BUG-3417](bugs/BUG-3417-lyrics-mining-context-sentences.md) | ✅ | ✅ | 歌词模式高级制卡无法前后加句 |

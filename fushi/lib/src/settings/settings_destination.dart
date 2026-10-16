@@ -440,6 +440,7 @@ class SettingsActionItem extends SettingsItem {
     required super.title,
     required this.onTap,
     this.destructive = false,
+    this.cli,
     super.subtitle,
     super.subtitleBuilder,
     super.icon,
@@ -454,6 +455,152 @@ class SettingsActionItem extends SettingsItem {
   /// 危险操作行（settings_kit 的 SettingsDangerRow）。只影响外观，确认框仍由
   /// [onTap] 自己负责。
   final bool destructive;
+
+  /// 控制通道（`fushi_cli config run`）上怎么执行这个动作。[onTap] 常带确认框 /
+  /// 选择器 / 文件选择器，CLI 不能去弹主窗口对话框，所以每个动作都要声明：
+  /// 直接跑 onTap（无交互）、带参数的入口，或「只是打开界面，用别的命令」。
+  /// 守卫：`test/settings/settings_cli_action_coverage_test.dart`。
+  final SettingsCliAction? cli;
+}
+
+/// 控制通道动作 / 列表操作的一个参数（CLI：`--arg name=value`，单参数可用
+/// `--value`）。
+class SettingsCliParam {
+  const SettingsCliParam(
+    this.name, {
+    required this.help,
+    this.required = true,
+    this.path = false,
+    this.secret = false,
+  });
+
+  final String name;
+
+  /// 给 CLI 用户看的一句说明（含写法）。
+  final String help;
+  final bool required;
+
+  /// 本机路径：CLI 侧转绝对路径，app 侧要求绝对路径。
+  final bool path;
+
+  /// 凭据（密码 / token / API key）：只收 CLI 的 `--secret-stdin` /
+  /// `--secret-from-env`，不收命令行明文。
+  final bool secret;
+}
+
+/// 控制通道执行体：[args] 已按 [SettingsCliAction.params] 校验过必填项；返回值
+/// （可 JSON 编码）进应答。参数不合法时抛 [ArgumentError] / [FormatException]
+/// （控制通道映射成 400）。
+typedef SettingsCliRun =
+    Future<Object?> Function(SettingsContext context, Map<String, String> args);
+
+/// [SettingsActionItem.cli]：动作在控制通道上的执行方式。
+class SettingsCliAction {
+  /// 带参数的无交互入口（把 [SettingsActionItem.onTap] 里对话框收集的值改成
+  /// 参数传入）。[confirm] = 破坏性，CLI 必须带 `--yes`。
+  const SettingsCliAction({
+    required SettingsCliRun this.run,
+    this.params = const <SettingsCliParam>[],
+    this.confirm = false,
+    this.offPageRunnable = false,
+  }) : unsupportedHint = null,
+       sameAsTap = false;
+
+  /// [SettingsActionItem.onTap] 本身没有任何对话框 / 选择器：CLI 直接调它。
+  const SettingsCliAction.tap({
+    this.confirm = false,
+    this.offPageRunnable = false,
+  }) : run = null,
+       params = const <SettingsCliParam>[],
+       unsupportedHint = null,
+       sameAsTap = true;
+
+  /// 这个动作只是打开页面 / 外部界面，没有能在这里完成的业务；[hint] 指向
+  /// 完成同一件事的 CLI 命令（或说明为何只能在界面里做）。
+  const SettingsCliAction.unsupported(String hint)
+    : run = null,
+      params = const <SettingsCliParam>[],
+      confirm = false,
+      offPageRunnable = false,
+      unsupportedHint = hint,
+      sameAsTap = false;
+
+  final SettingsCliRun? run;
+  final List<SettingsCliParam> params;
+  final bool confirm;
+  final bool sameAsTap;
+  final String? unsupportedHint;
+
+  /// 行只在某个页面里可见，但动作写的是全局偏好、离开页面执行同样有效：控制
+  /// 通道不按行可见性拒绝（同 [SettingsCliValue.offPageWritable]）。
+  final bool offPageRunnable;
+}
+
+/// [SettingsCustomItem.cliValue]：自绘行在控制通道上的单值读写（颜色、多行
+/// 文本、可序列化的布局 JSON…），`fushi_cli config get/set` 直接可用。
+class SettingsCliValue {
+  const SettingsCliValue({
+    required this.read,
+    required this.write,
+    this.help,
+    this.options,
+    this.offPageWritable = false,
+  });
+
+  /// 行本身只在某个页面里可见（如只在播放页快捷面板出现），但值是全局偏好、
+  /// 离开那个页面写入同样有效（下次进入生效）：控制通道不按行可见性拒绝。
+  final bool offPageWritable;
+
+  /// 当前值的文本形式（与 [write] 收的写法同形）。
+  final String Function(SettingsContext context) read;
+
+  /// 写入；写法不合法时抛 [ArgumentError] / [FormatException]（→ 400）。
+  final Future<void> Function(SettingsContext context, String raw) write;
+
+  /// 写法说明（如 `#AARRGGBB 或 theme`）。
+  final String? help;
+
+  /// 可选值（有固定取值集时）。
+  final List<String> Function(SettingsContext context)? options;
+}
+
+/// [SettingsCustomItem.cliList]：可增删的记录列表在控制通道上的操作
+/// （`fushi_cli config items ls|add|set|rm <key>`）。每条记录必须带 `id` 字段。
+class SettingsCliList {
+  const SettingsCliList({
+    required this.list,
+    this.add,
+    this.update,
+    this.remove,
+    this.fields = const <SettingsCliParam>[],
+    this.offPageWritable = false,
+  });
+
+  /// 同 [SettingsCliValue.offPageWritable]。
+  final bool offPageWritable;
+
+  final Future<List<Map<String, Object?>>> Function(SettingsContext context)
+  list;
+
+  /// 新增一条；返回新记录（含 id）。
+  final Future<Object?> Function(
+    SettingsContext context,
+    Map<String, String> fields,
+  )?
+  add;
+
+  /// 改一条（只改给出的字段）。
+  final Future<Object?> Function(
+    SettingsContext context,
+    String id,
+    Map<String, String> fields,
+  )?
+  update;
+
+  final Future<void> Function(SettingsContext context, String id)? remove;
+
+  /// add / update 收的字段说明。
+  final List<SettingsCliParam> fields;
 }
 
 class SettingsSwitchItem extends SettingsItem {
@@ -696,6 +843,8 @@ class SettingsCustomItem extends SettingsItem {
     this.searchTitle,
     this.searchKeywords,
     this.reset,
+    this.cliValue,
+    this.cliList,
     super.subtitle,
     super.icon,
     super.visible,
@@ -714,6 +863,8 @@ class SettingsCustomItem extends SettingsItem {
     super.title = '',
     this.searchTitle,
     this.searchKeywords,
+    this.cliValue,
+    this.cliList,
     super.subtitle,
     super.icon,
     super.visible,
@@ -745,6 +896,12 @@ class SettingsCustomItem extends SettingsItem {
   /// （settings_kit 的 settingsResetSpecFor），与声明了 defaultValue 的开关 /
   /// 滑杆同一套判据。
   final SettingsCustomReset? reset;
+
+  /// 控制通道上的单值读写（见 [SettingsCliValue]）；与 [cliList] 二选一。
+  final SettingsCliValue? cliValue;
+
+  /// 控制通道上的记录列表操作（见 [SettingsCliList]）。
+  final SettingsCliList? cliList;
 }
 
 /// [SettingsCustomItem.reset]：自绘行改没改过默认值、怎么恢复、恢复确认框里
