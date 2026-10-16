@@ -52,7 +52,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
         const val EXTRA_SUBTITLE_BOTTOM: String = "subtitleBottom"
 
         /**
-         * 截屏识字（BUG-3453）：被点字所在 ML Kit text block 的全文（块内各行按 `\n`
+         * 截屏识字（BUG-3487）：被点字所在 ML Kit text block 的全文（块内各行按 `\n`
          * 拼接）与 EXTRA_PROCESS_TEXT 那一行在块里的起始 UTF-16 偏移。Dart 查词窗据此截出
          * 含被点字的整句作制卡 `{sentence}`；竖排 / 折行长句不再只剩被点的那一行。
          * 缺省（旧入口 / 悬浮字幕 / 系统划词）时句子回落为整行，行为同 BUG-2900。
@@ -299,7 +299,7 @@ class PopupDictFlutterActivity : FlutterActivity() {
     }
 
     /**
-     * 截屏识字带来的所属块全文与本行在块里的起点（BUG-3453），没有就是 null。偏移越界
+     * 截屏识字带来的所属块全文与本行在块里的起点（BUG-3487），没有就是 null。偏移越界
      * 的载荷一律当作没有，Dart 侧回落为整行句子。
      */
     private fun extractSourceBlock(intent: Intent?): PopupEngineHolder.SourceBlock? {

@@ -63,7 +63,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 源文本条上做扫描查词，不再在这里切成单词把整行丢掉。
   int _sourceCharIndex = -1;
 
-  /// BUG-3453：截屏识字带来的被点字所在 OCR text block（全文 + 本行起点），制卡句子
+  /// BUG-3487：截屏识字带来的被点字所在 OCR text block（全文 + 本行起点），制卡句子
   /// 据此截整句；其它入口为 null。
   PopupSourceBlock? _sourceBlock;
 

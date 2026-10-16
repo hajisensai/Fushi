@@ -1,4 +1,4 @@
-/// BUG-3453：从截屏识字（ML Kit）的一个 text block 里截出包含被点字的整句，作 app 外
+/// BUG-3487：从截屏识字（ML Kit）的一个 text block 里截出包含被点字的整句，作 app 外
 /// 查词窗制卡的 `{sentence}`。
 ///
 /// 块全文是原生侧把块内各行按 `\n` 拼起来的（`ScreenOcrLayout.blockLineOffsets`）。

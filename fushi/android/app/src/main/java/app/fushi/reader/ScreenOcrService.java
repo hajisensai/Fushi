@@ -494,7 +494,7 @@ public class ScreenOcrService extends Service {
     private static List<ScreenOcrLayout.Line> toLines(@NonNull Text text) {
         List<ScreenOcrLayout.Line> out = new ArrayList<>();
         for (Text.TextBlock block : text.getTextBlocks()) {
-            // BUG-3453：先收齐本块留下的行，再把它们拼成块全文、记下每行偏移——竖排 /
+            // BUG-3487：先收齐本块留下的行，再把它们拼成块全文、记下每行偏移——竖排 /
             // 折行的长句跨行，制卡句子要从块全文里截，不能只拿被点的那一行。
             List<ScreenOcrLayout.Line> blockLines = new ArrayList<>();
             for (Text.Line line : block.getLines()) {
@@ -593,7 +593,7 @@ public class ScreenOcrService extends Service {
         intent.putExtra(Intent.EXTRA_PROCESS_TEXT, line.text);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX,
                 glyph != null ? glyph.start : -1);
-        // BUG-3453：所属块全文 + 本行在块里的起点，查词窗据此截出含被点字的整句作制卡
+        // BUG-3487：所属块全文 + 本行在块里的起点，查词窗据此截出含被点字的整句作制卡
         // {sentence}；EXTRA_PROCESS_TEXT 仍是整行（源文本条与扫描查词不变）。
         intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK, line.blockText);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK_OFFSET, line.blockOffset);

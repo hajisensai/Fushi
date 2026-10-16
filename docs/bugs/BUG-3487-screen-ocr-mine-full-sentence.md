@@ -1,4 +1,4 @@
-## BUG-3453 · 截屏识字制卡句子只有被点字所在一行，竖排/折行长句只剩半句
+## BUG-3487 · 截屏识字制卡句子只有被点字所在一行，竖排/折行长句只剩半句
 - **报告**：2026-10-16（用户：应用内反馈 1Mwaro8UTC，Android vivo V1901A / API 28，「应用外 OCR 查词制卡只有单词、没有例句」）
 - **真实性**：✅ 真 bug（部分）。BUG-2900 已把被点字所在**整行**补进 `{sentence}`，但行是 ML Kit 的排版行：
   `ScreenOcrService.toLines`（修前 `fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrService.java:493-519`）
@@ -15,7 +15,7 @@
   截不出时回落为整行（BUG-2900 原行为）。源文本条上点同一行别的字时按那个字重新取句。
   `EXTRA_PROCESS_TEXT` 仍是整行，源文本条与扫描查词不变；旧入口不带新 extra 时行为不变。
 - **[x] ② 已加自动化测试** — `fushi/test/lookup/ocr_block_sentence_test.dart`（竖排多行合并、跨行句、多句块、
-  标点缺失、超长回落、中英文）；`fushi/test/pages/popup_dictionary_source_line_test.dart` 新增三条 BUG-3453
+  标点缺失、超长回落、中英文）；`fushi/test/pages/popup_dictionary_source_line_test.dart` 新增三条 BUG-3487
   （真页面制卡取块内整句、条上点字换句、错位块回落整行）+ 通道载荷透传/不残留断言；
   `fushi/android/app/src/test/kotlin/app/fushi/reader/ScreenOcrLayoutTest.kt` `blockLineOffsetsIndexIntoNewlineJoinedBlock`。
 - **备注**：BUG-2900 的防误填判据未改：基础层原地跳到释义里的别的词、嵌套层再查时仍不补句；

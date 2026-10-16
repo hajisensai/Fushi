@@ -481,7 +481,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-3453: a screen-OCR line mines the whole sentence from its text block',
+    'BUG-3487: a screen-OCR line mines the whole sentence from its text block',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();
       final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
@@ -513,7 +513,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-3453: tapping another glyph on the strip re-picks its sentence',
+    'BUG-3487: tapping another glyph on the strip re-picks its sentence',
     (WidgetTester tester) async {
       final _SourceLineAppModel appModel = _SourceLineAppModel();
       final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
@@ -541,7 +541,7 @@ void main() {
   );
 
   testWidgets(
-    'BUG-3453: a block that does not contain the line at the given offset '
+    'BUG-3487: a block that does not contain the line at the given offset '
     'falls back to the whole line',
     (WidgetTester tester) async {
       final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
@@ -629,7 +629,7 @@ void main() {
       panel = tester.widget(find.byType(SourceLookupTextPanel));
       expect(panel.text, '明日は雨が降る');
 
-      // BUG-3453：截屏识字带上所属块，页面拿到块全文与本行起点。
+      // BUG-3487：截屏识字带上所属块，页面拿到块全文与本行起点。
       const String block = '朝から\n明日は雨が降る\nらしい。';
       await nativePush('明日は雨が降る', 3, block: block, blockOffset: 4);
       PopupDictionaryPage page = tester.widget(

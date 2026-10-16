@@ -43,7 +43,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// `{sentence}`（BUG-2900）。-1 = 整串就是查询（系统 PROCESS_TEXT / fushi://lookup）。
   final int sourceCharIndex;
 
-  /// BUG-3453：截屏识字时被点字所在 OCR text block 的全文（块内各行按 `\n` 拼接），
+  /// BUG-3487：截屏识字时被点字所在 OCR text block 的全文（块内各行按 `\n` 拼接），
   /// [sourceBlockOffset] 是 [searchTerm] 那一行在块里的起始 UTF-16 偏移。两者都有效时
   /// 制卡 `{sentence}` 取块里包含被点字的整句（[ocrBlockSentenceAt]），竖排 / 折行长句
   /// 不再只剩被点的那一行；否则回落为整行（BUG-2900）。
@@ -167,7 +167,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       ? _sentenceAtLineUnit(page, page.sourceCharIndex)
       : '';
 
-  /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3453）：有所属块就从块里截，
+  /// 行内 UTF-16 下标 [unitInLine] 那个字所在的整句（BUG-3487）：有所属块就从块里截，
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
@@ -343,7 +343,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
   Future<void> _lookupFromSourceStrip(String query, Rect rect, int charIndex) {
     if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
-      // BUG-3453：条上点的是同一行的别的字，它可能落在块里的另一句。
+      // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
       final String line = widget.searchTerm;
       final int leading = line.length - line.trimLeft().length;
       final int unit =

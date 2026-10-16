@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// BUG-3453：截屏识字带来的「被点字所在 OCR text block 全文 + 本行在块里的起点」。
+/// BUG-3487：截屏识字带来的「被点字所在 OCR text block 全文 + 本行在块里的起点」。
 /// 只有截屏识字入口给；其它入口为 null（制卡句子回落为整行）。
 typedef PopupSourceBlock = ({String text, int offset});
 
@@ -151,7 +151,7 @@ class PopupChannel {
     );
   }
 
-  /// BUG-3453：截屏识字的所属块全文与本行起点。缺键 / 类型不对 / 偏移越界一律 null
+  /// BUG-3487：截屏识字的所属块全文与本行起点。缺键 / 类型不对 / 偏移越界一律 null
   /// （不抛），制卡句子回落为整行。
   static PopupSourceBlock? _parseSourceBlock(Map<Object?, Object?> map) {
     final Object? text = map['sourceBlock'];

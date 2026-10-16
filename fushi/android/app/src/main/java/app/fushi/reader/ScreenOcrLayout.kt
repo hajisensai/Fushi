@@ -28,7 +28,7 @@ object ScreenOcrLayout {
      * 一行识别结果。[vertical] 决定「沿哪条轴找最近的字」。
      *
      * [blockText] / [blockOffset]：这行所属 ML Kit text block 的全文（块内各行按 `\n`
-     * 拼接）与本行在其中的起始 UTF-16 偏移（BUG-3453）。竖排 / 折行的长句被拆成多行，
+     * 拼接）与本行在其中的起始 UTF-16 偏移（BUG-3487）。竖排 / 折行的长句被拆成多行，
      * 只靠被点那一行做制卡句子只剩半句；查词窗据块全文截出含被点字的整句。不知道所属
      * 块时等于本行自身（偏移 0），行为同旧版。
      */
@@ -48,7 +48,7 @@ object ScreenOcrLayout {
     }
 
     /**
-     * BUG-3453：同一 text block 的各行按 `\n` 拼成块全文（[Line.blockText]），返回
+     * BUG-3487：同一 text block 的各行按 `\n` 拼成块全文（[Line.blockText]），返回
      * 每行在块全文里的起始 UTF-16 偏移（[Line.blockOffset]）。换行只是拼接分隔，
      * 不代表句界——句子怎么截由查词窗（Dart `ocrBlockSentenceAt`）决定。
      */

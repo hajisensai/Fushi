@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 
-/// BUG-3453：截屏识字制卡句子从 OCR text block 里截整句。块全文是原生侧把块内
+/// BUG-3487：截屏识字制卡句子从 OCR text block 里截整句。块全文是原生侧把块内
 /// 各行按 `\n` 拼起来的，换行只是排版折行、不是句界。
 void main() {
   int indexOf(String block, String needle) {
