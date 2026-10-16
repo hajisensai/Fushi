@@ -238,7 +238,8 @@ class AnchorGapFiller {
       if (!f.matched || c.isPseudo(k)) continue;
       final CueMatch o = c.out[k];
       if (!o.matched) return 'matched cue #$k became unmatched';
-      final bool same = o.sectionIndex == f.sectionIndex &&
+      final bool same =
+          o.sectionIndex == f.sectionIndex &&
           o.normCharStart == f.normCharStart &&
           o.normCharEnd == f.normCharEnd &&
           o.score == f.score;
@@ -443,7 +444,7 @@ class AnchorGapFiller {
     }
     final bool anchorsInsideUnion =
         regionStart + spans.first!.start >= unionStart &&
-            regionStart + spans.last!.end <= unionEnd;
+        regionStart + spans.last!.end <= unionEnd;
     if (placed <= dropped && !(dropped == 0 && anchorsInsideUnion)) {
       c.stats.abandonedRuns++;
       return true;
@@ -504,8 +505,9 @@ class AnchorGapFiller {
     final String na = c.norms[left + q1];
     final String nb = c.norms[left + q2];
     final String nm = c.norms[left + o];
-    final List<int> shrinkA =
-        pinnedA ? const <int>[0] : _tiedShrinks(na, region, a, fromRight: true);
+    final List<int> shrinkA = pinnedA
+        ? const <int>[0]
+        : _tiedShrinks(na, region, a, fromRight: true);
     final List<int> shrinkB = pinnedB
         ? const <int>[0]
         : _tiedShrinks(nb, region, b, fromRight: false);
@@ -529,7 +531,8 @@ class AnchorGapFiller {
           if (!_lengthPlausible(nm.length, ub - lb)) continue;
           m = _Span(lb, ub, _similarity(nm, region.substring(lb, ub)));
         }
-        final bool better = bestM == null ||
+        final bool better =
+            bestM == null ||
             m.similarity > bestM.similarity + 1e-9 ||
             (m.similarity > bestM.similarity - 1e-9 &&
                 da + db < bestDa + bestDb);
@@ -899,7 +902,8 @@ class GapFillStats {
   bool get skippedAny => oversizeRuns > 0 || budgetSkippedRuns > 0;
 
   @override
-  String toString() => 'GapFillStats(runs=$runs filled=$filledRuns '
+  String toString() =>
+      'GapFillStats(runs=$runs filled=$filledRuns '
       'abandoned=$abandonedRuns oversize=$oversizeRuns '
       'budgetSkipped=$budgetSkippedRuns work=$work '
       'invariantViolated=$invariantViolated)';
@@ -915,14 +919,14 @@ class _Stats {
   int work = 0;
 
   GapFillStats snapshot({required bool invariantViolated}) => GapFillStats(
-        runs: runs,
-        filledRuns: filledRuns,
-        abandonedRuns: abandonedRuns,
-        oversizeRuns: oversizeRuns,
-        budgetSkippedRuns: budgetSkippedRuns,
-        work: work,
-        invariantViolated: invariantViolated,
-      );
+    runs: runs,
+    filledRuns: filledRuns,
+    abandonedRuns: abandonedRuns,
+    oversizeRuns: oversizeRuns,
+    budgetSkippedRuns: budgetSkippedRuns,
+    work: work,
+    invariantViolated: invariantViolated,
+  );
 }
 
 /// 一次 [AnchorGapFiller.fill] 的工作集。
@@ -935,9 +939,9 @@ class _Ctx {
     required this.first,
     required this.out,
     required int softAnchorMaxLen,
-  })  : _softAnchorMaxLen = softAnchorMaxLen,
-        _firstPrevEnd = List<int>.filled(first.length, 0),
-        _firstNextStart = List<int>.filled(first.length, big.length) {
+  }) : _softAnchorMaxLen = softAnchorMaxLen,
+       _firstPrevEnd = List<int>.filled(first.length, 0),
+       _firstNextStart = List<int>.filled(first.length, big.length) {
     // 第一遍里每条 cue 前/后最近一条命中 cue 的终点/起点（全局偏移），软锚点
     // 重切不得越过。
     int prevEnd = 0;
@@ -1051,10 +1055,11 @@ void replaceMatchedCueTextWithBookText({
   }
 }
 
-/// 归一化区间 `[from, to)` 对应的原文，并把归一化时剥掉的标点带回来：向后一直
-/// 带到下一个保留字符之前（句号、引号、逗号都属于本句），但把紧挨下一句的开引号
-/// 留给下一句；向前只带紧邻的开引号/开括号。空白按 [_collapseWhitespace] 折叠：
-/// CJK 之间的换行/空格去掉，拉丁词之间保留一个空格。
+/// 归一化区间 `[from, to)` 对应的原文，并把归一化时剥掉的标点带回来。两个保留
+/// 字符之间被剥掉的那段（`」「……`、`。」「──`）在**第一个开引号/开括号处**一分
+/// 为二：之前的（句号、闭引号、逗号）属于前一句，从开引号起（连同它后面的省略号、
+/// 破折号）属于后一句——相邻两条 cue 用同一个分界，不重不漏。空白按
+/// [_collapseWhitespace] 折叠：CJK 之间的换行/空格去掉，拉丁词之间保留一个空格。
 String _bookSliceWithPunctuation(
   String original,
   NormalizedTextWithOffsets norm,
@@ -1063,16 +1068,30 @@ String _bookSliceWithPunctuation(
 ) {
   if (to <= from || from < 0 || to > norm.text.length) return '';
   int start = norm.starts[from];
-  while (start > 0 && _isOpeningMark(original.codeUnitAt(start - 1))) {
-    start--;
+  if (from > 0) {
+    start = _openingSplit(original, norm.ends[from - 1], start);
+  } else {
+    while (start > 0 && _isOpeningMark(original.codeUnitAt(start - 1))) {
+      start--;
+    }
   }
-  int end = to < norm.text.length ? norm.starts[to] : original.length;
+  int end = to < norm.text.length
+      ? _openingSplit(original, norm.ends[to - 1], norm.starts[to])
+      : original.length;
   while (end > norm.ends[to - 1] &&
-      (_isOpeningMark(original.codeUnitAt(end - 1)) ||
-          _isWhitespace(original.codeUnitAt(end - 1)))) {
+      _isWhitespace(original.codeUnitAt(end - 1))) {
     end--;
   }
   return _collapseWhitespace(original.substring(start, end));
+}
+
+/// 两个保留字符之间被剥掉的原文 `[gapStart, gapEnd)` 的分界：第一个开引号/开括号
+/// 的位置；没有开引号则整段归前一句（返回 [gapEnd]）。
+int _openingSplit(String original, int gapStart, int gapEnd) {
+  for (int k = gapStart; k < gapEnd; k++) {
+    if (_isOpeningMark(original.codeUnitAt(k))) return k;
+  }
+  return gapEnd;
 }
 
 /// 折叠正文里的空白：一段空白若两侧都是非 CJK 字符（英文词与词之间）压成一个

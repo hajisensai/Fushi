@@ -638,6 +638,11 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
         onPressed: () => widget.onChanged(entry.value),
         style: MenuItemButton.styleFrom(
           minimumSize: Size(menuWidth ?? 0, 48),
+          // 面板按子项固有宽度排版、再被 maximumSize 裁到触发器宽：长副标题
+          // 的项会被横向裁掉（不出省略号、面板右侧圆角也被切）。项本身也钉在
+          // 同一宽度，[Expanded] 里的文字才拿到有界宽度、按 ellipsis 收尾。
+          maximumSize:
+              menuWidth == null ? null : Size(menuWidth, double.infinity),
           padding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.rowHorizontal,
           ),

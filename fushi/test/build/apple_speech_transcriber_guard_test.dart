@@ -25,7 +25,13 @@ void main() {
       File('macos/Runner/AppDelegate.swift').readAsStringSync();
 
   test('channel 名与 Dart 侧常量逐字一致', () {
-    expect(dart, contains("MethodChannel('app.fushi.reader/apple_speech')"));
+    // 按 token 匹配而不是逐字：dart format（tall 风格）会把实参折行并补尾逗号。
+    expect(
+      dart,
+      matches(
+        RegExp(r"MethodChannel\(\s*'app\.fushi\.reader/apple_speech',?\s*\)"),
+      ),
+    );
     expect(swift, contains('"app.fushi.reader/apple_speech"'));
   });
 

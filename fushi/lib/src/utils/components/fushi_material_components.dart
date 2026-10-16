@@ -560,6 +560,29 @@ enum FushiListDensity { standard, compact }
 /// 选中态高亮形状：fill = 满宽方角（平铺列表），pill = 内缩圆角（导航列表）。
 enum FushiListItemSelectedShape { fill, pill }
 
+/// 行所在的「分段卡」（每行自成一张圆角卡，见 `AdaptiveSettingsSection` 的 MD3
+/// 分段排法）的圆角。[FushiListItem] 在这张卡里时状态层 / 选中底贴满整张卡、
+/// 取卡的圆角：内缩是给平铺列表 / 对话框选择列表设计的（一块容器里多行，高亮
+/// 不顶到容器边），放在独立分段卡里就成了「悬浮高亮比卡小一圈、圆角也对不上」
+/// （用户 10-16）。
+class FushiSegmentTileScope extends InheritedWidget {
+  const FushiSegmentTileScope({
+    required this.borderRadius,
+    required super.child,
+    super.key,
+  });
+
+  final BorderRadius borderRadius;
+
+  static BorderRadius? radiusOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<FushiSegmentTileScope>()
+      ?.borderRadius;
+
+  @override
+  bool updateShouldNotify(FushiSegmentTileScope oldWidget) =>
+      borderRadius != oldWidget.borderRadius;
+}
+
 class FushiListItem extends StatefulWidget {
   const FushiListItem({
     required this.title,
@@ -697,17 +720,24 @@ class _FushiListItemState extends State<FushiListItem> {
     // 状态层 / 选中底一律是内缩的 12 圆角块（不顶到容器边）：pill（导航 /
     // 对话框）内缩 8，平铺列表内缩 4——平铺行默认内边距同步减 4，文字起点仍在
     // 容器边 16 处，与分隔线、分组标题对齐。
-    final double inset = pill ? tokens.spacing.gap : kFushiMd3RowInset;
+    final BorderRadius? tileRadius = FushiSegmentTileScope.radiusOf(context);
+    final double inset = tileRadius != null
+        ? 0
+        : pill
+        ? tokens.spacing.gap
+        : kFushiMd3RowInset;
     // M3E 列表行形变：静止 / 悬停 12（corner-medium），按下 / 选中 16
     // （corner-large）；墨水屏不形变。
-    final BorderRadius highlightRadius = BorderRadius.all(
-      Radius.circular(
-        (widget.selected || _pressed) && !eink
-            ? FushiM3eShape.listActive
-            : kFushiMd3RowRadius,
-      ),
-    );
-    final double horizontalPadding = pill
+    final BorderRadius highlightRadius =
+        tileRadius ??
+        BorderRadius.all(
+          Radius.circular(
+            (widget.selected || _pressed) && !eink
+                ? FushiM3eShape.listActive
+                : kFushiMd3RowRadius,
+          ),
+        );
+    final double horizontalPadding = pill || tileRadius != null
         ? tokens.spacing.rowHorizontal
         : tokens.spacing.rowHorizontal - inset;
     final Widget content = ConstrainedBox(
@@ -5539,12 +5569,17 @@ class FushiFilePickerRow extends StatelessWidget {
     this.actions = const <Widget>[],
     this.onTap,
     this.enabled = true,
+    this.below,
   });
 
   final String title;
   final String? subtitle;
   final IconData icon;
   final List<Widget> actions;
+
+  /// 标题 / 副标题下方的整宽控件（如字幕行的「本地 | 转录」分段）：放在行尾
+  /// 窄屏会挤掉标题，放这里随行宽伸展。
+  final Widget? below;
   final VoidCallback? onTap;
   final bool enabled;
 
@@ -5559,7 +5594,17 @@ class FushiFilePickerRow extends StatelessWidget {
       minHeight: 60,
       leading: FushiIcon(icon, size: 22, color: foreground),
       title: Text(title),
-      subtitle: subtitle == null || subtitle!.isEmpty ? null : Text(subtitle!),
+      subtitle: below == null
+          ? (subtitle == null || subtitle!.isEmpty ? null : Text(subtitle!))
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                if (subtitle != null && subtitle!.isNotEmpty) Text(subtitle!),
+                SizedBox(height: tokens.spacing.gap),
+                below!,
+              ],
+            ),
       trailing: actions.isEmpty
           ? null
           : Row(mainAxisSize: MainAxisSize.min, children: actions),

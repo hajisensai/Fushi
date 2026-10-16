@@ -319,6 +319,10 @@ String _renderModel(Object? data) {
   if (data['started'] == true) out.write('\n已开始下载（models status 查进度）');
   if (data['alreadyReady'] == true) out.write('\n已经下好了，没有重复下载');
   if (data['detached'] == true) out.write('\n已移除接入（用户的文件没动）');
+  final Object? gpuError = data['gpuRuntimeError'];
+  if (gpuError != null) {
+    out.write('\nGPU 加速环境没装上（模型可用，先按 CPU 转录）：$gpuError');
+  }
   final Object? freed = data['freedBytes'];
   if (freed is num) out.write('\n释放 ${_mb(freed)}');
   if (data.containsKey('filesDeleted')) {

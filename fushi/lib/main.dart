@@ -8,6 +8,7 @@ import 'package:fushi/src/platform/desktop/windows_owned_file_picker.dart';
 import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
@@ -301,6 +302,10 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // Windows：偏好落在 DirectML 且环境已下载时换用它的 onnxruntime core。必须
+    // 先于本进程任何 ORT 调用（一个进程只能绑定一份 onnxruntime.dll），且要在
+    // 数据根解析器装好之后。
+    await selectGpuRuntimeAtStartup();
     // BUG-3286：Windows 系统文件对话框以主窗为 owner，视频全屏（TOPMOST）时不被压住。
     installWindowsOwnedFilePicker();
     // BUG-3315：按 DXGI 显卡身份判定 NVDEC 能否硬解 H.264 High 10，确认支持才在
@@ -314,6 +319,13 @@ void main([List<String> args = const <String>[]]) {
     // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
     // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
     await loadAsrModelCatalog();
+    // 老用户：语音模型早已下好、不会再经过「下模型阶段」，以前靠随包的 DirectML
+    // 跑 GPU。后台补下 15 MB 的 DirectML 环境，不补就会悄悄掉到 CPU。
+    unawaited(
+      backfillGpuRuntimeForExistingModels(
+        hasDownloadedModel: hasDownloadedAsrModel,
+      ),
+    );
     AppIconSelection startupAppIcon = currentAppIconSelection.value;
     try {
       // BUG-1920：在 runApp 前把持久化选择灌入 Flutter 侧唯一真值，避免侧栏

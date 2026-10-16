@@ -35,8 +35,58 @@ void main() {
       );
       expect(omni.languages, contains(AsrLanguage.japanese));
       expect(omni.languages, contains(AsrLanguage.english));
-      // 位置必须还在末尾：排到前面就会顶掉那 8 种语言的默认 transducer 包。
-      expect(packs.last.id, kAsrOmnilingualPack.id);
+      // 位置必须在默认包的末尾：排到前面就会顶掉那 8 种语言的默认 transducer
+      // 包。之后只许跟不进默认注册表的可选包（Kitsune 等）——它们同样排在所有
+      // 默认包之后，没做过选择的用户默认一个都不变。
+      final List<String> optionalIds = <String>[
+        for (final AsrModelPack p in kAsrOptionalModelPacks) p.id,
+      ];
+      final List<AsrModelPack> defaults = <AsrModelPack>[
+        for (final AsrModelPack p in packs)
+          if (!optionalIds.contains(p.id)) p,
+      ];
+      expect(defaults.last.id, kAsrOmnilingualPack.id);
+      expect(
+        <String>[
+          for (final AsrModelPack p in packs.skip(defaults.length)) p.id,
+        ],
+        optionalIds,
+        reason: '可选包必须整体排在全部默认包之后',
+      );
+    });
+
+    test('选中 Kitsune：置顶的窄包保留 NeMo mel 前端与许可（否则按波形 CTC 装载必失败）',
+        () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty
+            .withChoice(AsrLanguage.japanese, kAsrKitsunePack.id),
+      );
+      final AsrModelPack? chosen =
+          registry.packForLanguage(AsrLanguage.japanese);
+      expect(chosen?.id, kAsrKitsunePack.id);
+      expect(chosen!.ctcFrontend, AsrCtcFrontend.nemoMel80);
+      expect(chosen.license, kAsrKitsunePack.license);
+    });
+
+    test('窄包与原包除语言外 toJson 逐字相同（拷贝不许漏字段）', () {
+      // `AsrModelPack` 新增的可选字段漏抄不会编译报错、只会静默回到默认值；
+      // toJson 是持久化契约，新字段必然出现在里面，所以拿它做全字段比对。
+      Map<String, Object?> withoutLanguages(AsrModelPack pack) =>
+          Map<String, Object?>.of(pack.toJson() as Map<String, Object?>)
+            ..remove('languages');
+      for (final AsrModelPack pack in fushiAsrBasePacks()) {
+        final AsrLanguage language = pack.languages.first;
+        final AsrModelPack narrowed = buildAsrModelRegistry(
+          AsrModelCatalog.empty.withChoice(language, pack.id),
+        ).packForLanguage(language)!;
+        expect(narrowed.id, pack.id);
+        expect(narrowed.languages, <AsrLanguage>[language]);
+        expect(
+          withoutLanguages(narrowed),
+          withoutLanguages(pack),
+          reason: '${pack.id} 置顶后丢了字段',
+        );
+      }
     });
 
     test('给日语选 Omnilingual：只有日语变，英语等其余语言不受影响', () {

@@ -27,18 +27,18 @@ AudioCue _cue(
 }
 
 CueMatch _hit(int idx, int ns, int ne, {double score = 1}) => CueMatch(
-      cueSentenceIndex: idx,
-      sectionIndex: 0,
-      normCharStart: ns,
-      normCharEnd: ne,
-      score: score,
-    );
+  cueSentenceIndex: idx,
+  sectionIndex: 0,
+  normCharStart: ns,
+  normCharEnd: ne,
+  score: score,
+);
 
 MatchResult _result(List<CueMatch> matches) => MatchResult(
-      matches: matches,
-      totalCues: matches.length,
-      matchedCues: matches.where((CueMatch m) => m.matched).length,
-    );
+  matches: matches,
+  totalCues: matches.length,
+  matchedCues: matches.where((CueMatch m) => m.matched).length,
+);
 
 const CueSentenceResegmenter _r = CueSentenceResegmenter();
 
@@ -141,8 +141,11 @@ void main() {
       final CueResegmentResult out = _r.resegment(
         sections: sections,
         cues: cues,
-        result:
-            _result(<CueMatch>[_hit(0, 0, 9), _hit(1, 9, 11), _hit(2, 11, 20)]),
+        result: _result(<CueMatch>[
+          _hit(0, 0, 9),
+          _hit(1, 9, 11),
+          _hit(2, 11, 20),
+        ]),
       );
       expect(out.stats.boundariesRemoved, 1);
       expect(out.stats.boundariesAdded, 0);
@@ -258,7 +261,9 @@ void main() {
       expect(out.cues, hasLength(2));
       expect(out.cues[0].endMs, greaterThanOrEqualTo(160 + 40));
       expect(
-          out.cues[0].endMs - out.cues[0].startMs, greaterThanOrEqualTo(300));
+        out.cues[0].endMs - out.cues[0].startMs,
+        greaterThanOrEqualTo(300),
+      );
       expect(out.cues[1].startMs, out.cues[0].endMs);
       expect(out.cues[1].endMs, 5000);
     });
@@ -266,8 +271,8 @@ void main() {
 
   group('CueSentenceResegmenter 合缝', () {
     List<EpubSection> book(String text) => <EpubSection>[
-          EpubSection(index: 0, href: 'ch0.xhtml', text: text),
-        ];
+      EpubSection(index: 0, href: 'ch0.xhtml', text: text),
+    ];
     List<int> range(CueMatch m) => <int>[m.normCharStart, m.normCharEnd];
 
     test('书写假名、听写汉字的单字 cue 未命中：认领缝后两侧词中边界一起抹掉', () {
@@ -408,6 +413,108 @@ void main() {
       expect(identical(out.cues[1], other), isTrue);
       expect(out.result.matches[1].matched, isFalse);
       expect(out.result.matchedCues, 2);
+    });
+  });
+
+  group('CueSentenceResegmenter 无 token 正文片的归属', () {
+    List<EpubSection> sec(String text) => <EpubSection>[
+      EpubSection(index: 0, href: 'ch0.xhtml', text: text),
+    ];
+
+    test('ASR 漏听的新台词（开引号起头）并入后一片，不挂在前一句上', () {
+      // 「いいか？」「はぁ？なんで？」：ASR 只听到 いいか / なんで。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          0,
+          'いいかなんで',
+          start: 0,
+          end: 2600,
+          times: <int>[100, 200, 300, 2000, 2100, 2200],
+        ),
+      ];
+      final CueResegmentResult out = _r.resegment(
+        sections: sec('「いいか？」「はぁ？なんで？」'),
+        cues: cues,
+        result: _result(<CueMatch>[_hit(0, 0, 8)]),
+      );
+      expect(out.cues, hasLength(2));
+      expect(out.result.matches[0].normCharEnd, 3);
+      expect(out.result.matches[1].normCharStart, 3);
+      expect(out.cues[1].startMs, 2000 - 150);
+    });
+
+    test('句中续接（逗号后）留在前一片；终点不越过所属原 cue 的收声点', () {
+      // あいう、えおか。きく。cue0 念完「あいう」在 1000 收声，ASR 漏了「えおか」，
+      // 隔着长停顿才是「きく」。
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 'あいう', start: 0, end: 1000, times: <int>[100, 200, 300]),
+        _cue(1, 'きく', start: 3000, end: 3600, times: <int>[100, 200]),
+      ];
+      final CueResegmentResult out = _r.resegment(
+        sections: sec('あいう、えおか。きく。'),
+        cues: cues,
+        result: _result(<CueMatch>[_hit(0, 0, 3), _hit(1, 3, 8)]),
+      );
+      expect(out.cues, hasLength(2));
+      expect(out.result.matches[0].normCharEnd, 6);
+      expect(out.cues[0].endMs, 1000);
+      expect(out.cues[1].startMs, 3100 - 150);
+    });
+
+    test('引号内的后半截台词不因句末 + 停顿被甩到后一片', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          0,
+          'あいうきく',
+          start: 0,
+          end: 3600,
+          times: <int>[100, 200, 300, 3100, 3200],
+        ),
+      ];
+      final CueResegmentResult out = _r.resegment(
+        sections: sec('「あいう！えおか。」きく。'),
+        cues: cues,
+        result: _result(<CueMatch>[_hit(0, 0, 8)]),
+      );
+      expect(out.result.matches[0].normCharEnd, 6);
+      expect(out.result.matches[1].normCharStart, 6);
+    });
+
+    test('引号外「句末 + 停顿」后的漏听新句并入后一片', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(
+          0,
+          'あいうきく',
+          start: 0,
+          end: 3600,
+          times: <int>[100, 200, 300, 3100, 3200],
+        ),
+      ];
+      final CueResegmentResult out = _r.resegment(
+        sections: sec('あいう。えおか。きく。'),
+        cues: cues,
+        result: _result(<CueMatch>[_hit(0, 0, 8)]),
+      );
+      expect(out.result.matches[0].normCharEnd, 3);
+      expect(out.result.matches[1].normCharStart, 3);
+    });
+  });
+
+  group('replaceMatchedCueTextWithBookText 片间标点', () {
+    test('「」「……」之间的开引号连同省略号归下一句', () {
+      final List<AudioCue> cues = <AudioCue>[
+        _cue(0, 'あいう', start: 0, end: 1000),
+        _cue(1, 'えお', start: 1000, end: 2000),
+      ];
+      replaceMatchedCueTextWithBookText(
+        sections: <EpubSection>[
+          const EpubSection(index: 0, href: 'ch0.xhtml', text: 'あいう」「……えお」'),
+        ],
+        cues: cues,
+        result: _result(<CueMatch>[_hit(0, 0, 3), _hit(1, 3, 5)]),
+      );
+      expect(cues[0].text, 'あいう」');
+      expect(cues[1].text, '「……えお」');
     });
   });
 }
