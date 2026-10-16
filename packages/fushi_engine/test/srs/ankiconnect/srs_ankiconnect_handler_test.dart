@@ -105,7 +105,7 @@ void main() {
     });
 
     test('modelNames / modelNamesAndIds / modelFieldNames', () async {
-      expect(await h.ok('modelNames'), <String>['Lapis']);
+      expect(await h.ok('modelNames'), <String>['Fushi Card', 'Lapis']);
       final Map<String, Object?> m = ((await h.ok('modelNamesAndIds'))! as Map)
           .cast<String, Object?>();
       expect(m['Lapis'], SrsIds.builtinNoteTypeAnkiNum('lapis'));

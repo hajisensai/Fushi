@@ -173,9 +173,18 @@ void main() {
     expect(decks, hasLength(1));
     expect(decks.single.deck.id, b.defaultDeckId);
     final List<SrsNoteTypeView> types = await a.noteTypes();
-    expect(types.single.name, 'Lapis');
-    expect(types.single.fields.first.name, 'Expression');
-    expect(types.single.templates.single.front, contains('{{fld:'));
+    // 两种内置类型：Lapis 与 Fushi 卡片。
+    expect(types, hasLength(2));
+    final SrsNoteTypeView lapis = types.singleWhere(
+      (SrsNoteTypeView v) => v.id == a.lapisNoteTypeId,
+    );
+    expect(lapis.name, 'Lapis');
+    expect(lapis.fields.first.name, 'Expression');
+    expect(lapis.templates.single.front, contains('{{fld:'));
+    expect(
+      (await b.noteTypes()).map((SrsNoteTypeView v) => v.id).toSet(),
+      types.map((SrsNoteTypeView v) => v.id).toSet(),
+    );
   });
 
   test('加笔记生成卡片；复习 → 同步 → 另一台设备状态一致', () async {

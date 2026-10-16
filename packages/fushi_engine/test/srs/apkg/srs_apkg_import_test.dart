@@ -442,7 +442,7 @@ void main() {
     await syncAll(<SrsDbStore>[a, b]);
     for (final SrsDbStore s in <SrsDbStore>[a, b]) {
       expect(await s.listNotes(), hasLength(3));
-      expect(await s.noteTypes(), hasLength(3)); // Lapis + 2
+      expect(await s.noteTypes(), hasLength(4)); // Lapis + Fushi 卡片 + 2
       final List<String> names = <String>[
         for (final SrsDeckSummary d in await s.deckSummaries()) d.fullName,
       ];
@@ -479,7 +479,7 @@ void main() {
     expect(await s.listNotes(), hasLength(3));
     expect((await s.note(n1))!.field(back), 'local edit');
     expect((await s.exportAll()).whereType<SrsLogEvent>().length, logsBefore);
-    expect(await s.noteTypes(), hasLength(3));
+    expect(await s.noteTypes(), hasLength(4));
     expect(await s.deckSummaries(), hasLength(3));
 
     final SrsImportReport upd = await importInto(
@@ -582,7 +582,7 @@ void main() {
     expect(rep.reviewLogsImported, 0);
     expect(rep.revlogsVerifiedByExt, 1);
     expect(await s.listNotes(), hasLength(1));
-    expect(await s.noteTypes(), hasLength(1));
+    expect(await s.noteTypes(), hasLength(2));
     expect((await s.note(noteId))!.fields, fieldsBefore);
     expect((await s.cardsOfNote(noteId)).single.id, cardId);
     final SrsCardHistory h = await s.history(cardId);
@@ -1170,7 +1170,7 @@ void main() {
       expect(mr.noteTypesDuplicated, isEmpty);
       expect((await m.noteType(nt))!.fields, hasLength(3));
       expect((await m.note(g4))!.noteTypeId, nt);
-      expect(await m.noteTypes(), hasLength(3));
+      expect(await m.noteTypes(), hasLength(4));
 
       // 不合并。
       final SrsDbStore s = await seeded();
@@ -1196,7 +1196,7 @@ void main() {
             .toSet(),
         <String>{'g1', 'g3'},
       );
-      expect(await s.noteTypes(), hasLength(4));
+      expect(await s.noteTypes(), hasLength(5));
       // 同一份包再导入：回到同一个副本，不再新建。
       final SrsImportReport again = await importInto(
         s,
@@ -1204,7 +1204,7 @@ void main() {
         options: kFullOptions.copyWith(mergeNoteTypes: false),
       );
       expect(again.noteTypesDuplicated, isEmpty);
-      expect(await s.noteTypes(), hasLength(4));
+      expect(await s.noteTypes(), hasLength(5));
       // 结构相同的包（原包）不合并时照常进本机那一个。
       final SrsImportReport same = await importInto(
         s,

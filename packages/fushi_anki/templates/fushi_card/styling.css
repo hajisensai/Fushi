@@ -1,16 +1,16 @@
 /*
- * Fushi 卡片模板 · 样式（初版，尚未注册进 app）。
+ * Fushi 卡片 · 样式。
  *
- * 分四层：
- *   1. 主题令牌：颜色 / 字体 / 圆角全部经 --fushi-srs-* 读宿主注入值，没注入时才用这里的
- *      默认值。宿主（srs_card_face.dart 外壳）今天已注入 --fushi-srs-accent /
- *      --fushi-srs-on-accent，并在深色主题给 .card 挂 nightMode；其余变量按 Flutter
- *      ColorScheme 角色命名，外壳以后可一一注入。字面颜色只出现在本层。
- *   2. 卡面版式（正面 / 背面）。
+ * 分五层：
+ *   1. 主题令牌：颜色 / 字体 / 字阶 / 间距全部经 --fushi-srs-* 读宿主注入值，没注入时用这里的
+ *      默认值（导出到 Anki 也能看）。颜色按 Flutter ColorScheme 角色命名，宿主一一注入；
+ *      字面颜色只出现在本层。宿主类名（挂在 .card 上）开关区块显隐、密度、正面读音等。
+ *   2. 卡面版式（正面 / 背面；背面按卡面宽度分窄屏单栏、宽屏双栏）。
  *   3. 释义区：规则取自查词弹窗 fushi/assets/popup/popup.css（词典分组卡、词典名、标签、
- *      结构化内容表格 / 图片 / 注音、深色下词典内联底色），全部加 .fc-gloss 作用域，
- *      不外溢到卡面其它部分。
- *   4. 交互附件（图片放大层）。
+ *      结构化内容表格 / 图片 / 注音、深色下词典内联底色），全部限定在 .fc-gloss 内。
+ *   4. 统一词典样式（M3E）：宿主挂 fushi-srs-dict-unified 且宿主脚本量完原色（fc-dt-ready）
+ *      后，按 data-fushi-dt* 语义取卡面令牌（同 popup.css「词典样式统一」）。
+ *   5. 交互附件（图片放大层）与减弱动态效果。
  */
 
 /* ================================================================
@@ -28,9 +28,13 @@
   --fc-fg-muted: var(--fushi-srs-fg-muted, color-mix(in srgb, var(--fc-fg) 64%, var(--fc-bg)));
   --fc-accent-container: var(--fushi-srs-accent-container, color-mix(in srgb, var(--fc-accent) 15%, var(--fc-bg)));
   --fc-on-accent-container: var(--fushi-srs-on-accent-container, var(--fc-fg));
+  --fc-secondary-container: var(--fushi-srs-secondary-container, color-mix(in srgb, var(--fc-accent) 10%, var(--fc-surface-2)));
+  --fc-on-secondary-container: var(--fushi-srs-on-secondary-container, var(--fc-fg));
   --fc-surface-1: var(--fushi-srs-surface-container, color-mix(in srgb, var(--fc-fg) 4.5%, var(--fc-bg)));
   --fc-surface-2: var(--fushi-srs-surface-container-high, color-mix(in srgb, var(--fc-fg) 9%, var(--fc-bg)));
+  --fc-surface-3: var(--fushi-srs-surface-container-highest, color-mix(in srgb, var(--fc-fg) 13%, var(--fc-bg)));
   --fc-outline: var(--fushi-srs-outline-variant, color-mix(in srgb, var(--fc-fg) 15%, var(--fc-bg)));
+  --fc-outline-strong: var(--fushi-srs-outline, color-mix(in srgb, var(--fc-fg) 45%, var(--fc-bg)));
   --fc-highlight: var(--fushi-srs-highlight, color-mix(in srgb, var(--fc-accent) 28%, transparent));
   --fc-target: var(--fushi-srs-target, var(--fc-accent));
   --fc-link: var(--fushi-srs-link, var(--fc-accent));
@@ -43,10 +47,10 @@
   --fc-pitch-odaka: var(--fushi-srs-pitch-odaka, #4f9a2f);
   --fc-pitch-kifuku: var(--fushi-srs-pitch-kifuku, #7e53c4);
 
-  /* ---- 形状 ---- */
+  /* ---- 形状（M3E：外层大圆角，分段卡内小圆角） ---- */
   --fc-radius: var(--fushi-srs-radius, 20px);
   --fc-radius-inner: var(--fushi-srs-radius-inner, 4px);
-  --fc-radius-small: var(--fushi-srs-radius-small, 8px);
+  --fc-radius-small: var(--fushi-srs-radius-small, 10px);
 
   /* ---- 字体（日文优先，中文 / 韩文 / 西文按 :lang() 分流，同查词弹窗） ---- */
   --fc-font-ja: var(--fushi-srs-font-ja, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif);
@@ -56,13 +60,25 @@
   --fc-font-ko: var(--fushi-srs-font-ko, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR", sans-serif);
   --fc-font-ui: var(--fushi-srs-font-ui, system-ui, -apple-system, "Segoe UI", "Roboto", var(--fc-font-ja));
 
-  /* ---- 字阶 ---- */
-  --fc-size-body: var(--fushi-srs-size-body, 16px);
-  --fc-size-gloss: var(--fushi-srs-size-gloss, 15px);
-  --fc-size-sentence: var(--fushi-srs-size-sentence, 20px);
-  --fc-size-term: var(--fushi-srs-size-term, clamp(36px, 10.5vw, 56px));
-  --fc-size-term-hero: var(--fushi-srs-size-term-hero, clamp(60px, 21vw, 112px));
-  --fc-size-front-sentence: var(--fushi-srs-size-front-sentence, clamp(24px, 6.4vw, 36px));
+  /* ---- 字阶：宿主只给三个倍率（正文 / 词条 / 行距），各区块的基准在这里 ---- */
+  --fc-text-scale: var(--fushi-srs-text-scale, 1);
+  --fc-term-scale: var(--fushi-srs-term-scale, 1);
+  --fc-line-scale: var(--fushi-srs-line-scale, 1);
+  --fc-size-body: calc(16px * var(--fc-text-scale));
+  --fc-size-gloss: calc(15px * var(--fc-text-scale));
+  --fc-size-sentence: calc(20px * var(--fc-text-scale));
+  --fc-size-reading: calc(19px * var(--fc-text-scale));
+  --fc-size-front-sentence: calc(clamp(24px, 6.4vw, 36px) * var(--fc-text-scale));
+  --fc-size-term: calc(clamp(34px, 10vw, 52px) * var(--fc-term-scale));
+  --fc-size-term-hero: calc(clamp(60px, 21vw, 112px) * var(--fc-term-scale));
+  --fc-lh-body: calc(1.6 * var(--fc-line-scale));
+  --fc-lh-gloss: calc(1.85 * var(--fc-line-scale));
+  --fc-lh-sentence: calc(1.9 * var(--fc-line-scale));
+
+  /* ---- 间距（密度：宿主类名 fushi-srs-density-compact / -comfortable） ---- */
+  --fc-gap: 16px;
+  --fc-pad: 16px;
+  --fc-tap: 40px;
 
   /* ---- 标签文字（宿主按界面语言注入；这里是英文兜底） ---- */
   --fc-label-more: var(--fushi-srs-label-more, "All definitions");
@@ -78,6 +94,7 @@
   --fc-on-accent: var(--fushi-srs-on-accent, #00382a);
   --fc-surface-1: var(--fushi-srs-surface-container, color-mix(in srgb, var(--fc-fg) 7%, var(--fc-bg)));
   --fc-surface-2: var(--fushi-srs-surface-container-high, color-mix(in srgb, var(--fc-fg) 12%, var(--fc-bg)));
+  --fc-surface-3: var(--fushi-srs-surface-container-highest, color-mix(in srgb, var(--fc-fg) 17%, var(--fc-bg)));
   --fc-outline: var(--fushi-srs-outline-variant, color-mix(in srgb, var(--fc-fg) 20%, var(--fc-bg)));
   --fc-accent-container: var(--fushi-srs-accent-container, color-mix(in srgb, var(--fc-accent) 22%, var(--fc-bg)));
   --fc-highlight: var(--fushi-srs-highlight, color-mix(in srgb, var(--fc-accent) 34%, transparent));
@@ -90,6 +107,23 @@
   --fc-pitch-kifuku: var(--fushi-srs-pitch-kifuku, #b592f6);
 }
 
+.card.fushi-srs-density-compact {
+  --fc-gap: 10px;
+  --fc-pad: 12px;
+}
+
+.card.fushi-srs-density-comfortable {
+  --fc-gap: 22px;
+  --fc-pad: 20px;
+}
+
+/* 触屏：命中区放大到 48dp 量级 */
+@media (pointer: coarse) {
+  .card {
+    --fc-tap: 46px;
+  }
+}
+
 /* ================================================================
  * 2. 卡面版式
  * ================================================================ */
@@ -99,7 +133,7 @@
   color: var(--fc-fg);
   font-family: var(--fc-font-ja);
   font-size: var(--fc-size-body);
-  line-height: 1.6;
+  line-height: var(--fc-lh-body);
   text-align: left;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -176,8 +210,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--fc-tap);
+  height: var(--fc-tap);
   margin: 0;
   padding: 0;
   border: none;
@@ -186,13 +220,20 @@
   color: var(--fc-on-accent-container);
   vertical-align: middle;
   cursor: pointer;
-  transition: transform 120ms ease, background-color 120ms ease;
+  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1), background-color 140ms ease;
 }
 
 .fc .fushi-srs-sound:active,
 .fc .replay-button:active {
-  transform: scale(0.92);
+  transform: scale(0.9);
   background: color-mix(in srgb, var(--fc-accent) 30%, var(--fc-bg));
+}
+
+@media (hover: hover) {
+  .fc .fushi-srs-sound:hover,
+  .fc .replay-button:hover {
+    background: color-mix(in srgb, var(--fc-accent) 24%, var(--fc-bg));
+  }
 }
 
 .fc .fushi-srs-sound svg,
@@ -214,13 +255,13 @@
 
 .fc-audio--large .fushi-srs-sound,
 .fc-audio--large .replay-button {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
 }
 
 .fc-audio--large svg {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
 }
 
 /* ---------- 正面 ---------- */
@@ -300,7 +341,7 @@
 .fc-front-sentence {
   max-width: 30em;
   font-size: var(--fc-size-front-sentence);
-  line-height: 1.75;
+  line-height: calc(1.75 * var(--fc-line-scale));
   text-align: center;
 }
 
@@ -311,7 +352,7 @@
   background: var(--fc-surface-1);
   color: var(--fc-fg-muted);
   font-size: calc(var(--fc-size-front-sentence) * 0.74);
-  line-height: 1.8;
+  line-height: calc(1.8 * var(--fc-line-scale));
 }
 
 .fc-front-sentence b,
@@ -371,25 +412,32 @@
   font-size: 15px;
 }
 
-/* ---------- 背面 ---------- */
+/* ---------- 背面：窄屏（默认）单栏，关键信息在首屏 ---------- */
 
 .fc-back {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--fc-gap);
   padding-bottom: 8px;
+}
+
+.fc-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fc-gap);
+  min-width: 0;
 }
 
 .fc-head {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
+  gap: 14px;
 }
 
 .fc-head-main {
   flex: 1 1 auto;
   min-width: 0;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 
 .fc-back .fc-term {
@@ -402,11 +450,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .fc-reading {
-  font-size: 20px;
+  font-size: var(--fc-size-reading);
   line-height: 1.5;
   color: var(--fc-fg-muted);
   letter-spacing: 0.04em;
@@ -497,19 +545,27 @@
 /* 图片：标题区右侧缩略图，点按放大 */
 .fc-picture {
   flex: 0 0 auto;
-  max-width: 40%;
+  max-width: 38%;
   margin: 0;
 }
 
 .fc-picture img {
   display: block;
   max-width: 100%;
-  max-height: 132px;
+  max-height: 120px;
   width: auto;
   height: auto;
   border-radius: var(--fc-radius-small);
   object-fit: cover;
   cursor: zoom-in;
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (hover: hover) {
+  .fc-picture img:hover,
+  .fc-def-picture img:hover {
+    transform: scale(1.03);
+  }
 }
 
 .fc-picture.nsfw img,
@@ -529,7 +585,7 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 14px 16px;
+  padding: calc(var(--fc-pad) - 2px) var(--fc-pad);
   border-radius: var(--fc-radius);
   background: var(--fc-surface-1);
 }
@@ -541,7 +597,7 @@
 
 .fc-sentence {
   font-size: var(--fc-size-sentence);
-  line-height: 1.9;
+  line-height: var(--fc-lh-sentence);
 }
 
 .fc-sentence b {
@@ -566,10 +622,12 @@
 }
 
 .fc-translation {
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--fc-outline);
   color: var(--fc-fg-muted);
   font-family: var(--fc-font-ui);
-  font-size: 15px;
+  font-size: calc(15px * var(--fc-text-scale));
   line-height: 1.55;
 }
 
@@ -578,6 +636,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .fc-selection {
@@ -595,6 +654,7 @@
   max-height: 200px;
   border-radius: var(--fc-radius-small);
   cursor: zoom-in;
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .fc-more {
@@ -613,9 +673,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: var(--fc-tap);
   padding: 0 16px;
-  border-radius: var(--fc-radius);
+  border-radius: 999px;
   border: 1px solid var(--fc-outline);
   color: var(--fc-fg-muted);
   font-family: var(--fc-font-ui);
@@ -624,6 +684,14 @@
   cursor: pointer;
   -webkit-user-select: none;
   user-select: none;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+@media (hover: hover) {
+  .fc-more-label:hover {
+    background: var(--fc-surface-1);
+    border-color: var(--fc-outline-strong);
+  }
 }
 
 .fc-more-title::before {
@@ -638,7 +706,8 @@
   height: 20px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--fc-surface-2);
+  background: var(--fc-secondary-container);
+  color: var(--fc-on-secondary-container);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -651,7 +720,7 @@
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 200ms ease;
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
   opacity: 0.8;
 }
 
@@ -664,6 +733,17 @@
 }
 
 /* 频率 / 来源 */
+.fc-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fc-foot:not(:has(.fc-meta-row)) {
+  display: none;
+}
+
 .fc-meta-row {
   display: flex;
   align-items: baseline;
@@ -713,27 +793,96 @@
   min-width: 0;
 }
 
-/* 宽屏：放大例句与图片，正文行宽仍受 .fc 的 max-width 约束 */
-@media (min-width: 600px) {
+/* 区块显隐（宿主类名；Anki 里全显示） */
+.fushi-srs-hide-picture .fc-picture,
+.fushi-srs-hide-picture .fc-def-picture,
+.fushi-srs-hide-translation .fc-translation,
+.fushi-srs-hide-frequency .fc-meta-row--freq,
+.fushi-srs-hide-frequency .fc-back .fc-chip--freq,
+.fushi-srs-hide-source .fc-meta-row--source {
+  display: none;
+}
+
+.fushi-srs-hide-frequency .fc-meta-row--source {
+  padding-top: 12px;
+  border-top: 1px solid var(--fc-outline);
+}
+
+/* ---------- 背面：中等宽度（平板竖屏 / 窄窗口），单栏加大字与图 ---------- */
+@media (min-width: 560px) {
   .card {
-    --fc-size-sentence: var(--fushi-srs-size-sentence, 22px);
-    --fc-size-gloss: var(--fushi-srs-size-gloss, 16px);
-  }
-
-  .fc-back {
-    gap: 20px;
-  }
-
-  .fc-picture {
-    max-width: 36%;
+    --fc-size-sentence: calc(22px * var(--fc-text-scale));
+    --fc-size-gloss: calc(16px * var(--fc-text-scale));
   }
 
   .fc-picture img {
-    max-height: 190px;
+    max-height: 170px;
   }
 
   .fc-sentence-block {
-    padding: 18px 22px;
+    padding: calc(var(--fc-pad) + 2px) calc(var(--fc-pad) + 6px);
+  }
+}
+
+/* ---------- 背面：宽屏（≥720px，电脑 / 平板横屏）双栏 ----------
+   左栏：词条、读音、图片、例句（一眼看清「这是哪个词、在哪句话里」）；
+   右栏：释义（最长的部分单独成栏，少滚动）；左栏能放进视口时吸顶（脚本判定）。 */
+@media (min-width: 720px) {
+  .fc-back {
+    display: grid;
+    grid-template-columns: minmax(260px, 5fr) minmax(0, 7fr);
+    grid-template-areas:
+      "aside defs"
+      "foot defs";
+    grid-template-rows: auto 1fr;
+    column-gap: calc(var(--fc-gap) * 1.75);
+    row-gap: var(--fc-gap);
+    align-items: start;
+    max-width: 1160px;
+  }
+
+  .fc-aside {
+    grid-area: aside;
+  }
+
+  .fc-aside--sticky {
+    position: sticky;
+    top: 0;
+  }
+
+  .fc-defs {
+    grid-area: defs;
+  }
+
+  .fc-foot {
+    grid-area: foot;
+  }
+
+  /* 左栏里图片放到词条下方整宽显示（栏宽有限，不再挤在标题右侧） */
+  .fc-head {
+    flex-direction: column;
+    gap: var(--fc-gap);
+  }
+
+  .fc-picture {
+    max-width: 100%;
+  }
+
+  .fc-picture img {
+    max-height: 220px;
+  }
+
+  .fc-meta-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .fc-meta-label {
+    flex: 0 0 auto;
+  }
+
+  .fc-front {
+    max-width: 1000px;
   }
 }
 
@@ -744,7 +893,7 @@
 .fc-gloss {
   font-size: var(--fc-size-gloss);
   /* 词典正文多带逐字振假名：行距给足，注音不贴上一行 */
-  line-height: 1.85;
+  line-height: var(--fc-lh-gloss);
   /* popup.css .glossary-group（BUG-1827）：找不到断点的短语在卡内折行，不撑破卡片 */
   overflow-wrap: anywhere;
 }
@@ -777,13 +926,14 @@
 
 .fc-dict {
   min-width: 0;
-  padding: 0 16px;
+  padding: 0 var(--fc-pad);
   border-radius: var(--fc-radius-inner);
   background: var(--fc-surface-1);
+  transition: background-color 140ms ease;
 }
 
 .fc-dict[open] {
-  padding-bottom: 12px;
+  padding-bottom: calc(var(--fc-pad) - 4px);
 }
 
 .fc-dicts > .fc-dict:first-child {
@@ -802,7 +952,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: var(--fc-tap);
   list-style: none;
   color: var(--fc-fg-muted);
   font-family: var(--fc-font-ui);
@@ -836,7 +986,7 @@
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 200ms ease;
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
   opacity: 0.8;
 }
 
@@ -844,9 +994,25 @@
   transform: rotate(45deg);
 }
 
-/* 主释义只有一部词典时不需要折叠的视觉暗示 */
+@media (hover: hover) {
+  .fc-dict:not([open]):hover {
+    background: var(--fc-surface-2);
+  }
+
+  .fc-dict-label:hover {
+    color: var(--fc-fg);
+  }
+}
+
+/* 主释义：词典名降成小字说明，不需要折叠的视觉暗示 */
 .fc-gloss--main .fc-dict-label {
-  min-height: 36px;
+  min-height: 34px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.fc-gloss--main .fc-dict-label::after {
+  display: none;
 }
 
 .fc-dict-items {
@@ -978,14 +1144,113 @@
   color: var(--fc-link);
 }
 
-/* 深色下词典内联底色（为白纸设计的浅色色块）统一换成中性 chip（popup.css BUG-851） */
-.nightMode .fc-gloss [class^="gloss-sc-"][style*="background"] {
+/* 深色下词典内联底色（为白纸设计的浅色色块）统一换成中性 chip（popup.css BUG-851）。
+   只给「保留词典样式」模式：统一模式（fushi-srs-dict-unified + fc-dt-ready）自己按令牌着色；
+   宿主量词典原色期间（fc-dt-measuring）也让路，否则量到的是这里的灰。 */
+.nightMode .fc-gloss li[data-dictionary]:not(.fc-dt-measuring):not(.fc-dt-ready) [class^="gloss-sc-"][style*="background"],
+.nightMode:not(.fushi-srs-dict-unified) .fc-gloss li[data-dictionary].fc-dt-ready [class^="gloss-sc-"][style*="background"] {
   background-color: color-mix(in srgb, var(--fc-fg) 14%, transparent) !important;
   color: inherit !important;
 }
 
 /* ================================================================
- * 4. 图片放大层
+ * 4. 统一词典样式（M3E）
+ *
+ * 宿主脚本（fushi/lib/src/srs/srs_card_dict_style.dart，移植自 popup.js）量出每个元素的语义写成
+ * data-fushi-dt*，并给每个词条（li[data-dictionary]）挂 fc-dt-ready；宿主类名
+ * fushi-srs-dict-unified 是开关。全部选择器包在 :where() 里，特异度为 0：!important 压过词典的
+ * inline style 与 styles.css，又让用户自己写的 !important 规则照样生效。只换颜色类声明，字号 /
+ * 边距 / ruby / 表格结构 / 图片一概不动。卡面自己画的组件（.fc-tags）不参与。
+ * ================================================================ */
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) {
+  color: var(--fc-fg) !important;
+}
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where(*:not(img, svg, svg *, canvas, video, picture, .gloss-image-background, .fc-tags, .fc-tag)),
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where(*:not(.fc-tags, .fc-tag))::before,
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where(*:not(.fc-tags, .fc-tag))::after {
+  color: inherit !important;
+  background-color: transparent !important;
+  border-color: var(--fc-outline) !important;
+  text-decoration-color: currentColor !important;
+  text-emphasis-color: currentColor !important;
+  -webkit-text-fill-color: currentColor !important;
+}
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where(a) {
+  color: var(--fc-link) !important;
+}
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where(th, .gloss-sc-th) {
+  background-color: var(--fc-surface-2) !important;
+}
+
+/* 彩色强调字 → accent；灰字 → muted；显式黑字 → 正文色。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="accent"]),
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt-before="accent"])::before,
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt-after="accent"])::after {
+  color: var(--fc-accent) !important;
+}
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="muted"]) {
+  color: var(--fc-fg-muted) !important;
+}
+
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="plain"]) {
+  color: var(--fc-fg) !important;
+}
+
+/* 渐变底（无论最终归到哪类）一律抹平；url() 图片底不动。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="flat"], [data-fushi-dt="chip"], [data-fushi-dt="block"], [data-fushi-dt="panel"]) {
+  background-image: none !important;
+}
+
+/* 标签 / 徽标 → M3E tonal chip。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="chip"]),
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt-before="chip"])::before,
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt-after="chip"])::after {
+  color: var(--fc-on-secondary-container) !important;
+  background-color: var(--fc-secondary-container) !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  border-radius: 6px !important;
+}
+
+/* 词典原本零内边距的标签：补一点水平内边距，否则圆角色块贴着字。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt-pad]) {
+  padding-left: 0.3em !important;
+  padding-right: 0.3em !important;
+}
+
+/* 描框的短标签 → outlined chip。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="chip-outline"]) {
+  color: var(--fc-fg-muted) !important;
+  border-color: var(--fc-outline-strong) !important;
+  border-radius: 6px !important;
+}
+
+/* 深色 / 饱和底的块（大字框）→ primaryContainer。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="block"]) {
+  color: var(--fc-on-accent-container) !important;
+  background-color: var(--fc-accent-container) !important;
+  border-color: transparent !important;
+  border-radius: 12px !important;
+}
+
+/* 浅色底纹块（例句底色）→ surfaceContainerHighest（词典卡本身是 surfaceContainer，再低一级就糊成一片）。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="panel"]) {
+  background-color: var(--fc-surface-3) !important;
+  border-radius: 12px !important;
+}
+
+/* 容器里的链接跟随容器的 on-color，不在色块上再叠一层强调色。 */
+:where(.fushi-srs-dict-unified .fc-gloss li.fc-dt-ready) :where([data-fushi-dt="chip"], [data-fushi-dt="block"]) :where(a) {
+  color: inherit !important;
+}
+
+/* ================================================================
+ * 5. 图片放大层与减弱动态效果
  * ================================================================ */
 
 .fc-lightbox {

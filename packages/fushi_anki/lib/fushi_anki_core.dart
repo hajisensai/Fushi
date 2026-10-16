@@ -20,6 +20,7 @@ export 'src/anki_remote_media_http.dart';
 export 'src/anki_synchronized_clip_template.dart';
 export 'src/anki_template_render.dart';
 export 'src/card_source_link.dart';
+export 'src/fushi_card_note_type.dart';
 export 'src/ankiconnect/ankiconnect_service.dart';
 export 'src/lapis_blocks.dart';
 export 'src/lapis_note_type.dart';

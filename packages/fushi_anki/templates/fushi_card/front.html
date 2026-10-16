@@ -1,11 +1,7 @@
 <!--
-  Fushi 卡片模板 · 正面（初版，尚未注册进 app）。
-  字段名与 Lapis（lapis_note_type.dart）逐字一致，Lapis 笔记可零映射迁入；
-  卡型开关沿用 Lapis 语义：IsSentenceCard / IsWordAndSentenceCard / IsClickCard /
-  IsAudioCard 都为空时是单词卡，各开关块彼此独立（与 Lapis 相同）。
-  宿主可选类名（挂在 .card 上）：
-    fushi-srs-front-reading  正面词条显示注音与音调
-    fushi-srs-front-freq     正面显示词频序位
+  Fushi 卡片 · 正面。字段名与 Lapis 逐字一致；卡型开关沿用 Lapis 语义（IsSentenceCard /
+  IsWordAndSentenceCard / IsClickCard / IsAudioCard 都为空 = 单词卡）。
+  外观由 Fushi 宿主经 --fushi-srs-* 变量与 fushi-srs-* 类名注入；在 Anki 里没有宿主，按默认外观显示。
 -->
 <div class="fc fc-front" lang="ja">
   {{#FreqSort}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FreqSort}}</span></div>{{/FreqSort}}

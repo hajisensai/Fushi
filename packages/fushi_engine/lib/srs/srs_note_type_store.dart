@@ -8,7 +8,7 @@
 /// - 加模板不写任何卡片行：各设备刷新缓存时按 (noteId, templateId, clozeOrd) 确定性生成同一张卡。
 /// - 更改笔记类型：见 fushi_srs 的 note_type_ops.dart。
 ///
-/// 内置 Lapis：允许改名、改模板 / CSS、加字段 / 模板、改字段名与顺序；**不允许删除笔记类型，
+/// 内置类型（Lapis、Fushi 卡片）：允许改名、改模板 / CSS、加字段 / 模板、改字段名与顺序；**不允许删除笔记类型，
 /// 也不允许删除它的内置字段**（挖词与词状态按内置 fieldId 写入 / 读取，删了会让新挖的词落进看不见的字段）。
 library;
 
@@ -76,8 +76,6 @@ class SrsNoteTypeChangePreview {
 }
 
 extension SrsNoteTypeStoreOps on SrsDbStore {
-  bool _isLapis(SrsNoteTypeView t) => t.builtinKey == kSrsBuiltinLapisKey;
-
   Future<SrsNoteTypeView> _requireType(String id) async {
     final SrsNoteTypeView? t = await noteType(id);
     if (t == null || t.deletedAt != null) {
@@ -86,12 +84,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     return t;
   }
 
-  /// 内置字段（Lapis 的代码默认字段）：不能删。
+  /// 内置字段（内置类型 Lapis / Fushi 卡片的代码默认字段）：不能删。
   bool isBuiltinField(SrsNoteTypeView t, String fieldId) =>
-      _isLapis(t) &&
-      srsBuiltinLapis(
+      srsBuiltinNoteTypeForKey(
         profileUid,
-      ).fields.any((SrsFieldDef f) => f.id == fieldId);
+        t.builtinKey,
+      )?.fields.any((SrsFieldDef f) => f.id == fieldId) ??
+      false;
 
   /// 内置笔记类型不能删。
   bool canDeleteNoteType(SrsNoteTypeView t) => t.builtinKey == null;

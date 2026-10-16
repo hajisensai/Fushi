@@ -528,7 +528,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   // ------------------------------------------------------------------ 内置
 
-  /// 内置默认牌组与 Lapis（确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
+  /// 内置默认牌组与内置笔记类型（Lapis、Fushi 卡片；确定性 ID，每台设备都生成同一份；没改过的内置定义不写修改记录）。
   Future<void> ensureBuiltins() async {
     final List<SrsEvent> missing = <SrsEvent>[];
     for (final SrsEntityRecord r in srsBuiltinEntities(profileUid)) {
@@ -542,6 +542,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   String get defaultDeckId => SrsIds.builtinDefaultDeck(profileUid);
   String get lapisNoteTypeId => srsLapisNoteTypeId(profileUid);
+  String get fushiCardNoteTypeId => srsFushiCardNoteTypeId(profileUid);
 
   // ------------------------------------------------------------------ 物化
 
@@ -554,9 +555,10 @@ class SrsDbStore implements SrsSyncReplica {
     return SrsNoteTypeView.materialize(
       rec,
       await _entityEdits(SrsEntityKind.noteType, id),
-      builtin: rec.payload['builtin'] == kSrsBuiltinLapisKey
-          ? srsBuiltinLapis(profileUid)
-          : null,
+      builtin: srsBuiltinNoteTypeForKey(
+        profileUid,
+        rec.payload['builtin'] as String?,
+      ),
     );
   }
 
@@ -741,9 +743,13 @@ class SrsDbStore implements SrsSyncReplica {
     final String term = t?.termFieldId == null
         ? ''
         : srsTermKey(n.field(t!.termFieldId!));
-    final String reading = t?.builtinKey == kSrsBuiltinLapisKey
-        ? srsReadingKey(n.field(srsLapisReadingFieldId(profileUid)))
-        : '';
+    final String? readingFieldId = srsBuiltinReadingFieldId(
+      profileUid,
+      t?.builtinKey,
+    );
+    final String reading = readingFieldId == null
+        ? ''
+        : srsReadingKey(n.field(readingFieldId));
     final String sortField = t == null || t.fields.isEmpty
         ? ''
         : ankiStripHtml(n.field(t.fields.first.id)).trim();
