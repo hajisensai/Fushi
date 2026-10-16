@@ -5,7 +5,7 @@
   2. **重看已打勾的集续播跳下一集**：`continueMemberIndex` 锚点已完成就推进（`fushi/lib/src/media/collections/collection_continue.dart:72`），首页「继续观看」同口径（`fushi/lib/src/media/video/video_home_layout.dart:318`）。而打勾是一次性事实（`markVideoCompleted` 只在 `completed_at IS NULL` 时写，重看不撤销），所以「重看第 12 集看到一半退出」与「第 12 集看完了」在数据上不可区分——库里没有片长，分不出断点是不是在片尾。
   3. **自动打勾时机随机**：完成判定（≥ 90%，`shouldMarkCompleted`）只挂在 `StudyClock` 每 60 秒一次的 tick 上（`fushi/lib/src/media/video/video_watch_tracker.dart:122`）；离开本集时那一次判定（`:165`）排在 `await _clock.stop()` 之后，而 `dispose()` 调完 `unawaited(stop())` 立刻 `_source = null`（`:180-182`），`_checkCompletion` 看到 `_source == null` 直接返回——**离开时的判定永远落空**。于是：跳到 ED 立刻点下一集不打勾（60 秒内没有 tick）；暂停态拖进度条预览恰好赶上 tick（位置 ≥ 90%）就莫名打勾。
   4. **想要百分比**：集卡在算得出百分比时只画进度条、不写文字，算不出时只写「看到 mm:ss」；已打勾的集连时间进度都不显示（`collection_detail_layout.dart` `CollectionEpisodeCard`）。截图里第 12 集只有「看到 19:35」就是因为没有刮削片长。
-- **[x] ① 根因修复** —
+- **[x] ① 根因修复** — `3b9fb795bd`
   - 详情页按「本页路由重新成为栈顶」判回来（`ModalRoute.of(context).isCurrent` 边沿，`didChangeDependencies`），只在本页派出过播放（`_openSlot` 置位）时重读，对话框 / 菜单关掉不重读。媒体服务器播放出口改为返回 Future（`FutureOr<void>`，生产 = 根 Navigator push 的 Future，那条路由不会被 pushReplacement），详情页播完原地重拉已加载的集（不清空、不动滚动）；电影重取详情。
   - 播放器第一次落断点时把**真实片长**记进偏好 `video_duration_ms_<uid>`（`video_duration_pref.dart`，与断点镜像键 / 覆盖并集键同一种「每视频一个偏好」形态，不动 schema）。`CollectionMemberProgress` 加 `durationMs`：已打勾且断点不在片尾区（`isEpisodePositionNearEnd`，与打开时「从头放还是续播」**同一判据**）= 正在重看（`isRewatching`），续播停在它。不知道片长（旧库 / 没在本版本播过）一律沿用旧口径推进——旧库里看完的集断点都停在片尾附近，分不出来时宁可不改行为。详情页 / 首页继续观看 / 下一集 / 合集卡进度 / dashboard 视频合集 / 首页合集直开六处同一判据；远端集用 host / 服务器下发的 `durationMs`。
   - 完成判定改为：播放中每个位置采样点（1 秒 + 播放源通知）判一次，离开时按**离开那一刻同步取下的位置**再判一次；不再挂在 60 秒 tick 上。规则：**播放到 90% 之后，或停在 90% 之后离开，即打勾；暂停态拖条预览不算**。阈值 90% 不变。
