@@ -132,4 +132,127 @@ void main() {
       expect(identical(clearVerticalBaselineFlag(cut).data, cut), isTrue);
     });
   });
+
+  group('VerticalBaselineFontCache（BUG-3420：同一字体只处理一次、重活不在 UI isolate）', () {
+    late int patches;
+    late VerticalBaselineFontCache cache;
+    setUp(() {
+      patches = 0;
+      cache = VerticalBaselineFontCache(
+        patcher: (Uint8List data) async {
+          patches++;
+          return clearVerticalBaselineFlag(data);
+        },
+      );
+    });
+
+    test('带这一位的字体：同一身份第二次命中缓存，不再解析', () async {
+      final Uint8List font = _sfnt(0x0229);
+      final VerticalBaselineFontResult first = await cache.resolve(
+        key: 'a.ttf|100|1',
+        data: font,
+      );
+      final VerticalBaselineFontResult second = await cache.resolve(
+        key: 'a.ttf|100|1',
+        data: Uint8List.fromList(font),
+      );
+      expect(patches, 1);
+      expect(_flagsAt(first.data, 44), 0x0209);
+      expect(identical(second.data, first.data), isTrue);
+    });
+
+    test('并发的同一字体请求共用一次解析', () async {
+      final Uint8List font = _sfnt(0x0020);
+      final List<VerticalBaselineFontResult> results = await Future.wait(
+        <Future<VerticalBaselineFontResult>>[
+          for (int i = 0; i < 5; i++)
+            cache.resolve(key: 'b.otf|9|9', data: font),
+        ],
+      );
+      expect(patches, 1);
+      for (final VerticalBaselineFontResult r in results) {
+        expect(_flagsAt(r.data, 44), 0);
+      }
+    });
+
+    test('解析失败（含同步抛出）不留缓存：异常抛给调用方，下次同一字体重试', () async {
+      int calls = 0;
+      final VerticalBaselineFontCache failing = VerticalBaselineFontCache(
+        patcher: (Uint8List data) {
+          calls++;
+          if (calls == 1) throw StateError('boom');
+          return Future<VerticalBaselineFontResult>.value(
+            clearVerticalBaselineFlag(data),
+          );
+        },
+      );
+      final Uint8List font = _sfnt(0x0229);
+      await expectLater(
+        failing.resolve(key: 'e.ttf|1|1', data: font),
+        throwsStateError,
+      );
+      expect(failing.length, 0);
+      final VerticalBaselineFontResult r = await failing.resolve(
+        key: 'e.ttf|1|1',
+        data: font,
+      );
+      expect(calls, 2);
+      expect(_flagsAt(r.data, 44), 0x0209);
+    });
+
+    test('文件变了（大小 / 修改时间不同）就是另一个字体，重新解析', () async {
+      final Uint8List font = _sfnt(0x0020);
+      await cache.resolve(key: 'c.ttf|1|1', data: font);
+      await cache.resolve(key: 'c.ttf|1|2', data: font);
+      expect(patches, 2);
+    });
+
+    test('不带这一位的 sfnt：只读表目录，不进后台解析，原样返回调用方的字节', () async {
+      final Uint8List font = _sfnt(0x000B);
+      final VerticalBaselineFontResult r = await cache.resolve(
+        key: 'd.ttf|1|1',
+        data: font,
+      );
+      expect(patches, 0);
+      expect(identical(r.data, font), isTrue);
+      expect(r.mime, isNull);
+    });
+
+    test('WOFF2 解码后才知道：只解析一次，结论（不用改）也缓存', () async {
+      final ByteData woff2 = ByteData(48);
+      woff2.setUint32(0, 0x774F4632); // 'wOF2'，解不开 → 原样
+      final Uint8List bytes = woff2.buffer.asUint8List();
+      await cache.resolve(key: 'e.woff2|48|1', data: bytes);
+      final VerticalBaselineFontResult again = await cache.resolve(
+        key: 'e.woff2|48|1',
+        data: bytes,
+      );
+      expect(patches, 1);
+      expect(identical(again.data, bytes), isTrue);
+    });
+
+    test('改过的字体按总字节封顶淘汰', () async {
+      final VerticalBaselineFontCache small = VerticalBaselineFontCache(
+        patcher: (Uint8List data) async {
+          patches++;
+          return clearVerticalBaselineFlag(data);
+        },
+        maxPatchedBytes: _sfnt(0x0020).length,
+      );
+      await small.resolve(key: 'f1', data: _sfnt(0x0020));
+      await small.resolve(key: 'f2', data: _sfnt(0x0020));
+      expect(small.length, 1);
+      await small.resolve(key: 'f2', data: _sfnt(0x0020));
+      expect(patches, 2);
+    });
+
+    test('默认后台 isolate 路径真改字节', () async {
+      final VerticalBaselineFontCache real = VerticalBaselineFontCache();
+      final VerticalBaselineFontResult r = await real.resolve(
+        key: 'g.ttf|1|1',
+        data: _sfnt(0x0229),
+      );
+      expect(_flagsAt(r.data, 44), 0x0209);
+    });
+  });
 }

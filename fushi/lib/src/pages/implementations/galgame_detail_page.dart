@@ -465,21 +465,22 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
+        // 标题 / 开发商是刮削来的资料，要能复制去编辑 tab（反馈 2DmrXg-wtD）。
+        SelectableText(
           game.displayName,
+          key: const ValueKey<String>('galgame-hero-title'),
           style: narrow
               ? context.fushiType.headlineSmallEmphasized
               : context.fushiType.headlineMediumEmphasized,
           maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
         if (developer != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
+            child: SelectableText(
               developer,
+              key: const ValueKey<String>('galgame-hero-developer'),
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: tokens.surfaces.onVariant,
               ),
@@ -711,13 +712,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
-  /// 文本值的网格单元。
+  /// 文本值的网格单元（值可选择复制，与简介 tab 的 `_summarySection` 一致）。
   Widget _metaTextCell(BuildContext context, String label, String value) {
     final ThemeData theme = Theme.of(context);
     return _metaCell(
       context,
       label,
-      Text(value, style: theme.textTheme.bodyMedium),
+      SelectableText(value, style: theme.textTheme.bodyMedium),
     );
   }
 
