@@ -91,21 +91,30 @@ void main() {
     });
 
     test('不同 flag 混用按给出的顺序执行', () {
-      final I18nApplyResult result = run(<String>[
-        '--remove',
-        'beta',
-        '--rename',
-        'alpha',
-        'zeta',
-        '--add',
-        'delta',
-        'D',
-        'D中',
-        '--sort',
-      ], table());
+      final I18nApplyResult result = run(
+        <String>[
+          '--remove',
+          'beta',
+          '--rename',
+          'alpha',
+          'zeta',
+          '--add',
+          'delta',
+          'D',
+          'D中',
+          '--sort',
+        ],
+        // 起点故意不排序（omega 在首位）：--add / --rename 现在都按字典序就位，
+        // 起点有序时末尾 --sort 无事可做、测不到它确实执行了。
+        <String, dynamic>{
+          ...<String, dynamic>{'omega': 'O'},
+          ...table(),
+        },
+      );
       expect(result.json.keys.toList(), <String>[
         'delta',
         'gamma',
+        'omega',
         'zeta',
       ], reason: '删/改名/新增都要落地，且末尾 --sort 对最终结果排序');
       expect(result.hitsPerOp, <int>[1, 1, 1, 1]);
@@ -227,6 +236,20 @@ void main() {
         'gamma',
       ], reason: '改名必须就地换键，不得把键挪到末尾');
       expect(result.json['beta_renamed'], 'B');
+    });
+
+    test('--rename 到字典序别处的名字 → 挪到新名字的有序位置（不破坏全排序）', () {
+      final I18nApplyResult result = run(<String>[
+        '--rename',
+        'alpha',
+        'zeta',
+      ], table());
+      expect(result.json.keys.toList(), <String>[
+        'beta',
+        'gamma',
+        'zeta',
+      ], reason: '就地换键会把 zeta 留在首位，守卫 i18n_keys_sorted_guard_test 必红');
+      expect(result.json['zeta'], 'A');
     });
 
     test('--sort 幂等：已排序的表不算改动', () {
@@ -416,6 +439,76 @@ void main() {
       expect(editDelete.json.containsKey('a'), isFalse);
     });
 
+    test('renderI18nMergeResult：无冲突时与 encodeI18nJson 逐字节一致', () {
+      final Map<String, dynamic> ours = <String, dynamic>{
+        ...base(),
+        'a_x': 'X',
+        'n': <String, dynamic>{'one': '1', 'other': 'n'},
+      };
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: ours,
+        theirs: <String, dynamic>{...base(), 'a_y': 'Y'},
+      );
+      expect(
+        renderI18nMergeResult(r, ours: ours, theirs: base()),
+        encodeI18nJson(r.json),
+      );
+    });
+
+    test('renderI18nMergeResult：冲突 key 两边都写进冲突块，不静默取 ours', () {
+      final Map<String, dynamic> ours = <String, dynamic>{
+        'a': 'ours',
+        'c': 'C',
+      };
+      final Map<String, dynamic> theirs = <String, dynamic>{
+        'a': 'theirs',
+        'b': '2',
+      };
+      final I18nMergeResult r = mergeI18nThreeWay(
+        base: base(),
+        ours: ours,
+        theirs: theirs,
+      );
+      // a：两边改成不同值；b：ours 删、theirs 未动 → 删除生效；c：ours 新增。
+      expect(r.conflicts, <String>['a']);
+      final String text = renderI18nMergeResult(r, ours: ours, theirs: theirs);
+      expect(
+        text,
+        '{\n'
+        '<<<<<<< ours\n'
+        '  "a": "ours",\n'
+        '=======\n'
+        '  "a": "theirs",\n'
+        '>>>>>>> theirs\n'
+        '  "c": "C"\n'
+        '}\n',
+      );
+      expect(
+        () => jsonDecode(text),
+        throwsFormatException,
+        reason: '留着冲突块的文件必须解析失败，误提交时 slang / 守卫当场拦住',
+      );
+
+      // 一边删、一边改：删的那侧在冲突块里是空段。
+      final Map<String, dynamic> deleted = <String, dynamic>{'b': '2'};
+      final I18nMergeResult editDelete = mergeI18nThreeWay(
+        base: base(),
+        ours: deleted,
+        theirs: theirs,
+      );
+      expect(
+        renderI18nMergeResult(editDelete, ours: deleted, theirs: theirs),
+        '{\n'
+        '<<<<<<< ours\n'
+        '=======\n'
+        '  "a": "theirs",\n'
+        '>>>>>>> theirs\n'
+        '  "b": "2"\n'
+        '}\n',
+      );
+    });
+
     test('真 git 仓库：两分支加字典序相邻的 key，驱动接上后 git merge 无冲突', () {
       final Directory repo = Directory.systemTemp.createTempSync(
         'i18n_driver_e2e_',
@@ -480,5 +573,56 @@ void main() {
               as Map<String, dynamic>;
       expect(merged.keys.toList(), <String>['a', 'a_x', 'a_y', 'b']);
     }, timeout: const Timeout(Duration(minutes: 2)));
+
+    /// 失败安全：驱动报冲突 / 吃不下输入时，%A 必须同时带着两边的内容。旧实现
+    /// 冲突时把 ours 的值写成一份「看起来已合好」的合法 JSON、非 JSON 输入时
+    /// 原样留下 ours——`git add` 一下 theirs 的改动就静默没了。
+    group('驱动进程（失败安全）', () {
+      final String driver = File('tool/i18n_merge_driver.dart').absolute.path;
+      late Directory dir;
+      setUp(() => dir = Directory.systemTemp.createTempSync('i18n_driver_'));
+      tearDown(() => dir.deleteSync(recursive: true));
+
+      ProcessResult runDriver(String base, String ours, String theirs) {
+        File('${dir.path}/O').writeAsStringSync(base);
+        File('${dir.path}/A').writeAsStringSync(ours);
+        File('${dir.path}/B').writeAsStringSync(theirs);
+        // runInShell：Windows 上 PATH 里的 dart 可能是 dart.bat（Flutter SDK 的
+        // bin/），CreateProcess 直接起不了 .bat。git 起驱动时同样经 shell。
+        return Process.runSync('dart', <String>[
+          driver,
+          '${dir.path}/O',
+          '${dir.path}/A',
+          '${dir.path}/B',
+        ], runInShell: true);
+      }
+
+      test('同 key 两边不同值 → 退出码 1，%A 留冲突块含两边的值', () {
+        final ProcessResult r = runDriver(
+          encodeI18nJson(<String, dynamic>{'a': '1', 'b': '2'}),
+          encodeI18nJson(<String, dynamic>{'a': 'ours', 'b': '2'}),
+          encodeI18nJson(<String, dynamic>{'a': 'theirs', 'b': '2', 'c': 'C'}),
+        );
+        expect(r.exitCode, 1, reason: '${r.stdout}${r.stderr}');
+        final String out = File('${dir.path}/A').readAsStringSync();
+        expect(out, contains('<<<<<<< ours\n  "a": "ours",\n'));
+        expect(out, contains('=======\n  "a": "theirs",\n>>>>>>> theirs\n'));
+        expect(out, contains('  "c": "C"\n'), reason: '非冲突的 theirs 新增照常合入');
+        expect(r.stderr, contains('a'));
+      }, timeout: const Timeout(Duration(minutes: 2)));
+
+      test('输入不是 JSON → 退回 git merge-file 按行合并，%A 带两边的行', () {
+        const String base = '{\n  "a": "1"\n}\n';
+        final ProcessResult r = runDriver(
+          base,
+          '{\n<<<<<<< x\n  "a": "ours"\n=======\n  "a": "o2"\n>>>>>>> y\n}\n',
+          '{\n  "a": "theirs"\n}\n',
+        );
+        expect(r.exitCode, 1, reason: '${r.stdout}${r.stderr}');
+        final String out = File('${dir.path}/A').readAsStringSync();
+        expect(out, contains('"a": "theirs"'), reason: 'theirs 的内容不能被丢掉');
+        expect(out, contains('>>>>>>> theirs'));
+      }, timeout: const Timeout(Duration(minutes: 2)));
+    });
   });
 }

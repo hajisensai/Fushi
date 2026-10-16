@@ -13,12 +13,18 @@
 ///
 /// Git runs the driver from the work tree root with the ancestor (%O), ours
 /// (%A, also the output) and theirs (%B) as temp files. Exit 0 = merged; exit 1
-/// = conflict: %A then holds the merged file with ours' value for every
-/// conflicting key, and the keys are listed on stderr.
+/// = conflict: %A then holds the merged file with every key both sides changed
+/// differently written as a `<<<<<<< ours` / `=======` / `>>>>>>> theirs`
+/// block (see [renderI18nMergeResult]) and the keys are listed on stderr —
+/// neither side's value is silently dropped. A side that is not a JSON object
+/// (already holds conflict markers, a hand-broken edit, ...) falls back to
+/// git's own line-level `git merge-file`, so %A again carries both sides.
 ///
 /// Only local merges use it — GitHub's server-side merge ignores custom
 /// drivers, so a PR page can still say "conflicts" that a local
-/// `git merge origin/develop` resolves by itself.
+/// `git merge origin/develop` resolves by itself. Where the driver is not
+/// defined in git config (CI, a clone that never ran setup) git uses its
+/// built-in line merge for these files instead.
 library;
 
 import 'dart:convert';
@@ -33,18 +39,29 @@ void main(List<String> args) {
     );
     exit(2);
   }
+  final String basePath = args[0];
+  final String oursPath = args[1];
+  final String theirsPath = args[2];
 
   final Map<String, dynamic> base;
   final Map<String, dynamic> ours;
   final Map<String, dynamic> theirs;
   try {
-    base = _read(args[0]);
-    ours = _read(args[1]);
-    theirs = _read(args[2]);
+    base = _read(basePath);
+    ours = _read(oursPath);
+    theirs = _read(theirsPath);
   } on FormatException catch (e) {
-    // Leave %A untouched: git reports the file as conflicted and keeps ours.
-    stderr.writeln('i18n merge driver: not valid JSON, falling back ($e)');
-    exit(1);
+    stderr.writeln(
+      'i18n merge driver: not an i18n JSON object ($e); '
+      'falling back to line-level git merge-file',
+    );
+    exit(
+      _lineMerge(
+        basePath: basePath,
+        oursPath: oursPath,
+        theirsPath: theirsPath,
+      ),
+    );
   }
 
   final I18nMergeResult result = mergeI18nThreeWay(
@@ -52,12 +69,14 @@ void main(List<String> args) {
     ours: ours,
     theirs: theirs,
   );
-  File(args[1]).writeAsStringSync(encodeI18nJson(result.json));
+  File(oursPath).writeAsStringSync(
+    renderI18nMergeResult(result, ours: ours, theirs: theirs),
+  );
 
   if (result.conflicts.isEmpty) exit(0);
   stderr.writeln(
     'i18n merge driver: both sides changed these keys differently; '
-    'kept ours, please review: ${result.conflicts.join(', ')}',
+    'left conflict markers for: ${result.conflicts.join(', ')}',
   );
   exit(1);
 }
@@ -66,5 +85,38 @@ void main(List<String> args) {
 Map<String, dynamic> _read(String path) {
   final String text = File(path).readAsStringSync();
   if (text.trim().isEmpty) return <String, dynamic>{};
-  return jsonDecode(text) as Map<String, dynamic>;
+  final Object? decoded = jsonDecode(text);
+  if (decoded is! Map<String, dynamic>) {
+    throw FormatException('top level is not a JSON object', path);
+  }
+  return decoded;
+}
+
+/// git's own three-way line merge into [oursPath]: 0 = clean, 1 = conflict
+/// markers written, or merge-file could not run (then %A is still ours and git
+/// keeps the path unmerged).
+int _lineMerge({
+  required String basePath,
+  required String oursPath,
+  required String theirsPath,
+}) {
+  try {
+    final ProcessResult r = Process.runSync('git', <String>[
+      'merge-file',
+      '-L',
+      'ours',
+      '-L',
+      'base',
+      '-L',
+      'theirs',
+      oursPath,
+      basePath,
+      theirsPath,
+    ]);
+    stderr.write(r.stderr);
+    return r.exitCode == 0 ? 0 : 1;
+  } on ProcessException catch (e) {
+    stderr.writeln('i18n merge driver: git merge-file failed to start ($e)');
+    return 1;
+  }
 }

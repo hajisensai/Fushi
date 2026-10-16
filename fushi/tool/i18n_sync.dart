@@ -9,8 +9,9 @@
 ///                                                  # (see [insertKeyAfterPredecessor])
 ///   dart tool/i18n_sync.dart --remove key          # remove a key from all files
 ///   dart tool/i18n_sync.dart --rename old new      # rename a key in all files, keeping every
-///                                                  # language's existing translation (errors out
-///                                                  # if the new key already exists anywhere)
+///                                                  # language's existing translation and moving
+///                                                  # it to the new name's alphabetical position
+///                                                  # (errors out if the new key already exists)
 ///   dart tool/i18n_sync.dart --sort                # sort keys alphabetically in all files
 ///                                                  # (stable, idempotent)
 ///   dart tool/i18n_sync.dart --dry-run             # show what would change without writing
@@ -273,10 +274,19 @@ I18nApplyResult applyI18nOps({
           log.add('  skip $label (key "$oldKey" not present)');
           continue;
         }
-        current = <String, dynamic>{
-          for (final MapEntry<String, dynamic> e in current.entries)
-            (e.key == oldKey ? newKey : e.key): e.value,
-        };
+        // Re-place the renamed key at its own alphabetical position instead of
+        // swapping it into the old key's slot: the files are kept key-sorted
+        // (guard test/i18n/i18n_keys_sorted_guard_test.dart), and an in-place
+        // rename to a name that sorts elsewhere would break that invariant.
+        final dynamic renamedValue = current[oldKey];
+        current = insertKeyAfterPredecessor(
+          <String, dynamic>{
+            for (final MapEntry<String, dynamic> e in current.entries)
+              if (e.key != oldKey) e.key: e.value,
+          },
+          newKey,
+          renamedValue,
+        );
         hitsPerOp[i] = 1;
         log.add('  rename "$oldKey" -> "$newKey" in $label');
       case SortKeysOp():
@@ -362,7 +372,8 @@ Map<String, dynamic> fillMissingKeysInBaseOrder(
 }
 
 /// Outcome of [mergeI18nThreeWay]: the merged, key-sorted table plus the keys
-/// both sides changed differently (left at [ours]' value).
+/// both sides changed differently (left at ours' value in [json]; the driver
+/// writes them out as conflict blocks via [renderI18nMergeResult]).
 class I18nMergeResult {
   const I18nMergeResult({required this.json, required this.conflicts});
 
@@ -423,6 +434,56 @@ bool _jsonEquals(dynamic a, dynamic b) => jsonEncode(a) == jsonEncode(b);
 String encodeI18nJson(Map<String, dynamic> json) {
   const JsonEncoder encoder = JsonEncoder.withIndent('  ');
   return '${encoder.convert(json)}\n';
+}
+
+/// Render a [mergeI18nThreeWay] result as the merge driver's output file.
+///
+/// Without conflicts this is exactly [encodeI18nJson] of the merged table.
+/// Every conflicting key instead becomes a git-style conflict block holding
+/// [ours]' and [theirs]' entries (an empty side means that side deleted the
+/// key). The file is then deliberately not valid JSON: neither side's value is
+/// silently dropped, `git diff` shows both, and slang / the sorted-keys guard
+/// refuse the file until a human resolves the block.
+String renderI18nMergeResult(
+  I18nMergeResult result, {
+  required Map<String, dynamic> ours,
+  required Map<String, dynamic> theirs,
+}) {
+  if (result.conflicts.isEmpty) return encodeI18nJson(result.json);
+  final Set<String> conflicting = result.conflicts.toSet();
+  final List<String> keys = <String>{
+    ...result.json.keys,
+    ...conflicting,
+  }.toList()..sort();
+  final StringBuffer out = StringBuffer('{\n');
+  for (int i = 0; i < keys.length; i++) {
+    final String key = keys[i];
+    final String comma = i == keys.length - 1 ? '' : ',';
+    if (!conflicting.contains(key)) {
+      out.writeln('${_encodeI18nEntry(key, result.json[key])}$comma');
+      continue;
+    }
+    out.writeln('<<<<<<< ours');
+    if (ours.containsKey(key)) {
+      out.writeln('${_encodeI18nEntry(key, ours[key])}$comma');
+    }
+    out.writeln('=======');
+    if (theirs.containsKey(key)) {
+      out.writeln('${_encodeI18nEntry(key, theirs[key])}$comma');
+    }
+    out.writeln('>>>>>>> theirs');
+  }
+  out.write('}\n');
+  return out.toString();
+}
+
+/// One top-level entry exactly as [encodeI18nJson] lays it out (two-space
+/// indent, nested values indented relative to it), without separator.
+String _encodeI18nEntry(String key, dynamic value) {
+  const JsonEncoder encoder = JsonEncoder.withIndent('  ');
+  final String single = encoder.convert(<String, dynamic>{key: value});
+  // "{\n  <entry>\n}" -> "  <entry>"
+  return single.substring(2, single.length - 2);
 }
 
 void main(List<String> args) {
