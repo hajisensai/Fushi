@@ -7456,7 +7456,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
   /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。全屏期间经
   /// `Navigator.maybePop` 到达的返回由全屏路由里的 [VideoFullscreenBackScope] 接住，
-  /// 走同一份 [_dismissTopForegroundLayer]（BUG-3417）。
+  /// 走同一份 [_dismissTopForegroundLayer]（BUG-3423）。
   void _handleVideoEscapeAction() {
     if (_dismissTopForegroundLayer()) return;
     final BuildContext? ctx = _videoControlsContext;
