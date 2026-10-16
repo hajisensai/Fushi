@@ -214,6 +214,7 @@ import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
 import 'package:fushi/src/media/video/video_clip_subtitle_image.dart';
 import 'package:fushi/src/media/video/video_episode_panel.dart';
+import 'package:fushi/src/media/video/video_fullscreen_back_scope.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
@@ -7451,7 +7452,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// 「退全屏」这一级**只**能留在这里、进不了 [_handleBackOrExit]：全屏是推到根
   /// navigator 的独立路由，全屏期间栈顶是它、本页 [PopScope] 根本轮不到（框架先 pop
-  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。
+  /// 全屏路由），把它并进汇聚点等于写一条永远不执行的分支。全屏期间经
+  /// `Navigator.maybePop` 到达的返回由全屏路由里的 [VideoFullscreenBackScope] 接住，
+  /// 走同一份 [_dismissTopForegroundLayer]（BUG-3417）。
   void _handleVideoEscapeAction() {
     if (_dismissTopForegroundLayer()) return;
     final BuildContext? ctx = _videoControlsContext;
