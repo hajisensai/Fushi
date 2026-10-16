@@ -226,6 +226,40 @@ Uint8List legacyApkg(int nowMs) => zipOf(<String, List<int>>{
   '2': <int>[6],
 });
 
+/// 旧行为（选项加入前）：全部导入排程与预设、合并笔记类型、从不覆盖已有内容。
+const SrsAnkiImportOptions kFullOptions = SrsAnkiImportOptions(
+  mergeNoteTypes: true,
+  updateNotes: SrsImportUpdateCondition.never,
+  updateNoteTypes: SrsImportUpdateCondition.never,
+  withScheduling: true,
+  withDeckConfigs: true,
+);
+
+/// 旧格式包：[models] 换笔记类型、[patch] 再改集合（例如笔记 mod / 字段）。
+Uint8List customApkg(
+  int nowMs, {
+  Map<String, Object?>? models,
+  void Function(Database db)? patch,
+}) {
+  Uint8List col = buildLegacyCollection(
+    crtSecs: crtSecs,
+    conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': true},
+    models: models ?? legacyModels(),
+    decks: legacyDecks(),
+    dconf: legacyDconf(),
+    notes: fixtureNotes(nowMs),
+  );
+  if (patch != null) col = patchSqlite(col, patch);
+  return zipOf(<String, List<int>>{
+    'collection.anki21': col,
+    'media': utf8.encode(
+      jsonEncode(<String, String>{'0': 'a.png', '1': '_font.woff'}),
+    ),
+    '0': <int>[1, 2, 3],
+    '1': <int>[4, 5],
+  });
+}
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   int t = ms(2026, 10, 14, 12);
@@ -246,12 +280,12 @@ void main() {
   Future<SrsImportReport> importInto(
     SrsDbStore s,
     Uint8List bytes, {
-    bool updateExisting = false,
+    SrsAnkiImportOptions options = kFullOptions,
   }) => importAnkiPackage(
     store: s,
     bytes: bytes,
     storeMedia: storeMedia,
-    updateExisting: updateExisting,
+    options: options,
     zstdDecompress: (Uint8List b) => null,
   );
 
@@ -420,7 +454,7 @@ void main() {
     }
   });
 
-  test('③ 重复导入不重复、不覆盖本地字段；updateExisting 才写新值', () async {
+  test('③ 重复导入不重复、不覆盖本地字段；「更新笔记：总是」才写新值', () async {
     final SrsDbStore s = await openTestStore(
       profileUid: kProfile,
       deviceId: 'a',
@@ -446,9 +480,13 @@ void main() {
     final SrsImportReport upd = await importInto(
       s,
       legacyApkg(t),
-      updateExisting: true,
+      options: kFullOptions.copyWith(
+        updateNotes: SrsImportUpdateCondition.always,
+      ),
     );
-    expect(upd.notesUpdated, 3);
+    // 只有本机改过的那条内容不同；另两条内容一致，不写修改记录。
+    expect(upd.notesUpdated, 1);
+    expect(upd.notesSkipped, 2);
     expect((await s.note(n1))!.field(back), 'cat');
   });
 
@@ -793,6 +831,7 @@ void main() {
     final SrsImportReport rep = await importAnkiPackage(
       store: s,
       bytes: pkg,
+      options: kFullOptions,
       storeMedia: (String name, Uint8List b) async {
         mediaBytes.addAll(b);
         return 'h_$name';
@@ -836,5 +875,446 @@ void main() {
     expect(core.algorithmWire, 'fsrs6');
     expect(core.desiredRetention, closeTo(0.9, 1e-6));
     expect(core.fsrs6!.params.first, closeTo(fsrs6Params.first, 1e-6));
+  });
+
+  group('导入选项（对齐 Anki ImportAnkiPackageOptions）', () {
+    test('默认值与 Anki 相同；JSON 往返、缺项 / 坏值回落默认', () {
+      const SrsAnkiImportOptions d = SrsAnkiImportOptions();
+      expect(d.mergeNoteTypes, isFalse);
+      expect(d.updateNotes, SrsImportUpdateCondition.ifNewer);
+      expect(d.updateNoteTypes, SrsImportUpdateCondition.ifNewer);
+      expect(d.withScheduling, isFalse);
+      expect(d.withDeckConfigs, isFalse);
+      expect(SrsAnkiImportOptions.fromJson(const <String, Object?>{}), d);
+      expect(
+        SrsAnkiImportOptions.fromJson(<String, Object?>{
+          'updateNotes': 'bogus',
+          'withScheduling': 'yes',
+        }),
+        d,
+      );
+      expect(
+        SrsAnkiImportOptions.fromJson(kFullOptions.toJson()),
+        kFullOptions,
+      );
+    });
+
+    Future<SrsDbStore> seeded() async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      await importInto(s, legacyApkg(t));
+      return s;
+    }
+
+    test('更新笔记：较新时按来源 mod 与本机最后修改比；总是 / 从不', () async {
+      final String n1 = SrsIds.note(kProfile, 'g1');
+      final String back = SrsIds.field(basicNt(kProfile), 222);
+      final int localEditAt = t + 60000;
+      // 来源 g1 的背面改成 neko，mod 分别早于 / 晚于本机修改。
+      Uint8List withMod(int modMs) => customApkg(
+        t,
+        patch: (Database db) => db.execute(
+          "UPDATE notes SET mod = ?, flds = ? WHERE guid = 'g1'",
+          <Object?>[modMs ~/ 1000, '猫<img src="a.png">\x1fneko'],
+        ),
+      );
+      final Uint8List older = withMod(localEditAt - 30000);
+      final Uint8List newer = withMod(localEditAt + 3600000);
+
+      Future<String> run(Uint8List pkg, SrsImportUpdateCondition c) async {
+        t = ms(2026, 10, 14, 12);
+        final SrsDbStore s = await seeded();
+        t = localEditAt;
+        await s.updateNote(
+          n1,
+          fieldsById: <String, String>{back: 'local edit'},
+        );
+        t += 7200000;
+        await importInto(
+          s,
+          pkg,
+          options: kFullOptions.copyWith(updateNotes: c),
+        );
+        return (await s.note(n1))!.field(back);
+      }
+
+      expect(await run(older, SrsImportUpdateCondition.ifNewer), 'local edit');
+      expect(await run(newer, SrsImportUpdateCondition.ifNewer), 'neko');
+      expect(await run(older, SrsImportUpdateCondition.always), 'neko');
+      expect(await run(newer, SrsImportUpdateCondition.never), 'local edit');
+    });
+
+    test('更新笔记模板：较新时按来源 mod 比；总是 / 从不', () async {
+      final String nt = basicNt(kProfile);
+      final String tpl = SrsIds.template(nt, 333);
+      Uint8List withMod(int modMs) {
+        final Map<String, Object?> models = legacyModels();
+        final Map<String, Object?> basic =
+            models['$kBasic']! as Map<String, Object?>;
+        basic['mod'] = modMs ~/ 1000;
+        basic['css'] = '.new{}';
+        ((basic['tmpls']! as List<Object?>).first!
+                as Map<String, Object?>)['qfmt'] =
+            'NEW {{Front}}';
+        return customApkg(t, models: models);
+      }
+
+      Future<SrsNoteTypeView> run(
+        int Function(int importedAt) modOf,
+        SrsImportUpdateCondition c,
+      ) async {
+        t = ms(2026, 10, 14, 12);
+        final SrsDbStore s = await seeded();
+        final int importedAt = t;
+        t += 3600000;
+        await importInto(
+          s,
+          withMod(modOf(importedAt)),
+          options: kFullOptions.copyWith(updateNoteTypes: c),
+        );
+        return (await s.noteType(nt))!;
+      }
+
+      int older(int at) => at - 86400000;
+      int newer(int at) => at + 1800000;
+
+      SrsTemplateDef card1(SrsNoteTypeView v) =>
+          v.templates.firstWhere((SrsTemplateDef x) => x.id == tpl);
+      final SrsNoteTypeView a = await run(
+        older,
+        SrsImportUpdateCondition.ifNewer,
+      );
+      expect(card1(a).front, isNot(startsWith('NEW')));
+      expect(a.css, isNot('.new{}'));
+      final SrsNoteTypeView b = await run(
+        newer,
+        SrsImportUpdateCondition.ifNewer,
+      );
+      expect(card1(b).front, startsWith('NEW'));
+      expect(b.css, '.new{}');
+      final SrsNoteTypeView c = await run(
+        older,
+        SrsImportUpdateCondition.always,
+      );
+      expect(card1(c).front, startsWith('NEW'));
+      final SrsNoteTypeView d = await run(
+        newer,
+        SrsImportUpdateCondition.never,
+      );
+      expect(card1(d).front, isNot(startsWith('NEW')));
+    });
+
+    test('合并笔记模板：开 = 并进本机那一个；关 = 结构不同另建确定性副本，已有笔记记冲突', () async {
+      Uint8List withExtraField() {
+        final Map<String, Object?> models = legacyModels();
+        final Map<String, Object?> basic =
+            models['$kBasic']! as Map<String, Object?>;
+        (basic['flds']! as List<Object?>).add(<String, Object?>{
+          'name': 'Notes',
+          'ord': 2,
+          'id': 444,
+        });
+        return customApkg(
+          t,
+          models: models,
+          patch: (Database db) {
+            db.execute(
+              'UPDATE notes SET flds = flds || ? WHERE mid = ?',
+              <Object?>['\x1fmemo', kBasic],
+            );
+            db.execute(
+              'INSERT INTO notes VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+              <Object?>[
+                ms(2026, 3, 4),
+                'g4',
+                kBasic,
+                0,
+                0,
+                '',
+                '新\x1fnew\x1fm',
+                '新',
+                0,
+                0,
+                '',
+              ],
+            );
+            db.execute(
+              'INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              <Object?>[
+                41,
+                ms(2026, 3, 4),
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                9,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                '',
+              ],
+            );
+          },
+        );
+      }
+
+      final String nt = basicNt(kProfile);
+      final String g1 = SrsIds.note(kProfile, 'g1');
+      final String g4 = SrsIds.note(kProfile, 'g4');
+
+      // 合并。
+      final SrsDbStore m = await seeded();
+      final SrsImportReport mr = await importInto(
+        m,
+        withExtraField(),
+        options: kFullOptions.copyWith(mergeNoteTypes: true),
+      );
+      expect(mr.noteTypesDuplicated, isEmpty);
+      expect((await m.noteType(nt))!.fields, hasLength(3));
+      expect((await m.note(g4))!.noteTypeId, nt);
+      expect(await m.noteTypes(), hasLength(3));
+
+      // 不合并。
+      final SrsDbStore s = await seeded();
+      final SrsImportReport r = await importInto(
+        s,
+        withExtraField(),
+        options: kFullOptions.copyWith(mergeNoteTypes: false),
+      );
+      expect(r.noteTypesDuplicated, <String>['Basic (and reversed)']);
+      expect((await s.noteType(nt))!.fields, hasLength(2));
+      final String dup = (await s.note(g4))!.noteTypeId;
+      expect(dup, isNot(nt));
+      expect((await s.noteType(dup))!.fields, hasLength(3));
+      expect((await s.noteType(dup))!.name, 'Basic (and reversed)');
+      expect((await s.note(g1))!.noteTypeId, nt);
+      expect(
+        r.conflictNotes
+            .where(
+              (SrsImportNoteIssue i) =>
+                  i.reason == SrsImportIssueReason.noteTypeChanged,
+            )
+            .map((SrsImportNoteIssue i) => i.guid)
+            .toSet(),
+        <String>{'g1', 'g3'},
+      );
+      expect(await s.noteTypes(), hasLength(4));
+      // 同一份包再导入：回到同一个副本，不再新建。
+      final SrsImportReport again = await importInto(
+        s,
+        withExtraField(),
+        options: kFullOptions.copyWith(mergeNoteTypes: false),
+      );
+      expect(again.noteTypesDuplicated, isEmpty);
+      expect(await s.noteTypes(), hasLength(4));
+      // 结构相同的包（原包）不合并时照常进本机那一个。
+      final SrsImportReport same = await importInto(
+        s,
+        legacyApkg(t),
+        options: kFullOptions.copyWith(mergeNoteTypes: false),
+      );
+      expect(same.noteTypesDuplicated, isEmpty);
+      expect(same.conflictNotes, isEmpty);
+
+      // 两台设备不合并导入同一个包：副本 ID 相同（铁律 C）。
+      final SrsDbStore other = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'b',
+        now: () => t,
+      );
+      await importInto(other, legacyApkg(t));
+      await importInto(
+        other,
+        withExtraField(),
+        options: kFullOptions.copyWith(mergeNoteTypes: false),
+      );
+      expect((await other.note(g4))!.noteTypeId, dup);
+    });
+
+    test('不含排程：全部作为新卡、无复习日志、无锚点、不暂停、去掉 leech 标签', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        customApkg(
+          t,
+          patch: (Database db) => db.execute(
+            "UPDATE notes SET tags = ' animal leech Marked n5 ' WHERE guid = 'g1'",
+          ),
+        ),
+        options: const SrsAnkiImportOptions(withDeckConfigs: true),
+      );
+      expect(rep.notesAdded, 3);
+      expect(rep.cardsAdded, 5);
+      expect((await s.exportAll()).whereType<SrsLogEvent>(), isEmpty);
+      expect(rep.reviewLogsImported, 0);
+      expect(rep.anchorsWritten, 0);
+      expect(rep.futureCards, isEmpty);
+      // 11（复习卡）、22（暂停）、31（复习卡）。
+      expect(rep.cardsResetToNew, 3);
+      expect(rep.reviewLogsSkipped, 7);
+      for (final SrsNoteCacheRow n in await s.listNotes()) {
+        for (final SrsCardCacheRow c in await s.cardsOfNote(n.id)) {
+          expect(c.queue, SrsQueue.newCard.wire);
+          expect(c.suspended, isFalse);
+        }
+      }
+      expect((await s.note(SrsIds.note(kProfile, 'g1')))!.tags, <String>[
+        'animal',
+        'n5',
+      ]);
+      expect(jsonEncode(rep.toJson()), contains('"cardsResetToNew":3'));
+    });
+
+    test('不含牌组预设：新建牌组用本机默认设置', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        legacyApkg(t),
+        options: kFullOptions.copyWith(withDeckConfigs: false),
+      );
+      expect(rep.deckPresetsSkipped, 1);
+      expect(rep.truncatedSteps, isEmpty);
+      final SrsDeckTree tree = await s.deckTree();
+      final SrsDeckView lang = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'Lang',
+      );
+      final SrsDeckView jp = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'Lang::JP',
+      );
+      expect(lang.learnSteps, SrsDeckView.defaultLearnSteps);
+      expect(lang.newPerDay, 20);
+      expect(lang.fsrs6, isNull);
+      expect(lang.desiredRetention, 0.8);
+      expect(jp.ownParams, isFalse);
+      // 排程照常导入。
+      expect(rep.anchorsWritten, 2);
+    });
+  });
+
+  test('BUG-3418：新格式预设的 proto3 零值（上限 0 / 开关 false）导入后保持 0 / false', () async {
+    // schema 18 的表放进 collection.anki21（不走 zstd）：解码路径与 anki21b 相同。
+    final Uint8List collection = buildSqlite((Database db) {
+      db.execute(legacySchema);
+      db.execute(schema18Extra);
+      db.execute(
+        "INSERT INTO col VALUES (1,?,0,0,18,0,0,0,'','','','','')",
+        <Object?>[crtSecs],
+      );
+      db.execute('INSERT INTO config VALUES (?,0,0,?)', <Object?>[
+        'fsrs',
+        utf8.encode(jsonEncode(true)),
+      ]);
+      db.execute("INSERT INTO notetypes VALUES (6000,'Z',0,0,?)", <Object?>[
+        (PbWriter()..varint(10, 6060)).toBytes(),
+      ]);
+      db.execute("INSERT INTO fields VALUES (6000,0,'F',?)", <Object?>[
+        (PbWriter()..varint(9, 6001)).toBytes(),
+      ]);
+      db.execute("INSERT INTO templates VALUES (6000,0,'C',0,0,?)", <Object?>[
+        (PbWriter()
+              ..string(1, '{{F}}')
+              ..string(2, '{{F}}')
+              ..varint(8, 6002))
+            .toBytes(),
+      ]);
+      // 牌组 90 用预设 4；牌组 91 的 Normal 没写 config_id（proto3 零值）。
+      db.execute("INSERT INTO decks VALUES (90,'Zero',0,0,x'',?)", <Object?>[
+        (PbWriter()..message(1, PbWriter()..varint(1, 4))).toBytes(),
+      ]);
+      db.execute("INSERT INTO decks VALUES (91,'NoConf',0,0,x'',?)", <Object?>[
+        (PbWriter()..message(1, PbWriter())).toBytes(),
+      ]);
+      db.execute(
+        "INSERT INTO deck_config VALUES (1,'Default',0,0,?)",
+        <Object?>[
+          (PbWriter()
+                ..packedFloats(1, <double>[1, 10])
+                ..varint(9, 25)
+                ..varint(10, 250))
+              .toBytes(),
+        ],
+      );
+      // 预设 4：new_per_day / reviews_per_day = 0、rwkv 关、无最大间隔 / 保留率——
+      // proto3 一个都不写。
+      db.execute(
+        "INSERT INTO deck_config VALUES (4,'Zero preset',0,0,?)",
+        <Object?>[
+          (PbWriter()..packedFloats(1, <double>[3])).toBytes(),
+        ],
+      );
+      insertNotes(db, <FxNote>[
+        FxNote(
+          id: ms(2026, 5, 1),
+          guid: 'z1',
+          mid: 6000,
+          fields: <String>['a'],
+          cards: <FxCard>[FxCard(id: 901, ord: 0, did: 90)],
+        ),
+        FxNote(
+          id: ms(2026, 5, 2),
+          guid: 'z2',
+          mid: 6000,
+          fields: <String>['b'],
+          cards: <FxCard>[FxCard(id: 902, ord: 0, did: 91)],
+        ),
+      ]);
+    });
+
+    final SrsAnkiCollection col = await SrsAnkiCollection.open(collection);
+    try {
+      final SrsAnkiPreset zero = col.presets[4]!;
+      expect(zero.newPerDay, 0);
+      expect(zero.reviewsPerDay, 0);
+      expect(zero.rwkvEnabled, isFalse);
+      expect(zero.maxIntervalDays, 0);
+      expect(zero.desiredRetention, 0);
+      expect(zero.fsrsVersion, isNull);
+      expect(zero.fsrs6Params, isEmpty);
+      // config_id 缺失 = 0 → 按 Anki 回落默认预设 1。
+      expect(col.decks[91]!.configId, 1);
+      expect(col.decks[90]!.configId, 4);
+    } finally {
+      await col.close();
+    }
+
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    await importInto(
+      s,
+      zipOf(<String, List<int>>{
+        'collection.anki21': collection,
+        'media': utf8.encode('{}'),
+      }),
+    );
+    final SrsDeckTree tree = await s.deckTree();
+    SrsDeckView deck(String name) =>
+        tree.decks.firstWhere((SrsDeckView d) => tree.fullName(d.id) == name);
+    expect(deck('Zero').newPerDay, 0);
+    expect(deck('Zero').reviewsPerDay, 0);
+    expect(deck('Zero').learnSteps, <double>[3]);
+    expect(deck('Zero').maxIntervalDays, 36500); // 0 = 无效，不写，走默认。
+    expect(deck('NoConf').newPerDay, 25);
+    expect(deck('NoConf').reviewsPerDay, 250);
   });
 }

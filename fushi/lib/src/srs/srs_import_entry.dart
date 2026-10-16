@@ -1,6 +1,7 @@
 /// 复习牌组列表的「导入」/「导出到 Anki」/「从制卡历史导入」三个入口。
 ///
-/// - 导入：选 .apkg / .colpkg → 选项（「用导入内容更新已有笔记」默认关）→ 进度 →
+/// - 导入：选 .apkg / .colpkg → 选项（对齐 Anki 导入页，见
+///   srs_import_options_dialog.dart；记住上次的选择）→ 进度 →
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
 /// - 导出：`exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享；范围里有 FSRS-7
@@ -19,6 +20,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -29,6 +31,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -43,14 +46,14 @@ Future<SrsImportReport> runSrsAnkiImport({
   required SrsDbStore store,
   required SrsMediaStore media,
   required File file,
-  bool updateExisting = false,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
 }) => importAnkiPackageFile(
   store: store,
   file: file,
   storeMedia: (String name, Uint8List bytes) => media.store(name, bytes),
-  updateExisting: updateExisting,
+  options: options,
   onProgress: onProgress,
   zstdDecompress: zstdDecompress,
 );
@@ -72,6 +75,16 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     skipped: r.notesSkipped,
   ),
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
+  if (r.cardsResetToNew > 0)
+    t.srs_import_report_reset_new(n: r.cardsResetToNew),
+  if (r.reviewLogsSkipped > 0)
+    t.srs_import_report_reviews_skipped(n: r.reviewLogsSkipped),
+  if (r.deckPresetsSkipped > 0)
+    t.srs_import_report_presets_skipped(n: r.deckPresetsSkipped),
+  if (r.noteTypesUpdated > 0)
+    t.srs_import_report_notetypes_updated(n: r.noteTypesUpdated),
+  for (final String name in r.noteTypesDuplicated)
+    t.srs_import_report_notetypes_duplicated(name: name),
   if (r.reviewLogsImported > 0)
     t.srs_import_report_reviews(n: r.reviewLogsImported),
   if (r.fushiLogsRestored > 0)
@@ -162,8 +175,16 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
     allowedExtensions: const <String>{'apkg', 'colpkg'},
   );
   if (path == null || !context.mounted) return;
-  final bool? updateExisting = await _askImportOptions(context);
-  if (updateExisting == null || !context.mounted) return;
+  final PrefStore prefs = ref.read(appProvider).prefsRepo;
+  final SrsAnkiImportOptions? options = await showSrsImportOptionsDialog(
+    context: context,
+    fileName: File(path).uri.pathSegments.last,
+    initial: readSrsImportOptions(prefs),
+    wholeCollection: path.toLowerCase().endsWith('.colpkg'),
+  );
+  if (options == null || !context.mounted) return;
+  await writeSrsImportOptions(prefs, options);
+  if (!context.mounted) return;
 
   final ValueNotifier<double> progress = ValueNotifier<double>(0);
   final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
@@ -191,7 +212,7 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
       store: store,
       media: media,
       file: File(path),
-      updateExisting: updateExisting,
+      options: options,
       onProgress: (double p) => progress.value = p.clamp(0.0, 1.0),
     );
   } catch (e, stack) {
@@ -248,39 +269,6 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
           onPressed: () => Navigator.of(dialogContext).pop(),
         ),
       ],
-    ),
-  );
-}
-
-/// 选项对话框：返回「用导入内容更新已有笔记」的选择；取消返回 null。
-Future<bool?> _askImportOptions(BuildContext context) {
-  bool updateExisting = false;
-  return showAppDialog<bool>(
-    context: context,
-    builder: (BuildContext dialogContext) => StatefulBuilder(
-      builder: (BuildContext context, StateSetter setState) => FushiAlertDialog(
-        icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
-        title: Text(t.srs_import_pick_title),
-        content: AdaptiveSettingsSwitchRow(
-          key: const ValueKey<String>('srs-import-update-existing'),
-          title: t.srs_import_update_existing,
-          subtitle: t.srs_import_update_existing_hint,
-          value: updateExisting,
-          onChanged: (bool v) => setState(() => updateExisting = v),
-        ),
-        actions: <Widget>[
-          FushiDialogAction(
-            label: t.cancel,
-            onPressed: () => Navigator.of(dialogContext).pop(),
-          ),
-          FushiDialogAction(
-            label: t.srs_import,
-            kind: FushiDialogActionKind.primary,
-            autofocus: true,
-            onPressed: () => Navigator.of(dialogContext).pop(updateExisting),
-          ),
-        ],
-      ),
     ),
   );
 }
