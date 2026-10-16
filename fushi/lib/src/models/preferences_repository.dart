@@ -3856,10 +3856,10 @@ class PreferencesRepository extends ChangeNotifier
   // 悬浮字幕「同时显示句数」（取代上面的对称上下文 N）。1..15 = 固定显示这么多句，
   // 当前句居中（偶数时下文多一句，与歌词模式「往下看」的阅读方向一致）；0 = 自动：
   // 前后各送 12 句（`floatingLyricVisibleSpan`），原生窗把当前句滚到视口中央、超出
-  // 窗高的裁掉——拖高窗口就看到更多句（Windows）。新键没写过、旧 N 键写过（含旧
-  // 默认 / 显式 0）时一律按 2N+1 换算（0 → 1 句），老用户观感不变；只有两个键都
-  // 没写过的新用户才用默认 3 句。注意旧 0 必须换成 1 而不是落到新默认 3：旧版
-  // 默认就是 0，绝大多数老用户的旧键都是 0。
+  // 窗高的裁掉——拖高窗口就看到更多句（Windows）。新键没写过、旧 N 键**显式写过**
+  // （含显式 0）时按 2N+1 换算（0 → 1 句），改过这项的老用户观感不变；两个键都没写
+  // 过就用默认 3 句。偏好默认值从不落库，所以从没动过这项的老用户也会从 1 句变成
+  // 3 句（圆角同理从 0 变 24）——所有者 2026-10-15 拍板接受这一变化，不另做老用户判别。
   static const int floatingLyricVisibleLinesAuto = 0;
   static const int floatingLyricVisibleLinesDefault = 3;
   static const int floatingLyricVisibleLinesMax = 15;

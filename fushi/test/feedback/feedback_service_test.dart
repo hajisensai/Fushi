@@ -309,6 +309,32 @@ void main() {
     );
   });
 
+  test('同一清单并发写入：依次落盘不互相挪走临时文件，最后一次调用为准', () async {
+    FeedbackTicket ticket(String id) => FeedbackTicket(
+      id: id,
+      ticket: 't-$id',
+      title: id,
+      category: FeedbackCategory.bug,
+      createdAt: 1,
+      status: FeedbackStatus.open,
+      updatedAt: 1,
+    );
+    // 每次 new 一个实例：串行化必须按文件路径，而不是按实例。
+    final List<Future<void>> writes = <Future<void>>[
+      for (int i = 0; i < 20; i++)
+        FeedbackTicketStore(
+          root,
+        ).write(<FeedbackTicket>[ticket('id${i.toString().padLeft(8, '0')}')]),
+    ];
+    await Future.wait(writes);
+    final List<FeedbackTicket> read = await FeedbackTicketStore(root).read();
+    expect(read.map((FeedbackTicket t) => t.id), <String>['id00000019']);
+    expect(
+      File('${FeedbackTicketStore(root).file.path}.tmp').existsSync(),
+      isFalse,
+    );
+  });
+
   group('日志压缩', () {
     test('小日志原样压缩，可解回原文', () {
       final Uint8List gz = buildFeedbackLogGzip('第一行\nline 2\n');

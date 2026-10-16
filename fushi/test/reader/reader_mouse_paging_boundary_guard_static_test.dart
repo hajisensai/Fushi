@@ -232,9 +232,9 @@ void main() {
     test('onWheelPaginate Dart handler 方向只经 readerWheelTickIsForward，传 throttleMs',
         () {
       // 行为变更：onWheelPaginate handler 直送 _paginate，并传 wheelPageTurnInterval
-      // 作 throttleMs。方向由纯谓词 readerWheelTickIsForward 一处决定——纵向 / 鼠标
-      // 滚轮不读 invertSwipeDirection（TODO-737 脱钩根因），只有横向触控板（滑动翻页
-      // 手势，反馈 794gISjvgV）经它折算；象限表由
+      // 作 throttleMs。方向由纯谓词 readerWheelTickIsForward 一处决定——鼠标滚轮
+      // 不读 invertSwipeDirection（TODO-737 脱钩根因），只有触控板两指滑（滑动翻页
+      // 手势，BUG-3358，横纵两轴）经它折算；象限表由
       // test/reader/reader_wheel_page_turn_direction_test.dart 锁定。Dart handler 在合并
       // 语料的 webview.part.dart 段，setupScript 切片不含它，故读整源 [source]。
       //
@@ -253,7 +253,7 @@ void main() {
           RegExp(r'invertSwipe:\s*ReaderFushiSource\.instance\.invertSwipeDirection')
               .hasMatch(body),
           isTrue,
-          reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证纵向/鼠标不受它影响）');
+          reason: 'invertSwipeDirection 只能作为纯谓词的实参出现（谓词保证鼠标滚轮不受它影响）');
       expect('invertSwipeDirection'.allMatches(body).length, 1,
           reason: 'TODO-737：handler 不得在谓词之外另读 invertSwipeDirection');
       expect(containsCodeLine(body, 'throttleMs:'), isTrue,

@@ -120,6 +120,26 @@ void main() {
     expect(enabledOf('nav-module-down-video'), isFalse);
   });
 
+  testWidgets('上移 / 下移按钮命中区不小于 48dp', (WidgetTester tester) async {
+    await pumpList(tester);
+    for (final String key in <String>[
+      'nav-module-up-books',
+      'nav-module-down-books',
+    ]) {
+      final Size size = tester.getSize(find.byKey(ValueKey<String>(key)));
+      expect(
+        size.width,
+        greaterThanOrEqualTo(kMinInteractiveDimension),
+        reason: key,
+      );
+      expect(
+        size.height,
+        greaterThanOrEqualTo(kMinInteractiveDimension),
+        reason: key,
+      );
+    }
+  });
+
   testWidgets('焦点移到「下移」按 Enter：该行与下一行对调并落库', (WidgetTester tester) async {
     await pumpList(tester);
     final FocusDriver driver = FocusDriver(tester);

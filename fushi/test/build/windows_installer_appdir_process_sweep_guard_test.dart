@@ -39,17 +39,33 @@ void main() {
   });
 
   test('sweep filters by image path under the target dir, not by name', () {
-    final String iss = readInstallerScript();
+    expect(
+      readInstallerScript(),
+      contains('#include "process_control.iss"'),
+      reason: 'KillProcessesUnderDir 住在 process_control.iss，必须被 fushi.iss 引入',
+    );
+    final String control = File(
+      'windows/installer/process_control.iss',
+    ).readAsStringSync();
+    final int sweepAt = control.indexOf('procedure KillProcessesUnderDir(');
+    expect(sweepAt, greaterThan(0));
+    final String body = control.substring(sweepAt);
 
     expect(
-      iss,
-      contains('StartsWith(\$d, [System.StringComparison]::OrdinalIgnoreCase)'),
-      reason: 'BUG-1459：必须按可执行路径前缀过滤（大小写不敏感），'
-          '不得按进程名全局杀（会误伤用户自己的同名进程）',
+      body,
+      contains('Prefix := Lowercase(AddBackslash(Dir));'),
+      reason:
+          'BUG-1459：必须按可执行路径前缀过滤（大小写不敏感、带尾部分隔符防止'
+          ' C:\\Fushi 误中 C:\\Fushi2），不得按进程名全局杀（会误伤用户自己的同名进程）',
     );
     expect(
-      iss,
-      contains(r'Stop-Process -Force'),
+      body,
+      contains('if Pos(Prefix, Lowercase(Path)) = 1 then'),
+      reason: 'BUG-1459：只有镜像路径以安装目录开头的进程才清扫',
+    );
+    expect(
+      body,
+      contains('FushiTerminatePid(Pids[I]);'),
       reason: 'BUG-1459：路径命中的残留进程必须强制终止，否则文件仍被锁',
     );
   });

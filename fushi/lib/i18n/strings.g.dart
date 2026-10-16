@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 132328 (7784 per locale)
 ///
-/// Built on 2026-10-15 at 06:38 UTC
+/// Built on 2026-10-16 at 10:28 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -1989,7 +1989,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get floating_lyric_close => 'Close';
   String get floating_lyric_corner_radius => 'Floating subtitle corner radius';
   String get floating_lyric_corner_radius_hint =>
-      '0 keeps each platform\'s default corners; raise it to round the bar and buttons more';
+      '0 gives square corners; raise it to round the bar and buttons more (default 24)';
   String get floating_lyric_font_size => 'Floating subtitle font size';
   String get floating_lyric_hint =>
       'Float the currently playing subtitle line on top of other apps.';
@@ -14335,7 +14335,7 @@ class _StringsAr extends _StringsEn {
   String get floating_lyric_corner_radius => 'نصف قطر زوايا الترجمة العائمة';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 يحتفظ بالزوايا الافتراضية لكل منصة؛ ارفعه لتدوير الشريط والأزرار أكثر';
+      '0 يعني زوايا قائمة؛ ارفعه لتدوير الشريط والأزرار أكثر (الافتراضي 24)';
   @override
   String get floating_lyric_font_size => 'حجم خط الترجمة العائمة';
   @override
@@ -33237,7 +33237,7 @@ class _StringsDe extends _StringsEn {
       'Eckenradius der schwebenden Untertitel';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 behält die plattformüblichen Ecken bei; höhere Werte runden Leiste und Schaltflächen stärker ab';
+      '0 ergibt eckige Ecken; höhere Werte runden Leiste und Schaltflächen stärker ab (Standard 24)';
   @override
   String get floating_lyric_font_size =>
       'Schriftgröße der schwebenden Untertitel';
@@ -52465,7 +52465,7 @@ class _StringsEs extends _StringsEn {
       'Radio de esquinas del subtítulo flotante';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 mantiene las esquinas predeterminadas de cada plataforma; aumente para redondear más la barra y los botones';
+      '0 deja las esquinas rectas; aumente para redondear más la barra y los botones (predeterminado 24)';
   @override
   String get floating_lyric_font_size =>
       'Tamaño de fuente del subtítulo flotante';
@@ -71754,7 +71754,7 @@ class _StringsFr extends _StringsEn {
       'Rayon des coins du sous-titre flottant';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 garde les coins par défaut de chaque plateforme ; augmentez pour arrondir la barre et les boutons';
+      '0 donne des coins droits ; augmentez pour arrondir la barre et les boutons (24 par défaut)';
   @override
   String get floating_lyric_font_size =>
       'Taille de police du sous-titre flottant';
@@ -91029,7 +91029,7 @@ class _StringsId extends _StringsEn {
   String get floating_lyric_corner_radius => 'Radius sudut subtitle mengambang';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 menggunakan sudut default setiap platform; naikkan untuk membulatkan bar dan tombol lebih banyak';
+      '0 berarti sudut siku; naikkan untuk membulatkan bar dan tombol lebih banyak (default 24)';
   @override
   String get floating_lyric_font_size => 'Ukuran font subtitle mengambang';
   @override
@@ -110070,7 +110070,7 @@ class _StringsIt extends _StringsEn {
       'Raggio angoli sottotitoli flottanti';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 mantiene gli angoli predefiniti della piattaforma; aumenta per arrotondare di più la barra e i pulsanti';
+      '0 lascia gli angoli retti; aumenta per arrotondare di più la barra e i pulsanti (predefinito 24)';
   @override
   String get floating_lyric_font_size =>
       'Dimensione carattere sottotitolo flottante';
@@ -129061,7 +129061,7 @@ class _StringsJa extends _StringsEn {
   String get floating_lyric_corner_radius => 'フローティング字幕の角丸';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 は各プラットフォームのデフォルト角丸を使用。値を上げるとバーやボタンがより丸くなります';
+      '0 で角丸なし（直角）。値を上げるとバーやボタンがより丸くなります（既定 24）';
   @override
   String get floating_lyric_font_size => 'フローティング字幕の文字サイズ';
   @override
@@ -147227,7 +147227,7 @@ class _StringsKo extends _StringsEn {
   String get floating_lyric_corner_radius => '플로팅 자막 모서리 둥글기';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0은 각 플랫폼의 기본 모서리를 유지합니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다';
+      '0은 직각 모서리입니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다 (기본값 24)';
   @override
   String get floating_lyric_font_size => '플로팅 자막 글꼴 크기';
   @override
@@ -165612,7 +165612,7 @@ class _StringsNl extends _StringsEn {
   String get floating_lyric_corner_radius => 'Zwevende ondertitel hoekradius';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 behoudt de standaardhoeken per platform; verhoog om de balk en knoppen ronder te maken';
+      '0 geeft rechte hoeken; verhoog om de balk en knoppen ronder te maken (standaard 24)';
   @override
   String get floating_lyric_font_size => 'Lettergrootte zwevende ondertitel';
   @override
@@ -184748,7 +184748,7 @@ class _StringsPtBr extends _StringsEn {
       'Raio dos cantos da legenda flutuante';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 mantém os cantos padrão de cada plataforma; aumente para arredondar mais a barra e os botões';
+      '0 deixa os cantos retos; aumente para arredondar mais a barra e os botões (padrão 24)';
   @override
   String get floating_lyric_font_size =>
       'Tamanho da fonte da legenda flutuante';
@@ -203913,7 +203913,7 @@ class _StringsRu extends _StringsEn {
       'Скругление углов плавающих субтитров';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 оставляет углы по умолчанию для платформы; увеличьте, чтобы скруглить панель и кнопки';
+      '0 — прямые углы; увеличьте, чтобы сильнее скруглить панель и кнопки (по умолчанию 24)';
   @override
   String get floating_lyric_font_size => 'Размер шрифта плавающих субтитров';
   @override
@@ -222990,7 +222990,7 @@ class _StringsTh extends _StringsEn {
   String get floating_lyric_corner_radius => 'ความโค้งมุมคำบรรยายลอย';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 ใช้มุมเริ่มต้นของแต่ละแพลตฟอร์ม; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น';
+      '0 คือมุมฉาก; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น (ค่าเริ่มต้น 24)';
   @override
   String get floating_lyric_font_size => 'ขนาดตัวอักษรซับไตเติลลอย';
   @override
@@ -241852,7 +241852,7 @@ class _StringsTr extends _StringsEn {
   String get floating_lyric_corner_radius => 'Kayan altyazı köşe yarıçapı';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 her platformun varsayılan köşelerini korur; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın';
+      '0 köşeleri düz yapar; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın (varsayılan 24)';
   @override
   String get floating_lyric_font_size => 'Kayan altyazı yazı tipi boyutu';
   @override
@@ -260851,7 +260851,7 @@ class _StringsVi extends _StringsEn {
   String get floating_lyric_corner_radius => 'Bán kính bo góc phụ đề nổi';
   @override
   String get floating_lyric_corner_radius_hint =>
-      '0 giữ góc mặc định của mỗi nền tảng; tăng lên để bo tròn thanh và nút hơn';
+      '0 là góc vuông; tăng lên để bo tròn thanh và nút hơn (mặc định 24)';
   @override
   String get floating_lyric_font_size => 'Cỡ chữ phụ đề nổi';
   @override
@@ -279554,7 +279554,7 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get floating_lyric_corner_radius => '悬浮字幕圆角';
   @override
-  String get floating_lyric_corner_radius_hint => '0 = 各平台默认圆角；调大让字幕条与按钮更圆';
+  String get floating_lyric_corner_radius_hint => '0 = 直角；调大让字幕条与按钮更圆（默认 24）';
   @override
   String get floating_lyric_font_size => '悬浮字幕字号';
   @override
@@ -296848,7 +296848,7 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get floating_lyric_corner_radius => '懸浮字幕圓角';
   @override
-  String get floating_lyric_corner_radius_hint => '0 = 各平台預設圓角；調大讓字幕條與按鈕更圓';
+  String get floating_lyric_corner_radius_hint => '0 = 直角；調大讓字幕條與按鈕更圓（預設 24）';
   @override
   String get floating_lyric_font_size => '懸浮字幕字號';
   @override
@@ -314255,7 +314255,7 @@ extension on _StringsEn {
       case 'floating_lyric_corner_radius':
         return 'Floating subtitle corner radius';
       case 'floating_lyric_corner_radius_hint':
-        return '0 keeps each platform\'s default corners; raise it to round the bar and buttons more';
+        return '0 gives square corners; raise it to round the bar and buttons more (default 24)';
       case 'floating_lyric_font_size':
         return 'Floating subtitle font size';
       case 'floating_lyric_hint':
@@ -330403,7 +330403,7 @@ extension on _StringsAr {
       case 'floating_lyric_corner_radius':
         return 'نصف قطر زوايا الترجمة العائمة';
       case 'floating_lyric_corner_radius_hint':
-        return '0 يحتفظ بالزوايا الافتراضية لكل منصة؛ ارفعه لتدوير الشريط والأزرار أكثر';
+        return '0 يعني زوايا قائمة؛ ارفعه لتدوير الشريط والأزرار أكثر (الافتراضي 24)';
       case 'floating_lyric_font_size':
         return 'حجم خط الترجمة العائمة';
       case 'floating_lyric_hint':
@@ -346571,7 +346571,7 @@ extension on _StringsDe {
       case 'floating_lyric_corner_radius':
         return 'Eckenradius der schwebenden Untertitel';
       case 'floating_lyric_corner_radius_hint':
-        return '0 behält die plattformüblichen Ecken bei; höhere Werte runden Leiste und Schaltflächen stärker ab';
+        return '0 ergibt eckige Ecken; höhere Werte runden Leiste und Schaltflächen stärker ab (Standard 24)';
       case 'floating_lyric_font_size':
         return 'Schriftgröße der schwebenden Untertitel';
       case 'floating_lyric_hint':
@@ -362780,7 +362780,7 @@ extension on _StringsEs {
       case 'floating_lyric_corner_radius':
         return 'Radio de esquinas del subtítulo flotante';
       case 'floating_lyric_corner_radius_hint':
-        return '0 mantiene las esquinas predeterminadas de cada plataforma; aumente para redondear más la barra y los botones';
+        return '0 deja las esquinas rectas; aumente para redondear más la barra y los botones (predeterminado 24)';
       case 'floating_lyric_font_size':
         return 'Tamaño de fuente del subtítulo flotante';
       case 'floating_lyric_hint':
@@ -378989,7 +378989,7 @@ extension on _StringsFr {
       case 'floating_lyric_corner_radius':
         return 'Rayon des coins du sous-titre flottant';
       case 'floating_lyric_corner_radius_hint':
-        return '0 garde les coins par défaut de chaque plateforme ; augmentez pour arrondir la barre et les boutons';
+        return '0 donne des coins droits ; augmentez pour arrondir la barre et les boutons (24 par défaut)';
       case 'floating_lyric_font_size':
         return 'Taille de police du sous-titre flottant';
       case 'floating_lyric_hint':
@@ -395193,7 +395193,7 @@ extension on _StringsId {
       case 'floating_lyric_corner_radius':
         return 'Radius sudut subtitle mengambang';
       case 'floating_lyric_corner_radius_hint':
-        return '0 menggunakan sudut default setiap platform; naikkan untuk membulatkan bar dan tombol lebih banyak';
+        return '0 berarti sudut siku; naikkan untuk membulatkan bar dan tombol lebih banyak (default 24)';
       case 'floating_lyric_font_size':
         return 'Ukuran font subtitle mengambang';
       case 'floating_lyric_hint':
@@ -411363,7 +411363,7 @@ extension on _StringsIt {
       case 'floating_lyric_corner_radius':
         return 'Raggio angoli sottotitoli flottanti';
       case 'floating_lyric_corner_radius_hint':
-        return '0 mantiene gli angoli predefiniti della piattaforma; aumenta per arrotondare di più la barra e i pulsanti';
+        return '0 lascia gli angoli retti; aumenta per arrotondare di più la barra e i pulsanti (predefinito 24)';
       case 'floating_lyric_font_size':
         return 'Dimensione carattere sottotitolo flottante';
       case 'floating_lyric_hint':
@@ -427532,7 +427532,7 @@ extension on _StringsJa {
       case 'floating_lyric_corner_radius':
         return 'フローティング字幕の角丸';
       case 'floating_lyric_corner_radius_hint':
-        return '0 は各プラットフォームのデフォルト角丸を使用。値を上げるとバーやボタンがより丸くなります';
+        return '0 で角丸なし（直角）。値を上げるとバーやボタンがより丸くなります（既定 24）';
       case 'floating_lyric_font_size':
         return 'フローティング字幕の文字サイズ';
       case 'floating_lyric_hint':
@@ -443604,7 +443604,7 @@ extension on _StringsKo {
       case 'floating_lyric_corner_radius':
         return '플로팅 자막 모서리 둥글기';
       case 'floating_lyric_corner_radius_hint':
-        return '0은 각 플랫폼의 기본 모서리를 유지합니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다';
+        return '0은 직각 모서리입니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다 (기본값 24)';
       case 'floating_lyric_font_size':
         return '플로팅 자막 글꼴 크기';
       case 'floating_lyric_hint':
@@ -459712,7 +459712,7 @@ extension on _StringsNl {
       case 'floating_lyric_corner_radius':
         return 'Zwevende ondertitel hoekradius';
       case 'floating_lyric_corner_radius_hint':
-        return '0 behoudt de standaardhoeken per platform; verhoog om de balk en knoppen ronder te maken';
+        return '0 geeft rechte hoeken; verhoog om de balk en knoppen ronder te maken (standaard 24)';
       case 'floating_lyric_font_size':
         return 'Lettergrootte zwevende ondertitel';
       case 'floating_lyric_hint':
@@ -475906,7 +475906,7 @@ extension on _StringsPtBr {
       case 'floating_lyric_corner_radius':
         return 'Raio dos cantos da legenda flutuante';
       case 'floating_lyric_corner_radius_hint':
-        return '0 mantém os cantos padrão de cada plataforma; aumente para arredondar mais a barra e os botões';
+        return '0 deixa os cantos retos; aumente para arredondar mais a barra e os botões (padrão 24)';
       case 'floating_lyric_font_size':
         return 'Tamanho da fonte da legenda flutuante';
       case 'floating_lyric_hint':
@@ -492100,7 +492100,7 @@ extension on _StringsRu {
       case 'floating_lyric_corner_radius':
         return 'Скругление углов плавающих субтитров';
       case 'floating_lyric_corner_radius_hint':
-        return '0 оставляет углы по умолчанию для платформы; увеличьте, чтобы скруглить панель и кнопки';
+        return '0 — прямые углы; увеличьте, чтобы сильнее скруглить панель и кнопки (по умолчанию 24)';
       case 'floating_lyric_font_size':
         return 'Размер шрифта плавающих субтитров';
       case 'floating_lyric_hint':
@@ -508272,7 +508272,7 @@ extension on _StringsTh {
       case 'floating_lyric_corner_radius':
         return 'ความโค้งมุมคำบรรยายลอย';
       case 'floating_lyric_corner_radius_hint':
-        return '0 ใช้มุมเริ่มต้นของแต่ละแพลตฟอร์ม; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น';
+        return '0 คือมุมฉาก; เพิ่มค่าเพื่อทำให้แถบและปุ่มโค้งมนขึ้น (ค่าเริ่มต้น 24)';
       case 'floating_lyric_font_size':
         return 'ขนาดตัวอักษรซับไตเติลลอย';
       case 'floating_lyric_hint':
@@ -524429,7 +524429,7 @@ extension on _StringsTr {
       case 'floating_lyric_corner_radius':
         return 'Kayan altyazı köşe yarıçapı';
       case 'floating_lyric_corner_radius_hint':
-        return '0 her platformun varsayılan köşelerini korur; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın';
+        return '0 köşeleri düz yapar; çubuğu ve düğmeleri daha fazla yuvarlamak için artırın (varsayılan 24)';
       case 'floating_lyric_font_size':
         return 'Kayan altyazı yazı tipi boyutu';
       case 'floating_lyric_hint':
@@ -540605,7 +540605,7 @@ extension on _StringsVi {
       case 'floating_lyric_corner_radius':
         return 'Bán kính bo góc phụ đề nổi';
       case 'floating_lyric_corner_radius_hint':
-        return '0 giữ góc mặc định của mỗi nền tảng; tăng lên để bo tròn thanh và nút hơn';
+        return '0 là góc vuông; tăng lên để bo tròn thanh và nút hơn (mặc định 24)';
       case 'floating_lyric_font_size':
         return 'Cỡ chữ phụ đề nổi';
       case 'floating_lyric_hint':
@@ -556729,7 +556729,7 @@ extension on _StringsZhCn {
       case 'floating_lyric_corner_radius':
         return '悬浮字幕圆角';
       case 'floating_lyric_corner_radius_hint':
-        return '0 = 各平台默认圆角；调大让字幕条与按钮更圆';
+        return '0 = 直角；调大让字幕条与按钮更圆（默认 24）';
       case 'floating_lyric_font_size':
         return '悬浮字幕字号';
       case 'floating_lyric_hint':
@@ -572706,7 +572706,7 @@ extension on _StringsZhHk {
       case 'floating_lyric_corner_radius':
         return '懸浮字幕圓角';
       case 'floating_lyric_corner_radius_hint':
-        return '0 = 各平台預設圓角；調大讓字幕條與按鈕更圓';
+        return '0 = 直角；調大讓字幕條與按鈕更圓（預設 24）';
       case 'floating_lyric_font_size':
         return '懸浮字幕字號';
       case 'floating_lyric_hint':

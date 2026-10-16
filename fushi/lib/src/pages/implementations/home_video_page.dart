@@ -3831,6 +3831,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     await _attachSubtitleToVideoCard(book, subtitlePath);
   }
 
+  /// BUG-3361 跨域补漏：「加入合集」弹窗的成员数与合集详情页
+  /// （[loadCollectionEpisodeSlots]）同一判据——本机视频行 + 远端占位（与详情页
+  /// 同一远端门控：[_collectionRemoteContext] 为 null 时详情页不出远端槽）− 已被本机
+  /// 同一集归并的远端行；已删视频的孤儿行、混合合集里的书 / 游戏行不数。
+  CollectionMemberVisibility _videoCollectionMemberVisibility() {
+    final List<VideoBookRow> local = _videosCache ?? const <VideoBookRow>[];
+    final _RemoteVideoState? remote =
+        _remoteVideoSource != null && _shouldLoadRemoteVideos
+        ? _lastRemoteState
+        : null;
+    return videoCollectionMemberVisibility(
+      localBookUids: <String>{for (final VideoBookRow b in local) b.bookUid},
+      remoteOnlyIds: <String>{
+        for (final RemoteVideoInfo v
+            in remote?.videos ?? const <RemoteVideoInfo>[])
+          v.id,
+      },
+      mirroredRemoteIds: _remoteEpisodesMirroredLocally(local, remote),
+    );
+  }
+
   /// 单卡「加入合集」：entryKey 与批量组合三档同一编码——视频选择键就是裸
   /// bookUid（见 [shelfSelectionToEntry] 的 video 分支），落库同走
   /// addToCollection DAO；成功后按 [_combineAddToExisting] 同款
@@ -3841,6 +3862,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       database: ref.read(appProvider).database,
       mediaType: MediaKind.video,
       entryKey: book.bookUid,
+      isMemberVisible: _videoCollectionMemberVisibility(),
     );
     if (!added || !mounted) return;
     await _loadLibraryMaps();

@@ -2487,46 +2487,41 @@ jobs:
       # Flutter 3.44's experimental SPM integration here too. (TODO-1129)
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
-      # 互联 P2P 隧道（iroh）iOS 静态库（device 切片）：iOS 不能加载自带 dylib，以 staticlib
-      # 经 -force_load 链进 Runner。build_ios_staticlib.sh 顺带生成 xcconfig 片段，由
-      # fushi/ios/Flutter/Release.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)。
+      # iOS 伞形 Rust 静态库（device 切片）：互联 P2P 隧道（fushi_p2p，fp2p_*）+ SRS 排程内核
+      # （fushi_fsrs，ffsrs_*）合成一个 staticlib、Rust std 只有一份——两份单独的 .a 同时
+      # -force_load 会撞重复 std 符号。iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进
+      # Runner；build_ios_staticlib.sh 顺带生成 xcconfig 片段，由 fushi/ios/Flutter/Release.xcconfig
+      # 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_IOS_NATIVE_LDFLAGS)。
       # 不挂 testflight_only 条件：未签名 IPA 与 TestFlight 签名 IPA 两条出包路径都要它。
-      # P2P 互联不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
-      # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 符号。
-      # 持久库存整个 prebuilt/ios（.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，
-      # 两条出包路径上的 Runner 符号核对照跑。
-      #
-      # fushi_fsrs（SRS 排程内核）**暂不进 iOS 包**：两份 Rust staticlib 同时 -force_load 会撞
-      # 重复的 Rust std 符号，iOS 要改链伞形库 native/fushi_ios_umbrella（fp2p_* + ffsrs_* 合一），
-      # 切换步骤见 native/fushi_fsrs/README.md「iOS」，Runner 尚未切。在切换之前 iOS 上 SRS 原生
-      # 内核判不可用；伞形库能否编过由 build-multiplatform.yml 的 ios job 在 PR 上核对。切换时
-      # 把这里的 fushi_p2p staticlib 步骤整体换成伞形库，并在下面两条出包路径的 Runner 符号
-      # 核对里加 native/fushi_fsrs/verify_abi.sh。
-      - name: Restore fushi_p2p staticlib from native artifact store
-        id: p2p_store
+      # P2P 互联与 SRS 复习都不属于 store_compliance.dart 的三类受限能力，App Store 包照带。
+      # 失败口径同其它平台：构建失败即 job 失败；出包后逐个核对 Runner 导出了 fp2p_* 与 ffsrs_*
+      # 符号（缺 ffsrs_* 的包装到手机上，复习页报「排程内核不可用」）。持久库存整个 prebuilt/ios
+      # （.a + 系统库清单 + 生成的 xcconfig）；命中只跳 Rust，两条出包路径上的 Runner 符号核对照跑。
+      - name: Restore iOS umbrella staticlib from native artifact store
+        id: ios_native_store
         uses: ./.github/actions/native-artifact-store
         with:
           mode: restore
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
-      - name: Set up Rust (fushi_p2p, iOS device target)
-        if: steps.p2p_store.outputs.hit != 'true'
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
+      - name: Set up Rust (fushi_ios_umbrella, iOS device target)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
-      - name: Cache Rust build (fushi_p2p)
-        if: steps.p2p_store.outputs.hit != 'true'
+      - name: Cache Rust build (fushi_ios_umbrella)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/fushi_p2p -> target
-          key: fushi-p2p-ios
-      - name: Build fushi_p2p (iOS device staticlib)
-        if: steps.p2p_store.outputs.hit != 'true'
+          workspaces: native/fushi_ios_umbrella -> target
+          key: fushi-ios-umbrella
+      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device)
+        if: steps.ios_native_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_ios_staticlib.sh device
+          bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
       - name: Build iOS release app (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
@@ -2537,21 +2532,22 @@ jobs:
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
       # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
       # Release 配置下 dead-strip 与 strip 都开着，所以查的是真正要发出去的 Runner。
-      - name: Verify fushi_p2p symbols are linked into Runner (iOS release)
+      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (iOS release)
         if: github.event.inputs.testflight_only != 'true'
         shell: bash
         run: |
           set -euo pipefail
           bash native/fushi_p2p/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
+          bash native/fushi_fsrs/verify_abi.sh fushi/build/ios/iphoneos/Runner.app/Runner nm
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
-      - name: Save fushi_p2p staticlib to native artifact store
-        if: steps.p2p_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
+      - name: Save iOS umbrella staticlib to native artifact store
+        if: steps.ios_native_store.outputs.hit != 'true' && github.event.inputs.testflight_only != 'true'
         continue-on-error: true
         uses: ./.github/actions/native-artifact-store
         with:
           mode: save
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
       - name: Prepare unsigned iOS IPA release asset
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
@@ -2816,13 +2812,14 @@ jobs:
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
-      - name: Verify fushi_p2p symbols are linked into Runner (App Store archive)
+      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (App Store archive)
         if: steps.signing.outputs.testflight == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/verify_abi.sh \
-            fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner nm
+          runner=fushi/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app/Runner
+          bash native/fushi_p2p/verify_abi.sh "$runner" nm
+          bash native/fushi_fsrs/verify_abi.sh "$runner" nm
       - name: Upload to TestFlight
         if: steps.signing.outputs.testflight == 'true'
         working-directory: fushi
