@@ -504,7 +504,7 @@ SettingsDestination buildAppearanceDestination() {
                     settingsContext.appModel
                         .setNavBarStyle(value)
                         .then((_) => settingsContext.refresh()),
-            defaultValue: AdaptiveNavBarStyle.flat,
+            defaultValue: AdaptiveNavBarStyle.defaultStyle,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；
