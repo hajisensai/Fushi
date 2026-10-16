@@ -15,8 +15,12 @@ import 'dart:math';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
+import 'package:fushi_engine/tts/local/local_service_process.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
@@ -28,6 +32,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -190,6 +195,9 @@ Future<void> openTtsVoiceSettingsPage(
 /// 「添加声音」里「本机一键部署」那一项的值（其余项是 [TtsProviderCategory]）。
 const String _kAddLocalGptSovits = 'local_gpt_sovits';
 
+/// 「添加声音」里「本机一键部署 Irodori-TTS」那一项的值。
+const String _kAddLocalIrodori = 'local_irodori';
+
 class TtsVoiceSettingsPage extends StatefulWidget {
   const TtsVoiceSettingsPage({
     required this.services,
@@ -239,18 +247,21 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     });
   }
 
-  /// 「本机 GPT-SoVITS」页新建了声音：重读清单、定位到它。
-  Future<void> _openLocalDeploy({required bool wide}) async {
+  /// 本机部署页（GPT-SoVITS / [irodori] 时 Irodori-TTS）新建了声音：重读清单、
+  /// 定位到它。
+  Future<void> _openLocalDeploy({
+    required bool wide,
+    bool irodori = false,
+  }) async {
     // 那边直接读写预设仓：先把防抖中的编辑落盘，回来重读时才不丢。
     if (_saveDebounce?.isActive ?? false) {
       _saveDebounce!.cancel();
       await _store.savePresets(_presets);
       if (!mounted) return;
     }
-    final String? created = await openGptSovitsLocalPage(
-      context,
-      widget.services,
-    );
+    final String? created = irodori
+        ? await openIrodoriLocalPage(context, widget.services)
+        : await openGptSovitsLocalPage(context, widget.services);
     if (created == null || !mounted) return;
     setState(() {
       _presets = _store.loadPresets();
@@ -338,6 +349,13 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
             subtitle: t.audiobook_tts_local_add_hint,
             icon: FushiIcons.download,
           ),
+        if (widget.services.localIrodori.isSupported)
+          FushiChoiceOption<Object>(
+            value: _kAddLocalIrodori,
+            label: t.audiobook_tts_irodori_local_add,
+            subtitle: t.audiobook_tts_irodori_local_add_hint,
+            icon: FushiIcons.download,
+          ),
         for (final TtsProviderCategory c in categories)
           FushiChoiceOption<Object>(
             value: c,
@@ -350,6 +368,10 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     if (choice == null || !mounted) return;
     if (choice == _kAddLocalGptSovits) {
       await _openLocalDeploy(wide: wide);
+      return;
+    }
+    if (choice == _kAddLocalIrodori) {
+      await _openLocalDeploy(wide: wide, irodori: true);
       return;
     }
     final TtsProviderCategory picked = choice as TtsProviderCategory;
@@ -432,7 +454,12 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     onDelete: () => unawaited(onDelete()),
     // 经列表页打开：那边新建的声音要并进本页的 `_presets`，否则下一次防抖落盘会用
     // 旧清单把它覆盖掉。
-    onOpenLocalDeploy: () => unawaited(_openLocalDeploy(wide: embedded)),
+    onOpenLocalDeploy: () => unawaited(
+      _openLocalDeploy(
+        wide: embedded,
+        irodori: preset.providerId == IrodoriServerTtsDescriptor.providerId,
+      ),
+    ),
   );
 
   static String _displayName(TtsVoicePreset preset) =>
@@ -562,11 +589,13 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   TtsVoicePreset get _preset => widget.preset;
 
   GptSovitsLocalEngine get _local => widget.services.localGptSovits;
+  IrodoriLocalEngine get _localIrodori => widget.services.localIrodori;
 
   @override
   void initState() {
     super.initState();
     _local.addListener(_onLocalEngine);
+    _localIrodori.addListener(_onLocalEngine);
   }
 
   void _onLocalEngine() {
@@ -576,6 +605,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   @override
   void dispose() {
     _local.removeListener(_onLocalEngine);
+    _localIrodori.removeListener(_onLocalEngine);
     _testCancel?.cancel();
     unawaited(_releaseTestPlayer());
     for (final TextEditingController c in _controllers.values) {
@@ -1099,6 +1129,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   /// GPT-SoVITS 声音指向本机时：已部署就显示本机服务状态，没部署就给一键部署入口。
   /// 局域网 / 远端地址、不支持一键部署的平台不显示。
   Widget? _localServiceRow() {
+    if (_preset.providerId == IrodoriServerTtsDescriptor.providerId) {
+      return _localIrodoriRow();
+    }
     if (_preset.providerId != GptSovitsTtsDescriptor.providerId ||
         !_local.isSupported) {
       return null;
@@ -1129,6 +1162,43 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
         icon: installed ? FushiIcons.server : FushiIcons.download,
         showIcon: true,
         title: t.audiobook_tts_local_title,
+        subtitle: subtitle,
+        subtitleMaxLines: 3,
+        onTap: widget.onOpenLocalDeploy,
+      ),
+    );
+  }
+
+  /// Irodori-TTS（官方服务）声音指向本机时的同一行：已部署显示服务状态，没部署给
+  /// 一键部署入口。
+  Widget? _localIrodoriRow() {
+    if (!_localIrodori.isSupported) return null;
+    final String endpoint = _preset.param(
+      IrodoriServerTtsDescriptor.endpointKey,
+      fallback: IrodoriServerTtsDescriptor.defaultEndpoint,
+    );
+    if (!ttsEndpointIsLoopback(endpoint)) return null;
+    final bool installed = _localIrodori.isInstalled;
+    final bool managed = localServiceEndpointIsManaged(
+      endpoint,
+      _localIrodori.settings.port,
+    );
+    if (installed && !managed) return null;
+    final String subtitle = !installed
+        ? t.audiobook_tts_irodori_local_editor_not_installed
+        : switch (_localIrodori.server.phase) {
+            LocalServicePhase.running => t.audiobook_tts_local_server_running(
+              endpoint: _localIrodori.endpoint,
+            ),
+            LocalServicePhase.starting => t.audiobook_tts_local_server_starting,
+            _ => t.audiobook_tts_local_server_stopped,
+          };
+    return KeyedSubtree(
+      key: const ValueKey<String>('tts-voice-local-irodori'),
+      child: AdaptiveSettingsRow(
+        icon: installed ? FushiIcons.server : FushiIcons.download,
+        showIcon: true,
+        title: t.audiobook_tts_irodori_local_title,
         subtitle: subtitle,
         subtitleMaxLines: 3,
         onTap: widget.onOpenLocalDeploy,

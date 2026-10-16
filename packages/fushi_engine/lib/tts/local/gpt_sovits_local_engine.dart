@@ -5,7 +5,6 @@
 /// 仍按「外部服务」手填地址）。
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,9 +12,9 @@ import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_package.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
-import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:path/path.dart' as p;
 
@@ -275,7 +274,7 @@ class AutoStartGptSovitsTtsDescriptor extends GptSovitsTtsDescriptor {
 
   @override
   TtsProvider create(TtsVoicePreset preset, TtsHost host) =>
-      _AutoStartTtsProvider(
+      AutoStartTtsProvider(
         super.create(preset, host),
         () => engine.ensureRunningFor(
           preset.param(
@@ -286,67 +285,6 @@ class AutoStartGptSovitsTtsDescriptor extends GptSovitsTtsDescriptor {
       );
 }
 
-class _AutoStartTtsProvider extends TtsProvider {
-  _AutoStartTtsProvider(this._inner, this._ensure);
-
-  final TtsProvider _inner;
-  final Future<void> Function() _ensure;
-
-  @override
-  TtsCapabilities get capabilities => _inner.capabilities;
-
-  @override
-  Future<TtsResult> synthesize(
-    String text, {
-    required String outputPath,
-    required TtsCancelToken cancel,
-  }) async {
-    // 拉不起来不在这里报：照常发请求，连不上就是「无法连接语音服务」。等服务就绪
-    // 最长要几分钟，期间取消（翻页 / 停止朗读）必须立刻生效，不能干等。
-    await _awaitOrCancel(_ensure(), cancel);
-    cancel.throwIfCancelled();
-    return _inner.synthesize(text, outputPath: outputPath, cancel: cancel);
-  }
-
-  @override
-  Future<List<TtsVoice>> listVoices({TtsCancelToken? cancel}) async {
-    if (cancel == null) {
-      await _ensure();
-    } else {
-      await _awaitOrCancel(_ensure(), cancel);
-      cancel.throwIfCancelled();
-    }
-    return _inner.listVoices(cancel: cancel);
-  }
-
-  /// 等 [work]，但 [cancel] 一触发就返回（work 继续在后台跑完——服务照样起来，
-  /// 下一句直接用）。
-  static Future<void> _awaitOrCancel(
-    Future<void> work,
-    TtsCancelToken cancel,
-  ) async {
-    final Completer<void> cancelled = Completer<void>();
-    final void Function() unregister = cancel.onCancel(() {
-      if (!cancelled.isCompleted) cancelled.complete();
-    });
-    try {
-      await Future.any(<Future<void>>[
-        work.catchError((Object _) {}),
-        cancelled.future,
-      ]);
-    } finally {
-      unregister();
-    }
-  }
-
-  @override
-  Future<void> dispose() => _inner.dispose();
-}
-
 /// [endpoint] 是不是本机托管服务的地址（回环主机 + 托管端口）。
-bool gptSovitsEndpointIsManaged(String endpoint, int port) {
-  final Uri? uri = Uri.tryParse(endpoint.trim());
-  if (uri == null || !uri.hasPort || uri.port != port) return false;
-  final String host = uri.host.toLowerCase();
-  return host == 'localhost' || host == '::1' || host.startsWith('127.');
-}
+bool gptSovitsEndpointIsManaged(String endpoint, int port) =>
+    localServiceEndpointIsManaged(endpoint, port);

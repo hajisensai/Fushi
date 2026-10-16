@@ -5,7 +5,9 @@ import 'package:material_ui/material_ui.dart' show BuildContext;
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
+import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
+import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/media/manga/manga_ocr_models_storage_section.dart';
@@ -79,13 +81,20 @@ SettingsDestination buildModelsDestination() {
         id: 'models.section.files',
         title: t.models_section_files,
         visible: (SettingsContext c) =>
-            _isMangaOcrLocalSupported || _isLocalTtsSupported(c),
+            _isMangaOcrLocalSupported ||
+            _isLocalTtsSupported(c) ||
+            _isLocalIrodoriSupported(c),
         items: <SettingsItem>[
           // 语音合成的「模型文件」：GPT-SoVITS 整合包（约 19 GB）与 OCR 模型并列管理，
           // 点进去是同一个本机部署页（下载 / 删除 / 指向已有整合包）。
           _localGptSovitsItem(
             id: 'models.files.gpt_sovits',
             title: t.audiobook_tts_local_package,
+          ),
+          // 本机 Irodori-TTS 的环境与模型（Python / PyTorch / v4.1 模型，同一个专属目录）。
+          _localIrodoriItem(
+            id: 'models.files.irodori',
+            title: t.audiobook_tts_irodori_local_package,
           ),
           SettingsNavigationItem(
             id: 'storage.ocr_models',
@@ -188,6 +197,47 @@ SettingsActionItem _localGptSovitsItem({
   },
 );
 
+/// 本机能不能一键部署官方 Irodori-TTS-Server（桌面三端，uv 有发行包的架构）。
+bool _isLocalIrodoriSupported(SettingsContext _) =>
+    IrodoriLocalEngine.platformSupported;
+
+/// 本机 Irodori-TTS 的一句话状态（同 [_localTtsStatus]，只读已建好的服务对象）。
+String? _localIrodoriStatus(SettingsContext _) {
+  final IrodoriLocalEngine? engine = TtsServices.existing?.localIrodori;
+  if (engine == null) return null;
+  if (!engine.isInstalled) return t.audiobook_tts_local_status_not_installed;
+  if (engine.server.isRunning) {
+    return t.audiobook_tts_local_server_running(endpoint: engine.endpoint);
+  }
+  return t.audiobook_tts_local_status_installed;
+}
+
+/// 「本机 Irodori-TTS」入口（语音合成子页与模型文件分区共用一份）。
+SettingsActionItem _localIrodoriItem({
+  required String id,
+  required String title,
+}) => SettingsActionItem(
+  id: id,
+  title: title,
+  subtitle: t.audiobook_tts_irodori_local_add_hint,
+  subtitleBuilder: _localIrodoriStatus,
+  icon: FushiIcons.download,
+  visible: _isLocalIrodoriSupported,
+  cli: const SettingsCliAction.unsupported(
+    '本机 Irodori-TTS 用 fushi_cli models download / rm irodori 部署，'
+    'models start / stop irodori 起停服务，voice add irodori_server 建声音',
+  ),
+  onTap: (SettingsContext settingsContext) async {
+    final TtsServices tts = TtsServices.of(settingsContext.appModel.prefsRepo);
+    final BuildContext context = settingsContext.context;
+    final String? created = await openIrodoriLocalPage(context, tts);
+    if (created != null && context.mounted) {
+      await openTtsVoiceSettingsPage(context, tts, openPresetId: created);
+    }
+    settingsContext.refresh();
+  },
+);
+
 /// 语音合成：朗读声音（GPT-SoVITS / 在线 / 系统，含本机一键部署）是这里的主入口；
 /// 制卡发音的系统语音兜底只是如实展示「用的是什么、用在哪」。
 SettingsDestination _buildTtsDestination() {
@@ -220,6 +270,10 @@ SettingsDestination _buildTtsDestination() {
           _localGptSovitsItem(
             id: 'models.tts_local_gpt_sovits',
             title: t.audiobook_tts_local_title,
+          ),
+          _localIrodoriItem(
+            id: 'models.tts_local_irodori',
+            title: t.audiobook_tts_irodori_local_title,
           ),
         ],
       ),

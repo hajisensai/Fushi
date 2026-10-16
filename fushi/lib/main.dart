@@ -1318,6 +1318,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             .shutdown()
             .timeout(const Duration(seconds: 2));
       }),
+      // 本机 Irodori-TTS-Server 同理：停服务（venv 启动器连坐子进程）、取消安装中的 uv。
+      _guardedExitStep('local irodori server stop', () async {
+        await TtsServices.existing?.localIrodori
+            .shutdown()
+            .timeout(const Duration(seconds: 2));
+      }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续

@@ -5,7 +5,7 @@ import 'package:args/args.dart';
 import '../ctl_commands.dart';
 import 'settings_commands.dart' show readCtlSecretFromStdin;
 
-/// `models`（OCR / 语音转录 / 本机 GPT-SoVITS 模型文件）与 `voice`（朗读声音）
+/// `models`（OCR / 语音转录 / 本机 GPT-SoVITS / 本机 Irodori-TTS 模型文件）与 `voice`（朗读声音）
 /// 两个命令组。app 侧路由见
 /// `fushi/lib/src/platform/desktop/ctl/ctl_settings_model_routes.dart`。
 ///
@@ -14,7 +14,7 @@ import 'settings_commands.dart' show readCtlSecretFromStdin;
 const List<CtlCommandGroup> settingsModelCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'models',
-    summary: '模型文件：OCR / 语音转录（asr）/ 本机 GPT-SoVITS',
+    summary: '模型文件：OCR / 语音转录（asr）/ 本机 GPT-SoVITS / 本机 Irodori-TTS',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'ls',
@@ -25,14 +25,14 @@ const List<CtlCommandGroup> settingsModelCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'status',
         summary: '查看一个模型的状态与下载进度',
-        usage: '<asr|ocr|gpt-sovits> [<id>]',
+        usage: '<asr|ocr|gpt-sovits|irodori> [<id>]',
         build: _buildModelStatus,
         render: _renderModel,
       ),
       CtlCommandSpec(
         name: 'download',
         summary: '后台下载模型（asr 的 id 是包 id 或语言，如 ja）',
-        usage: '<asr|ocr|gpt-sovits> [<id>]',
+        usage: '<asr|ocr|gpt-sovits|irodori> [<id>]',
         configure: _configureDownload,
         build: _buildModelDownload,
         render: _renderModel,
@@ -40,29 +40,29 @@ const List<CtlCommandGroup> settingsModelCommandGroups = <CtlCommandGroup>[
       CtlCommandSpec(
         name: 'cancel',
         summary: '取消进行中的下载（已下的部分留着，下次续传）',
-        usage: '<asr|ocr|gpt-sovits> [<id>]',
+        usage: '<asr|ocr|gpt-sovits|irodori> [<id>]',
         build: _buildModelCancel,
         render: _renderModel,
       ),
       CtlCommandSpec(
         name: 'rm',
         summary: '删除模型文件（手动接入的 ASR 包与用户自己的整合包只移除接入；需 --yes）',
-        usage: '<asr|ocr|gpt-sovits> [<id>]',
+        usage: '<asr|ocr|gpt-sovits|irodori> [<id>]',
         configure: _configureYes,
         build: _buildModelRm,
         render: _renderModel,
       ),
       CtlCommandSpec(
         name: 'start',
-        summary: '启动本机 GPT-SoVITS 服务（等服务就绪或失败后返回）',
-        usage: 'gpt-sovits',
+        summary: '启动本机 GPT-SoVITS / Irodori-TTS 服务（等服务就绪或失败后返回）',
+        usage: '[gpt-sovits|irodori]',
         build: _buildModelStart,
         render: _renderModel,
       ),
       CtlCommandSpec(
         name: 'stop',
-        summary: '停止本机 GPT-SoVITS 服务',
-        usage: 'gpt-sovits',
+        summary: '停止本机 GPT-SoVITS / Irodori-TTS 服务',
+        usage: '[gpt-sovits|irodori]',
         build: _buildModelStop,
         render: _renderModel,
       ),
@@ -149,20 +149,28 @@ void _requireYes(CtlCommandContext context, String action) {
 
 // ── models ──────────────────────────────────────────────────────────────────
 
-/// `<kind> [<id>]` → 路径；asr 必须给 id，ocr 缺省 default，gpt-sovits 缺省 local。
+/// `<kind> [<id>]` → 路径；asr 必须给 id，ocr 缺省 default，gpt-sovits / irodori
+/// 缺省 local。
 String _modelPath(CtlCommandContext context) {
-  final String kind = context.positional(0, 'asr|ocr|gpt-sovits').toLowerCase();
+  final String kind = context
+      .positional(0, 'asr|ocr|gpt-sovits|irodori')
+      .toLowerCase();
   final String? id = context.optionalPositional(1);
   final String resolved = switch (kind) {
     'asr' =>
       id ?? (throw const CtlUsageError('asr 要给包 id 或语言（如 ja），models ls 查看')),
     'ocr' => id ?? 'default',
     'gpt-sovits' || 'gptsovits' || 'tts' => id ?? 'local',
-    _ => throw CtlUsageError('模型类别只能是 asr / ocr / gpt-sovits，收到「$kind」'),
+    'irodori' || 'irodori-tts' => id ?? 'local',
+    _ => throw CtlUsageError(
+      '模型类别只能是 asr / ocr / gpt-sovits / irodori，收到「$kind」',
+    ),
   };
-  final String normalizedKind = kind == 'asr' || kind == 'ocr'
-      ? kind
-      : 'gpt-sovits';
+  final String normalizedKind = switch (kind) {
+    'asr' || 'ocr' => kind,
+    'irodori' || 'irodori-tts' => 'irodori',
+    _ => 'gpt-sovits',
+  };
   return '/api/admin/models/$normalizedKind/${Uri.encodeComponent(resolved)}';
 }
 
@@ -182,8 +190,18 @@ void _configureDownload(ArgParser parser) {
     ..addOption('dir', help: 'gpt-sovits 安装目录（缺省在数据目录下）')
     ..addOption(
       'source',
-      allowed: const <String>['hf', 'ms'],
-      help: 'gpt-sovits 下载源：Hugging Face / ModelScope',
+      allowed: const <String>['hf', 'ms', 'hf-mirror'],
+      help: '下载源：gpt-sovits 用 hf / ms（ModelScope），irodori 用 hf / hf-mirror',
+    )
+    ..addOption(
+      'backend',
+      allowed: const <String>['cu128', 'rocm', 'cpu'],
+      help: 'irodori 的 PyTorch 后端（缺省按显卡自动选）',
+    )
+    ..addOption(
+      'model',
+      allowed: const <String>['small', 'mf'],
+      help: 'irodori 模型：v4.1 Small / v4.1 Small MF（快，适合 CPU）',
     );
 }
 
@@ -192,9 +210,22 @@ CtlRequestSpec _buildModelDownload(CtlCommandContext context) {
   final String? variant = context.option('variant');
   final String? dir = context.option('dir');
   final String? source = context.option('source');
-  if ((variant != null || dir != null || source != null) &&
-      !path.startsWith('/api/admin/models/gpt-sovits/')) {
-    throw const CtlUsageError('--variant / --dir / --source 只用于 gpt-sovits');
+  final String? backend = context.option('backend');
+  final String? model = context.option('model');
+  final bool gptSovits = path.startsWith('/api/admin/models/gpt-sovits/');
+  final bool irodori = path.startsWith('/api/admin/models/irodori/');
+  if ((dir != null || source != null) && !gptSovits && !irodori) {
+    throw const CtlUsageError('--dir / --source 只用于 gpt-sovits / irodori');
+  }
+  if (variant != null && !gptSovits) {
+    throw const CtlUsageError('--variant 只用于 gpt-sovits');
+  }
+  if ((backend != null || model != null) && !irodori) {
+    throw const CtlUsageError('--backend / --model 只用于 irodori');
+  }
+  if (source != null &&
+      ((gptSovits && source == 'hf-mirror') || (irodori && source == 'ms'))) {
+    throw CtlUsageError('这个模型类别不支持 --source $source');
   }
   return CtlRequestSpec.post(
     '$path/download',
@@ -202,6 +233,8 @@ CtlRequestSpec _buildModelDownload(CtlCommandContext context) {
       if (variant != null) 'variant': variant,
       if (dir != null) 'dir': ctlAbsolutePath(dir),
       if (source != null) 'source': source,
+      if (backend != null) 'backend': backend,
+      if (model != null) 'model': model,
     },
   );
 }
@@ -221,8 +254,11 @@ CtlRequestSpec _buildModelRm(CtlCommandContext context) {
 String _gptSovitsPath(CtlCommandContext context, String verb) {
   final String kind = (context.optionalPositional(0) ?? 'gpt-sovits')
       .toLowerCase();
+  if (kind == 'irodori' || kind == 'irodori-tts') {
+    return '/api/admin/models/irodori/local/$verb';
+  }
   if (kind != 'gpt-sovits' && kind != 'gptsovits' && kind != 'tts') {
-    throw CtlUsageError('只有 gpt-sovits 有本机服务可起停，收到「$kind」');
+    throw CtlUsageError('只有 gpt-sovits / irodori 有本机服务可起停，收到「$kind」');
   }
   return '/api/admin/models/gpt-sovits/local/$verb';
 }
@@ -250,7 +286,14 @@ String _modelState(Map<Object?, Object?> m) {
   final Object? download = m['download'];
   if (download is Map) {
     final Object? state = download['state'];
+    if (state == 'installingPython' || state == 'installingPackages') {
+      final Object? last = download['lastLog'];
+      return '$state${last == null ? '' : ' · $last'}';
+    }
     if (state == 'downloading' ||
+        state == 'downloadingUv' ||
+        state == 'downloadingSource' ||
+        state == 'downloadingModel' ||
         state == 'cancelling' ||
         state == 'listing' ||
         state == 'extracting' ||
@@ -303,6 +346,7 @@ String _renderModelsLs(Object? data) {
     }
   }
   add(data['gptSovits']);
+  add(data['irodori']);
   return renderCtlTable(rows, const <(String, String)>[
     ('类别', 'kind'),
     ('id', 'id'),

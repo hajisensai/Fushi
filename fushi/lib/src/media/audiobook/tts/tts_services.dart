@@ -8,8 +8,10 @@ import 'dart:io';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
+import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_builtin_providers.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -20,6 +22,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart';
 
 class TtsServices {
   TtsServices._(PrefStore prefs)
@@ -28,12 +31,22 @@ class TtsServices {
       localGptSovits = GptSovitsLocalEngine(
         prefs: prefs,
         httpClientFactory: createAppHttpClient,
+      ),
+      localIrodori = IrodoriLocalEngine(
+        prefs: prefs,
+        httpClientFactory: createAppHttpClient,
+        // uv 自己出网（PyPI / PyTorch / Python 发行包）：经本机中继走 app 代理。
+        childProxyEnvironment: () async =>
+            appNativeProxyEnvironment(await ensureAppNativeProxyEndpoint()),
       ) {
     registry = TtsProviderRegistry(<TtsProviderDescriptor>[
       for (final TtsProviderDescriptor d in kBuiltinTtsProviders)
         // GPT-SoVITS 换成会自动拉起本机托管服务的版本（id / 参数 / 缓存键不变）。
         if (d is GptSovitsTtsDescriptor)
           AutoStartGptSovitsTtsDescriptor(localGptSovits)
+        // 官方 Irodori-TTS-Server 同理（本机部署的服务朗读时自动拉起）。
+        else if (d is IrodoriServerTtsDescriptor)
+          AutoStartIrodoriServerTtsDescriptor(localIrodori)
         else
           d,
       const SystemTtsDescriptor(),
@@ -55,6 +68,9 @@ class TtsServices {
 
   /// 本机一键部署的 GPT-SoVITS（仅 Windows 可用；服务进程随 app 退出终止）。
   final GptSovitsLocalEngine localGptSovits;
+
+  /// 本机一键部署的官方 Irodori-TTS-Server（桌面三端；服务进程随 app 退出终止）。
+  final IrodoriLocalEngine localIrodori;
 
   late final TtsProviderRegistry registry;
 
