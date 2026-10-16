@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "位置を固定したままでも辞書引きを使いたい場合はオンにしてください。",
   "floating_lyric_close": "閉じる",
   "floating_lyric_corner_radius": "フローティング字幕の角丸",
-  "floating_lyric_corner_radius_hint": "0 は各プラットフォームのデフォルト角丸を使用。値を上げるとバーやボタンがより丸くなります",
+  "floating_lyric_corner_radius_hint": "0 で角丸なし（直角）。値を上げるとバーやボタンがより丸くなります（既定 24）",
   "floating_lyric_font_size": "フローティング字幕の文字サイズ",
   "floating_lyric_hint": "他のアプリの上に現在の文を表示します。",
   "floating_lyric_lock": "ロック",
