@@ -2,8 +2,11 @@
 // 相册选、也可直接粘贴剪贴板里的截图——桌面 Ctrl/Cmd+V、描述框长按菜单「粘贴图片」、
 // 显式「粘贴图片」按钮、Android 输入法插入的图片）+
 // 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（上传前
-// 本机转码成 720p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。成功后
-// `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
+// 本机转码成 720p（默认）/ 1080p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。
+// 成功后 `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
+//
+// 压缩期间表单不锁（BUG-3489）：文字 / 截图 / 开关照常可改，视频的 × 随时取消压缩；只有
+// 提交按钮保持忙碌。压完才按表单此刻的内容组草稿提交，压缩期间的修改不会丢。
 
 import 'dart:async';
 import 'dart:io';
@@ -92,10 +95,23 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   double? _videoFraction;
   bool _pickingVideo = false;
 
+  /// 压缩档位（默认 720p，只在本页有效，不进草稿）。
+  FeedbackVideoQuality _videoQuality = FeedbackVideoQuality.p720;
+
+  /// 进行中的压缩的取消开关（× / 离开页面时完成它）；没在压缩时为 null。
+  Completer<void>? _videoCancel;
+
+  /// 选了 1080p，但这段视频 1080p 装不进上限，本次改按 720p 压。
+  bool _videoDowngraded = false;
+
   /// 正在读剪贴板：Ctrl+V 与菜单 / 按钮同时触发时只读一次，避免同一张图加两遍。
   bool _pasting = false;
 
   bool get _busy => _stage != null;
+
+  /// 表单是否锁住：只有正文发出之后（发送 / 传附件）才锁。压缩视频期间不锁——压缩可能
+  /// 要好几分钟，期间文字、截图、开关都还能改，视频的 × 可取消压缩（BUG-3489）。
+  bool get _locked => _busy && _stage != FeedbackSubmitStage.videoPrepare;
 
   /// 联系方式框里是「上次用过的联系方式」预填的值（不算用户新写的草稿内容）。
   String _prefilledContact = '';
@@ -323,6 +339,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   @override
   void dispose() {
+    // 离开页面：进行中的压缩一并中止（强杀 ffmpeg、清掉半成品），不在后台白跑。
+    _cancelVideoCompression();
     // 返回 / 切走页面：把还在防抖里的改动落盘。
     _flushDraft();
     _lifecycle.dispose();
@@ -393,7 +411,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         FushiSwitchListTile(
           key: const ValueKey<String>('feedback-reopen-include-shots'),
           value: _includeParentShots,
-          onChanged: _busy || _loadingParentShots
+          onChanged: _locked || _loadingParentShots
               ? null
               : (bool v) => unawaited(_toggleParentShots(v)),
           title: Text(
@@ -469,7 +487,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   /// 把剪贴板里的图片加进附件。[explicit]（按钮 / 菜单）时没图、满了、读失败都给
   /// 一句提示；Ctrl+V 粘的多半是文字，没图时不打扰。
   Future<void> _pasteFromClipboard({required bool explicit}) async {
-    if (_busy || _pasting) return;
+    if (_locked || _pasting) return;
     _pasting = true;
     try {
       if (_room <= 0) {
@@ -515,7 +533,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   Widget _bodyContextMenu(BuildContext context, EditableTextState state) {
     final List<ContextMenuButtonItem> items = <ContextMenuButtonItem>[
       ...state.contextMenuButtonItems,
-      if (_room > 0 && !_busy)
+      if (_room > 0 && !_locked)
         ContextMenuButtonItem(
           label: t.feedback_compose_paste_image,
           onPressed: () {
@@ -540,7 +558,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   void _onContentInserted(KeyboardInsertedContent content) {
     final Uint8List? data = content.data;
-    if (data == null || data.isEmpty || _busy || _room <= 0) return;
+    if (data == null || data.isEmpty || _locked || _room <= 0) return;
     unawaited(_addRawImage(data));
   }
 
@@ -556,44 +574,76 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   };
 
   Future<void> _submit() async {
-    final String title = _title.text.trim();
-    final String body = _body.text.trim();
     // 只有标题是必填：一句话说得清的反馈不必再逼人写详情（反馈 JHR0a8mT5M）。
-    if (title.isEmpty) {
+    if (_title.text.trim().isEmpty) {
       setState(() => _error = t.feedback_compose_title_missing);
       return;
     }
+    final File? video = _video;
     setState(() {
       _error = null;
-      _stage = FeedbackSubmitStage.sending;
+      _videoDowngraded = false;
+      _stage = video == null
+          ? FeedbackSubmitStage.sending
+          : FeedbackSubmitStage.videoPrepare;
     });
+    FeedbackStagedVideo? staged;
     try {
-      final FeedbackSubmitResult result = await ref
-          .read(feedbackServiceProvider)
-          .submit(
-            FeedbackDraft(
-              category: _category,
-              title: title,
-              body: body,
-              contact: _contact.text.trim(),
-              includeLogs: _includeLogs,
-              includeDeviceInfo: _includeDevice,
-              linkAccount: _linkAccount,
-              screenshots: List<Uint8List>.of(_shots),
-              video: _video,
-              reopenOf: widget.reopenOf?.id,
+      if (video != null) {
+        // 先压视频，表单不锁（[_locked]）；压完再按表单此刻的内容提交。
+        final Completer<void> cancel = Completer<void>();
+        _videoCancel = cancel;
+        _videoFraction = null;
+        try {
+          staged = await _service.stageVideo(
+            video,
+            options: FeedbackVideoPrepareOptions(
+              quality: _videoQuality,
+              cancel: cancel.future,
+              onDowngraded: () {
+                if (mounted) setState(() => _videoDowngraded = true);
+              },
             ),
-            onStage: (FeedbackSubmitStage s) {
-              if (mounted) setState(() => _stage = s);
-            },
-            onVideoProgress: (double? f) {
-              if (!mounted) return;
-              // 按整百分比刷新：上传回调按块来，几十 MB 是上千次。
-              final int? before = _percentOf(_videoFraction);
-              _videoFraction = f;
-              if (_percentOf(f) != before || f == null) setState(() {});
-            },
+            onProgress: _onVideoProgress,
           );
+        } finally {
+          if (identical(_videoCancel, cancel)) _videoCancel = null;
+        }
+        if (!mounted || cancel.isCompleted) {
+          throw const FeedbackVideoCancelledException();
+        }
+        // 压缩期间标题被清空了：同提交前的校验。
+        if (_title.text.trim().isEmpty) {
+          setState(() {
+            _stage = null;
+            _videoFraction = null;
+            _error = t.feedback_compose_title_missing;
+          });
+          return;
+        }
+        setState(() => _stage = FeedbackSubmitStage.sending);
+      }
+      final FeedbackStagedVideo? handOff = staged;
+      staged = null; // 交给 submit：成功或失败都由它清理。
+      final FeedbackSubmitResult result = await _service.submit(
+        FeedbackDraft(
+          category: _category,
+          title: _title.text.trim(),
+          body: _body.text.trim(),
+          contact: _contact.text.trim(),
+          includeLogs: _includeLogs,
+          includeDeviceInfo: _includeDevice,
+          linkAccount: _linkAccount,
+          screenshots: List<Uint8List>.of(_shots),
+          video: video,
+          reopenOf: widget.reopenOf?.id,
+        ),
+        stagedVideo: handOff,
+        onStage: (FeedbackSubmitStage s) {
+          if (mounted) setState(() => _stage = s);
+        },
+        onVideoProgress: _onVideoProgress,
+      );
       _submitted = true;
       _draftTimer?.cancel();
       // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
@@ -605,6 +655,14 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         }
       }
       if (mounted) Navigator.of(context).pop(result);
+    } on FeedbackVideoCancelledException {
+      // 用户点了 ×（或离开了页面）：不是错误，表单回到可提交状态，什么也没发出去。
+      if (!mounted) return;
+      setState(() {
+        _stage = null;
+        _videoFraction = null;
+        _videoDowngraded = false;
+      });
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.submit', e, st);
       if (!mounted) return;
@@ -615,7 +673,24 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             feedbackVideoErrorText(e) ??
             t.feedback_submit_failed(reason: feedbackErrorReason(e));
       });
+    } finally {
+      await staged?.discard();
     }
+  }
+
+  void _onVideoProgress(double? f) {
+    if (!mounted) return;
+    // 按整百分比刷新：上传回调按块来，几十 MB 是上千次。
+    final int? before = _percentOf(_videoFraction);
+    _videoFraction = f;
+    if (_percentOf(f) != before || f == null) setState(() {});
+  }
+
+  /// 中止进行中的视频压缩（没在压缩时什么也不做）。
+  void _cancelVideoCompression() {
+    final Completer<void>? cancel = _videoCancel;
+    _videoCancel = null;
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
   }
 
   static int? _percentOf(double? f) => f == null ? null : (f * 100).floor();
@@ -635,19 +710,22 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     FeedbackSubmitStage.video => t.feedback_stage_video(percent: _percentText),
   };
 
-  /// 视频附件区：说明 + 「添加视频」或已选视频（文件名 · 大小 · 移除）+ 压缩 / 上传进度条。
+  /// 视频附件区：说明 + 「添加视频」或已选视频（文件名 · 大小 · 移除）+ 压缩档位 +
+  /// 压缩 / 上传进度条。压缩中 × 仍可点：取消压缩并移除视频（BUG-3489）；正文发出之后
+  /// （上传视频时）× 才禁用。
   List<Widget> _videoSection(FushiDesignTokens tokens) {
     final File? video = _video;
     final FeedbackSubmitStage? stage = _stage;
+    final bool compressing =
+        video != null && stage == FeedbackSubmitStage.videoPrepare;
     final bool transferring =
-        video != null &&
-        (stage == FeedbackSubmitStage.videoPrepare ||
-            stage == FeedbackSubmitStage.video);
+        compressing || (video != null && stage == FeedbackSubmitStage.video);
     return <Widget>[
       SizedBox(height: tokens.spacing.card),
       Text(
         t.feedback_compose_video_hint(
           max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+          resolution: _videoQuality.label,
         ),
         key: const ValueKey<String>('feedback-video-hint'),
         style: tokens.type.metadata,
@@ -683,15 +761,64 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             trailing: FushiIconButton(
               key: const ValueKey<String>('feedback-remove-video'),
               icon: FushiIcons.close,
-              tooltip: t.feedback_compose_remove_video,
-              enabled: !_busy,
-              onTap: () => setState(() {
-                _video = null;
-                _videoBytes = 0;
-              }),
+              tooltip: compressing
+                  ? t.feedback_compose_cancel_video_compression
+                  : t.feedback_compose_remove_video,
+              enabled: !_locked,
+              onTap: () {
+                // 压缩中：中止压缩（提交流程收到取消后回到可提交状态）并移除视频。
+                _cancelVideoCompression();
+                setState(() {
+                  _video = null;
+                  _videoBytes = 0;
+                  _videoDowngraded = false;
+                });
+              },
             ),
           ),
         ),
+      if (video != null && !_busy) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: adaptiveSegmentedButton<FeedbackVideoQuality>(
+            context: context,
+            segments: <ButtonSegment<FeedbackVideoQuality>>[
+              for (final FeedbackVideoQuality q in FeedbackVideoQuality.values)
+                ButtonSegment<FeedbackVideoQuality>(
+                  value: q,
+                  label: Text(
+                    q.label,
+                    key: ValueKey<String>('feedback-video-quality-${q.label}'),
+                  ),
+                ),
+            ],
+            selected: <FeedbackVideoQuality>{_videoQuality},
+            onSelectionChanged: (Set<FeedbackVideoQuality> v) =>
+                setState(() => _videoQuality = v.first),
+          ),
+        ),
+        if (_videoQuality == FeedbackVideoQuality.p1080) ...<Widget>[
+          const SizedBox(height: 2),
+          Text(
+            t.feedback_compose_video_1080_hint(
+              max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+            ),
+            key: const ValueKey<String>('feedback-video-1080-hint'),
+            style: tokens.type.metadata,
+          ),
+        ],
+      ],
+      if (video != null && _videoDowngraded) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          t.feedback_compose_video_downgraded(
+            max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+          ),
+          key: const ValueKey<String>('feedback-video-downgraded'),
+          style: tokens.type.metadata,
+        ),
+      ],
     ];
   }
 
@@ -744,7 +871,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                     avatar: FushiIcon(feedbackCategoryIcon(c)),
                     label: Text(feedbackCategoryLabel(c)),
                     selected: _category == c,
-                    onSelected: _busy
+                    onSelected: _locked
                         ? null
                         : (bool _) => setState(() => _category = c),
                   ),
@@ -754,7 +881,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             FushiTextField(
               key: const ValueKey<String>('feedback-title'),
               controller: _title,
-              enabled: !_busy,
+              enabled: !_locked,
               labelText: t.feedback_compose_title_field,
               hintText: t.feedback_compose_title_hint,
               maxLength: FeedbackLimits.titleMax,
@@ -764,7 +891,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             FushiTextField(
               key: const ValueKey<String>('feedback-body'),
               controller: _body,
-              enabled: !_busy,
+              enabled: !_locked,
               labelText: t.feedback_compose_body_field,
               hintText: t.feedback_compose_body_hint,
               keyboardType: TextInputType.multiline,
@@ -781,7 +908,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             FushiTextField(
               key: const ValueKey<String>('feedback-contact'),
               controller: _contact,
-              enabled: !_busy,
+              enabled: !_locked,
               labelText: t.feedback_compose_contact_field,
               hintText: t.feedback_compose_contact_hint,
               maxLength: FeedbackLimits.contactMax,
@@ -819,7 +946,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                   _Thumb(
                     key: ValueKey<String>('feedback-shot-$i'),
                     bytes: _shots[i],
-                    onRemove: _busy
+                    onRemove: _locked
                         ? null
                         : () => setState(() => _shots.removeAt(i)),
                   ),
@@ -828,13 +955,13 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                     key: const ValueKey<String>('feedback-add-image'),
                     icon: FushiIcons.addCircle,
                     label: t.feedback_compose_add_image,
-                    onTap: _busy ? null : () => unawaited(_addImage()),
+                    onTap: _locked ? null : () => unawaited(_addImage()),
                   ),
                   _AddTile(
                     key: const ValueKey<String>('feedback-paste-image'),
                     icon: FushiIcons.paste,
                     label: t.feedback_compose_paste_image,
-                    onTap: _busy
+                    onTap: _locked
                         ? null
                         : () => unawaited(_pasteFromClipboard(explicit: true)),
                   ),
@@ -846,7 +973,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             FushiSwitchListTile(
               key: const ValueKey<String>('feedback-include-logs'),
               value: _includeLogs,
-              onChanged: _busy
+              onChanged: _locked
                   ? null
                   : (bool v) => setState(() => _includeLogs = v),
               title: Text(t.feedback_compose_attach_logs),
@@ -855,7 +982,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             FushiSwitchListTile(
               key: const ValueKey<String>('feedback-include-device'),
               value: _includeDevice,
-              onChanged: _busy
+              onChanged: _locked
                   ? null
                   : (bool v) => setState(() => _includeDevice = v),
               title: Text(t.feedback_compose_attach_device),
@@ -865,7 +992,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               FushiSwitchListTile(
                 key: const ValueKey<String>('feedback-link-account'),
                 value: _linkAccount,
-                onChanged: _busy
+                onChanged: _locked
                     ? null
                     : (bool v) => setState(() => _linkAccount = v),
                 title: Text(
