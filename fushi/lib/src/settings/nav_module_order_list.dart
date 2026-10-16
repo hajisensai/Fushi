@@ -148,9 +148,6 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
         final String? hint = widget.hintOf?.call(module);
         final bool canMoveUp = index > 0;
         final bool canMoveDown = index < modules.length - 1;
-        final EdgeInsets buttonPadding = EdgeInsets.all(
-          FushiDesignTokens.of(context).spacing.gap / 2,
-        );
         return Semantics(
           key: ValueKey<String>('nav-module-semantics-${module.name}'),
           customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
@@ -182,14 +179,15 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
                   onChanged: (bool value) =>
                       unawaited(widget.onEnabledChanged(module, value)),
                 ),
-                // 拖拽把手的键盘 / 手柄等价物（手柄抓不住把手）。
+                // 拖拽把手的键盘 / 手柄等价物（手柄抓不住把手）。命中区走宽命中区
+                // （MD3 48dp），不要再收窄 padding。
                 FushiIconButton(
                   key: ValueKey<String>('nav-module-up-${module.name}'),
                   icon: FushiIcons.expandLess,
                   size: 18,
                   tooltip: t.move_up,
                   enabled: canMoveUp,
-                  padding: buttonPadding,
+                  isWideTapArea: true,
                   onTap: () => _move(index, -1),
                 ),
                 FushiIconButton(
@@ -198,7 +196,7 @@ class _NavModuleOrderListState extends State<NavModuleOrderList> {
                   size: 18,
                   tooltip: t.move_down,
                   enabled: canMoveDown,
-                  padding: buttonPadding,
+                  isWideTapArea: true,
                   onTap: () => _move(index, 1),
                 ),
                 ExcludeSemantics(

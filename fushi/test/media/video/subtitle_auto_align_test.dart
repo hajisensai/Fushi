@@ -18,6 +18,21 @@ AudioCue _cue(int startMs, int endMs) {
 }
 
 void main() {
+  group('subtitleAlignProbeLimitMs', () {
+    test('stream audio only pulls the first 3 minutes', () {
+      expect(kStreamSubtitleAlignProbeLimitMs, 3 * 60 * 1000);
+      expect(subtitleAlignProbeLimitMs(fromStream: true), 180000);
+    });
+
+    test('whole-file audio keeps the 20 minute window', () {
+      expect(
+        subtitleAlignProbeLimitMs(fromStream: false),
+        kSubtitleAutoAlignProbeLimitMs,
+      );
+      expect(kSubtitleAutoAlignProbeLimitMs, 20 * 60 * 1000);
+    });
+  });
+
   group('buildCueActivityEnvelope', () {
     test('empty cues / non-positive duration returns empty', () {
       expect(buildCueActivityEnvelope(<AudioCue>[], 10000), isEmpty);

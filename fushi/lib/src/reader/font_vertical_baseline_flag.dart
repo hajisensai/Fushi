@@ -1,6 +1,190 @@
+import 'dart:async';
+import 'dart:collection';
+import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi/src/models/woff2_decoder.dart';
+
+/// [clearVerticalBaselineFlag] 的结果：下发的字节与（WOFF2 解码成 sfnt 时的）新 MIME。
+typedef VerticalBaselineFontResult = ({Uint8List data, String? mime});
+
+/// 阅读器字体请求用的 [clearVerticalBaselineFlag] 缓存（BUG-3420）。
+///
+/// WebView 每次请求字体（每章、每个 `@font-face`、每次重排）都会走到这里。改正前每次
+/// 都在 UI isolate 上同步跑：WOFF2 每次整包 Brotli 解码 + glyf 重建；带这一位的 sfnt
+/// 每次整份复制 + 整文件校验和（CJK 字体动辄 5–20MB）。现在：
+/// - 按字体身份（[keyFor]：规范路径 + 大小 + 修改时间）缓存结论，同一字体只处理一次；
+///   并发的同一字体请求共用同一个 Future。
+/// - 先在当前 isolate 只读表目录（O(表数)）判断要不要改：不带这一位的 sfnt / TTC / WOFF
+///   原样返回，不进后台；只有带这一位的、以及只能解码后才知道的 WOFF2，才交给后台
+///   isolate（[Isolate.run]，入参复制一次、结果经 `Isolate.exit` 零拷贝带回）。
+/// - 只有真改过的字体才在缓存里持有字节，按条数与总字节封顶，先进先出（命中会续期）。
+class VerticalBaselineFontCache {
+  VerticalBaselineFontCache({
+    Future<VerticalBaselineFontResult> Function(Uint8List data)? patcher,
+    this.maxEntries = 128,
+    this.maxPatchedBytes = 96 * 1024 * 1024,
+  }) : _patcher = patcher ?? _patchInBackground;
+
+  /// 缓存的字体条数上限（含不需要改的字体，它们只占一个标记）。
+  final int maxEntries;
+
+  /// 缓存里改过的字体字节总量上限。
+  final int maxPatchedBytes;
+
+  final Future<VerticalBaselineFontResult> Function(Uint8List data) _patcher;
+  final LinkedHashMap<String, Future<_CachedFont>> _entries =
+      LinkedHashMap<String, Future<_CachedFont>>();
+  final Map<String, int> _patchedBytes = <String, int>{};
+  int _totalPatchedBytes = 0;
+
+  /// 字体身份：同一路径的文件被替换（大小或修改时间变化）就是另一个字体。
+  static String keyFor(String path, FileStat stat) =>
+      '$path|${stat.size}|${stat.modified.microsecondsSinceEpoch}';
+
+  /// 当前缓存的条数（测试用）。
+  int get length => _entries.length;
+
+  /// [data] 是 [key] 对应文件的当前字节。命中时不再解析；不需要改的字体原样返回 [data]。
+  Future<VerticalBaselineFontResult> resolve({
+    required String key,
+    required Uint8List data,
+  }) async {
+    Future<_CachedFont>? entry = _entries.remove(key);
+    if (entry != null) {
+      _entries[key] = entry; // 续期
+    } else {
+      entry = _load(key, data);
+      _entries[key] = entry;
+      _evictEntries();
+    }
+    final _CachedFont cached;
+    try {
+      cached = await entry;
+    } catch (_) {
+      // 失败不留缓存，下次请求重试；异常照常抛给调用方。在这里按 identity 删，而不是在
+      // [_load] 里删：[_load] 在第一个 await 之前同步失败时，它的清理会早于上面的登记。
+      if (identical(_entries[key], entry)) _entries.remove(key);
+      rethrow;
+    }
+    final Uint8List? patched = cached.data;
+    if (patched == null) return (data: data, mime: null);
+    return (data: patched, mime: cached.mime);
+  }
+
+  Future<_CachedFont> _load(String key, Uint8List data) async {
+    if (!_mayCarryVerticalBaselineFlag(data)) return const _CachedFont.clean();
+    final VerticalBaselineFontResult result = await _patcher(data);
+    if (identical(result.data, data)) return const _CachedFont.clean();
+    if (_entries.containsKey(key)) {
+      _patchedBytes[key] = result.data.length;
+      _totalPatchedBytes += result.data.length;
+      _evictBytes(keep: key);
+    }
+    return _CachedFont(result.data, result.mime);
+  }
+
+  void _drop(String key) {
+    _entries.remove(key);
+    final int? bytes = _patchedBytes.remove(key);
+    if (bytes != null) _totalPatchedBytes -= bytes;
+  }
+
+  void _evictEntries() {
+    while (_entries.length > maxEntries) {
+      _drop(_entries.keys.first);
+    }
+  }
+
+  void _evictBytes({required String keep}) {
+    for (final String key in _entries.keys.toList()) {
+      if (_totalPatchedBytes <= maxPatchedBytes) return;
+      if (key != keep && _patchedBytes.containsKey(key)) _drop(key);
+    }
+  }
+
+  /// 清空（测试用）。
+  void clear() {
+    _entries.clear();
+    _patchedBytes.clear();
+    _totalPatchedBytes = 0;
+  }
+}
+
+/// 阅读器 WebView 字体请求共用的缓存实例。
+final VerticalBaselineFontCache readerVerticalBaselineFontCache =
+    VerticalBaselineFontCache();
+
+Future<VerticalBaselineFontResult> _patchInBackground(Uint8List data) =>
+    Isolate.run<VerticalBaselineFontResult>(
+      () => clearVerticalBaselineFlag(data),
+      debugName: 'clearVerticalBaselineFlag',
+    );
+
+class _CachedFont {
+  const _CachedFont(this.data, this.mime);
+  const _CachedFont.clean() : data = null, mime = null;
+
+  /// 改过的字节；null = 不需要改，原样下发。
+  final Uint8List? data;
+  final String? mime;
+}
+
+/// 只读表目录判断 [clearVerticalBaselineFlag] 会不会改这份字体（WOFF2 要解码才知道，算会）。
+/// 与 [clearVerticalBaselineFlag] 的判据一一对应：这里返回 false 时那边必然原样返回。
+bool _mayCarryVerticalBaselineFlag(Uint8List data) {
+  if (data.length < 12) return false;
+  final ByteData bytes = ByteData.sublistView(data);
+  final int tag = bytes.getUint32(0);
+  if (tag == _wOF2) return true;
+  if (tag == _ttcf) {
+    final int count = bytes.getUint32(8);
+    for (int i = 0; i < count; i++) {
+      final int at = 12 + i * 4;
+      if (at + 4 > data.length) break;
+      if (_sfntHeadFlagSet(bytes, data.length, bytes.getUint32(at))) {
+        return true;
+      }
+    }
+    return false;
+  }
+  if (tag == _wOFF) {
+    if (data.length < 44) return false;
+    final int numTables = bytes.getUint16(12);
+    for (int i = 0; i < numTables; i++) {
+      final int rec = 44 + i * 20;
+      if (rec + 20 > data.length) return false;
+      if (bytes.getUint32(rec) != _head) continue;
+      final int offset = bytes.getUint32(rec + 4);
+      final int compLength = bytes.getUint32(rec + 8);
+      final int origLength = bytes.getUint32(rec + 12);
+      if (compLength != origLength || origLength < 54) return false;
+      if (offset + origLength > data.length) return false;
+      return bytes.getUint16(offset + 16) & _flagBit != 0;
+    }
+    return false;
+  }
+  if (tag == 0x00010000 || tag == _otto || tag == _true) {
+    return _sfntHeadFlagSet(bytes, data.length, 0);
+  }
+  return false;
+}
+
+bool _sfntHeadFlagSet(ByteData src, int length, int start) {
+  if (start + 12 > length) return false;
+  final int numTables = src.getUint16(start + 4);
+  for (int i = 0; i < numTables; i++) {
+    final int rec = start + 12 + i * 16;
+    if (rec + 16 > length) return false;
+    if (src.getUint32(rec) != _head) continue;
+    final int offset = src.getUint32(rec + 8);
+    final int headLength = src.getUint32(rec + 12);
+    if (headLength < 54 || offset + headLength > length) return false;
+    return src.getUint16(offset + 16) & _flagBit != 0;
+  }
+  return false;
+}
 
 /// 阅读器加载字体前清掉 `head.flags` 的第 5 位（「x = 0 是竖排基线」）。
 ///
