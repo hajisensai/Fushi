@@ -183,4 +183,58 @@ void main() {
       ]);
     });
   });
+
+  group('复习门一律经模块可见性', () {
+    // 正式版判据只在 ModuleId.availableOn → ModuleVisibility 这条链上生效；
+    // 直接读用户意愿（pref）的入口会绕过它——正式版里 pref 开着的用户（从
+    // 预发布版换装过来）就会看到复习。消费端只能问
+    // `moduleVisibility.isEnabled(ModuleId.srs)` / `srsModuleEnabledProvider`。
+    final RegExp prefBypass = RegExp(
+      r'''moduleEnabled\(\s*ModuleId\.srs\s*\)|ModuleId\.srs\.prefKey|['"]module_srs_enabled['"]''',
+    );
+
+    List<String> bypassesIn(Map<String, String> corpus) => <String>[
+      for (final MapEntry<String, String> e in corpus.entries)
+        if (e.key != moduleIdFile && prefBypass.hasMatch(maskComments(e.value)))
+          e.key,
+    ];
+
+    test('lib/ 里没有绕开模块可见性直接读复习开关 pref 的入口', () {
+      final Map<String, String> corpus = <String, String>{
+        for (final FileSystemEntity e in Directory(
+          'lib',
+        ).listSync(recursive: true))
+          if (e is File && e.path.endsWith('.dart'))
+            norm(e.path): e.readAsStringSync(),
+      };
+      expectScanScale(
+        corpus.length,
+        what: 'lib/ 下的 .dart 文件',
+        atLeast: 1400,
+        measured: 1812,
+      );
+      expect(
+        bypassesIn(corpus),
+        isEmpty,
+        reason:
+            '复习入口必须问 moduleVisibility.isEnabled(ModuleId.srs) / '
+            'srsModuleEnabledProvider（含正式版判据），不能直接读 pref。',
+      );
+    });
+
+    test('判据自校验：合成语料', () {
+      expect(
+        bypassesIn(<String, String>{
+          'lib/src/a.dart': 'final bool v = app.moduleEnabled(ModuleId.srs);',
+          'lib/src/b.dart': "final Object? v = getPref('module_srs_enabled');",
+          'lib/src/c.dart': 'final String k = ModuleId.srs.prefKey;',
+          'lib/src/ok_visibility.dart':
+              'final bool v = app.moduleVisibility.isEnabled(ModuleId.srs);',
+          'lib/src/ok_comment.dart': '// 别写 moduleEnabled(ModuleId.srs)',
+          moduleIdFile: "srs('module_srs_enabled'),",
+        }).toSet(),
+        <String>{'lib/src/a.dart', 'lib/src/b.dart', 'lib/src/c.dart'},
+      );
+    });
+  });
 }
