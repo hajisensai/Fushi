@@ -18,6 +18,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
@@ -112,6 +113,21 @@ class UsageHeartbeat {
          operatingSystem ?? Platform.operatingSystem,
        ),
        _now = now;
+
+  /// 生产装配：发往 Fushi 自己的统计端点，版本取运行中代码的构建版本（没注入时退回
+  /// [executableVersion]，即 `PackageInfo.version`）。版本解析收在这里而不是调用方：
+  /// `AppModel` 是复习模块门的消费端，不得自己读构建版本
+  /// （`test/build/prerelease_only_capability_guard_test.dart`）。
+  factory UsageHeartbeat.forFushi({
+    required PreferencesRepository prefs,
+    required String executableVersion,
+    required String Function() channel,
+  }) => UsageHeartbeat(
+    prefs: prefs,
+    send: sendUsageHeartbeatToFushi,
+    version: () => resolveCurrentAppVersion(executableVersion),
+    channel: channel,
+  );
 
   final PreferencesRepository _prefs;
   final UsageHeartbeatSender _send;

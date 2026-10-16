@@ -15,7 +15,6 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
-import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -1307,10 +1306,9 @@ class AppModel with ChangeNotifier {
     _updateCheckScheduler = scheduler;
     scheduler.start();
     // 安装统计心跳（iOS / 关了开关时它自己不发）：与更新检查同生命周期。
-    final UsageHeartbeat heartbeat = UsageHeartbeat(
+    final UsageHeartbeat heartbeat = UsageHeartbeat.forFushi(
       prefs: prefsRepo,
-      send: sendUsageHeartbeatToFushi,
-      version: () => resolveCurrentAppVersion(packageInfo.version),
+      executableVersion: packageInfo.version,
       channel: () => appUpdateChannelOf(this).name,
     );
     _usageHeartbeat = heartbeat;
