@@ -1,8 +1,8 @@
 // 官方「推荐词典 + 本地音频」分发包的导出入口（发布杂务，可重复执行）。
 //
-// 复用真实的 [BackupService.createBackup]，**不重实现**类别剥离逻辑——导出包里
-// 主库要剥掉哪些表、留哪些注册表行，唯一真相源是 backup_service.dart 自己。手工
-// 拼 zip 必然和它漂开。
+// 先对白名单之外的数据库内容做公开分发净化，再复用真实的
+// [BackupService.createBackup] 处理类别、注册项和资源。普通个人备份不等于
+// 公开分发包；仅选择两个类别仍可能留下新表、缓存和未分类的个人偏好。
 //
 // 用 `flutter test` 跑（backup_service 依赖 package:flutter/foundation，纯
 // `dart run` 起不来）：
@@ -17,6 +17,8 @@
 //   FUSHI_PACK_DICT_DIR     dictionaryResources 目录
 //   FUSHI_PACK_OUTPUT       输出 zip 路径
 //   FUSHI_PACK_APP_VERSION  写进 backup_meta.json 的 appVersion
+//   FUSHI_PACK_BASELINE     已发布兼容基线包；禁止静默提高最低 schema 要求。
+//                           新库高于基线时用 extend_recommended_pack.py 增补词典。
 //
 // 为什么 db 和 dbDirectory 分开指：活库正被 app 占用，直接开会触发 drift 迁移，
 // 是毁库红线。所以主库开在副本上，而 dbDirectory 仍指真实 support 目录——它只被
@@ -28,6 +30,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
+
+import 'recommended_pack_database.dart';
 
 const String _kDbCopyDirEnv = 'FUSHI_PACK_DB_COPY_DIR';
 const String _kDbDirectoryEnv = 'FUSHI_PACK_DB_DIRECTORY';
@@ -52,9 +57,28 @@ void main() {
       final String dictDirectory = _requireEnv(_kDictDirEnv);
       final String outputPath = _requireEnv(_kOutputEnv);
       final String appVersion = _requireEnv(_kAppVersionEnv);
+      final String baselinePath = _requireEnv('FUSHI_PACK_BASELINE');
+      final BackupMeta? baseline = await BackupRestoreService.validateBackup(
+        baselinePath,
+      );
+      if (baseline == null) throw StateError('推荐包兼容基线无效：$baselinePath');
 
-      final FushiDatabase db = FushiDatabase(dbCopyDir!);
+      if (p.equals(
+        await Directory(dbDirectory).resolveSymbolicLinks(),
+        await Directory(dbCopyDir!).resolveSymbolicLinks(),
+      )) {
+        throw StateError('推荐包导出必须使用数据库副本，不能净化用户活库');
+      }
+      final FushiDatabase db = FushiDatabase(dbCopyDir);
       addTearDown(db.close);
+      if (db.schemaVersion > baseline.schemaVersion) {
+        throw StateError(
+          '当前 schema ${db.schemaVersion} 高于推荐包兼容基线 '
+          '${baseline.schemaVersion}。请用 extend_recommended_pack.py '
+          '在原始基线结构上增补词典，不可要求用户为推荐包升级应用。',
+        );
+      }
+      await sanitizeRecommendedPackDatabase(db);
 
       final BackupService service = BackupService(
         db: db,
@@ -74,18 +98,23 @@ void main() {
       expect(await output.exists(), isTrue, reason: '导出未落盘：$outputPath');
       final int bytes = await output.length();
 
-      debugPrint('PACK_EXPORT_OK path=$outputPath '
-          'bytes=$bytes '
-          'schemaVersion=${meta.schemaVersion} '
-          'localAudioRoot=${meta.localAudioRoot} '
-          'excluded=${meta.excludedCategories.toList()..sort()} '
-          'elapsed=${sw.elapsed}');
+      debugPrint(
+        'PACK_EXPORT_OK path=$outputPath '
+        'bytes=$bytes '
+        'schemaVersion=${meta.schemaVersion} '
+        'localAudioRoot=${meta.localAudioRoot} '
+        'excluded=${meta.excludedCategories.toList()..sort()} '
+        'elapsed=${sw.elapsed}',
+      );
 
       // 包不该带上个人内容：这两个计数必须是 0，否则说明类别集合选错了。
       expect(meta.bookCount, 0, reason: '分发包不应携带书/视频记录');
       expect(meta.statsCount, 0, reason: '分发包不应携带统计记录');
-      expect(meta.localAudioRoot, dbDirectory,
-          reason: 'localAudioRoot 必须是真实 support 目录，导入侧靠它重定基址');
+      expect(
+        meta.localAudioRoot,
+        dbDirectory,
+        reason: 'localAudioRoot 必须是真实 support 目录，导入侧靠它重定基址',
+      );
     },
     // 打包 10GB 级素材，默认 30s 超时远远不够。
     timeout: const Timeout(Duration(hours: 4)),
