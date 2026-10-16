@@ -126,4 +126,10 @@ class TtsResult {
 - provider `irodori_server`（`irodori_server_tts_provider.dart`）：`/v1/audio/voices` 列声音，`/v1/audio/speech` 合成（`response_format: wav`，可选 `irodori.caption`、Bearer 密钥），并发 1；声音管理 `IrodoriServerVoiceApi`（上传 / 删除）。注册表里换成 `AutoStartIrodoriServerTtsDescriptor`（指向托管端口时朗读前自动拉起）。
 - UI：「本机 Irodori-TTS」页（显卡 / 后端 / 模型 / 端口 / 下载源 / 位置 / 进度与取消 / 安装日志 / 启停 / 服务日志 / 服务上的声音：上传参考音频、删除 / 用本机服务新建声音 / 删除）；入口：添加声音对话框、Irodori 声音编辑页、「模型 › 语音合成」「模型 › 模型文件」。桌面三端显示，移动端不显示。CLI：`fushi_cli models download|status|cancel|rm|start|stop irodori`（`--backend` / `--model` / `--source hf|hf-mirror` / `--dir`）。
 
-验证状态：见 PR 说明（引擎单测、Windows 真机全流程、Mac CPU、Linux 只编译）。
+验证状态（2026-10-17）：
+
+- 引擎单测 68 条全绿（安装状态机 / 清单改写 / 探活判据 / provider 请求格式 / 上传 multipart / 设置 / 删除只删专属目录；GPT-SoVITS 原有测试照常通过）。
+- Windows 真机（RTX 4070 Ti，cu128）：用引擎层真实代码走 安装（uv → 源码 → Python 3.10 → `uv pip sync` → 模型，无 git，约 62 分钟，主要是 3 GB 模型下载）→ 启动（首次 75 s，其后 38 s）→ 列声音 → `none` 合成（4.6 s 音频，约 4.3 s）→ 上传参考音频 → 用它合成 → 删声音 → 停止（端口释放）全部通过；装好的目录约 8.6 GB。发现并修掉：停止后端口晚一拍才关（venv 启动器连坐子进程），`stop` 现在等端口释放。
+- macOS 27.2（Apple 芯片，cpu extra）：uv / Python / 锁定依赖 / 模型下载（经系统代理）/ 删除都通过；**服务启动失败**：官方锁文件钉的 `scipy==1.15.3`（Python 3.10 能用的最后一版）的 `_spropack` 扩展在 macOS 27 的 dyld 下加载失败（`__DATA/__thread_bss has a zero-fill section type, but offset field is not zero`），`irodori_tts` 导入 transformers 时连带失败。这是上游锁文件 × 新 macOS 的不兼容，要修只能偏离官方锁（换 Python 3.11+ 并升级 scipy，需重新解析依赖），待所有者拍板；app 内表现为「服务启动时退出了，请查看日志」。
+- Linux：只做了静态分析（引擎是纯 Dart，Linux 分支由单测的非 Windows 路径覆盖），未真机安装。
+- 部署页 UI 只过了 `flutter analyze`，未在真 app 里人工过一遍。

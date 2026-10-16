@@ -277,6 +277,7 @@ void main() {
       final File python = File('${dir.path}/python.exe')..writeAsStringSync('');
       Map<String, String>? env;
       int probes = 0;
+      int afterKill = 0;
       final _HangingProcess process = _HangingProcess();
       final IrodoriLocalServer server = IrodoriLocalServer(
         spawn:
@@ -289,7 +290,9 @@ void main() {
               env = environment;
               return process;
             },
-        probe: (int port) async => ++probes >= 3,
+        // 杀掉后端口还要答两次话（Windows 上 venv 启动器的子进程晚一拍退出）。
+        probe: (int port) async =>
+            process.killed ? ++afterKill <= 2 : ++probes >= 3,
         probeInterval: Duration.zero,
       );
       final bool ok = await server.start(
@@ -307,12 +310,15 @@ void main() {
       expect(File('${dir.path}/$kIrodoriPidFileName').existsSync(), isTrue);
       await server.stop();
       expect(server.phase, LocalServicePhase.stopped);
+      // stop 等到端口不再答话才返回，紧接着的 start 不会把退出中的服务当外部服务借用。
+      expect(afterKill, 3);
     });
   });
 }
 
 class _HangingProcess implements Process {
   final Completer<int> _exit = Completer<int>();
+  bool killed = false;
 
   @override
   Stream<List<int>> get stdout => const Stream<List<int>>.empty();
@@ -326,6 +332,7 @@ class _HangingProcess implements Process {
   Future<int> get exitCode => _exit.future;
   @override
   bool kill([ProcessSignal signal = ProcessSignal.sigterm]) {
+    killed = true;
     if (!_exit.isCompleted) _exit.complete(-15);
     return true;
   }

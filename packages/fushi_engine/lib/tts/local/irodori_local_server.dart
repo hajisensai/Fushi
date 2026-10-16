@@ -92,6 +92,7 @@ class IrodoriLocalServer extends LocalServiceProcess {
     // 首次启动要 import torch 并把约 3 GB 的模型读进来；CPU / 慢盘上几分钟很常见。
     super.readyTimeout = const Duration(minutes: 10),
     super.probeInterval,
+    super.portReleaseTimeout = const Duration(seconds: 10),
   }) : super(
          probe: probe ?? irodoriDefaultProbe,
          pidFileName: kIrodoriPidFileName,

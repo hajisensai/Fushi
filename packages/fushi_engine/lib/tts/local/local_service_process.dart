@@ -148,6 +148,7 @@ class LocalServiceProcess extends EngineChangeNotifier {
     LocalServicePidKill? pidKill,
     this.readyTimeout = const Duration(minutes: 5),
     this.probeInterval = const Duration(seconds: 1),
+    this.portReleaseTimeout = Duration.zero,
   }) : _spawn = spawn ?? _registrySpawn,
        _probe = probe,
        _pidOwnerCheck = pidOwnerCheck ?? localServicePidOwnerCheck,
@@ -164,6 +165,11 @@ class LocalServiceProcess extends EngineChangeNotifier {
   /// 首次启动要把模型读进显存，慢盘 / 慢卡上一两分钟很常见。
   final Duration readyTimeout;
   final Duration probeInterval;
+
+  /// [stop] 等端口不再答话的上限（0 = 不等）。Windows 上 venv 的 `python.exe` 是
+  /// 启动器：杀掉它后真正的解释器由作业对象连坐结束，端口要晚一拍才关（实测）；
+  /// 不等的话紧接着的 [start] 会把这个正在退出的服务当成「外部服务」借用。
+  final Duration portReleaseTimeout;
 
   /// 日志尾保留的行数（失败时给用户看、复制给作者）。
   static const int logTailLines = 200;
@@ -390,15 +396,27 @@ class LocalServiceProcess extends EngineChangeNotifier {
       _pidKill(adopted);
       if (spec != null) _deletePidFile(spec, adopted);
     }
-    if (process == null) return;
-    process.kill();
-    await process.exitCode.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        process.kill(ProcessSignal.sigkill);
-        return -1;
-      },
-    );
+    if (process != null) {
+      process.kill();
+      await process.exitCode.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          process.kill(ProcessSignal.sigkill);
+          return -1;
+        },
+      );
+    }
+    if ((process != null || adopted != null) && spec != null) {
+      await _awaitPortReleased(spec.port);
+    }
+  }
+
+  Future<void> _awaitPortReleased(int port) async {
+    if (portReleaseTimeout <= Duration.zero) return;
+    final DateTime deadline = DateTime.now().add(portReleaseTimeout);
+    while (DateTime.now().isBefore(deadline) && await _probe(port)) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
   }
 
   @override
