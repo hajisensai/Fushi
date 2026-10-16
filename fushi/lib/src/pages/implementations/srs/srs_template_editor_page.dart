@@ -97,6 +97,9 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   SrsTemplateDef? _template;
   SrsNoteView? _sample;
 
+  /// 示例笔记的字段值（fieldId → 值），释义样式去重的引用行已展开（预览与复习页同一份内容）。
+  Map<String, String> _sampleValues = const <String, String>{};
+
   /// 载入时的三段原文（判断有没有未保存的修改）。
   String _savedFront = '';
   String _savedBack = '';
@@ -150,11 +153,15 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       final SrsNoteView? sample = notes.isEmpty
           ? null
           : await store.note(notes.first);
+      final Map<String, String> sampleValues = sample == null
+          ? const <String, String>{}
+          : await store.expandFields(sample.fields, dropMissing: true);
       if (!mounted) return;
       _store = store;
       _type = type;
       _template = tpl;
       _sample = sample;
+      _sampleValues = sampleValues;
       _savedFront = templateIdsToNames(tpl.front, _idToName);
       _savedBack = templateIdsToNames(tpl.back, _idToName);
       _savedCss = type.css;
@@ -194,7 +201,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     final SrsNoteView? sample = _sample;
     return <String, String>{
       for (final SrsFieldDef f in type.fields)
-        f.name: sample == null ? '(${f.name})' : sample.field(f.id),
+        f.name: sample == null ? '(${f.name})' : _sampleValues[f.id] ?? '',
     };
   }
 

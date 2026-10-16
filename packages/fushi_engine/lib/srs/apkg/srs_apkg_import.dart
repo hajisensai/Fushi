@@ -317,12 +317,29 @@ class _Importer {
   }
 
   Future<String> _withMedia(String html, {bool includeStatic = false}) async {
+    html = _inlinePackagedStyles(html);
     final Set<String> refs = srsMediaRefsIn(html, includeStatic: includeStatic);
     if (refs.isEmpty) return html;
     for (final String r in refs) {
       await _media(r);
     }
     return srsRewriteMediaRefs(html, _mediaRenames);
+  }
+
+  /// 包里带着共享样式文件、字段里是它的引用行（没展开就导出的包）：按包内文件展开回内联
+  /// `<style>`，落库时再统一去重成本机的共享样式文件。文件缺失或内容与文件名的哈希不符时原样保留。
+  String _inlinePackagedStyles(String html) {
+    if (srsStyleRefsIn(html).isEmpty) return html;
+    return srsExpandStyles(html, (String name) {
+      final Uint8List? bytes = pkg.mediaBytes(name);
+      if (bytes == null) return null;
+      try {
+        final String css = utf8.decode(bytes);
+        return srsStyleMediaName(css) == name ? css : null;
+      } on FormatException {
+        return null;
+      }
+    });
   }
 
   // ------------------------------------------------------------------ 笔记类型

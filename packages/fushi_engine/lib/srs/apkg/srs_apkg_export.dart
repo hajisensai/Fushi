@@ -191,8 +191,11 @@ class _Exporter {
         for (final SrsNoteView n in notes) {
           final SrsNoteTypeView? t = types[n.noteTypeId];
           if (t == null) continue;
+          // 释义样式去重的引用行展开回内联 `<style>`：导出包自包含，AnkiDroid / AnkiMobile
+          // 不必认识 `<link>`、也不必带共享样式文件（Fushi 回导时会重新去重）。
           final List<String> values = <String>[
-            for (final SrsFieldDef f in t.fields) n.field(f.id),
+            for (final SrsFieldDef f in t.fields)
+              await store.expandStyles(n.field(f.id)),
           ];
           for (final String v in values) {
             mediaRefs.addAll(srsMediaRefsIn(v));

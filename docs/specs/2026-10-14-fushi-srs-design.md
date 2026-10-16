@@ -76,6 +76,46 @@
   模板编辑器带实时预览）；笔记编辑页的类型行与浏览页批量操作走 `fushi/lib/src/srs/srs_change_note_type.dart` 的
   `showSrsChangeNoteTypeFlow`。
 
+## 释义样式去重（2026-10-16，分支 `pr/srs-style-dedup`）
+
+Yomitan 导出释义时每部词典内联一份 `<style>`，同一部词典的每张卡都带同一份。开发版制卡历史实测：最近 50 条释义平均
+11.7 万字符 / 卡，其中 7.1 万是样式；全部 208 条只有 7 种不同的样式块。每条笔记一份 → 数据库、同步批次、备份同比放大。
+
+- **表示**（fushi_srs `style_dedup.dart`，冻结）：笔记字段值里**无属性**的 `<style>`…`</style>`、正文 ≥ 512 码元、不在
+  `<script>` 里的块，换成 `<link rel="stylesheet" href="_fushi_style_<sha1(css)>.css">`；样式正文存成同名共享媒体文件
+  （下划线开头，Anki「检查媒体」不删）。文件名只由内容决定 → 各设备各自去重得到逐字节相同的值；展开是逐字节还原。
+- **为什么是共享媒体文件、不是新表**：媒体已经按内容哈希同步（只传对方没有的）、随「复习」备份打包，不用升 schema、
+  不用为样式另开一条同步通道；新表方案（落库占位、读出展开）要么让同步批次继续带全文（省不了流量），要么新增一种同步实体。
+- **落库**（`SrsDbStore._store` → `_compactEdit`）：一切修改记录落库都经这里——本机写（制卡、笔记编辑、制卡历史导入、
+  AnkiConnect 加卡 / 改卡、浏览页批量）、`.apkg` 导入、对端事件——只动 `note` 的 `f/<fieldId>` 字符串值。
+  `SrsDbStore.open(styles:)` 不给样式库时一律原样落库（无头服务端、测试、备份合并步骤临时打开的副本）；
+  这样落下的行由下面的存量迁移在 app 下次打开 store 时补上。
+- **合并语义不变**：`_sameValue`（冲突判定、no-op 判定的唯一口径）对字符串按去重规范形比较，内联样式与引用行同值。
+  所以同一内容由两台设备（一台去重、一台没有）并发写下不进「待裁决」；用户把原文再存一遍是 no-op。
+  这是「事件创建即不可变」的唯一表示层例外：同 ID 的记录可能一端存内联、一端存引用，`_store` 按 ID 去重，二者在合并里同值；
+  id / dot / ctx / hlc 一律不动。
+- **对外的读展开**（`SrsDbStore.expandStyles` / `expandFields`）：`renderCard`（文件还没同步到时删掉引用行，不让 WebView
+  请求相对地址；渲染结果与去重前逐字节相同，卡面外壳照旧按内容哈希登记样式）、`.apkg` 导出（自包含：展开回内联、不带样式文件，
+  AnkiDroid / AnkiMobile 对字段里 `<link>` 的支持未验证）、AnkiConnect `notesInfo` / `cardsInfo` 的字段值、制卡回读
+  `SrsMiner.fieldsByName`（出处卡片的乐观并发检查要求读回与写入一致）、模板编辑器的示例笔记。
+- **编辑器里看到的**：笔记编辑页是原始 HTML 输入框，用户看到的是一行 `<link>`（几十 KB 的 CSS 不再塞进输入框）。原样保存是
+  no-op；删掉这一行就是删掉该词典的样式（与在 Anki 里删 `<style>` 等价）；粘贴进来的大样式保存时照样去重。
+  浏览页的「查找替换」作用在引用表示上（搜 CSS 文本不再命中）。
+- **导入回读**：Fushi 导出的包本来就是内联样式，回导时重新去重；字段里是引用行、包里带同名样式文件的包（例如手工处理过的），
+  按包内文件校验哈希后展开再去重。
+- **媒体同步**：`srsReferencedMedia` 把字段里的样式引用算进被引用媒体，样式文件与图片 / 音频同一条通道上传下载。
+  对端先收到事件、后收到样式文件时，卡面暂时没有词典样式，下一轮媒体同步后恢复。
+- **存量迁移**（`SrsDbStore.compactStoredStyles`，打开 store 后在后台跑）：按 rowid 游标分批（每批一个事务），把已落库的
+  记录就地换成引用表示；游标记在本机状态里，可中断可续，幂等；恢复备份后游标归零。**不产生任何新事件、不进发件箱**：
+  零同步流量，每台设备迁移自己的库。若改用「写新的修改记录」迁移，每台设备都要把所有带样式的字段（去掉样式后）重新发布一遍
+  ——开发版 50 / 208 条分别约 2.7 MB / 12 MB，再乘以设备数，且各端都会收到别人的那一份。
+  服务器上已发布的旧批次仍是内联样式（不改），新设备首次同步下载它们后由自己的迁移去重；之后写的快照是引用表示。
+- **实测**（`packages/fushi_engine/test/srs/srs_style_dedup_real_data_test.dart`，开发版库只读副本）：修改记录总字节
+  50 条 6795 KB → 2731 KB（40.2%）、208 条 30560 KB → 12275 KB（40.2%），共享样式文件 7 个 / 189 KB；逐张渲染与去重前一致。
+- 代码：`fushi_srs/lib/src/style_dedup.dart`、`fushi_engine/lib/srs/srs_style_store.dart`、`srs_db_store.dart`；
+  测试：`fushi_srs/test/style_dedup_test.dart`、`fushi_engine/test/srs/srs_style_dedup_test.dart`、
+  `fushi/test/srs/srs_style_dedup_app_test.dart`。
+
 ## 实现现状（分支 worktree-fushi-srs）
 
 | 计划项 | 位置 | 状态 |
