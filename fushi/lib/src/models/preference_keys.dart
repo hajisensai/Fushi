@@ -429,7 +429,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'srs_mining_target',
   // String 'anki' | 'srs'：本安装「挖词目标」的出厂默认，兼一次性判定标记（2026-10-16：
   // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
-  // Profile 快照 / 分享、不随备份 / 推荐包出境，导入时外来值一律丢弃、保留本机值。
+  // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
   'srs_mining_target_install_default',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张

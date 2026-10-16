@@ -1158,9 +1158,11 @@ class BackupRestoreService {
         if (preservedSync.isNotEmpty) {
           await _applyPreservedConfig(dbDirectory, preservedSync);
         }
-        // 本安装的一次性判定键：外来值一律不采信，本机没有就让它缺着、下次启动重判
-        // （全新安装 haveCurrent=false 时 preservedSync 为空，也必须走这一步）。
-        await _dropForeignInstallScopedPrefs(dbDirectory, preservedSync);
+        // 本安装的一次性判定键：设置层换成了备份的，判定所依据的数据也随之换了——
+        // 外来值与本机旧值都不留，下次启动按恢复后的数据重判（全新安装
+        // haveCurrent=false 时也必须走这一步）。必须排在上面两步之后：它们会把本机
+        // 旧值写回来。
+        await _clearInstallScopedPrefs(dbDirectory);
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
         await _reapplySettingsLayer(dbDirectory);
@@ -1672,7 +1674,7 @@ class BackupRestoreService {
             (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
-        await _dropForeignInstallScopedPrefs(dbDirectory, prefs);
+        await _clearInstallScopedPrefs(dbDirectory);
       }
       sidecarStateApplied = true;
     } on FormatException catch (e, st) {
@@ -1917,31 +1919,26 @@ class BackupRestoreService {
     }
   }
 
-  /// 导入侧对 [SyncRepository.installScopedPrefKeys] 的最后一道：导入库里这些键
-  /// 只能是本机原值（[preserved] 里有的），备份 / 推荐包带进来的外来值一律删掉。
+  /// 导入设置的覆盖恢复（含崩溃恢复重放）收尾：删掉导入库里全部
+  /// [SyncRepository.installScopedPrefKeys]，让下次启动按恢复后的数据重新判定。
   ///
-  /// [_applyPreservedConfig] 只会「用本机值覆盖」，覆盖不到本机**没有**的键——全新
-  /// 安装直接恢复（没有活库可读）或本机判定还没落盘时，外来值会原样留下，而这些键
-  /// 本身就是「已判定」标记，留下即判定永不重跑。导出侧早已剔除，这里兜的是旧版本
-  /// 打出来的包。
-  static Future<void> _dropForeignInstallScopedPrefs(
-    String dbDirectory,
-    Map<String, String> preserved,
-  ) async {
-    final List<String> foreign = SyncRepository.installScopedPrefKeys
-        .where((String key) => !preserved.containsKey(key))
-        .toList(growable: false);
-    if (foreign.isEmpty) return;
+  /// 两种值都不能留：外来值是另一台机器（或打包机）的结论；本机旧值依据的是恢复
+  /// **前**的数据——新装判成 'srs' 后恢复一份老 Anki 用户的完整备份，留着旧值就会
+  /// 把这位老用户的卡送进复习。重判时推荐包回执照旧只认制卡数据信号；用户显式设过
+  /// 的 `srs_mining_target` 是普通偏好、随设置恢复，判定只给它兜默认值，不覆盖。
+  /// 不导入设置的恢复（设置层整层写回本机）不调本方法，本机判定原样保留。
+  static Future<void> _clearInstallScopedPrefs(String dbDirectory) async {
+    const List<String> keys = SyncRepository.installScopedPrefKeys;
     FushiDatabase? db;
     try {
       db = FushiDatabase(dbDirectory);
-      await (db.delete(db.preferences)..where((t) => t.key.isIn(foreign))).go();
+      await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, st) {
       // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，
       // 不因这一步把整次恢复判失败——那样的库本来就读不出任何偏好。
       debugPrint(
-        'BackupRestoreService._dropForeignInstallScopedPrefs failed: $e\n$st',
+        'BackupRestoreService._clearInstallScopedPrefs failed: $e\n$st',
       );
     } finally {
       try {

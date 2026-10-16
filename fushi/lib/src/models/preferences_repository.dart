@@ -2922,10 +2922,11 @@ class PreferencesRepository extends ChangeNotifier
   /// 老用户切到一份 SRS 之前建的快照、或导入一份旧的 Profile 分享，键一删就回落默认；
   /// 回落值取这里，老用户落回 'anki'，新用户落回 'srs'，不会被新默认误切。
   ///
-  /// 也不随备份 / 推荐包走：导出时剔除，导入时外来值一律丢弃、本机已判定的值原样保留
-  /// （维护者用装了新版的机器打推荐包会带上 'anki'，新用户一导入就会被误判成老 Anki
-  /// 用户）。本机还没判定过时导入后仍缺着，下次启动照常判定；判定前读取按 'anki'
-  /// （见 [srsMiningTarget]）。
+  /// 也不随备份 / 推荐包走：导出时剔除（维护者用装了新版的机器打推荐包会带上 'anki'，
+  /// 新用户一导入就会被误判成老 Anki 用户）。导入设置的恢复会把它清掉（外来值、本机
+  /// 旧值都不留），下次启动按恢复后的数据重判——新装后恢复老 Anki 用户的完整备份会
+  /// 判回 'anki'，引导里导入推荐包仍只认制卡数据信号；显式设过的 [srsMiningTargetKey]
+  /// 随设置恢复、不受影响。判定前读取按 'anki'（见 [srsMiningTarget]）。
   static const String srsMiningTargetInstallDefaultKey =
       'srs_mining_target_install_default';
 

@@ -1,5 +1,6 @@
 // 「本次安装」的一次性判定键（SyncRepository.installScopedPrefKeys，目前只有
-// `srs_mining_target_install_default`）不得随备份 / 推荐包出境，导入时也不采信外来值。
+// `srs_mining_target_install_default`）不得随备份 / 推荐包出境；导入设置的恢复把它清掉
+// （外来值、本机旧值都不留），下次启动按恢复后的数据重新判定。
 //
 // 事故形态：维护者用装了新版的机器打推荐包，包里带着 'anki'；新用户在引导里一导入，
 // 推荐包把偏好整层换掉，标记 = 'anki' 又兼「已判定」，于是被永久当成老 Anki 用户
@@ -36,21 +37,43 @@ void main() {
   Future<Directory> dir(String name) =>
       Directory(p.join(tmp.path, name)).create(recursive: true);
 
-  /// 一份「旧版本打出来的」包：真实的当前 schema 库，偏好里带着 [marker] 与推荐包
-  /// 会带的设置（引导已完成等），未经导出剔除——模拟修复前导出的产物。
-  Future<String> legacyPackCarrying(String marker) async {
-    final Directory src = await dir('legacy_src');
+  /// 一份备份 / 推荐包：真实的当前 schema 库，未经导出剔除（[marker] 非 null 时偏好里
+  /// 带着判定键——模拟修复前导出的产物）。
+  ///
+  /// - [oldAnkiUser]：老 Anki 用户的完整备份——引导已完成、选过 Anki 牌组、有制卡历史。
+  /// - 否则是推荐包形态：带着引导已完成等设置，但没有任何制卡数据。
+  /// - [explicitTarget]：用户显式设过的 `srs_mining_target`（普通偏好，随设置恢复）。
+  Future<String> backupZip({
+    String? marker,
+    bool oldAnkiUser = false,
+    String? explicitTarget,
+  }) async {
+    final Directory src = await dir('backup_src');
     final FushiDatabase db = FushiDatabase(src.path);
     // 与 app 写入同一编码（PrefCodec），模拟真实的包。
-    await db.setPrefTyped<String>(_marker, marker);
+    if (marker != null) await db.setPrefTyped<String>(_marker, marker);
     await db.setPrefTyped<bool>('onboarding_completed', true);
     await db.setPrefTyped<int>('reader_font_size', 19);
+    if (oldAnkiUser) {
+      await db.setPrefTyped<String>('last_selected_deck', 'Mining');
+      await db.customStatement(
+        'INSERT INTO mined_sentences (expression, source, date_key, created_at) '
+        "VALUES ('猫', 'reader', '2026-01-01', 0)",
+      );
+    }
+    if (explicitTarget != null) {
+      await db.setPrefTyped<String>(
+        PreferencesRepository.srsMiningTargetKey,
+        explicitTarget,
+      );
+    }
     final int schemaVersion = db.schemaVersion;
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     await db.close();
     final List<int> dbBytes = File(
       p.join(src.path, fushiDatabaseFileName),
     ).readAsBytesSync();
+    await src.delete(recursive: true);
     final List<int> meta = utf8.encode(
       jsonEncode(
         BackupMeta(
@@ -65,7 +88,7 @@ void main() {
     final Archive archive = Archive()
       ..addFile(ArchiveFile(fushiDatabaseFileName, dbBytes.length, dbBytes))
       ..addFile(ArchiveFile('backup_meta.json', meta.length, meta));
-    final String zipPath = p.join(tmp.path, 'legacy_pack_$marker.zip');
+    final String zipPath = p.join(tmp.path, 'backup.zip');
     File(zipPath).writeAsBytesSync(ZipEncoder().encode(archive)!);
     return zipPath;
   }
@@ -84,8 +107,9 @@ void main() {
     return support.path;
   }
 
-  /// 模拟导入后重启：重新装载偏好并跑启动判定，返回最终挖词目标。
-  Future<SrsMiningTarget> restartAndRead(
+  /// 模拟导入后重启：重新装载偏好并跑启动判定，返回最终挖词目标与复习模块开关。
+  Future<({SrsMiningTarget target, bool srsModule, Object? marker})>
+  restartAndRead(
     String support, {
     bool freshOnboardingPackImport = false,
   }) async {
@@ -96,7 +120,11 @@ void main() {
       await repo.settleSrsMiningTargetInstallDefault(
         freshOnboardingPackImport: freshOnboardingPackImport,
       );
-      return SrsMiningTarget.fromWire(repo.srsMiningTarget);
+      return (
+        target: SrsMiningTarget.fromWire(repo.srsMiningTarget),
+        srsModule: repo.moduleEnabled(ModuleId.srs),
+        marker: repo.getPref(_marker),
+      );
     } finally {
       repo.dispose();
       await db.close();
@@ -177,76 +205,102 @@ void main() {
   });
 
   group('导入', () {
-    test('新用户（已判定 srs）导入带 anki 的旧包 → 仍是 srs', () async {
+    /// 导入后、重启前直接读库里的判定键（PrefCodec 解码）。
+    Future<String?> storedMarker(String support) async {
+      final FushiDatabase db = FushiDatabase(support);
+      try {
+        final String value = await db.getPrefTyped<String>(_marker, '');
+        return value.isEmpty ? null : value;
+      } finally {
+        await db.close();
+      }
+    }
+
+    test('新装已判 srs，恢复老 Anki 用户的完整备份 → 重启重判为 anki，复习模块关', () async {
       final String support = await settledDevice(existingUser: false);
       await BackupRestoreService.restoreBackup(
         dbDirectory: support,
-        zipPath: await legacyPackCarrying('anki'),
+        zipPath: await backupZip(oldAnkiUser: true),
       );
-      final FushiDatabase db = FushiDatabase(support);
-      expect(await db.getPrefTyped<String>(_marker, ''), 'srs');
       expect(
-        await db.getPrefTyped<int>('reader_font_size', 0),
-        19,
-        reason: '其余设置照常随包恢复',
+        await storedMarker(support),
+        isNull,
+        reason: '本机旧判定依据的是恢复前的数据，清掉重判',
       );
-      await db.close();
-      expect(
-        await restartAndRead(support, freshOnboardingPackImport: true),
-        SrsMiningTarget.srs,
-      );
+      final r = await restartAndRead(support);
+      expect(r.target, SrsMiningTarget.anki);
+      expect(r.srsModule, isFalse);
+      expect(r.marker, 'anki');
     });
 
-    test('老用户（已判定 anki）导入带 srs 的包 → 仍是 anki，不改写本机判定', () async {
-      final String support = await settledDevice(existingUser: true);
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: support,
-        zipPath: await legacyPackCarrying('srs'),
-      );
-      final FushiDatabase db = FushiDatabase(support);
-      expect(await db.getPrefTyped<String>(_marker, ''), 'anki');
-      await db.close();
-      expect(await restartAndRead(support), SrsMiningTarget.anki);
-    });
-
-    test('不导入设置（importSettings=false）也不改写本机判定', () async {
+    test('新装已判 srs，引导里导入带 anki 判定值、无老用户数据的推荐包（有回执）→ 仍为 srs', () async {
       final String support = await settledDevice(existingUser: false);
       await BackupRestoreService.restoreBackup(
         dbDirectory: support,
-        zipPath: await legacyPackCarrying('anki'),
+        zipPath: await backupZip(marker: 'anki'),
+      );
+      expect(await storedMarker(support), isNull, reason: '外来的判定结论不得采信');
+      final r = await restartAndRead(support, freshOnboardingPackImport: true);
+      expect(r.target, SrsMiningTarget.srs);
+      expect(r.srsModule, isTrue);
+      expect(r.marker, 'srs');
+    });
+
+    test('新装已判 srs，恢复显式设了 srs_mining_target=srs 的老用户备份 → 仍为 srs', () async {
+      final String support = await settledDevice(existingUser: false);
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: support,
+        zipPath: await backupZip(oldAnkiUser: true, explicitTarget: 'srs'),
+      );
+      final r = await restartAndRead(support);
+      expect(r.marker, 'anki', reason: '出厂默认按恢复后的数据重判成老用户');
+      expect(r.target, SrsMiningTarget.srs, reason: '显式选过的挖词目标随设置恢复，重判不覆盖');
+    });
+
+    test('不导入设置（importSettings=false）时本机判定不变', () async {
+      final String support = await settledDevice(existingUser: false);
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: support,
+        zipPath: await backupZip(marker: 'anki', oldAnkiUser: true),
         importSettings: false,
       );
-      final FushiDatabase db = FushiDatabase(support);
-      expect(await db.getPrefTyped<String>(_marker, ''), 'srs');
-      await db.close();
+      expect(await storedMarker(support), 'srs');
+      final r = await restartAndRead(support);
+      expect(r.target, SrsMiningTarget.srs);
+      expect(r.srsModule, isTrue);
     });
 
-    test('还没有活库的全新安装直接导入带 anki 的旧包 → 外来值被丢弃，启动判定得 srs', () async {
+    test('还没有活库的全新安装直接导入带 anki 的旧推荐包 → 外来值被丢弃，启动判定得 srs', () async {
       final Directory support = await dir('fresh');
       await BackupRestoreService.restoreBackup(
         dbDirectory: support.path,
-        zipPath: await legacyPackCarrying('anki'),
+        zipPath: await backupZip(marker: 'anki'),
       );
+      expect(await storedMarker(support.path), isNull, reason: '外来的判定结论不得采信');
+      final r = await restartAndRead(
+        support.path,
+        freshOnboardingPackImport: true,
+      );
+      expect(r.target, SrsMiningTarget.srs);
+      expect(r.srsModule, isTrue);
+    });
+
+    test('崩溃恢复重放导入设置的恢复：本机旧值与外来值同样清掉', () async {
+      final Directory support = await dir('crashed');
+      // 中途崩溃的导入：活库已是备份的（带外来判定 'anki'），sidecar 记着本机的 'srs'。
       final FushiDatabase db = FushiDatabase(support.path);
-      expect(await db.getPref(_marker), isNull, reason: '外来的判定结论不得采信');
-      expect(
-        await db.getPrefTyped<bool>('onboarding_completed', false),
-        isTrue,
-        reason: '其余设置照常随包恢复',
-      );
+      await db.setPrefTyped<String>(_marker, 'anki');
       await db.close();
-      // 引导里导入推荐包后重启：回执在，只认制卡数据信号 → 新用户。
-      expect(
-        await restartAndRead(support.path, freshOnboardingPackImport: true),
-        SrsMiningTarget.srs,
+      await File(
+        p.join(support.path, '$fushiDatabaseFileName.sync-preserve.json'),
+      ).writeAsString(
+        jsonEncode(<String, dynamic>{
+          'mode': 'prefs',
+          'prefs': <String, String>{_marker: PrefCodec.encode('srs')},
+        }),
       );
-      final FushiDatabase after = FushiDatabase(support.path);
-      addTearDown(after.close);
-      expect(
-        await after.getPref(ModuleId.srs.prefKey),
-        isNull,
-        reason: '新用户复习模块按出厂默认（开），不被写成关',
-      );
+      await BackupRestoreService.recoverPendingRestore(support.path);
+      expect(await storedMarker(support.path), isNull);
     });
   });
 }
