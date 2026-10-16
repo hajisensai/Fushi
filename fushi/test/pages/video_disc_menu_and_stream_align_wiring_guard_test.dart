@@ -106,4 +106,35 @@ void main() {
       isTrue,
     );
   });
+
+  test('stream align audio, envelope and window share one probe limit', () {
+    final String subtitle = _read(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    );
+    // 流只拉前 3 分钟：抽音 / -t / cue 栅格化 / 波形窗口都取同一个 getter，
+    // 页面里不许再直接用 20 分钟常量（否则两侧栅格长度不一致、窗口与音频错位）。
+    expect(
+      _member(subtitle, 'int get _subtitleAlignProbeLimitMs'),
+      contains('subtitleAlignProbeLimitMs('),
+    );
+    expect(
+      subtitle.contains('limitMs: kSubtitleAutoAlignProbeLimitMs'),
+      isFalse,
+    );
+    expect(
+      _member(subtitle, 'Future<String?> _fetchStreamAlignAudio('),
+      isNot(contains('kSubtitleAutoAlignProbeLimitMs')),
+    );
+    expect(
+      _member(
+        subtitle,
+        'Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio(',
+      ),
+      contains('_subtitleAlignProbeLimitMs'),
+    );
+    final String page = _read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
+    expect(page, contains('subtitleProbeLimitMs: _subtitleAlignProbeLimitMs'));
+  });
 }
