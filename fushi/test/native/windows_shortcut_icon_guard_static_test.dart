@@ -124,10 +124,10 @@ void main() {
   });
 
   test('settings 页换图标成功后调 syncWindowsShortcutIcons', () {
-    final String src =
-        read('lib/src/pages/implementations/miscellaneous_settings_page.dart');
+    // 换图执行体抽进 app_icon_apply.dart（设置页与控制通道共用）。
+    final String src = read('lib/src/utils/misc/app_icon_apply.dart');
     expect(src.contains('syncWindowsShortcutIcons('), isTrue,
-        reason: '_switchPreset / _pickCustomIcon 必须在换图标后同步 .lnk 图标');
+        reason: 'applyPresetAppIcon / applyCustomAppIcon 必须在换图标后同步 .lnk 图标');
     // 两个 Windows 触点都接：preset + custom。
     expect('syncWindowsShortcutIcons('.allMatches(src).length >= 2, isTrue,
         reason: 'preset 与 custom 两条 Windows 换图路径都须同步');

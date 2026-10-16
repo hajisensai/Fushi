@@ -3,6 +3,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart'
+    show TorrentFileEntry, TorrentSnapshot;
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show VideoDownloadJobDetails, VideoDownloadLiveDataAbsence;
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
@@ -11,6 +15,10 @@ import 'package:fushi/src/platform/desktop/ctl/ctl_data_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_wire.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart'
+    show HostDownloadJob, HostDownloadTarget;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show withoutInterconnectHost;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_activity.dart';
@@ -82,6 +90,18 @@ void main() {
         ('POST', '/api/admin/peers/pair'),
         ('GET', '/api/admin/storage/root'),
         ('GET', '/api/admin/storage/usage'),
+        // 第二轮：完整参数 / 长任务进度 / 互联管理 / 数据目录迁移。
+        ('GET', '/api/admin/backups/status'),
+        ('POST', '/api/admin/downloads/j1/resume'),
+        ('POST', '/api/admin/downloads/j1/priority'),
+        ('GET', '/api/admin/downloads/j%2F1/details'),
+        ('GET', '/api/admin/download-targets'),
+        ('POST', '/api/admin/peers/pair-link'),
+        ('DELETE', '/api/admin/peers/pair-link'),
+        ('DELETE', '/api/admin/peers/clients/p1'),
+        ('DELETE', '/api/admin/peers/hosts/https%3A%2F%2Fh%3A7000'),
+        ('POST', '/api/admin/storage/migrate'),
+        ('GET', '/api/admin/storage/migrate'),
       ];
       for (final (String method, String path) in calls) {
         final List<CtlRoute> hits = <CtlRoute>[
@@ -140,6 +160,16 @@ void main() {
       });
     });
 
+    test('storage migrate：相对路径 / 缺 confirm 都 400（dryRun 不要 confirm）', () async {
+      await expect400('/api/admin/storage/migrate', <String, Object?>{
+        'path': 'rel/dir',
+        'dryRun': true,
+      });
+      await expect400('/api/admin/storage/migrate', <String, Object?>{
+        'path': p.join(p.separator, 'new', 'root'),
+      });
+    });
+
     test('backup restore 未知模式 / 非法组合 400', () async {
       await expect400('/api/admin/backups/restore', <String, Object?>{
         'path': '/x.zip',
@@ -151,6 +181,209 @@ void main() {
         'confirm': true,
         'categories': <String>['books'],
       });
+    });
+  });
+
+  group('互联吊销 / 忘记 host 缺 confirm 直接 400', () {
+    for (final (String pattern, String path) in <(String, String)>[
+      ('/api/admin/peers/clients/:peerId', '/api/admin/peers/clients/p1'),
+      ('/api/admin/peers/hosts/:host', '/api/admin/peers/hosts/h1'),
+    ]) {
+      test(pattern, () async {
+        final CtlRoute r = routes.firstWhere(
+          (CtlRoute r) => r.pattern == pattern && r.method == 'DELETE',
+        );
+        await expectLater(
+          r.handler(
+            CtlCall(method: 'DELETE', path: path, params: r.match(path)!),
+          ),
+          throwsA(
+            isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 400),
+          ),
+        );
+      });
+    }
+  });
+
+  group('下载第二轮：参数解析', () {
+    test('splitDownloadKind：movie / tv 是视频，其余按域，未知 400', () {
+      expect(splitDownloadKind(null), (
+        mediaKind: 'movie',
+        discoveryKind: null,
+      ));
+      expect(splitDownloadKind('tv'), (mediaKind: 'tv', discoveryKind: null));
+      expect(splitDownloadKind('game'), (
+        mediaKind: 'movie',
+        discoveryKind: 'game',
+      ));
+      expect(() => splitDownloadKind('anime'), throwsA(isA<CtlFailure>()));
+    });
+
+    test('parseDownloadFileIndexes / parseDownloadPriority', () {
+      expect(parseDownloadFileIndexes(const <String>[]), isNull);
+      expect(parseDownloadFileIndexes(const <String>['0, 2', '5']), <int>[
+        0,
+        2,
+        5,
+      ]);
+      expect(
+        () => parseDownloadFileIndexes(const <String>['-1']),
+        throwsA(isA<CtlFailure>()),
+      );
+      expect(parseDownloadPriority('high'), 1);
+      expect(parseDownloadPriority('normal'), 0);
+      expect(parseDownloadPriority('low'), -1);
+      expect(parseDownloadPriority('9'), 9);
+      expect(() => parseDownloadPriority('top'), throwsA(isA<CtlFailure>()));
+    });
+
+    test('matchDownloadHost：hostId 认整台 host 的任一地址，其次地址、设备名', () {
+      const HostDownloadTarget pc = HostDownloadTarget(
+        baseUrl: 'https://10.0.0.2:7000',
+        deviceName: 'PC',
+        backend: 'embedded',
+        peerUrls: <String>{'https://10.0.0.2:7000', 'https://[fd00::2]:7000'},
+      );
+      const HostDownloadTarget nas = HostDownloadTarget(
+        baseUrl: 'https://10.0.0.9:7000',
+        deviceName: 'NAS',
+        backend: 'qbittorrent',
+      );
+      const List<FushiClientUrl> paired = <FushiClientUrl>[
+        FushiClientUrl(url: 'https://[fd00::2]:7000', hostId: 'h-pc'),
+        FushiClientUrl(url: 'https://10.0.0.9:7000', hostId: 'h-nas'),
+      ];
+      final List<HostDownloadTarget> targets = <HostDownloadTarget>[pc, nas];
+      expect(matchDownloadHost(targets, paired, 'h-pc'), same(pc));
+      expect(matchDownloadHost(targets, paired, 'h-nas'), same(nas));
+      expect(
+        matchDownloadHost(targets, paired, 'https://[fd00::2]:7000'),
+        same(pc),
+      );
+      expect(matchDownloadHost(targets, paired, 'NAS'), same(nas));
+      expect(matchDownloadHost(targets, paired, 'nope'), isNull);
+      // hostId 认得但那台 host 此刻不在线：不退到别的设备。
+      expect(
+        matchDownloadHost(<HostDownloadTarget>[nas], paired, 'h-pc'),
+        isNull,
+      );
+      expect(downloadHostToWire(pc, paired), <String, Object?>{
+        'device': 'PC',
+        'url': 'https://10.0.0.2:7000',
+        'hostId': 'h-pc',
+        'backend': 'embedded',
+        'kinds': <String>['video'],
+        'deleteFilesParam': false,
+      });
+    });
+
+    test('远端任务：出参与动作判据同下载页「远端任务」卡', () {
+      HostDownloadJob job(String lifecycle) => HostDownloadJob(
+        jobId: 'r1',
+        title: 'T',
+        lifecycle: lifecycle,
+        stage: 'download',
+        stageProgress: 0.5,
+        updatedAt: 1,
+        lastError: 'GET https://h/x?token=s3cr3t 500',
+      );
+      final Map<String, Object?> wire = hostDownloadJobToWire(
+        job('active'),
+        device: 'PC',
+      );
+      expect(wire['device'], 'PC');
+      expect(wire['remote'], isTrue);
+      expect(wire.toString(), isNot(contains('s3cr3t')));
+      expect(hostDownloadJobFinished(job('active')), isFalse);
+      expect(hostDownloadJobFinished(job('completed')), isTrue);
+      expect(hostDownloadJobFinished(job('cancelled')), isTrue);
+      expect(hostDownloadJobRetryable(job('failed')), isTrue);
+      expect(hostDownloadJobRetryable(job('needsAttention')), isTrue);
+      expect(hostDownloadJobRetryable(job('active')), isFalse);
+    });
+
+    test('downloadJobDetailsToWire：文件清单与位置', () {
+      final Map<String, Object?> wire = downloadJobDetailsToWire(
+        const VideoDownloadJobDetails(
+          snapshot: TorrentSnapshot(
+            hash: 'abc',
+            name: 'Show',
+            progress: 0.5,
+            state: 'downloading',
+            savePath: '/dl',
+            contentPath: '/dl/Show',
+            amountLeft: 5,
+          ),
+          files: <TorrentFileEntry>[
+            TorrentFileEntry(name: 'e1.mkv', size: 10, progress: 1, index: 0),
+          ],
+          liveDataAbsence: VideoDownloadLiveDataAbsence.notHandedOff,
+        ),
+        location: '/dl/Show',
+      );
+      expect(wire['liveData'], 'notHandedOff');
+      expect(wire['location'], '/dl/Show');
+      expect((wire['files']! as List<Object?>).single, <String, Object?>{
+        'index': 0,
+        'name': 'e1.mkv',
+        'bytes': 10,
+        'progress': 1.0,
+      });
+    });
+  });
+
+  group('互联第二轮', () {
+    const List<FushiClientUrl> urls = <FushiClientUrl>[
+      FushiClientUrl(
+        url: 'https://10.0.0.2:7000',
+        hostId: 'h1',
+        deviceName: 'PC',
+      ),
+      FushiClientUrl(
+        url: 'https://[fd00::2]:7000',
+        hostId: 'h1',
+        learned: true,
+      ),
+      FushiClientUrl(url: 'http://legacy:7000', deviceName: 'Old'),
+    ];
+
+    test('resolveForgetHost：hostId 优先，其次地址、设备名', () {
+      expect(resolveForgetHost(urls, 'h1'), (
+        url: 'https://10.0.0.2:7000',
+        hostId: 'h1',
+      ));
+      expect(resolveForgetHost(urls, 'https://[fd00::2]:7000'), (
+        url: 'https://[fd00::2]:7000',
+        hostId: 'h1',
+      ));
+      expect(resolveForgetHost(urls, 'Old'), (
+        url: 'http://legacy:7000',
+        hostId: null,
+      ));
+      expect(
+        () => resolveForgetHost(urls, 'nope'),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 404),
+        ),
+      );
+    });
+
+    test('withoutInterconnectHost：有 hostId 删整台 host，老条目只删一行', () {
+      expect(
+        withoutInterconnectHost(
+          urls,
+          url: 'https://[fd00::2]:7000',
+          hostId: 'h1',
+        ).map((FushiClientUrl u) => u.url),
+        <String>['http://legacy:7000'],
+      );
+      expect(
+        withoutInterconnectHost(
+          urls,
+          url: 'http://legacy:7000',
+        ).map((FushiClientUrl u) => u.url),
+        <String>['https://10.0.0.2:7000', 'https://[fd00::2]:7000'],
+      );
     });
   });
 

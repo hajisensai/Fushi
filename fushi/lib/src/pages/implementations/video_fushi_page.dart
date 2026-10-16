@@ -94,16 +94,27 @@ import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
 import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
+import 'package:collection/collection.dart' show IterableExtension;
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile, AsrLanguage;
+import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart'
+    show
+        AudiobookTranscribeCancelToken,
+        AudiobookTranscribeCancelled,
+        AudiobookTranscribeJob,
+        AudiobookTranscribeJobPhase;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
+import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
+    show AppAudiobookTranscriber;
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';
 import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
+import 'package:fushi/src/media/video/video_ocr_cli_consent.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
@@ -240,7 +251,6 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
-import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleSyncDecision, SubtitleSyncDecisionKind;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
@@ -6675,27 +6685,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<MangaStreamOcrSetup> _prepareGraphicSubtitleOcr(
     String workDirPath, {
     String? language,
+    _GraphicOcrConsentGates? consent,
   }) {
     // 两个询问框（「默认交给 LLM」与 Lens 上传披露）都会夺走视频键盘焦点：
     // 套 guardOverlay，任何退出路径都把快捷键还给播放器。
     return prepareMangaStreamOcr(
       imageDirPath: workDirPath,
-      engines: MangaOcrWizardEngines.resolve(
-        context: context,
-        db: appModel.database,
-      ).wrapDecideAiDefault(_focusOwnership.guardOverlay),
+      engines:
+          MangaOcrWizardEngines.resolve(
+            context: context,
+            db: appModel.database,
+          ).wrapDecideAiDefault(
+            consent == null
+                ? _focusOwnership.guardOverlay
+                : (Future<void> Function() _) => consent.decideAiDefault(),
+          ),
       preference: MangaOcrEnginePreferenceKey.fromKey(
         appModel.mangaOcrEnginePreference,
       ),
       lensLanguage: appModel.mangaOcrLensLanguage,
-      confirmLensUpload: () async =>
-          mounted &&
-          await _focusOwnership.guardOverlay(
-            () => ensureGoogleLensDisclosure(
-              context,
-              scene: GoogleLensDisclosureScene.videoFrames,
-            ),
-          ),
+      confirmLensUpload: consent != null
+          ? consent.confirmLensUpload
+          : () async =>
+                mounted &&
+                await _focusOwnership.guardOverlay(
+                  () => ensureGoogleLensDisclosure(
+                    context,
+                    scene: GoogleLensDisclosureScene.videoFrames,
+                  ),
+                ),
       aiContext: MangaAiOcrContext(
         source: MangaAiOcrSource.subtitle,
         title: _title,

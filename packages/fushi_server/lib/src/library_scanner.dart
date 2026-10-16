@@ -23,6 +23,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -129,9 +130,11 @@ class LibraryScanner {
         case 'book':
           final _BookScan scan = await _scanBooks(dir, root, summary);
           if (pruneMissing) await _pruneBookRoot(dir, root.id, SourceLibraryKind.book, scan, summary);
+          await _groupBookSeries(summary);
         case 'manga':
           final _BookScan scan = await _scanManga(dir, root, summary);
           if (pruneMissing) await _pruneBookRoot(dir, root.id, SourceLibraryKind.manga, scan, summary);
+          await _groupBookSeries(summary);
         default:
           summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）');
       }
@@ -275,6 +278,17 @@ class LibraryScanner {
       lastScannedAt: DateTime.now(),
       lastScanError: error,
     );
+  }
+
+  /// 书 / 漫画根入库后，分卷按系列持久归组（与 app 来源扫描同步，BUG-3441）：
+  /// 无头服务端没有书架页，不在这里归，互联 client 拿到的清单就永远不带系列归属。
+  Future<void> _groupBookSeries(ScanSummary summary) async {
+    try {
+      await BookSeriesGrouper(db).groupAll();
+    } catch (e, stack) {
+      summary.errors.add('分卷系列归组失败: $e');
+      engineLog.log('LibraryScanner.groupBookSeries', e, stack);
+    }
   }
 
   /// 对一个视频根做一次对账（见 [pruneMissingVideoRows]）。

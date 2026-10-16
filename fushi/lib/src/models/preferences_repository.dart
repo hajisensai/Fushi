@@ -4321,12 +4321,62 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 翻页动画样式（`none` / `slide` / `fade`）。
-  String get mangaPageAnimation => getPref('manga_page_animation',
-      defaultValue: MangaPageAnimation.slide.key) as String;
+  /// 翻页动画样式（[PageTurnAnimation.key]：`none` / `slide` / `cover` / `fade`）。
+  ///
+  /// 这是漫画阅读器翻页动画的**唯一真相源**；
+  /// [MangaReaderPreferences.animateTransitions] 只是它的只读投影（见
+  /// [mangaReaderPreferences]），为旧数据 / 备份 / Profile 兼容保留。键从未写过时
+  /// （早于本键的安装 / 只恢复了 JSON 的备份）按旧 JSON 里的 `animateTransitions`
+  /// 迁移：显式关过过渡 = `none`，其余回落默认 `slide`。落盘值不认识时同样回落
+  /// `slide`，读出值恒为合法 key。
+  String get mangaPageAnimation {
+    final Object? stored = getPref('manga_page_animation');
+    if (stored is String) return mangaPageAnimationFromKey(stored).key;
+    return _legacyMangaAnimateTransitions() == false
+        ? PageTurnAnimation.none.key
+        : kMangaPageAnimationDefault.key;
+  }
 
   Future<void> setMangaPageAnimation(String value) async {
-    await setPref('manga_page_animation', value);
+    await setPref('manga_page_animation', mangaPageAnimationFromKey(value).key);
+    notifyListeners();
+  }
+
+  /// 旧 `manga_reader_preferences` JSON 里的 `animateTransitions`（没有 / 解析
+  /// 失败 = null）。
+  bool? _legacyMangaAnimateTransitions() {
+    final Object? raw = getPref('manga_reader_preferences');
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map && decoded['animateTransitions'] is bool) {
+        return decoded['animateTransitions'] as bool;
+      }
+    } on FormatException {
+      // 坏 JSON 等价于没有旧值。
+    }
+    return null;
+  }
+
+  /// 翻页动画速度（[PageTurnAnimationSpeed.key]，默认 `normal`）。
+  String get mangaPageAnimationSpeed => PageTurnAnimationSpeed.fromKey(
+        getPref('manga_page_animation_speed') as String?,
+      ).key;
+
+  Future<void> setMangaPageAnimationSpeed(String value) async {
+    await setPref(
+      'manga_page_animation_speed',
+      PageTurnAnimationSpeed.fromKey(value).key,
+    );
+    notifyListeners();
+  }
+
+  /// 单 / 双页模式滑动翻页「拖动跟手」（默认开）。
+  bool get mangaPageTurnFollowDrag => getPref('manga_page_turn_follow_drag',
+      defaultValue: kMangaPageTurnFollowDragDefault) as bool;
+
+  Future<void> setMangaPageTurnFollowDrag(bool value) async {
+    await setPref('manga_page_turn_follow_drag', value);
     notifyListeners();
   }
 
@@ -4480,12 +4530,9 @@ class PreferencesRepository extends ChangeNotifier
     );
     await setPref('manga_volume_key_paging', value.volumeKeys);
     await setPref('manga_spread_offset', value.spreadOffset);
-    await setPref(
-      'manga_page_animation',
-      value.animateTransitions
-          ? (mangaPageAnimation == 'none' ? 'slide' : mangaPageAnimation)
-          : 'none',
-    );
+    // `manga_page_animation` 不再从 animateTransitions 反写：翻页动画只由四选一
+    // （[setMangaPageAnimation]）决定，animateTransitions 只是读出时的投影。反写会
+    // 让任何拿着旧对象整份写回的调用方把刚选的「淡入淡出 / 覆盖」打回成 slide。
     notifyListeners();
   }
 

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi/src/asr_host/asr_model_downloads.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
@@ -139,11 +140,15 @@ void main() {
     downloads,
   );
 
+  // 独立登记表：按包开假目录、按素材问假服务、不带 GPU 环境（不碰插件 / 数据根）。
   Widget section(_FakeService service) => AsrModelsSettingsSection(
     service: service,
-    serviceForProfile: service.forProfile,
     showGpuRuntime: false,
-    openPackStore: openPackStore,
+    downloads: AsrModelDownloads(
+      openPackStore: openPackStore,
+      serviceForProfile: service.forProfile,
+      gpuRuntimeToDownload: () async => null,
+    ),
   );
 
   Widget wrap(Widget child) {
@@ -230,56 +235,47 @@ void main() {
     );
   });
 
-  testWidgets(
-    '只服务视频的包（Parakeet）那一行问的是 mixedAudio 服务、状态按自己的包，不借用同语言通用包',
-    (WidgetTester tester) async {
-      final _FakeService service = _FakeService(
-        root: tmp,
-        readyByLanguage: <AsrLanguage, bool>{AsrLanguage.japanese: true},
-      );
-      await tester.pumpWidget(wrap(section(service)));
-      await tester.pumpAndSettle();
-      final _FakeService video = service.forProfile(AsrAudioProfile.mixedAudio);
-      expect(video.audioProfile, AsrAudioProfile.mixedAudio);
-      // Parakeet 行的变体推荐问的是视频那份服务（fp32 显存门槛按 Parakeet 算）；
-      // 有声书那份不会替它被问。
-      expect(video.plannedLanguages, <AsrLanguage>[AsrLanguage.japanese]);
-      // ReazonSpeech 已下载 → 只有删除；Parakeet 未下载 → 只有下载（借用日语通用
-      // 包的状态时两行一起显示「已下载」，删 Parakeet 删的是 ReazonSpeech）。
-      expect(
-        find.byKey(
-          ValueKey<String>('asr-models-delete-${kAsrJapanesePack.id}'),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(
-          ValueKey<String>(
-            'asr-models-download-${kAsrParakeetJapanesePack.id}',
-          ),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(
-          ValueKey<String>(
-            'asr-models-delete-${kAsrParakeetJapanesePack.id}',
-          ),
-        ),
-        findsNothing,
-      );
-      // 点 Parakeet 的下载：落到 Parakeet 自己的目录，不是 ReazonSpeech。
-      await tester.tap(
-        find.byKey(
-          ValueKey<String>(
-            'asr-models-download-${kAsrParakeetJapanesePack.id}',
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(downloads, <String>[kAsrParakeetJapanesePack.id]);
-    },
-  );
+  testWidgets('只服务视频的包（Parakeet）那一行问的是 mixedAudio 服务、状态按自己的包，不借用同语言通用包', (
+    WidgetTester tester,
+  ) async {
+    final _FakeService service = _FakeService(
+      root: tmp,
+      readyByLanguage: <AsrLanguage, bool>{AsrLanguage.japanese: true},
+    );
+    await tester.pumpWidget(wrap(section(service)));
+    await tester.pumpAndSettle();
+    final _FakeService video = service.forProfile(AsrAudioProfile.mixedAudio);
+    expect(video.audioProfile, AsrAudioProfile.mixedAudio);
+    // Parakeet 行的变体推荐问的是视频那份服务（fp32 显存门槛按 Parakeet 算）；
+    // 有声书那份不会替它被问。
+    expect(video.plannedLanguages, <AsrLanguage>[AsrLanguage.japanese]);
+    // ReazonSpeech 已下载 → 只有删除；Parakeet 未下载 → 只有下载（借用日语通用
+    // 包的状态时两行一起显示「已下载」，删 Parakeet 删的是 ReazonSpeech）。
+    expect(
+      find.byKey(ValueKey<String>('asr-models-delete-${kAsrJapanesePack.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>('asr-models-download-${kAsrParakeetJapanesePack.id}'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>('asr-models-delete-${kAsrParakeetJapanesePack.id}'),
+      ),
+      findsNothing,
+    );
+    // 点 Parakeet 的下载：落到 Parakeet 自己的目录，不是 ReazonSpeech。
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('asr-models-download-${kAsrParakeetJapanesePack.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(downloads, <String>[kAsrParakeetJapanesePack.id]);
+  });
 
   testWidgets('删除先弹二次确认；确认后真删目录并回报释放字节', (WidgetTester tester) async {
     final _FakeService service = _FakeService(

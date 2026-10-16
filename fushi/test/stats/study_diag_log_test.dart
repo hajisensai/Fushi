@@ -120,7 +120,17 @@ void main() {
       final int fn = settings.indexOf('Future<void> _exportStudyDiagLog(');
       expect(fn, greaterThanOrEqualTo(0));
       final String body = settings.substring(fn, settings.indexOf('\n}\n', fn));
-      expect(body, contains('buildStudyDiagExport('));
+      // 正文组装抽成 _buildStudyDiagLog，供 UI 导出与控制通道（cli:）共用同一份
+      // 正文与参数；守卫跟着两跳：动作走 _buildStudyDiagLog，它再走
+      // buildStudyDiagExport。
+      expect(body, contains('_buildStudyDiagLog('));
+      final int builder =
+          settings.indexOf('Future<String> _buildStudyDiagLog(');
+      expect(builder, greaterThanOrEqualTo(0));
+      final String builderBody =
+          settings.substring(builder, settings.indexOf(');\n', builder));
+      expect(builderBody, contains('=> buildStudyDiagExport('));
+      expect(builderBody, contains('appModel.database'));
       expect(body, contains('saveLogToFile('));
       expect(body, contains("fileName: 'fushi_study_diag_log.txt'"));
     });

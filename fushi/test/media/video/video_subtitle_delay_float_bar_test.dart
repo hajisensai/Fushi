@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_subtitle_sync_row.dart';
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 
 import '../../helpers/video_quick_settings_harness.dart';
 
@@ -174,5 +176,38 @@ void main() {
     await tester.tap(find.byTooltip('-50ms'));
     await tester.pumpAndSettle();
     expect(delays.last, -1050);
+  });
+
+  // BUG-3440（反馈 B-yPx_on2A）：读数胶囊自带不透明底色与 cardRadius，焦点环原先
+  // 用 FushiFocusable 默认的 8 半径画在胶囊下面，被底色盖住、只在四角漏出残段。
+  testWidgets('读数胶囊聚焦：焦点环与胶囊同形并画在胶囊上面', (WidgetTester tester) async {
+    await _pumpRow(
+      tester,
+      VideoSubtitleSyncRow(
+        host: buildTestVideoHost(state: TestVideoHostState(delayMs: 0)),
+        floatBar: true,
+      ),
+    );
+    final Finder readout = find.byKey(
+      const ValueKey<String>('video-subtitle-delay-readout'),
+    );
+    final Finder ring = find.descendant(
+      of: find.descendant(of: readout, matching: find.byType(FushiFocusable)),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).border != null,
+      ),
+    );
+    Focus.of(tester.element(find.text('+0 ms'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    final DecoratedBox box = tester.widget<DecoratedBox>(ring.first);
+    final BoxDecoration deco = box.decoration as BoxDecoration;
+    expect(box.position, DecorationPosition.foreground);
+    expect(deco.borderRadius, FushiM3eShape.cardRadius);
+    final Border border = deco.border! as Border;
+    expect(border.top.color, isNot(Colors.transparent));
   });
 }

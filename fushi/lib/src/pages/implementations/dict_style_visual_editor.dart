@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -387,18 +387,15 @@ class DictStyleVisualEditor extends StatelessWidget {
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
         // M3E：标题 + 饼干形色块 hero 图标，与全应用标准对话框同口径。
-        icon: const FushiDialogHeroIcon(icon: FushiIcons.appearance),
+        // 矮屏（手机横屏）省掉 hero 图标，纵向空间全给取色器。
+        icon: FushiDialogColorPicker.compactHeight(dialogContext)
+            ? null
+            : const FushiDialogHeroIcon(icon: FushiIcons.appearance),
         title: Text(title),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: initial,
-            onColorChanged: (Color color) => picked = color,
-            portraitOnly: true,
-            enableAlpha: enableAlpha,
-            displayThumbColor: true,
-            hexInputBar: true,
-            labelTypes: const <ColorLabelType>[],
-          ),
+        content: FushiDialogColorPicker(
+          pickerColor: initial,
+          onColorChanged: (Color color) => picked = color,
+          enableAlpha: enableAlpha,
         ),
         actions: <Widget>[
           FushiDialogAction(

@@ -21,6 +21,8 @@ import 'package:fushi_core/fushi_core.dart'
         LocalFileDeleteFailure,
         LocalFileDeleteReport,
         deleteLocalFiles;
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show VideoDownloadPipelineService;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show DeleteDecision, DeleteScope;
@@ -58,58 +60,93 @@ class InterconnectDownloadTasksSection extends ConsumerWidget {
 
 /// 已完成的**扩展源视频**任务的「删除（可连文件）」。其它来源 / 状态，或不知道
 /// 成品落点（[InterconnectDownloadTask.destPath] 为 null）时返回 null——它们没有
-/// 可删的文件，下载中心只给「清记录」。
-///
-/// 只有文件真的删掉了才移出任务记录：删失败（Windows 句柄占用等）时任务留着让
-/// 用户重试，失败经 [reportVideoLibraryDeleteFailures] 如实提示。
+/// 可删的文件，下载中心只给「清记录」。删除本体见
+/// [deleteCompletedInterconnectDownloadFiles]（桌面控制通道共用）。
 Future<void> Function({required bool deleteFiles})? _completedFilesDeleter(
   WidgetRef ref,
   InterconnectDownloadManager manager,
   InterconnectDownloadTask task,
 ) {
-  final String? destPath = task.destPath;
-  if (task.status != InterconnectDownloadStatus.completed ||
-      task.origin != InterconnectDownloadOrigin.extension ||
-      task.kind != InterconnectDownloadKind.video ||
-      destPath == null) {
-    return null;
-  }
+  if (!canDeleteCompletedDownloadFiles(task)) return null;
   return ({required bool deleteFiles}) async {
     if (!deleteFiles) {
       manager.clearTask(task.id);
       return;
     }
     final AppModel app = ref.read(appProvider);
-    final FushiDatabase db = app.database;
-    final VideoBookRepository repo = VideoBookRepository(db);
-    final bool done = await deleteCompletedDownloadFile(
-      destPath: destPath,
-      libraryRowFor: (String path) async =>
-          (await repo.findByVideoPath(path))?.bookUid,
-      deleteLibraryRow: (String bookUid) => deleteVideoBooksWithDecision(
-        repo: repo,
-        database: db,
-        pipeline: app.videoDownloadPipelineService,
-        bookUids: <String>[bookUid],
-        decision: const DeleteDecision(
-          scope: DeleteScope.keepLocalOnly,
-          deleteLocalFiles: true,
-        ),
-      ),
-      deleteOrphanFile: (String path) async {
-        // 与媒体库删除链同一顺序：正握着它的播放器先放句柄，再删。
-        await MediaHandleRegistry.instance.releaseHolding(<String>[path]);
-        return deleteLocalFiles(<String>[path]);
-      },
-      fileExists: (String path) => File(path).exists(),
+    await deleteCompletedInterconnectDownloadFiles(
+      database: app.database,
+      pipeline: app.videoDownloadPipelineService,
+      manager: manager,
+      task: task,
       report: (VideoLibraryDeleteResult result) =>
           reportVideoLibraryDeleteFailures(
             result,
             source: 'InterconnectDownloadTasks.deleteCompleted',
           ),
     );
-    if (done) manager.clearTask(task.id);
   };
+}
+
+/// 这条任务有没有可删的成品文件：已完成的**扩展源视频**且知道落点。
+bool canDeleteCompletedDownloadFiles(InterconnectDownloadTask task) =>
+    task.status == InterconnectDownloadStatus.completed &&
+    task.origin == InterconnectDownloadOrigin.extension &&
+    task.kind == InterconnectDownloadKind.video &&
+    task.destPath != null;
+
+/// 删掉一条已完成剧集下载的成品并移出任务记录（下载页「删除并删文件」与
+/// `fushi_cli source anime-dl rm --delete-files` 共用）。
+///
+/// 按文件找库行（见 [deleteCompletedDownloadFile]）：有行走媒体库删除链（放句柄 →
+/// 删行 → 删原件 + 字幕），没有只删文件本身（先放掉握着它的播放器句柄）。只有文件
+/// 真的删掉了才移出任务记录：删失败（Windows 句柄占用等）时任务留着让用户重试，
+/// 删除结果交给 [report]（页面弹提示，CLI 回原因）。返回是否删掉并移出。
+///
+/// [task] 不满足 [canDeleteCompletedDownloadFiles] 抛 [ArgumentError]。
+/// [releaseHandles] 只给测试替换（缺省是 [MediaHandleRegistry.releaseHolding]）。
+Future<bool> deleteCompletedInterconnectDownloadFiles({
+  required FushiDatabase database,
+  required VideoDownloadPipelineService? pipeline,
+  required InterconnectDownloadManager manager,
+  required InterconnectDownloadTask task,
+  required void Function(VideoLibraryDeleteResult result) report,
+  Future<void> Function(List<String> paths)? releaseHandles,
+}) async {
+  if (!canDeleteCompletedDownloadFiles(task)) {
+    throw ArgumentError.value(
+      task.id,
+      'task',
+      'not a completed extension video download with a known file',
+    );
+  }
+  final VideoBookRepository repo = VideoBookRepository(database);
+  final bool done = await deleteCompletedDownloadFile(
+    destPath: task.destPath!,
+    libraryRowFor: (String path) async =>
+        (await repo.findByVideoPath(path))?.bookUid,
+    deleteLibraryRow: (String bookUid) => deleteVideoBooksWithDecision(
+      repo: repo,
+      database: database,
+      pipeline: pipeline,
+      bookUids: <String>[bookUid],
+      decision: const DeleteDecision(
+        scope: DeleteScope.keepLocalOnly,
+        deleteLocalFiles: true,
+      ),
+    ),
+    deleteOrphanFile: (String path) async {
+      // 与媒体库删除链同一顺序：正握着它的播放器先放句柄，再删。
+      await (releaseHandles ?? MediaHandleRegistry.instance.releaseHolding)(
+        <String>[path],
+      );
+      return deleteLocalFiles(<String>[path]);
+    },
+    fileExists: (String path) => File(path).exists(),
+    report: report,
+  );
+  if (done) manager.clearTask(task.id);
+  return done;
 }
 
 /// 删掉一条已完成下载的成品文件 [destPath]（纯编排，依赖全注入，供测试直接断言）。

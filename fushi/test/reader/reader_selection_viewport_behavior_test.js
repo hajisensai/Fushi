@@ -10,6 +10,9 @@ const path = require('node:path');
 const vm = require('node:vm');
 const sources = Object.fromEntries(Object.entries({
   pagination: 'reader_pagination_scripts.dart',
+  // 翻页动画片段（分页 shell 的 fushiReader 里原样插入）：paginate → turnPageAnimated，
+  // setPagePosition → finishPageTurnAnimation + _setPagePositionNow。
+  pageTurn: 'reader_page_turn_script.dart',
   selection: 'reader_selection_scripts.dart',
   vn: 'reader_visual_novel_scripts.dart',
 }).map(([key, file]) => [key, fs.readFileSync(
@@ -177,7 +180,13 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
     Object.assign(reader, {getScrollContext: () => context,
       paginationMetrics: {minScroll: 0, maxScroll: 200}, pageStepPosition: x => x});
     for (const name of ['getPagePosition', 'lockRootViewport', 'assignPagePosition',
-      'setPagePosition', 'paginate']) reader[name] = fn('pagination', name);
+      'setPagePosition', '_setPagePositionNow', 'paginate']) reader[name] = fn('pagination', name);
+    // 沙箱里没有 C / startViewTransition：效果恒为无，turnPageAnimated 退回瞬时
+    // setPagePosition，与动画前的落点 / 清选区语义逐字一致。
+    for (const name of ['pageTurnEffect', 'isEinkMode', 'pageTurnAnimationSupported',
+      'turnPageAnimated', 'finishPageTurnAnimation', '_takeFollowDragRelease',
+      '_clearFollowDragRelease', '_resetFollowDragVisual', '_applyFollowShift',
+      '_restoreFollowBase']) reader[name] = fn('pageTurn', name);
     return context;
   }
   function beginDrag(guard) {

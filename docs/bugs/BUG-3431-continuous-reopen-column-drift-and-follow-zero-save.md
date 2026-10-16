@@ -1,0 +1,32 @@
+## BUG-3431 · 滚动模式每次重开回退一列 + 跟读时视口首字 0 与句位交替落库
+- **报告**：2026-10-15（BUG-3446 / BUG-3430 真机复验时发现。BUG-3430 改为开书落在阅读存档后，有声书书在滚动模式下也按存档恢复，原先被「拉到音频句」盖住的两处问题露了出来）
+- **真实性**：✅ 真 bug，真机取证。小米 Pad 5 模拟手机形态（`wm size 1080x2400` + `wm density 420`），竖排滚动模式。
+  - ① **重开回退一列**：每次杀进程重开都比上次退一列。日志序列 912 → 874 → 837，以及 1551 → 1513，每次约 37 字。
+    - CDP 探针（恢复 1551 后）：`getFirstVisibleCharOffset` 走 caret 路径返回 1513，`inMap=true`。首边那一列从 1513 起，光标矩形右缘 403 = `innerWidth`(411) − `padding-right`(8.22)。
+    - 根因：`fushi/lib/src/reader/reader_pagination_scripts.dart` 连续 shell 的 `scrollToCharOffset` 用塌缩光标矩形（`characterAnchorRect`）对齐首边。恢复目标恰是列首时，Chromium 把软换行处的塌缩光标算到**上一列末尾**，于是首边落在上一列。之后的采样如实报出上一列的列首并落库。分页 shell 的同类现象见 BUG-2205，它靠 ±1 页 hint 兜住了；连续 shell 没有对应兜底。
+  - ② **跟读时 0 与句位交替落库**：播放跟读时，每推进一句就交替落库「句位 / 0」：67 / 0、73 / 0、93 / 0、113 / 0。暂停后重开，日志为 `restore from saved position ... charOffset=0`，落回章首。
+    - 根因：`fushi/lib/src/pages/implementations/reader_fushi/navigation.part.dart` 中，位置有两个所有者。
+      - `_syncPositionFromCurrentCue` 写句位。
+      - `_refreshProgress` 写视口首字。跟读把句子放在视口内侧，首边残留章首半列，所以量出 0。
+    - 去重只比 progress，两者每次都相差够大，交替都能落库。退出 / 切后台的实时读 `_syncPositionFromWebViewProgress` 也会拿视口值覆盖 `_lastProgress*`，它的瞬时归零守卫在播放时是关的。
+- **[x] ① 已修复**：
+  - 连续 shell 新增 `characterGlyphRect`（从 `characterAnchorRect` 里「逐码点量字形」那段抽出）。`scrollToCharOffset` 先量目标字的字形盒，量不到再退回原来的光标矩形。竖排、横排起点锚都改了。
+  - `_refreshProgress` 与 `_syncPositionFromWebViewProgress` 在 `shouldRevealCurrentCue` 为真（跟随开、按过播放、正在播、非单句试听）时，不写 `_lastProgress*`，`_refreshProgress` 也不落库，位置由当前句独占。统计入账、进度 UI、恢复锚照常更新。
+  - 审查补修（2026-10-16）：所有权门是 `_cueOwnsReadingPosition` = 跟读门 **且** 当前句映射得出阅读位置（`_readingPositionFromCurrentCue`，与 `_syncPositionFromCurrentCue` 落库共用一份映射）。只看跟读门时，音频停在没有句子的段落（片头、只对齐了部分章节的书、章字数未就绪）会让当前句与视口都不落库，播放中手动读过的位置全部丢失。
+- **[x] ② 已加自动化测试**：
+  - `fushi/test/reader/continuous_restore_glyph_anchor_behavior_test.{dart,js}`：Node 真执行连续 shell，喂「光标在上一列 / 上一行末、字形在下一列 / 下一行首」的 range，断言滚动落在字形上（竖排、横排各一例）；量不到字形时退回光标矩形。
+  - `fushi/test/reader/reader_follow_audio_position_single_owner_guard_test.dart`：源码守卫，钉住两个实时读入口在写 `_lastProgress*` / 落库前都先过 `_cueOwnsReadingPosition` 门，且该门同时要求跟读门与映射得出的当前句。
+- **真机验证（修复后，同一设备与形态，三种模式）**：
+  - **滚动**：
+    - 重开 1513 → 1513；往后滚到 2123 后连续重开两次，仍是 2123。
+    - 跟读 25 秒，落库 217 239 261 279 295，没有 0。
+    - 播放中杀进程重开，落在最后一句 343；之后取整到所在列列首 335，再重开仍是 335（一次性取整，不累积）。
+  - **翻页**：
+    - 翻到 1040 后连续重开两次，仍是 1040。
+    - 跟读落库 343 365 387 405 420。
+    - 播放中杀进程重开恢复到 438，落在所在页页首 291，再重开仍是 291。
+  - **VN**：
+    - 推进到 372 后连续重开两次，仍是 372。
+    - 跟读落库 438 473 488 508。
+    - 播放中杀进程重开是 508，再重开仍是 508。
+- **备注**：子代理通读还发现连续 shell 首边定义不止一处：caret 探点在 `innerWidth − pr − 2`，扫描兜底 / `calculateProgress` 用 `innerWidth`；`getLastVisibleCharOffset` 竖排传 `edge=0` 会走分页轴判据。本机几何下（列间距 > `pr`）这些不造成回退，本次未改，留作后续统一。

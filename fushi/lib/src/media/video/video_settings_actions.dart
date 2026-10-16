@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
@@ -66,38 +66,56 @@ Future<void> commitVideoMetadataRuntimePreference(
 /// 与扫描批次共用同一固定本地端口与限流簿记：若同一时刻正有刮削在线，
 /// 绑端口失败会按「UDP 连接失败」报出，等刮削结束再测即可。
 Future<void> testAniDbLogin(SettingsContext settingsContext) async {
+  try {
+    final ({bool ok, String message}) result = await verifyAniDbLogin(
+      settingsContext.appModel.prefsRepo,
+      onStart: () => _showVideoSettingsSnackBar(
+        settingsContext,
+        t.video_anidb_login_test_running,
+      ),
+    );
+    _showVideoSettingsSnackBar(settingsContext, result.message);
+  } on ArgumentError catch (error) {
+    _showVideoSettingsSnackBar(settingsContext, '${error.message}');
+  }
+}
+
+/// 组配置 → 校验凭据齐全 → [AnidbUdpFileClient.verifyLogin] → close。设置页按钮与
+/// CLI 共用。凭据不全抛 [ArgumentError]（message = 界面同款提示）；登录失败返回
+/// `ok=false` + 失败原因文案。[onStart] 在凭据校验通过、开始联网前调用。
+Future<({bool ok, String message})> verifyAniDbLogin(
+  PreferencesRepository prefs, {
+  void Function()? onStart,
+}) async {
   final VideoSourceScrapeGlobalConfig config =
       VideoSourceScrapeGlobalConfig.fromPreferences(
-    settingsContext.appModel.prefsRepo,
+    prefs,
     resolvedTmdbApiKey: '',
     // 只查凭据是否配齐，不拉资料；界面语言与登录无关。
     uiLocaleTag: kFallbackVideoMetadataLocale,
   );
   final AnidbUdpConfig udp = config.anidbUdpConfig;
   if (!udp.isAvailable) {
-    _showVideoSettingsSnackBar(
-      settingsContext,
-      t.video_anidb_login_test_incomplete,
-    );
-    return;
+    throw ArgumentError(t.video_anidb_login_test_incomplete);
   }
-  _showVideoSettingsSnackBar(settingsContext, t.video_anidb_login_test_running);
+  onStart?.call();
   final AnidbUdpFileClient client = AnidbUdpFileClient(config: udp);
-  String message;
   try {
     await client.verifyLogin();
-    message = client.clientUpdateAvailable
-        ? t.video_anidb_login_test_client_update(client: udp.clientName)
-        : t.video_anidb_login_test_success(
-            client: udp.clientName,
-            version: udp.clientVersion,
-          );
+    return (
+      ok: true,
+      message: client.clientUpdateAvailable
+          ? t.video_anidb_login_test_client_update(client: udp.clientName)
+          : t.video_anidb_login_test_success(
+              client: udp.clientName,
+              version: udp.clientVersion,
+            ),
+    );
   } on AnidbUdpException catch (error) {
-    message = aniDbLoginFailureMessage(error);
+    return (ok: false, message: aniDbLoginFailureMessage(error));
   } finally {
     await client.close();
   }
-  _showVideoSettingsSnackBar(settingsContext, message);
 }
 
 /// UDP 失败原因 → 设置页文案；与刮削报告里 `_hashFailureReason` 的分组一致。
@@ -495,8 +513,8 @@ Widget buildVideoSubtitleSyncRow(SettingsContext context) {
 }
 
 /// 一行「点开调色盘取任意色」的字幕颜色设置行（TODO-1326 文字色 / TODO-1059 背景
-/// 色）。行尾显示当前色色块，点整行开对话框内嵌 [ColorPicker]：拖动经 [onPreview]
-/// 实时预览背后字幕，关闭时经 [onCommit] 落盘一次。
+/// 色）。行尾显示当前色色块，点整行开对话框内嵌 [FushiDialogColorPicker]：拖动经
+/// [onPreview] 实时预览背后字幕，关闭时经 [onCommit] 落盘一次。
 Widget _buildSubtitleColorRow(
   SettingsContext context, {
   required String title,
@@ -504,6 +522,7 @@ Widget _buildSubtitleColorRow(
   required Color current,
   required void Function(Color color) onPreview,
   required void Function(Color color) onCommit,
+  _SubtitleColorClearAction? clearAction,
 }) {
   final BuildContext buildContext = context.context;
   return AdaptiveSettingsRow(
@@ -515,50 +534,73 @@ Widget _buildSubtitleColorRow(
       size: 24,
       borderColor: Theme.of(buildContext).dividerColor,
     ),
-    onTap: () => unawaited(_pickSubtitleColor(
-      buildContext,
-      title: title,
-      initial: current,
-      onPreview: onPreview,
-      onCommit: onCommit,
-    )),
+    onTap: () => unawaited(
+      _pickSubtitleColor(
+        buildContext,
+        title: title,
+        initial: current,
+        onPreview: onPreview,
+        onCommit: onCommit,
+        clearAction: clearAction,
+      ),
+    ),
   );
 }
 
-/// 弹字幕颜色对话框：内嵌 [ColorPicker] 取任意色。字幕文字/背景色都存**不透明**
-/// ARGB（背景实际可见透明度另由 backgroundOpacity 滑条控制），故这里强制不透明、
-/// 关闭 alpha 通道。拖动经 [onPreview] 实时预览（不落盘），点「完成」或关闭时经
-/// [onCommit] 落盘一次（避免拖动过程每帧写 DB）。
+/// 取色对话框里的「关掉这一层」动作（如「无描边」）：点了不落颜色，改走 [onClear]。
+class _SubtitleColorClearAction {
+  const _SubtitleColorClearAction({required this.label, required this.onClear});
+
+  final String label;
+  final Future<void> Function() onClear;
+}
+
+/// 弹字幕颜色对话框：内嵌 [FushiDialogColorPicker] 取任意色。字幕文字/背景色都存
+/// **不透明** ARGB（背景实际可见透明度另由 backgroundOpacity 滑条控制），故这里强制
+/// 不透明、关闭 alpha 通道。拖动经 [onPreview] 实时预览（不落盘），点「完成」或关闭时
+/// 经 [onCommit] 落盘一次（避免拖动过程每帧写 DB）。
+///
+/// 只有用户**真的选过色**才 commit（PM-iIH9G0b）：描边 / 背景的 commit 会把粗细 /
+/// 透明度从 0 顶到可见基线，若「打开看一眼就关」也 commit，用户刚滑到 0 关掉的描边
+/// 会被悄悄重新打开。给了 [clearAction] 时多一个「关掉」按钮（如「无描边」）。
 Future<void> _pickSubtitleColor(
   BuildContext context, {
   required String title,
   required Color initial,
   required void Function(Color color) onPreview,
   required void Function(Color color) onCommit,
+  _SubtitleColorClearAction? clearAction,
 }) async {
   Color picked = initial;
+  bool changed = false;
+  bool cleared = false;
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       return FushiAlertDialog(
-        icon: const FushiIcon(FushiIcons.appearance),
+        // 矮屏（手机横屏）省掉 hero 图标，纵向空间全给取色器。
+        icon: FushiDialogColorPicker.compactHeight(dialogContext)
+            ? null
+            : const FushiIcon(FushiIcons.appearance),
         title: Text(title),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: initial,
-            onColorChanged: (Color c) {
-              // 强制不透明：字幕文字透明无意义；背景透明度另由滑条控制。
-              picked = Color(0xFF000000 | (c.toARGB32() & 0xFFFFFF));
-              onPreview(picked);
-            },
-            portraitOnly: true,
-            enableAlpha: false,
-            displayThumbColor: true,
-            hexInputBar: true,
-            labelTypes: const <ColorLabelType>[],
-          ),
+        content: FushiDialogColorPicker(
+          pickerColor: initial,
+          onColorChanged: (Color c) {
+            // 强制不透明：字幕文字透明无意义；背景透明度另由滑条控制。
+            picked = Color(0xFF000000 | (c.toARGB32() & 0xFFFFFF));
+            changed = true;
+            onPreview(picked);
+          },
         ),
         actions: <Widget>[
+          if (clearAction != null)
+            FushiDialogAction(
+              label: clearAction.label,
+              onPressed: () {
+                cleared = true;
+                Navigator.of(dialogContext).pop();
+              },
+            ),
           FushiDialogAction(
             label: t.dialog_done,
             kind: FushiDialogActionKind.primary,
@@ -569,7 +611,11 @@ Future<void> _pickSubtitleColor(
       );
     },
   );
-  onCommit(picked);
+  if (cleared) {
+    await clearAction!.onClear();
+    return;
+  }
+  if (changed) onCommit(picked);
 }
 
 /// 字幕**文字**颜色取色行（TODO-1326）。与「尊重 .ass 自带样式」协调：respect 开且
@@ -584,14 +630,54 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
     current: style.textColor ?? const Color(0xFFFFFFFF),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
-      (VideoSubtitleStyle s) => s.copyWith(textColor: c),
+      (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
     ),
     onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
       context,
-      (VideoSubtitleStyle s) => s.copyWith(textColor: c),
+      (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
     )),
   );
 }
+
+/// 字幕文字色（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleTextColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(textColor: c);
+
+/// 字幕阴影色：保留当前阴影色的 alpha，只换 RGB（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleShadowColor(
+  VideoSubtitleStyle s,
+  Color c,
+) {
+  final Color base = s.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
+  return s.copyWith(
+    shadowColor: Color(
+      (base.toARGB32() & 0xFF000000) | (c.toARGB32() & 0x00FFFFFF),
+    ),
+  );
+}
+
+/// 字幕描边色：粗细为 0 时顶到可见基线 2px（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleOutlineColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(
+      outlineColor: c,
+      outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
+    );
+
+/// 字幕背景色：透明度为 0 时顶到可见基线 0.6（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleBackgroundColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(
+      backgroundColor: c,
+      backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
+    );
 
 /// 字幕**阴影**颜色取色行（#xif6-gtSz7）。取色器只给不透明色，这里保留当前阴影色的
 /// alpha（默认 0.9），只换 RGB——默认柔和投影的「半透明黑」观感不因换色变成实心硬影。
@@ -599,15 +685,8 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
   final Color current =
       style.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) {
-    final Color base =
-        s.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
-    return s.copyWith(
-      shadowColor: Color(
-        (base.toARGB32() & 0xFF000000) | (c.toARGB32() & 0x00FFFFFF),
-      ),
-    );
-  }
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleShadowColor;
 
   return _buildSubtitleColorRow(
     context,
@@ -629,10 +708,8 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
 /// 顶到可见基线（2px），与背景色行「选了色立刻生效」同一口径。
 Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) => s.copyWith(
-        outlineColor: c,
-        outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
-      );
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleOutlineColor;
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_outline_color,
@@ -642,10 +719,21 @@ Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
       context,
       (VideoSubtitleStyle s) => applyColor(s, c),
     ),
-    onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
-      context,
-      (VideoSubtitleStyle s) => applyColor(s, c),
-    )),
+    onCommit: (Color c) => unawaited(
+      commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => applyColor(s, c),
+      ),
+    ),
+    // PM-iIH9G0b：描边可以直接在取色对话框里关掉（粗细归 0 = 无描边，颜色保留，
+    // 下次拉起粗细仍是这个颜色）。
+    clearAction: _SubtitleColorClearAction(
+      label: t.video_setting_subtitle_no_outline,
+      onClear: () => commitVideoSubtitleStyle(
+        context,
+        (VideoSubtitleStyle s) => s.copyWith(outlineThickness: 0),
+      ),
+    ),
   );
 }
 
@@ -655,10 +743,8 @@ Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
 /// （0.6），让「选了色」立刻生效。
 Widget buildVideoSubtitleBgColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) => s.copyWith(
-        backgroundColor: c,
-        backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
-      );
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleBackgroundColor;
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_bg_color,
@@ -922,6 +1008,20 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
   }
 }
 
+/// 写弹幕屏蔽规则：host 在场走页面回调（即时重过滤），否则落 pref。输入框与
+/// 控制通道共用。
+Future<void> commitVideoDanmakuBlockRules(
+  SettingsContext context,
+  String value,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onDanmakuBlockRulesChanged != null) {
+    await host!.onDanmakuBlockRulesChanged!(value);
+  } else {
+    await context.appModel.setVideoDanmakuBlockRulesText(value);
+  }
+}
+
 /// TODO-1376：弹幕屏蔽词/正则过滤（多行文本，每行一条，`/pattern/` 为正则）。
 Widget buildVideoDanmakuBlockRulesField(SettingsContext context) {
   return _VideoDanmakuBlockRulesField(settingsContext: context);
@@ -949,16 +1049,8 @@ class _VideoDanmakuBlockRulesFieldState
     super.dispose();
   }
 
-  Future<void> _commit(String value) async {
-    final VideoQuickSettingsHost? host =
-        videoQuickSettingsHostOf(widget.settingsContext);
-    if (host?.onDanmakuBlockRulesChanged != null) {
-      await host!.onDanmakuBlockRulesChanged!(value);
-    } else {
-      await widget.settingsContext.appModel
-          .setVideoDanmakuBlockRulesText(value);
-    }
-  }
+  Future<void> _commit(String value) =>
+      commitVideoDanmakuBlockRules(widget.settingsContext, value);
 
   @override
   Widget build(BuildContext context) {

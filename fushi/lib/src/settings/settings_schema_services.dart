@@ -402,6 +402,21 @@ SettingsDestination buildServicesDestination() {
                       subtitle: t.video_anidb_login_test_hint,
                       icon: Icons.login_outlined,
                       onTap: testAniDbLogin,
+                      cli: SettingsCliAction(
+                        run:
+                            (
+                              SettingsContext c,
+                              Map<String, String> args,
+                            ) async {
+                              final ({bool ok, String message}) result =
+                                  await verifyAniDbLogin(c.appModel.prefsRepo);
+                              if (!result.ok) throw StateError(result.message);
+                              return <String, Object?>{
+                                'ok': result.ok,
+                                'message': result.message,
+                              };
+                            },
+                      ),
                     ),
                     // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
                     // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
@@ -488,12 +503,14 @@ SettingsDestination buildServicesDestination() {
           SettingsCustomItem(
             id: 'services.media_server.jellyfin',
             searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
+            cliList: buildJellyfinCliList(),
             builder: (SettingsContext c) =>
                 _JellyfinSettingsLink(settingsContext: c),
           ),
           SettingsCustomItem(
             id: 'services.media_server.plex',
             searchTitle: 'Plex · ${t.video_library_media_servers}',
+            cliList: buildPlexCliList(),
             builder: (SettingsContext c) =>
                 _PlexSettingsLink(settingsContext: c),
           ),

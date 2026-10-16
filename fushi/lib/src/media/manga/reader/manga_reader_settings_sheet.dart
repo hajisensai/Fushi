@@ -5,6 +5,7 @@ import 'package:flutter/services.dart'
     show LengthLimitingTextInputFormatter, TextInputFormatter;
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show
@@ -23,6 +24,43 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 enum MangaReaderPreferenceKind { choice, toggle, integer }
+
+/// 阅读器面板「阅读模式」页里的翻页动画三项：效果四选一、速度三档、拖动跟手。
+///
+/// 这三项是**全局偏好**（`manga_page_animation` / `manga_page_animation_speed` /
+/// `manga_page_turn_follow_drag`），不进作品覆盖：作用域条切到哪一层都写全局。
+@immutable
+class MangaPageTurnSettings {
+  const MangaPageTurnSettings({
+    this.animation = kMangaPageAnimationDefault,
+    this.speed = PageTurnAnimationSpeed.normal,
+    this.followDrag = kMangaPageTurnFollowDragDefault,
+  });
+
+  final MangaPageAnimation animation;
+  final PageTurnAnimationSpeed speed;
+  final bool followDrag;
+
+  MangaPageTurnSettings copyWith({
+    MangaPageAnimation? animation,
+    PageTurnAnimationSpeed? speed,
+    bool? followDrag,
+  }) => MangaPageTurnSettings(
+    animation: animation ?? this.animation,
+    speed: speed ?? this.speed,
+    followDrag: followDrag ?? this.followDrag,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is MangaPageTurnSettings &&
+      other.animation == animation &&
+      other.speed == speed &&
+      other.followDrag == followDrag;
+
+  @override
+  int get hashCode => Object.hash(animation, speed, followDrag);
+}
 
 class MangaReaderPreferenceDescriptor {
   const MangaReaderPreferenceDescriptor({
@@ -188,11 +226,8 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_flash_on_page_change,
   ),
-  MangaReaderPreferenceDescriptor(
-    key: 'animateTransitions',
-    kind: MangaReaderPreferenceKind.toggle,
-    title: t.manga_reader_animate_transitions,
-  ),
+  // 旧「过渡动画」开关（animateTransitions）已并进「翻页动画」四选一（见
+  // [MangaPageTurnSettings]），不再作为一行露出；字段只为旧覆盖 JSON 兼容保留。
   MangaReaderPreferenceDescriptor(
     key: 'lookupOnHover',
     kind: MangaReaderPreferenceKind.toggle,
@@ -291,6 +326,8 @@ Future<void> showMangaReaderSettingsSheet({
   required Future<void> Function(Map<String, Object?>) onChanged,
   Future<void> Function(Map<String, Object?> patch)? onGlobalChanged,
   Set<String> supportedDeviceKeys = const <String>{},
+  MangaPageTurnSettings? pageTurn,
+  Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged,
 }) async => showReaderSideSheet<void>(
   context: context,
   side: ReaderSideSheetSide.right,
@@ -302,6 +339,8 @@ Future<void> showMangaReaderSettingsSheet({
     onChanged: onChanged,
     onGlobalChanged: onGlobalChanged,
     supportedDeviceKeys: supportedDeviceKeys,
+    pageTurn: pageTurn,
+    onPageTurnChanged: onPageTurnChanged,
   ),
 );
 
@@ -317,6 +356,8 @@ class MangaReaderSettingsSheet extends StatefulWidget {
     this.onGlobalChanged,
     this.supportedDeviceKeys = const <String>{},
     this.ocrSettings,
+    this.pageTurn,
+    this.onPageTurnChanged,
   });
   final MangaReaderPreferences globalDefaults;
   final Map<String, Object?> overrides;
@@ -326,6 +367,12 @@ class MangaReaderSettingsSheet extends StatefulWidget {
   final Future<void> Function(Map<String, Object?> patch)? onGlobalChanged;
   final Set<String> supportedDeviceKeys;
   final Widget? ocrSettings;
+
+  /// 翻页动画三项的当前值；null = 面板不显示这一组。
+  final MangaPageTurnSettings? pageTurn;
+
+  /// 翻页动画三项的写入（全局偏好）；null = 只读。
+  final Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged;
   @override
   State<MangaReaderSettingsSheet> createState() =>
       _MangaReaderSettingsSheetState();
@@ -365,9 +412,16 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   /// 自定义颜色输入框里输到一半的值（失焦 / 回车才提交）。
   String? _draftColor;
 
+  /// 翻页动画三项：界面立即显示的值与最后一次成功写入的值（失败回滚到后者）。
+  MangaPageTurnSettings? _pageTurn;
+  MangaPageTurnSettings? _pageTurnPersisted;
+  Future<void> _pageTurnChain = Future<void>.value();
+
   @override
   void initState() {
     super.initState();
+    _pageTurn = widget.pageTurn;
+    _pageTurnPersisted = _pageTurn;
     _overrides = Map<String, Object?>.from(widget.overrides);
     _persisted = _overrides;
     _global = widget.globalDefaults;
@@ -580,7 +634,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'autoScrollSpeed' => FushiIcons.speed,
     'animateDoubleTap' => FushiIcons.touch,
     'disableZoomOut' => FushiIcons.zoomOut,
-    'animateTransitions' => FushiIcons.forward,
     'invertHorizontal' => FushiIcons.swap,
     'invertVertical' => FushiIcons.swap,
     'invertBoth' => FushiIcons.swap,
@@ -874,7 +927,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         <String>[
           'animateDoubleTap',
           'disableZoomOut',
-          'animateTransitions',
           'invertHorizontal',
           'invertVertical',
           'invertBoth',
@@ -942,6 +994,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         ];
     return <Widget>[
       if (tab == 0 && byKey['mode'] != null) _modeBlock(byKey['mode']!),
+      if (tab == 0 && _pageTurn != null) _pageTurnGroup(_pageTurn!),
       if (tab == 2) _filterPreview(),
       for (final (String Function(), List<String>) g in groups)
         MangaPanelGroup(
@@ -961,6 +1014,101 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         ),
       if (tab == 3 && widget.ocrSettings != null) widget.ocrSettings!,
     ];
+  }
+
+  /// 翻页动画三项改一笔：界面立即显示，串行写入，失败回滚到最后成功的值。
+  Future<void> _setPageTurn(MangaPageTurnSettings next) {
+    final Future<void> Function(MangaPageTurnSettings)? write =
+        widget.onPageTurnChanged;
+    if (write == null || next == _pageTurn) return Future<void>.value();
+    setState(() => _pageTurn = next);
+    final Future<void> chained = _pageTurnChain.then((_) async {
+      try {
+        await write(next);
+        _pageTurnPersisted = next;
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _pageTurn = _pageTurnPersisted);
+        _reportSaveFailure();
+      }
+    });
+    _pageTurnChain = chained;
+    return chained;
+  }
+
+  /// 「翻页动画」组：效果四选一 + 速度三档 + 拖动跟手。速度只在有动画时、跟手
+  /// 只在有位移的效果（平移 / 覆盖）时出现——关着还留着会让人以为它有用。
+  Widget _pageTurnGroup(MangaPageTurnSettings value) {
+    final bool editable = widget.onPageTurnChanged != null;
+    return MangaPanelGroup(
+      title: t.page_turn_animation,
+      children: <Widget>[
+        MangaPanelSegmentedRow<MangaPageAnimation>(
+          key: const ValueKey<String>('manga_page_turn_animation'),
+          title: t.page_turn_animation,
+          subtitle: t.page_turn_animation_paginated_only,
+          icon: FushiIcons.forward,
+          options: <MangaPanelOption<MangaPageAnimation>>[
+            for (final MangaPageAnimation a in MangaPageAnimation.values)
+              MangaPanelOption<MangaPageAnimation>(
+                value: a,
+                label: switch (a) {
+                  PageTurnAnimation.none => t.page_turn_animation_none,
+                  PageTurnAnimation.slide => t.page_turn_animation_slide,
+                  PageTurnAnimation.cover => t.page_turn_animation_cover,
+                  PageTurnAnimation.fade => t.page_turn_animation_fade,
+                },
+                key: ValueKey<String>('manga_page_turn_animation_${a.key}'),
+              ),
+          ],
+          selected: value.animation,
+          onChanged: editable
+              ? (MangaPageAnimation a) =>
+                    unawaited(_setPageTurn(value.copyWith(animation: a)))
+              : null,
+        ),
+        if (value.animation != PageTurnAnimation.none)
+          MangaPanelSegmentedRow<PageTurnAnimationSpeed>(
+            key: const ValueKey<String>('manga_page_turn_speed'),
+            title: t.page_turn_animation_speed,
+            icon: FushiIcons.speed,
+            options: <MangaPanelOption<PageTurnAnimationSpeed>>[
+              for (final PageTurnAnimationSpeed sp
+                  in PageTurnAnimationSpeed.values)
+                MangaPanelOption<PageTurnAnimationSpeed>(
+                  value: sp,
+                  label: switch (sp) {
+                    PageTurnAnimationSpeed.fast =>
+                      t.page_turn_animation_speed_fast,
+                    PageTurnAnimationSpeed.normal =>
+                      t.page_turn_animation_speed_normal,
+                    PageTurnAnimationSpeed.slow =>
+                      t.page_turn_animation_speed_slow,
+                  },
+                  key: ValueKey<String>('manga_page_turn_speed_${sp.key}'),
+                ),
+            ],
+            selected: value.speed,
+            onChanged: editable
+                ? (PageTurnAnimationSpeed sp) =>
+                      unawaited(_setPageTurn(value.copyWith(speed: sp)))
+                : null,
+          ),
+        if (value.animation.isDirectional)
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('manga_page_turn_follow_drag'),
+            title: t.page_turn_follow_drag,
+            subtitle: t.page_turn_follow_drag_description,
+            icon: FushiIcons.touch,
+            showIcon: true,
+            value: value.followDrag,
+            onChanged: editable
+                ? (bool v) =>
+                      unawaited(_setPageTurn(value.copyWith(followDrag: v)))
+                : null,
+          ),
+      ],
+    );
   }
 
   /// 阅读模式：页顶一组带示意图标的选择卡（自动 + 四种布局）。

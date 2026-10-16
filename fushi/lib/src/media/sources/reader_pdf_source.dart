@@ -69,7 +69,11 @@ class ReaderPdfSource extends ReaderMediaSource {
     final String bookKey =
         ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     return FushiAppUiScaleNeutralizer(
-      child: ReaderPdfPage(item: item, bookKey: bookKey),
+      child: ReaderPdfPage(
+        item: item,
+        bookKey: bookKey,
+        initialPageIndex: initialBookmarkJump?.sectionIndex,
+      ),
     );
   }
 

@@ -409,6 +409,16 @@ class EpubBook {
     return result;
   }
 
+  /// Whether [images] has already been built (reading it is then free).
+  bool get hasImages => _images != null;
+
+  /// Adopts an [images] list built off the UI isolate on a copy of this same
+  /// book, so later [images] reads on this instance do not rescan every
+  /// chapter. No-op once [images] is built.
+  void adoptImages(List<EpubImageRef> images) {
+    _images ??= List<EpubImageRef>.unmodifiable(images);
+  }
+
   /// Walks one chapter body in document order, counting study characters as it
   /// goes, and records how many preceded each image reference. Ruby readings
   /// (`<rt>/<rp>/<rtc>`) are skipped so a heavily annotated chapter does not
@@ -741,6 +751,34 @@ class EpubImageRef {
   /// except for a cover that no chapter references ([kEpubCoverChapterIndex]),
   /// which has no spine slot of its own and lands on the first chapter.
   int get jumpChapterIndex => chapterIndex < 0 ? 0 : chapterIndex;
+
+  /// On-disk form for the illustration index cache
+  /// (`epub_image_index_cache.dart`). Short keys: a long novel lists hundreds.
+  Map<String, Object> toJson() => <String, Object>{
+        'c': chapterIndex,
+        'o': orderInBook,
+        's': src,
+        'k': revealKey,
+        'n': normCharOffset,
+        'a': charOffset,
+        if (leadingAnchorIds.isNotEmpty) 'l': leadingAnchorIds,
+        if (sharesLineWithText) 't': true,
+      };
+
+  /// Inverse of [toJson]. Throws [FormatException] / [TypeError] on a
+  /// malformed entry; the cache reader treats that as a miss.
+  static EpubImageRef fromJson(Map<String, dynamic> json) => EpubImageRef(
+        chapterIndex: json['c'] as int,
+        orderInBook: json['o'] as int,
+        src: json['s'] as String,
+        revealKey: json['k'] as String,
+        normCharOffset: json['n'] as int,
+        charOffset: json['a'] as int,
+        leadingAnchorIds: List<String>.unmodifiable(
+          (json['l'] as List<dynamic>? ?? const <dynamic>[]).cast<String>(),
+        ),
+        sharesLineWithText: json['t'] == true,
+      );
 }
 
 /// BUG-898: normalizes an epub-root-relative image href to the shared
@@ -1067,6 +1105,10 @@ class EpubChapter {
   final String? _eagerHtml;
   final String? _filePath;
   String? _lazyHtml;
+
+  /// The on-disk XHTML backing a lazy chapter; null for an eager one. Derived
+  /// caches (the illustration index) fingerprint these files.
+  String? get filePath => _filePath;
 
   /// Chapter XHTML source. For lazy chapters this reads + decodes [_filePath]
   /// on first access and caches the result; a missing file degrades to `''`

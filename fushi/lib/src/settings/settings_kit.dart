@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
+import 'package:cupertino_ui/cupertino_ui.dart'
+    show CupertinoActivityIndicator, CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1020,9 +1021,11 @@ class SettingsLoadingState extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (apple)
+            // 固定 Apple（Cupertino）指示器：.adaptive() 按平台选，Windows / Android
+            // 上 Apple 设计系统仍会出 Material 圆圈。
             const SizedBox.square(
               dimension: 28,
-              child: CircularProgressIndicator.adaptive(),
+              child: CupertinoActivityIndicator(radius: 12),
             )
           else
             FushiExpressiveLoadingIndicator(

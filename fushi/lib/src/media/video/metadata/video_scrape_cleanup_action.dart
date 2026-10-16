@@ -12,6 +12,34 @@ bool _videoScrapeCleanupRunning = false;
 /// 已删除的「上次刮削」摘要。来源页监听此 revision 后从数据库重读。
 final ValueNotifier<int> videoScrapeCleanupRevision = ValueNotifier<int>(0);
 
+Future<VideoScrapeCleanupResult> _clearAllCommitted(
+  FushiDatabase database,
+) async {
+  final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
+    database: database,
+  ).clearAll();
+  videoScrapeCleanupRevision.value += 1;
+  return result;
+}
+
+/// 无界面版本（控制通道 `fushi_cli config run video.library.scrape_records_clear_all
+/// --yes`）：确认由调用方给出，其余与 [showClearAllVideoScrapeRecordsAction] 同一条
+/// single-flight 与完成广播。已有清理在跑时抛 [StateError]；清理事务本身忙时
+/// 原样抛 [VideoScrapeCleanupBusyException]。
+Future<VideoScrapeCleanupResult> clearAllVideoScrapeRecords(
+  FushiDatabase database,
+) async {
+  if (_videoScrapeCleanupRunning) {
+    throw StateError(t.video_source_scrape_clear_all_in_progress);
+  }
+  _videoScrapeCleanupRunning = true;
+  try {
+    return await _clearAllCommitted(database);
+  } finally {
+    _videoScrapeCleanupRunning = false;
+  }
+}
+
 /// 展示统一确认框并清理全部视频刮削记录。
 ///
 /// 设置页与视频「导入」页共用这一入口，避免两个按钮各自维护确认、single-flight、
@@ -46,10 +74,7 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
         );
     if (confirmed == null || !context.mounted) return false;
 
-    final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
-      database: database,
-    ).clearAll();
-    videoScrapeCleanupRevision.value += 1;
+    final VideoScrapeCleanupResult result = await _clearAllCommitted(database);
     if (!context.mounted) return true;
 
     onCompleted?.call();

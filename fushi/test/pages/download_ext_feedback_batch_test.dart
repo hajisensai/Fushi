@@ -112,6 +112,49 @@ void main() {
       expect(taps, <String>['item3']);
     });
 
+    testWidgets('按实际 56px 钮宽测宽：六个动作 340px 放不下全展开，376px 才全平铺', (
+      WidgetTester tester,
+    ) async {
+      // 6 * 56 + 5 * 8 = 376。旧实现按 48 估宽，340 预算下误判全展开并溢出。
+      await tester.pumpWidget(
+        _host(
+          sized(
+            340,
+            MediaDetailMoreButton(
+              buttonKey: const ValueKey<String>('more'),
+              items: items(6, <String>[]),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey<String>('item5')), findsNothing);
+      expect(find.byTooltip(t.common_more_actions), findsOneWidget);
+      final double rowWidth = tester
+          .getSize(find.byType(MediaDetailMoreButton))
+          .width;
+      expect(rowWidth, lessThanOrEqualTo(340));
+
+      // 换一棵树重来：展开方向带回差，复用同一个 State 要多 24px 才放出下一颗。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        _host(
+          sized(
+            376,
+            MediaDetailMoreButton(
+              buttonKey: const ValueKey<String>('more'),
+              items: items(6, <String>[]),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 6; i++) {
+        expect(find.byKey(ValueKey<String>('item$i')), findsOneWidget);
+      }
+      expect(find.byTooltip(t.common_more_actions), findsNothing);
+    });
+
     testWidgets('显式关掉 adaptiveOverflow 时恒收进菜单', (
       WidgetTester tester,
     ) async {

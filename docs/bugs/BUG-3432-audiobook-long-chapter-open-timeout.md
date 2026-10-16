@@ -1,0 +1,7 @@
+## BUG-3432 · 长章有声书开书白屏、「内容加载超时」
+- **报告**：2026-10-14（用户录屏，Windows：点开带有声书的《また、同じ夢を見ていた》空白约 8 秒 →「内容加载超时，如显示异常请重新打开」→ 正文仍空白；同会话不带有声书的竖排书 1 秒内打开）
+- **真实性**：✅ 真 bug，离屏 Windows itest 复现（隔离数据根，原书 + 合成 5089 条 SRT + 静音音频，生产对齐路径）：`applySentenceAudioCues payloadCues=2696` 后 WebView 主线程同步卡约 52 秒，8s 兜底超时触发，`onRestoreComplete` 不回、无 JS 异常。headless Chrome 真引擎二分：`applySentenceAudioCues` 13.8 s，其中 `__fushiLiveRanges.moveNodes`（2829 次）13.2 s；把包裹换回 v2.9.1 写法同章 0.65 s；横排同样慢。
+  - 根因：`fushi/lib/src/reader/reader_selection_scripts.dart` `__fushiLiveRanges.moveNodes` 每次都读原生选区（`getSelection().rangeCount` / `anchorNode`）。DOM 刚改过时这一读让 Blink 对整章同步排版（长章约 5ms/次），开章逐句包裹每条 cue 一次 → O(cue 数 × 整章排版)。由 c3030be9d7（BUG-3326 审查：句子包裹改走 live-range guard）引入；这本书全书正文只有两个巨型 section（一章 2696 / 2331 条 cue），所以最重。
+- **[x] ① 已修复** — `__fushiLiveRanges.batch(fn)`：进批读一次原生选区，没有选区时批内 `moveNodes` 不再读（同步执行、批内不会有用户输入新建选区）；有选区照旧逐次钉住写回。分页 / 连续开章包裹与 reset 拆包裹、VN 逐句包裹与拆包裹、高亮桥套 / 拆收藏都走批（共享片段 `withLiveRangeBatch`）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/sentence_audio_ruby_wrap_behavior_test.js` 用例 18（node 真跑生产 `applySentenceAudioCues` + `__fushiLiveRanges`：40 条 cue 整批只读 1 次选区、批标记复位；有原生选区时仍逐次读写回；撤修复即红）。
+- **备注**：未在真 app 重开原书验证修复后耗时（本机内存紧张，itest 排不上）；三种 view mode 的行为由 node 用例覆盖分页与 VN 包裹路径，未真机逐模式验。复现素材与探针存档 `D:\hibiki-tmp\bug-audiobook-open\`。未动的同类候选：VN `unwrap` 每次结束都整章 `buildNodeOffsets`（v2.9.1 起即如此，reset 时 O(N²)）；有声书当前句高亮 `splitSentenceAudioJoinLines` 切开后整章 `buildNodeOffsets`；Chrome < 120 横排也退回包裹高亮（05d72fd224）。

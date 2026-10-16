@@ -640,6 +640,11 @@ void main([List<String> args = const <String>[]]) {
           restoreFallback: false,
         );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
+    // BUG-3439：原生 TtsChannelHandler 随 Activity 重建（引擎被保留），新 handler
+    // 的本地音频库是空的；它挂上时会通知这里重推。必须在 initialise() 之前装。
+    TtsChannel.onNativeHandlerAttached(
+      appModel.rebindLocalAudioForNativeHandler,
+    );
     await appModel.initialise();
     // 复习模块（SRS，默认关）的常驻装配：模块开着时装上 AnkiConnect 兼容端点、同步
     // 后置步骤与自动优化调度；关着时 provider 为 null，什么也不装（零开销）。开关切换

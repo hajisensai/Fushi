@@ -249,6 +249,10 @@ final Set<GpuRuntimeKind> _installing = <GpuRuntimeKind>{};
 /// 装一种环境（进程内同一种只允许一个安装在跑——老用户的后台补下、转录弹层、
 /// 设置页可能同时触发，两个写者会写坏同一个 `.deflate.part`）。装完调
 /// [onGpuRuntimeInstalled]。同种已在装时抛 [StateError]。
+///
+/// 安装失败只以错误事件结束，**不**调 [onGpuRuntimeInstalled]：`yield*` 把内层
+/// 错误当事件转发、生成器照常往下走，不记下失败的话，不在第一个错误就取消订阅
+/// 的消费方（[withGpuRuntimeDownload]）会让一次失败的安装也去激活环境。
 Stream<GpuRuntimeInstallProgress> installGpuRuntime(
   GpuRuntimeStore store,
 ) async* {
@@ -256,11 +260,16 @@ Stream<GpuRuntimeInstallProgress> installGpuRuntime(
   if (!_installing.add(kind)) {
     throw StateError('${kind.name} runtime is already being downloaded');
   }
+  bool failed = false;
   try {
-    yield* store.install();
+    yield* store.install().handleError((Object error, StackTrace stack) {
+      failed = true;
+      Error.throwWithStackTrace(error, stack);
+    });
   } finally {
     _installing.remove(kind);
   }
+  if (failed) return;
   await onGpuRuntimeInstalled(kind);
 }
 
@@ -268,31 +277,45 @@ Stream<GpuRuntimeInstallProgress> installGpuRuntime(
 /// null 则什么都不加），合成一条逐文件事件流交给现有的模型下载 UI。
 ///
 /// GPU 环境失败**不算**模型下载失败——模型已经就绪、CPU 照样能转录；原因交给
-/// [onGpuRuntimeError]（UI 提示一下即可，设置页可重试）。取消订阅即取消，已收
-/// 的部分下次续传。
+/// [onGpuRuntimeError]（UI 提示一下即可，设置页可重试）。模型下载失败则照样以
+/// 错误事件结束、不再去装 GPU 环境。取消订阅即取消，已收的部分下次续传。
+///
+/// 两段都用 `yield*` 而不是 `await for`：async* 在 `await for` 两个事件之间挂起时，
+/// 取消要等到下一个事件才生效——下载卡住（或测试里一直不来事件）时，取消就一直
+/// 挂着；`yield*` 会把取消立刻转给正在跑的那条流。
 Stream<asr.ModelDownloadEvent> withGpuRuntimeDownload(
   Stream<asr.ModelDownloadEvent> model,
   GpuRuntimeStore? gpu, {
   void Function(Object error)? onGpuRuntimeError,
 }) async* {
-  await for (final asr.ModelDownloadEvent e in model) {
-    if (e.done && gpu != null) continue;
-    yield e;
+  if (gpu == null) {
+    yield* model;
+    return;
   }
-  if (gpu == null) return;
-  try {
-    await for (final GpuRuntimeInstallProgress p in installGpuRuntime(gpu)) {
-      if (p.phase == GpuRuntimeInstallPhase.done) continue;
-      yield asr.ModelDownloadEvent(
-        fileName: p.fileName ?? '',
-        receivedBytes: p.memberReceived,
-        totalBytes: p.memberTotal,
-      );
-    }
-  } on Object catch (error) {
-    debugPrint('[Fushi] GPU runtime install failed: $error');
-    onGpuRuntimeError?.call(error);
-  }
+  bool modelFailed = false;
+  yield* model.where((asr.ModelDownloadEvent e) => !e.done).handleError((
+    Object error,
+    StackTrace stack,
+  ) {
+    modelFailed = true;
+    Error.throwWithStackTrace(error, stack);
+  });
+  if (modelFailed) return;
+  yield* installGpuRuntime(gpu)
+      .where(
+        (GpuRuntimeInstallProgress p) => p.phase != GpuRuntimeInstallPhase.done,
+      )
+      .map(
+        (GpuRuntimeInstallProgress p) => asr.ModelDownloadEvent(
+          fileName: p.fileName ?? '',
+          receivedBytes: p.memberReceived,
+          totalBytes: p.memberTotal,
+        ),
+      )
+      .handleError((Object error) {
+        debugPrint('[Fushi] GPU runtime install failed: $error');
+        onGpuRuntimeError?.call(error);
+      });
   yield const asr.ModelDownloadEvent(
     fileName: '',
     receivedBytes: 0,

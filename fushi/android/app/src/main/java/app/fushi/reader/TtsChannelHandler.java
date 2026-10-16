@@ -74,8 +74,9 @@ public class TtsChannelHandler {
     }
 
     public void register(@NonNull FlutterEngine engine) {
-        new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL)
-            .setMethodCallHandler((call, result) -> {
+        MethodChannel channel =
+            new MethodChannel(engine.getDartExecutor().getBinaryMessenger(), CHANNEL);
+        channel.setMethodCallHandler((call, result) -> {
                 switch (call.method) {
                     case "ttsToFile":
                         handleTtsToFile(call, result);
@@ -108,6 +109,11 @@ public class TtsChannelHandler {
                         result.notImplemented();
                 }
             });
+        // 本 handler 挂在 Activity 上、每次 onCreate 新建且本地音频库列表为空，而引擎
+        // 被 audio_service 缓存、比 Activity 活得久：Dart 只在 initialise() 推过一次
+        // 库配置。挂上后主动通知 Dart 重推（TtsChannel.onNativeHandlerAttached，
+        // BUG-3439）；Dart 还没装监听时消息由 ChannelBuffers 暂存。
+        channel.invokeMethod("nativeHandlerAttached", null);
     }
 
     public void destroy() {

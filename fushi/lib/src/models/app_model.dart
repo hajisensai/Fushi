@@ -641,6 +641,14 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// Test seam：注入带假 Bangumi API 的 [MediaTrackingService]（控制通道 /
+  /// 设置页测试不能打真网络）。
+  @visibleForTesting
+  void wireMediaTrackingServiceForTesting(MediaTrackingService service) {
+    _mediaTrackingService?.dispose();
+    _mediaTrackingService = service;
+  }
+
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
   /// 共用同一份会话级 snooze + 单飞状态，避免冲突弹窗互相重入或反复打扰。
   final SyncConflictPrompter syncConflictPrompter = SyncConflictPrompter();
@@ -1433,7 +1441,19 @@ class AppModel with ChangeNotifier {
   );
 
   late FileExportManager _fileExportManager;
-  late LocalAudioManager _localAudioManager;
+  LocalAudioManager? _localAudioManagerOrNull;
+  LocalAudioManager get _localAudioManager => _localAudioManagerOrNull!;
+  set _localAudioManager(LocalAudioManager value) =>
+      _localAudioManagerOrNull = value;
+
+  /// Android 原生 `TtsChannelHandler` 新挂上本引擎时重推本地音频库配置（BUG-3439，
+  /// 见 [TtsChannel.onNativeHandlerAttached]）。管理器还没建好时什么也不做：
+  /// `initialise()` 随后自己会绑定，那时原生 handler 已经在了。
+  Future<void> rebindLocalAudioForNativeHandler() async {
+    final LocalAudioManager? manager = _localAudioManagerOrNull;
+    if (manager == null) return;
+    await manager.bindForNativeHandler();
+  }
 
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final FushiShortcutRegistry shortcutRegistry = FushiShortcutRegistry();
@@ -5986,6 +6006,7 @@ class AppModel with ChangeNotifier {
           subtitlePath: subtitlePath,
           audioPaths: job.audioPaths,
           contentPath: job.contentPath,
+          targetBookKey: job.targetBookKey,
           title: job.title,
         ),
       );
@@ -9541,6 +9562,14 @@ class AppModel with ChangeNotifier {
   String get mangaPageAnimation => prefsRepo.mangaPageAnimation;
   Future<void> setMangaPageAnimation(String value) =>
       prefsRepo.setMangaPageAnimation(value);
+
+  String get mangaPageAnimationSpeed => prefsRepo.mangaPageAnimationSpeed;
+  Future<void> setMangaPageAnimationSpeed(String value) =>
+      prefsRepo.setMangaPageAnimationSpeed(value);
+
+  bool get mangaPageTurnFollowDrag => prefsRepo.mangaPageTurnFollowDrag;
+  Future<void> setMangaPageTurnFollowDrag(bool value) =>
+      prefsRepo.setMangaPageTurnFollowDrag(value);
 
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>

@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
@@ -31,6 +33,10 @@ void main() {
       '<ruby>自嘲<rt>じちょう</rt></ruby>気味に笑った彼女は、'
       '<ruby>烏滸<rt>おこ</rt></ruby>がましいと<ruby>呟<rt>つぶや</rt></ruby>'
       'いて窓の外を見つめ続けていたが、やがて静かに目を閉じた。';
+  // BUG-3435：西文上伸（F l h t k b）/ 下延（g q y p j）要整个包在条里；Tokyo 带注音，
+  // 条同时不能碰振假名（F-JNEJVkuC）。基线真值由 harness 在行首插零尺寸 inline-block 量。
+  const String p3 =
+      'Flight <ruby>Tokyo<rt>とうきょう</rt></ruby> gets quickly by jolly piers';
 
   String baseText(String html) => html
       .replaceAll(RegExp(r'<rt>.*?</rt>'), '')
@@ -40,6 +46,7 @@ void main() {
   Future<String> page({
     required String writingMode,
     required String viewMode,
+    TargetPlatform? platform,
     bool backdrop = false,
   }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -48,7 +55,15 @@ void main() {
     await settings.refreshFromDb();
     await settings.setWritingMode(writingMode);
     await settings.setViewMode(viewMode);
-    final String css = ReaderContentStyles.css(settings: settings);
+    // Apple 变体：带上 WebKit 注音规则（rt 负 margin 把注音 em 盒压进基字盒），条必须被收到
+    // 振假名墨迹之外（F-JNEJVkuC）。
+    debugDefaultTargetPlatformOverride = platform;
+    final String css;
+    try {
+      css = ReaderContentStyles.css(settings: settings);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
     final bool vn = viewMode == 'vn';
     final String engine = ReaderPaginationScripts.engineShell(
       vnMode: vn,
@@ -96,6 +111,7 @@ void main() {
         'window.__fushiApplyReaderMargins = function() {};</script>'
         '</head><body><p>$p1</p>'
         '${backdrop ? '<p class="bd">${p2.replaceFirst('窓の外', '<span class="mk">窓の外</span>')}</p>' : '<p>$p2</p>'}'
+        '<p>$p3</p>'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'
         '<script>window.__fushiInstallShell(${jsonEncode(config)});</script>'
         '</body></html>';
@@ -111,27 +127,40 @@ void main() {
       }
       final List<Map<String, String>> pages = <Map<String, String>>[];
       final List<Map<String, String>> backdropPages = <Map<String, String>>[];
-      for (final String writingMode in <String>[
-        'vertical-rl',
-        'horizontal-tb',
+      for (final TargetPlatform? platform in <TargetPlatform?>[
+        null,
+        TargetPlatform.iOS,
       ]) {
-        for (final String viewMode in <String>[
-          'paginated',
-          'continuous',
-          'vn',
+        for (final String writingMode in <String>[
+          'vertical-rl',
+          'horizontal-tb',
         ]) {
-          pages.add(<String, String>{
-            'name': '$writingMode/$viewMode',
-            'html': await page(writingMode: writingMode, viewMode: viewMode),
-          });
-          backdropPages.add(<String, String>{
-            'name': '$writingMode/$viewMode/book-background',
-            'html': await page(
-              writingMode: writingMode,
-              viewMode: viewMode,
-              backdrop: true,
-            ),
-          });
+          for (final String viewMode in <String>[
+            'paginated',
+            'continuous',
+            'vn',
+          ]) {
+            pages.add(<String, String>{
+              'name':
+                  '${platform == null ? '' : 'apple-css:'}$writingMode/$viewMode',
+              'html': await page(
+                writingMode: writingMode,
+                viewMode: viewMode,
+                platform: platform,
+              ),
+            });
+            // 书自带底色（BUG-3421）只在默认 CSS 下跑一遍：与 Apple 注音规则正交。
+            if (platform == null) {
+              backdropPages.add(<String, String>{
+                'name': '$writingMode/$viewMode/book-background',
+                'html': await page(
+                  writingMode: writingMode,
+                  viewMode: viewMode,
+                  backdrop: true,
+                ),
+              });
+            }
+          }
         }
       }
       final Directory temp = Directory.systemTemp.createTempSync(
@@ -168,7 +197,7 @@ void main() {
           return;
         }
         expect(exitCode, 0, reason: '$out\n${await stderr}');
-        expect(out, contains('PASS 6 lane pages'));
+        expect(out, contains('PASS 12 lane pages'));
         expect(out, contains('6 book-background pages'));
       } finally {
         temp.deleteSync(recursive: true);

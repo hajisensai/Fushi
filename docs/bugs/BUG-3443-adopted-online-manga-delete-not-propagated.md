@@ -1,0 +1,27 @@
+## BUG-3443 · 互联收下的在线漫画收不到对端从所有设备删除
+- **报告**：2026-10-15（用户：电脑上删除一部在线漫画并勾选「从所有设备删除」，手机上没有删除）
+- **真实性**：✅ 真 bug（代码路径确认 + 电脑正式库里确有 `book/mihon-…` 删除墓碑）。手机「下载」电脑的章节式在线漫画时，用 `InterconnectMangaCatalog.entryFor` 建了一行 runtime=interconnect 的条目。它的 bookKey 由对端 bookKey **单向哈希推导**成 `interconnect-…`（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart:101-104` 的注释已写明「与对端 bookKey 不同」）。
+  - **消费方向**（电脑删 → 手机）：墓碑消费端用本机 `r.bookKey` 作在库键（`fushi/lib/src/sync/sync_orchestrator/tombstones.part.dart:23`），电脑墓碑键是 `mihon-…`，求交恒空：不出候选、确认框都不弹。互联 live 与云盘两条通道都有这个问题。
+  - **推送方向**（手机删 → 电脑）：`ReaderFushiSource.deleteBook` 用本机 `interconnect-…` 键写墓碑并推给 host。host 的 `_findBookByTitleOrKey` 按键找不到，只能靠书名兜底，改过名就静默跳过；host 不删也就不写自己的墓碑，第三台设备同样收不到。
+- **[x] ① 已修复** —
+  - 消费方向（`61d092124c`）：
+    - 新增 `InterconnectMangaCatalog.localBookKeyFor`，作为「对端键 → 本机键」的唯一推导点，占位卡去重也改用它；
+    - 两条消费通道求交前给对端墓碑追加本机键别名，带同一个 deletedAt。之后的候选、标题、基线、确认后删除都不需要特判。本机同时有原键行时不追加。
+  - 推送方向（`352bec9234`）：
+    - 新增 `InterconnectMangaCatalog.peerBookKeyOf`，从描述符 `series.key` 取对端键；
+    - `deleteBook` 在删行前选定墓碑键，这类行写对端键；
+    - 其它也收下了同一部的设备，经消费端别名照样命中。
+  - 消费端函数随 BUG-3429 泛化为 `aliasPeerBookTombstones`（`fushi/lib/src/sync/peer_book_tombstone_alias.dart`）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/peer_book_tombstone_alias_test.dart`：
+    - 换算结果与实际建行键逐字一致；
+    - 修复前求交为空，修复后产出 deleteLocal 候选；
+    - 晚于墓碑重新加回时不出候选；
+    - 原键在库时不重复。
+  - `fushi/test/media/sources/reader_fushi_source_test.dart`：收下的行用「从所有设备删除」时，墓碑写对端键。
+- **备注**：
+  - 修复后的行为是「下次同步弹出『其他设备已删除』确认框，用户确认后才删」，不是静默直接删。
+  - 修复前已经错过的那次删除不会补弹，需要用户在手机上手动删。
+  - 推送方向会把同一部作品在 client 配对的其它 host 上也删掉，这是「从所有设备删除」的本义。
+  - 未修、未坐实：host 的 `_findBookByTitleOrKey` 按书名兜底，理论上可能误删一本原始书名恰好等于推来键的别的书。推测风险，没有复现。
+  - 真机复测待补。

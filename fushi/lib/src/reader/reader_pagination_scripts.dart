@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_turn_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
@@ -805,6 +806,9 @@ class ReaderPaginationScripts {
 
   static String stableProgressInvocation() =>
       'window.fushiReader && !window.fushiReader._reanchorPending '
+      // 翻页动画回调还没落位 / 拖动跟手中：几何停在旧页或两页之间，返 null 等落定后的
+      // 滚动事件补刷（reader_page_turn_script.dart 的 pageTurnBusy）。
+      '&& !(window.fushiReader.pageTurnBusy && window.fushiReader.pageTurnBusy()) '
       '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
@@ -1394,6 +1398,11 @@ window.__fushiInstallShell = function(C) {
   characterAnchorRect: function(range) {
     var rect = range.getBoundingClientRect();
     if (rect.width > 0 || rect.height > 0) return rect;
+    return this.characterGlyphRect(range);
+  },
+  // BUG-3431：量 range 起点那个字本身的字形盒。塌缩光标落在软换行处时，Chromium 把它
+  // 算到上一列 / 上一行的末尾；拿它对齐视口首边，恢复就整列落在上一列，重开一次退一列。
+  characterGlyphRect: function(range) {
     var node = range.startContainer;
     if (!node || node.nodeType !== 3) return null;
     var text = node.textContent || '';
@@ -1868,30 +1877,33 @@ window.__fushiInstallShell = function(C) {
     // （__fushiLanes）画，同一行里同一句的片段并成一条。
     // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
     // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
-    for (var i = cueSegments.length - 1; i >= 0; i--) {
-      var id = cueSegments[i].id;
-      var segments = cueSegments[i].ranges;
-      if (!segments.length) continue;
-      var items = this.sentenceAudioWrapItems(segments);
-      var wrappers = [];
-      var rubyElements = [];
-      for (var g = items.length - 1; g >= 0; g--) {
-        try {
-          var wrapper = document.createElement('span');
-          wrapper.className = 'fushi-sentence-audio-cue';
-          wrappers.push(this.wrapSentenceAudioGroup(items[g], wrapper));
-        } catch (e) {
-          for (var k = 0; k < items[g].length; k++) {
-            var ruby = this.rubyForNode(items[g][k].node);
-            if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+    var self = this;
+    this.withLiveRangeBatch(function() {
+      for (var i = cueSegments.length - 1; i >= 0; i--) {
+        var id = cueSegments[i].id;
+        var segments = cueSegments[i].ranges;
+        if (!segments.length) continue;
+        var items = self.sentenceAudioWrapItems(segments);
+        var wrappers = [];
+        var rubyElements = [];
+        for (var g = items.length - 1; g >= 0; g--) {
+          try {
+            var wrapper = document.createElement('span');
+            wrapper.className = 'fushi-sentence-audio-cue';
+            wrappers.push(self.wrapSentenceAudioGroup(items[g], wrapper));
+          } catch (e) {
+            for (var k = 0; k < items[g].length; k++) {
+              var ruby = self.rubyForNode(items[g][k].node);
+              if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            }
           }
         }
+        wrappers.reverse();
+        rubyElements.reverse();
+        if (wrappers.length) self.cueWrappers.set(id, wrappers);
+        if (rubyElements.length) self.cueRubyElements.set(id, rubyElements);
       }
-      wrappers.reverse();
-      rubyElements.reverse();
-      if (wrappers.length) this.cueWrappers.set(id, wrappers);
-      if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
-    }
+    });
     this.buildNodeOffsets();
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
@@ -1910,8 +1922,18 @@ window.__fushiInstallShell = function(C) {
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
-      if (target && this.revealElement && this.revealElement(target)) {
-        return this.calculateProgress();
+      // 分页 shell：跟读落到相邻页时固定淡入（_alignRangeToPage 读这面旗）。翻页动画
+      // 在途时新位置还没写进 DOM，进度按待落定的目标页算（不读几何、不打断动画）。
+      this._audioRevealPageTurn = true;
+      var revealed = false;
+      try {
+        revealed = !!(target && this.revealElement && this.revealElement(target));
+      } finally {
+        this._audioRevealPageTurn = false;
+      }
+      if (revealed) {
+        return this.calculateProgress(
+          this.pendingPageTurnTarget ? this.pendingPageTurnTarget() : undefined);
       }
     }
     return null;
@@ -1999,7 +2021,9 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
     var self = this;
-    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    this.withLiveRangeBatch(function() {
+      self.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    });
     this.cueWrappers.clear();
     this.activeCueId = null;
   },
@@ -2423,12 +2447,16 @@ window.fushiReader = {
   paginationMetrics: null,
 $_sharedJs
 $kSentenceAudioRubyGapJs
+$kReaderPageTurnJs
   revealElement: function(element) {
     var range = document.createRange();
     range.selectNodeContents(element);
     return this.scrollToRange(range);
   },
   getScrollContext: function() {
+    // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
+    // 动画——读方拿到的必须是新页，绝不能是旧位置（见 reader_page_turn_script.dart）。
+    this._flushPendingPageTurn();
     // TODO-729：单一量纲（对齐安卓 reader-paginated.js getScrollContext）。
     // 列周期 = column-width + column-gap。CSS column-width 已等于 content-box
     // （reader_content_styles.dart 按书写轴分支扣 turn 轴 padding），单列正好填满
@@ -2576,7 +2604,13 @@ $kSentenceAudioRubyGapJs
     }
     this.lockRootViewport();
   },
+  // 瞬时定位的唯一入口（恢复 / 跳转 / 重锚 / 搜索 / 有声书跨多页）：先结束正在播的翻页
+  // 动画（落点已写死），再瞬时赋值。只有相邻翻页经 turnPageAnimated 播动画。
   setPagePosition: function(context, position) {
+    this.finishPageTurnAnimation();
+    return this._setPagePositionNow(context, position);
+  },
+  _setPagePositionNow: function(context, position) {
     var before = this.getPagePosition(context);
     var clamped = Math.min(Math.max(0, position), context.physicalMaxScroll);
     window.lastPageScroll = clamped;
@@ -2600,6 +2634,8 @@ $kSentenceAudioRubyGapJs
     }, { passive: true });
     document.body.addEventListener('scroll', () => {
       this.lockRootViewport();
+      // 拖动跟手 / 松手待翻 / 回弹期间 scroll 本就停在两页之间，不得被吸回旧页。
+      if (this._followDrag || this._followDragRelease || this._followRebound) return;
       var context = this.getScrollContext();
       if (context.pageSize <= 0) return;
       var currentScroll = this.getPagePosition(context);
@@ -2698,8 +2734,22 @@ $kSentenceAudioRubyGapJs
     // 网格相位（见那里的注释）：补上相位后，`targetScroll === currentScroll` 已经精确表达
     // 「句首就在本页」，两个方向的错判同时消失，这条特例短路不再需要，删除。
     if (targetScroll === currentScroll) return false;
-    this.setPagePosition(context, targetScroll);
     var self = this;
+    // 有声书跟读（highlightSentenceAudioCue 揭示期间才置 _audioRevealPageTurn）落到**相邻页**
+    // 时固定淡入；跨多页、搜索命中、插图揭示等其余 reveal 一律瞬时。
+    if (this._audioRevealPageTurn === true && this.pageTurnEffect() !== 'none' &&
+        Math.round(Math.abs(targetScroll - currentScroll) / context.pageSize) === 1) {
+      this.turnPageAnimated(context, targetScroll, targetScroll > currentScroll, 'fade');
+      this.whenPageTurnApplied(function() {
+        requestAnimationFrame(function() {
+          if (self.getPagePosition(context) !== targetScroll) {
+            self._setPagePositionNow(context, targetScroll);
+          }
+        });
+      });
+      return true;
+    }
+    this.setPagePosition(context, targetScroll);
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
     });
@@ -2850,6 +2900,17 @@ $kSentenceAudioRubyGapJs
       }
     }
     return exploredChars;
+  },
+  // 与 exploredCharsBeforeScroll 同口径（节点粒度、含锚字所在节点全部），但按章内
+  // 字符偏移查而不按滚动位置：几何锚持有期间进度要描述锚，不描述临时排版的页
+  // （BUG-3446）。progressStops 按滚动序排列，exploredChars 单调不减。
+  exploredCharsThroughCharOffset: function(charOffset) {
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    var stops = metrics.progressStops;
+    for (var i = 0; i < stops.length; i++) {
+      if (stops[i].exploredChars > charOffset) return stops[i].exploredChars;
+    }
+    return metrics.totalChars;
   },
   // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
   // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
@@ -3109,19 +3170,21 @@ $kSentenceAudioRubyGapJs
     // 是结构性正确的——不再需要旧的二次 settle 复核（那是双量纲下 maxScroll 低估的
     // 补救，根因消除后即多余）。安卓 reader-paginated.js paginate(814-840) 即直接
     // return "limit"。
+    // 相邻翻页落点经 turnPageAnimated（快照动画，reader_page_turn_script.dart）；不支持 /
+    // 墨水屏 / 效果为无时退化为与原来逐字等价的瞬时 setPagePosition。
     if (direction === "forward") {
       var targetForward = (Math.floor(pageCoordinate) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
-      this.setPagePosition(context, targetForward);
+      this.turnPageAnimated(context, targetForward, true);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
-      this.setPagePosition(context, targetBack);
+      this.turnPageAnimated(context, targetBack, false);
       return "scrolled";
     }
   },
@@ -3270,6 +3333,15 @@ $kSentenceAudioRubyGapJs
       scroll: scroll
     };
     return this._geometryReanchorAnchor;
+  },
+  // 持锚期间「读到哪里」的唯一真值（-1 = 没有可用的文字锚）。几何事件把视口挪到
+  // 临时排版上时页首字不是用户读到的位置：安卓切后台时系统栏出现让排版临时缩水，
+  // 此刻落库的若是临时页首字，进程在后台被回收后重开就退到前一页。进度组装
+  // （fushiProgressDetails）据此上报锚而不是临时页首字。
+  heldReadingAnchorCharOffset: function() {
+    var anchor = this._geometryReanchorAnchor;
+    if (!anchor || !anchor.hasTextAnchor || !(anchor.charOffset >= 0)) return -1;
+    return anchor.charOffset;
   },
   _invalidateGeometryReanchor: function() {
     this._geometryReanchorAnchor = null;
@@ -3990,7 +4062,9 @@ $kSentenceAudioRubyGapJs
     }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
-    var rect = this.characterAnchorRect(startRange);
+    // BUG-3431：对齐的是目标字自己的字形盒，不是塌缩光标（软换行处光标归上一列末）。
+    var rect = this.characterGlyphRect(startRange) ||
+        this.characterAnchorRect(startRange);
     if (!rect) return;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;

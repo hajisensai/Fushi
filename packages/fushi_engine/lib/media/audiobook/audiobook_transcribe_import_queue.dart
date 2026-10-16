@@ -37,6 +37,7 @@ class AudiobookTranscribeJob {
     required this.title,
     required this.audioPaths,
     this.contentPath,
+    this.targetBookKey,
     required this.createdAt,
     required this.updatedAt,
     this.status = AudiobookTranscribeJobStatus.queued,
@@ -56,6 +57,7 @@ class AudiobookTranscribeJob {
           path! as String,
       ],
       contentPath: json['contentPath'] as String?,
+      targetBookKey: json['targetBookKey'] as String?,
       createdAt: json['createdAt']! as int,
       updatedAt: json['updatedAt']! as int,
       status: AudiobookTranscribeJobStatus.values.byName(
@@ -74,6 +76,10 @@ class AudiobookTranscribeJob {
   final String title;
   final List<String> audioPaths;
   final String? contentPath;
+
+  /// 非 null = 转完挂到库里**已有**的这本书（`EpubBooks.bookKey`）上，而不是导入
+  /// 新正文 / 新建字幕书。与 [contentPath] 互斥。
+  final String? targetBookKey;
   final int createdAt;
   int updatedAt;
   AudiobookTranscribeJobStatus status;
@@ -96,6 +102,7 @@ class AudiobookTranscribeJob {
     'title': title,
     'audioPaths': audioPaths,
     'contentPath': contentPath,
+    if (targetBookKey != null) 'targetBookKey': targetBookKey,
     'createdAt': createdAt,
     'updatedAt': updatedAt,
     'status': status.name,
@@ -215,11 +222,17 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
   }
 
   /// 排一个任务。同一组音频已有未结束的任务时直接返回那个，不重复排。
+  /// [targetBookKey] 非 null = 转完挂到这本已有的书上（见
+  /// [AudiobookTranscribeJob.targetBookKey]），与 [contentPath] 互斥。
   Future<AudiobookTranscribeJob> enqueue({
     required List<String> audioPaths,
     String? contentPath,
+    String? targetBookKey,
     required String title,
   }) async {
+    if (contentPath != null && targetBookKey != null) {
+      throw ArgumentError('contentPath and targetBookKey are exclusive');
+    }
     await load();
     for (final AudiobookTranscribeJob job in _jobs) {
       if (!job.isTerminal && _samePaths(job.audioPaths, audioPaths)) {
@@ -232,6 +245,7 @@ class AudiobookTranscribeImportQueue extends EngineChangeNotifier {
       title: title,
       audioPaths: List<String>.unmodifiable(audioPaths),
       contentPath: contentPath,
+      targetBookKey: targetBookKey,
       createdAt: now,
       updatedAt: now,
     );

@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/settings/settings_cli_tasks.dart';
+import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -31,6 +33,106 @@ class ExternalReaderImportPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<ExternalReaderImportPage> createState() =>
       _ExternalReaderImportPageState();
+}
+
+/// 导入后让书架重读（导入页与控制通道共用）。
+void invalidateLibraryAfterExternalReaderImport(WidgetRef ref) {
+  ref.invalidate(fushiBooksProvider);
+  ref.invalidate(srtBooksProvider);
+  ref.invalidate(bookLastReadAtProvider);
+}
+
+/// 控制通道 Hoshi 导入任务的种类名（[SettingsCliTaskRegistry]）。
+const String kExternalReaderImportTaskKind = 'external-reader-import';
+
+/// 控制通道（`fushi_cli config run sync.hoshi_import --value <备份>`）：扫描 →
+/// 预览（在请求里做完）→ 非 dry_run 时起后台导入任务并立即返回任务快照，与导入页
+/// 同一组服务调用（[ExternalReaderImportService.run]）。进度与取消同导入页：逐本
+/// 报进度，取消在书与书之间生效（已导入的不回滚，当前这本会导完）；结果（含取消时
+/// 已完成的部分）在任务的 result 里，`fushi_cli task get <id> --wait` 查看。
+Future<Map<String, Object?>> runExternalReaderImportFromCli(
+  SettingsContext settingsContext,
+  String path, {
+  required bool dryRun,
+  SettingsCliTaskRegistry? registry,
+}) async {
+  final SettingsCliTaskRegistry tasks =
+      registry ?? SettingsCliTaskRegistry.instance;
+  if (!File(path).existsSync()) throw ArgumentError('文件不存在：$path');
+  if (!dryRun) {
+    final SettingsCliTask? active = tasks.activeOf(kExternalReaderImportTaskKind);
+    if (active != null) {
+      throw StateError('已有 Hoshi 备份导入在进行（任务 ${active.id}）');
+    }
+  }
+  final ExternalReaderBackup backup;
+  try {
+    backup = await scanExternalReaderBackup(path);
+  } on ExternalReaderBackupFormatException catch (e) {
+    throw FormatException('${t.hoshi_import_scan_invalid}：${e.message}');
+  }
+  final ExternalReaderImportService service = ExternalReaderImportService(
+    db: settingsContext.appModel.database,
+  );
+  final ExternalReaderImportPreview preview = await service.preview(backup);
+  final Map<String, Object?> previewJson = <String, Object?>{
+    'newBooks': preview.newBooks,
+    'existingBooks': preview.existingBooks,
+    'statsOnlyBooks': preview.statsOnlyBooks,
+    'statRecords': preview.statRecords,
+  };
+  if (dryRun) return <String, Object?>{'preview': previewJson};
+  final WidgetRef ref = settingsContext.ref;
+  final SettingsCliTask task = tasks.start(
+    kind: kExternalReaderImportTaskKind,
+    run: (SettingsCliTask task) async {
+      bool cancelRequested = false;
+      task
+        ..onCancel = (() => cancelRequested = true)
+        ..detail['file'] = path
+        ..detail['preview'] = previewJson
+        ..report(phase: 'importing', progress: 0);
+      await setScreenWakelock(enable: true, source: 'external reader import');
+      final ExternalReaderImportReport report;
+      try {
+        report = await service.run(
+          backup,
+          onProgress: (int done, int total, String title) {
+            task.report(progress: total == 0 ? null : done / total);
+            if (title.isNotEmpty) task.detail['current'] = title;
+          },
+          isCancelled: () => cancelRequested,
+        );
+      } finally {
+        await setScreenWakelock(
+          enable: false,
+          source: 'external reader import',
+        );
+        invalidateLibraryAfterExternalReaderImport(ref);
+      }
+      final Map<String, Object?> result = <String, Object?>{
+        'preview': previewJson,
+        'booksImported': report.booksImported,
+        'booksMatched': report.booksMatched,
+        'positionsWritten': report.positionsWritten,
+        'positionsKept': report.positionsKept,
+        'sessionsImported': report.sessionsImported,
+        'daysImported': report.daysImported,
+        'segmentsWritten': report.segmentsWritten,
+        'failures': <String>[
+          for (final ExternalReaderImportFailure f in report.failures)
+            '${f.title}: ${f.reason}',
+        ],
+      };
+      if (report.cancelled) {
+        // 取消前已导入的书保留：结果照样交给终端看。
+        task.result = <String, Object?>{...result, 'cancelled': true};
+        throw const SettingsCliTaskCancelled();
+      }
+      return result;
+    },
+  );
+  return task.toJson();
 }
 
 class _ExternalReaderImportPageState
@@ -160,9 +262,7 @@ class _ExternalReaderImportPageState
   /// 订阅里，导入后显式失效一次。
   void _refreshLibrary() {
     if (!mounted) return;
-    ref.invalidate(fushiBooksProvider);
-    ref.invalidate(srtBooksProvider);
-    ref.invalidate(bookLastReadAtProvider);
+    invalidateLibraryAfterExternalReaderImport(ref);
   }
 
   @override

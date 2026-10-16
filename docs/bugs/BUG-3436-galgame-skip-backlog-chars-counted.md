@@ -1,0 +1,6 @@
+## BUG-3436 · galgame-skip-backlog-chars-counted
+- **报告**：2026-10-16（用户：应用内反馈 LUgHjyc8By，Windows 2.10.0-debug.19163）
+- **真实性**：✅ 真 bug。galgame hook 文本进统计的唯一路径 `GalHookSessionController._recordActivity`（`fushi/lib/src/mining/gal_hook_session_controller.dart`，修复前 :4275）只经 `GalgameLineCharCounter`（`fushi/lib/src/mining/galgame_char_count.dart`）：它只做标点剔除 / **相邻**重发去重 / 打字机增量，库注释明写「非相邻重复照计、hook 到即读过」，也没有任何到达节奏判据。于是 ① Ctrl 跳过时引擎每帧推一句、每句都 `clock.addChars`；② Backlog 回看把旧台词作为新行重绘（非相邻）时整句再计一次。游戏会话的字 / 时 = 这些字数 ÷ 游玩时长，读速随之虚高。
+- **[x] ① 已修复** — 统计层新增引擎无关的入账门 `GalgameLineStudyGate`（`fushi/lib/src/stats/galgame_line_study_gate.dart`），`_recordActivity` 在计数器之后过门：会话内已入账台词（规范化文本：去空白 / 标点 / 符号、西文小写）不再计；行停留 < max(`kGalStudyMinLineDwell`=200ms, 字数 / `kGalStudyMaxReadableCharsPerSecond`=40 字每秒) 且连续 ≥ `kGalStudySkipBurstMinLines`=3 行判为快进流，整串经 `StudyClock.retractChars` 撤回，停留时长从下一次 `galgame_sessions` 结算里扣除。引擎路径到达时刻用 hook 事件自带 GetTickCount64（不受轮询攒批影响），外部通道用行接收时刻。未动 native hook / LunaHook；不改 wire、不碰 legacy 表（游戏段本就不出本机）。
+- **[x] ② 已加自动化测试** — `fushi/test/stats/galgame_line_study_gate_test.dart`（重复不计 / 快进不计 / 正常节奏照计 / 误点不算快进 / 跳过的行之后真读照计 / 外部通道前缀续写 / 跨会话照计）+ `fushi/test/mining/gal_hook_session_controller_test.dart`「LUgHjyc8By：hook 快进连发与回看重复台词不计入字数，正常节奏照计」（真控制器 → study_segments）。
+- **备注**：取舍——会话内短句（「はい」「うん」）跨场景合法重复也只计一次，量级可忽略；快进流前两行在第 3 行确认前短暂入账（去抖 2s 内即撤回，通常不落库）。游玩时长扣除未做真机验证。

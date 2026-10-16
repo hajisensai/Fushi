@@ -7,8 +7,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
+import 'package:fushi/src/asr_host/asr_model_downloads.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
-import 'package:fushi/src/asr_host/gpu_runtime_pack.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/gpu_acceleration_settings_card.dart';
 import 'package:flutter/foundation.dart'
@@ -31,28 +31,17 @@ import 'package:fushi/utils.dart';
 class AsrModelsSettingsSection extends StatefulWidget {
   const AsrModelsSettingsSection({
     required this.service,
-    this.serviceForProfile,
+    this.downloads,
     this.showGpuRuntime = true,
-    this.openPackStore = openAsrModelStoreForPack,
     super.key,
   });
 
-  /// 通用包（有声书与视频都能用的包）这一行用的服务。
-
   final AsrTranscriptionService service;
 
-  /// 只服务某一种素材的包（日语视频的 Parakeet）的变体 / EP 推荐问哪份服务：
-  /// [service] 按有声书取包，拿它去问会得到同语言通用包（ReazonSpeech）的推荐
-  /// ——Parakeet 的 fp32 显存门槛不同。null 时按素材现建
-  /// （[createAsrTranscriptionService]）；测试注入 fake。模型目录本身不经服务，
-  /// 走 [openPackStore]。
-  final AsrTranscriptionService Function(AsrAudioProfile profile)?
-  serviceForProfile;
-
-  /// 按包开模型目录。每一行的状态 / 下载 / 删除都只认这一行的包——同一语言
-  /// 有多行时（默认包、视频专用的 Parakeet、可选的 Kitsune、自带包），按语言
-  /// 走服务拿到的永远是那种素材当前选中的那个包。
-  final Future<AsrModelStore> Function(AsrModelPack pack) openPackStore;
+  /// 下载登记表；缺省全应用单例 [asrModelDownloads]（与 `fushi_cli models`
+  /// 同一份）。测试可注入独立实例。每一行的状态 / 下载 / 删除都经它**按包**
+  /// 开目录（[AsrModelDownloads.openPackStore]）。
+  final AsrModelDownloads? downloads;
 
   /// 是否在 Windows 上附带「GPU 加速环境」一行。它直接读数据根与插件，最小
   /// widget 测试（只注 fake 服务）传 false。
@@ -63,30 +52,41 @@ class AsrModelsSettingsSection extends StatefulWidget {
       _AsrModelsSettingsSectionState();
 }
 
-/// 一行（一个语言包）的运行态。
+/// 全应用唯一的语音转录模型下载登记表：设置页与控制通道（`fushi_cli models`）
+/// 共用。下载失败（含顺带的 GPU 环境装失败）时在这里弹全局提示——页面可能早已
+/// 关闭。
+final AsrModelDownloads asrModelDownloads = AsrModelDownloads(
+  onFinished: (AsrModelPack pack, {Object? error}) {
+    if (error == null) return;
+    FushiToast.show(
+      msg: t.asr_models_download_failed(error: '$error'),
+      severity: ToastSeverity.error,
+    );
+  },
+  onGpuRuntimeError: (AsrModelPack pack, Object error) => FushiToast.show(
+    msg: t.audiobook_transcribe_gpu_failed(reason: '$error'),
+    severity: ToastSeverity.warning,
+  ),
+);
+
+/// 一行（一个语言包）的运行态。下载态读全局登记表（下载不归页面所有）。
 class _PackRow {
-  _PackRow(this.pack);
+  _PackRow(this.pack, this.downloads);
 
   final AsrModelPack pack;
+  final AsrModelDownloads downloads;
   AsrTranscribePlan? plan;
   bool loading = true;
   bool deleting = false;
 
-  // 下载态：按「之前文件的总量 + 当前文件已收」累计成整包进度（与转录弹层同一
-  // 套算法：下载器事件是逐文件 0→100% 的，直接照搬进度条会来回跑好几趟）。
-  StreamSubscription<ModelDownloadEvent>? downloadSub;
-  int downloadReceived = 0;
-  int downloadTotal = 0;
-  String downloadFile = '';
+  bool get downloading => downloads.isActive(pack.id);
+  int get downloadReceived => downloads.progressOf(pack.id)?.receivedBytes ?? 0;
+  int get downloadTotal => downloads.progressOf(pack.id)?.totalBytes ?? 0;
+  String get downloadFile => downloads.progressOf(pack.id)?.currentFile ?? '';
 
-  bool get downloading => downloadSub != null;
-
-  /// 取消进行中的下载订阅（没有则无事）。已落盘的 `.part` 留着，下次「下载」
-  /// 由下载器 Range 续上。
-  Future<void> cancelDownload() async {
-    await downloadSub?.cancel();
-    downloadSub = null;
-  }
+  /// 取消进行中的下载（没有则无事）。已落盘的 `.part` 留着，下次「下载」由下载
+  /// 器 Range 续上。
+  Future<void> cancelDownload() => downloads.cancel(pack.id);
 }
 
 /// 设置页要列出来的包：本仓基础清单 + 用户手动接入的包，按 id 去重。
@@ -95,7 +95,7 @@ class _PackRow {
 /// 「只声明那一种语言」的窄包（见 `asr_model_catalog.dart` 文件头），它与原包同
 /// id。按 id 取第一个就会把 Omnilingual 那行的语言列表从「德语 · 西语 · 法语 …」
 /// 缩成只剩「日本語」，而这一行的副标题本来就是要把它服务的语言全列出来。
-List<AsrModelPack> _listedPacks() {
+List<AsrModelPack> listedAsrModelPacks() {
   final List<AsrModelPack> out = <AsrModelPack>[];
   final Set<String> seen = <String>{};
   final Map<String, AsrModelPack> custom = <String, AsrModelPack>{
@@ -111,64 +111,61 @@ List<AsrModelPack> _listedPacks() {
 }
 
 class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
-  late List<_PackRow> _rows = <_PackRow>[
-    // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
-    // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
-    for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
+  late final AsrModelDownloads _downloads =
+      widget.downloads ?? asrModelDownloads;
+
+  late List<_PackRow> _rows = _buildRows();
+
+  /// 上一次通知时在下载的包：用来发现「下载刚结束」（含别处发起的下载）并重查。
+  Set<String> _activeIds = <String>{};
+
+  // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
+  // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
+  List<_PackRow> _buildRows() => <_PackRow>[
+    for (final AsrModelPack pack in listedAsrModelPacks())
+      _PackRow(pack, _downloads),
   ];
 
   @override
   void initState() {
     super.initState();
+    _activeIds = _currentActiveIds();
+    _downloads.addListener(_onDownloadsChanged);
     for (final _PackRow row in _rows) {
       unawaited(_refresh(row));
     }
   }
 
+  Set<String> _currentActiveIds() => <String>{
+    for (final _PackRow row in _rows)
+      if (row.downloading) row.pack.id,
+  };
+
+  void _onDownloadsChanged() {
+    if (!mounted) return;
+    final Set<String> now = _currentActiveIds();
+    final Set<String> finished = _activeIds.difference(now);
+    _activeIds = now;
+    setState(() {});
+    // 下载结束（成功 / 失败 / 取消，不论谁发起的）：重查状态给出准数。
+    for (final _PackRow row in _rows) {
+      if (finished.contains(row.pack.id)) unawaited(_refresh(row));
+    }
+  }
+
   @override
   void dispose() {
-    for (final _PackRow row in _rows) {
-      unawaited(row.cancelDownload());
-    }
+    // 下载归全局登记表所有：离开页面照跑，不取消。
+    _downloads.removeListener(_onDownloadsChanged);
     super.dispose();
   }
-
-  /// 这一行的变体 / EP 推荐该问哪份服务（见
-  /// [AsrModelsSettingsSection.serviceForProfile]）。
-  AsrTranscriptionService _serviceFor(_PackRow row) {
-    final AsrModelPack pack = row.pack;
-    if (pack.servesProfile(widget.service.audioProfile)) return widget.service;
-    final AsrAudioProfile profile = pack.audioProfiles.first;
-    return _profileServices.putIfAbsent(
-      profile,
-      () =>
-          widget.serviceForProfile?.call(profile) ??
-          createAsrTranscriptionService(audioProfile: profile),
-    );
-  }
-
-  final Map<AsrAudioProfile, AsrTranscriptionService> _profileServices =
-      <AsrAudioProfile, AsrTranscriptionService>{};
 
   Future<void> _refresh(_PackRow row) async {
     if (mounted) setState(() => row.loading = true);
     AsrTranscribePlan? plan;
     try {
-      // 变体与 EP 推荐按「语言 + 这一行包服务的素材」取（与转录弹层同一口径）；
-      // 模型状态换成本行包自己的。
-      final AsrTranscribePlan byLanguage = await _serviceFor(row).plan(
-        language: row.pack.language,
-        preference: AsrAccelerationPreference.auto,
-      );
-      final AsrModelStore store = await widget.openPackStore(row.pack);
-      plan = AsrTranscribePlan(
-        language: byLanguage.language,
-        variant: byLanguage.variant,
-        expectedProvider: byLanguage.expectedProvider,
-        modelStatus: await store.status(byLanguage.variant),
-        probeError: byLanguage.probeError,
-        availableProviders: byLanguage.availableProviders,
-      );
+      // 变体与 EP 推荐按语言取（与转录弹层同一口径）；模型状态是本行包自己的。
+      plan = await _downloads.planFor(widget.service, row.pack);
     } catch (_) {
       plan = null;
     }
@@ -179,60 +176,13 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     });
   }
 
-  Future<void> _startDownload(_PackRow row) async {
+  void _startDownload(_PackRow row) {
     final AsrTranscribePlan? plan = row.plan;
     if (plan == null || row.downloading) return;
-    // 下模型阶段顺带下这台机器显卡对应的 GPU 环境（见 gpuRuntimeToDownload）。
-    final GpuRuntimeStore? gpu = await gpuRuntimeToDownloadForUi();
-    final AsrModelStore store = await widget.openPackStore(row.pack);
-    if (!mounted || row.downloading) return;
-    int completedBytes = 0;
-    String lastFile = '';
-    int lastFileTotal = 0;
-    setState(() {
-      row.downloadTotal =
-          plan.modelStatus.totalBytes + (gpu?.pendingDownloadBytes ?? 0);
-      row.downloadReceived = plan.modelStatus.obtainedBytes;
-      row.downloadFile = '';
-    });
-    row.downloadSub =
-        withGpuRuntimeDownload(
-          store.download(plan.variant),
-          gpu,
-          onGpuRuntimeError: (Object error) => FushiToast.show(
-            msg: t.audiobook_transcribe_gpu_failed(reason: '$error'),
-            severity: ToastSeverity.warning,
-          ),
-        ).listen(
-          (ModelDownloadEvent e) {
-            if (e.fileName != lastFile) {
-              completedBytes += lastFileTotal;
-              lastFile = e.fileName;
-              lastFileTotal = e.totalBytes;
-            }
-            if (!mounted) return;
-            setState(() {
-              row.downloadFile = e.fileName;
-              row.downloadReceived = completedBytes + e.receivedBytes;
-            });
-          },
-          onError: (Object e, StackTrace _) {
-            row.downloadSub = null;
-            if (!mounted) return;
-            setState(() {});
-            FushiToast.show(
-              msg: t.asr_models_download_failed(error: '$e'),
-              severity: ToastSeverity.error,
-            );
-            unawaited(_refresh(row));
-          },
-          onDone: () {
-            row.downloadSub = null;
-            if (!mounted) return;
-            unawaited(_refresh(row));
-          },
-        );
-    setState(() {});
+    // 登记表通知 → [_onDownloadsChanged] 刷新进度；结束时由它重查状态，失败的
+    // 全局提示由登记表的 onFinished 负责（页面关了也提示）。
+    // 下载落到本行包自己的目录，并顺带装 GPU 环境（都由登记表负责）。
+    _downloads.start(row.pack, plan: plan);
   }
 
   Future<void> _cancelDownload(_PackRow row) async {
@@ -267,9 +217,8 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     if (!mounted) return;
     await row.cancelDownload();
     setState(() {
-      _rows = <_PackRow>[
-        for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
-      ];
+      _rows = _buildRows();
+      _activeIds = _currentActiveIds();
     });
     for (final _PackRow fresh in _rows) {
       unawaited(_refresh(fresh));
@@ -299,7 +248,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     setState(() => row.deleting = true);
     int freed = 0;
     try {
-      final AsrModelStore store = await widget.openPackStore(row.pack);
+      final AsrModelStore store = await _downloads.openPackStore(row.pack);
       freed = await store.deleteAll();
     } finally {
       if (mounted) setState(() => row.deleting = false);
@@ -385,7 +334,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       children: <Widget>[
         FushiFilledButton.icon(
           key: ValueKey<String>('asr-models-download-${row.pack.id}'),
-          onPressed: row.deleting ? null : () => unawaited(_startDownload(row)),
+          onPressed: row.deleting ? null : () => _startDownload(row),
           icon: const FushiIcon(FushiIcons.download, size: 18),
           label: Text(t.asr_models_download),
         ),

@@ -78,6 +78,12 @@ const String kSentenceAudioRubyGapJs = r'''
     }
     return false;
   },
+  // BUG-3432：一整批逐句包裹 / 拆包裹只读一次原生选区（见 __fushiLiveRanges.batch）。选区脚本
+  // 还没注入时直接执行——那时 wrapSentenceAudioGroup 本来就走不通、按组回退。
+  withLiveRangeBatch: function(fn) {
+    var guard = window.__fushiLiveRanges;
+    return guard && typeof guard.batch === 'function' ? guard.batch(fn) : fn();
+  },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     return el && el.closest ? el.closest('ruby') : null;
