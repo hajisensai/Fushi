@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_audio/fushi_audio.dart' show AudiobookRepository;
+import 'package:fushi_audio/fushi_audio.dart'
+    show AudiobookRepository, AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
@@ -136,6 +138,14 @@ void main() {
   test(
     'BUG-3429：重新给落地键≠对端键的书配上有声书，撤销那条对端键有声书墓碑',
     () async {
+      // deleteAudiobook 的尾活会回收持久目录：把文档根钉到临时目录。
+      final Directory docs =
+          await Directory.systemTemp.createTemp('fushi-adopt-ab-');
+      AudiobookStorage.documentsRootResolver = () async => docs;
+      addTearDown(() async {
+        AudiobookStorage.documentsRootResolver = null;
+        if (await docs.exists()) await docs.delete(recursive: true);
+      });
       final EpubBookRow row = await insertBook('Neko');
       await db.setCollectionBookAlias(row.uid, 'Neko(2)');
       final AudiobookRepository audiobooks = AudiobookRepository(db);
