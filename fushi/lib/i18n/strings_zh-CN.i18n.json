@@ -8081,5 +8081,6 @@
   "srs_migrate_fushi_none": "没有可迁移的 Lapis 笔记",
   "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记",
   "srs_card_appearance_title": "Fushi 卡片外观",
-  "srs_card_edit_template": "编辑 $name 模板"
+  "srs_card_edit_template": "编辑 $name 模板",
+  "srs_review_hide_hard_easy": "隐藏「困难」和「简单」按钮"
 }

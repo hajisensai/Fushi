@@ -75,6 +75,14 @@ final Provider<SrsCardAppearance> srsCardAppearanceProvider =
       ),
     );
 
+/// 复习页评分栏是否只留「重来 / 良好」（按 profile 的偏好，对齐 AnkiDroid
+/// hideHardAndEasy；键盘 2/4 仍有效）。
+final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
+  ),
+);
+
 /// 卡面可供给的导入字体目录（app 字体库目录；测试覆写）。null = 不供给导入字体。
 final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {
   try {

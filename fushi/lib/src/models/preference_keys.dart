@@ -427,6 +427,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
   // 复习（二选一；存量 'both' 读成 'anki'）。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
+  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
+  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
+  'srs_review_hide_hard_easy',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张
   // 投影表 + activity_events 学习行）归属哪个 Profile。由 v105 迁移一次性写下

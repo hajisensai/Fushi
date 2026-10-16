@@ -112,6 +112,22 @@ class _FakeEngine implements FsrsEngine {
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
+/// 复习页「只留重来 / 良好」偏好放内存里（不碰数据库），其余同真 AppModel。
+class _HideHardEasyApp extends AppModel {
+  _HideHardEasyApp() : super(testPlatformServices());
+
+  bool hidden = false;
+
+  @override
+  bool get srsReviewHideHardEasy => hidden;
+
+  @override
+  Future<void> setSrsReviewHideHardEasy(bool value) async {
+    hidden = value;
+    notifyListeners();
+  }
+}
+
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
@@ -156,11 +172,12 @@ Future<void> _pumpPage(
   required SrsDbStore store,
   required bool apple,
   required Widget page,
+  AppModel? app,
 }) async {
   tester.view.physicalSize = const Size(1100, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = AppModel(testPlatformServices());
+  final AppModel appModel = app ?? AppModel(testPlatformServices());
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[
@@ -454,6 +471,99 @@ void main() {
         },
       );
       expect(card!.queue, SrsQueue.review.wire);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 复习页 ⋯「隐藏困难和简单」：评分栏只剩重来 / 良好，按 2 仍评困难', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final List<String> noteIds = <String>[
+        await _addLapis(tester, store, '食べる'),
+        await _addLapis(tester, store, '飲む'),
+      ];
+      final _HideHardEasyApp app = _HideHardEasyApp();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        app: app,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
+      );
+      Finder rate(int r) => find.byKey(ValueKey<String>('srs-rate-$r'));
+
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      for (int r = 1; r <= 4; r++) {
+        expect(rate(r), findsOneWidget, reason: '默认四个按钮：$r');
+      }
+
+      // 开关在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮。
+      Future<void> toggle() async {
+        final Finder flat = find.byKey(
+          const ValueKey<String>('srs_review_hide_hard_easy'),
+        );
+        if (flat.evaluate().isNotEmpty) {
+          await tester.tap(flat.first);
+        } else {
+          await tester.tap(
+            find
+                .byKey(
+                  const ValueKey<String>('fushi_floating_toolbar_overflow'),
+                )
+                .first,
+          );
+          await _settle(tester);
+          await tester.tap(find.text(t.srs_review_hide_hard_easy).last);
+        }
+        await _settle(tester);
+      }
+
+      await toggle();
+      expect(app.hidden, isTrue);
+      expect(rate(1), findsOneWidget);
+      expect(rate(2), findsNothing);
+      expect(rate(3), findsOneWidget);
+      expect(rate(4), findsNothing);
+      // 两颗均分整行（对齐 AnkiDroid：不留空位）。
+      final double w1 = tester.getSize(rate(1)).width;
+      final double w3 = tester.getSize(rate(3)).width;
+      expect(w1, moreOrLessEquals(w3, epsilon: 0.5));
+      expect(
+        w1 + w3,
+        greaterThan(tester.getSize(find.byType(SrsReviewPage)).width * 0.6),
+      );
+
+      // 再点一次关掉：四个按钮回来；再打开。
+      await toggle();
+      expect(app.hidden, isFalse);
+      for (int r = 1; r <= 4; r++) {
+        expect(rate(r), findsOneWidget, reason: '关掉后四个按钮：$r');
+      }
+      await toggle();
+      expect(app.hidden, isTrue);
+
+      await tester.tap(rate(3));
+      await _settle(tester);
+      // 第二张卡：按钮隐藏了，键盘 2 照样评「困难」。
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      expect(rate(2), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
+      await _settle(tester);
+
+      final List<int?> ratings = (await tester.runAsync(() async {
+        final List<int?> out = <int?>[];
+        for (final String noteId in noteIds) {
+          for (final SrsCardCacheRow c in await store.cardsOfNote(noteId)) {
+            final SrsCardHistory h = await store.history(c.id);
+            out.addAll(h.all.map((SrsReviewLog l) => l.rating));
+          }
+        }
+        return out;
+      }))!;
+      expect(ratings..sort((int? a, int? b) => a!.compareTo(b!)), <int>[2, 3]);
+
       await _unmount(tester);
     });
 

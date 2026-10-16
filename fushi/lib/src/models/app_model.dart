@@ -8255,6 +8255,11 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
       prefsRepo.setSrsCardAppearance(appearance.encode());
 
+  // 复习页评分栏只留「重来 / 良好」（透传 prefsRepo）。可空读：prefs 未装配 = 四按钮。
+  bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
+  Future<void> setSrsReviewHideHardEasy(bool value) =>
+      prefsRepo.setSrsReviewHideHardEasy(value);
+
   // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非内置类型的字段映射）。
   // 同样可空读：prefs 未装配 = 默认牌组 + Fushi 卡片。
   SrsMiningDestination get srsMiningDestination {
