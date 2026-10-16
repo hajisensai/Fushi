@@ -15,9 +15,27 @@ SessionManager::SessionManager() : next_session_id_(1), env_(ORT_LOGGING_LEVEL_W
 }
 
 SessionManager::~SessionManager() {
-  // Clear all sessions
-  std::lock_guard<std::mutex> lock(mutex_);
-  sessions_.clear();
+  // Teardown order matters for the CUDA plugin EP: every session built with
+  // it must be released before its library is unregistered, and the library
+  // must be unregistered before the env is released (env_ is destroyed after
+  // this body). Releasing out of order is what ORT documents as undefined.
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sessions_.clear();
+  }
+  cuda_.Unregister(env_);
+}
+
+CudaRegistrationResult SessionManager::registerCudaPlugin(const std::wstring &dir) {
+  return cuda_.Register(env_, dir);
+}
+
+bool SessionManager::isCudaRegistered() { return cuda_.IsRegistered(); }
+
+std::vector<std::string> SessionManager::registeredEpNames() { return cuda_.RegisteredEpNames(); }
+
+void SessionManager::appendCudaProvider(Ort::SessionOptions &session_options, int device_index) {
+  cuda_.AppendToSessionOptions(env_, session_options, device_index);
 }
 
 std::string SessionManager::createSession(const char *model_path, const Ort::SessionOptions &session_options,

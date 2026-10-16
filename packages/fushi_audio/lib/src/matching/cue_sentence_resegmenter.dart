@@ -44,10 +44,10 @@ class CueSentenceResegmenter {
     this.frameMs = 40,
     this.maxAlignCells = 400000,
     this.maxDensityRatio = 2.0,
-  }) : assert(
-          frameMs > 0,
-          'frameMs 是时长下限：合缝按时长分权重，0 会让全零时长的中间 cue 除零',
-        );
+    this.densitySlackMs = 250,
+    this.forwardPauseMs = 700,
+    this.unheardLeadMs = 1000,
+  }) : assert(frameMs > 0, 'frameMs 是时长下限：合缝按时长分权重，0 会让全零时长的中间 cue 除零');
 
   /// 新边界起点在该句首 token 之前预留的毫秒数（补偿 RNN-T 发射延迟）。
   final int leadInMs;
@@ -64,6 +64,19 @@ class CueSentenceResegmenter {
   /// 合缝判据：认领缝隙后 cue 的正文字数密度（字/ms）不得超过本次结果命中 cue
   /// 密度中位数的这个倍数。
   final double maxDensityRatio;
+
+  /// 合缝密度判据给 cue 时长加的发声容差（毫秒）。cue 终点是**显示**用的，紧贴
+  /// 收声点时短句（「悪かった。」0.32 s）的「字数 / 时长」会虚高到判据上限之外，
+  /// 缝里本属于它的正文尾巴（「た。」）就被拒收、正文换回来缺字。判据要估的是
+  /// 朗读速度，不该随显示终点收紧而变：锚点中位数与认领判定同加此容差。
+  final int densitySlackMs;
+
+  /// 无 token 的正文片前后两片之间的停顿（前片末 token → 后片首 token）达到此
+  /// 值时，该片并入后一片而不是前一片。
+  final int forwardPauseMs;
+
+  /// 片首 token 离所属原 cue 起点超过此值，视为那条原 cue 开头有被漏听的语音。
+  final int unheardLeadMs;
 
   /// 正文里的句末标点（与 `AsrCueBuilder.sentenceTerminators` 同源同义）。
   static const String sentenceTerminators = '。！？!?…‥．.';
@@ -82,9 +95,9 @@ class CueSentenceResegmenter {
     }
     final Map<int, _SectionGaps> gapsBySection = <int, _SectionGaps>{};
     _SectionGaps gapsFor(int section) => gapsBySection.putIfAbsent(
-          section,
-          () => _SectionGaps.build(sections[section].text),
-        );
+      section,
+      () => _SectionGaps.build(sections[section].text),
+    );
 
     // 命中区间可能越过章节末尾（匹配器把跨章命中记在起始章上），那种 cue 不
     // 参与重切——正文偏移在下一章里，本章的间隙表管不到它。
@@ -119,12 +132,7 @@ class CueSentenceResegmenter {
       int j = i;
       while (j + 1 < cues.length &&
           eligible(j + 1) &&
-          _contiguous(
-            cues[j],
-            matches[j],
-            cues[j + 1],
-            matches[j + 1],
-          )) {
+          _contiguous(cues[j], matches[j], cues[j + 1], matches[j + 1])) {
         j++;
       }
       runs++;
@@ -194,7 +202,12 @@ class CueSentenceResegmenter {
       for (int k = 0; k < cues.length; k++)
         if (eligible(k)) k,
     ];
-    final double? reference = _medianDensity(cues, matches, anchors);
+    final double? reference = _medianDensity(
+      cues,
+      matches,
+      anchors,
+      densitySlackMs,
+    );
     if (reference == null) return _ClosedGaps(matches, 0);
     final double ceiling = reference * maxDensityRatio;
     final List<CueMatch> out = List<CueMatch>.of(matches);
@@ -202,7 +215,8 @@ class CueSentenceResegmenter {
 
     // 认领后密度不超上限才成交；[chars] 是认领后该 cue 的正文字数。
     bool affordable(AudioCue cue, int chars) {
-      final int dur = math.max(cue.endMs - cue.startMs, frameMs);
+      final int dur =
+          math.max(cue.endMs - cue.startMs, frameMs) + densitySlackMs;
       return chars / dur <= ceiling;
     }
 
@@ -236,8 +250,11 @@ class CueSentenceResegmenter {
 
       if (interior.isEmpty) {
         if (gapLen == 0) continue;
-        final int cut =
-            _firstBoundary(gapsFor(mi.sectionIndex), gapStart, gapEnd);
+        final int cut = _firstBoundary(
+          gapsFor(mi.sectionIndex),
+          gapStart,
+          gapEnd,
+        );
         final int left = cut - gapStart;
         final int right = gapEnd - cut;
         if (left > 0 &&
@@ -262,7 +279,9 @@ class CueSentenceResegmenter {
       ];
       // 密度按整块判，不按单条：0.25 s 的 cue 分到 1 字还是 2 字是量化噪音。
       final int totalWeight = weights.fold<int>(0, (int s, int w) => s + w);
-      if (gapLen / totalWeight > ceiling) continue;
+      if (gapLen / (totalWeight + densitySlackMs * interior.length) > ceiling) {
+        continue;
+      }
       int pos = gapStart;
       int acc = 0;
       for (int n = 0; n < interior.length; n++) {
@@ -289,12 +308,13 @@ class CueSentenceResegmenter {
     List<AudioCue> cues,
     List<CueMatch> matches,
     List<int> anchors,
+    int slackMs,
   ) {
     if (anchors.isEmpty) return null;
     final List<double> densities = <double>[
       for (final int k in anchors)
         (matches[k].normCharEnd - matches[k].normCharStart) /
-            math.max(cues[k].endMs - cues[k].startMs, 1),
+            (math.max(cues[k].endMs - cues[k].startMs, 1) + slackMs),
     ]..sort();
     return densities[densities.length ~/ 2];
   }
@@ -308,12 +328,12 @@ class CueSentenceResegmenter {
   }
 
   static CueMatch _withRange(CueMatch m, int start, int end) => CueMatch(
-        cueSentenceIndex: m.cueSentenceIndex,
-        sectionIndex: m.sectionIndex,
-        normCharStart: start,
-        normCharEnd: end,
-        score: m.score,
-      );
+    cueSentenceIndex: m.cueSentenceIndex,
+    sectionIndex: m.sectionIndex,
+    normCharStart: start,
+    normCharEnd: end,
+    score: m.score,
+  );
 
   /// 空区间（`end == start`）也算：那是合缝时认领了 0 字缝的幻觉 cue。
   static bool _eligible(AudioCue cue, CueMatch m, int sectionCount) {
@@ -325,12 +345,7 @@ class CueSentenceResegmenter {
         !timing.isEmpty;
   }
 
-  static bool _contiguous(
-    AudioCue a,
-    CueMatch ma,
-    AudioCue b,
-    CueMatch mb,
-  ) =>
+  static bool _contiguous(AudioCue a, CueMatch ma, AudioCue b, CueMatch mb) =>
       ma.sectionIndex == mb.sectionIndex &&
       a.audioFileIndex == b.audioFileIndex &&
       mb.normCharStart == ma.normCharEnd &&
@@ -397,23 +412,47 @@ class CueSentenceResegmenter {
       }
       pieceTokens[piece].add(t);
     }
+    // 没认领到 token 的片（ASR 漏听的短句：「はぁ？」「うおんむ。」）默认并入
+    // 前一片；但它以开引号起头（新台词的开头），或是句末之后、前一片念完隔着
+    // 停顿才轮到后一片的新句，它就是在后一片那段语音里念的——并入后一片。并错
+    // 方向的代价是台词错拼（「いいか？」「はぁ？」）且前一条 cue 跨过整段静音
+    // 挂到下一句（「…呼んだ」「うおんむ。」挂 1.8 s）。
     final List<_Piece> pieces = <_Piece>[];
+    int? pendingStart;
     for (int k = 0; k < pieceTokens.length; k++) {
       final List<_Token> ts = pieceTokens[k];
       if (ts.isEmpty) {
-        if (pieces.isEmpty) {
-          // 首片没有 token：并入后一片（把起点拉到串首）。
-          if (k + 1 < pieceTokens.length) {
-            pieceTokens[k + 1].insertAll(0, ts);
-            edges[k + 1] = edges[k];
-          }
+        if (pieces.isEmpty || pendingStart != null) {
+          pendingStart ??= edges[k];
           continue;
         }
-        pieces.last.end = edges[k + 1];
+        int next = k + 1;
+        while (next < pieceTokens.length && pieceTokens[next].isEmpty) {
+          next++;
+        }
+        // 句中续接（前面是逗号或无标点：「お前、｜喋んなければ…」、「…階』｜だ。」）
+        // 与引号内的后半截台词（「…やばっ！｜めっちゃ似合ってる…」」）永远留在
+        // 前一片；只有新台词或引号外「句末 + 停顿」后的新句才往后并。
+        final bool forward =
+            next < pieceTokens.length &&
+            (gaps.opensAt(edges[k]) ||
+                (gaps.kindAt(edges[k]) == _GapKind.sentence &&
+                    gaps.quoteDepthAt(edges[k]) == 0 &&
+                    pieceTokens[next].first.timeMs - pieces.last.lastTokenMs >=
+                        forwardPauseMs));
+        if (forward) {
+          pendingStart = edges[k];
+        } else {
+          pieces.last.end = edges[k + 1];
+        }
         continue;
       }
-      pieces.add(_Piece(start: edges[k], end: edges[k + 1], tokens: ts));
+      pieces.add(
+        _Piece(start: pendingStart ?? edges[k], end: edges[k + 1], tokens: ts),
+      );
+      pendingStart = null;
     }
+    if (pendingStart != null && pieces.isNotEmpty) pieces.last.end = runEnd;
     if (pieces.length <= 1 && removed == 0) {
       return _RunOutput.unchanged(cues, matches, from, to);
     }
@@ -435,6 +474,16 @@ class CueSentenceResegmenter {
       } else {
         final _Boundary? kept = boundaries[pieces[k + 1].start];
         ends[k] = kept?.endMs ?? (pieces[k + 1].firstTokenMs - leadInMs);
+        // 新边界落在两条原 cue 之间（中间隔着 VAD 静音）：终点不越过本片末
+        // token 所属原 cue 的收声终点，否则字幕跨着整段停顿挂到下一句。但后一片
+        // 的首 token 离它那条原 cue 的起点很远时，那段开头的语音被 ASR 整段漏听了
+        // （「まったく、｜人を貶める…のかしら。」只听出「まったく」），合缝已把
+        // 那段正文归给本片，终点就该延到那段语音之后，不能卡回前一个 VAD 段。
+        if (kept == null &&
+            p.lastCueEndMs < pieces[k + 1].firstTokenMs &&
+            pieces[k + 1].leadingSilenceMs < unheardLeadMs) {
+          ends[k] = math.min(ends[k], p.lastCueEndMs);
+        }
       }
     }
     for (int k = 0; k < n; k++) {
@@ -463,9 +512,7 @@ class CueSentenceResegmenter {
         ..endMs = ends[k]
         ..audioFileIndex = proto.audioFileIndex
         ..tokenTiming = CueTokenTiming(
-          tokens: List<String>.unmodifiable(
-            p.tokens.map((_Token t) => t.text),
-          ),
+          tokens: List<String>.unmodifiable(p.tokens.map((_Token t) => t.text)),
           offsetsMs: List<int>.unmodifiable(
             p.tokens.map((_Token t) => t.timeMs - starts[k]),
           ),
@@ -526,10 +573,19 @@ class CueSentenceResegmenter {
         // 标点 token / 认领了 0 字缝的幻觉 cue：挂到前一个 token 上。
         bookPos = out.last.bookPos;
       } else {
-        bookPos = m.normCharStart +
+        bookPos =
+            m.normCharStart +
             math.min(posMap[cursor], math.max(0, slice.length - 1));
       }
-      out.add(_Token(text: timing.tokens[k], timeMs: timeMs, bookPos: bookPos));
+      out.add(
+        _Token(
+          text: timing.tokens[k],
+          timeMs: timeMs,
+          bookPos: bookPos,
+          cueStartMs: cue.startMs,
+          cueEndMs: cue.endMs,
+        ),
+      );
       cursor += normLen;
     }
   }
@@ -639,7 +695,8 @@ class CueResegmentStats {
       boundariesAdded > 0 || boundariesRemoved > 0 || gapsClosed > 0;
 
   @override
-  String toString() => 'CueResegmentStats(runs=$runs cues=$cuesIn→$cuesOut '
+  String toString() =>
+      'CueResegmentStats(runs=$runs cues=$cuesIn→$cuesOut '
       'added=$boundariesAdded removed=$boundariesRemoved '
       'gapsClosed=$gapsClosed)';
 }
@@ -658,13 +715,26 @@ enum _GapKind { none, soft, sentence }
 /// （标点/空白/引号）→ [_GapKind.soft]；夹着的字符里有句末标点 →
 /// [_GapKind.sentence]。
 class _SectionGaps {
-  _SectionGaps._(this.norm, this._kinds);
+  _SectionGaps._(this.norm, this._kinds, this._opens, this._depth);
 
   factory _SectionGaps.build(String original) {
     final NormalizedTextWithOffsets norm =
         AudioTextNormalizer.normalizeWithOffsets(original);
     final int n = norm.text.length;
     final List<_GapKind> kinds = List<_GapKind>.filled(n + 1, _GapKind.none);
+    final List<bool> opens = List<bool>.filled(n + 1, false);
+    // 每个保留字符处的引号嵌套深度（「』等配对符号，不平衡时夹到 0）。
+    final List<int> depth = List<int>.filled(n + 1, 0);
+    int d = 0;
+    int scanned = 0;
+    for (int p = 0; p < n; p++) {
+      for (; scanned < norm.starts[p]; scanned++) {
+        final String c = original[scanned];
+        if (_openingQuotes.contains(c)) d++;
+        if (_closingQuotes.contains(c) && d > 0) d--;
+      }
+      depth[p] = d;
+    }
     for (int p = 1; p < n; p++) {
       final int from = norm.ends[p - 1];
       final int to = norm.starts[p];
@@ -672,28 +742,56 @@ class _SectionGaps {
       final String between = original.substring(from, to);
       bool sentence = false;
       for (int k = 0; k < between.length && !sentence; k++) {
-        sentence =
-            CueSentenceResegmenter.sentenceTerminators.contains(between[k]);
+        sentence = CueSentenceResegmenter.sentenceTerminators.contains(
+          between[k],
+        );
       }
       kinds[p] = sentence ? _GapKind.sentence : _GapKind.soft;
+      for (int k = 0; k < between.length && !opens[p]; k++) {
+        opens[p] = _openingMarks.contains(between[k]);
+      }
     }
-    return _SectionGaps._(norm, kinds);
+    return _SectionGaps._(norm, kinds, opens, depth);
   }
 
   final NormalizedTextWithOffsets norm;
   final List<_GapKind> _kinds;
 
+  final List<bool> _opens;
+
+  static const String _openingMarks = '「『（(【〈《“';
+  static const String _openingQuotes = '「『';
+  static const String _closingQuotes = '」』';
+
+  final List<int> _depth;
+
+  /// 位置 [p] 的保留字符处于几层引号之内（0 = 地の文）。
+  int quoteDepthAt(int p) => p >= 0 && p < _depth.length ? _depth[p] : 0;
+
   _GapKind kindAt(int p) =>
       p > 0 && p < _kinds.length ? _kinds[p] : _GapKind.none;
+
+  /// 位置 [p] 前的间隙里有开引号/开括号：[p] 起是一句新台词的开头。
+  bool opensAt(int p) => p > 0 && p < _opens.length && _opens[p];
 }
 
 class _Token {
-  const _Token(
-      {required this.text, required this.timeMs, required this.bookPos});
+  const _Token({
+    required this.text,
+    required this.timeMs,
+    required this.bookPos,
+    required this.cueStartMs,
+    required this.cueEndMs,
+  });
 
   final String text;
   final int timeMs;
   final int bookPos;
+
+  /// 该 token 所属原 cue 的终点（转录时按 VAD 收声点定的）。
+  /// 该 token 所属原 cue 的起点。
+  final int cueStartMs;
+  final int cueEndMs;
 }
 
 class _Boundary {
@@ -714,7 +812,16 @@ class _Piece {
   int get firstTokenMs => tokens.first.timeMs;
 
   int get lastTokenMs => tokens.fold<int>(
-      tokens.first.timeMs, (int a, _Token t) => math.max(a, t.timeMs));
+    tokens.first.timeMs,
+    (int a, _Token t) => math.max(a, t.timeMs),
+  );
+
+  /// 片内最后一个 token 所属原 cue 的终点。
+  int get lastCueEndMs => tokens.last.cueEndMs;
+
+  /// 片首 token 离它所属原 cue 起点多远：远了说明那条原 cue 开头有一段语音没被
+  /// 听写出来（RNN-T 整段漏字）。
+  int get leadingSilenceMs => tokens.first.timeMs - tokens.first.cueStartMs;
 }
 
 class _RunOutput {
@@ -730,13 +837,12 @@ class _RunOutput {
     List<CueMatch> matches,
     int from,
     int to,
-  ) =>
-      _RunOutput(
-        cues: cues.sublist(from, to + 1),
-        matches: matches.sublist(from, to + 1),
-        boundariesAdded: 0,
-        boundariesRemoved: 0,
-      );
+  ) => _RunOutput(
+    cues: cues.sublist(from, to + 1),
+    matches: matches.sublist(from, to + 1),
+    boundariesAdded: 0,
+    boundariesRemoved: 0,
+  );
 
   final List<AudioCue> cues;
   final List<CueMatch> matches;

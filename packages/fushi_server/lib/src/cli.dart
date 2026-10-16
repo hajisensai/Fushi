@@ -42,7 +42,12 @@ bool? _explicitFlag(ArgResults results, String name) =>
 
 ArgParser _buildParser() {
   final ArgParser parser = ArgParser()
-    ..addOption('config', abbr: 'c', help: '配置文件路径', defaultsTo: kDefaultConfigFileName)
+    ..addOption(
+      'config',
+      abbr: 'c',
+      help: '配置文件路径',
+      defaultsTo: kDefaultConfigFileName,
+    )
     ..addFlag('verbose', abbr: 'v', negatable: false, help: '调试日志')
     ..addFlag('help', abbr: 'h', negatable: false);
   parser.addCommand('init')
@@ -70,11 +75,12 @@ ArgParser _buildParser() {
   parser.addCommand('status');
   parser.addCommand('pair');
   parser.addCommand('admin');
-  parser
-      .addCommand('models')
-      .addOption('language', abbr: 'l', help: 'ASR 语言 tag（ja / en / zh …）');
+  parser.addCommand('models')
+    ..addOption('language', abbr: 'l', help: 'ASR 语言 tag（ja / en / zh …）')
+    ..addOption('model', abbr: 'm', help: _kModelOptionHelp);
   parser.addCommand('transcribe')
     ..addOption('language', abbr: 'l', help: 'ASR 语言 tag', defaultsTo: 'ja')
+    ..addOption('model', abbr: 'm', help: _kModelOptionHelp)
     ..addOption('out', abbr: 'o', help: '输出 .srt 路径（默认与音频同名）')
     ..addFlag('cpu', negatable: false, help: '只用 CPU');
   parser.addCommand('ctl', buildCtlParser());
@@ -86,9 +92,11 @@ ArgParser _buildParser() {
 
 void _usage(ArgParser parser) {
   stdout.writeln('fushi_server <command> [options]\n');
-  stdout.writeln('commands: init | serve | scan | status | pair ls|revoke <peerId> | '
-      'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang> | '
-      'ctl <action>\n');
+  stdout.writeln(
+    'commands: init | serve | scan | status | pair ls|revoke <peerId> | '
+    'admin reset-token | models pull|status -l <lang> | transcribe <audio> -l <lang> | '
+    'ctl <action>\n',
+  );
   stdout.writeln(parser.usage);
   stdout.writeln('\n$kCtlUsage');
   for (final CliModule module in kCliModules) {
@@ -121,7 +129,9 @@ Future<int> runFushiServerCli(List<String> args) async {
   final String label = _commandLabel(command);
   // --json：stdout 只留给最终 JSON，后台 isolate / 原生库的打印整体改道 stderr。
   if (commandChainWantsJson(command)) {
-    return runWithJsonStdoutIsolation(() => _dispatch(parser, command, configFile, verbose, label));
+    return runWithJsonStdoutIsolation(
+      () => _dispatch(parser, command, configFile, verbose, label),
+    );
   }
   return _dispatch(parser, command, configFile, verbose, label);
 }
@@ -138,35 +148,69 @@ String _commandLabel(ArgResults command) {
   return names.join(' ');
 }
 
-Future<int> _dispatch(ArgParser parser, ArgResults command, File configFile, bool verbose, String label) async {
+Future<int> _dispatch(
+  ArgParser parser,
+  ArgResults command,
+  File configFile,
+  bool verbose,
+  String label,
+) async {
   switch (command.name) {
     case 'init':
       return _init(configFile, command);
     case 'serve':
       return withServerRuntime(
-          configFile,
-          verbose,
-          (ServerRuntime rt) => _serve(rt,
-              scan: command['scan'] as bool,
-              prune: _explicitFlag(command, 'prune')),
-          serve: true,
-          command: label);
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _serve(
+          rt,
+          scan: command['scan'] as bool,
+          prune: _explicitFlag(command, 'prune'),
+        ),
+        serve: true,
+        command: label,
+      );
     case 'scan':
-      return withServerRuntime(configFile, verbose,
-          (ServerRuntime rt) => _scan(rt,
-              prune: _explicitFlag(command, 'prune'),
-              scrape: _explicitFlag(command, 'scrape')),
-          command: label);
+      return withServerRuntime(
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _scan(
+          rt,
+          prune: _explicitFlag(command, 'prune'),
+          scrape: _explicitFlag(command, 'scrape'),
+        ),
+        command: label,
+      );
     case 'status':
       return withServerRuntime(configFile, verbose, _status, command: label);
     case 'pair':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _pair(rt, command.rest), command: label);
+      return withServerRuntime(
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _pair(rt, command.rest),
+        command: label,
+      );
     case 'admin':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _admin(rt, command.rest), command: label);
+      return withServerRuntime(
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _admin(rt, command.rest),
+        command: label,
+      );
     case 'models':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _models(rt, command), command: label);
+      return withServerRuntime(
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _models(rt, command),
+        command: label,
+      );
     case 'transcribe':
-      return withServerRuntime(configFile, verbose, (ServerRuntime rt) => _transcribe(rt, command), command: label);
+      return withServerRuntime(
+        configFile,
+        verbose,
+        (ServerRuntime rt) => _transcribe(rt, command),
+        command: label,
+      );
     case 'ctl':
       // 不走 _withRuntime：ctl 只发 HTTP，不开数据库、不装 host 绑定（serve 正占着它们）。
       return runCtl(configFile, command);
@@ -176,7 +220,11 @@ Future<int> _dispatch(ArgParser parser, ArgResults command, File configFile, boo
       return module.run(
         command.name!,
         command,
-        CliContext(configFile: configFile, verbose: verbose, commandLabel: label),
+        CliContext(
+          configFile: configFile,
+          verbose: verbose,
+          commandLabel: label,
+        ),
       );
     }
   }
@@ -189,8 +237,8 @@ Future<int> _init(File configFile, ArgResults command) async {
     stderr.writeln('已存在: ${configFile.path}（不覆盖）');
     return 1;
   }
-  final String dataDir = command['data-dir'] as String? ??
-      p.join(configFile.parent.path, 'data');
+  final String dataDir =
+      command['data-dir'] as String? ?? p.join(configFile.parent.path, 'data');
   ServerConfig config = ServerConfig.defaults(dataDir: p.absolute(dataDir));
   config = config.copyWith(
     port: int.tryParse(command['port'] as String) ?? ServerConfig.defaultPort,
@@ -219,9 +267,13 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     stderr.writeln('端口被占用: $e');
     return 75;
   }
-  stdout.writeln('fushi_server 已启动: ${rt.config.bind}:${host.port} '
-      '${rt.config.tls ? '(https, fingerprint ${host.hostFingerprint})' : '(http)'}');
-  stdout.writeln('设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}');
+  stdout.writeln(
+    'fushi_server 已启动: ${rt.config.bind}:${host.port} '
+    '${rt.config.tls ? '(https, fingerprint ${host.hostFingerprint})' : '(http)'}',
+  );
+  stdout.writeln(
+    '设备名: ${rt.config.deviceName}   设备 id: ${rt.identity.deviceId}',
+  );
   stdout.writeln('配对：在 Fushi 里添加互联设备，输入本机地址；PIN 会打印在这里。');
   final AdminContext adminCtx = AdminContext(
     config: rt.config,
@@ -245,12 +297,15 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
       await admin.start();
       // 锁文件补上 WebUI 地址：被拒的离线命令据此提示「改用 ctl」该连哪。
       await rt.dataLock.update(
-        admin: '${rt.config.tls ? 'https' : 'http'}://'
+        admin:
+            '${rt.config.tls ? 'https' : 'http'}://'
             '${rt.config.adminBind == '0.0.0.0' ? '127.0.0.1' : rt.config.adminBind}:${admin.port}',
       );
-      stdout.writeln('WebUI: ${rt.config.tls ? 'https' : 'http'}://'
-          '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
-          '（admin_token 在配置文件里）');
+      stdout.writeln(
+        'WebUI: ${rt.config.tls ? 'https' : 'http'}://'
+        '${rt.config.adminBind == '0.0.0.0' ? '<本机地址>' : rt.config.adminBind}:${admin.port}/ '
+        '（admin_token 在配置文件里）',
+      );
     } on SocketException catch (e) {
       stderr.writeln('WebUI 端口 ${rt.config.adminPort} 起不来: ${e.message}');
       admin = null;
@@ -264,8 +319,9 @@ Future<int> _serve(ServerRuntime rt, {required bool scan, bool? prune}) async {
     if (!stop.isCompleted) stop.complete();
   }
 
-  final StreamSubscription<ProcessSignal> sigint =
-      ProcessSignal.sigint.watch().listen(onSignal);
+  final StreamSubscription<ProcessSignal> sigint = ProcessSignal.sigint
+      .watch()
+      .listen(onSignal);
   StreamSubscription<ProcessSignal>? sigterm;
   if (!Platform.isWindows) {
     sigterm = ProcessSignal.sigterm.watch().listen(onSignal);
@@ -302,7 +358,9 @@ Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
   for (final String err in summary.errors) {
     stdout.writeln('  ! $err');
   }
-  final bool hasVideoRoot = rt.config.libraries.any((LibraryRootConfig l) => l.kind == 'video');
+  final bool hasVideoRoot = rt.config.libraries.any(
+    (LibraryRootConfig l) => l.kind == 'video',
+  );
   if (hasVideoRoot && (scrape ?? rt.config.scanScrape)) {
     // 一次性命令：同步等补刮跑完再退出（只刮从未识别过的作品，见 video_scrape_host.dart）。
     final ServerVideoScrape videoScrape = ServerVideoScrape(
@@ -314,8 +372,10 @@ Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
       stdout.writeln('刮削中（只补刮从未识别过的作品）…');
       await videoScrape.sweep();
       final Map<String, Object?> st = videoScrape.status();
-      stdout.writeln('刮削完成: ${st['lastReport'] ?? '没有需要刮削的作品'}'
-          '${st['tmdbAvailable'] == true ? '' : '（未配置 tmdb_api_key，TMDB 不可用）'}');
+      stdout.writeln(
+        '刮削完成: ${st['lastReport'] ?? '没有需要刮削的作品'}'
+        '${st['tmdbAvailable'] == true ? '' : '（未配置 tmdb_api_key，TMDB 不可用）'}',
+      );
       final int pending = await videoScrape.pendingCount();
       if (pending > 0) stdout.writeln('  待人工指定身份: $pending 部（可在客户端经互联手动指定）');
     } finally {
@@ -330,8 +390,12 @@ Future<int> _status(ServerRuntime rt) async {
   final int videos = (await rt.db.allVideoBooks()).length;
   stdout.writeln('config:      ${rt.configFile.path}');
   stdout.writeln('data_dir:    ${rt.config.dataDir}');
-  stdout.writeln('listen:      ${rt.config.bind}:${rt.config.port} tls=${rt.config.tls}');
-  stdout.writeln('device:      ${rt.config.deviceName} (${rt.identity.deviceId})');
+  stdout.writeln(
+    'listen:      ${rt.config.bind}:${rt.config.port} tls=${rt.config.tls}',
+  );
+  stdout.writeln(
+    'device:      ${rt.config.deviceName} (${rt.identity.deviceId})',
+  );
   stdout.writeln('libraries:   ${rt.config.libraries.length}');
   stdout.writeln('videos:      $videos');
   stdout.writeln('paired:      ${peers.length}');
@@ -348,10 +412,13 @@ Future<int> _pair(ServerRuntime rt, List<String> rest) async {
         return 0;
       }
       for (final FushiPairedPeerRow peer in peers) {
-        final String at =
-            DateTime.fromMillisecondsSinceEpoch(peer.pairedAtMs).toIso8601String();
-        stdout.writeln('${peer.peerId}  ${peer.deviceName ?? '-'}  '
-            '${peer.lastSeenIp ?? '-'}  paired $at');
+        final String at = DateTime.fromMillisecondsSinceEpoch(
+          peer.pairedAtMs,
+        ).toIso8601String();
+        stdout.writeln(
+          '${peer.peerId}  ${peer.deviceName ?? '-'}  '
+          '${peer.lastSeenIp ?? '-'}  paired $at',
+        );
       }
       return 0;
     case 'revoke':
@@ -372,8 +439,9 @@ Future<int> _admin(ServerRuntime rt, List<String> rest) async {
   final String sub = rest.isEmpty ? '' : rest.first;
   switch (sub) {
     case 'reset-token':
-      final ServerConfig next =
-          rt.config.copyWith(adminToken: FushiSyncServer.generateToken());
+      final ServerConfig next = rt.config.copyWith(
+        adminToken: FushiSyncServer.generateToken(),
+      );
       await next.save(rt.configFile);
       stdout.writeln('新的 admin_token: ${next.adminToken}');
       return 0;
@@ -383,28 +451,64 @@ Future<int> _admin(ServerRuntime rt, List<String> rest) async {
   }
 }
 
+const String _kModelOptionHelp =
+    '模型包 id（缺省按语言取内置包）；可选包如 kitsune-p0.1b（CC BY-NC 4.0，非商用）';
+
+/// `--model <id>`：把选中的包排到注册表最前，让它接管所服务的语言。候选是当前
+/// 注册表 + 不进默认注册表的可选包（`kAsrOptionalModelPacks`）。返回 false =
+/// id 不认识（已报错）。
+bool _applyModelArg(ArgResults command) {
+  final String? id = command['model'] as String?;
+  if (id == null || id.isEmpty) return true;
+  final List<asr.AsrModelPack> candidates = <asr.AsrModelPack>[
+    ...asr.asrModelRegistry.packs,
+    ...asr.kAsrOptionalModelPacks,
+  ];
+  for (final asr.AsrModelPack pack in candidates) {
+    if (pack.id != id) continue;
+    asr.asrModelRegistry = asr.asrModelRegistry.mergedWith(
+      asr.AsrModelRegistry(<asr.AsrModelPack>[pack]),
+    );
+    if (pack.license != null) {
+      stderr.writeln('模型 ${pack.displayName} 的许可为 ${pack.license}');
+    }
+    return true;
+  }
+  stderr.writeln(
+    '未知模型 "$id"；可用: '
+    '${candidates.map((asr.AsrModelPack p) => p.id).toSet().join(', ')}',
+  );
+  return false;
+}
+
 asr.AsrLanguage? _languageArg(ArgResults command) {
   final String? tag = command['language'] as String?;
   final asr.AsrLanguage? language = asr.AsrLanguage.fromTag(tag);
   if (language == null) {
-    stderr.writeln('未知语言 "$tag"；可用: '
-        '${asr.AsrLanguage.registered.map((asr.AsrLanguage l) => l.tag).join(', ')}');
+    stderr.writeln(
+      '未知语言 "$tag"；可用: '
+      '${asr.AsrLanguage.registered.map((asr.AsrLanguage l) => l.tag).join(', ')}',
+    );
   }
   return language;
 }
 
 Future<int> _models(ServerRuntime rt, ArgResults command) async {
   final String sub = command.rest.isEmpty ? 'status' : command.rest.first;
-  final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
+  if (!_applyModelArg(command)) return 64;
+  final asr.AsrTranscriptionService service =
+      createServerAsrTranscriptionService();
   if (sub == 'status') {
     for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
       final asr.AsrTranscribePlan plan = await service.plan(
         language: language,
         preference: asr.AsrAccelerationPreference.auto,
       );
-      stdout.writeln('${language.tag.padRight(4)} ${plan.modelReady ? 'ready  ' : 'missing'} '
-          '${plan.variant.name} ${plan.expectedProvider.name} '
-          '${plan.modelStatus.obtainedBytes}/${plan.modelStatus.totalBytes} bytes');
+      stdout.writeln(
+        '${language.tag.padRight(4)} ${plan.modelReady ? 'ready  ' : 'missing'} '
+        '${plan.variant.name} ${plan.expectedProvider.name} '
+        '${plan.modelStatus.obtainedBytes}/${plan.modelStatus.totalBytes} bytes',
+      );
     }
     return 0;
   }
@@ -420,9 +524,12 @@ Future<int> _models(ServerRuntime rt, ArgResults command) async {
       return 0;
     }
     String last = '';
-    await for (final asr.ModelDownloadEvent e
-        in service.downloadModel(language: language, variant: plan.variant)) {
-      final String line = '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
+    await for (final asr.ModelDownloadEvent e in service.downloadModel(
+      language: language,
+      variant: plan.variant,
+    )) {
+      final String line =
+          '${e.fileName} ${e.receivedBytes}/${e.totalBytes}${e.done ? ' done' : ''}';
       if (line != last) {
         stdout.writeln(line);
         last = line;
@@ -448,14 +555,20 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   }
   final asr.AsrLanguage? language = _languageArg(command);
   if (language == null) return 64;
+  if (!_applyModelArg(command)) return 64;
   final asr.AsrAccelerationPreference preference = command['cpu'] as bool
       ? asr.AsrAccelerationPreference.cpuOnly
       : asr.AsrAccelerationPreference.auto;
-  final asr.AsrTranscriptionService service = createServerAsrTranscriptionService();
-  final asr.AsrTranscribePlan plan =
-      await service.plan(language: language, preference: preference);
+  final asr.AsrTranscriptionService service =
+      createServerAsrTranscriptionService();
+  final asr.AsrTranscribePlan plan = await service.plan(
+    language: language,
+    preference: preference,
+  );
   if (!plan.modelReady) {
-    stderr.writeln('${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag}');
+    stderr.writeln(
+      '${language.tag} 模型未下载：先跑 fushi_server models pull -l ${language.tag}',
+    );
     return 69;
   }
   final asr.AsrRunningTranscription running = await service.start(
@@ -468,12 +581,16 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   try {
     await for (final asr.AsrTranscribeEvent e in running.run()) {
       switch (e) {
-        case asr.AsrTranscribeProgressEvent(progress: final asr.AsrTranscribeProgress pr):
+        case asr.AsrTranscribeProgressEvent(
+          progress: final asr.AsrTranscribeProgress pr,
+        ):
           final double? f = pr.fraction;
           if (f != null) stderr.write('\r${(f * 100).toStringAsFixed(1)}%   ');
         case asr.AsrTranscribePausedEvent():
           break;
-        case asr.AsrTranscribeFinishedEvent(result: final asr.AsrTranscribeResult r):
+        case asr.AsrTranscribeFinishedEvent(
+          result: final asr.AsrTranscribeResult r,
+        ):
           result = r;
       }
     }
@@ -487,7 +604,9 @@ Future<int> _transcribe(ServerRuntime rt, ArgResults command) async {
   }
   final String out = command['out'] as String? ?? p.setExtension(audio, '.srt');
   await File(result.srtPath).copy(out);
-  final File tokens = File(p.join(p.dirname(result.srtPath), asr.AsrJobFiles.cueTokens));
+  final File tokens = File(
+    p.join(p.dirname(result.srtPath), asr.AsrJobFiles.cueTokens),
+  );
   if (await tokens.exists()) {
     await tokens.copy(p.setExtension(out, '.tokens.jsonl'));
   }

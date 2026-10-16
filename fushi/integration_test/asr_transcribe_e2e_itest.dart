@@ -23,6 +23,8 @@
 library;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/onnx/onnx_inference_ort.dart'
+    show probeCuda, registerCudaRuntime, selectOrtRuntime;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +32,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_asr_core/asr_core.dart';
+
 /// `--dart-define` 优先；没有就读同名进程环境变量——`tool/run_windows_itest.ps1`
 /// 不透传自定义 dart-define，但会把父进程环境原样传给运行器。
 String _param(String name, {String defaultValue = ''}) {
@@ -45,10 +48,14 @@ String _param(String name, {String defaultValue = ''}) {
     'ASR_BUCKETS' => const String.fromEnvironment('ASR_BUCKETS'),
     'ASR_FP16' => const String.fromEnvironment('ASR_FP16'),
     'ASR_GREEDY_SESSIONS' => const String.fromEnvironment(
-        'ASR_GREEDY_SESSIONS',
-      ),
+      'ASR_GREEDY_SESSIONS',
+    ),
     'ASR_GREEDY_THREADS' => const String.fromEnvironment('ASR_GREEDY_THREADS'),
     'ASR_PCM_PARALLEL' => const String.fromEnvironment('ASR_PCM_PARALLEL'),
+    'ASR_MODEL_ID' => const String.fromEnvironment('ASR_MODEL_ID'),
+    'ASR_CUDA_RT_DIR' => const String.fromEnvironment('ASR_CUDA_RT_DIR'),
+    'ASR_DML_CORE' => const String.fromEnvironment('ASR_DML_CORE'),
+    'ASR_ACCEL' => const String.fromEnvironment('ASR_ACCEL'),
     _ => '',
   };
   if (fromDefine.isNotEmpty) return fromDefine;
@@ -58,9 +65,16 @@ String _param(String name, {String defaultValue = ''}) {
 }
 
 final String _kSeed = _param('ASR_MODEL_SEED');
+
+/// ASR_ACCEL=cuda|directml：GPU 用例显式指定后端（缺省 auto = CUDA > DirectML）。
+final AsrAccelerationPreference _gpuPreference = switch (_param('ASR_ACCEL')) {
+  'cuda' => AsrAccelerationPreference.cuda,
+  'directml' => AsrAccelerationPreference.directml,
+  _ => AsrAccelerationPreference.auto,
+};
 final AsrLanguage _kLang =
     AsrLanguage.fromTag(_param('ASR_LANG', defaultValue: 'ja')) ??
-        AsrLanguage.japanese;
+    AsrLanguage.japanese;
 final String _kAudio = _param(
   'ASR_AUDIO',
   defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
@@ -88,12 +102,14 @@ String _normalize(String s) =>
     s.toLowerCase().replaceAll(RegExp(r'[\s、。！？!?,.\x27"“”’]'), '');
 
 Future<
-    ({
-      String text,
-      AsrTranscribeResult result,
-      OnnxProviderResolution resolution,
-      Duration wall,
-    })> _runOnce({
+  ({
+    String text,
+    AsrTranscribeResult result,
+    OnnxProviderResolution resolution,
+    Duration wall,
+  })
+>
+_runOnce({
   required AsrModelStore store,
   required Directory jobsRoot,
   required String audio,
@@ -104,7 +120,7 @@ Future<
     // 素材是干净朗读（TTS / 有声书），能量门限的双模态前提成立。
     audioProfile: AsrAudioProfile.cleanSpeech,
     backend: fushiAsrBackend(),
-    openStore: (AsrLanguage _) async => store,
+    openStore: (AsrLanguage _, AsrAudioProfile __) async => store,
     jobsRoot: () async => jobsRoot,
     // 缺省 60 s 让检查点/续跑路径多走几次；ASR_CHUNK_SECONDS=300 对齐生产值拿速度数。
     chunkSeconds: int.tryParse(_param('ASR_CHUNK_SECONDS')) ?? 60,
@@ -181,10 +197,11 @@ Future<
     }
     final List<AsrTranscribedSegment> segments =
         await AsrTranscribeJob.loadSegments(
-      await service.jobDirFor(<String>[audio], _kLang),
-    );
-    final String text =
-        segments.map((AsrTranscribedSegment s) => s.text).join();
+          await service.jobDirFor(<String>[audio], _kLang),
+        );
+    final String text = segments
+        .map((AsrTranscribedSegment s) => s.text)
+        .join();
     return (
       text: text,
       result: result!,
@@ -204,12 +221,39 @@ void main() {
   late String audio;
 
   setUpAll(() async {
+    // ASR_DML_CORE=<DirectML 版 onnxruntime.dll>：任何 ORT 调用之前选中它（生产
+    // 里由 main() 的 selectGpuRuntimeAtStartup 做）。
+    final String dmlCore = _param('ASR_DML_CORE');
+    if (dmlCore.isNotEmpty) {
+      // ignore: avoid_print
+      print('[asr-e2e][dml] select=${await selectOrtRuntime(dmlCore)}');
+    }
+    // ASR_CUDA_RT_DIR=<目录>：先把 CUDA 插件 EP 注册进本进程（生产里由
+    // GpuAwareOnnxSessionFactory 在探测前做；本测试自建服务，手动注册）。
+    final String cudaDir = _param('ASR_CUDA_RT_DIR');
+    if (cudaDir.isNotEmpty) {
+      // ignore: avoid_print
+      print(
+        '[asr-e2e][cuda] probe=${await probeCuda()} '
+        'register=${await registerCudaRuntime(cudaDir)}',
+      );
+    }
     expect(
       _kSeed,
       isNotEmpty,
       reason: '需要 --dart-define=ASR_MODEL_SEED=<模型目录>',
     );
-    store = AsrModelStore(Directory(_kSeed), asrModelPackFor(_kLang));
+    // ASR_MODEL_ID=kitsune-p0.1b：用不进默认注册表的可选包（模型目录同样由
+    // ASR_MODEL_SEED 给）。
+    final String modelId = _param('ASR_MODEL_ID');
+    store = AsrModelStore(
+      Directory(_kSeed),
+      modelId.isEmpty
+          ? asrModelPackFor(_kLang)
+          : kAsrOptionalModelPacks.firstWhere(
+              (AsrModelPack pack) => pack.id == modelId,
+            ),
+    );
     expect(
       store.isReady(AsrEncoderVariant.int8) ||
           store.isReady(AsrEncoderVariant.fp32),
@@ -274,15 +318,16 @@ void main() {
       );
       return;
     }
-    final Set<OnnxExecutionProvider> available =
-        await AsrEngineLoader(factory: buildFushiOnnxFactory()).availableAcceleratedProviders();
+    final Set<OnnxExecutionProvider> available = await AsrEngineLoader(
+      factory: buildFushiOnnxFactory(),
+    ).availableAcceleratedProviders();
     // ignore: avoid_print
     print('[asr-e2e][gpu-fp32] available accelerated EPs: $available');
     final r = await _runOnce(
       store: store,
       jobsRoot: jobsRoot,
       audio: audio,
-      preference: AsrAccelerationPreference.auto,
+      preference: _gpuPreference,
       variant: AsrEncoderVariant.fp32,
     );
     // ignore: avoid_print
@@ -305,31 +350,29 @@ void main() {
     }
   }, timeout: const Timeout(Duration(minutes: 40)));
 
-  testWidgets(
-    '分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）',
-    (WidgetTester tester) async {
-      if (onlyGpu || onlyCpu) return;
-      if (store.isReady(AsrEncoderVariant.int8)) {
-        await _phaseBenchmark(
-          store: store,
-          audio: audio,
-          preference: AsrAccelerationPreference.cpuOnly,
-          variant: AsrEncoderVariant.int8,
-          label: 'cpu-int8',
-        );
-      }
-      if (store.isReady(AsrEncoderVariant.fp32)) {
-        await _phaseBenchmark(
-          store: store,
-          audio: audio,
-          preference: AsrAccelerationPreference.auto,
-          variant: AsrEncoderVariant.fp32,
-          label: 'gpu-fp32',
-        );
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 20)),
-  );
+  testWidgets('分阶段计时：ffmpeg / VAD / ASR（CPU int8 与 GPU fp32）', (
+    WidgetTester tester,
+  ) async {
+    if (onlyGpu || onlyCpu) return;
+    if (store.isReady(AsrEncoderVariant.int8)) {
+      await _phaseBenchmark(
+        store: store,
+        audio: audio,
+        preference: AsrAccelerationPreference.cpuOnly,
+        variant: AsrEncoderVariant.int8,
+        label: 'cpu-int8',
+      );
+    }
+    if (store.isReady(AsrEncoderVariant.fp32)) {
+      await _phaseBenchmark(
+        store: store,
+        audio: audio,
+        preference: _gpuPreference,
+        variant: AsrEncoderVariant.fp32,
+        label: 'gpu-fp32',
+      );
+    }
+  }, timeout: const Timeout(Duration(minutes: 20)));
 }
 
 /// 仅为拿数：把 VAD 与解码分开计时，回答「时间花在哪」。不做正确性断言以外的检查。
@@ -340,16 +383,15 @@ Future<void> _phaseBenchmark({
   required AsrEncoderVariant variant,
   required String label,
 }) async {
-  final AsrEngineSessions sessions = await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
-    store: store,
-    variant: variant,
-    preference: preference,
-  );
+  final AsrEngineSessions sessions = await AsrEngineLoader(
+    factory: buildFushiOnnxFactory(),
+  ).load(store: store, variant: variant, preference: preference);
   try {
     final FfmpegAsrPcmSource pcm = FfmpegAsrPcmSource();
     final Stopwatch decodeClock = Stopwatch()..start();
-    final List<AsrPcmChunk> chunks =
-        await pcm.decode(audio, chunkSeconds: 600).toList();
+    final List<AsrPcmChunk> chunks = await pcm
+        .decode(audio, chunkSeconds: 600)
+        .toList();
     decodeClock.stop();
     final int samples = chunks.fold<int>(
       0,

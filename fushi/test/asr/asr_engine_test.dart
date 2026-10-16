@@ -407,8 +407,9 @@ void main() {
     test(
       'encoder 用策略选出的 providers，decoder/joiner/vad 恒 CPU，resolution 透传',
       () async {
+        // 不放 CUDA：编码器落到 CUDA 会触发装载自检（fake 会话的空输出过不了，
+        // 会重装到 DirectML），那条路径在上游 asr_engine_cuda_test.dart 单独测。
         const Set<OnnxExecutionProvider> available = <OnnxExecutionProvider>{
-          OnnxExecutionProvider.cuda,
           OnnxExecutionProvider.directml,
         };
         final _FakeFactory factory = _FakeFactory(available: available);

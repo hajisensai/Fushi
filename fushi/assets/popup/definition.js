@@ -49,6 +49,14 @@ function setStructuredContentElementStyle(element, style) {
             element.style[property] = value;
         }
     }
+    // 行内 nowrap 组改原子 inline-block + max-width:100%，组宽超过一行时不再画到框外
+    // （与 popup.js setStructuredContentElementStyle 同一规则，理由见那里）。
+    const tag = element.tagName;
+    if (style.whiteSpace === 'nowrap' && style.display === undefined && (tag === 'SPAN' || tag === 'A')) {
+        element.style.whiteSpace = '';
+        element.style.display = 'inline-block';
+        element.style.maxWidth = '100%';
+    }
 }
 
 

@@ -681,13 +681,16 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final int visibleCount =
         headerCount + (!collapsible || expanded ? rowCount : 0);
 
-    Widget segment(int position, Widget child, {Key? key}) =>
-        AdaptiveSettingsSurface(
-          key: key,
-          color: widget.surfaceColor,
-          borderRadius: settingsSegmentRadius(position, visibleCount),
-          child: child,
-        );
+    Widget segment(int position, Widget child, {Key? key}) {
+      final BorderRadius radius = settingsSegmentRadius(position, visibleCount);
+      return AdaptiveSettingsSurface(
+        key: key,
+        color: widget.surfaceColor,
+        borderRadius: radius,
+        // 行的悬停 / 选中层贴满这张分段卡（见 [FushiSegmentTileScope]）。
+        child: FushiSegmentTileScope(borderRadius: radius, child: child),
+      );
+    }
 
     List<Widget> rowSegments() => <Widget>[
       for (int i = 0; i < rowCount; i++) ...<Widget>[

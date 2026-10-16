@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-/// 视频全屏路由的「返回上一级」接管层（BUG-3417）。
+/// 视频全屏路由的「返回上一级」接管层（BUG-3449）。
 ///
 /// 窗口模式下「返回上一级」有两条入口：页面键盘通道（焦点在本页子树里时由
 /// `_handleVideoKeyboardShortcut` 直接接住）与 `Navigator.maybePop`（焦点不在本页

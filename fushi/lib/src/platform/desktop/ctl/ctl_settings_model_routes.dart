@@ -40,9 +40,10 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// （CLI 侧见 `packages/fushi_cli/lib/src/commands/settings_model_commands.dart`）。
 ///
 /// - `/api/admin/models`：三类模型文件的状态 / 下载 / 取消 / 删除。
-///   - `asr/<包 id 或语言>`：与设置页同一套——变体取 `plan(auto)` 的推荐，下载走
-///     `AsrTranscriptionService.downloadModel`，删除走 `AsrModelStore.deleteAll`；手动
-///     接入的本地包只「移除接入」（`withoutCustomPack`），不碰用户的文件；
+///   - `asr/<包 id 或语言>`：与设置页同一套（[AsrModelDownloads]）——变体取
+///     `plan(auto)` 的推荐，状态 / 下载 / 删除都**按包**开目录（同一语言的几个包
+///     互不串），下载顺带装 Windows 的 GPU 环境，删除走 `AsrModelStore.deleteAll`；
+///     手动接入的本地包只「移除接入」（`withoutCustomPack`），不碰用户的文件；
 ///   - `ocr/<模型 key>`：下载归全应用的 [MangaOcrModelDownloads] 登记表（与设置页
 ///     同一份进度，离开 CLI 照跑），删除走 `MangaOcrService.deleteModels`；
 ///   - `gpt-sovits/local`：本机 GPT-SoVITS 整合包（`GptSovitsLocalEngine.install` /
@@ -306,16 +307,15 @@ class _CtlModelState {
     );
   }
 
-  Future<AsrTranscribePlan> _planOf(AsrModelPack pack) => _asr.plan(
-    language: pack.language,
-    preference: AsrAccelerationPreference.auto,
-  );
+  Future<AsrTranscribePlan> _planOf(AsrModelPack pack) =>
+      _asrDownloads.planFor(_asr, pack);
 
   Future<Map<String, Object?>> _asrJson(AsrModelPack pack) async {
     final AsrModelDownloadProgress? progress = _asrDownloads.progressOf(
       pack.id,
     );
     final String? lastError = _asrDownloads.lastErrorOf(pack.id);
+    final String? gpuError = _asrDownloads.lastGpuRuntimeErrorOf(pack.id);
     Map<String, Object?> status;
     try {
       final AsrTranscribePlan plan = await _planOf(pack);
@@ -348,6 +348,7 @@ class _CtlModelState {
         }
       else if (lastError != null)
         'download': <String, Object?>{'state': 'failed', 'error': lastError},
+      if (gpuError != null) 'gpuRuntimeError': gpuError,
     };
   }
 
@@ -364,7 +365,7 @@ class _CtlModelState {
     if (plan.modelStatus.ready) {
       return <String, Object?>{...await _asrJson(pack), 'alreadyReady': true};
     }
-    if (!_asrDownloads.start(pack, service: _asr, plan: plan)) {
+    if (!_asrDownloads.start(pack, plan: plan)) {
       throw CtlFailure.conflict(
         '${pack.displayName} 已在下载（models status asr ${pack.id}）',
       );
@@ -387,7 +388,7 @@ class _CtlModelState {
         'freedBytes': 0,
       };
     }
-    final AsrModelStore store = await _asr.modelStore(pack.language);
+    final AsrModelStore store = await _asrDownloads.openPackStore(pack);
     final int freed = await store.deleteAll();
     return <String, Object?>{...await _asrJson(pack), 'freedBytes': freed};
   }

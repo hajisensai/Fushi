@@ -13,8 +13,9 @@ import 'package:flutter/services.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 
 /// 平台通道。原生侧实现同名方法（`apple/FushiSpeechTranscriber.swift`）。
-const MethodChannel kAppleSpeechChannel =
-    MethodChannel('app.fushi.reader/apple_speech');
+const MethodChannel kAppleSpeechChannel = MethodChannel(
+  'app.fushi.reader/apple_speech',
+);
 
 /// 原生给回的一条结果：一句话 + 它在音频里的区间 + 逐词起点。
 class AppleSpeechSegment {
@@ -87,7 +88,7 @@ abstract interface class AppleSpeechPlatform {
 
 class MethodChannelAppleSpeech implements AppleSpeechPlatform {
   MethodChannelAppleSpeech({MethodChannel? channel})
-      : _channel = channel ?? kAppleSpeechChannel;
+    : _channel = channel ?? kAppleSpeechChannel;
 
   final MethodChannel _channel;
   void Function(int processedMs, int totalMs)? _onProgress;
@@ -153,20 +154,17 @@ class MethodChannelAppleSpeech implements AppleSpeechPlatform {
         if (call.method != 'progress') return null;
         final Map<Object?, Object?> args =
             (call.arguments as Map<Object?, Object?>?) ??
-                const <Object?, Object?>{};
-        _onProgress?.call(
-          _asInt(args['processedMs']),
-          _asInt(args['totalMs']),
-        );
+            const <Object?, Object?>{};
+        _onProgress?.call(_asInt(args['processedMs']), _asInt(args['totalMs']));
         return null;
       });
     }
     try {
-      final Map<Object?, Object?>? raw =
-          await _channel.invokeMapMethod<Object?, Object?>(
-        'transcribe',
-        <String, Object?>{'path': path, 'locale': locale},
-      );
+      final Map<Object?, Object?>? raw = await _channel
+          .invokeMapMethod<Object?, Object?>('transcribe', <String, Object?>{
+            'path': path,
+            'locale': locale,
+          });
       if (raw == null) throw const AppleSpeechUnavailable('empty_response');
       return parseAppleSpeechPayload(raw);
     } on MissingPluginException {

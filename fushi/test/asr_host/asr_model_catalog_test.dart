@@ -35,8 +35,65 @@ void main() {
       );
       expect(omni.languages, contains(AsrLanguage.japanese));
       expect(omni.languages, contains(AsrLanguage.english));
-      // 位置必须还在末尾：排到前面就会顶掉那 8 种语言的默认 transducer 包。
-      expect(packs.last.id, kAsrOmnilingualPack.id);
+      // 位置必须在默认包的末尾：排到前面就会顶掉那 8 种语言的默认 transducer
+      // 包。之后只许跟不进默认注册表的可选包（Kitsune 等）——它们同样排在所有
+      // 默认包之后，没做过选择的用户默认一个都不变。
+      final List<String> optionalIds = <String>[
+        for (final AsrModelPack p in kAsrOptionalModelPacks) p.id,
+      ];
+      final List<AsrModelPack> defaults = <AsrModelPack>[
+        for (final AsrModelPack p in packs)
+          if (!optionalIds.contains(p.id)) p,
+      ];
+      expect(defaults.last.id, kAsrOmnilingualPack.id);
+      expect(
+        <String>[
+          for (final AsrModelPack p in packs.skip(defaults.length)) p.id,
+        ],
+        optionalIds,
+        reason: '可选包必须整体排在全部默认包之后',
+      );
+    });
+
+    test('选中 Kitsune：置顶的窄包保留 NeMo mel 前端与许可（否则按波形 CTC 装载必失败）',
+        () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty
+            .withChoice(AsrLanguage.japanese, kAsrKitsunePack.id),
+      );
+      // 选择默认记在有声书上（老键），窄包只在那种素材上参选。
+      final AsrModelPack? chosen = registry.packForLanguage(
+        AsrLanguage.japanese,
+        profile: AsrAudioProfile.cleanSpeech,
+      );
+      expect(chosen?.id, kAsrKitsunePack.id);
+      expect(chosen!.ctcFrontend, AsrCtcFrontend.nemoMel80);
+      expect(chosen.license, kAsrKitsunePack.license);
+    });
+
+    test('窄包与原包除语言 / 素材外 toJson 逐字相同（拷贝不许漏字段）', () {
+      // `AsrModelPack` 新增的可选字段漏抄不会编译报错、只会静默回到默认值；
+      // toJson 是持久化契约，新字段必然出现在里面，所以拿它做全字段比对。
+      // 语言与素材是窄包本来就要改的两项，单独断言。
+      Map<String, Object?> withoutNarrowed(AsrModelPack pack) =>
+          Map<String, Object?>.of(pack.toJson() as Map<String, Object?>)
+            ..remove('languages')
+            ..remove('audioProfiles');
+      for (final AsrModelPack pack in fushiAsrBasePacks()) {
+        final AsrLanguage language = pack.languages.first;
+        final AsrAudioProfile profile = pack.audioProfiles.first;
+        final AsrModelPack narrowed = buildAsrModelRegistry(
+          AsrModelCatalog.empty.withChoice(language, pack.id, profile: profile),
+        ).packForLanguage(language, profile: profile)!;
+        expect(narrowed.id, pack.id);
+        expect(narrowed.languages, <AsrLanguage>[language]);
+        expect(narrowed.audioProfiles, <AsrAudioProfile>[profile]);
+        expect(
+          withoutNarrowed(narrowed),
+          withoutNarrowed(pack),
+          reason: '${pack.id} 置顶后丢了字段',
+        );
+      }
     });
 
     test('给日语选 Omnilingual：只有日语变，英语等其余语言不受影响', () {
@@ -44,8 +101,14 @@ void main() {
           .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id);
       final AsrModelRegistry registry = buildAsrModelRegistry(catalog);
 
+      // 老键（语言标签）只管有声书：按 cleanSpeech 查。
       expect(
-        registry.packForLanguage(AsrLanguage.japanese)?.id,
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )
+            ?.id,
         kAsrOmnilingualPack.id,
       );
       // 这条是整套设计的理由：多语言包被整个提到最前会顺带改掉每一种语言。
@@ -88,7 +151,12 @@ void main() {
       final AsrModelCatalog chosen =
           added.withChoice(AsrLanguage.japanese, mine.id);
       expect(
-        buildAsrModelRegistry(chosen).packForLanguage(AsrLanguage.japanese)?.id,
+        buildAsrModelRegistry(chosen)
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )
+            ?.id,
         mine.id,
       );
     });
@@ -163,6 +231,151 @@ void main() {
       expect(
         choices.map((AsrModelPack p) => p.id).toSet(),
         hasLength(choices.length),
+      );
+    });
+  });
+
+  group('按素材分开记选择（asrChoiceKey）', () {
+    test('有声书沿用老键 = 语言标签，视频是 <标签>@mixedAudio', () {
+      expect(
+        asrChoiceKey(AsrLanguage.japanese, AsrAudioProfile.cleanSpeech),
+        'ja',
+      );
+      expect(
+        asrChoiceKey(AsrLanguage.japanese, AsrAudioProfile.mixedAudio),
+        'ja@mixedAudio',
+      );
+      final AsrModelCatalog catalog = AsrModelCatalog.empty.withChoice(
+        AsrLanguage.japanese,
+        kAsrJapanesePack.id,
+        profile: AsrAudioProfile.mixedAudio,
+      );
+      expect(catalog.choices, <String, String>{'ja@mixedAudio': 'reazonspeech-k2-v2'});
+      expect(
+        catalog
+            .withChoice(
+              AsrLanguage.japanese,
+              null,
+              profile: AsrAudioProfile.mixedAudio,
+            )
+            .choices,
+        isEmpty,
+      );
+    });
+
+    test('没做过选择：视频默认 Parakeet，有声书默认 ReazonSpeech', () {
+      final AsrModelRegistry registry =
+          buildAsrModelRegistry(AsrModelCatalog.empty);
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.mixedAudio,
+            )!
+            .id,
+        kAsrParakeetJapanesePack.id,
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )!
+            .id,
+        kAsrJapanesePack.id,
+      );
+      // 下拉候选同样按素材过滤：视频第一项 Parakeet，有声书里根本不列它。
+      expect(
+        asrModelChoicesFor(
+          AsrLanguage.japanese,
+          registry,
+          profile: AsrAudioProfile.mixedAudio,
+        ).first.id,
+        kAsrParakeetJapanesePack.id,
+      );
+      expect(
+        asrModelChoicesFor(AsrLanguage.japanese, registry)
+            .map((AsrModelPack p) => p.id),
+        isNot(contains(kAsrParakeetJapanesePack.id)),
+      );
+    });
+
+    test('老用户在有声书里选过 ReazonSpeech（老键 ja）不会把视频钉死在它上面', () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty
+            .withChoice(AsrLanguage.japanese, kAsrJapanesePack.id),
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.mixedAudio,
+            )!
+            .id,
+        kAsrParakeetJapanesePack.id,
+      );
+    });
+
+    test('视频上显式选 ReazonSpeech 生效，且不影响有声书', () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty
+            .withChoice(
+              AsrLanguage.japanese,
+              kAsrJapanesePack.id,
+              profile: AsrAudioProfile.mixedAudio,
+            )
+            .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.mixedAudio,
+            )!
+            .id,
+        kAsrJapanesePack.id,
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )!
+            .id,
+        kAsrOmnilingualPack.id,
+      );
+    });
+
+    test('把只服务视频的包选给有声书：这条选择被忽略，回落默认', () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        AsrModelCatalog.empty
+            .withChoice(AsrLanguage.japanese, kAsrParakeetJapanesePack.id),
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )!
+            .id,
+        kAsrJapanesePack.id,
+      );
+    });
+
+    test('认不出的素材名整条忽略（不抛、不污染别的语言）', () {
+      final AsrModelRegistry registry = buildAsrModelRegistry(
+        const AsrModelCatalog(
+          choices: <String, String>{'ja@nope': 'omnilingual-asr-1b-ctc-v2'},
+        ),
+      );
+      expect(
+        registry
+            .packForLanguage(
+              AsrLanguage.japanese,
+              profile: AsrAudioProfile.cleanSpeech,
+            )!
+            .id,
+        kAsrJapanesePack.id,
       );
     });
   });
@@ -362,7 +575,21 @@ void main() {
 
       // 这条断言就是「后台不会按错模型静默解码」的全部依据：那侧的
       // asrModelPackFor(ja) 必须与主 isolate 规划时用的是同一个包。
-      expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrOmnilingualPack.id);
+      expect(
+        asrModelPackFor(
+          AsrLanguage.japanese,
+          profile: AsrAudioProfile.cleanSpeech,
+        ).id,
+        kAsrOmnilingualPack.id,
+      );
+      // 老键只管有声书：视频照旧落到只服务混音素材的 Parakeet。
+      expect(
+        asrModelPackFor(
+          AsrLanguage.japanese,
+          profile: AsrAudioProfile.mixedAudio,
+        ).id,
+        kAsrParakeetJapanesePack.id,
+      );
     });
 
     test('每次起 isolate 都现读：弹层打开后改的选择也能带过去', () {
@@ -377,7 +604,21 @@ void main() {
             .withChoice(AsrLanguage.japanese, kAsrOmnilingualPack.id),
       );
       fushiAsrIsolateBootstrap(<Object?>[null, file.path]);
-      expect(asrModelPackFor(AsrLanguage.japanese).id, kAsrOmnilingualPack.id);
+      expect(
+        asrModelPackFor(
+          AsrLanguage.japanese,
+          profile: AsrAudioProfile.cleanSpeech,
+        ).id,
+        kAsrOmnilingualPack.id,
+      );
+      // 老键只管有声书：视频照旧落到只服务混音素材的 Parakeet。
+      expect(
+        asrModelPackFor(
+          AsrLanguage.japanese,
+          profile: AsrAudioProfile.mixedAudio,
+        ).id,
+        kAsrParakeetJapanesePack.id,
+      );
     });
 
     test('路径缺失 / 文件不存在时保持内置表，不清空成空表', () {
@@ -434,7 +675,10 @@ void main() {
           .withChoice(AsrLanguage.japanese, local.id);
       asrModelRegistry = buildAsrModelRegistry(catalog);
 
-      final AsrModelStore store = await openAsrModelStore(AsrLanguage.japanese);
+      final AsrModelStore store = await openAsrModelStore(
+        AsrLanguage.japanese,
+        AsrAudioProfile.cleanSpeech,
+      );
       // 这条是「手动指定模型」能不能跑的全部依据：包里的 AsrModelStore.open()
       // 只按 pack.id 拼 <数据根>/asr_models/<id>，文件不在那儿就恒判未就绪、
       // 接着拿 file: URL 去发 HTTP 请求。

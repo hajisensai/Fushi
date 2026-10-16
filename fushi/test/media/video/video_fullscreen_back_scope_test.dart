@@ -6,7 +6,7 @@ import 'package:fushi/src/media/video/video_foreground_layers.dart';
 import 'package:fushi/src/media/video/video_fullscreen_back_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3417（反馈 _oQPV1HPqX / 2XRS7o4YJ8）：全屏 + 底部剧集轨开着按 Esc，先退了全屏、
+/// BUG-3449（反馈 _oQPV1HPqX / 2XRS7o4YJ8）：全屏 + 底部剧集轨开着按 Esc，先退了全屏、
 /// 剧集轨还留着。
 ///
 /// 全屏是推到根 navigator 的独立路由。焦点不在视频页子树里时，Esc（以及手柄 B 兜底、

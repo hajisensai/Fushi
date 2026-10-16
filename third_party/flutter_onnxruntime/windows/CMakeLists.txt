@@ -9,91 +9,96 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 # This value is used when generating builds using this plugin, so it must not be changed.
 set(PLUGIN_NAME "flutter_onnxruntime_plugin")
 
-# === ONNX Runtime DirectML configuration ===
-# Pin the official NuGet artifacts instead of using the generic GitHub release
-# archive. The generic Windows archive is CPU-only and therefore advertises no
-# DmlExecutionProvider even though the Dart API accepts DIRECT_ML.
-set(ONNXRUNTIME_VERSION "1.22.0")
-set(DIRECTML_VERSION "1.15.4")
-set(ONNXRUNTIME_NUPKG_SHA256 "29F9872D786236B79AA83F94482F3A17C14297E4833768D6D0ED4883EE732E60")
-set(DIRECTML_NUPKG_SHA256 "4E7CB7DDCE8CF837A7A75DC029209B520CA0101470FCDF275C1F49736A3615B9")
+# === ONNX Runtime configuration (Fushi fork) ===
+# Bundled: the latest CPU core (Microsoft.ML.OnnxRuntime). It is the revision the
+# official CUDA plugin EP is built against, so CUDA (plugin-ep-cuda + cuBLAS /
+# cuDNN, downloaded by the app and registered at runtime, src/cuda_provider.cc)
+# runs core and plugin from the same ORT revision - the release notes warn that
+# mismatched contributed-operator schemas can execute incorrectly undetected.
+#
+# NOT bundled: DirectML. It only ships in Microsoft.ML.OnnxRuntime.DirectML,
+# whose last release is 1.24.4; the app downloads that core (+ DirectML.dll) on
+# demand and maps it before ORT is first bound (src/ort_runtime_loader.cc). The
+# plugin therefore links onnxruntime.dll with /DELAYLOAD and pins the ORT API
+# version it requests (kOrtApiVersionUsed) so either core can serve it. The
+# DirectML package is still fetched at build time, but only for
+# dml_provider_factory.h (DirectML.h comes from the Windows SDK).
+set(ONNXRUNTIME_VERSION "1.31.0")
+set(ONNXRUNTIME_NUPKG_SHA256 "7E35FDB4F5ADB62F01E60798E2E5ED05108F5FBBE1CCA03FBCC37903CF7C5E3B")
+set(ONNXRUNTIME_DML_VERSION "1.24.4")
+set(ONNXRUNTIME_DML_NUPKG_SHA256 "57E9F11B73437BEF7A309496135D4C1F96B1A8E9DDBA60013FA27BFC1D788681")
 
 if(CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
   set(ONNXRUNTIME_RID "win-arm64")
-  set(DIRECTML_ARCH "arm64-win")
-elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  set(ONNXRUNTIME_RID "win-x64")
-  set(DIRECTML_ARCH "x64-win")
 else()
-  set(ONNXRUNTIME_RID "win-x86")
-  set(DIRECTML_ARCH "x86-win")
+  set(ONNXRUNTIME_RID "win-x64")
 endif()
 
-set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime-directml-${ONNXRUNTIME_VERSION}")
+set(ONNXRUNTIME_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime-${ONNXRUNTIME_VERSION}")
 set(ONNXRUNTIME_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime")
-set(DIRECTML_EXTRACT_DIR "${ONNXRUNTIME_DOWNLOAD_DIR}/directml")
-set(ONNXRUNTIME_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime-directml.nupkg")
-set(DIRECTML_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/directml.nupkg")
+set(ONNXRUNTIME_NUPKG "${ONNXRUNTIME_DOWNLOAD_DIR}/onnxruntime.nupkg")
+set(ONNXRUNTIME_DML_DOWNLOAD_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime-directml-${ONNXRUNTIME_DML_VERSION}")
+set(ONNXRUNTIME_DML_EXTRACT_DIR "${ONNXRUNTIME_DML_DOWNLOAD_DIR}/onnxruntime")
+set(ONNXRUNTIME_DML_NUPKG "${ONNXRUNTIME_DML_DOWNLOAD_DIR}/onnxruntime-directml.nupkg")
 
-if(NOT EXISTS "${ONNXRUNTIME_EXTRACT_DIR}/build/native/include/dml_provider_factory.h")
-  file(MAKE_DIRECTORY "${ONNXRUNTIME_DOWNLOAD_DIR}" "${ONNXRUNTIME_EXTRACT_DIR}")
+function(fushi_fetch_nupkg URL NUPKG SHA256 EXTRACT_DIR SENTINEL)
+  if(EXISTS "${SENTINEL}")
+    return()
+  endif()
+  file(MAKE_DIRECTORY "${EXTRACT_DIR}")
   file(
-    DOWNLOAD
-    "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.directml.${ONNXRUNTIME_VERSION}.nupkg"
-    "${ONNXRUNTIME_NUPKG}"
-    EXPECTED_HASH "SHA256=${ONNXRUNTIME_NUPKG_SHA256}"
+    DOWNLOAD "${URL}" "${NUPKG}"
+    EXPECTED_HASH "SHA256=${SHA256}"
     TLS_VERIFY ON
     SHOW_PROGRESS)
   execute_process(
-    COMMAND ${CMAKE_COMMAND} -E tar xf "${ONNXRUNTIME_NUPKG}"
-    WORKING_DIRECTORY "${ONNXRUNTIME_EXTRACT_DIR}"
-    RESULT_VARIABLE ONNXRUNTIME_EXTRACT_RESULT)
-  if(NOT ONNXRUNTIME_EXTRACT_RESULT EQUAL 0)
-    message(FATAL_ERROR "Failed to extract ONNX Runtime DirectML package: ${ONNXRUNTIME_EXTRACT_RESULT}")
+    COMMAND ${CMAKE_COMMAND} -E tar xf "${NUPKG}"
+    WORKING_DIRECTORY "${EXTRACT_DIR}"
+    RESULT_VARIABLE EXTRACT_RESULT)
+  if(NOT EXTRACT_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to extract ${NUPKG}: ${EXTRACT_RESULT}")
   endif()
-endif()
+endfunction()
 
-if(NOT EXISTS "${DIRECTML_EXTRACT_DIR}/bin/${DIRECTML_ARCH}/DirectML.dll")
-  file(MAKE_DIRECTORY "${DIRECTML_EXTRACT_DIR}")
-  file(
-    DOWNLOAD
-    "https://api.nuget.org/v3-flatcontainer/microsoft.ai.directml/${DIRECTML_VERSION}/microsoft.ai.directml.${DIRECTML_VERSION}.nupkg"
-    "${DIRECTML_NUPKG}"
-    EXPECTED_HASH "SHA256=${DIRECTML_NUPKG_SHA256}"
-    TLS_VERIFY ON
-    SHOW_PROGRESS)
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E tar xf "${DIRECTML_NUPKG}"
-    WORKING_DIRECTORY "${DIRECTML_EXTRACT_DIR}"
-    RESULT_VARIABLE DIRECTML_EXTRACT_RESULT)
-  if(NOT DIRECTML_EXTRACT_RESULT EQUAL 0)
-    message(FATAL_ERROR "Failed to extract DirectML redistributable: ${DIRECTML_EXTRACT_RESULT}")
-  endif()
-endif()
+fushi_fetch_nupkg(
+  "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRUNTIME_VERSION}/microsoft.ml.onnxruntime.${ONNXRUNTIME_VERSION}.nupkg"
+  "${ONNXRUNTIME_NUPKG}" "${ONNXRUNTIME_NUPKG_SHA256}" "${ONNXRUNTIME_EXTRACT_DIR}"
+  "${ONNXRUNTIME_EXTRACT_DIR}/runtimes/${ONNXRUNTIME_RID}/native/onnxruntime.dll")
+fushi_fetch_nupkg(
+  "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime.directml/${ONNXRUNTIME_DML_VERSION}/microsoft.ml.onnxruntime.directml.${ONNXRUNTIME_DML_VERSION}.nupkg"
+  "${ONNXRUNTIME_DML_NUPKG}" "${ONNXRUNTIME_DML_NUPKG_SHA256}" "${ONNXRUNTIME_DML_EXTRACT_DIR}"
+  "${ONNXRUNTIME_DML_EXTRACT_DIR}/build/native/include/dml_provider_factory.h")
 
 set(ONNXRUNTIME_INCLUDE_DIRS "${ONNXRUNTIME_EXTRACT_DIR}/build/native/include")
+set(ONNXRUNTIME_DML_HEADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/onnxruntime-dml-header")
+file(MAKE_DIRECTORY "${ONNXRUNTIME_DML_HEADER_DIR}")
+# Only the DirectML factory header: the rest of the include tree must be the
+# bundled core's.
+file(COPY "${ONNXRUNTIME_DML_EXTRACT_DIR}/build/native/include/dml_provider_factory.h"
+     DESTINATION "${ONNXRUNTIME_DML_HEADER_DIR}")
 set(ONNXRUNTIME_NATIVE_DIR "${ONNXRUNTIME_EXTRACT_DIR}/runtimes/${ONNXRUNTIME_RID}/native")
 set(ONNXRUNTIME_LIBRARY "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime.lib")
 set(ONNXRUNTIME_DLL "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime.dll")
 set(ONNXRUNTIME_PROVIDERS_SHARED_DLL "${ONNXRUNTIME_NATIVE_DIR}/onnxruntime_providers_shared.dll")
-set(DIRECTML_DLL "${DIRECTML_EXTRACT_DIR}/bin/${DIRECTML_ARCH}/DirectML.dll")
 
-foreach(REQUIRED_FILE IN ITEMS "${ONNXRUNTIME_LIBRARY}" "${ONNXRUNTIME_DLL}"
-                               "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}" "${DIRECTML_DLL}")
+foreach(REQUIRED_FILE IN ITEMS "${ONNXRUNTIME_LIBRARY}" "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}")
   if(NOT EXISTS "${REQUIRED_FILE}")
-    message(FATAL_ERROR "Required ONNX Runtime DirectML artifact is missing: ${REQUIRED_FILE}")
+    message(FATAL_ERROR "Required ONNX Runtime artifact is missing: ${REQUIRED_FILE}")
   endif()
 endforeach()
 
 set(ONNXRUNTIME_LIBRARIES "${ONNXRUNTIME_LIBRARY}")
-set(flutter_onnxruntime_bundled_libraries "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}"
-                                           "${DIRECTML_DLL}")
+set(flutter_onnxruntime_bundled_libraries "${ONNXRUNTIME_DLL}" "${ONNXRUNTIME_PROVIDERS_SHARED_DLL}")
 
 # Define Windows-specific preprocessor macros
 add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX -DUNICODE -D_UNICODE)
+# Fushi fork: the C++ API is bound explicitly once the core is chosen
+# (OrtRuntimeLoader::Ensure), never by a static initializer at DLL load.
+add_definitions(-DORT_API_MANUAL_INIT)
 
 # Any new source files that you add to the plugin should be added here.
-list(APPEND PLUGIN_SOURCES "src/async_dispatch.cc" "src/dml_provider.cc" "src/dxgi_memory.cc"
+list(APPEND PLUGIN_SOURCES "src/async_dispatch.cc" "src/cuda_provider.cc" "src/dml_provider.cc" "src/dxgi_memory.cc"
+  "src/ort_runtime_loader.cc"
   "src/session_manager.cc" "src/value_conversion.cc" "src/tensor_manager.cc"
      "src/windows_utils.cc")
 
@@ -148,18 +153,19 @@ target_include_directories(${PLUGIN_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_BINAR
                                                  $<INSTALL_INTERFACE:include>)
 
 # Add ONNX Runtime include directories
-target_include_directories(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
+target_include_directories(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS} "${ONNXRUNTIME_DML_HEADER_DIR}")
 
 # Link against Flutter and other libraries
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 
-# Link against ONNX Runtime
-target_link_libraries(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES})
+# Link against ONNX Runtime, delay-loaded (see the configuration block above).
+target_link_libraries(${PLUGIN_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES} delayimp)
+target_link_options(${PLUGIN_NAME} PRIVATE "/DELAYLOAD:onnxruntime.dll")
 
 # Link against Windows Shell API library for PathRemoveFileSpecW
 target_link_libraries(${PLUGIN_NAME} PRIVATE Shlwapi dxgi)
 
-# Copy the complete DirectML runtime next to the plugin for local runs. Flutter
+# Copy the bundled ONNX Runtime next to the plugin for local runs. Flutter
 # also consumes flutter_onnxruntime_bundled_libraries when assembling the app.
 foreach(BUNDLED_LIBRARY IN LISTS flutter_onnxruntime_bundled_libraries)
   add_custom_command(
