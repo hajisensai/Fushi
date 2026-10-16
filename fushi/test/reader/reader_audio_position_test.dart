@@ -165,7 +165,17 @@ void main() {
         audio,
         contains('_navigateToChapter(newSection, charOffset: studyOffset)'),
       );
-      expect(navigation, contains('_lastProgressCharOffset = studyOffset'));
+      // 跟读落库（_syncPositionFromCurrentCue）经 _readingPositionFromCurrentCue 取位置
+      // （BUG-3431：同一份映射也决定跟读是否独占位置），字符锚必须是映射出的 studyOffset。
+      expect(
+        navigation,
+        matches(RegExp(r'charOffset:\s*studyOffset')),
+        reason: '跟读派生的阅读位置必须带上映射后的学习单位字符锚',
+      );
+      expect(
+        navigation,
+        contains('_lastProgressCharOffset = position.charOffset'),
+      );
       expect(
         navigation,
         isNot(contains('frag.normCharStart / _chapterCharCounts')),

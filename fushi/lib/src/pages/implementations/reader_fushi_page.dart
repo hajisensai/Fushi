@@ -2935,8 +2935,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _openTrace.mark('charCounts');
 
     // 有声书槽（音频服务初始化 + 会话附着 + 全书 cue 预热）与书/spread 并行起跑。
-    // 普通开书在选首个恢复锚前必须等它：只要存在可映射的音频 cue，音频位置始终
-    // 是主位置；书签/收藏是用户显式跳转，仍保持最高优先级、不消费此槽。
+    // 普通开书在选首个恢复锚前等它：没有阅读存档时起点取自音频 cue（BUG-3430 起阅读
+    // 存档是主位置，音频 cue 只兜底）；书签/收藏是用户显式跳转，仍保持最高优先级、
+    // 不消费此槽。
     final Future<void> audioSlotFuture = _resolveAudioSlot().then((_) {
       _openTrace.markLate('audioSlot');
     });
@@ -2993,22 +2994,22 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
               saved.sectionIndex >= _book!.chapters.length)) {
         saved = null;
       }
-      // BUG-2390：产品真值是「带有声书时音频位置为主」，不是两份时间戳 LWW。
-      // LWW 会让用户往前翻后的较新阅读存档压过音频位置；第二次打开先落旧阅读页，
-      // 播放后又跳到音频 cue，不仅位置错，还可能让统计账本把程序化跨过的文字误当
-      // 正常阅读。这里在 WebView 首文档创建前先解析音频 cue；只有音频不存在、槽失败
-      // 或 cue 无法映射到正文时，才回退阅读存档。显式书签分支仍在本分支之前。
+      // BUG-3430（取代 BUG-2390 的「开书时音频位置为主」，用户 2026-10-15 拍板对齐
+      // Hoshi）：开书一律落在阅读存档；有声书的位置在**首次按播放**时由跟读把正文
+      // 带过去（play → 跟读揭示 / 跨章，程序化跨过的正文照旧不入账）。开书时问播放器
+      // 「此刻在哪句」不可靠：Windows 开书慢，恢复 seek 落定前它报的是 0，书就被定位到
+      // 全书第一句；暂停态手动往后读过的存档也会被音频位置盖回去。只有没有阅读存档
+      // （首次打开 / 进度被清）时才用音频 cue 定起点。显式书签分支仍在本分支之前。
       bool restored = false;
       // 音频槽失败（audio_service 冷启 / setAudioSource 超时 / 文件不在）不能把整本
-      // 书开失败：正文照开，起点回退存档；底栏由后面的 .catchError 分支提示。
+      // 书开失败：正文照开；底栏由后面的 .catchError 分支提示。
       try {
         await audioSlotFuture;
       } catch (_) {
         // 已由 audioSlotFuture 的 catchError 链上报 ErrorLogService，这里只回退。
       }
       if (!mounted) return;
-      restored = _restoreFromCurrentAudioCue();
-      if (!restored && saved != null) {
+      if (saved != null) {
         // BUG-162: 有精确锚就用它（restoreToCharOffset 不动点），否则 -1 回退分数。
         // BUG-461: 存档恢复无句子区间，单点句首锚（仅收藏句跳转才有句尾锚）。
         _setOpenResumePoint(
@@ -3017,7 +3018,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
           charOffset: saved.charOffset ?? -1,
           source: 'saved position',
         );
+        restored = true;
       }
+      if (!restored) restored = _restoreFromCurrentAudioCue();
     }
     _openTrace.mark('position');
 

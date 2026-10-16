@@ -1665,8 +1665,20 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     var hasEnd = typeof r.getLastVisibleCharOffset === 'function';
     var end = hasEnd ? r.getLastVisibleCharOffset(off) : -1;
     if (atEnd && end >= 0) end = total;
-    return (atEnd ? total : Math.round(p * total)) + ',' + total + ',' + off
-        + (hasEnd ? ',' + end : '');
+    var read = atEnd ? total : Math.round(p * total);
+    // 分页持几何锚、而视口没从锚起（系统栏 / inset / 尺寸变化把页挪到了临时排版上）：
+    // 读到哪里以锚为准，落库的字符偏移与进度都报锚；这一页是几何补偿不是阅读，不报
+    // 可见终点（-1 = Dart 不 arrive）。安卓切后台时系统栏让排版在后台临时缩水，旧实现
+    // 把临时页首字落库，进程在后台被回收后重开就退到前一页（BUG-3429）。
+    var held = typeof r.heldReadingAnchorCharOffset === 'function'
+        ? r.heldReadingAnchorCharOffset() : -1;
+    if (held >= 0 && held !== off && !atEnd) {
+      off = held;
+      read = typeof r.exploredCharsThroughCharOffset === 'function'
+          ? r.exploredCharsThroughCharOffset(held) : Math.min(held, total);
+      end = -1;
+    }
+    return read + ',' + total + ',' + off + (hasEnd ? ',' + end : '');
   };
   // BUG-213: 章内原生滚动（连续模式 window 滚动 / 分页模式触摸/trackpad/键盘箭头
   // 落 body 的原生滚动）没有进度回传通道，进度条要等 10s 轮询或翻章才更新。这里给

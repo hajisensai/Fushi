@@ -1394,6 +1394,11 @@ window.__fushiInstallShell = function(C) {
   characterAnchorRect: function(range) {
     var rect = range.getBoundingClientRect();
     if (rect.width > 0 || rect.height > 0) return rect;
+    return this.characterGlyphRect(range);
+  },
+  // BUG-3431：量 range 起点那个字本身的字形盒。塌缩光标落在软换行处时，Chromium 把它
+  // 算到上一列 / 上一行的末尾；拿它对齐视口首边，恢复就整列落在上一列，重开一次退一列。
+  characterGlyphRect: function(range) {
     var node = range.startContainer;
     if (!node || node.nodeType !== 3) return null;
     var text = node.textContent || '';
@@ -2851,6 +2856,17 @@ $kSentenceAudioRubyGapJs
     }
     return exploredChars;
   },
+  // 与 exploredCharsBeforeScroll 同口径（节点粒度、含锚字所在节点全部），但按章内
+  // 字符偏移查而不按滚动位置：几何锚持有期间进度要描述锚，不描述临时排版的页
+  // （BUG-3429）。progressStops 按滚动序排列，exploredChars 单调不减。
+  exploredCharsThroughCharOffset: function(charOffset) {
+    var metrics = this.paginationMetrics || this.buildPaginationMetrics();
+    var stops = metrics.progressStops;
+    for (var i = 0; i < stops.length; i++) {
+      if (stops[i].exploredChars > charOffset) return stops[i].exploredChars;
+    }
+    return metrics.totalChars;
+  },
   // BUG-1241：最后一页的 progress 是「视口首字符 / 全章字符」，只要末页还能显示多行，
   // 它就天然停在 0.99 左右，不能拿来判断用户是否真的到达章末。末页判定必须读分页
   // 几何的 terminal clamp；fushiProgressDetails 会在此为 true 时把持久进度钳到 100%。
@@ -3270,6 +3286,15 @@ $kSentenceAudioRubyGapJs
       scroll: scroll
     };
     return this._geometryReanchorAnchor;
+  },
+  // 持锚期间「读到哪里」的唯一真值（-1 = 没有可用的文字锚）。几何事件把视口挪到
+  // 临时排版上时页首字不是用户读到的位置：安卓切后台时系统栏出现让排版临时缩水，
+  // 此刻落库的若是临时页首字，进程在后台被回收后重开就退到前一页。进度组装
+  // （fushiProgressDetails）据此上报锚而不是临时页首字。
+  heldReadingAnchorCharOffset: function() {
+    var anchor = this._geometryReanchorAnchor;
+    if (!anchor || !anchor.hasTextAnchor || !(anchor.charOffset >= 0)) return -1;
+    return anchor.charOffset;
   },
   _invalidateGeometryReanchor: function() {
     this._geometryReanchorAnchor = null;
@@ -3990,7 +4015,9 @@ $kSentenceAudioRubyGapJs
     }
     var startRange = this.collapsedRangeAtCharOffset(charOffset);
     if (!startRange) return;
-    var rect = this.characterAnchorRect(startRange);
+    // BUG-3431：对齐的是目标字自己的字形盒，不是塌缩光标（软换行处光标归上一列末）。
+    var rect = this.characterGlyphRect(startRange) ||
+        this.characterAnchorRect(startRange);
     if (!rect) return;
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;

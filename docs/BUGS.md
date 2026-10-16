@@ -33,6 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3086 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3431](bugs/BUG-3431-continuous-reopen-column-drift-and-follow-zero-save.md) | ✅ | ✅ | 滚动模式每次重开回退一列 + 跟读时视口首字 0 与句位交替落库 |
+| [BUG-3430](bugs/BUG-3430-reader-open-audio-live-position-and-play-before-seek.md) | ✅ | ✅ | 带有声书开书只信播放器实时位置 + 播放不等恢复 seek：先跳到书首句再跳回 |
+| [BUG-3429](bugs/BUG-3429-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
 > 共 3084 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
