@@ -262,7 +262,9 @@ void _flattenPageInto(
 List<String> _optionLabelsOf(SettingsItem item, SettingsContext context) {
   if (item is SettingsSegmentedItem) {
     return <String>[
-      for (final SettingsSegmentOption<dynamic> option in item.options)
+      for (final SettingsSegmentOption<dynamic> option in item.optionsFor(
+        context,
+      ))
         option.label,
     ];
   }

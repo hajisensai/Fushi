@@ -45,6 +45,7 @@ void main() {
 
     test('顺序键随模块开关一起是设备本地键（不进备份 / Profile）', () {
       expect(ModuleId.devicePrefKeys, contains(ModuleId.orderPrefKey));
+      expect(ModuleId.devicePrefKeys, contains(ModuleId.startupPrefKey));
       expect(ModuleId.devicePrefKeys, containsAll(ModuleId.allPrefKeys));
     });
   });

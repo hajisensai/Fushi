@@ -1481,11 +1481,26 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('current_home_tab_index', index);
   }
 
-  bool get startupDefaultDictionaryTab =>
-      getPref('startup_default_dictionary_tab', defaultValue: false) as bool;
+  /// 旧开关「启动时打开查词」的持久化键，已由 [ModuleId.startupPrefKey] 取代。
+  /// 只读不写：[ModuleId.startupPrefKey] 从未写过时据此迁移（开着 = 查词）。
+  static const String legacyStartupDictionaryTabKey =
+      'startup_default_dictionary_tab';
 
-  Future<void> setStartupDefaultDictionaryTab(bool value) async {
-    await setPref('startup_default_dictionary_tab', value);
+  /// 启动页模块；`null` = 默认（底栏第一个可见页）。只是用户意愿：所选模块此刻
+  /// 是否可见由 `homeInitialTab` 判，不可见时回退默认。
+  ///
+  /// 迁移：新键从未写过（`getPref` 返回 null）时读旧开关——升级前开了「启动时打开
+  /// 查词」的用户启动页 = 查词。新键一旦写过（含写成默认的空串），旧开关不再读。
+  ModuleId? get startupModule {
+    final Object? stored = getPref(ModuleId.startupPrefKey);
+    if (stored is String) return ModuleId.tryParsePrefKey(stored);
+    final bool legacyLookup =
+        getPref(legacyStartupDictionaryTabKey, defaultValue: false) as bool;
+    return legacyLookup ? ModuleId.lookup : null;
+  }
+
+  Future<void> setStartupModule(ModuleId? module) async {
+    await setPref(ModuleId.startupPrefKey, module?.prefKey ?? '');
     notifyListeners();
   }
 
