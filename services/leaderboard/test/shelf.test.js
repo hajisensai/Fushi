@@ -209,7 +209,8 @@ describe('跨用户作品匹配', () => {
     const perBatch = prepared / 16;
     console.log(`8000 entries in 16 batches: ${elapsed}ms, ${perBatch} statements/batch`);
     expect(elapsed).toBeLessThan(20000);
-    expect(perBatch).toBeLessThan(40);
+    // 封面投票（迁移 0011）每批固定多约 11 条（现票读取 + 投票 / 物化 / 清理 + 孤儿候选），仍是常数。
+    expect(perBatch).toBeLessThan(50);
     const full = await delta(env, a, { put: [entry('book', ['t:one more|'], 'one more')] });
     expect(full.status).toBe(413);
     expect(full.data.error).toBe('shelf_full');

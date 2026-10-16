@@ -5,6 +5,7 @@ import { verifyRegistration } from './auth.js';
 import { allocateDiscriminator, checkNickname } from './nickname.js';
 import { consumeCode } from './email.js';
 import { casBatch, casStatements, coverKeysOf, orphanPurgeStatements, readersDeltaStatement } from './shelf.js';
+import { accountVotes, voteStatements } from './cover_votes.js';
 import { periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia, spend } from './budget.js';
 import { publicAccount } from './views.js';
@@ -158,6 +159,9 @@ export async function deleteAccount(env, account) {
   const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null && r.counted !== 0);
   const deltas = finished.map((r) => ({ id: r.work_id, d: -1 }));
   const periodDeltas = finished.flatMap((r) => periodContributions(r.work_id, r.finished_at, r.finished_date, -1));
+  // 撤掉本账户的全部封面票（各作品随之重新物化；没人再投的候选清理掉）。
+  const votes = await accountVotes(env.DB, id, null);
+  const voteOps = [...votes].map(([w, v]) => ({ w, from: v.candidateId, cid: null, key: null, url: null }));
   const results = await casBatch(env.DB, [
     ...casStatements(env.DB, id, acc.shelf_rev),
     readersDeltaStatement(env.DB, JSON.stringify(deltas)),
@@ -179,9 +183,10 @@ export async function deleteAccount(env, account) {
       'DELETE FROM used_sigs WHERE account_id IN (SELECT key_id FROM device_keys WHERE account_id = ?1)',
     ).bind(id),
     env.DB.prepare('DELETE FROM device_keys WHERE account_id = ?1').bind(id),
+    ...voteStatements(env.DB, id, voteOps, Date.now(), !acc.hidden),
     env.DB.prepare('DELETE FROM accounts WHERE id = ?1').bind(id),
     // 只有他一个人读过的作品随之消失；别人也在架的作品（及其封面）保留。
     ...orphanPurgeStatements(env.DB, prevJson),
   ]);
-  await deleteMedia(env, [account.avatar_key, ...coverKeysOf(results[results.length - 1])]);
+  await deleteMedia(env, [account.avatar_key, ...coverKeysOf(results)]);
 }

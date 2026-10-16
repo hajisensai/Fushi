@@ -13,11 +13,13 @@ import {
   accountStatsStatements,
   casBatch,
   casStatements,
+  coverKeysOf,
   readersDeltaStatement,
   recomputeMetaStatement,
 } from './shelf.js';
 import { accountPeriodsStatements, exactWorkPeriodsStatements, periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia } from './budget.js';
+import { recountStatement, settleStatements } from './cover_votes.js';
 import { refreshSnapshots } from './snapshots.js';
 
 /**
@@ -40,6 +42,12 @@ function recountStatements(db, workIds, accountIds) {
     stmts.push(...accountStatsStatements(db, acc, null), ...accountPeriodsStatements(db, acc, null));
   }
   return stmts;
+}
+
+/** 精确重算这些作品的封面票数，再物化 + 清理（清理 RETURNING cover_key）。 */
+function coverResettleStatements(db, workIds, now) {
+  const ids = JSON.stringify(workIds);
+  return [recountStatement(db, ids, now), ...settleStatements(db, ids)];
 }
 
 /** 这些作品的全部在架账户书架版本 +1：与之交错的上传 CAS 失败、重读后重试。 */
@@ -77,17 +85,35 @@ async function recomputeMeta(env, workId) {
 
 export async function mergeWorks(env, from, into, now) {
   if (!from || !into || from === into) throw new HttpError(400, 'bad_merge');
-  const both = await env.DB.prepare('SELECT id, kind, cover_key FROM works WHERE id IN (?1, ?2)').bind(from, into).all();
+  const both = await env.DB.prepare('SELECT id, kind FROM works WHERE id IN (?1, ?2)').bind(from, into).all();
   if (both.results.length !== 2) throw new HttpError(404, 'not_found');
   if (both.results[0].kind !== both.results[1].kind) throw new HttpError(400, 'kind_mismatch');
-  const fromRow = both.results.find((r) => r.id === from);
   // 只有两边都在架的账户计分会变（两行并成一行）；其余账户只是换了作品 id，计分不变。
   const dup = await env.DB.prepare(
     'SELECT account_id FROM shelf WHERE work_id = ?1 AND account_id IN (SELECT account_id FROM shelf WHERE work_id = ?2)',
   ).bind(from, into).all();
-  await env.DB.batch([
+  const results = await env.DB.batch([
     bumpRevStatement(env.DB, [from, into]),
     env.DB.prepare('UPDATE work_aliases SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
+    // 封面票：两边都投过的账户保留目标作品上的那票；同一 URL 的候选并成一个（票转到目标那边）；
+    // 其余候选与票整体迁到目标作品，随后精确重算、重新物化。
+    env.DB.prepare(
+      'DELETE FROM cover_votes WHERE work_id = ?1 AND account_id IN (SELECT account_id FROM cover_votes WHERE work_id = ?2)',
+    ).bind(from, into),
+    env.DB.prepare(
+      `UPDATE cover_votes SET candidate_id = (
+         SELECT c2.id FROM cover_candidates c1 JOIN cover_candidates c2 ON c2.work_id = ?2 AND c2.cover_url = c1.cover_url
+         WHERE c1.id = cover_votes.candidate_id)
+       WHERE work_id = ?1 AND candidate_id IN (
+         SELECT c1.id FROM cover_candidates c1 JOIN cover_candidates c2 ON c2.work_id = ?2 AND c2.cover_url = c1.cover_url
+         WHERE c1.work_id = ?1)`,
+    ).bind(from, into),
+    env.DB.prepare(
+      `DELETE FROM cover_candidates WHERE work_id = ?1 AND cover_url IN (
+         SELECT cover_url FROM cover_candidates WHERE work_id = ?2 AND cover_url IS NOT NULL)`,
+    ).bind(from, into),
+    env.DB.prepare('UPDATE cover_votes SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
+    env.DB.prepare('UPDATE cover_candidates SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     // 同一账户两边都有：与上报合并规则一致——读完时刻取较晚者，字数/时长累加。
     env.DB.prepare(
       `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at)
@@ -112,12 +138,13 @@ export async function mergeWorks(env, from, into, now) {
        WHERE id = ?2`,
     ).bind(from, into),
     env.DB.prepare('DELETE FROM works WHERE id = ?1').bind(from),
+    ...coverResettleStatements(env.DB, [into], now),
     ...recountStatements(env.DB, [from, into], dup.results.map((r) => r.account_id)),
     env.DB.prepare('UPDATE accounts SET shelf_count = (SELECT COUNT(*) FROM shelf s WHERE s.account_id = accounts.id) WHERE id IN (SELECT value FROM json_each(?1))')
       .bind(JSON.stringify(dup.results.map((r) => r.account_id))),
   ]);
-  const kept = await env.DB.prepare('SELECT cover_key FROM works WHERE id = ?1').bind(into).first();
-  if (fromRow.cover_key && kept.cover_key !== fromRow.cover_key) await deleteMedia(env, fromRow.cover_key);
+  // 来源作品的封面都已是候选（迁移 0011 回填）、随候选迁到目标作品；落选且无票的由清理语句交回。
+  await deleteMedia(env, coverKeysOf(results));
   await recomputeMeta(env, into);
   await refreshSnapshots(env, now);
 }
@@ -132,7 +159,7 @@ export async function splitWork(env, ref, now) {
   const old = await env.DB.prepare('SELECT * FROM works WHERE id = ?1').bind(alias.work_id).first();
   if (!old) throw new HttpError(404, 'not_found');
   const newId = randomId(12);
-  await env.DB.batch([
+  const splitResults = await env.DB.batch([
     env.DB.prepare(
       'INSERT INTO works (id, kind, title, author, nsfw, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
     ).bind(newId, old.kind, old.title, old.author, old.nsfw, now),
@@ -145,9 +172,16 @@ export async function splitWork(env, ref, now) {
          WHERE r.value = ?1 OR EXISTS (SELECT 1 FROM work_aliases a WHERE a.ref = r.value AND a.work_id = ?2)
          ORDER BY r.key LIMIT 1) = ?1`,
     ).bind(ref, old.id, newId),
+    // 迁走的账户在原作品上的封面票随之作废（它们的客户端会对新作品重新投票）。
+    env.DB.prepare(
+      `DELETE FROM cover_votes WHERE work_id = ?1
+         AND NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = ?1 AND s.account_id = cover_votes.account_id)`,
+    ).bind(old.id),
+    ...coverResettleStatements(env.DB, [old.id], now),
     // 拆分只是把行换个作品 id（同 kind、同读完时刻），账户计分不变，只重算两部作品。
     ...recountStatements(env.DB, [newId, old.id], []),
   ]);
+  await deleteMedia(env, coverKeysOf(splitResults));
   await recomputeMeta(env, newId);
   await recomputeMeta(env, old.id);
   await refreshSnapshots(env, now);
@@ -166,15 +200,20 @@ export async function setAccountHidden(env, accountId, hidden, now) {
     'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL AND counted = 1',
   ).bind(accountId).all();
   const d = hidden ? -1 : 1;
+  // 隐藏账户的封面票照记、不计数：它投过的作品精确重算并重新物化。
+  const voted = await env.DB.prepare('SELECT work_id FROM cover_votes WHERE account_id = ?1').bind(accountId).all();
+  const votedWorks = voted.results.map((x) => x.work_id);
   // CAS：与本账户并发上传交错时整批回滚（409），管理员重试即可——否则上传用的旧 hidden 会让读者数重复计入。
-  await casBatch(env.DB, [
+  const results = await casBatch(env.DB, [
     ...casStatements(env.DB, accountId, acc.shelf_rev),
     env.DB.prepare('UPDATE accounts SET hidden = ?2 WHERE id = ?1').bind(accountId, hidden ? 1 : 0),
+    ...(votedWorks.length ? coverResettleStatements(env.DB, votedWorks, now) : []),
     readersDeltaStatement(env.DB, JSON.stringify(finished.results.map((x) => ({ id: x.work_id, d })))),
     ...workPeriodsDeltaStatements(env.DB, JSON.stringify(
       finished.results.flatMap((x) => periodContributions(x.work_id, x.finished_at, x.finished_date, d)),
     )),
   ]);
+  await deleteMedia(env, coverKeysOf(results));
   await refreshSnapshots(env, now);
 }
 
@@ -231,13 +270,28 @@ export async function handleAdmin(env, request, path, body, now) {
     const locked = title !== work.title || author !== work.author ? 1 : work.locked;
     const nsfw = typeof body.nsfw === 'boolean' ? (body.nsfw ? 1 : 0) : work.nsfw;
     const clear = body.clearCover === true;
-    await env.DB.prepare(
+    const stmts = [];
+    if (clear) {
+      // 清掉的是「当前封面」这一个候选及投给它的票；其余候选按票数顶上（都没票则作品无封面）。
+      // 投过这张图的客户端不会自动重投同一张（本机记着已投过），要换封面得本地先换。
+      const current = `SELECT id FROM cover_candidates WHERE work_id = ?1
+                       AND (cover_key = ?2 OR cover_url = ?3)`;
+      stmts.push(
+        env.DB.prepare(`DELETE FROM cover_votes WHERE candidate_id IN (${current})`)
+          .bind(work.id, work.cover_key, work.cover_url),
+        env.DB.prepare(`DELETE FROM cover_candidates WHERE id IN (${current})`)
+          .bind(work.id, work.cover_key, work.cover_url),
+      );
+    }
+    stmts.push(env.DB.prepare(
       `UPDATE works SET title = ?2, author = ?3, locked = ?4, nsfw = ?5,
          cover_url = CASE WHEN ?6 THEN NULL ELSE cover_url END,
          cover_key = CASE WHEN ?6 THEN NULL ELSE cover_key END
        WHERE id = ?1`,
-    ).bind(work.id, title, author, locked, nsfw, clear ? 1 : 0).run();
-    if (clear && work.cover_key) await deleteMedia(env, work.cover_key);
+    ).bind(work.id, title, author, locked, nsfw, clear ? 1 : 0));
+    if (clear) stmts.push(...coverResettleStatements(env.DB, [work.id], now));
+    const results = await env.DB.batch(stmts);
+    if (clear) await deleteMedia(env, [work.cover_key, ...coverKeysOf(results)]);
     return json({ ok: true });
   }
   throw new HttpError(404, 'not_found');

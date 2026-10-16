@@ -589,28 +589,36 @@ class FriendList {
   };
 }
 
-/// 上报响应里一条 put 条目（下标 [i]）落到的作品，以及它是否缺封面（缺则可补传缩略图）。
+/// 上报响应里一条 put 条目（下标 [i]）落到的作品。
+///
+/// [needsCover] = 作品还没有任何封面（旧协议语义）。[coverVote] = 处理完这批后本账户对该作品的
+/// 封面票型：`'url'`（投给了条目带的白名单 coverUrl）/ `'hash'`（投给了上传的缩略图）/ null
+/// （没投票，或服务端是不认封面投票的旧版本）。
 class UploadedWork {
   const UploadedWork({
     required this.i,
     required this.workId,
     required this.needsCover,
+    this.coverVote,
   });
 
   factory UploadedWork.fromJson(JsonMap j) => UploadedWork(
     i: _int(j['i']),
     workId: j['workId'] as String,
     needsCover: j['needsCover'] == true,
+    coverVote: j['coverVote'] as String?,
   );
 
   final int i;
   final String workId;
   final bool needsCover;
+  final String? coverVote;
 
   JsonMap toJson() => <String, dynamic>{
     'i': i,
     'workId': workId,
     'needsCover': needsCover,
+    if (coverVote != null) 'coverVote': coverVote,
   };
 }
 
