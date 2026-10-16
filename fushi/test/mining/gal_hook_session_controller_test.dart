@@ -715,11 +715,9 @@ void main() {
         isTrue,
       );
       expect(loopback.startCalls, 1);
-      expect(
-        engine.rememberedNativePolicies,
-        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.allow],
-        reason: '只有 full 会话可在 injector start 前记住 allow',
-      );
+      expect(engine.rememberedNativePolicies, <GalNativeLoopbackPolicy>[
+        GalNativeLoopbackPolicy.allow,
+      ], reason: '只有 full 会话可在 injector start 前记住 allow');
       expect(controller.state.audioBackend, GalHookAudioBackend.systemLoopback);
 
       controller.setAudioFallbackPolicy(GalAudioFallbackPolicy.cleanOnly);
@@ -917,11 +915,9 @@ void main() {
           isTrue,
         );
         expect(controller.state.audioFallbackPolicy, policy);
-        expect(
-          engine.rememberedNativePolicies,
-          <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
-          reason: '$policy 必须在 injector start 前把 injected loopback 置 deny',
-        );
+        expect(engine.rememberedNativePolicies, <GalNativeLoopbackPolicy>[
+          GalNativeLoopbackPolicy.deny,
+        ], reason: '$policy 必须在 injector start 前把 injected loopback 置 deny');
         expect(controller.state.audioBackend, GalHookAudioBackend.gameResource);
         expect(
           loopback.startCalls,
@@ -2129,11 +2125,9 @@ void main() {
         sentence: entry.text,
         outputExtension: 'aac',
       );
-      expect(
-        engine.utteranceTimestamps,
-        <int>[654321],
-        reason: 'mining reuses the exact cached utterance for this line',
-      );
+      expect(engine.utteranceTimestamps, <int>[
+        654321,
+      ], reason: 'mining reuses the exact cached utterance for this line');
 
       await controller.close();
       endpoints.dispose();
@@ -2788,6 +2782,75 @@ void main() {
     expect(rows, hasLength(1));
     // 5（首句去标点）+ 0（重发）+ 5（ありがとう）；外部行被单计数源门挡下。
     expect(rows.single.chars, 10);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  // 反馈 LUgHjyc8By：快进流与 Backlog 回看的台词不进 study_segments。
+  test('LUgHjyc8By：hook 快进连发与回看重复台词不计入字数，正常节奏照计', () async {
+    final FushiDatabase db = await _openDbWithLibraryGame();
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    final List<GalHookedLine> lines = <GalHookedLine>[
+      const GalHookedLine(
+        seq: 1,
+        timestampMs: 1000,
+        text: 'ゆっくり読む台詞', // 8 字，停留 4s
+        threadId: 1,
+        hookName: 'Unity',
+      ),
+      // Ctrl 跳过：hook 时间戳每 40ms 一行。
+      for (int i = 0; i < 10; i++)
+        GalHookedLine(
+          seq: 2 + i,
+          timestampMs: 5000 + i * 40,
+          text: '飛ばした台詞${'あいうえおかきくけこ'[i]}だよ',
+          threadId: 1,
+          hookName: 'Unity',
+        ),
+      const GalHookedLine(
+        seq: 20,
+        timestampMs: 5400, // 快进最后一行也只停了 40ms
+        text: '止めて読む', // 5 字，停留 4s
+        threadId: 1,
+        hookName: 'Unity',
+      ),
+      // Backlog 回看：旧台词再进来一次。
+      const GalHookedLine(
+        seq: 21,
+        timestampMs: 10000,
+        text: 'ゆっくり読む台詞',
+        threadId: 1,
+        hookName: 'Unity',
+      ),
+    ];
+    final _FakeEngineSource engine = _FakeEngineSource(
+      pairedBytes: Uint8List(0),
+      audioFormat: null,
+      textReady: true,
+      polledLines: lines,
+    );
+    final GalHookSessionController controller = _buildAttachedLibraryController(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      db: db,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 8, pid: 909, title: 'サノバウィッチ'),
+    );
+    await controller.selectTextThread(1);
+    for (int i = 0; i < 80 && service.entries.length < lines.length; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(service.entries, hasLength(lines.length));
+
+    await controller.stopCapture();
+    final List<StudySegmentRow> rows = await db.getStudySegments();
+    expect(rows, hasLength(1));
+    expect(rows.single.chars, 8 + 5, reason: '快进的 10 行与回看的重复行一字不计');
 
     await controller.close();
     endpoints.dispose();
@@ -3475,11 +3538,9 @@ void _bug950Guard() {
       '_pollThreadPreviews',
       '_consumeTextLane',
     ], reason: 'v12 的线程预览必须先于文本环轮询');
-    expect(
-      awaitedIn(consumeAt, consumeEnd),
-      <String>['engine.pollText'],
-      reason: 'BUG-1063 仍要求语音抓取走 _scheduleLineAudioAttach 的后台队列',
-    );
+    expect(awaitedIn(consumeAt, consumeEnd), <String>[
+      'engine.pollText',
+    ], reason: 'BUG-1063 仍要求语音抓取走 _scheduleLineAudioAttach 的后台队列');
 
     final int attachAt = body.indexOf('Future<void> _attachLineAudio(');
     expect(attachAt, greaterThan(0), reason: '_attachLineAudio 不存在，守卫需更新');
@@ -3840,11 +3901,9 @@ void _bug950Guard() {
 
       // 退避到期后自动重试，成功即把音源升级回引擎，不再停在整机混音。
       await waitForEvent(controller, 'engine.attach_recovered');
-      expect(
-        recovered.rememberedNativePolicies,
-        <GalNativeLoopbackPolicy>[GalNativeLoopbackPolicy.deny],
-        reason: 'retry 必须读取切换后的策略，不能复用首次 attach 的 allow',
-      );
+      expect(recovered.rememberedNativePolicies, <GalNativeLoopbackPolicy>[
+        GalNativeLoopbackPolicy.deny,
+      ], reason: 'retry 必须读取切换后的策略，不能复用首次 attach 的 allow');
       expect(controller.state.audioBackend, GalHookAudioBackend.enginePcm);
       expect(controller.state.phase, GalHookSessionPhase.waitingSignals);
       expect(controller.state.injectorFailure, GalHookInjectorFailure.none);
