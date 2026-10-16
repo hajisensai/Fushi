@@ -1,0 +1,234 @@
+<!--
+  Fushi 卡片模板 · 背面（初版，尚未注册进 app）。
+  字段名与 Lapis（lapis_note_type.dart）逐字一致；唯一的扩展字段是
+  SentenceTranslation（Lapis 没有，为空时整块不出现，Lapis 笔记迁入时留空即可）。
+  界面上的少量标签文字不写死在模板里，取宿主注入的 CSS 变量（见 styling.css「标签文字」）。
+  脚本只做三件事：音调图、释义按词典分组 / 去重、图片放大。脚本不跑时卡面照常可读。
+  音调解析与分类改写自 Lapis v1.7.0（donkuri/lapis，GPL-3.0）。
+-->
+<div class="fc fc-back" lang="ja">
+  <header class="fc-head">
+    <div class="fc-head-main">
+      <div class="fc-term">{{#ExpressionFurigana}}{{furigana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{Expression}}{{/ExpressionFurigana}}</div>
+      <div class="fc-reading-row">
+        <span class="fc-reading">{{#ExpressionFurigana}}{{kana:ExpressionFurigana}}{{/ExpressionFurigana}}{{^ExpressionFurigana}}{{ExpressionReading}}{{/ExpressionFurigana}}</span>
+        {{#PitchPosition}}<span class="fc-pitch-tags">{{PitchPosition}}</span>{{/PitchPosition}}
+        {{#ExpressionAudio}}<span class="fc-audio">{{ExpressionAudio}}</span>{{/ExpressionAudio}}
+        {{#FreqSort}}<span class="fc-chip fc-chip--freq">{{FreqSort}}</span>{{/FreqSort}}
+      </div>
+    </div>
+    {{#Picture}}<figure class="fc-picture {{Tags}}">{{Picture}}</figure>{{/Picture}}
+  </header>
+
+  {{#Sentence}}
+  <section class="fc-sentence-block">
+    <div class="fc-sentence-body">
+      <div class="fc-sentence">{{#SentenceFurigana}}{{furigana:SentenceFurigana}}{{/SentenceFurigana}}{{^SentenceFurigana}}{{furigana:Sentence}}{{/SentenceFurigana}}</div>
+      {{#SentenceTranslation}}<div class="fc-translation" lang="">{{SentenceTranslation}}</div>{{/SentenceTranslation}}
+    </div>
+    {{#SentenceAudio}}<span class="fc-audio">{{SentenceAudio}}</span>{{/SentenceAudio}}
+  </section>
+  {{/Sentence}}
+
+  <section class="fc-defs">
+    {{#SelectionText}}<blockquote class="fc-selection">{{SelectionText}}</blockquote>{{/SelectionText}}
+    {{#DefinitionPicture}}<div class="fc-def-picture">{{DefinitionPicture}}</div>{{/DefinitionPicture}}
+    {{#MainDefinition}}<div class="fc-gloss fc-gloss--main">{{MainDefinition}}</div>{{/MainDefinition}}
+    {{#Glossary}}
+    <details class="fc-more"{{^MainDefinition}} open{{/MainDefinition}}>
+      <summary class="fc-more-label"><span class="fc-more-title"></span><span class="fc-more-count"></span></summary>
+      <div class="fc-gloss fc-gloss--all">{{Glossary}}</div>
+    </details>
+    {{/Glossary}}
+  </section>
+
+  {{#Frequency}}
+  <section class="fc-meta-row">
+    <span class="fc-meta-label fc-meta-label--freq"></span>
+    <div class="fc-freq-list">{{Frequency}}</div>
+  </section>
+  {{/Frequency}}
+  {{#MiscInfo}}
+  <section class="fc-meta-row">
+    <span class="fc-meta-label fc-meta-label--source"></span>
+    <div class="fc-source">{{MiscInfo}}</div>
+  </section>
+  {{/MiscInfo}}
+
+  <span class="fc-src" data-fc="pitch-categories" hidden>{{text:PitchCategories}}</span>
+</div>
+
+<script>
+  (function () {
+    var root = document.querySelector(".fc-back");
+    if (!root) return;
+
+    /* ---------- 音调图（读音上画高低线，按类型着色） ---------- */
+    var SMALL = "ァィゥェォャュョヮぁぃぅぇぉゃゅょゎ゙゚°";
+    function morae(kana) {
+      var out = [];
+      for (var i = 0; i < kana.length; i++) {
+        var c = kana[i];
+        if (i + 1 < kana.length && SMALL.indexOf(kana[i + 1]) >= 0) {
+          c += kana[i + 1];
+          i++;
+        }
+        out.push(c);
+      }
+      return out;
+    }
+    function toHira(s) {
+      return s.replace(/[ァ-ヶ]/g, function (ch) {
+        return String.fromCharCode(ch.charCodeAt(0) - 0x60);
+      });
+    }
+    function pitchType(position, moraCount, categories) {
+      if (position === 0) return "heiban";
+      var cats = categories.match(/heiban|atamadaka|nakadaka|odaka|kifuku/g) || [];
+      if (cats.indexOf("kifuku") >= 0) return "kifuku";
+      if (position === 1) return "atamadaka";
+      return position >= moraCount ? "odaka" : "nakadaka";
+    }
+    /* 「[0]」这类数字，或「カヨイマ＼ス」这类带降调符的假名写法。 */
+    function parsePitch(token, kana) {
+      if (/^\d+$/.test(token)) return Number(token);
+      var marked = token.replace(/[・]/g, "");
+      var plain = marked.replace(/[\\＼ꜜ]/g, "");
+      if (toHira(plain) !== toHira(kana)) return null;
+      var cut = marked.search(/[\\＼ꜜ]/);
+      return cut < 0 ? 0 : morae(marked.slice(0, cut)).length;
+    }
+    function drawPitch() {
+      var readingEl = root.querySelector(".fc-reading");
+      var tagsEl = root.querySelector(".fc-pitch-tags");
+      if (!readingEl || !tagsEl) return;
+      var kana = readingEl.textContent.trim();
+      if (!kana) return;
+      var tokens = tagsEl.textContent.match(/\d+|[ぁ-ヺー\\＼ꜜ・]+/g) || [];
+      var positions = [];
+      tokens.forEach(function (t) {
+        var p = parsePitch(t, kana);
+        if (p !== null && positions.indexOf(p) < 0) positions.push(p);
+      });
+      if (!positions.length) return;
+      var m = morae(kana);
+      var cats = (root.querySelector('[data-fc="pitch-categories"]') || {}).textContent || "";
+      var p = positions[0];
+      var type = pitchType(p, m.length, cats);
+      root.setAttribute("data-fc-pitch", type);
+      var html = "";
+      m.forEach(function (mora, i) {
+        var high = p === 0 ? i > 0 : p === 1 ? i === 0 : i > 0 && i < p;
+        var drop = p > 0 && i === p - 1;
+        html += '<span class="fc-mora" data-pitch="' + (high ? "high" : "low") + '"' +
+          (drop ? ' data-drop="1"' : "") + ">" + mora + '<span class="fc-mora-line"></span></span>';
+      });
+      if (p > 0 && p >= m.length) html += '<span class="fc-mora fc-mora--tail" data-pitch="low"><span class="fc-mora-line"></span></span>';
+      readingEl.innerHTML = html;
+      readingEl.classList.add("fc-reading--graph");
+      tagsEl.innerHTML = positions.map(function (x) {
+        return '<span class="fc-pitch-num" data-type="' + pitchType(x, m.length, cats) + '">' + x + "</span>";
+      }).join("");
+    }
+
+    /* ---------- 释义：同一词典的相邻条目收进一张卡（与查词弹窗同形） ---------- */
+    function tagsFromLabel(label, dict) {
+      var t = (label || "").trim().replace(/^\(|\)$/g, "");
+      if (t === dict) return [];
+      if (t.slice(-(dict.length + 2)) === ", " + dict) t = t.slice(0, -(dict.length + 2));
+      return t ? t.split(", ") : [];
+    }
+    function groupGlossary(container, open, skip) {
+      var made = 0;
+      container.querySelectorAll(".yomitan-glossary").forEach(function (gl) {
+        var lists = Array.prototype.filter.call(gl.children, function (c) { return c.tagName === "OL"; });
+        if (!lists.length) return;
+        var wrap = document.createElement("div");
+        wrap.className = "fc-dicts";
+        var group = null, current = null;
+        lists.forEach(function (ol) {
+          Array.prototype.slice.call(ol.children).forEach(function (li) {
+            var dict = li.getAttribute("data-dictionary") || "";
+            if (skip && skip.indexOf(dict) >= 0) { li.remove(); return; }
+            if (dict !== current || !group) {
+              current = dict;
+              group = document.createElement("details");
+              group.className = "fc-dict";
+              group.setAttribute("data-fc-dict", dict);
+              if (open) group.open = true;
+              var sum = document.createElement("summary");
+              sum.className = "fc-dict-label";
+              var name = document.createElement("span");
+              name.className = "fc-dict-name";
+              name.textContent = dict;
+              sum.appendChild(name);
+              group.appendChild(sum);
+              var items = document.createElement("ol");
+              items.className = "fc-dict-items";
+              group.appendChild(items);
+              wrap.appendChild(group);
+              made++;
+            }
+            var label = li.querySelector(":scope > i");
+            if (label) {
+              var tags = tagsFromLabel(label.textContent, dict);
+              var chips = document.createElement("span");
+              chips.className = "fc-tags";
+              tags.forEach(function (tag) {
+                var chip = document.createElement("span");
+                chip.className = "fc-tag";
+                chip.textContent = tag;
+                chips.appendChild(chip);
+              });
+              label.replaceWith(chips);
+            }
+            group.lastChild.appendChild(li);
+          });
+          ol.remove();
+        });
+        gl.insertBefore(wrap, gl.firstChild);
+      });
+      return made;
+    }
+    function setUpGlossary() {
+      var main = root.querySelector(".fc-gloss--main");
+      var shown = [];
+      if (main) {
+        main.querySelectorAll("li[data-dictionary]").forEach(function (li) {
+          var d = li.getAttribute("data-dictionary");
+          if (shown.indexOf(d) < 0) shown.push(d);
+        });
+        groupGlossary(main, true, null);
+      }
+      var more = root.querySelector(".fc-more");
+      var all = root.querySelector(".fc-gloss--all");
+      if (!more || !all) return;
+      var count = groupGlossary(all, !main, main ? shown : null);
+      if (main && count === 0) { more.remove(); return; }
+      more.querySelector(".fc-more-count").textContent = String(count);
+    }
+
+    /* ---------- 图片：点按放大，再点关闭 ---------- */
+    function setUpLightbox() {
+      var imgs = root.querySelectorAll(".fc-picture img, .fc-def-picture img");
+      if (!imgs.length) return;
+      var box = document.createElement("div");
+      box.className = "fc-lightbox";
+      box.addEventListener("click", function () { box.classList.remove("fc-lightbox--open"); });
+      root.appendChild(box);
+      imgs.forEach(function (img) {
+        img.addEventListener("click", function () {
+          box.innerHTML = "";
+          var big = document.createElement("img");
+          big.src = img.currentSrc || img.src;
+          box.appendChild(big);
+          box.classList.add("fc-lightbox--open");
+        });
+      });
+    }
+
+    [drawPitch, setUpGlossary, setUpLightbox].forEach(function (step) {
+      try { step(); } catch (e) { if (window.console) console.error(e); }
+    });
+  })();
+</script>
