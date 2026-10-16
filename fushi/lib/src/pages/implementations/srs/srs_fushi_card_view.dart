@@ -15,11 +15,13 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
@@ -783,22 +785,34 @@ class _SrsCardStyle {
       ? null
       : Locale(languageCode!);
 
-  /// 字体：字体库「复习卡片」链在前，其后交给引擎按 locale 回落。
+  /// 内容文字的字体链：字体库「复习卡片」链在前，其后按卡片内容语言接受控的 CJK
+  /// 链（与释义区 WebView、视频字幕同一张平台字体表）。只设 `locale` 不够——
+  /// Windows 上引擎回落不看 locale、按系统字体序落到微软雅黑，日文汉字会变中文
+  /// 字形，且与旁边 WebView 释义区的字体对不上。卡片内容几乎总是 CJK，语言缺省时
+  /// 用按内容分布排序（日文在前）的兜底链，而不是交给引擎随机挑。
+  late final List<String> _contentFamilies = contentFontFamilies(
+    languageTag: languageCode,
+    platform: defaultTargetPlatform,
+    customFamilies: fontFamilies,
+    fallbackWhenUnknown: true,
+  );
+
   TextStyle body({
     double size = 16,
     double? height,
     Color? color,
     bool ui = false,
-  }) => TextStyle(
-    fontSize: size,
-    height: height ?? 1.6 * appearance.lineSpacing,
-    color: color ?? scheme.onSurface,
-    fontFamily: fontFamilies.firstOrNull,
-    fontFamilyFallback: fontFamilies.length > 1
-        ? fontFamilies.sublist(1)
-        : null,
-    locale: ui ? null : _locale,
-  );
+  }) {
+    final List<String> families = ui ? fontFamilies : _contentFamilies;
+    return TextStyle(
+      fontSize: size,
+      height: height ?? 1.6 * appearance.lineSpacing,
+      color: color ?? scheme.onSurface,
+      fontFamily: families.firstOrNull,
+      fontFamilyFallback: families.length > 1 ? families.sublist(1) : null,
+      locale: ui ? null : _locale,
+    );
+  }
 
   TextStyle term({required double size}) =>
       body(size: size, height: 1.25).copyWith(fontWeight: FontWeight.w600);

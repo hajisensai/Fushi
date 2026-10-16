@@ -1,6 +1,8 @@
 // Fushi 卡片混合渲染：原生区块 + 释义 WebView（测试里由 srsCardFaceBuilderProvider 换成占位）。
 // 钉住：正面不建 WebView、区块顺序跟单一真相源 FushiCardBlock 走、宽窄两种版式、外观开关、
 // 内容高度撑开释义区、点击卡 Enter 翻、MD3 / Apple 两套设计系统都不抛。
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,6 +127,32 @@ void main() {
       find.byKey(const ValueKey<String>('srs-fushi-front-term')),
       findsOne,
     );
+  });
+
+  testWidgets('Windows：日文内容走日文字体链（不交给引擎回落到微软雅黑）', (WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await pump(tester, answer: true);
+      for (final String key in <String>[
+        'srs-fushi-term',
+        'srs-fushi-sentence',
+      ]) {
+        final TextStyle style = tester
+            .widget<SrsRubyText>(find.byKey(ValueKey<String>(key)))
+            .style;
+        expect(style.fontFamily, 'Yu Gothic UI', reason: key);
+        final List<String> fallback = style.fontFamilyFallback!;
+        // 日文链完整排在任何中文字体之前：混进来的中文才落到受控的中文 face。
+        expect(
+          fallback.indexOf('Meiryo'),
+          lessThan(fallback.indexOf('Microsoft YaHei UI')),
+          reason: key,
+        );
+        expect(style.locale, const Locale('ja'), reason: key);
+      }
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   for (final bool apple in <bool>[false, true]) {
