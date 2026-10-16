@@ -12,21 +12,23 @@ void main() {
   tearDown(() => db.close());
 
   Future<int> addSource(String root) => db.insertMediaSource(
-        MediaSourcesCompanion.insert(
-          label: root,
-          mediaKind: 'video',
-          rootPath: root,
-          createdAt: 1,
-        ),
-      );
+    MediaSourcesCompanion.insert(
+      label: root,
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1,
+    ),
+  );
 
   Future<void> addVideo(String uid, String path, int sourceId) =>
-      db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(uid),
-        title: Value<String>(uid),
-        videoPath: Value<String>(path),
-        sourceId: Value<int?>(sourceId),
-      ));
+      db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>(uid),
+          videoPath: Value<String>(path),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
 
   test('按作品去重且混来源合集只携带当前来源成员', () async {
     final int sourceA = await addSource('D:/A');
@@ -45,20 +47,27 @@ void main() {
     }
 
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceA))!;
-    final List<VideoSourceScrapeWork> work =
-        await VideoSourceWorkPlanner(db).plan(source);
+    final List<VideoSourceScrapeWork> work = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
 
     expect(work, hasLength(2));
-    final VideoSourceScrapeWork show =
-        work.singleWhere((VideoSourceScrapeWork item) => item.isEpisodic);
+    final VideoSourceScrapeWork show = work.singleWhere(
+      (VideoSourceScrapeWork item) => item.isEpisodic,
+    );
     expect(show.collection!.id, collectionId);
-    expect(show.members.map((VideoBookRow row) => row.bookUid),
-        <String>['a-01', 'a-02']);
-    expect(show.members.every((VideoBookRow row) => row.sourceId == sourceA),
-        isTrue);
+    expect(show.members.map((VideoBookRow row) => row.bookUid), <String>[
+      'a-01',
+      'a-02',
+    ]);
+    expect(
+      show.members.every((VideoBookRow row) => row.sourceId == sourceA),
+      isTrue,
+    );
 
-    final VideoSourceScrapeWork movie =
-        work.singleWhere((VideoSourceScrapeWork item) => !item.isEpisodic);
+    final VideoSourceScrapeWork movie = work.singleWhere(
+      (VideoSourceScrapeWork item) => !item.isEpisodic,
+    );
     expect(movie.members.single.bookUid, 'movie-a');
   });
 
@@ -66,10 +75,10 @@ void main() {
     final int sourceId = await addSource('D:/A');
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
     VideoSourceScrapeWork work(String title) => VideoSourceScrapeWork(
-          source: source,
-          title: title,
-          members: const <VideoBookRow>[],
-        );
+      source: source,
+      title: title,
+      members: const <VideoBookRow>[],
+    );
     expect(work('特典 S00E01').hasIdentifiableTitle, isFalse);
     expect(work('S00E01').hasIdentifiableTitle, isFalse);
     expect(work('SP S01E02').hasIdentifiableTitle, isFalse);
@@ -104,17 +113,21 @@ void main() {
     await db.addToCollection(collectionId, MediaKind.video, 'movie-b');
 
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final List<VideoSourceScrapeWork> works =
-        await VideoSourceWorkPlanner(db).plan(source);
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
 
     expect(works, hasLength(2));
     expect(
-        works.every((VideoSourceScrapeWork work) => !work.isEpisodic), isTrue);
+      works.every((VideoSourceScrapeWork work) => !work.isEpisodic),
+      isTrue,
+    );
   });
 
   test('re0 方括号 PV、菜单与迷你动画不产生独立刮削作品', () async {
     final int sourceId = await addSource('D:/smb/re0');
-    const String root = 'D:/smb/re0/[DBD-Raws][Re：从零开始的异世界生活 第三季]'
+    const String root =
+        'D:/smb/re0/[DBD-Raws][Re：从零开始的异世界生活 第三季]'
         '[01-16TV全集+SP][1080P][BDRip]';
     await addVideo(
       'main-01',
@@ -160,14 +173,44 @@ void main() {
     }
 
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final List<VideoSourceScrapeWork> works =
-        await VideoSourceWorkPlanner(db).plan(source);
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
 
     expect(works, hasLength(1));
     expect(works.single.collection?.id, collectionId);
     expect(
       works.single.members.map((VideoBookRow row) => row.bookUid),
       <String>['main-01', 'main-02'],
+    );
+  });
+
+  test('yt-dlp 默认命名的 YouTube 视频不进刮削计划，同来源番剧照常', () async {
+    final int sourceId = await addSource('D:/影视');
+    await addVideo(
+      'yt-01',
+      'D:/影视/vlog/【韓国ソウル旅行①】女子2人で食べて買って [dQw4w9WgXcQ].mp4',
+      sourceId,
+    );
+    await addVideo(
+      'yt-02',
+      'D:/影视/vlog/北京ユニバに初めて行ったら [jNQXAC9IVRw].f137.mp4',
+      sourceId,
+    );
+    await addVideo(
+      'anime-01',
+      'D:/影视/[SubsPlease] Sousou no Frieren - 01 (1080p) [F02B9CEE].mkv',
+      sourceId,
+    );
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
+      <String>['anime-01'],
     );
   });
 }
