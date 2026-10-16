@@ -1255,36 +1255,38 @@ jobs:
       # Disable it until the native_splash chain is satisfiable / we adopt SPM. (TODO-1129)
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
-      # 互联 P2P 隧道（iroh）iOS 静态库：iOS 不能加载自带 dylib，以 staticlib 经
-      # -force_load 链进 Runner（native/fushi_p2p/build_ios_staticlib.sh 生成的 xcconfig
-      # 由 fushi/ios/Flutter/*.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_P2P_LDFLAGS)）。
+      # iOS 伞形 Rust 静态库（互联 P2P 隧道 fushi_p2p + SRS 排程内核 fushi_fsrs 合一，std 只有
+      # 一份）：iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进 Runner
+      # （native/fushi_ios_umbrella/build_ios_staticlib.sh 生成的 xcconfig 由
+      # fushi/ios/Flutter/*.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_IOS_NATIVE_LDFLAGS)）。
+      # 两份单独的 Rust .a 同时 -force_load 会撞重复的 std 符号，所以 iOS 只链这一份。
       # 这里是设备构建，只编 device 切片。持久库存的是整个 prebuilt/ios（.a + 系统库清单 +
       # 生成的 xcconfig），命中时跳过 Rust；出包后的 Runner 符号核对照跑。
-      - name: Restore fushi_p2p staticlib from native artifact store
-        id: p2p_store
+      - name: Restore iOS umbrella staticlib from native artifact store
+        id: ios_native_store
         uses: ./.github/actions/native-artifact-store
         with:
           mode: restore
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
-      - name: Set up Rust (fushi_p2p, iOS device target)
-        if: steps.p2p_store.outputs.hit != 'true'
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
+      - name: Set up Rust (fushi_ios_umbrella, iOS device target)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
-      - name: Cache Rust build (fushi_p2p)
-        if: steps.p2p_store.outputs.hit != 'true'
+      - name: Cache Rust build (fushi_ios_umbrella)
+        if: steps.ios_native_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: native/fushi_p2p -> target
-          key: fushi-p2p-ios
-      - name: Build fushi_p2p (iOS device staticlib)
-        if: steps.p2p_store.outputs.hit != 'true'
+          workspaces: native/fushi_ios_umbrella -> target
+          key: fushi-ios-umbrella
+      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device)
+        if: steps.ios_native_store.outputs.hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          bash native/fushi_p2p/build_ios_staticlib.sh device
+          bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
       - name: Build iOS (debug, no codesign)
         working-directory: fushi
         run: >-
@@ -1292,7 +1294,8 @@ jobs:
       # 静态库 + -force_load 的失败形态是「链接成功、符号被 dead-strip / strip 掉」，
       # DynamicLibrary.process().lookup 在用户手里才抛。直接查 Runner 主二进制的导出表。
       # Xcode 的 debug 构建会把 app 代码放进 Runner.debug.dylib（ENABLE_DEBUG_DYLIB），有就查它。
-      - name: Verify fushi_p2p symbols are linked into Runner (iOS)
+      # 两组都查：fp2p_*（互联 P2P）与 ffsrs_*（SRS 排程内核，缺了复习页报「排程内核不可用」）。
+      - name: Verify fushi_p2p + fushi_fsrs symbols are linked into Runner (iOS)
         working-directory: fushi
         shell: bash
         run: |
@@ -1301,32 +1304,15 @@ jobs:
           bin="$app/Runner"
           if [ -f "$app/Runner.debug.dylib" ]; then bin="$app/Runner.debug.dylib"; fi
           bash ../native/fushi_p2p/verify_abi.sh "$bin" nm
-      - name: Save fushi_p2p staticlib to native artifact store
-        if: steps.p2p_store.outputs.hit != 'true'
+          bash ../native/fushi_fsrs/verify_abi.sh "$bin" nm
+      - name: Save iOS umbrella staticlib to native artifact store
+        if: steps.ios_native_store.outputs.hit != 'true'
         continue-on-error: true
         uses: ./.github/actions/native-artifact-store
         with:
           mode: save
-          name: ${{ steps.native_store.outputs.p2p }}
-          path: native/fushi_p2p/prebuilt/ios
-      # iOS 伞形静态库（fushi_p2p + fushi_fsrs 合一，std 只有一份）：Runner 目前仍只链
-      # fushi_p2p 单独那份（切换步骤见 native/fushi_fsrs/README.md「iOS」），这里只编 device
-      # 切片并核对归档同时导出 fp2p_* 与 ffsrs_*，让「伞形库在 iOS 上编不过」在 PR 上就暴露。
-      - name: Set up Rust (fushi_ios_umbrella, iOS device target)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ steps.native_store.outputs.p2p_rust }}
-          targets: aarch64-apple-ios
-      - name: Cache Rust build (fushi_ios_umbrella)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/fushi_ios_umbrella -> target
-          key: fushi-ios-umbrella
-      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device)
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
+          name: ${{ steps.native_store.outputs.ios_native }}
+          path: native/fushi_ios_umbrella/prebuilt/ios
   windows:
     needs: changes
     if: needs.changes.outputs.windows == 'true'

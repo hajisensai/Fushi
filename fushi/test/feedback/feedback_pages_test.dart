@@ -1121,7 +1121,12 @@ void main() {
 
     // 右栏里「从本机移除」：不 pop 整页，右栏退回占位。
     await tester.tap(find.byTooltip(t.feedback_detail_forget));
-    await settleIo(tester, () => f.tickets.isEmpty);
+    // 同步点是「forget 已返回」之后才发生的右栏退场，而不是 f.tickets 变空：后者在
+    // forget 改完内存时就成立，此刻落盘还没写完，测试收尾删临时目录会和它撞上。
+    await settleIo(
+      tester,
+      () => find.byType(FeedbackDetailPage).evaluate().isEmpty,
+    );
     expect(find.byType(FeedbackCenterPage), findsOneWidget);
     expect(find.byType(FeedbackDetailPage), findsNothing);
     expect(

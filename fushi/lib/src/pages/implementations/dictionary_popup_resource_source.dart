@@ -78,6 +78,20 @@ class RemoteDictionaryPopupResources implements DictionaryPopupResourceSource {
   @override
   Map<String, String> get dictionaryStyles => _styles;
 
+  /// 已收到 host 按 `stylesRevision` 门控下发的整表（[adoptHostStyles]）：指纹协议
+  /// 本身就是权威的，[prefetchStyles] 不再另走样式端点。
+  bool _revisionGated = false;
+
+  /// BUG-3425：采用查词回包随附的 host 词典样式（`FushiRemoteLookupClient
+  /// .hostDictionaryStyles`）。同一实例重复传入不算变化——WebView 按身份去重，指纹
+  /// 不变期间就不会重注入。
+  void adoptHostStyles(Map<String, String> styles) {
+    _revisionGated = true;
+    _stylesLoaded = true;
+    if (identical(styles, _styles)) return;
+    _styles = styles;
+  }
+
   /// 结果渲染前调：首查拉整套样式；之后只有结果里出现了既不在样式表、也没确认过
   /// 「对端没给它样式」的词典名才重拉（对端会话中途导入了新词典）。
   ///
@@ -93,7 +107,9 @@ class RemoteDictionaryPopupResources implements DictionaryPopupResourceSource {
       (String name) =>
           !_styles.containsKey(name) && !_knownWithoutStyle.contains(name),
     );
-    if (_stylesLoaded && !unknown) return Future<void>.value();
+    if (_revisionGated || (_stylesLoaded && !unknown)) {
+      return Future<void>.value();
+    }
     return _stylesInFlight ??= _loadStyles(
       names,
     ).whenComplete(() => _stylesInFlight = null);
