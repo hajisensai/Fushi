@@ -45,7 +45,11 @@ part 'shortcut_settings/binding_edit_dialog.part.dart';
 part 'shortcut_settings/shortcut_browser.part.dart';
 
 class ShortcutSettingsPage extends BasePage {
-  const ShortcutSettingsPage({super.key});
+  const ShortcutSettingsPage({super.key, this.initialScope});
+
+  /// 打开时预选的作用域筛选（从播放器设置面板进来时定位到「视频」）；null = 全部。
+  /// 该作用域不可见（所属模块被关掉）时忽略、照常显示全部。
+  final ShortcutScope? initialScope;
 
   @override
   BasePageState<ShortcutSettingsPage> createState() =>
@@ -353,6 +357,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     return ShortcutBindingsBrowser(
       registry: _registry,
       scopes: _visibleScopes(),
+      initialDomain: widget.initialScope,
       platform: defaultTargetPlatform,
       gamepadBrand: _gamepadBrand,
       onChanged: () async {

@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "副字幕遮蔽",
   "video_setting_secondary_subtitle_obscure_hint": "模糊或隐藏副字幕（翻译参考轨）",
   "video_setting_seek_seconds": "快进/快退步长（秒）",
+  "video_setting_shortcuts_hint": "查看并自定义播放器的键盘 / 手柄快捷键",
   "video_setting_slim_progress_bar": "底部细进度条",
   "video_setting_slim_progress_bar_hint": "控制条淡出后，在视频最下方保留一条主题色细进度条。小窗模式下它恒常显示——那里完整进度条已被收起。",
   "video_setting_speed": "播放速度",

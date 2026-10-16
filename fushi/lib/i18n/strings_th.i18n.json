@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "ซ่อนคำบรรยายรอง",
   "video_setting_secondary_subtitle_obscure_hint": "เบลอหรือซ่อนคำบรรยายรอง (คำแปล)",
   "video_setting_seek_seconds": "ระยะเลื่อนเวลา (วินาที)",
+  "video_setting_shortcuts_hint": "ดูและปรับแต่งปุ่มลัดแป้นพิมพ์และเกมแพดของเครื่องเล่น",
   "video_setting_slim_progress_bar": "แถบความคืบหน้าบางที่ด้านล่าง",
   "video_setting_slim_progress_bar_hint": "เมื่อตัวควบคุมจางหาย จะคงเส้นความคืบหน้าบางสีเน้นไว้ที่ขอบล่างสุดของวิดีโอ ในหน้าต่างเล็กจะแสดงเสมอเพราะแถบเลื่อนเต็มถูกซ่อน",
   "video_setting_speed": "ความเร็วในการเล่น",

@@ -414,6 +414,8 @@ class VideoControlBar extends StatefulWidget {
   const VideoControlBar({
     required this.entries,
     required this.moreButtonBuilder,
+    this.singleActionButtonBuilder,
+    this.onMenuOpenChanged,
     this.fill = true,
     this.clusterStyle,
     super.key,
@@ -423,6 +425,14 @@ class VideoControlBar extends StatefulWidget {
 
   /// 画「⋯」按钮：调用方负责外观（与其它控制条按钮同款），按下时调 `open`。
   final Widget Function(VoidCallback open) moreButtonBuilder;
+
+  /// 「⋯」里**只有一项**时，在「⋯」的位置直接画这一项的按钮（调用方负责外观，按下
+  /// 执行 `action.onSelected`），不再弹只有一行的菜单。null = 一项也走「⋯」菜单。
+  final Widget Function(VideoBarMenuAction action)? singleActionButtonBuilder;
+
+  /// 「⋯」菜单弹出（true）/ 关闭（false）。调用方借它在菜单开着期间按住控制条不让
+  /// 自动隐藏——菜单锚在「⋯」上，控制条一收，按钮连同锚点一起消失。
+  final ValueChanged<bool>? onMenuOpenChanged;
 
   final bool fill;
 
@@ -446,10 +456,41 @@ class _VideoControlBarState extends State<VideoControlBar> {
 
   final GlobalKey _moreButtonKey = GlobalKey(debugLabel: 'video-bar-more');
 
+  /// 菜单正开着（[VideoControlBar.onMenuOpenChanged] 已报过 true、还没报 false）。
+  bool _menuOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧前布局还没给结论，但常驻菜单项（folded）不看宽度、一定在「⋯」里：先按它们
+    // 起步，「⋯」位置首帧就画对（只有一项时直接画那一项，而不是先闪一帧「⋯」）。
+    final VideoBarPlan initial = VideoBarPlan(
+      hidden: <int>{
+        for (int i = 0; i < widget.entries.length; i++)
+          if (widget.entries[i].folded) i,
+      },
+    );
+    _focusPlan.value = initial;
+    _laidOutPlan = initial;
+  }
+
   @override
   void dispose() {
+    if (_menuOpen) {
+      _menuOpen = false;
+      widget.onMenuOpenChanged?.call(false);
+    }
     _focusPlan.dispose();
     super.dispose();
+  }
+
+  /// [plan] 收进「⋯」的条目在菜单里的那几行（按条目顺序）。
+  List<VideoBarMenuAction> _menuActions(VideoBarPlan plan) {
+    return <VideoBarMenuAction>[
+      for (int i = 0; i < widget.entries.length; i++)
+        if (plan.hidden.contains(i))
+          if (widget.entries[i].menuAction case final VideoBarMenuAction a) a,
+    ];
   }
 
   void _onLayoutPlan(VideoBarPlan plan) {
@@ -498,11 +539,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
   }
 
   Future<void> _openOverflowMenu() async {
-    final List<VideoBarMenuAction> actions = <VideoBarMenuAction>[
-      for (int i = 0; i < widget.entries.length; i++)
-        if (_laidOutPlan.hidden.contains(i))
-          if (widget.entries[i].menuAction case final VideoBarMenuAction a) a,
-    ];
+    final List<VideoBarMenuAction> actions = _menuActions(_laidOutPlan);
     final RenderObject? button = _moreButtonKey.currentContext
         ?.findRenderObject();
     final NavigatorState navigator = Navigator.of(context);
@@ -519,24 +556,52 @@ class _VideoControlBarState extends State<VideoControlBar> {
         ancestor: overlay,
       ),
     );
-    final VideoBarMenuAction? chosen = await showFushiMenu<VideoBarMenuAction>(
-      context: context,
-      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
-      items: <PopupMenuEntry<VideoBarMenuAction>>[
-        for (final VideoBarMenuAction action in actions)
-          PopupMenuItem<VideoBarMenuAction>(
-            value: action,
-            child: Row(
-              children: <Widget>[
-                FushiIcon(action.icon, size: 20),
-                const SizedBox(width: 12),
-                Flexible(child: Text(action.label)),
-              ],
+    _menuOpen = true;
+    widget.onMenuOpenChanged?.call(true);
+    final VideoBarMenuAction? chosen;
+    try {
+      chosen = await showFushiMenu<VideoBarMenuAction>(
+        context: context,
+        position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
+        items: <PopupMenuEntry<VideoBarMenuAction>>[
+          for (final VideoBarMenuAction action in actions)
+            PopupMenuItem<VideoBarMenuAction>(
+              value: action,
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(action.icon, size: 20),
+                  const SizedBox(width: 12),
+                  Flexible(child: Text(action.label)),
+                ],
+              ),
             ),
-          ),
-      ],
-    );
+        ],
+      );
+    } finally {
+      if (_menuOpen) {
+        _menuOpen = false;
+        widget.onMenuOpenChanged?.call(false);
+      }
+    }
     chosen?.onSelected();
+  }
+
+  /// 「⋯」那个槽位画什么：只剩一项且调用方给了 [VideoControlBar.singleActionButtonBuilder]
+  /// 时直接画那一项的按钮，否则画「⋯」。
+  Widget _moreSlotChild() {
+    final Widget more = widget.moreButtonBuilder(
+      () => unawaited(_openOverflowMenu()),
+    );
+    final Widget Function(VideoBarMenuAction action)? single =
+        widget.singleActionButtonBuilder;
+    if (single == null) return more;
+    return ValueListenableBuilder<VideoBarPlan>(
+      valueListenable: _focusPlan,
+      builder: (BuildContext _, VideoBarPlan plan, Widget? __) {
+        final List<VideoBarMenuAction> actions = _menuActions(plan);
+        return actions.length == 1 ? single(actions.single) : more;
+      },
+    );
   }
 
   @override
@@ -563,12 +628,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
         _slot(
           _VideoBarChildRole.more,
           -1,
-          KeyedSubtree(
-            key: _moreButtonKey,
-            child: widget.moreButtonBuilder(
-              () => unawaited(_openOverflowMenu()),
-            ),
-          ),
+          KeyedSubtree(key: _moreButtonKey, child: _moreSlotChild()),
         ),
       ],
     );

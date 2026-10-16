@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Ocultar subtítulo secundario",
   "video_setting_secondary_subtitle_obscure_hint": "Difumina u oculta el subtítulo secundario (traducción)",
   "video_setting_seek_seconds": "Segundos de salto",
+  "video_setting_shortcuts_hint": "Ver y personalizar los atajos de teclado y mando del reproductor",
   "video_setting_slim_progress_bar": "Barra de progreso fina en la parte inferior",
   "video_setting_slim_progress_bar_hint": "Cuando los controles se desvanecen, mantiene una fina línea de progreso del color de énfasis en el borde inferior del vídeo. En la ventana mini siempre se muestra, ya que allí la barra de búsqueda completa está oculta.",
   "video_setting_speed": "Velocidad de reproducción",

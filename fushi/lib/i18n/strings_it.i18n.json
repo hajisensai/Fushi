@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Oscura sottotitolo secondario",
   "video_setting_secondary_subtitle_obscure_hint": "Sfoca o nascondi il sottotitolo secondario (traduzione)",
   "video_setting_seek_seconds": "Secondi di spostamento",
+  "video_setting_shortcuts_hint": "Visualizza e personalizza le scorciatoie da tastiera e gamepad del lettore",
   "video_setting_slim_progress_bar": "Barra di avanzamento sottile in basso",
   "video_setting_slim_progress_bar_hint": "Quando i controlli sfumano, mantiene una sottile linea di avanzamento del colore di accento lungo il bordo inferiore del video. Nella mini finestra è sempre mostrata, perché lì la barra di ricerca completa è nascosta.",
   "video_setting_speed": "Velocità di riproduzione",

@@ -191,6 +191,7 @@ class ShortcutBindingsBrowser extends StatefulWidget {
     super.key,
     this.gamepadBrand = GamepadBrand.xbox,
     this.initialDevice = ShortcutInputDevice.keyboard,
+    this.initialDomain,
     this.onDeviceChanged,
     this.onOpenEditor,
     this.onResetScope,
@@ -216,6 +217,10 @@ class ShortcutBindingsBrowser extends StatefulWidget {
 
   final GamepadBrand gamepadBrand;
   final ShortcutInputDevice initialDevice;
+
+  /// 初始的作用域筛选（null = 全部）；不在 [scopes] 里时按「全部」处理。
+  final ShortcutScope? initialDomain;
+
   final ValueChanged<ShortcutInputDevice>? onDeviceChanged;
 
   /// 「完整编辑」：打开多通道编辑对话框（能录 Esc / Tab 这类行内录制让给取消 /
@@ -263,7 +268,9 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
   String _query = '';
   Object? _keyFilter;
   bool _keySearchArmed = false;
-  ShortcutScope? _domain;
+  late ShortcutScope? _domain = widget.scopes.contains(widget.initialDomain)
+      ? widget.initialDomain
+      : null;
   late ShortcutInputDevice _device = widget.initialDevice;
 
   ShortcutAction? _recording;

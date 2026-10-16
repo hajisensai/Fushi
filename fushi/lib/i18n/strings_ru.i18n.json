@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Скрыть вторичные субтитры",
   "video_setting_secondary_subtitle_obscure_hint": "Размыть или скрыть вторичные (переводные) субтитры",
   "video_setting_seek_seconds": "Шаг перемотки (с)",
+  "video_setting_shortcuts_hint": "Просмотр и настройка сочетаний клавиш клавиатуры и геймпада для плеера",
   "video_setting_slim_progress_bar": "Тонкая полоса прогресса внизу",
   "video_setting_slim_progress_bar_hint": "Когда элементы управления скрываются, оставлять тонкую линию прогресса акцентного цвета вдоль самого низа видео. В мини-окне она показывается всегда, так как полная полоса перемотки там скрыта.",
   "video_setting_speed": "Скорость воспроизведения",
