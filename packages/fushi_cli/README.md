@@ -15,16 +15,28 @@ fushi_cli quit              # 落库后退出 app（与关窗口同一条路径�
 
 | 域 | 覆盖 |
 |---|---|
-| `library` | 书架 / 媒体库条目 ls / get / rm、导入（EPUB / PDF / 文本 / 漫画 / 有声书 / 视频 / 游戏）、在 app 里打开、最近打开、来源库扫描 |
-| `dict` / `anki` | 词典 ls / 启用停用 / 排序 / 删除 / 导入 / 在线更新、结构化查词结果；Anki 状态、牌组、笔记类型、制卡、查重、同步 |
-| `config` / `module` / `profile` / `stats` / `keys` | 设置项读写（与设置页同一入口，机密打码）、模块开关、Profile 管理与导入导出、学习统计、快捷键清单 |
-| `backup` / `sync` / `dl` / `mediaserver` / `peer` / `storage` | 备份创建与恢复（`--merge` / `--replace` 预设）、云同步（可指定通道）、下载中心（含 http 直链）、Jellyfin / Emby / Plex 浏览与搜索、互联 host 与配对、存储占用 |
-| `ext` / `source` / `discover` / `play` / `nav` | 漫画 / 视频 / 小说扩展与仓库、在线源搜索 / 加库 / 下载、发现与一键获取、视频 / 有声书播放遥控（`--target`）、顶层页面跳转 |
-| `video` | 视频作品列表、刮削 / 重刮 / 取消、手动识别（AniDB / MAL / TMDB）、视频发现、资源搜索与下载入队 |
+| `library` | 书架 / 媒体库条目 ls / get / rm、导入、打开到指定位置（`--chapter` / `--page` / `--at`）、改名、换封面、标记完成、重置进度、来源库增删改与扫描、最近打开 |
+| `collection` / `tag` / `bookmark` / `favorite` | 合集（含播放列表）建删改与成员、标签、书签、收藏句管理与导出 |
+| `reader` | 遥控当前打开的 EPUB / PDF / 漫画阅读器：状态、翻页、按章 / 页 / 百分比跳转 |
+| `audiobook` / `ocr` | 有声书附着 / 替换音频与字幕、重新匹配、转录（含挂到已有书 `--into`）及任务；漫画整卷 OCR（`--force` / `--engine` / `--consent-upload`） |
+| `dict` / `anki` | 词典管理、推荐词典与推荐包下载导入、改名与语言覆盖；Anki 制卡、待发队列（pending / send / retry / discard）、内置同步客户端登录与同步 |
+| `config` / `module` / `profile` / `stats` / `keys` | 设置项读写与动作执行（`config get/set/run/reset`，列表型 `config items`；独立设置页的条目也在其中）、模块开关与排序、Profile 及媒体 / 语言绑定、学习统计、快捷键改绑 / 解绑 / 重置 |
+| `ai` / `models` / `voice` / `audiosrc` | LLM 提供商与功能指派、OCR / ASR / GPT-SoVITS 模型下载与删除及本机服务起停、TTS 声音与语速、查词音频来源 |
+| `task` / `update` | 通用后台任务查询 / 等待 / 取消；检查更新、下载、安装 |
+| `backup` / `sync` / `dl` / `mediaserver` / `peer` / `storage` | 备份（含按书 / 视频）与恢复、云同步与差异逐条应用、下载中心（直接入队、目标库、字幕策略、执行设备、优先级、互联 host 上的任务）、Jellyfin / Emby / Plex（含 Plex PIN 授权）、互联配对链接与吊销、存储占用与数据目录迁移 |
+| `ext` / `source` / `discover` / `play` / `nav` / `aidl` | 扩展启停、源启停 / 置顶 / 偏好 / 筛选浏览、漫画章节与视频剧集下载任务、发现与一键获取、播放遥控、页面跳转、AI 下载会话（消歧 / 确认 / 取消） |
+| `video` | 作品与刮削（含 `video confirm` 回答待确认候选）、播放器音量 / 音轨 / 主副字幕、字幕导入 / OCR / 转录 / 对轴、字幕位置、着色器、制卡与暂存队列、片段导出、长任务 |
+| `game`（仅 Windows） | 游戏库管理与刮削、启动 / 附着 / 停止、文本线程与当前台词、音轨与补录、分阶段能力状态、制卡、内嵌查词模式与截图校准 |
 
-app 侧每个域一个路由文件 `fushi/lib/src/platform/desktop/ctl/ctl_<域>_routes.dart`，CLI 侧一个命令文件
-`lib/src/commands/<域>_commands.dart`；每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。
-破坏性操作（删除、恢复备份、覆盖）必须加 `--yes`。
+app 侧路由在 `fushi/lib/src/platform/desktop/ctl/ctl_*.dart`，CLI 侧命令在 `lib/src/commands/*_commands.dart`；
+每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。破坏性操作（删除、恢复备份、覆盖）必须加
+`--yes`；需要用户同意的上传 / LLM 处理用显式参数（`--consent-upload` / `--consent-llm`）表态，不在 app 里弹框；
+凭据只经 stdin 或环境变量传入。长任务立即返回任务 id，用对应的 `job` / `task get --wait` 查进度、`cancel` 取消，
+进入写盘阶段后拒绝取消。
+
+**新增 UI 操作必须同时接 ctl 路由与 CLI 命令**：`fushi/test/platform/desktop/ctl/ctl_cli_route_coverage_guard_test.dart`
+双向钉死「每条路由都有 CLI 命令、每条 CLI 请求都落到路由」；设置页动作由
+`fushi/test/settings/settings_cli_action_coverage_test.dart` 要求声明 CLI 入口。
 
 全局选项：`--json`（机器可读输出）、`--app <路径>`、`--timeout <秒>`（默认 90）、
 `--no-launch`。

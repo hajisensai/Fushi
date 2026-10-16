@@ -624,10 +624,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Future<void> _deleteUrl(int index) async {
     final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
-    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
-          for (final FushiClientUrl u in current)
-            if (u.url != url && (hostId == null || u.hostId != hostId)) u,
-        ]);
+    await _mutateUrls((List<FushiClientUrl> current) =>
+        withoutInterconnectHost(current, url: url, hostId: hostId));
   }
 
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK

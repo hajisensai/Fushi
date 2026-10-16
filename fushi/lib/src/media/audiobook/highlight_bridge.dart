@@ -251,11 +251,21 @@ class HighlightBridge {
   function _unwrapFallbackHighlights(selector) {
     var guard = window.__fushiLiveRanges;
     var parents = [];
-    document.querySelectorAll(selector).forEach(function(el) {
-      var parent = guard.unwrap(el);
-      if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+    guard.batch(function() {
+      document.querySelectorAll(selector).forEach(function(el) {
+        var parent = guard.unwrap(el);
+        if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+      });
     });
     parents.forEach(function(parent) { guard.normalize(parent); });
+  }
+
+  // BUG-3369: a whole chapter's favourites move text nodes once per highlight
+  // (fallback wrapping, WebKit anonymous-block moves); read the native
+  // selection once for the batch instead of forcing a full layout per move.
+  function _liveRangeBatch(fn) {
+    var guard = window.__fushiLiveRanges;
+    return guard && typeof guard.batch === 'function' ? guard.batch(fn) : fn();
   }
 
   var ALL_COLORS = ['yellow','green','blue','pink','purple'];
@@ -309,8 +319,24 @@ class HighlightBridge {
       : null;
   };
 
+  // 刚收藏的句子（freshIds，Dart 侧收藏动作给出）：在写入 CSS.highlights / 包裹 span 之后、窄条层
+  // 微任务重画之前，把它的行片段登记给窄条层，笔触样式下这几行放一次落笔动画。章节打开、重排
+  // 后的重新应用不带 freshIds，永远不重放。
+  function _markFreshFavorites(freshIds, rangesFor) {
+    var lanes = window.__fushiLanes;
+    if (!freshIds || !freshIds.length || !lanes || typeof lanes.markFresh !== 'function') return;
+    for (var i = 0; i < freshIds.length; i++) {
+      var hit = rangesFor(freshIds[i]);
+      if (hit) lanes.markFresh(hit.ranges, hit.elements);
+    }
+  }
+
   // ── 应用高亮 ──
-  window.__fushiApplyHighlights = function(highlightsJson) {
+  window.__fushiApplyHighlights = function(highlightsJson, freshIds) {
+    _liveRangeBatch(function() { _applyHighlightsInBatch(highlightsJson, freshIds); });
+  };
+
+  function _applyHighlightsInBatch(highlightsJson, freshIds) {
     _syncHighlightVars();
     if (window.__fushiCssHighlightsSupported) {
       window.__fushiHighlightRangeMap = {};
@@ -356,6 +382,10 @@ class HighlightBridge {
           };
         }
       }
+      _markFreshFavorites(freshIds, function(id) {
+        var entry = window.__fushiHighlightRangeMap[id];
+        return entry ? { ranges: entry.ranges, elements: entry.rubyElements } : null;
+      });
       _rebuildCssHighlightsNow();
     } else {
       _clearFallbackRubyHighlights();
@@ -404,9 +434,17 @@ class HighlightBridge {
           };
         }
       }
+      _markFreshFavorites(freshIds, function(id) {
+        var spans = [];
+        document.querySelectorAll('[data-highlight-id]').forEach(function(el) {
+          if (el.getAttribute('data-highlight-id') === id) spans.push(el);
+        });
+        var rubyEntry = window.__fushiFallbackHighlightRubyMap[id];
+        return { ranges: [], elements: spans.concat(rubyEntry ? rubyEntry.elements : []) };
+      });
       _reapplyFallbackRubyHighlights();
     }
-  };
+  }
 
   // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
   window.__fushiFindTextNormRange = function(text, studyHint) {
@@ -463,6 +501,9 @@ class HighlightBridge {
     InAppWebViewController controller,
     List<FavoriteSentence> highlights, {
     String backgroundHex = '#ffffff',
+    // 刚收藏的那条（收藏动作给出）：笔触样式下给它放一次落笔动画。章节打开 / 重排后的
+    // 重新应用不传，保证翻页与重排永远不重放动画。
+    List<String> freshIds = const <String>[],
   }) async {
     // Stored offsets are navigation hints, not highlight character indexes.
     // Always send the text, including for old favorites with a non-null offset.
@@ -482,10 +523,13 @@ class HighlightBridge {
     final bool backgroundIsDark = ReaderContentStyles.isDarkBackground(
       backgroundHex,
     );
+    final String args = freshIds.isEmpty
+        ? json
+        : '$json, ${jsonEncode(freshIds)}';
     await controller.evaluateJavascript(
       source:
           'window.__fushiHighlightBgDark=$backgroundIsDark;'
-          'window.__fushiApplyHighlights && window.__fushiApplyHighlights($json);',
+          'window.__fushiApplyHighlights && window.__fushiApplyHighlights($args);',
     );
   }
 

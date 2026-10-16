@@ -146,8 +146,9 @@ void main() {
     for (final String step in <String>[
       'materializeGraphicSubtitleTrack(',
       'readGraphicSubtitleTrackInBackground(',
-      // 引擎装配同暂停 OCR，只多带字幕轨语言（低置信度交大模型时的期望语言）。
-      '_prepareGraphicSubtitleOcr(dir, language: language)',
+      // 引擎装配同暂停 OCR，只多带字幕轨语言（低置信度交大模型时的期望语言）与
+      // 桌面 CLI 的无头同意答案（null = app 内弹框询问）。
+      '_prepareGraphicSubtitleOcr(dir, language: language, consent: consent)',
       // 边抽边识别：识别出的字实时补进可点字幕。
       'recognizeGraphicSubtitleCuesLive(',
       'controller.setCues(live)',

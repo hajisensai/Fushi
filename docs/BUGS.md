@@ -33,16 +33,62 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3056 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3369](bugs/BUG-3369-audiobook-long-chapter-open-timeout.md) | ✅ | ✅ | 长章有声书开书白屏、「内容加载超时」 |
+| [BUG-3370](bugs/BUG-3370-lyrics-illustrations-scan-on-ui-isolate.md) | ✅ | ✅ | 歌词模式 / 插图册在 UI isolate 上同步扫整本书插图 |
+> 共 3086 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3431](bugs/BUG-3431-continuous-reopen-column-drift-and-follow-zero-save.md) | ✅ | ✅ | 滚动模式每次重开回退一列 + 跟读时视口首字 0 与句位交替落库 |
+| [BUG-3430](bugs/BUG-3430-reader-open-audio-live-position-and-play-before-seek.md) | ✅ | ✅ | 带有声书开书只信播放器实时位置 + 播放不等恢复 seek：先跳到书首句再跳回 |
+| [BUG-3429](bugs/BUG-3429-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
+> 共 3084 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
+> 共 3086 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-downloaded-book-key-mismatch-delete-lost.md) | ✅ | ✅ | 从对端下载的书落地键不同导致跨设备删除丢失 |
+| [BUG-3428](bugs/BUG-3428-adopted-online-manga-delete-not-propagated.md) | ✅ | ✅ | 互联收下的在线漫画收不到对端从所有设备删除 |
+| [BUG-3427](bugs/BUG-3427-remote-series-volumes-not-in-collection.md) | ✅ | ✅ | 远端占位分卷不进本地同系列合集 |
+> 共 3084 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3428](bugs/BUG-3428-inline-video-word-audio-overlap.md) | ✅ | ✅ | 视频片段（WebM 内嵌）制卡翻面时单词音频与句子片段同时播放 |
+> 共 3075 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3420](bugs/BUG-3420-subtitle-delay-readout-focus-ring.md) | ✅ | ✅ | 字幕调轴读数胶囊的焦点环四角残缺 |
+| [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
+| [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
+> 共 3071 条。点号进各自文件。
 > 共 3072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3417](bugs/BUG-3417-remote-download-delete-files-ignored.md) | ✅ | ✅ | 远端代下载任务删除时「同时删除已下载文件」勾选被丢弃 |
+| [BUG-3417](bugs/BUG-3417-galgame-skip-backlog-chars-counted.md) | ✅ | ✅ | galgame-skip-backlog-chars-counted |
+| [BUG-3417](bugs/BUG-3417-reader-highlight-lane-latin-ink.md) | ✅ | ✅ | 小说高亮条瘦身后西文上伸 / 下延字母没被包住 |
+| [BUG-3417](bugs/BUG-3417-lyrics-mining-context-sentences.md) | ✅ | ✅ | 歌词模式高级制卡无法前后加句 |
 | [BUG-3418](bugs/BUG-3418-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
 | [BUG-3417](bugs/BUG-3417-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
 > 共 3081 条。点号进各自文件。
+> 共 3083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-book-collection-continue-next-volume.md) | ✅ | ✅ | book-collection-continue-next-volume |
+| [BUG-3428](bugs/BUG-3428-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
+| [BUG-3427](bugs/BUG-3427-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
 | [BUG-3426](bugs/BUG-3426-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
 | [BUG-3425](bugs/BUG-3425-game-stream-card-missing-host-dict-styles.md) | ✅ | ✅ | game-stream-card-missing-host-dict-styles |
 | [BUG-3424](bugs/BUG-3424-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |
@@ -51,8 +97,10 @@
 | [BUG-3421](bugs/BUG-3421-reader-highlight-lanes-under-book-paragraph-background.md) | ✅ | ✅ | 书自带段落底色盖住高亮窄条 |
 | [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
 | [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
+| [BUG-3418](bugs/BUG-3418-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
 | [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
 | [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
+| [BUG-3417](bugs/BUG-3417-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
 | [BUG-3414](bugs/BUG-3414-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |

@@ -10,6 +10,7 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -1267,7 +1268,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _lastScrolledIndex = visibleIndex;
     _scrollTargetRawIndex = currentIndex;
     _retainRowKeyFor(currentIndex);
-    const Duration duration = Duration(milliseconds: 240);
+    // 自动跟随滚动：墨水屏 / 系统「减弱动态效果」下归零，直接到位。
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     const Curve curve = FushiMotion.enter;
     // 可变行高下优先用 ensureVisible 把当前行精确居中（alignment 0.5）；目标行已挂载
     // 才有 RenderObject。未挂载（在远处视口外）时先按估算行高粗滚使其进入视口、下一帧
@@ -2312,7 +2314,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             fixedSize: const Size.square(36),
             minimumSize: const Size.square(36),
             padding: EdgeInsets.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            // 视觉 36，命中区补足到 48（工具栏命中区 ≥48dp）。
+            tapTargetSize: MaterialTapTargetSize.padded,
             foregroundColor: cs.onSurface,
             backgroundColor: selected
                 ? cs.primaryContainer
@@ -2345,7 +2348,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 fixedSize: const Size.square(36),
                 minimumSize: const Size.square(36),
                 padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                tapTargetSize: MaterialTapTargetSize.padded,
               ),
               color: cs.onSurface,
               icon: const FushiIcon(FushiIcons.remove, size: 18),
@@ -2373,7 +2376,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 fixedSize: const Size.square(36),
                 minimumSize: const Size.square(36),
                 padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                tapTargetSize: MaterialTapTargetSize.padded,
               ),
               color: cs.onSurface,
               icon: const FushiIcon(FushiIcons.add, size: 18),
@@ -2395,7 +2398,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     _filterLabel(f),
                     maxLines: 1,
                     softWrap: false,
-                    overflow: TextOverflow.visible,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
           )
@@ -2420,49 +2423,100 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           // 计数与导出（右，仅收藏态出现，行高固定），状态切换不跳。
           Row(
             children: <Widget>[
+              // 工具按钮默认全部平铺（命中区 ≥48dp，不再 FittedBox 整体缩小），
+              // 面板窄到放不下才从最低优先级起收进「⋯」。
               Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      toolButton(
-                        icon: _searchOpen
-                            ? FushiIcons.searchOff
-                            : FushiIcons.search,
-                        tooltip: t.video_subtitle_list_search,
-                        selected: _searchOpen,
-                        onPressed: () => _toggleSearch(),
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints box) => Align(
+                    alignment: Alignment.centerLeft,
+                    child: FushiAdaptiveActionStrip(
+                      maxWidth: box.maxWidth,
+                      key: const ValueKey<String>(
+                        'video-subtitle-list-header-actions',
                       ),
-                      const SizedBox(width: 4),
-                      toolButton(
-                        icon: _autoScroll
-                            ? FushiIcons.alignCenterVertical
-                            : FushiIcons.pauseCircle,
-                        tooltip: t.video_subtitle_list_auto_scroll,
-                        selected: _autoScroll,
-                        onPressed: _toggleAutoScroll,
+                      moreKey: const ValueKey<String>(
+                        'video-subtitle-list-header-more',
                       ),
-                      if (widget.onLookupCue != null) ...<Widget>[
-                        const SizedBox(width: 4),
-                        KeyedSubtree(
-                          key: const ValueKey<String>(
-                            'video-subtitle-list-tap-lookup',
+                      actions: <FushiAdaptiveAction>[
+                        FushiAdaptiveAction(
+                          icon: _searchOpen
+                              ? FushiIcons.searchOff
+                              : FushiIcons.search,
+                          label: t.video_subtitle_list_search,
+                          onPressed: () => _toggleSearch(),
+                          selected: _searchOpen,
+                          inlineBuilder: (BuildContext _) => toolButton(
+                            icon: _searchOpen
+                                ? FushiIcons.searchOff
+                                : FushiIcons.search,
+                            tooltip: t.video_subtitle_list_search,
+                            selected: _searchOpen,
+                            onPressed: () => _toggleSearch(),
                           ),
-                          child: toolButton(
+                        ),
+                        FushiAdaptiveAction(
+                          icon: _autoScroll
+                              ? FushiIcons.alignCenterVertical
+                              : FushiIcons.pauseCircle,
+                          label: t.video_subtitle_list_auto_scroll,
+                          onPressed: _toggleAutoScroll,
+                          selected: _autoScroll,
+                          inlineBuilder: (BuildContext _) => toolButton(
+                            icon: _autoScroll
+                                ? FushiIcons.alignCenterVertical
+                                : FushiIcons.pauseCircle,
+                            tooltip: t.video_subtitle_list_auto_scroll,
+                            selected: _autoScroll,
+                            onPressed: _toggleAutoScroll,
+                          ),
+                        ),
+                        if (widget.onLookupCue != null)
+                          FushiAdaptiveAction(
                             icon: _tapLookup
                                 ? FushiIcons.lookup
                                 : FushiIcons.touch,
-                            tooltip: t.video_subtitle_list_tap_lookup,
-                            selected: _tapLookup,
+                            label: t.video_subtitle_list_tap_lookup,
                             onPressed: _toggleTapLookup,
+                            selected: _tapLookup,
+                            inlineBuilder: (BuildContext _) => KeyedSubtree(
+                              key: const ValueKey<String>(
+                                'video-subtitle-list-tap-lookup',
+                              ),
+                              child: toolButton(
+                                icon: _tapLookup
+                                    ? FushiIcons.lookup
+                                    : FushiIcons.touch,
+                                tooltip: t.video_subtitle_list_tap_lookup,
+                                selected: _tapLookup,
+                                onPressed: _toggleTapLookup,
+                              ),
+                            ),
                           ),
+                        FushiAdaptiveAction(
+                          icon: FushiIcons.add,
+                          label: t.video_subtitle_list_font_larger,
+                          onPressed: null,
+                          // 「− 100% +」步进器：两个 48 命中区 + 40 宽读数。
+                          inlineSlots: 3,
+                          inlineBuilder: (BuildContext _) => fontStepper,
+                          foldedEntries: (BuildContext _) =>
+                              <PopupMenuEntry<VoidCallback>>[
+                                FushiPopupMenuItem<VoidCallback>(
+                                  value: () => _stepFont(-1),
+                                  icon: FushiIcons.remove,
+                                  label: t.video_subtitle_list_font_smaller,
+                                  enabled: canSmaller,
+                                ),
+                                FushiPopupMenuItem<VoidCallback>(
+                                  value: () => _stepFont(1),
+                                  icon: FushiIcons.add,
+                                  label: t.video_subtitle_list_font_larger,
+                                  enabled: canLarger,
+                                ),
+                              ],
                         ),
                       ],
-                      const SizedBox(width: 4),
-                      fontStepper,
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -2476,7 +2530,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     fixedSize: const Size.square(36),
                     minimumSize: const Size.square(36),
                     padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    tapTargetSize: MaterialTapTargetSize.padded,
                     backgroundColor: FushiDesignTokens.of(
                       context,
                     ).surfaces.search,
@@ -2492,7 +2546,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             height: 40,
             child: Row(
               children: <Widget>[
-                filter,
+                // 窄面板里分段可压缩（标签省略号），按钮高度 / 命中区不变，不右溢。
+                Flexible(child: filter),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _filter == VideoSubtitleListFilter.favorites

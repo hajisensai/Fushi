@@ -8,10 +8,13 @@ part of 'update_checker.dart';
 /// 上看到的是同一个下载浮层、同一个「取消」按钮——远程触发不另写一套界面，host 上正在
 /// 阅读 / 播放的人也能看见并中止一次别的设备发起的更新。
 class _UpdateDownloadSession {
-  _UpdateDownloadSession()
+  /// [cancellation] 由调用方给时与调用方共享同一个取消令牌（控制通道
+  /// `fushi_cli update cancel` 与浮层「取消」按的是同一个）。
+  _UpdateDownloadSession({UpdateDownloadCancellation? cancellation})
       // 体感快修（TODO-683）：进下载前显「正在连接更新源…」，首个进度/诊断信号到达再翻
       // 「正在下载更新…」。GFW 下坏候选累积超时期间不再让用户盯着「下载中 0%」误以为卡死。
-      : status = ValueNotifier<String>(t.update_connecting) {
+      : status = ValueNotifier<String>(t.update_connecting),
+        cancellation = cancellation ?? UpdateDownloadCancellation() {
     _statusController = UpdateDownloadStatusController(status);
   }
 
@@ -28,7 +31,7 @@ class _UpdateDownloadSession {
   final ValueNotifier<bool> overlayVisible = ValueNotifier<bool>(true);
 
   /// 取消令牌（TODO-738）：浮层「取消」按下后置位，下载引擎在候选边界看到即中断。
-  final UpdateDownloadCancellation cancellation = UpdateDownloadCancellation();
+  final UpdateDownloadCancellation cancellation;
   OverlayEntry? _entry;
 
   /// 把下载浮层插进 [overlay]（一个会话只插一次）。
@@ -97,6 +100,28 @@ class _UpdateDownloadSession {
   return (cancellation: session.cancellation, dispose: session.dispose);
 }
 
+/// 一次「查新版本」的结果（[HeadlessUpdateFlow.checkAvailableUpdate]）。
+class HeadlessUpdateCheck {
+  const HeadlessUpdateCheck({
+    required this.version,
+    required this.asset,
+    required this.releaseNotes,
+    required this.htmlUrl,
+  });
+
+  /// 本平台可装的版本（per-平台 effective 版本，与「发现新版本」对话框同源）。
+  final String version;
+
+  /// null = 有新版但本平台没有可应用内安装的包。
+  final UpdateAsset? asset;
+
+  /// 更新说明（release body，Markdown）。
+  final String releaseNotes;
+
+  /// 发布页 URL。
+  final String? htmlUrl;
+}
+
 /// 不经「发现新版本」对话框的更新入口（互联 host 远程更新，反馈 Pp8XPyve0N）。
 ///
 /// 与本机 UI 流同一条拉取 / 选包 / 比较链路、同一把版本级互斥锁、同一条下载引擎与
@@ -114,6 +139,28 @@ abstract final class HeadlessUpdateFlow {
     required UpdateChannel channel,
     String customProxy = '',
     PlatformUpdater? updater,
+  }) async {
+    final HeadlessUpdateCheck? check = await checkAvailableUpdate(
+      currentVersion: currentVersion,
+      currentBuildNumber: currentBuildNumber,
+      channel: channel,
+      customProxy: customProxy,
+      updater: updater,
+    );
+    if (check == null) return null;
+    return (version: check.version, asset: check.asset);
+  }
+
+  /// 同 [resolveAvailableUpdate]，另带更新说明与发布页（控制通道 `update check`）。
+  /// [cacheWriter] 非 null 时与 [UpdateChecker.scheduleCheck] 一样把结果写回检查缓存
+  /// （设置页「立即检查更新」下次的乐观提示读它）。
+  static Future<HeadlessUpdateCheck?> checkAvailableUpdate({
+    required String currentVersion,
+    String? currentBuildNumber,
+    required UpdateChannel channel,
+    String customProxy = '',
+    PlatformUpdater? updater,
+    UpdateCheckCacheWriter? cacheWriter,
   }) async {
     final PlatformUpdater platformUpdater =
         updater ?? updaterForCurrentPlatform();
@@ -135,12 +182,25 @@ abstract final class HeadlessUpdateFlow {
         updater: platformUpdater,
       );
       if (selection == null || selection.version.isEmpty) return null;
+      if (cacheWriter != null) {
+        await cacheWriter(UpdateCheckCacheEntry(
+          lastCheckEpochMs: DateTime.now().toUtc().millisecondsSinceEpoch,
+          latestTag: selection.version,
+          htmlUrl: selection.htmlUrl ?? '',
+          channel: channel,
+        ));
+      }
       if (!isUpdateVersionNewer(selection.version, currentVersion, channel,
           remoteSeq: selection.release['releaseSequence'] as int?,
           localSeq: localSeq)) {
         return null;
       }
-      return (version: selection.version, asset: selection.asset);
+      return HeadlessUpdateCheck(
+        version: selection.version,
+        asset: selection.asset,
+        releaseNotes: selection.releaseNotes,
+        htmlUrl: selection.htmlUrl,
+      );
     } finally {
       client.close();
     }
@@ -172,34 +232,98 @@ abstract final class HeadlessUpdateFlow {
     return UpdateChecker._runExclusiveUpdateFlow(
         UpdateChecker._updateFlowKey(version), () async {
       final _UpdateDownloadSession session = _UpdateDownloadSession();
-      if (overlay != null && overlay.mounted) session.showIn(overlay);
-      final UpdateDownloadCancellation cancellation = session.cancellation;
-      final HttpClient client = UpdateChecker._newUpdateHttpClient();
       try {
-        await applyAppProxy(client, userProxy: customProxy);
-        cancellation.registerAbort(() => client.close(force: true));
-        final File outFile = await UpdateChecker._downloadAssetForInstall(
-          client: client,
+        final File outFile = await _downloadInSession(
+          session,
           asset: asset,
           version: version,
           updater: updater,
           customProxy: customProxy,
-          cancellation: cancellation,
-          onProgress: (double value) {
-            session.onProgress(value);
-            onProgress(value);
-          },
-          onDiagnostics: session.onDiagnostics,
-          onSourceNotice: session.onSourceNotice,
+          overlay: overlay,
+          onProgress: onProgress,
         );
         session.status.value = t.update_installing;
         onInstalling();
         await updater.apply(outFile, version);
       } finally {
-        cancellation.clearAbort();
-        client.close();
         session.dispose();
       }
     });
+  }
+
+  /// 只下载、不安装（控制通道 `update download`）：与 [downloadAndApply] 同一条下载
+  /// 引擎、同一把版本级互斥锁、同一个下载浮层；安装另由 [PlatformUpdater.apply] 接
+  /// （`update install`）。
+  ///
+  /// [cancellation] 与浮层「取消」共用：任一处取消都以
+  /// [UpdateDownloadCancelledException] 抛给调用方。已有同版本流在途时抛 [StateError]。
+  static Future<File> download({
+    required UpdateAsset asset,
+    required String version,
+    required PlatformUpdater updater,
+    String customProxy = '',
+    OverlayState? overlay,
+    UpdateDownloadCancellation? cancellation,
+    required void Function(double progress) onProgress,
+  }) async {
+    if (isActive(version)) {
+      throw StateError('update flow for $version already active');
+    }
+    File? outFile;
+    await UpdateChecker._runExclusiveUpdateFlow(
+        UpdateChecker._updateFlowKey(version), () async {
+      final _UpdateDownloadSession session =
+          _UpdateDownloadSession(cancellation: cancellation);
+      try {
+        outFile = await _downloadInSession(
+          session,
+          asset: asset,
+          version: version,
+          updater: updater,
+          customProxy: customProxy,
+          overlay: overlay,
+          onProgress: onProgress,
+        );
+      } finally {
+        session.dispose();
+      }
+    });
+    return outFile!;
+  }
+
+  /// [downloadAndApply] / [download] 共用的下载段（浮层、代理、强断、进度接线）。
+  static Future<File> _downloadInSession(
+    _UpdateDownloadSession session, {
+    required UpdateAsset asset,
+    required String version,
+    required PlatformUpdater updater,
+    required String customProxy,
+    required OverlayState? overlay,
+    required void Function(double progress) onProgress,
+  }) async {
+    if (overlay != null && overlay.mounted) session.showIn(overlay);
+    final UpdateDownloadCancellation cancellation = session.cancellation;
+    final HttpClient client = UpdateChecker._newUpdateHttpClient();
+    try {
+      await applyAppProxy(client, userProxy: customProxy);
+      cancellation.registerAbort(() => client.close(force: true));
+      return await UpdateChecker._downloadAssetForInstall(
+        client: client,
+        asset: asset,
+        version: version,
+        updater: updater,
+        customProxy: customProxy,
+        cancellation: cancellation,
+        onProgress: (double value) {
+          session.onProgress(value);
+          onProgress(value);
+        },
+        onDiagnostics: session.onDiagnostics,
+        onSourceNotice: session.onSourceNotice,
+      );
+    } finally {
+      cancellation.clearAbort();
+      client.close();
+    }
   }
 }

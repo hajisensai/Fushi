@@ -1,4 +1,4 @@
-// 头像 / 作品封面缩略图：客户端先缩好再传（头像 128px、封面 ≤300px），服务端只验魔数与大小。
+// 头像 / 作品封面缩略图：客户端先缩好再传（头像 ≤384px、封面 ≤300px），服务端只验魔数与大小。
 // R2 key 带时间戳版本号（a/<account>-<ts>.jpg），出图可设 immutable 长缓存，换图即换 key。
 
 import { HttpError, randomId } from './util.js';
@@ -12,7 +12,7 @@ function objectKey(prefix, owner, now, ext) {
   return `${prefix}/${owner}-${randomId(8)}-${now}.${ext}`;
 }
 
-// 客户端上传前已缩好（头像 128px、封面 ≤ 300px JPEG，一般 10–40KB）；上限留余量但不给存大图的机会。
+// 客户端上传前已缩好（头像 ≤384px 且按本上限逐级降质量、封面 ≤ 300px JPEG，一般 10–60KB）；上限留余量但不给存大图的机会。
 export const AVATAR_MAX_BYTES = 64 * 1024;
 export const COVER_MAX_BYTES = 96 * 1024;
 

@@ -349,17 +349,15 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// 下载失败（用户取消 / 网络全挂）则不改档，停在原状态（不留半启用）。
   Future<void> _selectTier(VideoShaderTier tier) async {
     final VideoShaderTierSpec spec = shaderTierSpec(tier);
-    final Anime4kPreset? preset = spec.preset;
-    if (preset != null) {
-      final bool alreadyHave = preset.fileNames.every(_files.toSet().contains);
-      if (!alreadyHave) {
-        final bool ok =
-            await _downloadPreset(preset); // 内部已 _refresh 刷新 _files。
-        if (!mounted || !ok) return; // 取消/失败：不切档（不留半启用）。
-      }
-    }
-    // 从目录现有文件按该档叠加顺序过滤出有序启用集（个别下载失败也只启用存在的）。
-    final List<String> enabled = orderedEnabledForTier(tier, _files.toSet());
+    // 缺文件先下载（_downloadPreset 内部已 _refresh 刷新 _files）；取消 / 失败不切档
+    // （不留半启用）。启用集按该档叠加顺序从目录现有文件里挑——规则与控制通道
+    // （video_settings_cli.dart 的选档）共用 [resolveShaderTierEnabledNames]。
+    final List<String>? enabled = await resolveShaderTierEnabledNames(
+      tier,
+      listFiles: () async => _files,
+      ensurePreset: _downloadPreset,
+    );
+    if (!mounted || enabled == null) return;
     setState(() {
       _enabled
         ..clear()

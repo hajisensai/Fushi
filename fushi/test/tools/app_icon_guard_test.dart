@@ -112,9 +112,13 @@ void main() {
     expect(
         prefs.contains('await appIconImageProvider(resolved).evict()'), isTrue,
         reason: '固定自定义路径覆盖内容后必须清掉旧 ResizeImage cache');
-    expect(page.contains('saveAppIconSelection('), isTrue,
+    // 换图执行体抽进 app_icon_apply.dart（设置页与控制通道共用），页面只调它。
+    final String apply = read('lib/src/utils/misc/app_icon_apply.dart');
+    expect(page.contains('applyPresetAppIcon('), isTrue);
+    expect(page.contains('applyCustomAppIcon('), isTrue);
+    expect(apply.contains('saveAppIconSelection('), isTrue,
         reason: '预设与自定义成功路径必须在持久化后发布运行时选择');
-    expect(page.contains('_persistAppliedIcon('), isTrue,
+    expect('persistAppliedAppIcon('.allMatches(apply).length >= 3, isTrue,
         reason: '原生切换成功后即使偏好写入失败，rail 也必须同步本次运行态');
     expect(page.contains('saveIconPresetKey('), isFalse);
     expect(page.contains('saveCustomIconPath('), isFalse);

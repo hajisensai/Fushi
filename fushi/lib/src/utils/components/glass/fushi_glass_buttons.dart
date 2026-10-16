@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiMotion, fushiMotionDuration;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
@@ -646,13 +648,15 @@ class _FushiPlainButtonState extends State<FushiPlainButton> {
     final Color? fill = widget.fill;
     Widget body = AnimatedOpacity(
       // 按下立即变淡、松手缓回，与 UIKit 高亮的节奏一致。
-      duration: _pressed ? Duration.zero : const Duration(milliseconds: 180),
+      duration: _pressed
+          ? Duration.zero
+          : fushiMotionDuration(context, FushiMotion.short),
       opacity: _pressed ? (fill == null ? 0.3 : 0.85) : 1,
       child: widget.child,
     );
     final Color overlay = appleOnAccent(fill ?? apple.groupedBackground);
     body = AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
+      duration: fushiMotionDuration(context, FushiMotion.micro),
       decoration: BoxDecoration(
         color: fill != null
             ? Color.alphaBlend(

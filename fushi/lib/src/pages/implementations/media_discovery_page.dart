@@ -3,6 +3,7 @@ import 'package:collection/collection.dart' show mergeSort;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -579,10 +580,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       if (mounted) setState(() {});
     }
     try {
-      await startDiscoveryItemDownload(
-        context: context,
-        appModel: appModel,
-        item: item,
+      showDownloadStartNotices(
+        await startDiscoveryItemDownload(
+          context: context,
+          appModel: appModel,
+          item: item,
+        ),
       );
     } finally {
       if (torrent) {

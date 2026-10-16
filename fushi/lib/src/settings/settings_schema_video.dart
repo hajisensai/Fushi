@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -11,11 +14,16 @@ import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
+import 'package:fushi/src/media/video/video_settings_cli.dart';
+import 'package:fushi/src/media/video/video_settings_cli_ops.dart'
+    show videoSubtitlePositionForCli;
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart'
+    show VideoScrapeCleanupBusyException, VideoScrapeCleanupResult;
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -757,6 +765,20 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 字幕**文字**颜色调色盘行（TODO-1326）。四个颜色行全局设置页也显示
+          // （PM-iIH9G0b，此前 host 门控只在播放页出现）：builder 无 host 时经拖动
+          // 预览态驱动分组顶部的样式预览、关闭时直接落 pref，不依赖播放器。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_text_color',
+            searchTitle: t.video_setting_subtitle_text_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 90,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            cliValue: videoSubtitleTextColorCli,
+            builder: buildVideoSubtitleTextColorRow,
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.shadow',
             title: t.video_setting_subtitle_shadow,
@@ -788,6 +810,18 @@ SettingsDestination buildVideoDestination() {
                 (VideoSubtitleStyle s) => s.copyWith(shadowThickness: v),
               );
             },
+          ),
+          // 字幕阴影颜色调色盘行（#xif6-gtSz7），紧跟阴影粗细滑条。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_shadow_color',
+            searchTitle: t.video_setting_subtitle_shadow_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 101,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            cliValue: videoSubtitleShadowColorCli,
+            builder: buildVideoSubtitleShadowColorRow,
           ),
           // 字幕描边粗细（#xif6-gtSz7）：沿字形轮廓的真描边，与上面的柔和投影是两层。
           // 0 = 不描边（默认）。只作用于统一外观，「尊重 .ass 自带样式」时由文件决定。
@@ -822,6 +856,18 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: VideoSubtitleStyle.defaults.outlineThickness,
           ),
+          // 字幕描边颜色调色盘行（#xif6-gtSz7），紧跟描边粗细滑条；对话框带「无描边」。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_outline_color',
+            searchTitle: t.video_setting_subtitle_outline_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 103,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            cliValue: videoSubtitleOutlineColorCli,
+            builder: buildVideoSubtitleOutlineColorRow,
+          ),
           SettingsSliderItem(
             id: 'video.subtitle.bg_opacity',
             title: t.video_setting_subtitle_bg_opacity,
@@ -849,6 +895,18 @@ SettingsDestination buildVideoDestination() {
               );
             },
             defaultValue: VideoSubtitleStyle.defaults.backgroundOpacity,
+          ),
+          // 字幕背景颜色调色盘行（TODO-1059），紧跟背景不透明度滑条。
+          SettingsCustomItem(
+            id: 'video.player.subtitle_bg_color',
+            searchTitle: t.video_setting_subtitle_bg_color,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 130,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            cliValue: videoSubtitleBackgroundColorCli,
+            builder: buildVideoSubtitleBgColorRow,
           ),
           // 主字幕垂直锚定（TODO-2838）：底部（默认，历史行为）/ 顶部。顶锚时下面的
           // 「垂直位置」量纲变为**离顶距离**（镜像副字幕置顶的既有消费路径）；ASS 自带
@@ -976,6 +1034,34 @@ SettingsDestination buildVideoDestination() {
             ),
             visible: (SettingsContext c) =>
                 videoQuickSettingsHostOf(c)?.onEnterSubtitleDragAdjust != null,
+            // 拖动松手写入的那几项（锚定边 + 距离，主 / 副字幕）改成参数，走同一条
+            // commitVideoSubtitleStyle（播放中 = 页面 _persistSubtitleStyle）。
+            cli: const SettingsCliAction(
+              run: videoSubtitlePositionForCli,
+              offPageRunnable: true,
+              params: <SettingsCliParam>[
+                SettingsCliParam(
+                  'position',
+                  help: '主字幕离锚定边的距离 0…400（顶锚时 = 离顶）',
+                  required: false,
+                ),
+                SettingsCliParam(
+                  'anchor',
+                  help: '主字幕锚定边 bottom / top',
+                  required: false,
+                ),
+                SettingsCliParam(
+                  'secondary_position',
+                  help: '副字幕距离 0…400',
+                  required: false,
+                ),
+                SettingsCliParam(
+                  'secondary_anchor',
+                  help: '副字幕锚定边 bottom / top',
+                  required: false,
+                ),
+              ],
+            ),
             onTap: (SettingsContext settingsContext) async {
               videoQuickSettingsHostOf(
                 settingsContext,
@@ -1494,6 +1580,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_control_reset_layout,
             icon: Icons.restart_alt_outlined,
             video: VideoPlacement(group: VideoGroup.controls, order: 20),
+            cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext settingsContext) async {
               await resetVideoControlLayoutDual(settingsContext);
             },
@@ -1549,6 +1636,24 @@ SettingsDestination buildVideoDestination() {
               return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
             },
             icon: Icons.folder_open_outlined,
+            // CLI 直接给目录（代替系统目录选择器）；同一个 setter。
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '截图保存目录（已存在的本机目录绝对路径）',
+                  path: true,
+                ),
+              ],
+              run: (SettingsContext c, Map<String, String> args) async {
+                final String dir = args['value']!;
+                if (!Directory(dir).existsSync()) {
+                  throw ArgumentError('目录不存在：$dir');
+                }
+                await c.appModel.setVideoScreenshotDirectory(dir);
+                return <String, Object?>{'directory': dir};
+              },
+            ),
             onTap: (SettingsContext settingsContext) async {
               // 截图目录长期承载写入，必须是真实文件系统路径（安卓上
               // getDirectoryPath() 只给 SAF tree URI，dart:io 读不了）——走统一入口。
@@ -1826,6 +1931,16 @@ SettingsDestination buildVideoDestination() {
             subtitle: t.video_metadata_identifier_words_hint,
             subtitleBuilder: videoScrapeIdentifierWordsSubtitle,
             icon: Icons.rule_outlined,
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '整份识别词表（多行文本，每行一条；空串 = 清空）',
+                  required: false,
+                ),
+              ],
+              run: commitVideoScrapeIdentifierWords,
+            ),
             onTap: showVideoScrapeIdentifierWordsDialog,
           ),
           SettingsActionItem(
@@ -1834,6 +1949,21 @@ SettingsDestination buildVideoDestination() {
             subtitle: t.video_source_scrape_clear_all_hint,
             icon: Icons.delete_sweep_outlined,
             destructive: true,
+            cli: SettingsCliAction(
+              confirm: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                try {
+                  final VideoScrapeCleanupResult result =
+                      await clearAllVideoScrapeRecords(c.appModel.database);
+                  return <String, Object?>{
+                    'cleared': true,
+                    'preservedFiles': result.preservedFiles,
+                  };
+                } on VideoScrapeCleanupBusyException {
+                  throw StateError(t.video_source_scrape_clear_all_busy);
+                }
+              },
+            ),
             onTap: (SettingsContext settingsContext) async {
               await showClearAllVideoScrapeRecordsAction(
                 context: settingsContext.context,
@@ -1872,6 +2002,36 @@ SettingsDestination buildVideoDestination() {
               order: 214,
               section: t.video_setting_mpv_group_advanced,
             ),
+            // CLI 直接给脚本路径（代替系统文件选择器），同一个导入函数。
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '要导入的 .lua 文件绝对路径（多个用 | 分隔；同名覆盖）',
+                ),
+              ],
+              run: (SettingsContext c, Map<String, String> args) async {
+                final List<String> paths = <String>[
+                  for (final String raw in args['value']!.split('|'))
+                    if (raw.trim().isNotEmpty) raw.trim(),
+                ];
+                for (final String path in paths) {
+                  if (!p.isAbsolute(path) ||
+                      !path.toLowerCase().endsWith('.lua')) {
+                    throw ArgumentError('不是 .lua 文件的绝对路径：$path');
+                  }
+                  if (!File(path).existsSync()) {
+                    throw ArgumentError('文件不存在：$path');
+                  }
+                }
+                final List<String> imported = <String>[
+                  for (final String path in paths)
+                    await importLuaScriptFile(path),
+                ];
+                await videoQuickSettingsHostOf(c)?.onLuaScriptsChanged?.call();
+                return <String, Object?>{'imported': imported};
+              },
+            ),
             onTap: (SettingsContext settingsContext) async {
               final FilePickerResult? result = await pickFilesByExtensions(
                 context: settingsContext.context,
@@ -1908,6 +2068,48 @@ SettingsDestination buildVideoDestination() {
               order: 215,
               section: t.video_setting_mpv_group_advanced,
             ),
+            // 目录即真相：列表 = 目录里的 *.lua，增 = 导入（复制进目录），删 = 删掉
+            // 目录里的那个文件（mpv 无 unload-script，下次进入视频页生效）。
+            cliList: SettingsCliList(
+              fields: const <SettingsCliParam>[
+                SettingsCliParam('path', help: '要导入的 .lua 文件绝对路径', path: true),
+              ],
+              list: (SettingsContext c) async {
+                final Map<String, String?> states =
+                    videoQuickSettingsHostOf(c)?.luaScriptStates?.value ??
+                    const <String, String?>{};
+                return <Map<String, Object?>>[
+                  for (final String path in await listLuaScriptPaths())
+                    <String, Object?>{
+                      'id': p.basename(path),
+                      'path': path,
+                      if (states.containsKey(path))
+                        'state': states[path] ?? 'loaded',
+                    },
+                ];
+              },
+              add: (SettingsContext c, Map<String, String> fields) async {
+                final String path = fields['path']!;
+                if (!path.toLowerCase().endsWith('.lua') ||
+                    !File(path).existsSync()) {
+                  throw ArgumentError('不是存在的 .lua 文件：$path');
+                }
+                final String imported = await importLuaScriptFile(path);
+                await videoQuickSettingsHostOf(c)?.onLuaScriptsChanged?.call();
+                return <String, Object?>{
+                  'id': p.basename(imported),
+                  'path': imported,
+                };
+              },
+              remove: (SettingsContext c, String id) async {
+                final Directory dir = await mpvLuaScriptDirectory();
+                final File file = File(p.join(dir.path, id));
+                if (!p.isWithin(dir.path, file.path) || !file.existsSync()) {
+                  throw ArgumentError('脚本目录里没有 $id');
+                }
+                await file.delete();
+              },
+            ),
             builder: buildVideoLuaScriptList,
           ),
           // 复制目录路径（全平台一致，不做平台分支的文件管理器跳转）：用户拿路径
@@ -1920,6 +2122,13 @@ SettingsDestination buildVideoDestination() {
               group: VideoGroup.mpv,
               order: 216,
               section: t.video_setting_mpv_group_advanced,
+            ),
+            // CLI 直接回报目录路径（不经剪贴板）。
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> args) async =>
+                  <String, Object?>{
+                    'path': (await mpvLuaScriptDirectory()).path,
+                  },
             ),
             onTap: (SettingsContext settingsContext) async {
               final String dirPath = (await mpvLuaScriptDirectory()).path;
@@ -2043,38 +2252,6 @@ SettingsDestination buildVideoDestination() {
             ),
             builder: buildVideoSubtitleSyncRow,
           ),
-          // 字幕**文字**颜色调色盘行（TODO-1326）。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_text_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 90,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleTextColorRow,
-          ),
-          // 字幕阴影 / 描边颜色调色盘行（#xif6-gtSz7），紧跟各自的粗细滑条。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_shadow_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 101,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleShadowColorRow,
-          ),
-          SettingsCustomItem(
-            id: 'video.player.subtitle_outline_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 103,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleOutlineColorRow,
-          ),
           // 一键无背景：与相邻 bg_opacity 滑到 0 等效的便捷动作，全局设置页有意不
           // 单列（冗余），播放页快捷面板保留。
           SettingsActionItem(
@@ -2088,23 +2265,13 @@ SettingsDestination buildVideoDestination() {
               order: 120,
               section: t.video_setting_subtitle_appearance,
             ),
+            cli: const SettingsCliAction.tap(offPageRunnable: true),
             onTap: (SettingsContext c) async {
               await commitVideoSubtitleStyle(
                 c,
                 (VideoSubtitleStyle s) => s.copyWith(backgroundOpacity: 0),
               );
             },
-          ),
-          // TODO-1059：字幕背景颜色调色盘行。
-          SettingsCustomItem(
-            id: 'video.player.subtitle_bg_color',
-            visible: videoHostVisible,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 130,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            builder: buildVideoSubtitleBgColorRow,
           ),
           SettingsActionItem(
             id: 'video.player.subtitle_style_reset',
@@ -2116,6 +2283,7 @@ SettingsDestination buildVideoDestination() {
               order: 150,
               section: t.video_setting_subtitle_appearance,
             ),
+            cli: const SettingsCliAction.tap(offPageRunnable: true),
             onTap: (SettingsContext c) async {
               await commitVideoSubtitleStyle(
                 c,
@@ -2128,6 +2296,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.player.shaders',
             visible: videoHostVisible,
             video: VideoPlacement(group: VideoGroup.shaders, order: 10),
+            cliList: videoShadersCliList,
             builder: buildVideoShaderManager,
           ),
           // 原始 mpv.conf 多行逃生口（高级）。
@@ -2139,6 +2308,7 @@ SettingsDestination buildVideoDestination() {
               order: 210,
               section: t.video_setting_mpv_group_advanced,
             ),
+            cliValue: videoMpvRawConfCli,
             builder: buildVideoMpvRawConfField,
           ),
           // 重置：全部回 mpv 默认（含清空原始 conf 框，经 pref 回填输入框）。
@@ -2148,6 +2318,7 @@ SettingsDestination buildVideoDestination() {
             icon: Icons.restart_alt_outlined,
             visible: videoHostVisible,
             video: VideoPlacement(group: VideoGroup.mpv, order: 220),
+            cli: const SettingsCliAction.tap(offPageRunnable: true),
             onTap: (SettingsContext c) async {
               await commitVideoMpvConfig(
                 c,
@@ -2236,6 +2407,7 @@ SettingsDestination buildVideoDestination() {
               order: 90,
               section: t.video_setting_danmaku_block_rules,
             ),
+            cliValue: videoDanmakuBlockRulesCli,
             builder: buildVideoDanmakuBlockRulesField,
           ),
           // 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。
@@ -2243,6 +2415,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.player.controls_editor',
             visible: videoHostVisible,
             video: VideoPlacement(group: VideoGroup.controls, order: 10),
+            cliValue: videoControlLayoutCli,
             builder: buildVideoControlLayoutEditor,
           ),
         ],
@@ -2466,6 +2639,38 @@ String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
             '${parsed.errors.length}';
 }
 
+/// 识别词表的无界面写入（控制通道 `config run video.library.metadata_identifier_words
+/// --value …`）：与编辑对话框同一个写入口；对话框里只是展示的非法行，这里直接
+/// 拒绝（CLI 看不到实时校验，静默写进一行无效规则只会让用户以为生效了）。
+Future<Object?> commitVideoScrapeIdentifierWords(
+  SettingsContext settingsContext,
+  Map<String, String> args,
+) async {
+  final String text = args['value'] ?? '';
+  final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
+    text,
+  );
+  if (parsed.errors.isNotEmpty) {
+    throw FormatException(
+      '识别词表有 ${parsed.errors.length} 行无法解析：${parsed.errors.join('；')}',
+    );
+  }
+  await _writeVideoScrapeIdentifierWords(settingsContext, text);
+  return <String, Object?>{'rules': parsed.words.length};
+}
+
+/// 识别词表的唯一写入口（对话框与控制通道共用）：词表里的换行与缩进是语义的
+/// 一部分，不能走默认的 trim。
+Future<void> _writeVideoScrapeIdentifierWords(
+  SettingsContext settingsContext,
+  String text,
+) => commitVideoMetadataRuntimePreference(
+  settingsContext,
+  kVideoMetadataIdentifierWordsPref,
+  text,
+  trimValue: false,
+);
+
 /// 识别词编辑对话框：多行词表 + 实时非法行提示。取消不写任何偏好。
 Future<void> showVideoScrapeIdentifierWordsDialog(
   SettingsContext settingsContext,
@@ -2482,13 +2687,7 @@ Future<void> showVideoScrapeIdentifierWordsDialog(
     ),
   );
   if (saved == null) return;
-  // 词表里的换行与缩进是语义的一部分，不能走默认的 trim。
-  await commitVideoMetadataRuntimePreference(
-    settingsContext,
-    kVideoMetadataIdentifierWordsPref,
-    saved,
-    trimValue: false,
-  );
+  await _writeVideoScrapeIdentifierWords(settingsContext, saved);
   settingsContext.refresh();
 }
 

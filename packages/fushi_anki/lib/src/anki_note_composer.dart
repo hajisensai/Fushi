@@ -132,6 +132,9 @@ const String _inlineVideoPlayVisibleJs =
 /// `data-fushi-started`，其余一律直接返回。`canplay` 在媒体载入后才来，此时整张卡
 /// 已插入 DOM、CSS 已生效，可见性判得准。`play()` 被拒（卡组关了自动播放 → Anki 恢复
 /// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
+///
+/// BUG-3428：卡上有内嵌单词音频（[inlineVideoWordAudioHtml]）时先播单词、`ended`
+/// 之后再播片段——两者都在页内，顺序由这里串起来，不再和 Anki 原生队列抢着出声。
 String inlineVideoCoverHtml(String mediaName) =>
     '<video class="fushi-inline-video" '
     'src="${const HtmlEscape().convert(mediaName)}" '
@@ -140,8 +143,72 @@ String inlineVideoCoverHtml(String mediaName) =>
     "if(this.getAttribute('data-fushi-started'))return;"
     "Array.prototype.forEach.call(document.querySelectorAll('video.fushi-inline-video'),"
     "function(e){e.setAttribute('data-fushi-started','1');});"
-    '$_inlineVideoPlayVisibleJs'
+    '${_inlineWordAudioThenJs(_inlineVideoPlayVisibleJs)}'
     '"></video>';
+
+/// 页面上所有内嵌单词音频副本里取第一个、其余暂停（单行、无反斜杠 / 反引号 / `${`）。
+/// Lapis 把 `{{ExpressionAudio}}` 复制进 header / alt 两个按钮容器，音频没有可见性
+/// 之分，只要保证同时只有一份在响。
+const String _inlineWordAudioPickJs =
+    "var ws=Array.prototype.slice.call(document.querySelectorAll('audio.fushi-word-audio'));"
+    'var w=ws[0];ws.forEach(function(e){if(e!==w){e.onended=null;e.pause();}});';
+
+/// 先播内嵌单词音频，`ended` 后执行 [next]；页面上没有单词音频时直接执行 [next]。
+///
+/// `play()` 被拒分两种：`NotAllowedError`（卡组关了自动播放、需要用户手势）时 [next]
+/// 一样会被拒，什么都不做；其余（文件缺失 / 解码失败）跳过单词、照常执行 [next]，
+/// 不让坏掉的单词音频把句子也吞掉。
+String _inlineWordAudioThenJs(String next) =>
+    _inlineWordAudioPickJs +
+    'if(w){w.currentTime=0;w.onended=function(){w.onended=null;$next};'
+        'var wp=w.play();if(wp&&wp.catch){wp.catch(function(err){'
+        "if(err&&err.name==='NotAllowedError')return;"
+        'w.onended=null;$next});}}'
+        'else{$next}';
+
+/// 手动重播句子时停掉单词音频并撤销「播完接句子」，否则单词稍后播完会把句子再
+/// 从头拉一遍（单行、无反斜杠 / 反引号 / `${`）。
+const String _inlineWordAudioStopJs =
+    "Array.prototype.forEach.call(document.querySelectorAll('audio.fushi-word-audio'),"
+    'function(e){e.onended=null;e.pause();});';
+
+/// 同步片段卡的单词音频字段：重播按钮 + 一个隐藏 `<audio>`，取代原来的 `[sound:]`。
+///
+/// BUG-3428：`[sound:]` 由 Anki 原生队列在翻面时自动播放，而内嵌片段由页内
+/// `oncanplay` 自己播放；原生播放结束不会通知卡片 JS，两路没法排先后，于是单词和
+/// 句子同时出声。把单词音频也放进页内，由 [inlineVideoCoverHtml] 的脚本先播单词、
+/// 再播片段。代价：Anki 的「重播音频」快捷键（R）不再重播单词，改用卡上的按钮。
+///
+/// - 按钮：只重播单词，并撤销「播完接句子」。带 `replay-button` 类，沿用 Lapis 按钮样式。
+/// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时由它开头——播一次单词，
+///   `ended` 后接句子音频字段里的隐藏 `<audio>`（句子那边见到单词音频就让出）；
+///   有片段时什么都不做（画面那边的脚本负责整条顺序）。
+/// - `onerror`：单词文件坏掉、又没有片段时直接放句子，不让整张卡静音。
+///
+/// 与句子音频字段一样会被 Lapis 插进 JS 模板字面量（`addAudioButtons`），所以同样
+/// 不能有反斜杠 / 反引号 / `${` / `<script>`。守卫见 `inline_video_cover_test.dart`。
+String inlineVideoWordAudioHtml(String mediaName) =>
+    '<button type="button" class="replay-button fushi-word-audio-replay" '
+    'aria-label="Replay word audio" '
+    'onclick="event.stopPropagation();$_inlineWordAudioPickJs'
+    'if(w){w.onended=null;w.currentTime=0;var p=w.play();'
+    'if(p&&p.catch){p.catch(function(){});}}'
+    'return false;">&#9654;</button>'
+    '<audio class="fushi-word-audio" '
+    'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
+    'oncanplay="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    '${_inlineWordAudioThenJs(_inlineAudioPlayJs)}" '
+    'onerror="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    '$_inlineAudioPlayJs'
+    '"></audio>';
 
 /// 页面上**没有**内嵌片段时，改用句子音频字段里的隐藏 `<audio>` 播放同一个片段文件的
 /// 声音（单行、无反斜杠 / 反引号 / `${`）。
@@ -154,7 +221,9 @@ const String _inlineAudioPlayJs =
 /// - 按钮：页面上有内嵌片段 → 片段回到开头音画一起重播；没有（Lapis「音频卡」正面只
 ///   渲染 `{{SentenceAudio}}`、自定义模板把 Picture 放在另一面）→ 播隐藏 `<audio>`。
 /// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时自动播放一次（音频卡正面照旧
-///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）。
+///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）；有内嵌单词
+///   音频时也让出（[inlineVideoWordAudioHtml] 播完单词再接它，BUG-3428）。
+/// - 按钮先停掉单词音频并撤销它的「播完接句子」，免得句子被拉两遍。
 ///
 /// 为什么用内联事件属性而不是 `<script>`：Lapis 背面把 `{{SentenceAudio}}` 插进一个
 /// `<script>` 块里的 JS 模板字面量，字段里出现 `</script>` 会让 HTML 解析器提前结束那个
@@ -166,7 +235,7 @@ const String _inlineAudioPlayJs =
 String inlineVideoSentenceAudioHtml(String mediaName) =>
     '<button type="button" class="replay-button fushi-synced-video-replay '
     'fushi-inline-video-replay" aria-label="Replay video" '
-    'onclick="event.stopPropagation();'
+    'onclick="event.stopPropagation();$_inlineWordAudioStopJs'
     "if(document.querySelector('video.fushi-inline-video')){"
     '$_inlineVideoPlayVisibleJs}else{$_inlineAudioPlayJs}'
     'return false;">&#9654;</button>'
@@ -174,6 +243,7 @@ String inlineVideoSentenceAudioHtml(String mediaName) =>
     'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
     'oncanplay="'
     "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-word-audio')||"
     "document.querySelector('audio.fushi-inline-audio[data-fushi-started]'))"
     'return;'
     "this.setAttribute('data-fushi-started','1');"
@@ -734,6 +804,14 @@ mixin AnkiNoteComposer {
             )
             ? inlineVideoSentenceAudioHtml(inlineVideoName)
             : null;
+        // BUG-3428：单词音频若留成 `[sound:]`，Anki 原生队列翻面就放，和片段的
+        // oncanplay 同时出声。改成页内 <audio>，由片段脚本先播单词再播片段。
+        final RegExpMatch? wordAudio = RegExp(
+          r'^\[sound:([^\]]+)\]$',
+        ).firstMatch(processedAudio);
+        if (wordAudio != null) {
+          processedAudio = inlineVideoWordAudioHtml(wordAudio.group(1)!);
+        }
       }
     } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(

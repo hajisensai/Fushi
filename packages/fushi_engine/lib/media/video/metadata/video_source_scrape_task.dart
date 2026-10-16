@@ -1042,22 +1042,27 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     return completer.future.whenComplete(_clearPendingConfirmation);
   }
 
-  void confirmPending(
+  /// 用 [candidate] 回答当前待确认项。app 内确认框与桌面 CLI（`video confirm`）
+  /// 回答的是同一个待决状态：谁先答算谁的，后到的一方拿到 false（此时完成器已
+  /// 完成、只是清理还没跑到微任务，[pendingConfirmation] 可能仍非空，所以「答没
+  /// 答上」只能看返回值）。
+  bool confirmPending(
     VideoSourceScrapeConfirmationCandidate candidate,
   ) {
     final Completer<VideoSourceScrapeConfirmationCandidate?>? completer =
         _confirmationCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete(candidate);
-    }
+    if (completer == null || completer.isCompleted) return false;
+    completer.complete(candidate);
+    return true;
   }
 
-  void skipPendingConfirmation() {
+  /// 跳过当前待确认项（作品留在待确认清单里）。返回值语义同 [confirmPending]。
+  bool skipPendingConfirmation() {
     final Completer<VideoSourceScrapeConfirmationCandidate?>? completer =
         _confirmationCompleter;
-    if (completer != null && !completer.isCompleted) {
-      completer.complete();
-    }
+    if (completer == null || completer.isCompleted) return false;
+    completer.complete();
+    return true;
   }
 
   void _clearPendingConfirmation() {

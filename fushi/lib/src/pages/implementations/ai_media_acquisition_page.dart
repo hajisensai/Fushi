@@ -11,6 +11,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
@@ -120,6 +121,142 @@ List<MediaAcquisitionCandidate> orderMediaAcquisitionCandidates(
   return <MediaAcquisitionCandidate>[...picked, ...rest];
 }
 
+/// 一轮「AI 下载」搜索进行到哪一步。
+enum MediaAcquisitionSearchPhase { parsing, searching, picking, done }
+
+/// 一轮「AI 下载」搜索的当前快照（页面与桌面控制通道共用）。
+class MediaAcquisitionSearchSnapshot {
+  const MediaAcquisitionSearchSnapshot({
+    required this.phase,
+    this.queries = const <String>[],
+    this.candidates = const <MediaAcquisitionCandidate>[],
+    this.picks = const <String>[],
+    this.aiDegraded = false,
+  });
+
+  final MediaAcquisitionSearchPhase phase;
+
+  /// 实际拿去搜的词（AI 解析结果，失败时是原文）。
+  final List<String> queries;
+
+  /// 目前为止的候选；[phase] 为 done 时已按「推荐在前」排好。
+  final List<MediaAcquisitionCandidate> candidates;
+
+  /// AI 推荐的候选 id（按推荐序）。
+  final List<String> picks;
+
+  /// AI 两步里有一步失败（流程照常，只是没有智能解析 / 推荐）。
+  final bool aiDegraded;
+}
+
+/// 一轮「AI 下载」搜索：① AI 把一句话解析成搜索词（失败 / 没解析出作品名就按
+/// 原文搜）② 逐词、全部后端并发搜，按 id 去重 ③ AI 在已取回的候选里挑推荐（池子
+/// 按本地分截前 [kAiMediaAcquisitionPickPool]，失败按本地排序）。AI 永远不触发下载。
+///
+/// 每推进一步把快照交给 [onUpdate]；[isStale] 为真时立刻停下、不再回调并返回 null
+/// （页面换了一轮提交 / 控制通道取消了会话）。
+Future<MediaAcquisitionSearchSnapshot?> runMediaAcquisitionSearch({
+  required AiMediaAcquisitionAi ai,
+  required AiMediaAcquisitionDomain domain,
+  required List<MediaAcquisitionBackend> backends,
+  required String utterance,
+  required void Function(MediaAcquisitionSearchSnapshot snapshot) onUpdate,
+  bool Function()? isStale,
+}) async {
+  bool stale() => isStale?.call() ?? false;
+  bool aiDegraded = false;
+
+  // ① 一句话 → 搜索词；失败 / 没解析出作品名就按原文搜。
+  List<String> queries = <String>[utterance];
+  try {
+    final AiMediaAcquisitionIntent? intent = await ai.parseIntent(
+      domain,
+      utterance,
+    );
+    if (intent != null && !intent.isEmpty) queries = intent.queries;
+  } on Object {
+    aiDegraded = true;
+  }
+  if (stale()) return null;
+  onUpdate(
+    MediaAcquisitionSearchSnapshot(
+      phase: MediaAcquisitionSearchPhase.searching,
+      queries: queries,
+      aiDegraded: aiDegraded,
+    ),
+  );
+
+  // ② 逐词、全部后端并发搜，按 id 去重。
+  final Map<String, MediaAcquisitionCandidate> found =
+      <String, MediaAcquisitionCandidate>{};
+  for (final String query in queries) {
+    final List<List<MediaAcquisitionCandidate>> batches =
+        await Future.wait(<Future<List<MediaAcquisitionCandidate>>>[
+          for (final MediaAcquisitionBackend backend in backends)
+            backend
+                .search(query)
+                .catchError((Object _) => const <MediaAcquisitionCandidate>[]),
+        ]);
+    if (stale()) return null;
+    for (final List<MediaAcquisitionCandidate> batch in batches) {
+      for (final MediaAcquisitionCandidate c in batch) {
+        found.putIfAbsent(c.id, () => c);
+      }
+    }
+    onUpdate(
+      MediaAcquisitionSearchSnapshot(
+        phase: MediaAcquisitionSearchPhase.searching,
+        queries: queries,
+        candidates: found.values.toList(),
+        aiDegraded: aiDegraded,
+      ),
+    );
+  }
+  if (found.isEmpty) {
+    final MediaAcquisitionSearchSnapshot empty = MediaAcquisitionSearchSnapshot(
+      phase: MediaAcquisitionSearchPhase.done,
+      queries: queries,
+      aiDegraded: aiDegraded,
+    );
+    onUpdate(empty);
+    return empty;
+  }
+
+  // ③ AI 在已取回的候选里挑推荐（池子按本地分截前 N）。
+  onUpdate(
+    MediaAcquisitionSearchSnapshot(
+      phase: MediaAcquisitionSearchPhase.picking,
+      queries: queries,
+      candidates: found.values.toList(),
+      aiDegraded: aiDegraded,
+    ),
+  );
+  final List<MediaAcquisitionCandidate> pool = orderMediaAcquisitionCandidates(
+    found.values.toList(),
+    const <String>[],
+  ).take(kAiMediaAcquisitionPickPool).toList();
+  List<String> picks = const <String>[];
+  try {
+    picks =
+        await ai.pick(domain, utterance, <AiMediaAcquisitionCandidateFact>[
+          for (final MediaAcquisitionCandidate c in pool) c.toFact(),
+        ]) ??
+        const <String>[];
+  } on Object {
+    aiDegraded = true;
+  }
+  if (stale()) return null;
+  final MediaAcquisitionSearchSnapshot done = MediaAcquisitionSearchSnapshot(
+    phase: MediaAcquisitionSearchPhase.done,
+    queries: queries,
+    candidates: orderMediaAcquisitionCandidates(found.values.toList(), picks),
+    picks: picks,
+    aiDegraded: aiDegraded,
+  );
+  onUpdate(done);
+  return done;
+}
+
 enum _Phase { idle, parsing, searching, picking, done }
 
 class AiMediaAcquisitionPage extends StatefulWidget {
@@ -191,87 +328,37 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
       _picks = const <String>{};
       _aiDegraded = false;
     });
-
-    // ① 一句话 → 搜索词；失败 / 没解析出作品名就按原文搜。
-    List<String> queries = <String>[utterance];
-    try {
-      final AiMediaAcquisitionIntent? intent = await widget.ai.parseIntent(
-        widget.domain,
-        utterance,
-      );
-      if (intent != null && !intent.isEmpty) queries = intent.queries;
-    } on Object {
-      _aiDegraded = true;
-    }
-    if (stale()) return;
-    setState(() {
-      _phase = _Phase.searching;
-      _queries = queries;
-    });
-
-    // ② 逐词、全部后端并发搜，按 id 去重。
-    final Map<String, MediaAcquisitionCandidate> found =
-        <String, MediaAcquisitionCandidate>{};
-    for (final String query in queries) {
-      final List<List<MediaAcquisitionCandidate>> batches = await Future.wait(
-        <Future<List<MediaAcquisitionCandidate>>>[
-          for (final MediaAcquisitionBackend backend in widget.backends)
-            backend
-                .search(query)
-                .catchError((Object _) => const <MediaAcquisitionCandidate>[]),
-        ],
-      );
-      if (stale()) return;
-      for (final List<MediaAcquisitionCandidate> batch in batches) {
-        for (final MediaAcquisitionCandidate c in batch) {
-          found.putIfAbsent(c.id, () => c);
-        }
-      }
-      setState(() => _candidates = found.values.toList());
-    }
-    if (found.isEmpty) {
-      setState(() => _phase = _Phase.done);
-      return;
-    }
-
-    // ③ AI 在已取回的候选里挑推荐（池子按本地分截前 N）。
-    setState(() => _phase = _Phase.picking);
-    final List<MediaAcquisitionCandidate> pool =
-        orderMediaAcquisitionCandidates(
-          found.values.toList(),
-          const <String>[],
-        ).take(kAiMediaAcquisitionPickPool).toList();
-    List<String> picks = const <String>[];
-    try {
-      picks =
-          await widget.ai.pick(
-            widget.domain,
-            utterance,
-            <AiMediaAcquisitionCandidateFact>[
-              for (final MediaAcquisitionCandidate c in pool) c.toFact(),
-            ],
-          ) ??
-          const <String>[];
-    } on Object {
-      _aiDegraded = true;
-    }
-    if (stale()) return;
-    setState(() {
-      _picks = picks.toSet();
-      _candidates = orderMediaAcquisitionCandidates(
-        found.values.toList(),
-        picks,
-      );
-      _phase = _Phase.done;
-    });
+    await runMediaAcquisitionSearch(
+      ai: widget.ai,
+      domain: widget.domain,
+      backends: widget.backends,
+      utterance: utterance,
+      isStale: stale,
+      onUpdate: (MediaAcquisitionSearchSnapshot snapshot) => setState(() {
+        _phase = switch (snapshot.phase) {
+          MediaAcquisitionSearchPhase.parsing => _Phase.parsing,
+          MediaAcquisitionSearchPhase.searching => _Phase.searching,
+          MediaAcquisitionSearchPhase.picking => _Phase.picking,
+          MediaAcquisitionSearchPhase.done => _Phase.done,
+        };
+        _queries = snapshot.queries;
+        _candidates = snapshot.candidates;
+        _picks = snapshot.picks.toSet();
+        _aiDegraded = snapshot.aiDegraded;
+      }),
+    );
   }
 
   Future<void> _acquire(MediaAcquisitionCandidate candidate) async {
     if (!_acquiring.add(candidate.id)) return;
     setState(() {});
     try {
-      final bool ok = await candidate.backend.acquire(context, candidate);
-      if (ok) _acquired.add(candidate.id);
+      final DownloadStartResult result = await candidate.backend.acquire(
+        context,
+        candidate,
+      );
+      showDownloadStartNotices(result);
+      if (result.started) _acquired.add(candidate.id);
     } finally {
       _acquiring.remove(candidate.id);
       if (mounted) setState(() {});

@@ -56,8 +56,15 @@ abstract interface class HostDownloadHost {
 
   Future<void> retryJob(String jobId);
 
-  Future<void> deleteJob(String jobId);
+  /// 删除任务。[deleteFiles] 是对端的显式选择（`DELETE /api/downloads/<id>?deleteFiles=`）：
+  /// 给了就按它删 / 留已下载数据；null = 旧客户端没带这个参数，各 host 保持各自的
+  /// 历史缺省（app 当 host 只移出列表，无头服务端连数据一起删，BUG-3417）。
+  Future<void> deleteJob(String jobId, {bool? deleteFiles});
 }
+
+/// `/api/capabilities` 的 downloads 段里声明「DELETE 认 deleteFiles 参数」的键。
+/// 老 host 没有这个键 → 客户端不能让用户选，删除语义按 host 历史缺省。
+const String kHostDownloadDeleteFilesParamCapability = 'deleteFilesParam';
 
 /// `POST /api/downloads` 的请求（字段与校验见 [HostDownloadAddRequest.fromJson]）。
 ///

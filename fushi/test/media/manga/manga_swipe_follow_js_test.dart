@@ -9,10 +9,17 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// 拖动全程 `#manga-root` 的 translateX 一像素不动（拖 N px 的跟随误差恒为 N），
 /// 松手后才从静止状态播翻页动画。
 ///
-/// 跑的是生成文档里**真实的** `_translateToSpread` / `_clampPan` / `_panBy` /
-/// `_start` / `_swipeMove` / `_swipeRelease` / `_end`，不是复刻；pointermove 按生产
-/// 监听器的顺序（先 `_panBy` 再 `_swipeMove`）逐步喂。每一步断言「页面位移 ==
-/// 手指位移」——这就是跟手误差的度量，期望恒为 0。
+/// 翻页动画升级（四选一 + 速度 + 跟手开关）后，这里同时咬住：
+/// - 跟手提交阈值：拖过 0.25 个视口宽，或往翻页方向甩动 > 0.6 px/ms 才翻，否则回弹；
+/// - 首 / 末页（没有相邻跨页）0.3× 阻尼、松手仍交给 Dart（跨章）并回弹；
+/// - 松手后 Dart 换页：从手指停下的位置接着动画，剩余时长按剩余距离缩短；
+/// - 连按：上一段动画直接落到终点再开始下一次；长距离跳页瞬时；
+/// - 「覆盖」效果：克隆层随手 / 自己动，strip 瞬时定位；
+/// - 第二指落下（捏合）立即复位。
+///
+/// 跑的是生成文档里**真实的** `_translateToSpread` … `__mangaApplyTranslate` /
+/// `_clampPan` / `_panBy` / `_start` / `_swipeMove` / `_swipeRelease` / `_end`，不是
+/// 复刻；pointermove 按生产监听器的顺序（先 `_panBy` 再 `_swipeMove`）逐步喂。
 void main() {
   final String document = mangaWindowDocument(
     const <MokuroImage>[
@@ -38,7 +45,7 @@ void main() {
 
   final String translate = section(
     '  function _translateToSpread(target){',
-    '  window.__mangaApplyTranslate = function(target){',
+    '  // 运行中换翻页动画设置',
   );
   final String pan = section('  function _clampPan(){', '  // 方向键平移');
   final String start = section(
@@ -51,29 +58,45 @@ void main() {
   );
 
   /// 视口 412×860、RTL、5 个跨页：RTL 倒序排布，跨页 i 的 offsetLeft =
-  /// (4-i)×412。当前停在跨页 2（落位 translateX = -824）。
+  /// (4-i)×412。当前停在跨页 2（落位 translateX = -824）。动画时长 220ms。
   String harness(String body) =>
       '''
 const assert=require('node:assert/strict');
 let ZOOM=1, PAN_X=0, PAN_Y=0, PAN_WIDE=true, IS_WEBTOON=false, IS_RTL=true;
-let SPLIT_ACTIVE=false, CURRENT=2;
+let SPLIT_ACTIVE=false, CURRENT=2, PAGE_HALF=0;
+let PAGE_ANIM='slide', PAGE_ANIM_MS=220, FOLLOW_DRAG=true;
+const MAX_ANIM_DIST=1, FOLLOW_COMMIT=0.25, FOLLOW_FLING=0.6;
+const FOLLOW_EDGE_DAMPING=0.3, PAGE_EASE='ease';
 const window={innerWidth:412,innerHeight:860};
-const root={style:{transform:'',transition:''},
-  querySelector(sel){
-    const m=/data-spread="(-?\\d+)"/.exec(sel);
-    const i=Number(m[1]);
-    return (i>=0&&i<5)?{offsetLeft:(4-i)*412}:null;
-  }};
+function mkEl(props){
+  const el={style:{transform:'',transition:'',opacity:''}, attrs:{}, children:[],
+    parentNode:null, offsetHeight:860, offsetWidth:412,
+    removeAttribute(k){ delete this.attrs[k]; },
+    querySelectorAll(){ return []; },
+    appendChild(c){ c.parentNode=this; this.children.push(c); return c; },
+    removeChild(c){ this.children=this.children.filter(x=>x!==c); c.parentNode=null; },
+    cloneNode(){ return mkEl({cloneOf:this.spread}); }};
+  return Object.assign(el, props||{});
+}
+const spreads=[0,1,2,3,4].map(i=>mkEl({spread:i, offsetLeft:(4-i)*412}));
+const root=mkEl({querySelector(sel){
+  const m=/data-spread="(-?\\d+)"/.exec(sel);
+  return spreads[Number(m[1])]||null;
+}});
+const vp=mkEl();
 const document={
-  getElementById(id){ return id==='manga-root'?root:null; },
+  body:{},
+  getElementById(id){ return id==='manga-root'?root:(id==='manga-viewport'?vp:null); },
   querySelectorAll(){ return []; },
+  createElement(){ return mkEl(); },
 };
 function _applyWidePolicy(){}
 function _hintWillChange(){}
-const PAGE_ANIM_MS=220;
 function _updateAutomaticBackground(){}
 function _applyCanvas(){}
 function _currentPageIsWide(){ return false; }
+function _flashPageChange(){}
+function _retryFailedPagesWhere(){}
 let turns=[], taps=0, dart=null;
 function _bridge(){ return {callHandler:(n,d)=>{
   if(n!=='onMangaTurn') return undefined;
@@ -87,7 +110,9 @@ $translate
 $pan
 $start
 $end
-function tx(){ return Number(/translateX\\((-?[\\d.]+)px\\)/.exec(root.style.transform)[1]); }
+function pxOf(el){ return Number(/translateX\\((-?[\\d.]+)px\\)/.exec(el.style.transform)[1]); }
+function tx(){ return pxOf(root); }
+function msOf(el){ const m=/^transform (\\d+)ms/.exec(el.style.transition); assert.ok(m,'没有过渡：'+el.style.transition); return Number(m[1]); }
 _translateToSpread(CURRENT);
 const BASE=tx();
 assert.equal(BASE,-824);
@@ -97,7 +122,7 @@ let lastX=0, lastY=0;
 function down(x,y){ lastX=x; lastY=y; _start(x,y); }
 function move(x,y,dt){ now+=dt||16; _panBy(x-lastX,y-lastY); lastX=x; lastY=y; _swipeMove(x,y); }
 function up(x,y){ return _end(x,y); }
-const errors=[];
+function later(ms, fn){ setTimeout(fn, ms); }
 $body
 ''';
 
@@ -140,7 +165,7 @@ for(let i=1;i<=10;i++){ const x=440-i*30; move(x,600); assert.equal(tx()-BASE,x-
     );
   });
 
-  test('越过阈值松手：交给 Dart 翻页；Dart 换了页就由翻页动画接管、不回弹', () async {
+  test('越过阈值松手：Dart 换了页就从松手位置接着动画，剩余时长按比例缩短', () async {
     await runJs(
       harness('''
 centerAt(1);
@@ -150,15 +175,18 @@ down(200,600);
 for(let i=1;i<=10;i++) move(200+i*15,600);
 up(350,600);
 assert.deepEqual(turns,['next'],'RTL 右滑 = 下一页');
-assert.equal(root.style.transition,'','松手前还原过渡，翻页动画从手指停下的位置接着走');
-assert.equal(tx(),BASE+150,'Dart 还没答复：页面停在手指松开的位置');
-// Dart 推进到跨页 3（等价 __mangaApplyTranslate），处理完才答复。
-TURN_SERIAL++; _translateToSpread(3);
+assert.equal(root.style.transition,'none','等 Dart 答复期间停在手指松开的位置');
+assert.equal(tx(),BASE+150);
+// Dart 推进到跨页 3，处理完才答复。
+window.__mangaApplyTranslate(3);
 settled();
-setTimeout(()=>{
-  assert.equal(CURRENT,3);
+assert.equal(CURRENT,3);
+assert.equal(tx(),-412);
+assert.equal(msOf(root),Math.round(220*262/412),'剩余 262px / 412px 的时长');
+later(300,()=>{
   assert.equal(tx(),-412,'翻页落位不被回弹覆盖');
-},0);
+  assert.equal(root.style.transition,'','动画结束还原过渡');
+});
 '''),
     );
   });
@@ -172,22 +200,50 @@ down(200,600);
 for(let i=1;i<=10;i++) move(200+i*15,600);
 up(350,600);
 assert.deepEqual(turns,['next']);
-setTimeout(()=>{ assert.equal(tx(),BASE,'没换页就回弹'); },0);
+later(0,()=>{
+  assert.equal(tx(),BASE,'没换页就回弹');
+  assert.ok(msOf(root)>0,'回弹是动画，不是瞬移');
+});
+later(300,()=>{ assert.equal(root.style.transition,''); });
 '''),
     );
   });
 
-  test('没过阈值：不翻页、立即回弹', () async {
+  test('没过阈值（慢拖 < 1/4 视口宽）：不翻页、回弹', () async {
     await runJs(
       harness('''
 centerAt(1);
 down(200,600);
-for(let i=1;i<=10;i++) move(200+i*4,600,40);
-assert.equal(tx(),BASE+40);
-up(240,600);
-assert.deepEqual(turns,[]);
-assert.equal(root.style.transition,'');
+for(let i=1;i<=9;i++) move(200+i*10,600,100);
+assert.equal(tx(),BASE+90);
+up(290,600);
+assert.deepEqual(turns,[],'90px < 0.25×412，速度 0.1px/ms：回弹');
 assert.equal(tx(),BASE);
+later(300,()=>{ assert.equal(root.style.transition,''); });
+'''),
+    );
+  });
+
+  test('慢拖过 1/4 视口宽：提交翻页', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+down(200,600);
+for(let i=1;i<=12;i++) move(200+i*10,600,100);
+up(320,600);
+assert.deepEqual(turns,['next'],'120px > 103px');
+'''),
+    );
+  });
+
+  test('短距离快甩（> 0.6 px/ms）：提交翻页', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+down(200,600);
+for(let i=1;i<=4;i++) move(200-i*10,600,10);
+up(160,600);
+assert.deepEqual(turns,['prev'],'40px、1px/ms：RTL 左甩 = 上一页');
 '''),
     );
   });
@@ -244,6 +300,159 @@ for(let i=1;i<=10;i++) move(200+i*15,600);
 assert.equal(tx(),BASE);
 up(350,600);
 assert.deepEqual(turns,['next'],'松手判定照旧');
+'''),
+    );
+  });
+
+  test('跟手开关关 / 淡入淡出 / 无动画：拖动中页面不动，松手沿用固定阈值', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+for (const setup of [()=>{FOLLOW_DRAG=false;}, ()=>{PAGE_ANIM='fade';}, ()=>{PAGE_ANIM='none';}]) {
+  FOLLOW_DRAG=true; PAGE_ANIM='slide'; turns=[];
+  setup();
+  down(200,600);
+  for(let i=1;i<=10;i++) move(200+i*8,600,40);
+  assert.equal(tx(),BASE,'不跟手');
+  up(280,600);
+  assert.deepEqual(turns,['next'],'80px ≥ 72px 旧阈值');
+}
+'''),
+    );
+  });
+
+  test('末页朝外拖：0.3× 阻尼，松手仍交给 Dart（跨章），没换页就回弹', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+_translateToSpread(4);
+const LAST=tx();
+assert.equal(LAST,0);
+dart=()=>Promise.resolve();
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*15,600);
+assert.equal(tx(),LAST+45,'RTL 右拖 = 下一跨页，不存在：150px × 0.3');
+up(350,600);
+assert.deepEqual(turns,['next'],'交给 Dart 判断要不要换章');
+later(0,()=>{ assert.equal(tx(),LAST,'回弹'); });
+'''),
+    );
+  });
+
+  test('连按：上一段动画立即落到终点再开始下一次；长距离跳页瞬时', () async {
+    await runJs(
+      harness('''
+window.__mangaApplyTranslate(3);
+assert.equal(msOf(root),220);
+assert.equal(tx(),-412);
+window.__mangaApplyTranslate(4);
+assert.equal(CURRENT,4);
+assert.equal(msOf(root),220,'第二次从上一段终点起播完整一段，不排队');
+assert.equal(tx(),0);
+window.__mangaApplyTranslate(0);
+assert.equal(root.style.transition,'','跳 4 个跨页：瞬时');
+assert.equal(tx(),-1648);
+assert.equal(_pageAnim,null,'没有在播的动画');
+'''),
+    );
+  });
+
+  test('第二指落下（捏合）：跟到一半的页面立即复位，不播回弹', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+down(200,600);
+for(let i=1;i<=6;i++) move(200+i*15,600);
+assert.equal(tx(),BASE+90);
+_swipeRelease(false, true);
+assert.equal(tx(),BASE);
+assert.equal(root.style.transition,'');
+'''),
+    );
+  });
+
+  test('覆盖：前进拖动是当前页的克隆层跟手，strip 底下已是目标页；提交后克隆层移走', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='cover';
+let settled=null;
+dart=()=>new Promise(r=>{ settled=r; });
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*15,600);
+assert.equal(vp.children.length,1,'一个覆盖层');
+const layer=vp.children[0];
+assert.equal(layer.children[0].cloneOf,2,'前进：克隆的是当前页');
+assert.equal(pxOf(layer),150,'覆盖层随手');
+assert.equal(tx(),-412,'strip 底下已是目标页 3');
+up(350,600);
+assert.deepEqual(turns,['next']);
+window.__mangaApplyTranslate(3);
+settled();
+assert.equal(pxOf(layer),412,'当前页整屏移走');
+assert.equal(msOf(layer),Math.round(220*262/412));
+later(300,()=>{
+  assert.equal(vp.children.length,0,'动画结束移除覆盖层');
+  assert.equal(CURRENT,3);
+  assert.equal(tx(),-412);
+});
+'''),
+    );
+  });
+
+  test('覆盖：后退拖动是目标页盖回来；没过阈值就退回去并移除', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='cover';
+down(200,600);
+for(let i=1;i<=6;i++) move(200-i*10,600,100);
+const layer=vp.children[0];
+assert.equal(layer.children[0].cloneOf,1,'后退：克隆的是上一跨页');
+assert.equal(pxOf(layer),412-60,'从右侧屏外盖进来 60px');
+assert.equal(tx(),BASE,'strip 留在当前页');
+up(140,600);
+assert.deepEqual(turns,[]);
+assert.equal(pxOf(layer),412,'退回屏外');
+later(300,()=>{
+  assert.equal(vp.children.length,0);
+  assert.equal(tx(),BASE);
+});
+'''),
+    );
+  });
+
+  test('覆盖：拖动中换方向就按新方向重建克隆层', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='cover';
+down(200,600);
+move(260,600);
+assert.equal(vp.children[0].children[0].cloneOf,2);
+move(140,600);
+assert.equal(vp.children.length,1,'旧层拆掉');
+assert.equal(vp.children[0].children[0].cloneOf,1);
+assert.equal(tx(),BASE);
+'''),
+    );
+  });
+
+  test('覆盖：按键 / 点击后退，目标页从屏外盖回，结束后 strip 才落到目标', () async {
+    await runJs(
+      harness('''
+PAGE_ANIM='cover';
+window.__mangaApplyTranslate(1);
+assert.equal(CURRENT,1);
+const layer=vp.children[0];
+assert.equal(layer.children[0].cloneOf,1);
+assert.equal(pxOf(layer),0,'盖到位');
+assert.equal(msOf(layer),220);
+assert.equal(tx(),BASE,'动画期间 strip 仍是旧页');
+later(300,()=>{
+  assert.equal(vp.children.length,0);
+  assert.equal(tx(),-1236);
+});
 '''),
     );
   });

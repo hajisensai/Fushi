@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 132158 (7774 per locale)
+/// Strings: 133008 (7824 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -3166,6 +3166,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Does not apply within your local network; LAN transfers always run at full speed.';
   String get download_rate_limit_lan_included =>
       'Also applies within your local network.';
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
   String get download_remote_jobs_empty => 'No tasks on the host yet';
   String download_remote_jobs_title({required Object device}) =>
       'Tasks on ${device}';
@@ -5054,6 +5056,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get home_continue => 'Continue';
   String get home_continue_empty => 'Nothing to continue yet';
   String home_continue_episode({required Object n}) => 'Ep ${n}';
+  String home_continue_volume({required Object n}) => 'Vol. ${n}';
   String get home_filter_added => 'Added';
   String get home_filter_all => 'All';
   String get home_filter_game => 'Game';
@@ -6116,10 +6119,6 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get manga_online_stage_extract => 'Extracting…';
   String get manga_online_stage_mokuro => 'Downloading OCR data…';
   String get manga_page_actions => 'Page actions';
-  String get manga_page_animation => 'Page turn animation';
-  String get manga_page_animation_fade => 'Fade';
-  String get manga_page_animation_none => 'None';
-  String get manga_page_animation_slide => 'Slide';
   String get manga_page_copy => 'Copy image';
   String manga_page_number_hint({required Object total}) =>
       'Page number (1-${total})';
@@ -7294,6 +7293,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get overlay_lookup_max_width => 'Pop-out lookup max width';
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
+  String get page_turn_animation => 'Page turn animation';
+  String get page_turn_animation_cover => 'Cover';
+  String get page_turn_animation_fade => 'Fade';
+  String get page_turn_animation_none => 'None';
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  String get page_turn_animation_slide => 'Slide';
+  String get page_turn_animation_speed => 'Animation speed';
+  String get page_turn_animation_speed_fast => 'Fast';
+  String get page_turn_animation_speed_normal => 'Normal';
+  String get page_turn_animation_speed_slow => 'Slow';
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
   String get paste => 'Paste';
   String get pause => 'Pause';
   String get pause_on_lookup => 'Pause on lookup';
@@ -7591,6 +7604,62 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
     required Object total,
   }) => 'Unlocked ${unlocked} / ${total}';
   String get reader_gallery_unlocked_empty => 'No unlocked illustrations yet';
+  String get reader_highlight_all_classic => 'All classic';
+  String get reader_highlight_animate => 'Stroke animation';
+  String get reader_highlight_animate_audio_hint =>
+      'Draws each sentence along the text as the audio reaches it';
+  String get reader_highlight_animate_hint =>
+      'Draws the stroke along the text when you add a favorite';
+  String get reader_highlight_animate_lookup_hint =>
+      'Draws the stroke along the text when you select a new word';
+  String get reader_highlight_animate_search_hint =>
+      'Draws the stroke along the text when you jump to a new match';
+  String get reader_highlight_cover_ruby => 'Cover furigana';
+  String get reader_highlight_cover_ruby_hint =>
+      'Thickens the stroke toward the furigana side. The furigana stays readable on top.';
+  String get reader_highlight_eink_notice =>
+      'E-ink mode always uses the classic style.';
+  String get reader_highlight_horizontal => 'Horizontal';
+  String get reader_highlight_kind_audio => 'Audiobook';
+  String get reader_highlight_kind_favorite => 'Favorites';
+  String get reader_highlight_kind_label => 'Applies to';
+  String get reader_highlight_kind_lookup => 'Lookup';
+  String get reader_highlight_kind_search => 'Search';
+  String get reader_highlight_opacity => 'Color strength';
+  String get reader_highlight_preview_color => 'Preview color';
+  String get reader_highlight_preview_color_hint =>
+      'Only changes the preview. Each favorite keeps its own color.';
+  String get reader_highlight_replay => 'Replay';
+  String get reader_highlight_reset => 'Reset to defaults';
+  String get reader_highlight_roughness => 'Stroke jitter';
+  String get reader_highlight_style_classic => 'Classic';
+  String get reader_highlight_style_classic_hint =>
+      'A one-character-high bar with an underline';
+  String get reader_highlight_style_crayon => 'Colored pencil';
+  String get reader_highlight_style_crayon_hint =>
+      'Grainy color with uneven edges';
+  String get reader_highlight_style_fluo => 'Highlighter';
+  String get reader_highlight_style_fluo_hint =>
+      'Feathered edges, darker at both ends';
+  String get reader_highlight_style_marker => 'Chisel marker';
+  String get reader_highlight_style_marker_hint =>
+      'Slanted ends, with a little ink pooling where the pen lifts';
+  String get reader_highlight_style_rough => 'Hand-drawn';
+  String get reader_highlight_style_rough_hint =>
+      'Two overlapping strokes, as if marked twice';
+  String get reader_highlight_style_tape => 'Washi tape';
+  String get reader_highlight_style_tape_hint =>
+      'Torn ends and a fine diagonal pattern';
+  String get reader_highlight_style_under => 'Lower half';
+  String get reader_highlight_style_under_hint =>
+      'Covers only the lower half of the text, never the furigana';
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  String get reader_highlight_thickness => 'Thickness';
+  String get reader_highlight_title => 'Highlight style';
+  String get reader_highlight_vertical => 'Vertical';
   String get reader_horizontal => 'Horizontal';
   String reader_image_copy_failed({required Object error}) =>
       'Failed to copy image: ${error}';
@@ -10521,6 +10590,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_setting_subtitle_no_background => 'No background';
   String get video_setting_subtitle_no_background_hint =>
       'Make the subtitle background transparent.';
+  String get video_setting_subtitle_no_outline => 'No outline';
   String get video_setting_subtitle_obscure => 'Obscure subtitles';
   String get video_setting_subtitle_obscure_blur => 'Blur';
   String get video_setting_subtitle_obscure_hide => 'Hide';
@@ -16232,6 +16302,9 @@ class _StringsAr extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'ينطبق أيضاً داخل شبكتك المحلية.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'لا توجد مهام على المضيف بعد';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -19441,6 +19514,8 @@ class _StringsAr extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'الحلقة ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'المجلد ${n}';
+  @override
   String get home_filter_added => 'مضافة';
   @override
   String get home_filter_all => 'الكل';
@@ -21217,14 +21292,6 @@ class _StringsAr extends _StringsEn {
   String get manga_online_stage_mokuro => 'جارٍ تحميل بيانات OCR…';
   @override
   String get manga_page_actions => 'إجراءات الصفحة';
-  @override
-  String get manga_page_animation => 'حركة تقليب الصفحة';
-  @override
-  String get manga_page_animation_fade => 'تلاشي';
-  @override
-  String get manga_page_animation_none => 'بدون';
-  @override
-  String get manga_page_animation_slide => 'انزلاق';
   @override
   String get manga_page_copy => 'نسخ الصورة';
   @override
@@ -23224,6 +23291,32 @@ class _StringsAr extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'صفحة ${current} / ${total}';
   @override
+  String get page_turn_animation => 'حركة تقليب الصفحة';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'تلاشي';
+  @override
+  String get page_turn_animation_none => 'بدون';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'انزلاق';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'لصق';
   @override
   String get pause => 'إيقاف مؤقت';
@@ -23754,6 +23847,99 @@ class _StringsAr extends _StringsEn {
   }) => 'تم فتح ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => 'لا توجد رسوم توضيحية مفتوحة بعد';
+  @override
+  String get reader_highlight_all_classic => 'الكل كلاسيكي';
+  @override
+  String get reader_highlight_animate => 'حركة رسم الخط';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'يرسم كل جملة على امتداد النص عندما يصل إليها الصوت';
+  @override
+  String get reader_highlight_animate_hint =>
+      'يرسم الخط على امتداد النص عند إضافة مفضلة';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'يرسم الخط عند تحديد كلمة جديدة؛ ولا يعيد الرسم عند توسيع التحديد بالسحب';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'يرسم الخط عند الانتقال إلى نتيجة جديدة';
+  @override
+  String get reader_highlight_cover_ruby => 'تغطية الفوريغانا';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'يزيد سُمك الخط نحو جهة الفوريغانا، وتبقى الفوريغانا مقروءة فوقه.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'يستخدم وضع E-ink النمط الكلاسيكي دائمًا.';
+  @override
+  String get reader_highlight_horizontal => 'أفقي';
+  @override
+  String get reader_highlight_kind_audio => 'الكتاب الصوتي';
+  @override
+  String get reader_highlight_kind_favorite => 'المفضلة';
+  @override
+  String get reader_highlight_kind_label => 'يُطبَّق على';
+  @override
+  String get reader_highlight_kind_lookup => 'البحث في القاموس';
+  @override
+  String get reader_highlight_kind_search => 'البحث';
+  @override
+  String get reader_highlight_opacity => 'شدة اللون';
+  @override
+  String get reader_highlight_preview_color => 'لون المعاينة';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'يغيّر المعاينة فقط، وتحتفظ كل مفضلة بلونها.';
+  @override
+  String get reader_highlight_replay => 'إعادة التشغيل';
+  @override
+  String get reader_highlight_reset => 'إعادة التعيين إلى الافتراضي';
+  @override
+  String get reader_highlight_roughness => 'اهتزاز الخط';
+  @override
+  String get reader_highlight_style_classic => 'كلاسيكي';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'شريط بارتفاع حرف واحد مع خط سفلي';
+  @override
+  String get reader_highlight_style_crayon => 'قلم تلوين';
+  @override
+  String get reader_highlight_style_crayon_hint => 'لون محبب بحواف غير منتظمة';
+  @override
+  String get reader_highlight_style_fluo => 'قلم تمييز';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'حواف منتشرة وأغمق عند الطرفين';
+  @override
+  String get reader_highlight_style_marker => 'قلم تحديد مشطوف';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'طرفان مائلان مع قليل من تجمّع الحبر عند رفع القلم';
+  @override
+  String get reader_highlight_style_rough => 'مرسوم باليد';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'خطّان متراكبان كأنه حُدّد مرتين';
+  @override
+  String get reader_highlight_style_tape => 'شريط واشي';
+  @override
+  String get reader_highlight_style_tape_hint => 'طرفان ممزقان ونقش قطري رفيع';
+  @override
+  String get reader_highlight_style_under => 'النصف السفلي';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'يغطي النصف السفلي من النص فقط ولا يغطي الفوريغانا أبدًا';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'السُّمك';
+  @override
+  String get reader_highlight_title => 'نمط التمييز';
+  @override
+  String get reader_highlight_vertical => 'عمودي';
   @override
   String get reader_horizontal => 'أفقي';
   @override
@@ -28856,6 +29042,8 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'اجعل خلفية الترجمة شفافة.';
+  @override
+  String get video_setting_subtitle_no_outline => 'بلا حدود للنص';
   @override
   String get video_setting_subtitle_obscure => 'إخفاء الترجمات';
   @override
@@ -35116,6 +35304,9 @@ class _StringsDe extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Gilt auch innerhalb Ihres lokalen Netzwerks.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Noch keine Aufgaben auf dem Host';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -38409,6 +38600,8 @@ class _StringsDe extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Folge ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Band ${n}';
+  @override
   String get home_filter_added => 'Hinzugefügt';
   @override
   String get home_filter_all => 'Alle';
@@ -40221,14 +40414,6 @@ class _StringsDe extends _StringsEn {
   String get manga_online_stage_mokuro => 'OCR-Daten werden heruntergeladen…';
   @override
   String get manga_page_actions => 'Seitenaktionen';
-  @override
-  String get manga_page_animation => 'Seitenumblätter-Animation';
-  @override
-  String get manga_page_animation_fade => 'Verblassen';
-  @override
-  String get manga_page_animation_none => 'Keine';
-  @override
-  String get manga_page_animation_slide => 'Gleiten';
   @override
   String get manga_page_copy => 'Bild kopieren';
   @override
@@ -42284,6 +42469,32 @@ class _StringsDe extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Seite ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Seitenumblätter-Animation';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Verblassen';
+  @override
+  String get page_turn_animation_none => 'Keine';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Gleiten';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Einfügen';
   @override
   String get pause => 'Pause';
@@ -42823,6 +43034,101 @@ class _StringsDe extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Noch keine freigeschalteten Illustrationen';
+  @override
+  String get reader_highlight_all_classic => 'Alle klassisch';
+  @override
+  String get reader_highlight_animate => 'Strichanimation';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Zeichnet jeden Satz entlang des Textes, sobald das Audio ihn erreicht';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Zeichnet den Strich entlang des Textes, wenn du einen Favoriten hinzufügst';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Zeichnet den Strich, wenn du ein neues Wort auswählst; Erweitern der Auswahl durch Ziehen zeichnet nicht neu';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Zeichnet den Strich, wenn du zu einem neuen Treffer springst';
+  @override
+  String get reader_highlight_cover_ruby => 'Furigana überdecken';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Verbreitert den Strich zur Furigana-Seite. Die Furigana bleiben darüber lesbar.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'Im E-Ink-Modus wird immer der klassische Stil verwendet.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontal';
+  @override
+  String get reader_highlight_kind_audio => 'Hörbuch';
+  @override
+  String get reader_highlight_kind_favorite => 'Favoriten';
+  @override
+  String get reader_highlight_kind_label => 'Gilt für';
+  @override
+  String get reader_highlight_kind_lookup => 'Nachschlagen';
+  @override
+  String get reader_highlight_kind_search => 'Suche';
+  @override
+  String get reader_highlight_opacity => 'Farbintensität';
+  @override
+  String get reader_highlight_preview_color => 'Vorschaufarbe';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Ändert nur die Vorschau. Jeder Favorit behält seine eigene Farbe.';
+  @override
+  String get reader_highlight_replay => 'Erneut abspielen';
+  @override
+  String get reader_highlight_reset => 'Auf Standard zurücksetzen';
+  @override
+  String get reader_highlight_roughness => 'Strichunruhe';
+  @override
+  String get reader_highlight_style_classic => 'Klassisch';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Ein zeichenhoher Balken mit Unterstreichung';
+  @override
+  String get reader_highlight_style_crayon => 'Buntstift';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Körnige Farbe mit unregelmäßigen Rändern';
+  @override
+  String get reader_highlight_style_fluo => 'Textmarker';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Ausgefranste Ränder, an beiden Enden dunkler';
+  @override
+  String get reader_highlight_style_marker => 'Keilspitzmarker';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Schräg abgeschnittene Enden, etwas Tinte sammelt sich am Strichende';
+  @override
+  String get reader_highlight_style_rough => 'Handgezeichnet';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Zwei überlagerte Striche, als wäre zweimal markiert worden';
+  @override
+  String get reader_highlight_style_tape => 'Washi-Tape';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Gerissene Enden und ein feines Schrägmuster';
+  @override
+  String get reader_highlight_style_under => 'Untere Hälfte';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Deckt nur die untere Hälfte des Textes ab, nie die Furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Stärke';
+  @override
+  String get reader_highlight_title => 'Hervorhebungsstil';
+  @override
+  String get reader_highlight_vertical => 'Vertikal';
   @override
   String get reader_horizontal => 'Horizontal';
   @override
@@ -48016,6 +48322,8 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Macht den Untertitelhintergrund transparent.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Keine Kontur';
   @override
   String get video_setting_subtitle_obscure => 'Untertitel verbergen';
   @override
@@ -54324,6 +54632,9 @@ class _StringsEs extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'También se aplica en su red local.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Aún no hay tareas en el anfitrión';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -57614,6 +57925,8 @@ class _StringsEs extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Ep. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Tomo ${n}';
+  @override
   String get home_filter_added => 'Añadido';
   @override
   String get home_filter_all => 'Todo';
@@ -59428,14 +59741,6 @@ class _StringsEs extends _StringsEn {
   String get manga_online_stage_mokuro => 'Descargando datos de OCR…';
   @override
   String get manga_page_actions => 'Acciones de página';
-  @override
-  String get manga_page_animation => 'Animación de paso de página';
-  @override
-  String get manga_page_animation_fade => 'Desvanecer';
-  @override
-  String get manga_page_animation_none => 'Ninguna';
-  @override
-  String get manga_page_animation_slide => 'Deslizar';
   @override
   String get manga_page_copy => 'Copiar imagen';
   @override
@@ -61493,6 +61798,32 @@ class _StringsEs extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Animación de paso de página';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Desvanecer';
+  @override
+  String get page_turn_animation_none => 'Ninguna';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Deslizar';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Pegar';
   @override
   String get pause => 'Pausar';
@@ -62032,6 +62363,101 @@ class _StringsEs extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Aún no hay ilustraciones desbloqueadas';
+  @override
+  String get reader_highlight_all_classic => 'Todo clásico';
+  @override
+  String get reader_highlight_animate => 'Animación del trazo';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Dibuja cada frase a lo largo del texto cuando el audio llega a ella';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Dibuja el trazo a lo largo del texto al añadir un favorito';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Dibuja el trazo al seleccionar una palabra nueva; ampliar la selección arrastrando no lo redibuja';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Dibuja el trazo al saltar a una nueva coincidencia';
+  @override
+  String get reader_highlight_cover_ruby => 'Cubrir furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Engrosa el trazo hacia el lado del furigana. El furigana sigue visible encima.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'El modo E-ink siempre usa el estilo clásico.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontal';
+  @override
+  String get reader_highlight_kind_audio => 'Audiolibro';
+  @override
+  String get reader_highlight_kind_favorite => 'Favoritos';
+  @override
+  String get reader_highlight_kind_label => 'Se aplica a';
+  @override
+  String get reader_highlight_kind_lookup => 'Búsqueda en diccionario';
+  @override
+  String get reader_highlight_kind_search => 'Búsqueda';
+  @override
+  String get reader_highlight_opacity => 'Intensidad del color';
+  @override
+  String get reader_highlight_preview_color => 'Color de vista previa';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Solo cambia la vista previa. Cada favorito conserva su propio color.';
+  @override
+  String get reader_highlight_replay => 'Repetir';
+  @override
+  String get reader_highlight_reset => 'Restablecer valores predeterminados';
+  @override
+  String get reader_highlight_roughness => 'Irregularidad del trazo';
+  @override
+  String get reader_highlight_style_classic => 'Clásico';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Una barra de un carácter de alto con subrayado';
+  @override
+  String get reader_highlight_style_crayon => 'Lápiz de color';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Color granulado con bordes irregulares';
+  @override
+  String get reader_highlight_style_fluo => 'Resaltador';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Bordes difuminados, más oscuro en ambos extremos';
+  @override
+  String get reader_highlight_style_marker => 'Marcador biselado';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Extremos en diagonal, con un poco de tinta acumulada al levantar el trazo';
+  @override
+  String get reader_highlight_style_rough => 'A mano';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Dos trazos superpuestos, como si se marcara dos veces';
+  @override
+  String get reader_highlight_style_tape => 'Cinta washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Extremos rasgados y un fino patrón diagonal';
+  @override
+  String get reader_highlight_style_under => 'Mitad inferior';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Cubre solo la mitad inferior del texto, nunca el furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Grosor';
+  @override
+  String get reader_highlight_title => 'Estilo de resaltado';
+  @override
+  String get reader_highlight_vertical => 'Vertical';
   @override
   String get reader_horizontal => 'Horizontal';
   @override
@@ -67252,6 +67678,8 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Hace transparente el fondo del subtítulo.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Sin contorno';
   @override
   String get video_setting_subtitle_obscure => 'Ocultar subtítulos';
   @override
@@ -73595,6 +74023,9 @@ class _StringsFr extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'S\'applique aussi sur votre réseau local.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty =>
       'Aucune tâche sur l\'hôte pour l\'instant';
   @override
@@ -76893,6 +77324,8 @@ class _StringsFr extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Ép. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Tome ${n}';
+  @override
   String get home_filter_added => 'Ajouté';
   @override
   String get home_filter_all => 'Tout';
@@ -78715,14 +79148,6 @@ class _StringsFr extends _StringsEn {
   String get manga_online_stage_mokuro => 'Téléchargement des données OCR…';
   @override
   String get manga_page_actions => 'Actions sur la page';
-  @override
-  String get manga_page_animation => 'Animation de changement de page';
-  @override
-  String get manga_page_animation_fade => 'Fondu';
-  @override
-  String get manga_page_animation_none => 'Aucune';
-  @override
-  String get manga_page_animation_slide => 'Glissement';
   @override
   String get manga_page_copy => 'Copier l\'image';
   @override
@@ -80793,6 +81218,32 @@ class _StringsFr extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Page ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Animation de changement de page';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Fondu';
+  @override
+  String get page_turn_animation_none => 'Aucune';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Glissement';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Coller';
   @override
   String get pause => 'Pause';
@@ -81333,6 +81784,101 @@ class _StringsFr extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Aucune illustration débloquée pour l\'instant';
+  @override
+  String get reader_highlight_all_classic => 'Tout classique';
+  @override
+  String get reader_highlight_animate => 'Animation du trait';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Trace chaque phrase le long du texte quand l\'audio l\'atteint';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Trace le trait le long du texte quand vous ajoutez un favori';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Trace le trait quand vous sélectionnez un nouveau mot ; agrandir la sélection en glissant ne le retrace pas';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Trace le trait quand vous passez à un nouveau résultat';
+  @override
+  String get reader_highlight_cover_ruby => 'Couvrir les furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Épaissit le trait du côté des furigana. Les furigana restent lisibles par-dessus.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'Le mode E-ink utilise toujours le style classique.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontal';
+  @override
+  String get reader_highlight_kind_audio => 'Livre audio';
+  @override
+  String get reader_highlight_kind_favorite => 'Favoris';
+  @override
+  String get reader_highlight_kind_label => 'S\'applique à';
+  @override
+  String get reader_highlight_kind_lookup => 'Recherche de mots';
+  @override
+  String get reader_highlight_kind_search => 'Recherche';
+  @override
+  String get reader_highlight_opacity => 'Intensité de la couleur';
+  @override
+  String get reader_highlight_preview_color => 'Couleur d\'aperçu';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Ne modifie que l\'aperçu. Chaque favori garde sa propre couleur.';
+  @override
+  String get reader_highlight_replay => 'Rejouer';
+  @override
+  String get reader_highlight_reset => 'Rétablir les valeurs par défaut';
+  @override
+  String get reader_highlight_roughness => 'Irrégularité du trait';
+  @override
+  String get reader_highlight_style_classic => 'Classique';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Une barre de la hauteur d\'un caractère avec soulignement';
+  @override
+  String get reader_highlight_style_crayon => 'Crayon de couleur';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Couleur granuleuse aux bords irréguliers';
+  @override
+  String get reader_highlight_style_fluo => 'Surligneur';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Bords estompés, plus foncé aux deux extrémités';
+  @override
+  String get reader_highlight_style_marker => 'Marqueur biseauté';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Extrémités en biais, un peu d\'encre accumulée en fin de trait';
+  @override
+  String get reader_highlight_style_rough => 'Fait main';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Deux traits superposés, comme surligné deux fois';
+  @override
+  String get reader_highlight_style_tape => 'Ruban washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Extrémités déchirées et fin motif diagonal';
+  @override
+  String get reader_highlight_style_under => 'Moitié inférieure';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Ne couvre que la moitié inférieure du texte, jamais les furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind} : ${style}';
+  @override
+  String get reader_highlight_thickness => 'Épaisseur';
+  @override
+  String get reader_highlight_title => 'Style de surlignage';
+  @override
+  String get reader_highlight_vertical => 'Vertical';
   @override
   String get reader_horizontal => 'Horizontal';
   @override
@@ -86568,6 +87114,8 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Rend le fond des sous-titres transparent.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Sans contour';
   @override
   String get video_setting_subtitle_obscure => 'Masquer les sous-titres';
   @override
@@ -92830,6 +93378,9 @@ class _StringsId extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Juga berlaku dalam jaringan lokal Anda.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Belum ada tugas di host';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -96078,6 +96629,8 @@ class _StringsId extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Ep. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Jilid ${n}';
+  @override
   String get home_filter_added => 'Ditambahkan';
   @override
   String get home_filter_all => 'Semua';
@@ -97872,14 +98425,6 @@ class _StringsId extends _StringsEn {
   String get manga_online_stage_mokuro => 'Mengunduh data OCR…';
   @override
   String get manga_page_actions => 'Aksi halaman';
-  @override
-  String get manga_page_animation => 'Animasi pergantian halaman';
-  @override
-  String get manga_page_animation_fade => 'Pudar';
-  @override
-  String get manga_page_animation_none => 'Tidak ada';
-  @override
-  String get manga_page_animation_slide => 'Geser';
   @override
   String get manga_page_copy => 'Salin gambar';
   @override
@@ -99901,6 +100446,32 @@ class _StringsId extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Halaman ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Animasi pergantian halaman';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Pudar';
+  @override
+  String get page_turn_animation_none => 'Tidak ada';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Geser';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Tempel';
   @override
   String get pause => 'Jeda';
@@ -100436,6 +101007,101 @@ class _StringsId extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Belum ada ilustrasi yang terbuka';
+  @override
+  String get reader_highlight_all_classic => 'Semua klasik';
+  @override
+  String get reader_highlight_animate => 'Animasi goresan';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Menggambar setiap kalimat di sepanjang teks saat audio sampai ke kalimat itu';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Menggambar goresan di sepanjang teks saat Anda menambahkan favorit';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Menggambar goresan saat Anda memilih kata baru; memperluas pilihan dengan menyeret tidak menggambar ulang';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Menggambar goresan saat Anda melompat ke hasil baru';
+  @override
+  String get reader_highlight_cover_ruby => 'Tutupi furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Menebalkan goresan ke arah furigana. Furigana tetap terbaca di atasnya.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'Mode E-ink selalu memakai gaya klasik.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontal';
+  @override
+  String get reader_highlight_kind_audio => 'Buku audio';
+  @override
+  String get reader_highlight_kind_favorite => 'Favorit';
+  @override
+  String get reader_highlight_kind_label => 'Berlaku untuk';
+  @override
+  String get reader_highlight_kind_lookup => 'Cari kata';
+  @override
+  String get reader_highlight_kind_search => 'Pencarian';
+  @override
+  String get reader_highlight_opacity => 'Intensitas warna';
+  @override
+  String get reader_highlight_preview_color => 'Warna pratinjau';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Hanya mengubah pratinjau. Setiap favorit tetap memakai warnanya sendiri.';
+  @override
+  String get reader_highlight_replay => 'Putar ulang';
+  @override
+  String get reader_highlight_reset => 'Kembalikan ke default';
+  @override
+  String get reader_highlight_roughness => 'Getaran goresan';
+  @override
+  String get reader_highlight_style_classic => 'Klasik';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Bilah setinggi satu karakter dengan garis bawah';
+  @override
+  String get reader_highlight_style_crayon => 'Pensil warna';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Warna berbintik dengan tepi tidak rata';
+  @override
+  String get reader_highlight_style_fluo => 'Stabilo';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Tepi meluber, lebih gelap di kedua ujung';
+  @override
+  String get reader_highlight_style_marker => 'Spidol pahat';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Ujung miring, dengan sedikit tinta menumpuk saat pena diangkat';
+  @override
+  String get reader_highlight_style_rough => 'Gambar tangan';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Dua goresan bertumpuk, seperti ditandai dua kali';
+  @override
+  String get reader_highlight_style_tape => 'Selotip washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Ujung sobek dan pola diagonal halus';
+  @override
+  String get reader_highlight_style_under => 'Separuh bawah';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Hanya menutup separuh bawah teks, tidak pernah menutup furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Ketebalan';
+  @override
+  String get reader_highlight_title => 'Gaya sorotan';
+  @override
+  String get reader_highlight_vertical => 'Vertikal';
   @override
   String get reader_horizontal => 'Horizontal';
   @override
@@ -105583,6 +106249,8 @@ class _StringsId extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Buat latar subtitle transparan.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Tanpa garis tepi';
   @override
   String get video_setting_subtitle_obscure => 'Samarkan subtitle';
   @override
@@ -111851,6 +112519,9 @@ class _StringsIt extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Si applica anche alla rete locale.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Ancora nessuna attività sull\'host';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -115126,6 +115797,8 @@ class _StringsIt extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Ep. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Volume ${n}';
+  @override
   String get home_filter_added => 'Aggiunti';
   @override
   String get home_filter_all => 'Tutti';
@@ -116930,14 +117603,6 @@ class _StringsIt extends _StringsEn {
   String get manga_online_stage_mokuro => 'Download dati OCR…';
   @override
   String get manga_page_actions => 'Azioni della pagina';
-  @override
-  String get manga_page_animation => 'Animazione cambio pagina';
-  @override
-  String get manga_page_animation_fade => 'Dissolvenza';
-  @override
-  String get manga_page_animation_none => 'Nessuna';
-  @override
-  String get manga_page_animation_slide => 'Scorrimento';
   @override
   String get manga_page_copy => 'Copia immagine';
   @override
@@ -118988,6 +119653,32 @@ class _StringsIt extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Animazione cambio pagina';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Dissolvenza';
+  @override
+  String get page_turn_animation_none => 'Nessuna';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Scorrimento';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Incolla';
   @override
   String get pause => 'Pausa';
@@ -119524,6 +120215,101 @@ class _StringsIt extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Ancora nessuna illustrazione sbloccata';
+  @override
+  String get reader_highlight_all_classic => 'Tutto classico';
+  @override
+  String get reader_highlight_animate => 'Animazione del tratto';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Disegna ogni frase lungo il testo quando l\'audio la raggiunge';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Disegna il tratto lungo il testo quando aggiungi un preferito';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Disegna il tratto quando selezioni una nuova parola; ampliare la selezione trascinando non lo ridisegna';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Disegna il tratto quando passi a un nuovo risultato';
+  @override
+  String get reader_highlight_cover_ruby => 'Copri i furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Ispessisce il tratto verso il lato dei furigana. I furigana restano leggibili sopra.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'La modalità E-ink usa sempre lo stile classico.';
+  @override
+  String get reader_highlight_horizontal => 'Orizzontale';
+  @override
+  String get reader_highlight_kind_audio => 'Audiolibro';
+  @override
+  String get reader_highlight_kind_favorite => 'Preferiti';
+  @override
+  String get reader_highlight_kind_label => 'Si applica a';
+  @override
+  String get reader_highlight_kind_lookup => 'Ricerca nel dizionario';
+  @override
+  String get reader_highlight_kind_search => 'Ricerca';
+  @override
+  String get reader_highlight_opacity => 'Intensità del colore';
+  @override
+  String get reader_highlight_preview_color => 'Colore anteprima';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Cambia solo l\'anteprima. Ogni preferito mantiene il proprio colore.';
+  @override
+  String get reader_highlight_replay => 'Riproduci di nuovo';
+  @override
+  String get reader_highlight_reset => 'Ripristina predefiniti';
+  @override
+  String get reader_highlight_roughness => 'Irregolarità del tratto';
+  @override
+  String get reader_highlight_style_classic => 'Classico';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Una barra alta un carattere con sottolineatura';
+  @override
+  String get reader_highlight_style_crayon => 'Matita colorata';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Colore granuloso con bordi irregolari';
+  @override
+  String get reader_highlight_style_fluo => 'Evidenziatore';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Bordi sfumati, più scuro alle due estremità';
+  @override
+  String get reader_highlight_style_marker => 'Marcatore a scalpello';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Estremità oblique, con un po\' d\'inchiostro accumulato dove si solleva la penna';
+  @override
+  String get reader_highlight_style_rough => 'A mano';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Due tratti sovrapposti, come se fosse segnato due volte';
+  @override
+  String get reader_highlight_style_tape => 'Nastro washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Estremità strappate e un sottile motivo diagonale';
+  @override
+  String get reader_highlight_style_under => 'Metà inferiore';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Copre solo la metà inferiore del testo, mai i furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Spessore';
+  @override
+  String get reader_highlight_title => 'Stile evidenziazione';
+  @override
+  String get reader_highlight_vertical => 'Verticale';
   @override
   String get reader_horizontal => 'Orizzontale';
   @override
@@ -124717,6 +125503,8 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Rende trasparente lo sfondo dei sottotitoli.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Nessun contorno';
   @override
   String get video_setting_subtitle_obscure => 'Oscura sottotitoli';
   @override
@@ -130776,6 +131564,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get download_rate_limit_lan_included => 'ローカルネットワーク内にも適用されます。';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'ホストにはまだタスクがありません';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -133865,6 +134656,8 @@ class _StringsJa extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => '第${n}話';
   @override
+  String home_continue_volume({required Object n}) => '第${n}巻';
+  @override
   String get home_filter_added => '追加日';
   @override
   String get home_filter_all => 'すべて';
@@ -135578,14 +136371,6 @@ class _StringsJa extends _StringsEn {
   String get manga_online_stage_mokuro => 'OCRデータをダウンロード中…';
   @override
   String get manga_page_actions => 'ページ操作';
-  @override
-  String get manga_page_animation => 'ページめくりアニメーション';
-  @override
-  String get manga_page_animation_fade => 'フェード';
-  @override
-  String get manga_page_animation_none => 'なし';
-  @override
-  String get manga_page_animation_slide => 'スライド';
   @override
   String get manga_page_copy => '画像をコピー';
   @override
@@ -137504,6 +138289,32 @@ class _StringsJa extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'ページ ${current} / ${total}';
   @override
+  String get page_turn_animation => 'ページめくりアニメーション';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'フェード';
+  @override
+  String get page_turn_animation_none => 'なし';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'スライド';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => '貼り付け';
   @override
   String get pause => '一時停止';
@@ -138025,6 +138836,92 @@ class _StringsJa extends _StringsEn {
   }) => '解放済み ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => '解放済みの挿絵はまだありません';
+  @override
+  String get reader_highlight_all_classic => 'すべてクラシック';
+  @override
+  String get reader_highlight_animate => '描画アニメーション';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      '音声が読み上げた文から順に、文字に沿って線を引きます';
+  @override
+  String get reader_highlight_animate_hint => 'お気に入りに追加すると、文字に沿って線を引きます';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      '新しい語を選択すると線を引きます。ドラッグで選択範囲を広げても引き直しません';
+  @override
+  String get reader_highlight_animate_search_hint => '新しい検索結果に移動すると線を引きます';
+  @override
+  String get reader_highlight_cover_ruby => 'ふりがなを覆う';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'ふりがな側に線を太くします。ふりがなは線の上に表示されたままです。';
+  @override
+  String get reader_highlight_eink_notice => 'E-ink モードでは常にクラシックスタイルを使います。';
+  @override
+  String get reader_highlight_horizontal => '横書き';
+  @override
+  String get reader_highlight_kind_audio => 'オーディオブック';
+  @override
+  String get reader_highlight_kind_favorite => 'お気に入り';
+  @override
+  String get reader_highlight_kind_label => '適用先';
+  @override
+  String get reader_highlight_kind_lookup => '辞書検索';
+  @override
+  String get reader_highlight_kind_search => '検索';
+  @override
+  String get reader_highlight_opacity => '濃さ';
+  @override
+  String get reader_highlight_preview_color => 'プレビューの色';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'プレビューにのみ反映されます。各お気に入りは自分の色を保ちます。';
+  @override
+  String get reader_highlight_replay => '再生';
+  @override
+  String get reader_highlight_reset => 'デフォルトに戻す';
+  @override
+  String get reader_highlight_roughness => '線の揺らぎ';
+  @override
+  String get reader_highlight_style_classic => 'クラシック';
+  @override
+  String get reader_highlight_style_classic_hint => '1文字分の高さのバーと下線';
+  @override
+  String get reader_highlight_style_crayon => '色鉛筆';
+  @override
+  String get reader_highlight_style_crayon_hint => '紙の粒子感と不揃いな縁';
+  @override
+  String get reader_highlight_style_fluo => '蛍光ペン';
+  @override
+  String get reader_highlight_style_fluo_hint => 'にじんだ縁、書き始めと書き終わりが濃くなる';
+  @override
+  String get reader_highlight_style_marker => 'チゼルマーカー';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      '両端が斜めにカットされ、書き終わりに少しインクが溜まる';
+  @override
+  String get reader_highlight_style_rough => '手書き';
+  @override
+  String get reader_highlight_style_rough_hint => '2本の太い線を重ね、2回なぞったような仕上がり';
+  @override
+  String get reader_highlight_style_tape => 'マスキングテープ';
+  @override
+  String get reader_highlight_style_tape_hint => '両端が破れ、細い斜線模様が入る';
+  @override
+  String get reader_highlight_style_under => '下半分';
+  @override
+  String get reader_highlight_style_under_hint => '文字の下半分だけを塗り、ふりがなは隠さない';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}：${style}';
+  @override
+  String get reader_highlight_thickness => '太さ';
+  @override
+  String get reader_highlight_title => 'ハイライトスタイル';
+  @override
+  String get reader_highlight_vertical => '縦書き';
   @override
   String get reader_horizontal => '横書き';
   @override
@@ -142946,6 +143843,8 @@ class _StringsJa extends _StringsEn {
   String get video_setting_subtitle_no_background => '背景なし';
   @override
   String get video_setting_subtitle_no_background_hint => '字幕の背景を透明にします。';
+  @override
+  String get video_setting_subtitle_no_outline => '縁取りなし';
   @override
   String get video_setting_subtitle_obscure => '字幕を隠す';
   @override
@@ -148915,6 +149814,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get download_rate_limit_lan_included => '로컬 네트워크에도 적용됩니다.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => '호스트에 아직 작업이 없습니다';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -152018,6 +152920,8 @@ class _StringsKo extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => '${n}화';
   @override
+  String home_continue_volume({required Object n}) => '${n}권';
+  @override
   String get home_filter_added => '추가됨';
   @override
   String get home_filter_all => '전체';
@@ -153738,14 +154642,6 @@ class _StringsKo extends _StringsEn {
   String get manga_online_stage_mokuro => 'OCR 데이터 다운로드 중…';
   @override
   String get manga_page_actions => '페이지 동작';
-  @override
-  String get manga_page_animation => '페이지 넘김 애니메이션';
-  @override
-  String get manga_page_animation_fade => '페이드';
-  @override
-  String get manga_page_animation_none => '없음';
-  @override
-  String get manga_page_animation_slide => '슬라이드';
   @override
   String get manga_page_copy => '이미지 복사';
   @override
@@ -155672,6 +156568,32 @@ class _StringsKo extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       '페이지 ${current} / ${total}';
   @override
+  String get page_turn_animation => '페이지 넘김 애니메이션';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => '페이드';
+  @override
+  String get page_turn_animation_none => '없음';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => '슬라이드';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => '붙여넣기';
   @override
   String get pause => '일시정지';
@@ -156195,6 +157117,92 @@ class _StringsKo extends _StringsEn {
   }) => '잠금 해제됨 ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => '아직 잠금 해제된 삽화가 없습니다';
+  @override
+  String get reader_highlight_all_classic => '모두 클래식';
+  @override
+  String get reader_highlight_animate => '그리기 애니메이션';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      '오디오가 읽는 문장마다 글자를 따라 획을 그립니다';
+  @override
+  String get reader_highlight_animate_hint => '즐겨찾기를 추가하면 글자를 따라 획을 그립니다';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      '새 단어를 선택하면 획을 그립니다. 드래그로 선택 범위를 넓힐 때는 다시 그리지 않습니다';
+  @override
+  String get reader_highlight_animate_search_hint => '새 검색 결과로 이동하면 획을 그립니다';
+  @override
+  String get reader_highlight_cover_ruby => '후리가나 덮기';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      '후리가나 쪽으로 획을 두껍게 합니다. 후리가나는 획 위에 그대로 보입니다.';
+  @override
+  String get reader_highlight_eink_notice => 'E-ink 모드에서는 항상 클래식 스타일을 사용합니다.';
+  @override
+  String get reader_highlight_horizontal => '가로쓰기';
+  @override
+  String get reader_highlight_kind_audio => '오디오북';
+  @override
+  String get reader_highlight_kind_favorite => '즐겨찾기';
+  @override
+  String get reader_highlight_kind_label => '적용 대상';
+  @override
+  String get reader_highlight_kind_lookup => '사전 검색';
+  @override
+  String get reader_highlight_kind_search => '검색';
+  @override
+  String get reader_highlight_opacity => '색 농도';
+  @override
+  String get reader_highlight_preview_color => '미리보기 색상';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      '미리보기에만 적용됩니다. 각 즐겨찾기는 고유한 색을 유지합니다.';
+  @override
+  String get reader_highlight_replay => '다시 재생';
+  @override
+  String get reader_highlight_reset => '기본값으로 재설정';
+  @override
+  String get reader_highlight_roughness => '획 흔들림';
+  @override
+  String get reader_highlight_style_classic => '클래식';
+  @override
+  String get reader_highlight_style_classic_hint => '글자 한 줄 높이의 막대와 밑줄';
+  @override
+  String get reader_highlight_style_crayon => '색연필';
+  @override
+  String get reader_highlight_style_crayon_hint => '종이 질감의 입자와 고르지 않은 가장자리';
+  @override
+  String get reader_highlight_style_fluo => '형광펜';
+  @override
+  String get reader_highlight_style_fluo_hint => '번진 가장자리, 양 끝이 더 진함';
+  @override
+  String get reader_highlight_style_marker => '치즐 마커';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      '양 끝이 비스듬히 잘리고, 펜을 떼는 곳에 잉크가 살짝 고임';
+  @override
+  String get reader_highlight_style_rough => '손그림';
+  @override
+  String get reader_highlight_style_rough_hint => '두 번 그은 듯 겹친 두 줄';
+  @override
+  String get reader_highlight_style_tape => '마스킹 테이프';
+  @override
+  String get reader_highlight_style_tape_hint => '찢어진 양 끝과 가는 사선 무늬';
+  @override
+  String get reader_highlight_style_under => '아래 절반';
+  @override
+  String get reader_highlight_style_under_hint => '글자의 아래 절반만 칠해 후리가나를 가리지 않음';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => '굵기';
+  @override
+  String get reader_highlight_title => '하이라이트 스타일';
+  @override
+  String get reader_highlight_vertical => '세로쓰기';
   @override
   String get reader_horizontal => '가로';
   @override
@@ -161123,6 +162131,8 @@ class _StringsKo extends _StringsEn {
   String get video_setting_subtitle_no_background => '배경 없음';
   @override
   String get video_setting_subtitle_no_background_hint => '자막 배경을 투명하게 만듭니다.';
+  @override
+  String get video_setting_subtitle_no_outline => '외곽선 없음';
   @override
   String get video_setting_subtitle_obscure => '자막 가리기';
   @override
@@ -167323,6 +168333,9 @@ class _StringsNl extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Geldt ook binnen je lokale netwerk.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Nog geen taken op de host';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -170581,6 +171594,8 @@ class _StringsNl extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Afl. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Deel ${n}';
+  @override
   String get home_filter_added => 'Toegevoegd';
   @override
   String get home_filter_all => 'Alles';
@@ -172384,14 +173399,6 @@ class _StringsNl extends _StringsEn {
   String get manga_online_stage_mokuro => 'OCR-gegevens downloaden…';
   @override
   String get manga_page_actions => 'Pagina-acties';
-  @override
-  String get manga_page_animation => 'Paginaomslag-animatie';
-  @override
-  String get manga_page_animation_fade => 'Vervagen';
-  @override
-  String get manga_page_animation_none => 'Geen';
-  @override
-  String get manga_page_animation_slide => 'Schuiven';
   @override
   String get manga_page_copy => 'Afbeelding kopiëren';
   @override
@@ -174429,6 +175436,32 @@ class _StringsNl extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Pagina ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Paginaomslag-animatie';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Vervagen';
+  @override
+  String get page_turn_animation_none => 'Geen';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Schuiven';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Plakken';
   @override
   String get pause => 'Pauzeren';
@@ -174967,6 +176000,101 @@ class _StringsNl extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Nog geen ontgrendelde illustraties';
+  @override
+  String get reader_highlight_all_classic => 'Alles klassiek';
+  @override
+  String get reader_highlight_animate => 'Streekanimatie';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Tekent elke zin langs de tekst zodra de audio die bereikt';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Tekent de streek langs de tekst wanneer je een favoriet toevoegt';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Tekent de streek wanneer je een nieuw woord selecteert; de selectie vergroten door te slepen tekent niet opnieuw';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Tekent de streek wanneer je naar een nieuwe treffer springt';
+  @override
+  String get reader_highlight_cover_ruby => 'Furigana bedekken';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Maakt de streek dikker aan de furigana-kant. De furigana blijven erboven leesbaar.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'In E-ink-modus wordt altijd de klassieke stijl gebruikt.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontaal';
+  @override
+  String get reader_highlight_kind_audio => 'Luisterboek';
+  @override
+  String get reader_highlight_kind_favorite => 'Favorieten';
+  @override
+  String get reader_highlight_kind_label => 'Geldt voor';
+  @override
+  String get reader_highlight_kind_lookup => 'Opzoeken';
+  @override
+  String get reader_highlight_kind_search => 'Zoeken';
+  @override
+  String get reader_highlight_opacity => 'Kleursterkte';
+  @override
+  String get reader_highlight_preview_color => 'Voorbeeldkleur';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Wijzigt alleen het voorbeeld. Elke favoriet houdt zijn eigen kleur.';
+  @override
+  String get reader_highlight_replay => 'Opnieuw afspelen';
+  @override
+  String get reader_highlight_reset => 'Standaardwaarden herstellen';
+  @override
+  String get reader_highlight_roughness => 'Onrustige streek';
+  @override
+  String get reader_highlight_style_classic => 'Klassiek';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Een balk van één teken hoog met onderstreping';
+  @override
+  String get reader_highlight_style_crayon => 'Kleurpotlood';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Korrelige kleur met onregelmatige randen';
+  @override
+  String get reader_highlight_style_fluo => 'Markeerstift';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Uitgelopen randen, donkerder aan beide uiteinden';
+  @override
+  String get reader_highlight_style_marker => 'Beitelmarker';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Schuine uiteinden, met wat inkt waar de pen loskomt';
+  @override
+  String get reader_highlight_style_rough => 'Handgetekend';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Twee overlappende strepen, alsof er twee keer is gemarkeerd';
+  @override
+  String get reader_highlight_style_tape => 'Washi-tape';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Gescheurde uiteinden en een fijn diagonaal patroon';
+  @override
+  String get reader_highlight_style_under => 'Onderste helft';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Bedekt alleen de onderste helft van de tekst, nooit de furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Dikte';
+  @override
+  String get reader_highlight_title => 'Markeerstijl';
+  @override
+  String get reader_highlight_vertical => 'Verticaal';
   @override
   String get reader_horizontal => 'Horizontaal';
   @override
@@ -180147,6 +181275,8 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Maak de ondertitelachtergrond transparant.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Geen omlijning';
   @override
   String get video_setting_subtitle_obscure => 'Ondertitels verbergen';
   @override
@@ -186434,6 +187564,9 @@ class _StringsPtBr extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Também se aplica na rede local.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Nenhuma tarefa no host ainda';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -189714,6 +190847,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Ep. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Volume ${n}';
+  @override
   String get home_filter_added => 'Adicionados';
   @override
   String get home_filter_all => 'Todos';
@@ -191521,14 +192656,6 @@ class _StringsPtBr extends _StringsEn {
   String get manga_online_stage_mokuro => 'Baixando dados de OCR…';
   @override
   String get manga_page_actions => 'Ações da página';
-  @override
-  String get manga_page_animation => 'Animação de virada de página';
-  @override
-  String get manga_page_animation_fade => 'Desvanecer';
-  @override
-  String get manga_page_animation_none => 'Nenhuma';
-  @override
-  String get manga_page_animation_slide => 'Deslizar';
   @override
   String get manga_page_copy => 'Copiar imagem';
   @override
@@ -193573,6 +194700,32 @@ class _StringsPtBr extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Página ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Animação de virada de página';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Desvanecer';
+  @override
+  String get page_turn_animation_none => 'Nenhuma';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Deslizar';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Colar';
   @override
   String get pause => 'Pausar';
@@ -194111,6 +195264,101 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Nenhuma ilustração desbloqueada ainda';
+  @override
+  String get reader_highlight_all_classic => 'Tudo clássico';
+  @override
+  String get reader_highlight_animate => 'Animação do traço';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Desenha cada frase ao longo do texto quando o áudio chega a ela';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Desenha o traço ao longo do texto quando você adiciona um favorito';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Desenha o traço ao selecionar uma palavra nova; ampliar a seleção arrastando não redesenha';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Desenha o traço ao pular para um novo resultado';
+  @override
+  String get reader_highlight_cover_ruby => 'Cobrir furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Engrossa o traço para o lado do furigana. O furigana continua legível por cima.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'O modo E-ink sempre usa o estilo clássico.';
+  @override
+  String get reader_highlight_horizontal => 'Horizontal';
+  @override
+  String get reader_highlight_kind_audio => 'Audiolivro';
+  @override
+  String get reader_highlight_kind_favorite => 'Favoritos';
+  @override
+  String get reader_highlight_kind_label => 'Aplica-se a';
+  @override
+  String get reader_highlight_kind_lookup => 'Consulta';
+  @override
+  String get reader_highlight_kind_search => 'Pesquisa';
+  @override
+  String get reader_highlight_opacity => 'Intensidade da cor';
+  @override
+  String get reader_highlight_preview_color => 'Cor da pré-visualização';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Muda só a pré-visualização. Cada favorito mantém a própria cor.';
+  @override
+  String get reader_highlight_replay => 'Repetir';
+  @override
+  String get reader_highlight_reset => 'Restaurar padrões';
+  @override
+  String get reader_highlight_roughness => 'Irregularidade do traço';
+  @override
+  String get reader_highlight_style_classic => 'Clássico';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Uma barra da altura de um caractere com sublinhado';
+  @override
+  String get reader_highlight_style_crayon => 'Lápis de cor';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Cor granulada com bordas irregulares';
+  @override
+  String get reader_highlight_style_fluo => 'Marca-texto';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Bordas esfumadas, mais escuro nas duas pontas';
+  @override
+  String get reader_highlight_style_marker => 'Marcador chanfrado';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Pontas inclinadas, com um pouco de tinta acumulada onde a caneta se levanta';
+  @override
+  String get reader_highlight_style_rough => 'Feito à mão';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Dois traços sobrepostos, como se marcado duas vezes';
+  @override
+  String get reader_highlight_style_tape => 'Fita washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Pontas rasgadas e um fino padrão diagonal';
+  @override
+  String get reader_highlight_style_under => 'Metade inferior';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Cobre só a metade inferior do texto, nunca o furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Espessura';
+  @override
+  String get reader_highlight_title => 'Estilo de destaque';
+  @override
+  String get reader_highlight_vertical => 'Vertical';
   @override
   String get reader_horizontal => 'Horizontal';
   @override
@@ -199304,6 +200552,8 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Deixa o fundo da legenda transparente.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Sem contorno';
   @override
   String get video_setting_subtitle_obscure => 'Ocultar legendas';
   @override
@@ -205573,6 +206823,9 @@ class _StringsRu extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Также применяется в локальной сети.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'На хосте пока нет задач';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -208838,6 +210091,8 @@ class _StringsRu extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Эп. ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Том ${n}';
+  @override
   String get home_filter_added => 'Добавлено';
   @override
   String get home_filter_all => 'Все';
@@ -210639,14 +211894,6 @@ class _StringsRu extends _StringsEn {
   String get manga_online_stage_mokuro => 'Загрузка данных OCR…';
   @override
   String get manga_page_actions => 'Действия со страницей';
-  @override
-  String get manga_page_animation => 'Анимация перелистывания';
-  @override
-  String get manga_page_animation_fade => 'Затухание';
-  @override
-  String get manga_page_animation_none => 'Нет';
-  @override
-  String get manga_page_animation_slide => 'Скольжение';
   @override
   String get manga_page_copy => 'Копировать изображение';
   @override
@@ -212696,6 +213943,32 @@ class _StringsRu extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Страница ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Анимация перелистывания';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Затухание';
+  @override
+  String get page_turn_animation_none => 'Нет';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Скольжение';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Вставить';
   @override
   String get pause => 'Пауза';
@@ -213234,6 +214507,101 @@ class _StringsRu extends _StringsEn {
   }) => 'Открыто ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => 'Открытых иллюстраций пока нет';
+  @override
+  String get reader_highlight_all_classic => 'Все классические';
+  @override
+  String get reader_highlight_animate => 'Анимация штриха';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Прорисовывает каждое предложение вдоль текста, когда до него доходит аудио';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Прорисовывает штрих вдоль текста при добавлении в избранное';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Прорисовывает штрих при выборе нового слова; расширение выделения перетаскиванием не перерисовывает';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Прорисовывает штрих при переходе к новому совпадению';
+  @override
+  String get reader_highlight_cover_ruby => 'Закрывать фуригану';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Утолщает штрих в сторону фуриганы. Фуригана остаётся видна поверх.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'В режиме E-ink всегда используется классический стиль.';
+  @override
+  String get reader_highlight_horizontal => 'Горизонтально';
+  @override
+  String get reader_highlight_kind_audio => 'Аудиокнига';
+  @override
+  String get reader_highlight_kind_favorite => 'Избранное';
+  @override
+  String get reader_highlight_kind_label => 'Применяется к';
+  @override
+  String get reader_highlight_kind_lookup => 'Поиск слов';
+  @override
+  String get reader_highlight_kind_search => 'Поиск';
+  @override
+  String get reader_highlight_opacity => 'Насыщенность цвета';
+  @override
+  String get reader_highlight_preview_color => 'Цвет предпросмотра';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Меняет только предпросмотр. Каждая запись в избранном сохраняет свой цвет.';
+  @override
+  String get reader_highlight_replay => 'Повторить';
+  @override
+  String get reader_highlight_reset => 'Сбросить настройки';
+  @override
+  String get reader_highlight_roughness => 'Неровность штриха';
+  @override
+  String get reader_highlight_style_classic => 'Классический';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Полоса высотой в один символ с подчёркиванием';
+  @override
+  String get reader_highlight_style_crayon => 'Цветной карандаш';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Зернистый цвет с неровными краями';
+  @override
+  String get reader_highlight_style_fluo => 'Текстовыделитель';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Размытые края, оба конца темнее';
+  @override
+  String get reader_highlight_style_marker => 'Скошенный маркер';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Скошенные концы, немного чернил скапливается в конце штриха';
+  @override
+  String get reader_highlight_style_rough => 'От руки';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Два наложенных штриха, будто выделено дважды';
+  @override
+  String get reader_highlight_style_tape => 'Васи-лента';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Рваные края и тонкий диагональный узор';
+  @override
+  String get reader_highlight_style_under => 'Нижняя половина';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Закрашивает только нижнюю половину текста, никогда не закрывает фуригану';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Толщина';
+  @override
+  String get reader_highlight_title => 'Стиль выделения';
+  @override
+  String get reader_highlight_vertical => 'Вертикально';
   @override
   String get reader_horizontal => 'Горизонтальное';
   @override
@@ -218409,6 +219777,8 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Сделать фон субтитров прозрачным.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Без обводки';
   @override
   String get video_setting_subtitle_obscure => 'Скрыть субтитры';
   @override
@@ -224612,6 +225982,9 @@ class _StringsTh extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'ใช้กับเครือข่ายท้องถิ่นของคุณด้วย';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'ยังไม่มีงานบนโฮสต์';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -227816,6 +229189,8 @@ class _StringsTh extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'ตอนที่ ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'เล่ม ${n}';
+  @override
   String get home_filter_added => 'เพิ่มแล้ว';
   @override
   String get home_filter_all => 'ทั้งหมด';
@@ -229590,14 +230965,6 @@ class _StringsTh extends _StringsEn {
   String get manga_online_stage_mokuro => 'กำลังดาวน์โหลดข้อมูล OCR…';
   @override
   String get manga_page_actions => 'การกระทำของหน้า';
-  @override
-  String get manga_page_animation => 'แอนิเมชันการพลิกหน้า';
-  @override
-  String get manga_page_animation_fade => 'จางหาย';
-  @override
-  String get manga_page_animation_none => 'ไม่มี';
-  @override
-  String get manga_page_animation_slide => 'เลื่อน';
   @override
   String get manga_page_copy => 'คัดลอกภาพ';
   @override
@@ -231601,6 +232968,32 @@ class _StringsTh extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'หน้า ${current} / ${total}';
   @override
+  String get page_turn_animation => 'แอนิเมชันการพลิกหน้า';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'จางหาย';
+  @override
+  String get page_turn_animation_none => 'ไม่มี';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'เลื่อน';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'วาง';
   @override
   String get pause => 'หยุดชั่วคราว';
@@ -232133,6 +233526,100 @@ class _StringsTh extends _StringsEn {
   }) => 'ปลดล็อกแล้ว ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => 'ยังไม่มีภาพประกอบที่ปลดล็อก';
+  @override
+  String get reader_highlight_all_classic => 'คลาสสิกทั้งหมด';
+  @override
+  String get reader_highlight_animate => 'แอนิเมชันการลากเส้น';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'ลากเส้นทีละประโยคไปตามข้อความเมื่อเสียงอ่านถึงประโยคนั้น';
+  @override
+  String get reader_highlight_animate_hint =>
+      'ลากเส้นไปตามข้อความเมื่อเพิ่มรายการโปรด';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'ลากเส้นเมื่อเลือกคำใหม่ การลากขยายส่วนที่เลือกจะไม่วาดใหม่';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'ลากเส้นเมื่อข้ามไปยังผลการค้นหาใหม่';
+  @override
+  String get reader_highlight_cover_ruby => 'ทับฟุริงานะ';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'ทำให้เส้นหนาขึ้นไปทางฝั่งฟุริงานะ ฟุริงานะยังอ่านได้อยู่ด้านบน';
+  @override
+  String get reader_highlight_eink_notice => 'โหมด E-ink ใช้สไตล์คลาสสิกเสมอ';
+  @override
+  String get reader_highlight_horizontal => 'แนวนอน';
+  @override
+  String get reader_highlight_kind_audio => 'หนังสือเสียง';
+  @override
+  String get reader_highlight_kind_favorite => 'รายการโปรด';
+  @override
+  String get reader_highlight_kind_label => 'ใช้กับ';
+  @override
+  String get reader_highlight_kind_lookup => 'ค้นหาคำ';
+  @override
+  String get reader_highlight_kind_search => 'ค้นหา';
+  @override
+  String get reader_highlight_opacity => 'ความเข้มของสี';
+  @override
+  String get reader_highlight_preview_color => 'สีตัวอย่าง';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'เปลี่ยนเฉพาะตัวอย่างเท่านั้น รายการโปรดแต่ละรายการยังคงสีของตัวเอง';
+  @override
+  String get reader_highlight_replay => 'เล่นซ้ำ';
+  @override
+  String get reader_highlight_reset => 'รีเซ็ตเป็นค่าเริ่มต้น';
+  @override
+  String get reader_highlight_roughness => 'ความสั่นของเส้น';
+  @override
+  String get reader_highlight_style_classic => 'คลาสสิก';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'แถบสูงหนึ่งตัวอักษรพร้อมขีดเส้นใต้';
+  @override
+  String get reader_highlight_style_crayon => 'ดินสอสี';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'สีมีเม็ดหยาบ ขอบไม่สม่ำเสมอ';
+  @override
+  String get reader_highlight_style_fluo => 'ปากกาเน้นข้อความ';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'ขอบซึมเลือน ปลายทั้งสองข้างเข้มกว่า';
+  @override
+  String get reader_highlight_style_marker => 'ปากกามาร์กเกอร์หัวตัด';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'ปลายทั้งสองข้างตัดเฉียง มีหมึกค้างเล็กน้อยตรงที่ยกปากกา';
+  @override
+  String get reader_highlight_style_rough => 'วาดมือ';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'สองเส้นซ้อนกัน เหมือนขีดสองรอบ';
+  @override
+  String get reader_highlight_style_tape => 'เทปวาชิ';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'ปลายฉีกขาดและมีลายเส้นทแยงบางๆ';
+  @override
+  String get reader_highlight_style_under => 'ครึ่งล่าง';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'ระบายเฉพาะครึ่งล่างของตัวอักษร ไม่บังฟุริงานะ';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'ความหนา';
+  @override
+  String get reader_highlight_title => 'สไตล์ไฮไลต์';
+  @override
+  String get reader_highlight_vertical => 'แนวตั้ง';
   @override
   String get reader_horizontal => 'แนวนอน';
   @override
@@ -237229,6 +238716,8 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'ทำให้พื้นหลังคำบรรยายโปร่งใส';
+  @override
+  String get video_setting_subtitle_no_outline => 'ไม่มีขอบตัวอักษร';
   @override
   String get video_setting_subtitle_obscure => 'ซ่อนคำบรรยาย';
   @override
@@ -243449,6 +244938,9 @@ class _StringsTr extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Yerel ağınızda da geçerlidir.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Ana makinede henüz görev yok';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -246704,6 +248196,8 @@ class _StringsTr extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => '${n}. bölüm';
   @override
+  String home_continue_volume({required Object n}) => '${n}. cilt';
+  @override
   String get home_filter_added => 'Eklenen';
   @override
   String get home_filter_all => 'Tümü';
@@ -248494,14 +249988,6 @@ class _StringsTr extends _StringsEn {
   String get manga_online_stage_mokuro => 'OCR verileri indiriliyor…';
   @override
   String get manga_page_actions => 'Sayfa eylemleri';
-  @override
-  String get manga_page_animation => 'Sayfa çevirme animasyonu';
-  @override
-  String get manga_page_animation_fade => 'Solma';
-  @override
-  String get manga_page_animation_none => 'Yok';
-  @override
-  String get manga_page_animation_slide => 'Kaydırma';
   @override
   String get manga_page_copy => 'Görseli kopyala';
   @override
@@ -250527,6 +252013,32 @@ class _StringsTr extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Sayfa ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Sayfa çevirme animasyonu';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Solma';
+  @override
+  String get page_turn_animation_none => 'Yok';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Kaydırma';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Yapıştır';
   @override
   String get pause => 'Duraklat';
@@ -251061,6 +252573,101 @@ class _StringsTr extends _StringsEn {
   }) => 'Açılan ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => 'Henüz açılmış illüstrasyon yok';
+  @override
+  String get reader_highlight_all_classic => 'Tümü klasik';
+  @override
+  String get reader_highlight_animate => 'Çizgi animasyonu';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Ses ulaştıkça her cümleyi metin boyunca çizer';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Favori eklediğinizde çizgiyi metin boyunca çizer';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Yeni bir kelime seçtiğinizde çizer; seçimi sürükleyerek genişletmek yeniden çizmez';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Yeni bir eşleşmeye geçtiğinizde çizer';
+  @override
+  String get reader_highlight_cover_ruby => 'Furiganayı kapat';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Çizgiyi furigana tarafına doğru kalınlaştırır. Furigana üstte okunur kalır.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'E-ink modu her zaman klasik stili kullanır.';
+  @override
+  String get reader_highlight_horizontal => 'Yatay';
+  @override
+  String get reader_highlight_kind_audio => 'Sesli kitap';
+  @override
+  String get reader_highlight_kind_favorite => 'Favoriler';
+  @override
+  String get reader_highlight_kind_label => 'Uygulandığı yer';
+  @override
+  String get reader_highlight_kind_lookup => 'Sözlükte arama';
+  @override
+  String get reader_highlight_kind_search => 'Arama';
+  @override
+  String get reader_highlight_opacity => 'Renk yoğunluğu';
+  @override
+  String get reader_highlight_preview_color => 'Önizleme rengi';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Yalnızca önizlemeyi değiştirir. Her favori kendi rengini korur.';
+  @override
+  String get reader_highlight_replay => 'Yeniden oynat';
+  @override
+  String get reader_highlight_reset => 'Varsayılanlara sıfırla';
+  @override
+  String get reader_highlight_roughness => 'Çizgi titreşimi';
+  @override
+  String get reader_highlight_style_classic => 'Klasik';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Bir karakter yüksekliğinde altı çizili şerit';
+  @override
+  String get reader_highlight_style_crayon => 'Boya kalemi';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Düzensiz kenarlı, grenli renk';
+  @override
+  String get reader_highlight_style_fluo => 'Fosforlu kalem';
+  @override
+  String get reader_highlight_style_fluo_hint =>
+      'Dağılmış kenarlar, iki uçta daha koyu';
+  @override
+  String get reader_highlight_style_marker => 'Kesik uçlu kalem';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Eğik uçlar, kalemin kalktığı yerde biraz mürekkep birikir';
+  @override
+  String get reader_highlight_style_rough => 'Elle çizilmiş';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'İki kez işaretlenmiş gibi üst üste iki çizgi';
+  @override
+  String get reader_highlight_style_tape => 'Washi bant';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Yırtık uçlar ve ince çapraz desen';
+  @override
+  String get reader_highlight_style_under => 'Alt yarı';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Metnin yalnızca alt yarısını boyar, furiganayı asla kapatmaz';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Kalınlık';
+  @override
+  String get reader_highlight_title => 'Vurgu stili';
+  @override
+  String get reader_highlight_vertical => 'Dikey';
   @override
   String get reader_horizontal => 'Yatay';
   @override
@@ -256206,6 +257813,8 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Altyazı arka planını saydam yapar.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Kontur yok';
   @override
   String get video_setting_subtitle_obscure => 'Altyazıları gizle';
   @override
@@ -262427,6 +264036,9 @@ class _StringsVi extends _StringsEn {
   String get download_rate_limit_lan_included =>
       'Cũng áp dụng trong mạng nội bộ.';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => 'Máy chủ chưa có tác vụ nào';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -265668,6 +267280,8 @@ class _StringsVi extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => 'Tập ${n}';
   @override
+  String home_continue_volume({required Object n}) => 'Quyển ${n}';
+  @override
   String get home_filter_added => 'Đã thêm';
   @override
   String get home_filter_all => 'Tất cả';
@@ -267452,14 +269066,6 @@ class _StringsVi extends _StringsEn {
   String get manga_online_stage_mokuro => 'Đang tải dữ liệu OCR…';
   @override
   String get manga_page_actions => 'Thao tác trang';
-  @override
-  String get manga_page_animation => 'Hiệu ứng lật trang';
-  @override
-  String get manga_page_animation_fade => 'Mờ dần';
-  @override
-  String get manga_page_animation_none => 'Không';
-  @override
-  String get manga_page_animation_slide => 'Trượt';
   @override
   String get manga_page_copy => 'Sao chép ảnh';
   @override
@@ -269469,6 +271075,32 @@ class _StringsVi extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       'Trang ${current} / ${total}';
   @override
+  String get page_turn_animation => 'Hiệu ứng lật trang';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => 'Mờ dần';
+  @override
+  String get page_turn_animation_none => 'Không';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => 'Trượt';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => 'Dán';
   @override
   String get pause => 'Tạm dừng';
@@ -270002,6 +271634,100 @@ class _StringsVi extends _StringsEn {
   @override
   String get reader_gallery_unlocked_empty =>
       'Chưa có minh họa nào được mở khóa';
+  @override
+  String get reader_highlight_all_classic => 'Tất cả cổ điển';
+  @override
+  String get reader_highlight_animate => 'Hiệu ứng vẽ nét';
+  @override
+  String get reader_highlight_animate_audio_hint =>
+      'Vẽ từng câu dọc theo chữ khi âm thanh đọc đến câu đó';
+  @override
+  String get reader_highlight_animate_hint =>
+      'Vẽ nét dọc theo chữ khi bạn thêm mục yêu thích';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      'Vẽ nét khi bạn chọn một từ mới; kéo để mở rộng vùng chọn sẽ không vẽ lại';
+  @override
+  String get reader_highlight_animate_search_hint =>
+      'Vẽ nét khi bạn chuyển đến kết quả mới';
+  @override
+  String get reader_highlight_cover_ruby => 'Che furigana';
+  @override
+  String get reader_highlight_cover_ruby_hint =>
+      'Làm dày nét về phía furigana. Furigana vẫn hiển thị rõ ở trên.';
+  @override
+  String get reader_highlight_eink_notice =>
+      'Chế độ E-ink luôn dùng kiểu cổ điển.';
+  @override
+  String get reader_highlight_horizontal => 'Ngang';
+  @override
+  String get reader_highlight_kind_audio => 'Sách nói';
+  @override
+  String get reader_highlight_kind_favorite => 'Yêu thích';
+  @override
+  String get reader_highlight_kind_label => 'Áp dụng cho';
+  @override
+  String get reader_highlight_kind_lookup => 'Tra từ';
+  @override
+  String get reader_highlight_kind_search => 'Tìm kiếm';
+  @override
+  String get reader_highlight_opacity => 'Độ đậm màu';
+  @override
+  String get reader_highlight_preview_color => 'Màu xem trước';
+  @override
+  String get reader_highlight_preview_color_hint =>
+      'Chỉ thay đổi phần xem trước. Mỗi mục yêu thích giữ màu riêng.';
+  @override
+  String get reader_highlight_replay => 'Phát lại';
+  @override
+  String get reader_highlight_reset => 'Khôi phục mặc định';
+  @override
+  String get reader_highlight_roughness => 'Độ rung nét';
+  @override
+  String get reader_highlight_style_classic => 'Cổ điển';
+  @override
+  String get reader_highlight_style_classic_hint =>
+      'Thanh cao bằng một ký tự kèm gạch chân';
+  @override
+  String get reader_highlight_style_crayon => 'Bút chì màu';
+  @override
+  String get reader_highlight_style_crayon_hint =>
+      'Màu lấm tấm hạt, viền không đều';
+  @override
+  String get reader_highlight_style_fluo => 'Bút dạ quang';
+  @override
+  String get reader_highlight_style_fluo_hint => 'Viền loang, hai đầu đậm hơn';
+  @override
+  String get reader_highlight_style_marker => 'Bút dạ đầu vát';
+  @override
+  String get reader_highlight_style_marker_hint =>
+      'Hai đầu cắt chéo, mực hơi đọng ở chỗ nhấc bút';
+  @override
+  String get reader_highlight_style_rough => 'Vẽ tay';
+  @override
+  String get reader_highlight_style_rough_hint =>
+      'Hai nét chồng lên nhau như được tô hai lần';
+  @override
+  String get reader_highlight_style_tape => 'Băng dính washi';
+  @override
+  String get reader_highlight_style_tape_hint =>
+      'Hai đầu xé rách và họa tiết sọc chéo mảnh';
+  @override
+  String get reader_highlight_style_under => 'Nửa dưới';
+  @override
+  String get reader_highlight_style_under_hint =>
+      'Chỉ tô nửa dưới của chữ, không bao giờ che furigana';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}: ${style}';
+  @override
+  String get reader_highlight_thickness => 'Độ dày';
+  @override
+  String get reader_highlight_title => 'Kiểu tô sáng';
+  @override
+  String get reader_highlight_vertical => 'Dọc';
   @override
   String get reader_horizontal => 'Ngang';
   @override
@@ -275129,6 +276855,8 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_setting_subtitle_no_background_hint =>
       'Làm nền phụ đề trong suốt.';
+  @override
+  String get video_setting_subtitle_no_outline => 'Không viền';
   @override
   String get video_setting_subtitle_obscure => 'Che phụ đề';
   @override
@@ -280919,6 +282647,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get download_rate_limit_lan_included => '同时作用于局域网内的传输。';
   @override
+  String get download_remote_delete_files_host_default =>
+      '这台主机版本较旧，删除任务时无法选择是否保留文件：Fushi 应用当主机会保留文件，无头 fushi_server 会连文件一起删除。';
+  @override
   String get download_remote_jobs_empty => '主机上还没有任务';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -283855,6 +285586,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => '第 ${n} 集';
   @override
+  String home_continue_volume({required Object n}) => '第 ${n} 卷';
+  @override
   String get home_filter_added => '导入';
   @override
   String get home_filter_all => '全部';
@@ -285487,14 +287220,6 @@ class _StringsZhCn extends _StringsEn {
   String get manga_online_stage_mokuro => '下载 OCR 数据…';
   @override
   String get manga_page_actions => '页面操作';
-  @override
-  String get manga_page_animation => '翻页动画';
-  @override
-  String get manga_page_animation_fade => '淡入淡出';
-  @override
-  String get manga_page_animation_none => '无';
-  @override
-  String get manga_page_animation_slide => '滑动';
   @override
   String get manga_page_copy => '复制图片';
   @override
@@ -287335,6 +289060,31 @@ class _StringsZhCn extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 页';
   @override
+  String get page_turn_animation => '翻页动画';
+  @override
+  String get page_turn_animation_cover => '覆盖';
+  @override
+  String get page_turn_animation_fade => '淡入淡出';
+  @override
+  String get page_turn_animation_none => '无';
+  @override
+  String get page_turn_animation_paginated_only => '只在翻页模式下生效';
+  @override
+  String get page_turn_animation_slide => '滑动';
+  @override
+  String get page_turn_animation_speed => '动画速度';
+  @override
+  String get page_turn_animation_speed_fast => '快';
+  @override
+  String get page_turn_animation_speed_normal => '标准';
+  @override
+  String get page_turn_animation_speed_slow => '慢';
+  @override
+  String get page_turn_follow_drag => '拖动跟手';
+  @override
+  String get page_turn_follow_drag_description =>
+      '页面随手指移动，松手时拖过四分之一宽度或快速甩动就翻页，否则回弹';
+  @override
   String get paste => '粘贴';
   @override
   String get pause => '暂停';
@@ -287831,6 +289581,88 @@ class _StringsZhCn extends _StringsEn {
   }) => '已解锁 ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => '还没有已解锁的插图';
+  @override
+  String get reader_highlight_all_classic => '全部经典';
+  @override
+  String get reader_highlight_animate => '落笔动画';
+  @override
+  String get reader_highlight_animate_audio_hint => '朗读到哪一句，就沿书写方向画出哪一句';
+  @override
+  String get reader_highlight_animate_hint => '新收藏时沿书写方向画出来';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      '选中新的词时沿书写方向画出来；拖动扩大选区时不重画';
+  @override
+  String get reader_highlight_animate_search_hint => '跳到新的搜索结果时沿书写方向画出来';
+  @override
+  String get reader_highlight_cover_ruby => '笔划盖住振假名';
+  @override
+  String get reader_highlight_cover_ruby_hint => '往振假名一侧加厚，振假名仍显示在笔划上面';
+  @override
+  String get reader_highlight_eink_notice => '墨水屏模式下固定使用经典样式。';
+  @override
+  String get reader_highlight_horizontal => '横排';
+  @override
+  String get reader_highlight_kind_audio => '有声书';
+  @override
+  String get reader_highlight_kind_favorite => '收藏';
+  @override
+  String get reader_highlight_kind_label => '应用于';
+  @override
+  String get reader_highlight_kind_lookup => '查词';
+  @override
+  String get reader_highlight_kind_search => '搜索';
+  @override
+  String get reader_highlight_opacity => '浓度';
+  @override
+  String get reader_highlight_preview_color => '预览颜色';
+  @override
+  String get reader_highlight_preview_color_hint => '只影响预览，每条收藏保留自己的颜色';
+  @override
+  String get reader_highlight_replay => '重播';
+  @override
+  String get reader_highlight_reset => '恢复默认';
+  @override
+  String get reader_highlight_roughness => '笔触抖动';
+  @override
+  String get reader_highlight_style_classic => '经典';
+  @override
+  String get reader_highlight_style_classic_hint => '一个字高的色条加下划线';
+  @override
+  String get reader_highlight_style_crayon => '彩铅涂抹';
+  @override
+  String get reader_highlight_style_crayon_hint => '纸面颗粒感，边缘不规则';
+  @override
+  String get reader_highlight_style_fluo => '水性荧光笔';
+  @override
+  String get reader_highlight_style_fluo_hint => '边缘晕开，起笔和收笔颜色更深';
+  @override
+  String get reader_highlight_style_marker => '斜切马克笔';
+  @override
+  String get reader_highlight_style_marker_hint => '两端斜切，收笔处微微积墨';
+  @override
+  String get reader_highlight_style_rough => '手绘双笔';
+  @override
+  String get reader_highlight_style_rough_hint => '两道粗笔叠画，像随手划了两遍';
+  @override
+  String get reader_highlight_style_tape => '和纸胶带';
+  @override
+  String get reader_highlight_style_tape_hint => '两端撕口，带一层细斜纹';
+  @override
+  String get reader_highlight_style_under => '半截荧光';
+  @override
+  String get reader_highlight_style_under_hint => '只涂字的下半截，永远不挡振假名';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}：${style}';
+  @override
+  String get reader_highlight_thickness => '粗细';
+  @override
+  String get reader_highlight_title => '高亮样式';
+  @override
+  String get reader_highlight_vertical => '竖排';
   @override
   String get reader_horizontal => '横排';
   @override
@@ -292509,6 +294341,8 @@ class _StringsZhCn extends _StringsEn {
   String get video_setting_subtitle_no_background => '无背景';
   @override
   String get video_setting_subtitle_no_background_hint => '让字幕背景透明，不显示底色。';
+  @override
+  String get video_setting_subtitle_no_outline => '无描边';
   @override
   String get video_setting_subtitle_obscure => '字幕遮蔽';
   @override
@@ -298299,6 +300133,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get download_rate_limit_lan_included => '同時作用於局域網內的傳輸。';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
   String get download_remote_jobs_empty => '主機上還沒有任務';
   @override
   String download_remote_jobs_title({required Object device}) =>
@@ -301269,6 +303106,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String home_continue_episode({required Object n}) => '第 ${n} 集';
   @override
+  String home_continue_volume({required Object n}) => '第 ${n} 卷';
+  @override
   String get home_filter_added => '導入';
   @override
   String get home_filter_all => '全部';
@@ -302925,14 +304764,6 @@ class _StringsZhHk extends _StringsEn {
   String get manga_online_stage_mokuro => '下載 OCR 數據…';
   @override
   String get manga_page_actions => '頁面操作';
-  @override
-  String get manga_page_animation => '翻頁動畫';
-  @override
-  String get manga_page_animation_fade => '淡入淡出';
-  @override
-  String get manga_page_animation_none => '無';
-  @override
-  String get manga_page_animation_slide => '滑動';
   @override
   String get manga_page_copy => '複製圖片';
   @override
@@ -304786,6 +306617,32 @@ class _StringsZhHk extends _StringsEn {
   String page_progress({required Object current, required Object total}) =>
       '第 ${current} / ${total} 頁';
   @override
+  String get page_turn_animation => '翻頁動畫';
+  @override
+  String get page_turn_animation_cover => 'Cover';
+  @override
+  String get page_turn_animation_fade => '淡入淡出';
+  @override
+  String get page_turn_animation_none => '無';
+  @override
+  String get page_turn_animation_paginated_only =>
+      'Only applies in paginated mode';
+  @override
+  String get page_turn_animation_slide => '滑動';
+  @override
+  String get page_turn_animation_speed => 'Animation speed';
+  @override
+  String get page_turn_animation_speed_fast => 'Fast';
+  @override
+  String get page_turn_animation_speed_normal => 'Normal';
+  @override
+  String get page_turn_animation_speed_slow => 'Slow';
+  @override
+  String get page_turn_follow_drag => 'Follow finger while dragging';
+  @override
+  String get page_turn_follow_drag_description =>
+      'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
+  @override
   String get paste => '貼上';
   @override
   String get pause => '暫停';
@@ -305297,6 +307154,88 @@ class _StringsZhHk extends _StringsEn {
   }) => '已解鎖 ${unlocked} / ${total}';
   @override
   String get reader_gallery_unlocked_empty => '還沒有已解鎖的插圖';
+  @override
+  String get reader_highlight_all_classic => '全部經典';
+  @override
+  String get reader_highlight_animate => '落筆動畫';
+  @override
+  String get reader_highlight_animate_audio_hint => '朗讀到哪一句，就沿書寫方向畫出哪一句';
+  @override
+  String get reader_highlight_animate_hint => '新收藏時沿書寫方向畫出來';
+  @override
+  String get reader_highlight_animate_lookup_hint =>
+      '選中新的詞時沿書寫方向畫出來；拖動擴大選取範圍時不重畫';
+  @override
+  String get reader_highlight_animate_search_hint => '跳到新的搜尋結果時沿書寫方向畫出來';
+  @override
+  String get reader_highlight_cover_ruby => '筆劃蓋住注音';
+  @override
+  String get reader_highlight_cover_ruby_hint => '往注音一側加厚，注音仍顯示在筆劃上面';
+  @override
+  String get reader_highlight_eink_notice => '墨水屏模式下固定使用經典樣式。';
+  @override
+  String get reader_highlight_horizontal => '橫排';
+  @override
+  String get reader_highlight_kind_audio => '有聲書';
+  @override
+  String get reader_highlight_kind_favorite => '收藏';
+  @override
+  String get reader_highlight_kind_label => '套用於';
+  @override
+  String get reader_highlight_kind_lookup => '查詞';
+  @override
+  String get reader_highlight_kind_search => '搜尋';
+  @override
+  String get reader_highlight_opacity => '濃度';
+  @override
+  String get reader_highlight_preview_color => '預覽顏色';
+  @override
+  String get reader_highlight_preview_color_hint => '只影響預覽，每條收藏保留自己的顏色';
+  @override
+  String get reader_highlight_replay => '重播';
+  @override
+  String get reader_highlight_reset => '恢復預設';
+  @override
+  String get reader_highlight_roughness => '筆觸抖動';
+  @override
+  String get reader_highlight_style_classic => '經典';
+  @override
+  String get reader_highlight_style_classic_hint => '一個字高的色條加底線';
+  @override
+  String get reader_highlight_style_crayon => '彩鉛塗抹';
+  @override
+  String get reader_highlight_style_crayon_hint => '紙面顆粒感，邊緣不規則';
+  @override
+  String get reader_highlight_style_fluo => '水性螢光筆';
+  @override
+  String get reader_highlight_style_fluo_hint => '邊緣暈開，起筆和收筆顏色更深';
+  @override
+  String get reader_highlight_style_marker => '斜切麥克筆';
+  @override
+  String get reader_highlight_style_marker_hint => '兩端斜切，收筆處微微積墨';
+  @override
+  String get reader_highlight_style_rough => '手繪雙筆';
+  @override
+  String get reader_highlight_style_rough_hint => '兩道粗筆疊畫，像隨手劃了兩遍';
+  @override
+  String get reader_highlight_style_tape => '和紙膠帶';
+  @override
+  String get reader_highlight_style_tape_hint => '兩端撕口，帶一層細斜紋';
+  @override
+  String get reader_highlight_style_under => '半截螢光';
+  @override
+  String get reader_highlight_style_under_hint => '只塗字的下半截，永遠不擋注音';
+  @override
+  String reader_highlight_summary_entry({
+    required Object kind,
+    required Object style,
+  }) => '${kind}：${style}';
+  @override
+  String get reader_highlight_thickness => '粗細';
+  @override
+  String get reader_highlight_title => '高亮樣式';
+  @override
+  String get reader_highlight_vertical => '直排';
   @override
   String get reader_horizontal => '橫排';
   @override
@@ -310086,6 +312025,8 @@ class _StringsZhHk extends _StringsEn {
   String get video_setting_subtitle_no_background => '無背景';
   @override
   String get video_setting_subtitle_no_background_hint => '讓字幕背景透明，不顯示底色。';
+  @override
+  String get video_setting_subtitle_no_outline => '無描邊';
   @override
   String get video_setting_subtitle_obscure => '字幕遮蔽';
   @override
@@ -315401,6 +317342,8 @@ extension on _StringsEn {
         return 'Does not apply within your local network; LAN transfers always run at full speed.';
       case 'download_rate_limit_lan_included':
         return 'Also applies within your local network.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'No tasks on the host yet';
       case 'download_remote_jobs_title':
@@ -318136,6 +320079,8 @@ extension on _StringsEn {
         return 'Nothing to continue yet';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ep ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Vol. ${n}';
       case 'home_filter_added':
         return 'Added';
       case 'home_filter_all':
@@ -319642,14 +321587,6 @@ extension on _StringsEn {
         return 'Downloading OCR data…';
       case 'manga_page_actions':
         return 'Page actions';
-      case 'manga_page_animation':
-        return 'Page turn animation';
-      case 'manga_page_animation_fade':
-        return 'Fade';
-      case 'manga_page_animation_none':
-        return 'None';
-      case 'manga_page_animation_slide':
-        return 'Slide';
       case 'manga_page_copy':
         return 'Copy image';
       case 'manga_page_number_hint':
@@ -321374,6 +323311,30 @@ extension on _StringsEn {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Page turn animation';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Fade';
+      case 'page_turn_animation_none':
+        return 'None';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Slide';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Paste';
       case 'pause':
@@ -321850,6 +323811,85 @@ extension on _StringsEn {
             'Unlocked ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'No unlocked illustrations yet';
+      case 'reader_highlight_all_classic':
+        return 'All classic';
+      case 'reader_highlight_animate':
+        return 'Stroke animation';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Draws each sentence along the text as the audio reaches it';
+      case 'reader_highlight_animate_hint':
+        return 'Draws the stroke along the text when you add a favorite';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Draws the stroke along the text when you select a new word';
+      case 'reader_highlight_animate_search_hint':
+        return 'Draws the stroke along the text when you jump to a new match';
+      case 'reader_highlight_cover_ruby':
+        return 'Cover furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Thickens the stroke toward the furigana side. The furigana stays readable on top.';
+      case 'reader_highlight_eink_notice':
+        return 'E-ink mode always uses the classic style.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Audiobook';
+      case 'reader_highlight_kind_favorite':
+        return 'Favorites';
+      case 'reader_highlight_kind_label':
+        return 'Applies to';
+      case 'reader_highlight_kind_lookup':
+        return 'Lookup';
+      case 'reader_highlight_kind_search':
+        return 'Search';
+      case 'reader_highlight_opacity':
+        return 'Color strength';
+      case 'reader_highlight_preview_color':
+        return 'Preview color';
+      case 'reader_highlight_preview_color_hint':
+        return 'Only changes the preview. Each favorite keeps its own color.';
+      case 'reader_highlight_replay':
+        return 'Replay';
+      case 'reader_highlight_reset':
+        return 'Reset to defaults';
+      case 'reader_highlight_roughness':
+        return 'Stroke jitter';
+      case 'reader_highlight_style_classic':
+        return 'Classic';
+      case 'reader_highlight_style_classic_hint':
+        return 'A one-character-high bar with an underline';
+      case 'reader_highlight_style_crayon':
+        return 'Colored pencil';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Grainy color with uneven edges';
+      case 'reader_highlight_style_fluo':
+        return 'Highlighter';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Feathered edges, darker at both ends';
+      case 'reader_highlight_style_marker':
+        return 'Chisel marker';
+      case 'reader_highlight_style_marker_hint':
+        return 'Slanted ends, with a little ink pooling where the pen lifts';
+      case 'reader_highlight_style_rough':
+        return 'Hand-drawn';
+      case 'reader_highlight_style_rough_hint':
+        return 'Two overlapping strokes, as if marked twice';
+      case 'reader_highlight_style_tape':
+        return 'Washi tape';
+      case 'reader_highlight_style_tape_hint':
+        return 'Torn ends and a fine diagonal pattern';
+      case 'reader_highlight_style_under':
+        return 'Lower half';
+      case 'reader_highlight_style_under_hint':
+        return 'Covers only the lower half of the text, never the furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Thickness';
+      case 'reader_highlight_title':
+        return 'Highlight style';
+      case 'reader_highlight_vertical':
+        return 'Vertical';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -326310,6 +328350,8 @@ extension on _StringsEn {
         return 'No background';
       case 'video_setting_subtitle_no_background_hint':
         return 'Make the subtitle background transparent.';
+      case 'video_setting_subtitle_no_outline':
+        return 'No outline';
       case 'video_setting_subtitle_obscure':
         return 'Obscure subtitles';
       case 'video_setting_subtitle_obscure_blur':
@@ -331531,6 +333573,8 @@ extension on _StringsAr {
         return 'لا ينطبق داخل شبكتك المحلية؛ عمليات النقل عبر الشبكة المحلية تعمل بأقصى سرعة دائماً.';
       case 'download_rate_limit_lan_included':
         return 'ينطبق أيضاً داخل شبكتك المحلية.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'لا توجد مهام على المضيف بعد';
       case 'download_remote_jobs_title':
@@ -334264,6 +336308,8 @@ extension on _StringsAr {
         return 'لا يوجد ما يمكن متابعته بعد';
       case 'home_continue_episode':
         return ({required Object n}) => 'الحلقة ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'المجلد ${n}';
       case 'home_filter_added':
         return 'مضافة';
       case 'home_filter_all':
@@ -335766,14 +337812,6 @@ extension on _StringsAr {
         return 'جارٍ تحميل بيانات OCR…';
       case 'manga_page_actions':
         return 'إجراءات الصفحة';
-      case 'manga_page_animation':
-        return 'حركة تقليب الصفحة';
-      case 'manga_page_animation_fade':
-        return 'تلاشي';
-      case 'manga_page_animation_none':
-        return 'بدون';
-      case 'manga_page_animation_slide':
-        return 'انزلاق';
       case 'manga_page_copy':
         return 'نسخ الصورة';
       case 'manga_page_number_hint':
@@ -337499,6 +339537,30 @@ extension on _StringsAr {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'صفحة ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'حركة تقليب الصفحة';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'تلاشي';
+      case 'page_turn_animation_none':
+        return 'بدون';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'انزلاق';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'لصق';
       case 'pause':
@@ -337975,6 +340037,85 @@ extension on _StringsAr {
             'تم فتح ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'لا توجد رسوم توضيحية مفتوحة بعد';
+      case 'reader_highlight_all_classic':
+        return 'الكل كلاسيكي';
+      case 'reader_highlight_animate':
+        return 'حركة رسم الخط';
+      case 'reader_highlight_animate_audio_hint':
+        return 'يرسم كل جملة على امتداد النص عندما يصل إليها الصوت';
+      case 'reader_highlight_animate_hint':
+        return 'يرسم الخط على امتداد النص عند إضافة مفضلة';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'يرسم الخط عند تحديد كلمة جديدة؛ ولا يعيد الرسم عند توسيع التحديد بالسحب';
+      case 'reader_highlight_animate_search_hint':
+        return 'يرسم الخط عند الانتقال إلى نتيجة جديدة';
+      case 'reader_highlight_cover_ruby':
+        return 'تغطية الفوريغانا';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'يزيد سُمك الخط نحو جهة الفوريغانا، وتبقى الفوريغانا مقروءة فوقه.';
+      case 'reader_highlight_eink_notice':
+        return 'يستخدم وضع E-ink النمط الكلاسيكي دائمًا.';
+      case 'reader_highlight_horizontal':
+        return 'أفقي';
+      case 'reader_highlight_kind_audio':
+        return 'الكتاب الصوتي';
+      case 'reader_highlight_kind_favorite':
+        return 'المفضلة';
+      case 'reader_highlight_kind_label':
+        return 'يُطبَّق على';
+      case 'reader_highlight_kind_lookup':
+        return 'البحث في القاموس';
+      case 'reader_highlight_kind_search':
+        return 'البحث';
+      case 'reader_highlight_opacity':
+        return 'شدة اللون';
+      case 'reader_highlight_preview_color':
+        return 'لون المعاينة';
+      case 'reader_highlight_preview_color_hint':
+        return 'يغيّر المعاينة فقط، وتحتفظ كل مفضلة بلونها.';
+      case 'reader_highlight_replay':
+        return 'إعادة التشغيل';
+      case 'reader_highlight_reset':
+        return 'إعادة التعيين إلى الافتراضي';
+      case 'reader_highlight_roughness':
+        return 'اهتزاز الخط';
+      case 'reader_highlight_style_classic':
+        return 'كلاسيكي';
+      case 'reader_highlight_style_classic_hint':
+        return 'شريط بارتفاع حرف واحد مع خط سفلي';
+      case 'reader_highlight_style_crayon':
+        return 'قلم تلوين';
+      case 'reader_highlight_style_crayon_hint':
+        return 'لون محبب بحواف غير منتظمة';
+      case 'reader_highlight_style_fluo':
+        return 'قلم تمييز';
+      case 'reader_highlight_style_fluo_hint':
+        return 'حواف منتشرة وأغمق عند الطرفين';
+      case 'reader_highlight_style_marker':
+        return 'قلم تحديد مشطوف';
+      case 'reader_highlight_style_marker_hint':
+        return 'طرفان مائلان مع قليل من تجمّع الحبر عند رفع القلم';
+      case 'reader_highlight_style_rough':
+        return 'مرسوم باليد';
+      case 'reader_highlight_style_rough_hint':
+        return 'خطّان متراكبان كأنه حُدّد مرتين';
+      case 'reader_highlight_style_tape':
+        return 'شريط واشي';
+      case 'reader_highlight_style_tape_hint':
+        return 'طرفان ممزقان ونقش قطري رفيع';
+      case 'reader_highlight_style_under':
+        return 'النصف السفلي';
+      case 'reader_highlight_style_under_hint':
+        return 'يغطي النصف السفلي من النص فقط ولا يغطي الفوريغانا أبدًا';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'السُّمك';
+      case 'reader_highlight_title':
+        return 'نمط التمييز';
+      case 'reader_highlight_vertical':
+        return 'عمودي';
       case 'reader_horizontal':
         return 'أفقي';
       case 'reader_image_copy_failed':
@@ -342432,6 +344573,8 @@ extension on _StringsAr {
         return 'بلا خلفية';
       case 'video_setting_subtitle_no_background_hint':
         return 'اجعل خلفية الترجمة شفافة.';
+      case 'video_setting_subtitle_no_outline':
+        return 'بلا حدود للنص';
       case 'video_setting_subtitle_obscure':
         return 'إخفاء الترجمات';
       case 'video_setting_subtitle_obscure_blur':
@@ -347683,6 +349826,8 @@ extension on _StringsDe {
         return 'Gilt nicht innerhalb Ihres lokalen Netzwerks; LAN-Übertragungen laufen immer mit voller Geschwindigkeit.';
       case 'download_rate_limit_lan_included':
         return 'Gilt auch innerhalb Ihres lokalen Netzwerks.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Noch keine Aufgaben auf dem Host';
       case 'download_remote_jobs_title':
@@ -350421,6 +352566,8 @@ extension on _StringsDe {
         return 'Noch nichts zum Fortsetzen';
       case 'home_continue_episode':
         return ({required Object n}) => 'Folge ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Band ${n}';
       case 'home_filter_added':
         return 'Hinzugefügt';
       case 'home_filter_all':
@@ -351935,14 +354082,6 @@ extension on _StringsDe {
         return 'OCR-Daten werden heruntergeladen…';
       case 'manga_page_actions':
         return 'Seitenaktionen';
-      case 'manga_page_animation':
-        return 'Seitenumblätter-Animation';
-      case 'manga_page_animation_fade':
-        return 'Verblassen';
-      case 'manga_page_animation_none':
-        return 'Keine';
-      case 'manga_page_animation_slide':
-        return 'Gleiten';
       case 'manga_page_copy':
         return 'Bild kopieren';
       case 'manga_page_number_hint':
@@ -353678,6 +355817,30 @@ extension on _StringsDe {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Seite ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Seitenumblätter-Animation';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Verblassen';
+      case 'page_turn_animation_none':
+        return 'Keine';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Gleiten';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Einfügen';
       case 'pause':
@@ -354154,6 +356317,85 @@ extension on _StringsDe {
             'Freigeschaltet ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Noch keine freigeschalteten Illustrationen';
+      case 'reader_highlight_all_classic':
+        return 'Alle klassisch';
+      case 'reader_highlight_animate':
+        return 'Strichanimation';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Zeichnet jeden Satz entlang des Textes, sobald das Audio ihn erreicht';
+      case 'reader_highlight_animate_hint':
+        return 'Zeichnet den Strich entlang des Textes, wenn du einen Favoriten hinzufügst';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Zeichnet den Strich, wenn du ein neues Wort auswählst; Erweitern der Auswahl durch Ziehen zeichnet nicht neu';
+      case 'reader_highlight_animate_search_hint':
+        return 'Zeichnet den Strich, wenn du zu einem neuen Treffer springst';
+      case 'reader_highlight_cover_ruby':
+        return 'Furigana überdecken';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Verbreitert den Strich zur Furigana-Seite. Die Furigana bleiben darüber lesbar.';
+      case 'reader_highlight_eink_notice':
+        return 'Im E-Ink-Modus wird immer der klassische Stil verwendet.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Hörbuch';
+      case 'reader_highlight_kind_favorite':
+        return 'Favoriten';
+      case 'reader_highlight_kind_label':
+        return 'Gilt für';
+      case 'reader_highlight_kind_lookup':
+        return 'Nachschlagen';
+      case 'reader_highlight_kind_search':
+        return 'Suche';
+      case 'reader_highlight_opacity':
+        return 'Farbintensität';
+      case 'reader_highlight_preview_color':
+        return 'Vorschaufarbe';
+      case 'reader_highlight_preview_color_hint':
+        return 'Ändert nur die Vorschau. Jeder Favorit behält seine eigene Farbe.';
+      case 'reader_highlight_replay':
+        return 'Erneut abspielen';
+      case 'reader_highlight_reset':
+        return 'Auf Standard zurücksetzen';
+      case 'reader_highlight_roughness':
+        return 'Strichunruhe';
+      case 'reader_highlight_style_classic':
+        return 'Klassisch';
+      case 'reader_highlight_style_classic_hint':
+        return 'Ein zeichenhoher Balken mit Unterstreichung';
+      case 'reader_highlight_style_crayon':
+        return 'Buntstift';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Körnige Farbe mit unregelmäßigen Rändern';
+      case 'reader_highlight_style_fluo':
+        return 'Textmarker';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Ausgefranste Ränder, an beiden Enden dunkler';
+      case 'reader_highlight_style_marker':
+        return 'Keilspitzmarker';
+      case 'reader_highlight_style_marker_hint':
+        return 'Schräg abgeschnittene Enden, etwas Tinte sammelt sich am Strichende';
+      case 'reader_highlight_style_rough':
+        return 'Handgezeichnet';
+      case 'reader_highlight_style_rough_hint':
+        return 'Zwei überlagerte Striche, als wäre zweimal markiert worden';
+      case 'reader_highlight_style_tape':
+        return 'Washi-Tape';
+      case 'reader_highlight_style_tape_hint':
+        return 'Gerissene Enden und ein feines Schrägmuster';
+      case 'reader_highlight_style_under':
+        return 'Untere Hälfte';
+      case 'reader_highlight_style_under_hint':
+        return 'Deckt nur die untere Hälfte des Textes ab, nie die Furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Stärke';
+      case 'reader_highlight_title':
+        return 'Hervorhebungsstil';
+      case 'reader_highlight_vertical':
+        return 'Vertikal';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -358629,6 +360871,8 @@ extension on _StringsDe {
         return 'Kein Hintergrund';
       case 'video_setting_subtitle_no_background_hint':
         return 'Macht den Untertitelhintergrund transparent.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Keine Kontur';
       case 'video_setting_subtitle_obscure':
         return 'Untertitel verbergen';
       case 'video_setting_subtitle_obscure_blur':
@@ -363872,6 +366116,8 @@ extension on _StringsEs {
         return 'No se aplica en su red local; las transferencias LAN siempre se ejecutan a máxima velocidad.';
       case 'download_rate_limit_lan_included':
         return 'También se aplica en su red local.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Aún no hay tareas en el anfitrión';
       case 'download_remote_jobs_title':
@@ -366610,6 +368856,8 @@ extension on _StringsEs {
         return 'Aún no hay nada para continuar';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ep. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Tomo ${n}';
       case 'home_filter_added':
         return 'Añadido';
       case 'home_filter_all':
@@ -368121,14 +370369,6 @@ extension on _StringsEs {
         return 'Descargando datos de OCR…';
       case 'manga_page_actions':
         return 'Acciones de página';
-      case 'manga_page_animation':
-        return 'Animación de paso de página';
-      case 'manga_page_animation_fade':
-        return 'Desvanecer';
-      case 'manga_page_animation_none':
-        return 'Ninguna';
-      case 'manga_page_animation_slide':
-        return 'Deslizar';
       case 'manga_page_copy':
         return 'Copiar imagen';
       case 'manga_page_number_hint':
@@ -369861,6 +372101,30 @@ extension on _StringsEs {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Animación de paso de página';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Desvanecer';
+      case 'page_turn_animation_none':
+        return 'Ninguna';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Deslizar';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Pegar';
       case 'pause':
@@ -370339,6 +372603,85 @@ extension on _StringsEs {
             'Desbloqueadas ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Aún no hay ilustraciones desbloqueadas';
+      case 'reader_highlight_all_classic':
+        return 'Todo clásico';
+      case 'reader_highlight_animate':
+        return 'Animación del trazo';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Dibuja cada frase a lo largo del texto cuando el audio llega a ella';
+      case 'reader_highlight_animate_hint':
+        return 'Dibuja el trazo a lo largo del texto al añadir un favorito';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Dibuja el trazo al seleccionar una palabra nueva; ampliar la selección arrastrando no lo redibuja';
+      case 'reader_highlight_animate_search_hint':
+        return 'Dibuja el trazo al saltar a una nueva coincidencia';
+      case 'reader_highlight_cover_ruby':
+        return 'Cubrir furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Engrosa el trazo hacia el lado del furigana. El furigana sigue visible encima.';
+      case 'reader_highlight_eink_notice':
+        return 'El modo E-ink siempre usa el estilo clásico.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Audiolibro';
+      case 'reader_highlight_kind_favorite':
+        return 'Favoritos';
+      case 'reader_highlight_kind_label':
+        return 'Se aplica a';
+      case 'reader_highlight_kind_lookup':
+        return 'Búsqueda en diccionario';
+      case 'reader_highlight_kind_search':
+        return 'Búsqueda';
+      case 'reader_highlight_opacity':
+        return 'Intensidad del color';
+      case 'reader_highlight_preview_color':
+        return 'Color de vista previa';
+      case 'reader_highlight_preview_color_hint':
+        return 'Solo cambia la vista previa. Cada favorito conserva su propio color.';
+      case 'reader_highlight_replay':
+        return 'Repetir';
+      case 'reader_highlight_reset':
+        return 'Restablecer valores predeterminados';
+      case 'reader_highlight_roughness':
+        return 'Irregularidad del trazo';
+      case 'reader_highlight_style_classic':
+        return 'Clásico';
+      case 'reader_highlight_style_classic_hint':
+        return 'Una barra de un carácter de alto con subrayado';
+      case 'reader_highlight_style_crayon':
+        return 'Lápiz de color';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Color granulado con bordes irregulares';
+      case 'reader_highlight_style_fluo':
+        return 'Resaltador';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Bordes difuminados, más oscuro en ambos extremos';
+      case 'reader_highlight_style_marker':
+        return 'Marcador biselado';
+      case 'reader_highlight_style_marker_hint':
+        return 'Extremos en diagonal, con un poco de tinta acumulada al levantar el trazo';
+      case 'reader_highlight_style_rough':
+        return 'A mano';
+      case 'reader_highlight_style_rough_hint':
+        return 'Dos trazos superpuestos, como si se marcara dos veces';
+      case 'reader_highlight_style_tape':
+        return 'Cinta washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Extremos rasgados y un fino patrón diagonal';
+      case 'reader_highlight_style_under':
+        return 'Mitad inferior';
+      case 'reader_highlight_style_under_hint':
+        return 'Cubre solo la mitad inferior del texto, nunca el furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Grosor';
+      case 'reader_highlight_title':
+        return 'Estilo de resaltado';
+      case 'reader_highlight_vertical':
+        return 'Vertical';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -374811,6 +377154,8 @@ extension on _StringsEs {
         return 'Sin fondo';
       case 'video_setting_subtitle_no_background_hint':
         return 'Hace transparente el fondo del subtítulo.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Sin contorno';
       case 'video_setting_subtitle_obscure':
         return 'Ocultar subtítulos';
       case 'video_setting_subtitle_obscure_blur':
@@ -380066,6 +382411,8 @@ extension on _StringsFr {
         return 'Ne s\'applique pas sur votre réseau local ; les transferts LAN fonctionnent toujours à pleine vitesse.';
       case 'download_rate_limit_lan_included':
         return 'S\'applique aussi sur votre réseau local.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Aucune tâche sur l\'hôte pour l\'instant';
       case 'download_remote_jobs_title':
@@ -382805,6 +385152,8 @@ extension on _StringsFr {
         return 'Rien à reprendre pour le moment';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ép. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Tome ${n}';
       case 'home_filter_added':
         return 'Ajouté';
       case 'home_filter_all':
@@ -384315,14 +386664,6 @@ extension on _StringsFr {
         return 'Téléchargement des données OCR…';
       case 'manga_page_actions':
         return 'Actions sur la page';
-      case 'manga_page_animation':
-        return 'Animation de changement de page';
-      case 'manga_page_animation_fade':
-        return 'Fondu';
-      case 'manga_page_animation_none':
-        return 'Aucune';
-      case 'manga_page_animation_slide':
-        return 'Glissement';
       case 'manga_page_copy':
         return 'Copier l\'image';
       case 'manga_page_number_hint':
@@ -386058,6 +388399,30 @@ extension on _StringsFr {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Page ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Animation de changement de page';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Fondu';
+      case 'page_turn_animation_none':
+        return 'Aucune';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Glissement';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Coller';
       case 'pause':
@@ -386535,6 +388900,85 @@ extension on _StringsFr {
             'Débloquées ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Aucune illustration débloquée pour l\'instant';
+      case 'reader_highlight_all_classic':
+        return 'Tout classique';
+      case 'reader_highlight_animate':
+        return 'Animation du trait';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Trace chaque phrase le long du texte quand l\'audio l\'atteint';
+      case 'reader_highlight_animate_hint':
+        return 'Trace le trait le long du texte quand vous ajoutez un favori';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Trace le trait quand vous sélectionnez un nouveau mot ; agrandir la sélection en glissant ne le retrace pas';
+      case 'reader_highlight_animate_search_hint':
+        return 'Trace le trait quand vous passez à un nouveau résultat';
+      case 'reader_highlight_cover_ruby':
+        return 'Couvrir les furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Épaissit le trait du côté des furigana. Les furigana restent lisibles par-dessus.';
+      case 'reader_highlight_eink_notice':
+        return 'Le mode E-ink utilise toujours le style classique.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Livre audio';
+      case 'reader_highlight_kind_favorite':
+        return 'Favoris';
+      case 'reader_highlight_kind_label':
+        return 'S\'applique à';
+      case 'reader_highlight_kind_lookup':
+        return 'Recherche de mots';
+      case 'reader_highlight_kind_search':
+        return 'Recherche';
+      case 'reader_highlight_opacity':
+        return 'Intensité de la couleur';
+      case 'reader_highlight_preview_color':
+        return 'Couleur d\'aperçu';
+      case 'reader_highlight_preview_color_hint':
+        return 'Ne modifie que l\'aperçu. Chaque favori garde sa propre couleur.';
+      case 'reader_highlight_replay':
+        return 'Rejouer';
+      case 'reader_highlight_reset':
+        return 'Rétablir les valeurs par défaut';
+      case 'reader_highlight_roughness':
+        return 'Irrégularité du trait';
+      case 'reader_highlight_style_classic':
+        return 'Classique';
+      case 'reader_highlight_style_classic_hint':
+        return 'Une barre de la hauteur d\'un caractère avec soulignement';
+      case 'reader_highlight_style_crayon':
+        return 'Crayon de couleur';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Couleur granuleuse aux bords irréguliers';
+      case 'reader_highlight_style_fluo':
+        return 'Surligneur';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Bords estompés, plus foncé aux deux extrémités';
+      case 'reader_highlight_style_marker':
+        return 'Marqueur biseauté';
+      case 'reader_highlight_style_marker_hint':
+        return 'Extrémités en biais, un peu d\'encre accumulée en fin de trait';
+      case 'reader_highlight_style_rough':
+        return 'Fait main';
+      case 'reader_highlight_style_rough_hint':
+        return 'Deux traits superposés, comme surligné deux fois';
+      case 'reader_highlight_style_tape':
+        return 'Ruban washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Extrémités déchirées et fin motif diagonal';
+      case 'reader_highlight_style_under':
+        return 'Moitié inférieure';
+      case 'reader_highlight_style_under_hint':
+        return 'Ne couvre que la moitié inférieure du texte, jamais les furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind} : ${style}';
+      case 'reader_highlight_thickness':
+        return 'Épaisseur';
+      case 'reader_highlight_title':
+        return 'Style de surlignage';
+      case 'reader_highlight_vertical':
+        return 'Vertical';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -391010,6 +393454,8 @@ extension on _StringsFr {
         return 'Sans fond';
       case 'video_setting_subtitle_no_background_hint':
         return 'Rend le fond des sous-titres transparent.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Sans contour';
       case 'video_setting_subtitle_obscure':
         return 'Masquer les sous-titres';
       case 'video_setting_subtitle_obscure_blur':
@@ -396243,6 +398689,8 @@ extension on _StringsId {
         return 'Tidak berlaku dalam jaringan lokal Anda; transfer LAN selalu berjalan pada kecepatan penuh.';
       case 'download_rate_limit_lan_included':
         return 'Juga berlaku dalam jaringan lokal Anda.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Belum ada tugas di host';
       case 'download_remote_jobs_title':
@@ -398978,6 +401426,8 @@ extension on _StringsId {
         return 'Belum ada yang bisa dilanjutkan';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ep. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Jilid ${n}';
       case 'home_filter_added':
         return 'Ditambahkan';
       case 'home_filter_all':
@@ -400485,14 +402935,6 @@ extension on _StringsId {
         return 'Mengunduh data OCR…';
       case 'manga_page_actions':
         return 'Aksi halaman';
-      case 'manga_page_animation':
-        return 'Animasi pergantian halaman';
-      case 'manga_page_animation_fade':
-        return 'Pudar';
-      case 'manga_page_animation_none':
-        return 'Tidak ada';
-      case 'manga_page_animation_slide':
-        return 'Geser';
       case 'manga_page_copy':
         return 'Salin gambar';
       case 'manga_page_number_hint':
@@ -402217,6 +404659,30 @@ extension on _StringsId {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Halaman ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Animasi pergantian halaman';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Pudar';
+      case 'page_turn_animation_none':
+        return 'Tidak ada';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Geser';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Tempel';
       case 'pause':
@@ -402693,6 +405159,85 @@ extension on _StringsId {
             'Terbuka ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Belum ada ilustrasi yang terbuka';
+      case 'reader_highlight_all_classic':
+        return 'Semua klasik';
+      case 'reader_highlight_animate':
+        return 'Animasi goresan';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Menggambar setiap kalimat di sepanjang teks saat audio sampai ke kalimat itu';
+      case 'reader_highlight_animate_hint':
+        return 'Menggambar goresan di sepanjang teks saat Anda menambahkan favorit';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Menggambar goresan saat Anda memilih kata baru; memperluas pilihan dengan menyeret tidak menggambar ulang';
+      case 'reader_highlight_animate_search_hint':
+        return 'Menggambar goresan saat Anda melompat ke hasil baru';
+      case 'reader_highlight_cover_ruby':
+        return 'Tutupi furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Menebalkan goresan ke arah furigana. Furigana tetap terbaca di atasnya.';
+      case 'reader_highlight_eink_notice':
+        return 'Mode E-ink selalu memakai gaya klasik.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Buku audio';
+      case 'reader_highlight_kind_favorite':
+        return 'Favorit';
+      case 'reader_highlight_kind_label':
+        return 'Berlaku untuk';
+      case 'reader_highlight_kind_lookup':
+        return 'Cari kata';
+      case 'reader_highlight_kind_search':
+        return 'Pencarian';
+      case 'reader_highlight_opacity':
+        return 'Intensitas warna';
+      case 'reader_highlight_preview_color':
+        return 'Warna pratinjau';
+      case 'reader_highlight_preview_color_hint':
+        return 'Hanya mengubah pratinjau. Setiap favorit tetap memakai warnanya sendiri.';
+      case 'reader_highlight_replay':
+        return 'Putar ulang';
+      case 'reader_highlight_reset':
+        return 'Kembalikan ke default';
+      case 'reader_highlight_roughness':
+        return 'Getaran goresan';
+      case 'reader_highlight_style_classic':
+        return 'Klasik';
+      case 'reader_highlight_style_classic_hint':
+        return 'Bilah setinggi satu karakter dengan garis bawah';
+      case 'reader_highlight_style_crayon':
+        return 'Pensil warna';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Warna berbintik dengan tepi tidak rata';
+      case 'reader_highlight_style_fluo':
+        return 'Stabilo';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Tepi meluber, lebih gelap di kedua ujung';
+      case 'reader_highlight_style_marker':
+        return 'Spidol pahat';
+      case 'reader_highlight_style_marker_hint':
+        return 'Ujung miring, dengan sedikit tinta menumpuk saat pena diangkat';
+      case 'reader_highlight_style_rough':
+        return 'Gambar tangan';
+      case 'reader_highlight_style_rough_hint':
+        return 'Dua goresan bertumpuk, seperti ditandai dua kali';
+      case 'reader_highlight_style_tape':
+        return 'Selotip washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Ujung sobek dan pola diagonal halus';
+      case 'reader_highlight_style_under':
+        return 'Separuh bawah';
+      case 'reader_highlight_style_under_hint':
+        return 'Hanya menutup separuh bawah teks, tidak pernah menutup furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Ketebalan';
+      case 'reader_highlight_title':
+        return 'Gaya sorotan';
+      case 'reader_highlight_vertical':
+        return 'Vertikal';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -407154,6 +409699,8 @@ extension on _StringsId {
         return 'Tanpa latar';
       case 'video_setting_subtitle_no_background_hint':
         return 'Buat latar subtitle transparan.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Tanpa garis tepi';
       case 'video_setting_subtitle_obscure':
         return 'Samarkan subtitle';
       case 'video_setting_subtitle_obscure_blur':
@@ -412395,6 +414942,8 @@ extension on _StringsIt {
         return 'Non si applica alla rete locale; i trasferimenti LAN vanno sempre a velocità massima.';
       case 'download_rate_limit_lan_included':
         return 'Si applica anche alla rete locale.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Ancora nessuna attività sull\'host';
       case 'download_remote_jobs_title':
@@ -415132,6 +417681,8 @@ extension on _StringsIt {
         return 'Ancora niente da continuare';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ep. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Volume ${n}';
       case 'home_filter_added':
         return 'Aggiunti';
       case 'home_filter_all':
@@ -416641,14 +419192,6 @@ extension on _StringsIt {
         return 'Download dati OCR…';
       case 'manga_page_actions':
         return 'Azioni della pagina';
-      case 'manga_page_animation':
-        return 'Animazione cambio pagina';
-      case 'manga_page_animation_fade':
-        return 'Dissolvenza';
-      case 'manga_page_animation_none':
-        return 'Nessuna';
-      case 'manga_page_animation_slide':
-        return 'Scorrimento';
       case 'manga_page_copy':
         return 'Copia immagine';
       case 'manga_page_number_hint':
@@ -418380,6 +420923,30 @@ extension on _StringsIt {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Animazione cambio pagina';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Dissolvenza';
+      case 'page_turn_animation_none':
+        return 'Nessuna';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Scorrimento';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Incolla';
       case 'pause':
@@ -418856,6 +421423,85 @@ extension on _StringsIt {
             'Sbloccate ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Ancora nessuna illustrazione sbloccata';
+      case 'reader_highlight_all_classic':
+        return 'Tutto classico';
+      case 'reader_highlight_animate':
+        return 'Animazione del tratto';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Disegna ogni frase lungo il testo quando l\'audio la raggiunge';
+      case 'reader_highlight_animate_hint':
+        return 'Disegna il tratto lungo il testo quando aggiungi un preferito';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Disegna il tratto quando selezioni una nuova parola; ampliare la selezione trascinando non lo ridisegna';
+      case 'reader_highlight_animate_search_hint':
+        return 'Disegna il tratto quando passi a un nuovo risultato';
+      case 'reader_highlight_cover_ruby':
+        return 'Copri i furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Ispessisce il tratto verso il lato dei furigana. I furigana restano leggibili sopra.';
+      case 'reader_highlight_eink_notice':
+        return 'La modalità E-ink usa sempre lo stile classico.';
+      case 'reader_highlight_horizontal':
+        return 'Orizzontale';
+      case 'reader_highlight_kind_audio':
+        return 'Audiolibro';
+      case 'reader_highlight_kind_favorite':
+        return 'Preferiti';
+      case 'reader_highlight_kind_label':
+        return 'Si applica a';
+      case 'reader_highlight_kind_lookup':
+        return 'Ricerca nel dizionario';
+      case 'reader_highlight_kind_search':
+        return 'Ricerca';
+      case 'reader_highlight_opacity':
+        return 'Intensità del colore';
+      case 'reader_highlight_preview_color':
+        return 'Colore anteprima';
+      case 'reader_highlight_preview_color_hint':
+        return 'Cambia solo l\'anteprima. Ogni preferito mantiene il proprio colore.';
+      case 'reader_highlight_replay':
+        return 'Riproduci di nuovo';
+      case 'reader_highlight_reset':
+        return 'Ripristina predefiniti';
+      case 'reader_highlight_roughness':
+        return 'Irregolarità del tratto';
+      case 'reader_highlight_style_classic':
+        return 'Classico';
+      case 'reader_highlight_style_classic_hint':
+        return 'Una barra alta un carattere con sottolineatura';
+      case 'reader_highlight_style_crayon':
+        return 'Matita colorata';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Colore granuloso con bordi irregolari';
+      case 'reader_highlight_style_fluo':
+        return 'Evidenziatore';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Bordi sfumati, più scuro alle due estremità';
+      case 'reader_highlight_style_marker':
+        return 'Marcatore a scalpello';
+      case 'reader_highlight_style_marker_hint':
+        return 'Estremità oblique, con un po\' d\'inchiostro accumulato dove si solleva la penna';
+      case 'reader_highlight_style_rough':
+        return 'A mano';
+      case 'reader_highlight_style_rough_hint':
+        return 'Due tratti sovrapposti, come se fosse segnato due volte';
+      case 'reader_highlight_style_tape':
+        return 'Nastro washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Estremità strappate e un sottile motivo diagonale';
+      case 'reader_highlight_style_under':
+        return 'Metà inferiore';
+      case 'reader_highlight_style_under_hint':
+        return 'Copre solo la metà inferiore del testo, mai i furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Spessore';
+      case 'reader_highlight_title':
+        return 'Stile evidenziazione';
+      case 'reader_highlight_vertical':
+        return 'Verticale';
       case 'reader_horizontal':
         return 'Orizzontale';
       case 'reader_image_copy_failed':
@@ -423331,6 +425977,8 @@ extension on _StringsIt {
         return 'Nessuno sfondo';
       case 'video_setting_subtitle_no_background_hint':
         return 'Rende trasparente lo sfondo dei sottotitoli.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Nessun contorno';
       case 'video_setting_subtitle_obscure':
         return 'Oscura sottotitoli';
       case 'video_setting_subtitle_obscure_blur':
@@ -428535,6 +431183,8 @@ extension on _StringsJa {
         return 'ローカルネットワーク内では適用されません。LAN転送は常に最大速度で実行されます。';
       case 'download_rate_limit_lan_included':
         return 'ローカルネットワーク内にも適用されます。';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'ホストにはまだタスクがありません';
       case 'download_remote_jobs_title':
@@ -431265,6 +433915,8 @@ extension on _StringsJa {
         return '続きから再開できる作品はまだありません';
       case 'home_continue_episode':
         return ({required Object n}) => '第${n}話';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第${n}巻';
       case 'home_filter_added':
         return '追加日';
       case 'home_filter_all':
@@ -432758,14 +435410,6 @@ extension on _StringsJa {
         return 'OCRデータをダウンロード中…';
       case 'manga_page_actions':
         return 'ページ操作';
-      case 'manga_page_animation':
-        return 'ページめくりアニメーション';
-      case 'manga_page_animation_fade':
-        return 'フェード';
-      case 'manga_page_animation_none':
-        return 'なし';
-      case 'manga_page_animation_slide':
-        return 'スライド';
       case 'manga_page_copy':
         return '画像をコピー';
       case 'manga_page_number_hint':
@@ -434483,6 +437127,30 @@ extension on _StringsJa {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'ページ ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'ページめくりアニメーション';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'フェード';
+      case 'page_turn_animation_none':
+        return 'なし';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'スライド';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return '貼り付け';
       case 'pause':
@@ -434958,6 +437626,85 @@ extension on _StringsJa {
             '解放済み ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return '解放済みの挿絵はまだありません';
+      case 'reader_highlight_all_classic':
+        return 'すべてクラシック';
+      case 'reader_highlight_animate':
+        return '描画アニメーション';
+      case 'reader_highlight_animate_audio_hint':
+        return '音声が読み上げた文から順に、文字に沿って線を引きます';
+      case 'reader_highlight_animate_hint':
+        return 'お気に入りに追加すると、文字に沿って線を引きます';
+      case 'reader_highlight_animate_lookup_hint':
+        return '新しい語を選択すると線を引きます。ドラッグで選択範囲を広げても引き直しません';
+      case 'reader_highlight_animate_search_hint':
+        return '新しい検索結果に移動すると線を引きます';
+      case 'reader_highlight_cover_ruby':
+        return 'ふりがなを覆う';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'ふりがな側に線を太くします。ふりがなは線の上に表示されたままです。';
+      case 'reader_highlight_eink_notice':
+        return 'E-ink モードでは常にクラシックスタイルを使います。';
+      case 'reader_highlight_horizontal':
+        return '横書き';
+      case 'reader_highlight_kind_audio':
+        return 'オーディオブック';
+      case 'reader_highlight_kind_favorite':
+        return 'お気に入り';
+      case 'reader_highlight_kind_label':
+        return '適用先';
+      case 'reader_highlight_kind_lookup':
+        return '辞書検索';
+      case 'reader_highlight_kind_search':
+        return '検索';
+      case 'reader_highlight_opacity':
+        return '濃さ';
+      case 'reader_highlight_preview_color':
+        return 'プレビューの色';
+      case 'reader_highlight_preview_color_hint':
+        return 'プレビューにのみ反映されます。各お気に入りは自分の色を保ちます。';
+      case 'reader_highlight_replay':
+        return '再生';
+      case 'reader_highlight_reset':
+        return 'デフォルトに戻す';
+      case 'reader_highlight_roughness':
+        return '線の揺らぎ';
+      case 'reader_highlight_style_classic':
+        return 'クラシック';
+      case 'reader_highlight_style_classic_hint':
+        return '1文字分の高さのバーと下線';
+      case 'reader_highlight_style_crayon':
+        return '色鉛筆';
+      case 'reader_highlight_style_crayon_hint':
+        return '紙の粒子感と不揃いな縁';
+      case 'reader_highlight_style_fluo':
+        return '蛍光ペン';
+      case 'reader_highlight_style_fluo_hint':
+        return 'にじんだ縁、書き始めと書き終わりが濃くなる';
+      case 'reader_highlight_style_marker':
+        return 'チゼルマーカー';
+      case 'reader_highlight_style_marker_hint':
+        return '両端が斜めにカットされ、書き終わりに少しインクが溜まる';
+      case 'reader_highlight_style_rough':
+        return '手書き';
+      case 'reader_highlight_style_rough_hint':
+        return '2本の太い線を重ね、2回なぞったような仕上がり';
+      case 'reader_highlight_style_tape':
+        return 'マスキングテープ';
+      case 'reader_highlight_style_tape_hint':
+        return '両端が破れ、細い斜線模様が入る';
+      case 'reader_highlight_style_under':
+        return '下半分';
+      case 'reader_highlight_style_under_hint':
+        return '文字の下半分だけを塗り、ふりがなは隠さない';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}：${style}';
+      case 'reader_highlight_thickness':
+        return '太さ';
+      case 'reader_highlight_title':
+        return 'ハイライトスタイル';
+      case 'reader_highlight_vertical':
+        return '縦書き';
       case 'reader_horizontal':
         return '横書き';
       case 'reader_image_copy_failed':
@@ -439391,6 +442138,8 @@ extension on _StringsJa {
         return '背景なし';
       case 'video_setting_subtitle_no_background_hint':
         return '字幕の背景を透明にします。';
+      case 'video_setting_subtitle_no_outline':
+        return '縁取りなし';
       case 'video_setting_subtitle_obscure':
         return '字幕を隠す';
       case 'video_setting_subtitle_obscure_blur':
@@ -444589,6 +447338,8 @@ extension on _StringsKo {
         return '로컬 네트워크에는 적용되지 않습니다. LAN 전송은 항상 최대 속도로 실행됩니다.';
       case 'download_rate_limit_lan_included':
         return '로컬 네트워크에도 적용됩니다.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return '호스트에 아직 작업이 없습니다';
       case 'download_remote_jobs_title':
@@ -447320,6 +450071,8 @@ extension on _StringsKo {
         return '아직 이어서 볼 항목이 없습니다';
       case 'home_continue_episode':
         return ({required Object n}) => '${n}화';
+      case 'home_continue_volume':
+        return ({required Object n}) => '${n}권';
       case 'home_filter_added':
         return '추가됨';
       case 'home_filter_all':
@@ -448814,14 +451567,6 @@ extension on _StringsKo {
         return 'OCR 데이터 다운로드 중…';
       case 'manga_page_actions':
         return '페이지 동작';
-      case 'manga_page_animation':
-        return '페이지 넘김 애니메이션';
-      case 'manga_page_animation_fade':
-        return '페이드';
-      case 'manga_page_animation_none':
-        return '없음';
-      case 'manga_page_animation_slide':
-        return '슬라이드';
       case 'manga_page_copy':
         return '이미지 복사';
       case 'manga_page_number_hint':
@@ -450538,6 +453283,30 @@ extension on _StringsKo {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '페이지 ${current} / ${total}';
+      case 'page_turn_animation':
+        return '페이지 넘김 애니메이션';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return '페이드';
+      case 'page_turn_animation_none':
+        return '없음';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return '슬라이드';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return '붙여넣기';
       case 'pause':
@@ -451013,6 +453782,85 @@ extension on _StringsKo {
             '잠금 해제됨 ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return '아직 잠금 해제된 삽화가 없습니다';
+      case 'reader_highlight_all_classic':
+        return '모두 클래식';
+      case 'reader_highlight_animate':
+        return '그리기 애니메이션';
+      case 'reader_highlight_animate_audio_hint':
+        return '오디오가 읽는 문장마다 글자를 따라 획을 그립니다';
+      case 'reader_highlight_animate_hint':
+        return '즐겨찾기를 추가하면 글자를 따라 획을 그립니다';
+      case 'reader_highlight_animate_lookup_hint':
+        return '새 단어를 선택하면 획을 그립니다. 드래그로 선택 범위를 넓힐 때는 다시 그리지 않습니다';
+      case 'reader_highlight_animate_search_hint':
+        return '새 검색 결과로 이동하면 획을 그립니다';
+      case 'reader_highlight_cover_ruby':
+        return '후리가나 덮기';
+      case 'reader_highlight_cover_ruby_hint':
+        return '후리가나 쪽으로 획을 두껍게 합니다. 후리가나는 획 위에 그대로 보입니다.';
+      case 'reader_highlight_eink_notice':
+        return 'E-ink 모드에서는 항상 클래식 스타일을 사용합니다.';
+      case 'reader_highlight_horizontal':
+        return '가로쓰기';
+      case 'reader_highlight_kind_audio':
+        return '오디오북';
+      case 'reader_highlight_kind_favorite':
+        return '즐겨찾기';
+      case 'reader_highlight_kind_label':
+        return '적용 대상';
+      case 'reader_highlight_kind_lookup':
+        return '사전 검색';
+      case 'reader_highlight_kind_search':
+        return '검색';
+      case 'reader_highlight_opacity':
+        return '색 농도';
+      case 'reader_highlight_preview_color':
+        return '미리보기 색상';
+      case 'reader_highlight_preview_color_hint':
+        return '미리보기에만 적용됩니다. 각 즐겨찾기는 고유한 색을 유지합니다.';
+      case 'reader_highlight_replay':
+        return '다시 재생';
+      case 'reader_highlight_reset':
+        return '기본값으로 재설정';
+      case 'reader_highlight_roughness':
+        return '획 흔들림';
+      case 'reader_highlight_style_classic':
+        return '클래식';
+      case 'reader_highlight_style_classic_hint':
+        return '글자 한 줄 높이의 막대와 밑줄';
+      case 'reader_highlight_style_crayon':
+        return '색연필';
+      case 'reader_highlight_style_crayon_hint':
+        return '종이 질감의 입자와 고르지 않은 가장자리';
+      case 'reader_highlight_style_fluo':
+        return '형광펜';
+      case 'reader_highlight_style_fluo_hint':
+        return '번진 가장자리, 양 끝이 더 진함';
+      case 'reader_highlight_style_marker':
+        return '치즐 마커';
+      case 'reader_highlight_style_marker_hint':
+        return '양 끝이 비스듬히 잘리고, 펜을 떼는 곳에 잉크가 살짝 고임';
+      case 'reader_highlight_style_rough':
+        return '손그림';
+      case 'reader_highlight_style_rough_hint':
+        return '두 번 그은 듯 겹친 두 줄';
+      case 'reader_highlight_style_tape':
+        return '마스킹 테이프';
+      case 'reader_highlight_style_tape_hint':
+        return '찢어진 양 끝과 가는 사선 무늬';
+      case 'reader_highlight_style_under':
+        return '아래 절반';
+      case 'reader_highlight_style_under_hint':
+        return '글자의 아래 절반만 칠해 후리가나를 가리지 않음';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return '굵기';
+      case 'reader_highlight_title':
+        return '하이라이트 스타일';
+      case 'reader_highlight_vertical':
+        return '세로쓰기';
       case 'reader_horizontal':
         return '가로';
       case 'reader_image_copy_failed':
@@ -455452,6 +458300,8 @@ extension on _StringsKo {
         return '배경 없음';
       case 'video_setting_subtitle_no_background_hint':
         return '자막 배경을 투명하게 만듭니다.';
+      case 'video_setting_subtitle_no_outline':
+        return '외곽선 없음';
       case 'video_setting_subtitle_obscure':
         return '자막 가리기';
       case 'video_setting_subtitle_obscure_blur':
@@ -460685,6 +463535,8 @@ extension on _StringsNl {
         return 'Geldt niet binnen je lokale netwerk; LAN-overdrachten lopen altijd op volle snelheid.';
       case 'download_rate_limit_lan_included':
         return 'Geldt ook binnen je lokale netwerk.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Nog geen taken op de host';
       case 'download_remote_jobs_title':
@@ -463420,6 +466272,8 @@ extension on _StringsNl {
         return 'Nog niets om verder te gaan';
       case 'home_continue_episode':
         return ({required Object n}) => 'Afl. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Deel ${n}';
       case 'home_filter_added':
         return 'Toegevoegd';
       case 'home_filter_all':
@@ -464933,14 +467787,6 @@ extension on _StringsNl {
         return 'OCR-gegevens downloaden…';
       case 'manga_page_actions':
         return 'Pagina-acties';
-      case 'manga_page_animation':
-        return 'Paginaomslag-animatie';
-      case 'manga_page_animation_fade':
-        return 'Vervagen';
-      case 'manga_page_animation_none':
-        return 'Geen';
-      case 'manga_page_animation_slide':
-        return 'Schuiven';
       case 'manga_page_copy':
         return 'Afbeelding kopiëren';
       case 'manga_page_number_hint':
@@ -466673,6 +469519,30 @@ extension on _StringsNl {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Pagina ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Paginaomslag-animatie';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Vervagen';
+      case 'page_turn_animation_none':
+        return 'Geen';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Schuiven';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Plakken';
       case 'pause':
@@ -467149,6 +470019,85 @@ extension on _StringsNl {
             'Ontgrendeld ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Nog geen ontgrendelde illustraties';
+      case 'reader_highlight_all_classic':
+        return 'Alles klassiek';
+      case 'reader_highlight_animate':
+        return 'Streekanimatie';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Tekent elke zin langs de tekst zodra de audio die bereikt';
+      case 'reader_highlight_animate_hint':
+        return 'Tekent de streek langs de tekst wanneer je een favoriet toevoegt';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Tekent de streek wanneer je een nieuw woord selecteert; de selectie vergroten door te slepen tekent niet opnieuw';
+      case 'reader_highlight_animate_search_hint':
+        return 'Tekent de streek wanneer je naar een nieuwe treffer springt';
+      case 'reader_highlight_cover_ruby':
+        return 'Furigana bedekken';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Maakt de streek dikker aan de furigana-kant. De furigana blijven erboven leesbaar.';
+      case 'reader_highlight_eink_notice':
+        return 'In E-ink-modus wordt altijd de klassieke stijl gebruikt.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontaal';
+      case 'reader_highlight_kind_audio':
+        return 'Luisterboek';
+      case 'reader_highlight_kind_favorite':
+        return 'Favorieten';
+      case 'reader_highlight_kind_label':
+        return 'Geldt voor';
+      case 'reader_highlight_kind_lookup':
+        return 'Opzoeken';
+      case 'reader_highlight_kind_search':
+        return 'Zoeken';
+      case 'reader_highlight_opacity':
+        return 'Kleursterkte';
+      case 'reader_highlight_preview_color':
+        return 'Voorbeeldkleur';
+      case 'reader_highlight_preview_color_hint':
+        return 'Wijzigt alleen het voorbeeld. Elke favoriet houdt zijn eigen kleur.';
+      case 'reader_highlight_replay':
+        return 'Opnieuw afspelen';
+      case 'reader_highlight_reset':
+        return 'Standaardwaarden herstellen';
+      case 'reader_highlight_roughness':
+        return 'Onrustige streek';
+      case 'reader_highlight_style_classic':
+        return 'Klassiek';
+      case 'reader_highlight_style_classic_hint':
+        return 'Een balk van één teken hoog met onderstreping';
+      case 'reader_highlight_style_crayon':
+        return 'Kleurpotlood';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Korrelige kleur met onregelmatige randen';
+      case 'reader_highlight_style_fluo':
+        return 'Markeerstift';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Uitgelopen randen, donkerder aan beide uiteinden';
+      case 'reader_highlight_style_marker':
+        return 'Beitelmarker';
+      case 'reader_highlight_style_marker_hint':
+        return 'Schuine uiteinden, met wat inkt waar de pen loskomt';
+      case 'reader_highlight_style_rough':
+        return 'Handgetekend';
+      case 'reader_highlight_style_rough_hint':
+        return 'Twee overlappende strepen, alsof er twee keer is gemarkeerd';
+      case 'reader_highlight_style_tape':
+        return 'Washi-tape';
+      case 'reader_highlight_style_tape_hint':
+        return 'Gescheurde uiteinden en een fijn diagonaal patroon';
+      case 'reader_highlight_style_under':
+        return 'Onderste helft';
+      case 'reader_highlight_style_under_hint':
+        return 'Bedekt alleen de onderste helft van de tekst, nooit de furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Dikte';
+      case 'reader_highlight_title':
+        return 'Markeerstijl';
+      case 'reader_highlight_vertical':
+        return 'Verticaal';
       case 'reader_horizontal':
         return 'Horizontaal';
       case 'reader_image_copy_failed':
@@ -471617,6 +474566,8 @@ extension on _StringsNl {
         return 'Geen achtergrond';
       case 'video_setting_subtitle_no_background_hint':
         return 'Maak de ondertitelachtergrond transparant.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Geen omlijning';
       case 'video_setting_subtitle_obscure':
         return 'Ondertitels verbergen';
       case 'video_setting_subtitle_obscure_blur':
@@ -476858,6 +479809,8 @@ extension on _StringsPtBr {
         return 'Não se aplica na rede local; transferências LAN sempre rodam em velocidade máxima.';
       case 'download_rate_limit_lan_included':
         return 'Também se aplica na rede local.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Nenhuma tarefa no host ainda';
       case 'download_remote_jobs_title':
@@ -479593,6 +482546,8 @@ extension on _StringsPtBr {
         return 'Nada para continuar ainda';
       case 'home_continue_episode':
         return ({required Object n}) => 'Ep. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Volume ${n}';
       case 'home_filter_added':
         return 'Adicionados';
       case 'home_filter_all':
@@ -481103,14 +484058,6 @@ extension on _StringsPtBr {
         return 'Baixando dados de OCR…';
       case 'manga_page_actions':
         return 'Ações da página';
-      case 'manga_page_animation':
-        return 'Animação de virada de página';
-      case 'manga_page_animation_fade':
-        return 'Desvanecer';
-      case 'manga_page_animation_none':
-        return 'Nenhuma';
-      case 'manga_page_animation_slide':
-        return 'Deslizar';
       case 'manga_page_copy':
         return 'Copiar imagem';
       case 'manga_page_number_hint':
@@ -482842,6 +485789,30 @@ extension on _StringsPtBr {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Página ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Animação de virada de página';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Desvanecer';
+      case 'page_turn_animation_none':
+        return 'Nenhuma';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Deslizar';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Colar';
       case 'pause':
@@ -483318,6 +486289,85 @@ extension on _StringsPtBr {
             'Desbloqueadas ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Nenhuma ilustração desbloqueada ainda';
+      case 'reader_highlight_all_classic':
+        return 'Tudo clássico';
+      case 'reader_highlight_animate':
+        return 'Animação do traço';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Desenha cada frase ao longo do texto quando o áudio chega a ela';
+      case 'reader_highlight_animate_hint':
+        return 'Desenha o traço ao longo do texto quando você adiciona um favorito';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Desenha o traço ao selecionar uma palavra nova; ampliar a seleção arrastando não redesenha';
+      case 'reader_highlight_animate_search_hint':
+        return 'Desenha o traço ao pular para um novo resultado';
+      case 'reader_highlight_cover_ruby':
+        return 'Cobrir furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Engrossa o traço para o lado do furigana. O furigana continua legível por cima.';
+      case 'reader_highlight_eink_notice':
+        return 'O modo E-ink sempre usa o estilo clássico.';
+      case 'reader_highlight_horizontal':
+        return 'Horizontal';
+      case 'reader_highlight_kind_audio':
+        return 'Audiolivro';
+      case 'reader_highlight_kind_favorite':
+        return 'Favoritos';
+      case 'reader_highlight_kind_label':
+        return 'Aplica-se a';
+      case 'reader_highlight_kind_lookup':
+        return 'Consulta';
+      case 'reader_highlight_kind_search':
+        return 'Pesquisa';
+      case 'reader_highlight_opacity':
+        return 'Intensidade da cor';
+      case 'reader_highlight_preview_color':
+        return 'Cor da pré-visualização';
+      case 'reader_highlight_preview_color_hint':
+        return 'Muda só a pré-visualização. Cada favorito mantém a própria cor.';
+      case 'reader_highlight_replay':
+        return 'Repetir';
+      case 'reader_highlight_reset':
+        return 'Restaurar padrões';
+      case 'reader_highlight_roughness':
+        return 'Irregularidade do traço';
+      case 'reader_highlight_style_classic':
+        return 'Clássico';
+      case 'reader_highlight_style_classic_hint':
+        return 'Uma barra da altura de um caractere com sublinhado';
+      case 'reader_highlight_style_crayon':
+        return 'Lápis de cor';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Cor granulada com bordas irregulares';
+      case 'reader_highlight_style_fluo':
+        return 'Marca-texto';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Bordas esfumadas, mais escuro nas duas pontas';
+      case 'reader_highlight_style_marker':
+        return 'Marcador chanfrado';
+      case 'reader_highlight_style_marker_hint':
+        return 'Pontas inclinadas, com um pouco de tinta acumulada onde a caneta se levanta';
+      case 'reader_highlight_style_rough':
+        return 'Feito à mão';
+      case 'reader_highlight_style_rough_hint':
+        return 'Dois traços sobrepostos, como se marcado duas vezes';
+      case 'reader_highlight_style_tape':
+        return 'Fita washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Pontas rasgadas e um fino padrão diagonal';
+      case 'reader_highlight_style_under':
+        return 'Metade inferior';
+      case 'reader_highlight_style_under_hint':
+        return 'Cobre só a metade inferior do texto, nunca o furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Espessura';
+      case 'reader_highlight_title':
+        return 'Estilo de destaque';
+      case 'reader_highlight_vertical':
+        return 'Vertical';
       case 'reader_horizontal':
         return 'Horizontal';
       case 'reader_image_copy_failed':
@@ -487784,6 +490834,8 @@ extension on _StringsPtBr {
         return 'Sem fundo';
       case 'video_setting_subtitle_no_background_hint':
         return 'Deixa o fundo da legenda transparente.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Sem contorno';
       case 'video_setting_subtitle_obscure':
         return 'Ocultar legendas';
       case 'video_setting_subtitle_obscure_blur':
@@ -493030,6 +496082,8 @@ extension on _StringsRu {
         return 'Не применяется в локальной сети; передача по LAN всегда идёт на максимальной скорости.';
       case 'download_rate_limit_lan_included':
         return 'Также применяется в локальной сети.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'На хосте пока нет задач';
       case 'download_remote_jobs_title':
@@ -495766,6 +498820,8 @@ extension on _StringsRu {
         return 'Пока нечего продолжить';
       case 'home_continue_episode':
         return ({required Object n}) => 'Эп. ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Том ${n}';
       case 'home_filter_added':
         return 'Добавлено';
       case 'home_filter_all':
@@ -497276,14 +500332,6 @@ extension on _StringsRu {
         return 'Загрузка данных OCR…';
       case 'manga_page_actions':
         return 'Действия со страницей';
-      case 'manga_page_animation':
-        return 'Анимация перелистывания';
-      case 'manga_page_animation_fade':
-        return 'Затухание';
-      case 'manga_page_animation_none':
-        return 'Нет';
-      case 'manga_page_animation_slide':
-        return 'Скольжение';
       case 'manga_page_copy':
         return 'Копировать изображение';
       case 'manga_page_number_hint':
@@ -499015,6 +502063,30 @@ extension on _StringsRu {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Страница ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Анимация перелистывания';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Затухание';
+      case 'page_turn_animation_none':
+        return 'Нет';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Скольжение';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Вставить';
       case 'pause':
@@ -499491,6 +502563,85 @@ extension on _StringsRu {
             'Открыто ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Открытых иллюстраций пока нет';
+      case 'reader_highlight_all_classic':
+        return 'Все классические';
+      case 'reader_highlight_animate':
+        return 'Анимация штриха';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Прорисовывает каждое предложение вдоль текста, когда до него доходит аудио';
+      case 'reader_highlight_animate_hint':
+        return 'Прорисовывает штрих вдоль текста при добавлении в избранное';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Прорисовывает штрих при выборе нового слова; расширение выделения перетаскиванием не перерисовывает';
+      case 'reader_highlight_animate_search_hint':
+        return 'Прорисовывает штрих при переходе к новому совпадению';
+      case 'reader_highlight_cover_ruby':
+        return 'Закрывать фуригану';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Утолщает штрих в сторону фуриганы. Фуригана остаётся видна поверх.';
+      case 'reader_highlight_eink_notice':
+        return 'В режиме E-ink всегда используется классический стиль.';
+      case 'reader_highlight_horizontal':
+        return 'Горизонтально';
+      case 'reader_highlight_kind_audio':
+        return 'Аудиокнига';
+      case 'reader_highlight_kind_favorite':
+        return 'Избранное';
+      case 'reader_highlight_kind_label':
+        return 'Применяется к';
+      case 'reader_highlight_kind_lookup':
+        return 'Поиск слов';
+      case 'reader_highlight_kind_search':
+        return 'Поиск';
+      case 'reader_highlight_opacity':
+        return 'Насыщенность цвета';
+      case 'reader_highlight_preview_color':
+        return 'Цвет предпросмотра';
+      case 'reader_highlight_preview_color_hint':
+        return 'Меняет только предпросмотр. Каждая запись в избранном сохраняет свой цвет.';
+      case 'reader_highlight_replay':
+        return 'Повторить';
+      case 'reader_highlight_reset':
+        return 'Сбросить настройки';
+      case 'reader_highlight_roughness':
+        return 'Неровность штриха';
+      case 'reader_highlight_style_classic':
+        return 'Классический';
+      case 'reader_highlight_style_classic_hint':
+        return 'Полоса высотой в один символ с подчёркиванием';
+      case 'reader_highlight_style_crayon':
+        return 'Цветной карандаш';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Зернистый цвет с неровными краями';
+      case 'reader_highlight_style_fluo':
+        return 'Текстовыделитель';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Размытые края, оба конца темнее';
+      case 'reader_highlight_style_marker':
+        return 'Скошенный маркер';
+      case 'reader_highlight_style_marker_hint':
+        return 'Скошенные концы, немного чернил скапливается в конце штриха';
+      case 'reader_highlight_style_rough':
+        return 'От руки';
+      case 'reader_highlight_style_rough_hint':
+        return 'Два наложенных штриха, будто выделено дважды';
+      case 'reader_highlight_style_tape':
+        return 'Васи-лента';
+      case 'reader_highlight_style_tape_hint':
+        return 'Рваные края и тонкий диагональный узор';
+      case 'reader_highlight_style_under':
+        return 'Нижняя половина';
+      case 'reader_highlight_style_under_hint':
+        return 'Закрашивает только нижнюю половину текста, никогда не закрывает фуригану';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Толщина';
+      case 'reader_highlight_title':
+        return 'Стиль выделения';
+      case 'reader_highlight_vertical':
+        return 'Вертикально';
       case 'reader_horizontal':
         return 'Горизонтальное';
       case 'reader_image_copy_failed':
@@ -503956,6 +507107,8 @@ extension on _StringsRu {
         return 'Без фона';
       case 'video_setting_subtitle_no_background_hint':
         return 'Сделать фон субтитров прозрачным.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Без обводки';
       case 'video_setting_subtitle_obscure':
         return 'Скрыть субтитры';
       case 'video_setting_subtitle_obscure_blur':
@@ -509177,6 +512330,8 @@ extension on _StringsTh {
         return 'ไม่ใช้กับเครือข่ายท้องถิ่นของคุณ; การถ่ายโอน LAN จะทำงานเต็มความเร็วเสมอ';
       case 'download_rate_limit_lan_included':
         return 'ใช้กับเครือข่ายท้องถิ่นของคุณด้วย';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'ยังไม่มีงานบนโฮสต์';
       case 'download_remote_jobs_title':
@@ -511913,6 +515068,8 @@ extension on _StringsTh {
         return 'ยังไม่มีรายการให้ทำต่อ';
       case 'home_continue_episode':
         return ({required Object n}) => 'ตอนที่ ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'เล่ม ${n}';
       case 'home_filter_added':
         return 'เพิ่มแล้ว';
       case 'home_filter_all':
@@ -513419,14 +516576,6 @@ extension on _StringsTh {
         return 'กำลังดาวน์โหลดข้อมูล OCR…';
       case 'manga_page_actions':
         return 'การกระทำของหน้า';
-      case 'manga_page_animation':
-        return 'แอนิเมชันการพลิกหน้า';
-      case 'manga_page_animation_fade':
-        return 'จางหาย';
-      case 'manga_page_animation_none':
-        return 'ไม่มี';
-      case 'manga_page_animation_slide':
-        return 'เลื่อน';
       case 'manga_page_copy':
         return 'คัดลอกภาพ';
       case 'manga_page_number_hint':
@@ -515150,6 +518299,30 @@ extension on _StringsTh {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'หน้า ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'แอนิเมชันการพลิกหน้า';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'จางหาย';
+      case 'page_turn_animation_none':
+        return 'ไม่มี';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'เลื่อน';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'วาง';
       case 'pause':
@@ -515626,6 +518799,85 @@ extension on _StringsTh {
             'ปลดล็อกแล้ว ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'ยังไม่มีภาพประกอบที่ปลดล็อก';
+      case 'reader_highlight_all_classic':
+        return 'คลาสสิกทั้งหมด';
+      case 'reader_highlight_animate':
+        return 'แอนิเมชันการลากเส้น';
+      case 'reader_highlight_animate_audio_hint':
+        return 'ลากเส้นทีละประโยคไปตามข้อความเมื่อเสียงอ่านถึงประโยคนั้น';
+      case 'reader_highlight_animate_hint':
+        return 'ลากเส้นไปตามข้อความเมื่อเพิ่มรายการโปรด';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'ลากเส้นเมื่อเลือกคำใหม่ การลากขยายส่วนที่เลือกจะไม่วาดใหม่';
+      case 'reader_highlight_animate_search_hint':
+        return 'ลากเส้นเมื่อข้ามไปยังผลการค้นหาใหม่';
+      case 'reader_highlight_cover_ruby':
+        return 'ทับฟุริงานะ';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'ทำให้เส้นหนาขึ้นไปทางฝั่งฟุริงานะ ฟุริงานะยังอ่านได้อยู่ด้านบน';
+      case 'reader_highlight_eink_notice':
+        return 'โหมด E-ink ใช้สไตล์คลาสสิกเสมอ';
+      case 'reader_highlight_horizontal':
+        return 'แนวนอน';
+      case 'reader_highlight_kind_audio':
+        return 'หนังสือเสียง';
+      case 'reader_highlight_kind_favorite':
+        return 'รายการโปรด';
+      case 'reader_highlight_kind_label':
+        return 'ใช้กับ';
+      case 'reader_highlight_kind_lookup':
+        return 'ค้นหาคำ';
+      case 'reader_highlight_kind_search':
+        return 'ค้นหา';
+      case 'reader_highlight_opacity':
+        return 'ความเข้มของสี';
+      case 'reader_highlight_preview_color':
+        return 'สีตัวอย่าง';
+      case 'reader_highlight_preview_color_hint':
+        return 'เปลี่ยนเฉพาะตัวอย่างเท่านั้น รายการโปรดแต่ละรายการยังคงสีของตัวเอง';
+      case 'reader_highlight_replay':
+        return 'เล่นซ้ำ';
+      case 'reader_highlight_reset':
+        return 'รีเซ็ตเป็นค่าเริ่มต้น';
+      case 'reader_highlight_roughness':
+        return 'ความสั่นของเส้น';
+      case 'reader_highlight_style_classic':
+        return 'คลาสสิก';
+      case 'reader_highlight_style_classic_hint':
+        return 'แถบสูงหนึ่งตัวอักษรพร้อมขีดเส้นใต้';
+      case 'reader_highlight_style_crayon':
+        return 'ดินสอสี';
+      case 'reader_highlight_style_crayon_hint':
+        return 'สีมีเม็ดหยาบ ขอบไม่สม่ำเสมอ';
+      case 'reader_highlight_style_fluo':
+        return 'ปากกาเน้นข้อความ';
+      case 'reader_highlight_style_fluo_hint':
+        return 'ขอบซึมเลือน ปลายทั้งสองข้างเข้มกว่า';
+      case 'reader_highlight_style_marker':
+        return 'ปากกามาร์กเกอร์หัวตัด';
+      case 'reader_highlight_style_marker_hint':
+        return 'ปลายทั้งสองข้างตัดเฉียง มีหมึกค้างเล็กน้อยตรงที่ยกปากกา';
+      case 'reader_highlight_style_rough':
+        return 'วาดมือ';
+      case 'reader_highlight_style_rough_hint':
+        return 'สองเส้นซ้อนกัน เหมือนขีดสองรอบ';
+      case 'reader_highlight_style_tape':
+        return 'เทปวาชิ';
+      case 'reader_highlight_style_tape_hint':
+        return 'ปลายฉีกขาดและมีลายเส้นทแยงบางๆ';
+      case 'reader_highlight_style_under':
+        return 'ครึ่งล่าง';
+      case 'reader_highlight_style_under_hint':
+        return 'ระบายเฉพาะครึ่งล่างของตัวอักษร ไม่บังฟุริงานะ';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'ความหนา';
+      case 'reader_highlight_title':
+        return 'สไตล์ไฮไลต์';
+      case 'reader_highlight_vertical':
+        return 'แนวตั้ง';
       case 'reader_horizontal':
         return 'แนวนอน';
       case 'reader_image_copy_failed':
@@ -520084,6 +523336,8 @@ extension on _StringsTh {
         return 'ไม่มีพื้นหลัง';
       case 'video_setting_subtitle_no_background_hint':
         return 'ทำให้พื้นหลังคำบรรยายโปร่งใส';
+      case 'video_setting_subtitle_no_outline':
+        return 'ไม่มีขอบตัวอักษร';
       case 'video_setting_subtitle_obscure':
         return 'ซ่อนคำบรรยาย';
       case 'video_setting_subtitle_obscure_blur':
@@ -525321,6 +528575,8 @@ extension on _StringsTr {
         return 'Yerel ağınızda geçerli değildir; LAN aktarımları her zaman tam hızda çalışır.';
       case 'download_rate_limit_lan_included':
         return 'Yerel ağınızda da geçerlidir.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Ana makinede henüz görev yok';
       case 'download_remote_jobs_title':
@@ -528058,6 +531314,8 @@ extension on _StringsTr {
         return 'Henüz devam edilecek bir şey yok';
       case 'home_continue_episode':
         return ({required Object n}) => '${n}. bölüm';
+      case 'home_continue_volume':
+        return ({required Object n}) => '${n}. cilt';
       case 'home_filter_added':
         return 'Eklenen';
       case 'home_filter_all':
@@ -529567,14 +532825,6 @@ extension on _StringsTr {
         return 'OCR verileri indiriliyor…';
       case 'manga_page_actions':
         return 'Sayfa eylemleri';
-      case 'manga_page_animation':
-        return 'Sayfa çevirme animasyonu';
-      case 'manga_page_animation_fade':
-        return 'Solma';
-      case 'manga_page_animation_none':
-        return 'Yok';
-      case 'manga_page_animation_slide':
-        return 'Kaydırma';
       case 'manga_page_copy':
         return 'Görseli kopyala';
       case 'manga_page_number_hint':
@@ -531301,6 +534551,30 @@ extension on _StringsTr {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Sayfa ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Sayfa çevirme animasyonu';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Solma';
+      case 'page_turn_animation_none':
+        return 'Yok';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Kaydırma';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Yapıştır';
       case 'pause':
@@ -531777,6 +535051,85 @@ extension on _StringsTr {
             'Açılan ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Henüz açılmış illüstrasyon yok';
+      case 'reader_highlight_all_classic':
+        return 'Tümü klasik';
+      case 'reader_highlight_animate':
+        return 'Çizgi animasyonu';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Ses ulaştıkça her cümleyi metin boyunca çizer';
+      case 'reader_highlight_animate_hint':
+        return 'Favori eklediğinizde çizgiyi metin boyunca çizer';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Yeni bir kelime seçtiğinizde çizer; seçimi sürükleyerek genişletmek yeniden çizmez';
+      case 'reader_highlight_animate_search_hint':
+        return 'Yeni bir eşleşmeye geçtiğinizde çizer';
+      case 'reader_highlight_cover_ruby':
+        return 'Furiganayı kapat';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Çizgiyi furigana tarafına doğru kalınlaştırır. Furigana üstte okunur kalır.';
+      case 'reader_highlight_eink_notice':
+        return 'E-ink modu her zaman klasik stili kullanır.';
+      case 'reader_highlight_horizontal':
+        return 'Yatay';
+      case 'reader_highlight_kind_audio':
+        return 'Sesli kitap';
+      case 'reader_highlight_kind_favorite':
+        return 'Favoriler';
+      case 'reader_highlight_kind_label':
+        return 'Uygulandığı yer';
+      case 'reader_highlight_kind_lookup':
+        return 'Sözlükte arama';
+      case 'reader_highlight_kind_search':
+        return 'Arama';
+      case 'reader_highlight_opacity':
+        return 'Renk yoğunluğu';
+      case 'reader_highlight_preview_color':
+        return 'Önizleme rengi';
+      case 'reader_highlight_preview_color_hint':
+        return 'Yalnızca önizlemeyi değiştirir. Her favori kendi rengini korur.';
+      case 'reader_highlight_replay':
+        return 'Yeniden oynat';
+      case 'reader_highlight_reset':
+        return 'Varsayılanlara sıfırla';
+      case 'reader_highlight_roughness':
+        return 'Çizgi titreşimi';
+      case 'reader_highlight_style_classic':
+        return 'Klasik';
+      case 'reader_highlight_style_classic_hint':
+        return 'Bir karakter yüksekliğinde altı çizili şerit';
+      case 'reader_highlight_style_crayon':
+        return 'Boya kalemi';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Düzensiz kenarlı, grenli renk';
+      case 'reader_highlight_style_fluo':
+        return 'Fosforlu kalem';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Dağılmış kenarlar, iki uçta daha koyu';
+      case 'reader_highlight_style_marker':
+        return 'Kesik uçlu kalem';
+      case 'reader_highlight_style_marker_hint':
+        return 'Eğik uçlar, kalemin kalktığı yerde biraz mürekkep birikir';
+      case 'reader_highlight_style_rough':
+        return 'Elle çizilmiş';
+      case 'reader_highlight_style_rough_hint':
+        return 'İki kez işaretlenmiş gibi üst üste iki çizgi';
+      case 'reader_highlight_style_tape':
+        return 'Washi bant';
+      case 'reader_highlight_style_tape_hint':
+        return 'Yırtık uçlar ve ince çapraz desen';
+      case 'reader_highlight_style_under':
+        return 'Alt yarı';
+      case 'reader_highlight_style_under_hint':
+        return 'Metnin yalnızca alt yarısını boyar, furiganayı asla kapatmaz';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Kalınlık';
+      case 'reader_highlight_title':
+        return 'Vurgu stili';
+      case 'reader_highlight_vertical':
+        return 'Dikey';
       case 'reader_horizontal':
         return 'Yatay';
       case 'reader_image_copy_failed':
@@ -536241,6 +539594,8 @@ extension on _StringsTr {
         return 'Arka plan yok';
       case 'video_setting_subtitle_no_background_hint':
         return 'Altyazı arka planını saydam yapar.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Kontur yok';
       case 'video_setting_subtitle_obscure':
         return 'Altyazıları gizle';
       case 'video_setting_subtitle_obscure_blur':
@@ -541471,6 +544826,8 @@ extension on _StringsVi {
         return 'Không áp dụng trong mạng nội bộ; truyền LAN luôn chạy tốc độ tối đa.';
       case 'download_rate_limit_lan_included':
         return 'Cũng áp dụng trong mạng nội bộ.';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return 'Máy chủ chưa có tác vụ nào';
       case 'download_remote_jobs_title':
@@ -544208,6 +547565,8 @@ extension on _StringsVi {
         return 'Chưa có gì để tiếp tục';
       case 'home_continue_episode':
         return ({required Object n}) => 'Tập ${n}';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Quyển ${n}';
       case 'home_filter_added':
         return 'Đã thêm';
       case 'home_filter_all':
@@ -545713,14 +549072,6 @@ extension on _StringsVi {
         return 'Đang tải dữ liệu OCR…';
       case 'manga_page_actions':
         return 'Thao tác trang';
-      case 'manga_page_animation':
-        return 'Hiệu ứng lật trang';
-      case 'manga_page_animation_fade':
-        return 'Mờ dần';
-      case 'manga_page_animation_none':
-        return 'Không';
-      case 'manga_page_animation_slide':
-        return 'Trượt';
       case 'manga_page_copy':
         return 'Sao chép ảnh';
       case 'manga_page_number_hint':
@@ -547445,6 +550796,30 @@ extension on _StringsVi {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             'Trang ${current} / ${total}';
+      case 'page_turn_animation':
+        return 'Hiệu ứng lật trang';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return 'Mờ dần';
+      case 'page_turn_animation_none':
+        return 'Không';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return 'Trượt';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return 'Dán';
       case 'pause':
@@ -547921,6 +551296,85 @@ extension on _StringsVi {
             'Đã mở khóa ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return 'Chưa có minh họa nào được mở khóa';
+      case 'reader_highlight_all_classic':
+        return 'Tất cả cổ điển';
+      case 'reader_highlight_animate':
+        return 'Hiệu ứng vẽ nét';
+      case 'reader_highlight_animate_audio_hint':
+        return 'Vẽ từng câu dọc theo chữ khi âm thanh đọc đến câu đó';
+      case 'reader_highlight_animate_hint':
+        return 'Vẽ nét dọc theo chữ khi bạn thêm mục yêu thích';
+      case 'reader_highlight_animate_lookup_hint':
+        return 'Vẽ nét khi bạn chọn một từ mới; kéo để mở rộng vùng chọn sẽ không vẽ lại';
+      case 'reader_highlight_animate_search_hint':
+        return 'Vẽ nét khi bạn chuyển đến kết quả mới';
+      case 'reader_highlight_cover_ruby':
+        return 'Che furigana';
+      case 'reader_highlight_cover_ruby_hint':
+        return 'Làm dày nét về phía furigana. Furigana vẫn hiển thị rõ ở trên.';
+      case 'reader_highlight_eink_notice':
+        return 'Chế độ E-ink luôn dùng kiểu cổ điển.';
+      case 'reader_highlight_horizontal':
+        return 'Ngang';
+      case 'reader_highlight_kind_audio':
+        return 'Sách nói';
+      case 'reader_highlight_kind_favorite':
+        return 'Yêu thích';
+      case 'reader_highlight_kind_label':
+        return 'Áp dụng cho';
+      case 'reader_highlight_kind_lookup':
+        return 'Tra từ';
+      case 'reader_highlight_kind_search':
+        return 'Tìm kiếm';
+      case 'reader_highlight_opacity':
+        return 'Độ đậm màu';
+      case 'reader_highlight_preview_color':
+        return 'Màu xem trước';
+      case 'reader_highlight_preview_color_hint':
+        return 'Chỉ thay đổi phần xem trước. Mỗi mục yêu thích giữ màu riêng.';
+      case 'reader_highlight_replay':
+        return 'Phát lại';
+      case 'reader_highlight_reset':
+        return 'Khôi phục mặc định';
+      case 'reader_highlight_roughness':
+        return 'Độ rung nét';
+      case 'reader_highlight_style_classic':
+        return 'Cổ điển';
+      case 'reader_highlight_style_classic_hint':
+        return 'Thanh cao bằng một ký tự kèm gạch chân';
+      case 'reader_highlight_style_crayon':
+        return 'Bút chì màu';
+      case 'reader_highlight_style_crayon_hint':
+        return 'Màu lấm tấm hạt, viền không đều';
+      case 'reader_highlight_style_fluo':
+        return 'Bút dạ quang';
+      case 'reader_highlight_style_fluo_hint':
+        return 'Viền loang, hai đầu đậm hơn';
+      case 'reader_highlight_style_marker':
+        return 'Bút dạ đầu vát';
+      case 'reader_highlight_style_marker_hint':
+        return 'Hai đầu cắt chéo, mực hơi đọng ở chỗ nhấc bút';
+      case 'reader_highlight_style_rough':
+        return 'Vẽ tay';
+      case 'reader_highlight_style_rough_hint':
+        return 'Hai nét chồng lên nhau như được tô hai lần';
+      case 'reader_highlight_style_tape':
+        return 'Băng dính washi';
+      case 'reader_highlight_style_tape_hint':
+        return 'Hai đầu xé rách và họa tiết sọc chéo mảnh';
+      case 'reader_highlight_style_under':
+        return 'Nửa dưới';
+      case 'reader_highlight_style_under_hint':
+        return 'Chỉ tô nửa dưới của chữ, không bao giờ che furigana';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}: ${style}';
+      case 'reader_highlight_thickness':
+        return 'Độ dày';
+      case 'reader_highlight_title':
+        return 'Kiểu tô sáng';
+      case 'reader_highlight_vertical':
+        return 'Dọc';
       case 'reader_horizontal':
         return 'Ngang';
       case 'reader_image_copy_failed':
@@ -552384,6 +555838,8 @@ extension on _StringsVi {
         return 'Không nền';
       case 'video_setting_subtitle_no_background_hint':
         return 'Làm nền phụ đề trong suốt.';
+      case 'video_setting_subtitle_no_outline':
+        return 'Không viền';
       case 'video_setting_subtitle_obscure':
         return 'Che phụ đề';
       case 'video_setting_subtitle_obscure_blur':
@@ -557549,6 +561005,8 @@ extension on _StringsZhCn {
         return '不作用于局域网；局域网内的传输始终全速进行。';
       case 'download_rate_limit_lan_included':
         return '同时作用于局域网内的传输。';
+      case 'download_remote_delete_files_host_default':
+        return '这台主机版本较旧，删除任务时无法选择是否保留文件：Fushi 应用当主机会保留文件，无头 fushi_server 会连文件一起删除。';
       case 'download_remote_jobs_empty':
         return '主机上还没有任务';
       case 'download_remote_jobs_title':
@@ -560265,6 +563723,8 @@ extension on _StringsZhCn {
         return '还没有可以继续的内容';
       case 'home_continue_episode':
         return ({required Object n}) => '第 ${n} 集';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第 ${n} 卷';
       case 'home_filter_added':
         return '导入';
       case 'home_filter_all':
@@ -561753,14 +565213,6 @@ extension on _StringsZhCn {
         return '下载 OCR 数据…';
       case 'manga_page_actions':
         return '页面操作';
-      case 'manga_page_animation':
-        return '翻页动画';
-      case 'manga_page_animation_fade':
-        return '淡入淡出';
-      case 'manga_page_animation_none':
-        return '无';
-      case 'manga_page_animation_slide':
-        return '滑动';
       case 'manga_page_copy':
         return '复制图片';
       case 'manga_page_number_hint':
@@ -563470,6 +566922,30 @@ extension on _StringsZhCn {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 页';
+      case 'page_turn_animation':
+        return '翻页动画';
+      case 'page_turn_animation_cover':
+        return '覆盖';
+      case 'page_turn_animation_fade':
+        return '淡入淡出';
+      case 'page_turn_animation_none':
+        return '无';
+      case 'page_turn_animation_paginated_only':
+        return '只在翻页模式下生效';
+      case 'page_turn_animation_slide':
+        return '滑动';
+      case 'page_turn_animation_speed':
+        return '动画速度';
+      case 'page_turn_animation_speed_fast':
+        return '快';
+      case 'page_turn_animation_speed_normal':
+        return '标准';
+      case 'page_turn_animation_speed_slow':
+        return '慢';
+      case 'page_turn_follow_drag':
+        return '拖动跟手';
+      case 'page_turn_follow_drag_description':
+        return '页面随手指移动，松手时拖过四分之一宽度或快速甩动就翻页，否则回弹';
       case 'paste':
         return '粘贴';
       case 'pause':
@@ -563944,6 +567420,85 @@ extension on _StringsZhCn {
             '已解锁 ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return '还没有已解锁的插图';
+      case 'reader_highlight_all_classic':
+        return '全部经典';
+      case 'reader_highlight_animate':
+        return '落笔动画';
+      case 'reader_highlight_animate_audio_hint':
+        return '朗读到哪一句，就沿书写方向画出哪一句';
+      case 'reader_highlight_animate_hint':
+        return '新收藏时沿书写方向画出来';
+      case 'reader_highlight_animate_lookup_hint':
+        return '选中新的词时沿书写方向画出来；拖动扩大选区时不重画';
+      case 'reader_highlight_animate_search_hint':
+        return '跳到新的搜索结果时沿书写方向画出来';
+      case 'reader_highlight_cover_ruby':
+        return '笔划盖住振假名';
+      case 'reader_highlight_cover_ruby_hint':
+        return '往振假名一侧加厚，振假名仍显示在笔划上面';
+      case 'reader_highlight_eink_notice':
+        return '墨水屏模式下固定使用经典样式。';
+      case 'reader_highlight_horizontal':
+        return '横排';
+      case 'reader_highlight_kind_audio':
+        return '有声书';
+      case 'reader_highlight_kind_favorite':
+        return '收藏';
+      case 'reader_highlight_kind_label':
+        return '应用于';
+      case 'reader_highlight_kind_lookup':
+        return '查词';
+      case 'reader_highlight_kind_search':
+        return '搜索';
+      case 'reader_highlight_opacity':
+        return '浓度';
+      case 'reader_highlight_preview_color':
+        return '预览颜色';
+      case 'reader_highlight_preview_color_hint':
+        return '只影响预览，每条收藏保留自己的颜色';
+      case 'reader_highlight_replay':
+        return '重播';
+      case 'reader_highlight_reset':
+        return '恢复默认';
+      case 'reader_highlight_roughness':
+        return '笔触抖动';
+      case 'reader_highlight_style_classic':
+        return '经典';
+      case 'reader_highlight_style_classic_hint':
+        return '一个字高的色条加下划线';
+      case 'reader_highlight_style_crayon':
+        return '彩铅涂抹';
+      case 'reader_highlight_style_crayon_hint':
+        return '纸面颗粒感，边缘不规则';
+      case 'reader_highlight_style_fluo':
+        return '水性荧光笔';
+      case 'reader_highlight_style_fluo_hint':
+        return '边缘晕开，起笔和收笔颜色更深';
+      case 'reader_highlight_style_marker':
+        return '斜切马克笔';
+      case 'reader_highlight_style_marker_hint':
+        return '两端斜切，收笔处微微积墨';
+      case 'reader_highlight_style_rough':
+        return '手绘双笔';
+      case 'reader_highlight_style_rough_hint':
+        return '两道粗笔叠画，像随手划了两遍';
+      case 'reader_highlight_style_tape':
+        return '和纸胶带';
+      case 'reader_highlight_style_tape_hint':
+        return '两端撕口，带一层细斜纹';
+      case 'reader_highlight_style_under':
+        return '半截荧光';
+      case 'reader_highlight_style_under_hint':
+        return '只涂字的下半截，永远不挡振假名';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}：${style}';
+      case 'reader_highlight_thickness':
+        return '粗细';
+      case 'reader_highlight_title':
+        return '高亮样式';
+      case 'reader_highlight_vertical':
+        return '竖排';
       case 'reader_horizontal':
         return '横排';
       case 'reader_image_copy_failed':
@@ -568355,6 +571910,8 @@ extension on _StringsZhCn {
         return '无背景';
       case 'video_setting_subtitle_no_background_hint':
         return '让字幕背景透明，不显示底色。';
+      case 'video_setting_subtitle_no_outline':
+        return '无描边';
       case 'video_setting_subtitle_obscure':
         return '字幕遮蔽';
       case 'video_setting_subtitle_obscure_blur':
@@ -573515,6 +577072,8 @@ extension on _StringsZhHk {
         return '不作用於局域網；局域網內的傳輸始終全速進行。';
       case 'download_rate_limit_lan_included':
         return '同時作用於局域網內的傳輸。';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
       case 'download_remote_jobs_empty':
         return '主機上還沒有任務';
       case 'download_remote_jobs_title':
@@ -576241,6 +579800,8 @@ extension on _StringsZhHk {
         return '還沒有可以繼續的內容';
       case 'home_continue_episode':
         return ({required Object n}) => '第 ${n} 集';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第 ${n} 卷';
       case 'home_filter_added':
         return '導入';
       case 'home_filter_all':
@@ -577731,14 +581292,6 @@ extension on _StringsZhHk {
         return '下載 OCR 數據…';
       case 'manga_page_actions':
         return '頁面操作';
-      case 'manga_page_animation':
-        return '翻頁動畫';
-      case 'manga_page_animation_fade':
-        return '淡入淡出';
-      case 'manga_page_animation_none':
-        return '無';
-      case 'manga_page_animation_slide':
-        return '滑動';
       case 'manga_page_copy':
         return '複製圖片';
       case 'manga_page_number_hint':
@@ -579452,6 +583005,30 @@ extension on _StringsZhHk {
       case 'page_progress':
         return ({required Object current, required Object total}) =>
             '第 ${current} / ${total} 頁';
+      case 'page_turn_animation':
+        return '翻頁動畫';
+      case 'page_turn_animation_cover':
+        return 'Cover';
+      case 'page_turn_animation_fade':
+        return '淡入淡出';
+      case 'page_turn_animation_none':
+        return '無';
+      case 'page_turn_animation_paginated_only':
+        return 'Only applies in paginated mode';
+      case 'page_turn_animation_slide':
+        return '滑動';
+      case 'page_turn_animation_speed':
+        return 'Animation speed';
+      case 'page_turn_animation_speed_fast':
+        return 'Fast';
+      case 'page_turn_animation_speed_normal':
+        return 'Normal';
+      case 'page_turn_animation_speed_slow':
+        return 'Slow';
+      case 'page_turn_follow_drag':
+        return 'Follow finger while dragging';
+      case 'page_turn_follow_drag_description':
+        return 'The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back';
       case 'paste':
         return '貼上';
       case 'pause':
@@ -579927,6 +583504,85 @@ extension on _StringsZhHk {
             '已解鎖 ${unlocked} / ${total}';
       case 'reader_gallery_unlocked_empty':
         return '還沒有已解鎖的插圖';
+      case 'reader_highlight_all_classic':
+        return '全部經典';
+      case 'reader_highlight_animate':
+        return '落筆動畫';
+      case 'reader_highlight_animate_audio_hint':
+        return '朗讀到哪一句，就沿書寫方向畫出哪一句';
+      case 'reader_highlight_animate_hint':
+        return '新收藏時沿書寫方向畫出來';
+      case 'reader_highlight_animate_lookup_hint':
+        return '選中新的詞時沿書寫方向畫出來；拖動擴大選取範圍時不重畫';
+      case 'reader_highlight_animate_search_hint':
+        return '跳到新的搜尋結果時沿書寫方向畫出來';
+      case 'reader_highlight_cover_ruby':
+        return '筆劃蓋住注音';
+      case 'reader_highlight_cover_ruby_hint':
+        return '往注音一側加厚，注音仍顯示在筆劃上面';
+      case 'reader_highlight_eink_notice':
+        return '墨水屏模式下固定使用經典樣式。';
+      case 'reader_highlight_horizontal':
+        return '橫排';
+      case 'reader_highlight_kind_audio':
+        return '有聲書';
+      case 'reader_highlight_kind_favorite':
+        return '收藏';
+      case 'reader_highlight_kind_label':
+        return '套用於';
+      case 'reader_highlight_kind_lookup':
+        return '查詞';
+      case 'reader_highlight_kind_search':
+        return '搜尋';
+      case 'reader_highlight_opacity':
+        return '濃度';
+      case 'reader_highlight_preview_color':
+        return '預覽顏色';
+      case 'reader_highlight_preview_color_hint':
+        return '只影響預覽，每條收藏保留自己的顏色';
+      case 'reader_highlight_replay':
+        return '重播';
+      case 'reader_highlight_reset':
+        return '恢復預設';
+      case 'reader_highlight_roughness':
+        return '筆觸抖動';
+      case 'reader_highlight_style_classic':
+        return '經典';
+      case 'reader_highlight_style_classic_hint':
+        return '一個字高的色條加底線';
+      case 'reader_highlight_style_crayon':
+        return '彩鉛塗抹';
+      case 'reader_highlight_style_crayon_hint':
+        return '紙面顆粒感，邊緣不規則';
+      case 'reader_highlight_style_fluo':
+        return '水性螢光筆';
+      case 'reader_highlight_style_fluo_hint':
+        return '邊緣暈開，起筆和收筆顏色更深';
+      case 'reader_highlight_style_marker':
+        return '斜切麥克筆';
+      case 'reader_highlight_style_marker_hint':
+        return '兩端斜切，收筆處微微積墨';
+      case 'reader_highlight_style_rough':
+        return '手繪雙筆';
+      case 'reader_highlight_style_rough_hint':
+        return '兩道粗筆疊畫，像隨手劃了兩遍';
+      case 'reader_highlight_style_tape':
+        return '和紙膠帶';
+      case 'reader_highlight_style_tape_hint':
+        return '兩端撕口，帶一層細斜紋';
+      case 'reader_highlight_style_under':
+        return '半截螢光';
+      case 'reader_highlight_style_under_hint':
+        return '只塗字的下半截，永遠不擋注音';
+      case 'reader_highlight_summary_entry':
+        return ({required Object kind, required Object style}) =>
+            '${kind}：${style}';
+      case 'reader_highlight_thickness':
+        return '粗細';
+      case 'reader_highlight_title':
+        return '高亮樣式';
+      case 'reader_highlight_vertical':
+        return '直排';
       case 'reader_horizontal':
         return '橫排';
       case 'reader_image_copy_failed':
@@ -584351,6 +588007,8 @@ extension on _StringsZhHk {
         return '無背景';
       case 'video_setting_subtitle_no_background_hint':
         return '讓字幕背景透明，不顯示底色。';
+      case 'video_setting_subtitle_no_outline':
+        return '無描邊';
       case 'video_setting_subtitle_obscure':
         return '字幕遮蔽';
       case 'video_setting_subtitle_obscure_blur':
