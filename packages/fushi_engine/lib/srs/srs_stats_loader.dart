@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 
@@ -57,59 +58,21 @@ class SrsStatsIndex {
       if (n == null) continue;
       final SrsNoteTypeView? t = noteTypes[n.noteTypeId];
       if (t == null) continue;
-      if (matchesAnkiSearch(node, _StatSubject(this, n, t, c, today))) {
+      final SrsCardSearchSubject subject = SrsCardSearchSubject(
+        note: n,
+        noteType: t,
+        card: c,
+        deckName: tree[c.deckId] == null ? '' : tree.fullName(c.deckId),
+        day: day,
+        nowMs: nowMs,
+        todayDayIndex: today,
+      );
+      if (matchesAnkiSearch(node, subject)) {
         out.add(c.id);
       }
     }
     return out;
   }
-}
-
-class _StatSubject implements SrsSearchSubject {
-  _StatSubject(this.index, this.note, this.type, this.card, this.today);
-
-  final SrsStatsIndex index;
-  final SrsNoteView note;
-  final SrsNoteTypeView type;
-  final SrsCardCacheRow card;
-  final int today;
-
-  SrsQueue get _q => SrsQueue.parse(card.queue);
-
-  @override
-  String get deckName =>
-      index.tree[card.deckId] == null ? '' : index.tree.fullName(card.deckId);
-  @override
-  String get noteTypeName => type.name;
-  @override
-  Map<String, String> get fields => <String, String>{
-    for (final SrsFieldDef f in type.fields) f.name: note.field(f.id),
-  };
-  @override
-  List<String> get tags => note.tags;
-  @override
-  bool get isNew => _q == SrsQueue.newCard;
-  @override
-  bool get isLearn => _q == SrsQueue.learning || _q == SrsQueue.relearning;
-  @override
-  bool get isReview => _q == SrsQueue.review || _q == SrsQueue.relearning;
-  @override
-  bool get isDue => switch (_q) {
-    SrsQueue.newCard => false,
-    SrsQueue.review => (card.dueDay ?? 0) <= today,
-    SrsQueue.learning ||
-    SrsQueue.relearning => (card.dueAt ?? 0) <= index.nowMs + 20 * 60000,
-  };
-  @override
-  bool get isSuspended => card.suspended;
-  @override
-  int get noteId => SrsIds.ankiNumericId(note.id);
-  @override
-  int get cardId => SrsIds.ankiNumericId(card.id);
-  @override
-  int get addedDayIndex => index.day.dayIndexOf(note.createdAt);
-  @override
-  int get todayDayIndex => today;
 }
 
 /// 装载结果。

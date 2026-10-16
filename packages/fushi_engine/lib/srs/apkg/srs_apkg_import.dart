@@ -774,8 +774,9 @@ class _Importer {
         values[SrsFieldKeys.deckParamsMode] = inherit ? 'inherit' : 'own';
       }
       // Anki 里收起的牌组导入后同样收起（缺省展开，不写记录）。
-      if (src != null && src.collapsed)
+      if (src != null && src.collapsed) {
         values[SrsFieldKeys.deckCollapsed] = true;
+      }
       final Map<String, Object?>? ext = _extDecks[full];
       if (ext != null) {
         for (final String k in srsFushiExtDeckKeys) {
