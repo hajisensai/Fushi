@@ -27426,10 +27426,10 @@ class _StringsAr extends _StringsEn {
   @override
   String get url => 'الرابط';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'مشاركة إحصاءات الاستخدام';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'مرة واحدة يوميًا، يرسل معرّف تثبيت عشوائيًا وإصدار التطبيق والمنصة وقناة التحديث إلى fushi.moe لنتمكن من إحصاء المستخدمين النشطين. لا تُضمَّن أي بيانات عن الحساب أو المكتبة أو القراءة، ولا يُخزَّن عنوان IP الخاص بك. عند إرفاق معلومات الجهاز بالملاحظات، يُرسَل معرّف التثبيت معها.';
   @override
   String get video_air_season_autumn => 'خريف';
   @override
@@ -46766,10 +46766,10 @@ class _StringsDe extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Nutzungsstatistiken teilen';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Sendet einmal täglich eine zufällige Installations-ID, die App-Version, die Plattform und den Update-Kanal an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.';
   @override
   String get video_air_season_autumn => 'Herbst';
   @override
@@ -66212,10 +66212,10 @@ class _StringsEs extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Compartir estadísticas de uso';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Una vez al día, envía a fushi.moe un ID de instalación aleatorio, la versión de la app, la plataforma y el canal de actualizaciones para que podamos contar los usuarios activos. No incluye datos de la cuenta, la biblioteca ni la lectura, y tu dirección IP no se guarda. Si adjuntas información del dispositivo a un comentario, el ID de instalación se envía con él.';
   @override
   String get video_air_season_autumn => 'Otoño';
   @override
@@ -85732,10 +85732,10 @@ class _StringsFr extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Partager les statistiques d’utilisation';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Une fois par jour, envoie à fushi.moe un identifiant d’installation aléatoire, la version de l’app, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.';
   @override
   String get video_air_season_autumn => 'Automne';
   @override
@@ -104992,10 +104992,10 @@ class _StringsId extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Bagikan statistik penggunaan';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Sekali sehari, mengirim ID instalasi acak, versi aplikasi, platform, dan kanal pembaruan ke fushi.moe agar kami dapat menghitung pengguna aktif. Tidak ada data akun, pustaka, atau bacaan yang disertakan, dan alamat IP Anda tidak disimpan. Saat Anda melampirkan info perangkat ke masukan, ID instalasi ikut dikirim.';
   @override
   String get video_air_season_autumn => 'Musim gugur';
   @override
@@ -124334,10 +124334,10 @@ class _StringsIt extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Condividi statistiche di utilizzo';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Una volta al giorno invia a fushi.moe un ID di installazione casuale, la versione dell\'app, la piattaforma e il canale di aggiornamento, così possiamo contare gli utenti attivi. Non sono inclusi dati dell\'account, della libreria o di lettura, e il tuo indirizzo IP non viene memorizzato. Se alleghi le informazioni sul dispositivo a un feedback, l\'ID di installazione viene inviato insieme.';
   @override
   String get video_air_season_autumn => 'Autunno';
   @override
@@ -161238,10 +161238,10 @@ class _StringsKo extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => '사용 통계 보내기';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      '하루에 한 번 무작위 설치 ID, 앱 버전, 플랫폼, 업데이트 채널을 fushi.moe로 보내 활성 사용자 수를 집계합니다. 계정, 라이브러리, 읽기 데이터는 포함되지 않으며 IP 주소도 저장하지 않습니다. 피드백에 기기 정보를 첨부하면 설치 ID도 함께 전송됩니다.';
   @override
   String get video_air_season_autumn => '가을';
   @override
@@ -180388,10 +180388,10 @@ class _StringsNl extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Gebruiksstatistieken delen';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Stuurt één keer per dag een willekeurige installatie-ID, de app-versie, het platform en het updatekanaal naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.';
   @override
   String get video_air_season_autumn => 'Herfst';
   @override
@@ -199744,10 +199744,10 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Compartilhar estatísticas de uso';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Uma vez por dia, envia ao fushi.moe um ID de instalação aleatório, a versão do app, a plataforma e o canal de atualização para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.';
   @override
   String get video_air_season_autumn => 'Outono';
   @override
@@ -219074,10 +219074,10 @@ class _StringsRu extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Отправлять статистику использования';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Раз в день отправляет на fushi.moe случайный идентификатор установки, версию приложения, платформу и канал обновлений, чтобы мы могли посчитать активных пользователей. Данные аккаунта, библиотеки и чтения не передаются, ваш IP-адрес не сохраняется. Если вы прикладываете к отзыву сведения об устройстве, идентификатор установки отправляется вместе с ним.';
   @override
   String get video_air_season_autumn => 'Осень';
   @override
@@ -238144,10 +238144,10 @@ class _StringsTh extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'ส่งสถิติการใช้งาน';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'วันละครั้ง จะส่ง ID การติดตั้งแบบสุ่ม เวอร์ชันแอป แพลตฟอร์ม และช่องทางอัปเดตไปยัง fushi.moe เพื่อนับจำนวนผู้ใช้ที่ใช้งานอยู่ ไม่มีข้อมูลบัญชี คลัง หรือการอ่าน และไม่จัดเก็บที่อยู่ IP ของคุณ เมื่อคุณแนบข้อมูลอุปกรณ์ไปกับความคิดเห็น ID การติดตั้งจะถูกส่งไปด้วย';
   @override
   String get video_air_season_autumn => 'ฤดูใบไม้ร่วง';
   @override
@@ -257314,10 +257314,10 @@ class _StringsTr extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Kullanım istatistiklerini paylaş';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Günde bir kez rastgele bir kurulum kimliğini, uygulama sürümünü, platformu ve güncelleme kanalını fushi.moe\'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.';
   @override
   String get video_air_season_autumn => 'Sonbahar';
   @override
@@ -276454,10 +276454,10 @@ class _StringsVi extends _StringsEn {
   @override
   String get url => 'URL';
   @override
-  String get usage_stats_enabled => 'Share usage statistics';
+  String get usage_stats_enabled => 'Chia sẻ thống kê sử dụng';
   @override
   String get usage_stats_enabled_hint =>
-      'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+      'Mỗi ngày một lần, gửi ID cài đặt ngẫu nhiên, phiên bản ứng dụng, nền tảng và kênh cập nhật đến fushi.moe để chúng tôi đếm số người dùng hoạt động. Không bao gồm dữ liệu tài khoản, thư viện hay nội dung đọc, và địa chỉ IP của bạn không được lưu. Khi bạn đính kèm thông tin thiết bị vào phản hồi, ID cài đặt sẽ được gửi kèm.';
   @override
   String get video_air_season_autumn => 'Thu';
   @override
@@ -344790,9 +344790,9 @@ extension on _StringsAr {
       case 'url':
         return 'الرابط';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'مشاركة إحصاءات الاستخدام';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'مرة واحدة يوميًا، يرسل معرّف تثبيت عشوائيًا وإصدار التطبيق والمنصة وقناة التحديث إلى fushi.moe لنتمكن من إحصاء المستخدمين النشطين. لا تُضمَّن أي بيانات عن الحساب أو المكتبة أو القراءة، ولا يُخزَّن عنوان IP الخاص بك. عند إرفاق معلومات الجهاز بالملاحظات، يُرسَل معرّف التثبيت معها.';
       case 'video_air_season_autumn':
         return 'خريف';
       case 'video_air_season_spring':
@@ -361159,9 +361159,9 @@ extension on _StringsDe {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Nutzungsstatistiken teilen';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Sendet einmal täglich eine zufällige Installations-ID, die App-Version, die Plattform und den Update-Kanal an fushi.moe, damit wir aktive Nutzer zählen können. Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten, und deine IP-Adresse wird nicht gespeichert. Wenn du Feedback Geräteinformationen anhängst, wird die Installations-ID mitgesendet.';
       case 'video_air_season_autumn':
         return 'Herbst';
       case 'video_air_season_spring':
@@ -377519,9 +377519,9 @@ extension on _StringsEs {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Compartir estadísticas de uso';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Una vez al día, envía a fushi.moe un ID de instalación aleatorio, la versión de la app, la plataforma y el canal de actualizaciones para que podamos contar los usuarios activos. No incluye datos de la cuenta, la biblioteca ni la lectura, y tu dirección IP no se guarda. Si adjuntas información del dispositivo a un comentario, el ID de instalación se envía con él.';
       case 'video_air_season_autumn':
         return 'Otoño';
       case 'video_air_season_spring':
@@ -393893,9 +393893,9 @@ extension on _StringsFr {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Partager les statistiques d’utilisation';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Une fois par jour, envoie à fushi.moe un identifiant d’installation aléatoire, la version de l’app, la plateforme et le canal de mise à jour afin de compter les utilisateurs actifs. Aucune donnée de compte, de bibliothèque ou de lecture n’est incluse, et votre adresse IP n’est pas conservée. Si vous joignez les informations de l’appareil à un retour, l’identifiant d’installation est envoyé avec.';
       case 'video_air_season_autumn':
         return 'Automne';
       case 'video_air_season_spring':
@@ -410220,9 +410220,9 @@ extension on _StringsId {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Bagikan statistik penggunaan';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Sekali sehari, mengirim ID instalasi acak, versi aplikasi, platform, dan kanal pembaruan ke fushi.moe agar kami dapat menghitung pengguna aktif. Tidak ada data akun, pustaka, atau bacaan yang disertakan, dan alamat IP Anda tidak disimpan. Saat Anda melampirkan info perangkat ke masukan, ID instalasi ikut dikirim.';
       case 'video_air_season_autumn':
         return 'Musim gugur';
       case 'video_air_season_spring':
@@ -426571,9 +426571,9 @@ extension on _StringsIt {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Condividi statistiche di utilizzo';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Una volta al giorno invia a fushi.moe un ID di installazione casuale, la versione dell\'app, la piattaforma e il canale di aggiornamento, così possiamo contare gli utenti attivi. Non sono inclusi dati dell\'account, della libreria o di lettura, e il tuo indirizzo IP non viene memorizzato. Se alleghi le informazioni sul dispositivo a un feedback, l\'ID di installazione viene inviato insieme.';
       case 'video_air_season_autumn':
         return 'Autunno';
       case 'video_air_season_spring':
@@ -459057,9 +459057,9 @@ extension on _StringsKo {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return '사용 통계 보내기';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return '하루에 한 번 무작위 설치 ID, 앱 버전, 플랫폼, 업데이트 채널을 fushi.moe로 보내 활성 사용자 수를 집계합니다. 계정, 라이브러리, 읽기 데이터는 포함되지 않으며 IP 주소도 저장하지 않습니다. 피드백에 기기 정보를 첨부하면 설치 ID도 함께 전송됩니다.';
       case 'video_air_season_autumn':
         return '가을';
       case 'video_air_season_spring':
@@ -475387,9 +475387,9 @@ extension on _StringsNl {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Gebruiksstatistieken delen';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Stuurt één keer per dag een willekeurige installatie-ID, de app-versie, het platform en het updatekanaal naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.';
       case 'video_air_season_autumn':
         return 'Herfst';
       case 'video_air_season_spring':
@@ -491731,9 +491731,9 @@ extension on _StringsPtBr {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Compartilhar estatísticas de uso';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Uma vez por dia, envia ao fushi.moe um ID de instalação aleatório, a versão do app, a plataforma e o canal de atualização para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.';
       case 'video_air_season_autumn':
         return 'Outono';
       case 'video_air_season_spring':
@@ -508082,9 +508082,9 @@ extension on _StringsRu {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Отправлять статистику использования';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Раз в день отправляет на fushi.moe случайный идентификатор установки, версию приложения, платформу и канал обновлений, чтобы мы могли посчитать активных пользователей. Данные аккаунта, библиотеки и чтения не передаются, ваш IP-адрес не сохраняется. Если вы прикладываете к отзыву сведения об устройстве, идентификатор установки отправляется вместе с ним.';
       case 'video_air_season_autumn':
         return 'Осень';
       case 'video_air_season_spring':
@@ -524390,9 +524390,9 @@ extension on _StringsTh {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'ส่งสถิติการใช้งาน';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'วันละครั้ง จะส่ง ID การติดตั้งแบบสุ่ม เวอร์ชันแอป แพลตฟอร์ม และช่องทางอัปเดตไปยัง fushi.moe เพื่อนับจำนวนผู้ใช้ที่ใช้งานอยู่ ไม่มีข้อมูลบัญชี คลัง หรือการอ่าน และไม่จัดเก็บที่อยู่ IP ของคุณ เมื่อคุณแนบข้อมูลอุปกรณ์ไปกับความคิดเห็น ID การติดตั้งจะถูกส่งไปด้วย';
       case 'video_air_season_autumn':
         return 'ฤดูใบไม้ร่วง';
       case 'video_air_season_spring':
@@ -540720,9 +540720,9 @@ extension on _StringsTr {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Kullanım istatistiklerini paylaş';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Günde bir kez rastgele bir kurulum kimliğini, uygulama sürümünü, platformu ve güncelleme kanalını fushi.moe\'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.';
       case 'video_air_season_autumn':
         return 'Sonbahar';
       case 'video_air_season_spring':
@@ -557044,9 +557044,9 @@ extension on _StringsVi {
       case 'url':
         return 'URL';
       case 'usage_stats_enabled':
-        return 'Share usage statistics';
+        return 'Chia sẻ thống kê sử dụng';
       case 'usage_stats_enabled_hint':
-        return 'Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.';
+        return 'Mỗi ngày một lần, gửi ID cài đặt ngẫu nhiên, phiên bản ứng dụng, nền tảng và kênh cập nhật đến fushi.moe để chúng tôi đếm số người dùng hoạt động. Không bao gồm dữ liệu tài khoản, thư viện hay nội dung đọc, và địa chỉ IP của bạn không được lưu. Khi bạn đính kèm thông tin thiết bị vào phản hồi, ID cài đặt sẽ được gửi kèm.';
       case 'video_air_season_autumn':
         return 'Thu';
       case 'video_air_season_spring':
