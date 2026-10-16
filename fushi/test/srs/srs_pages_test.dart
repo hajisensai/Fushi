@@ -3,6 +3,8 @@
 // 内存库 + 确定性假排程内核（真实数值由 packages/fushi_srs 的 FFI 测试覆盖）；
 // widget 测试里没有 WebView，卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
@@ -156,8 +158,9 @@ Future<void> _pumpPage(
   required SrsDbStore store,
   required bool apple,
   required Widget page,
+  Size size = const Size(1100, 900),
 }) async {
-  tester.view.physicalSize = const Size(1100, 900);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final AppModel appModel = AppModel(testPlatformServices());
@@ -247,6 +250,51 @@ void main() {
       );
       // 顶栏动作：添加笔记 / 浏览 / 冲突 / 新建牌组 / 导入。
       expect(find.byKey(const ValueKey<String>('srs_add_note')), findsWidgets);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表手机宽度：各层牌组名（含深层子牌组）都有可读宽度、不溢出', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final List<String> ids = <String>[];
+      await tester.runAsync(() async {
+        ids.add(await store.ensureDeckPath('Japanese::Novel vocab'));
+        ids.add(await store.ensureDeckPath('Japanese::Novel vocab::Book one'));
+        ids.add(
+          await store.ensureDeckPath(
+            'Japanese::Novel vocab::Book one::Chapter 3::Part B',
+          ),
+        );
+        ids.add(await store.ensureDeckPath('Kanji writing'));
+      });
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+        size: const Size(390, 844),
+      );
+      expect(tester.takeException(), isNull, reason: '窄屏行不溢出');
+      for (final String name in <String>[
+        'Default',
+        'Japanese',
+        'Novel vocab',
+        'Book one',
+        'Chapter 3',
+        'Part B',
+        'Kanji writing',
+      ]) {
+        final Finder title = find.text(name);
+        expect(title, findsOneWidget, reason: '$name 在列表里');
+        // 标题区至少能放下约 5 个字（此前手机上被挤到只剩「De…」甚至 0 宽）。
+        expect(
+          tester.getSize(title).width,
+          greaterThanOrEqualTo(math.min(80, name.length * 8.0)),
+          reason: '$name 的标题宽度',
+        );
+      }
       await _unmount(tester);
     });
 

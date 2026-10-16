@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
@@ -644,15 +645,38 @@ class _DeckRow extends StatelessWidget {
     return KeyEventResult.handled;
   }
 
+  /// 行宽低于此值按窄屏排：手机竖屏（~350 行宽）下宽屏排法的行首（缩进 + 48 箭头
+  /// + 40 图标）与行尾（三计数 + ⋮）合计 ~280，标题被挤到只剩一两个字甚至 0 宽。
+  static const double compactBelow = 480;
+
+  /// 窄屏每层缩进与封顶层数：深层子牌组不再无限右移吃掉标题宽度。
+  static const double _compactIndentStep = 10;
+  static const int _compactIndentMaxDepth = 3;
+
+  /// 层级缩进。宽屏每深一层右移一格（spacing.card）；窄屏每层 10、最多 3 层。
+  static double indentFor({
+    required int depth,
+    required bool compact,
+    required FushiDesignTokens tokens,
+  }) => compact
+      ? math.min(depth, _compactIndentMaxDepth) * _compactIndentStep
+      : depth * tokens.spacing.card;
+
   /// 行首：缩进 + 展开 / 收起箭头 + 牌组图标。有子牌组时整块都是展开 / 收起的
   /// 命中区（用户 2026-10-16：只有箭头那 48 方框能折叠，旁边的缩进留白和图标一点
   /// 就开始复习，太容易误触）；没有子牌组的行首照旧跟随整行打开牌组。
-  Widget _leading(FushiDesignTokens tokens) {
+  ///
+  /// 窄屏（[compactBelow]）：缩进封顶、不画装饰性的牌组图标——层级已由缩进 + 箭头
+  /// 表达，把宽度留给牌组名（箭头仍是 48 见方命中区）。没有层级时窄屏行首为空。
+  Widget? _leading(FushiDesignTokens tokens, {required bool compact}) {
+    if (compact && !hasTree) return null;
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         // 层级缩进：子牌组每深一层右移一格。
-        SizedBox(width: deck.depth * tokens.spacing.card),
+        SizedBox(
+          width: indentFor(depth: deck.depth, compact: compact, tokens: tokens),
+        ),
         if (hasTree)
           _CollapseToggle(
             deckId: deck.deck.id,
@@ -660,12 +684,13 @@ class _DeckRow extends StatelessWidget {
             collapsed: collapsed,
             onPressed: () => onSetCollapsed(!collapsed),
           ),
-        FushiListLeadingIcon(
-          deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
-          tone: deck.reviewCount + deck.learnCount > 0
-              ? FushiCardTone.primary
-              : FushiCardTone.neutral,
-        ),
+        if (!compact)
+          FushiListLeadingIcon(
+            deck.depth == 0 ? FushiIcons.collection : FushiIcons.folder,
+            tone: deck.reviewCount + deck.learnCount > 0
+                ? FushiCardTone.primary
+                : FushiCardTone.neutral,
+          ),
       ],
     );
     if (!hasChildren) return row;
@@ -678,7 +703,12 @@ class _DeckRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) =>
+        _buildRow(context, compact: constraints.maxWidth < compactBelow),
+  );
+
+  Widget _buildRow(BuildContext context, {required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? note = srsNewBudgetNote(deck.newBudget);
     return Actions(
@@ -696,7 +726,9 @@ class _DeckRow extends StatelessWidget {
             count: count,
             onTap: () => onOpen(deck),
             child: FushiListItem(
-              leading: _leading(tokens),
+              leading: _leading(tokens, compact: compact),
+              // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
+              titleMaxLines: compact ? 2 : 1,
               title: FushiTooltip(
                 message: deck.fullName,
                 child: Text(deck.deck.name),
@@ -704,9 +736,10 @@ class _DeckRow extends StatelessWidget {
               subtitle: note == null ? null : Text(note),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
-                spacing: tokens.spacing.gap / 2,
+                spacing: compact ? 0 : tokens.spacing.gap / 2,
                 children: <Widget>[
                   SrsCountTriple(
+                    dense: compact,
                     newCount: deck.newCount,
                     learnCount: deck.learnCount,
                     reviewCount: deck.reviewCount,
