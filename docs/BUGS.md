@@ -33,20 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3102 条。点号进各自文件。
+> 共 3104 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3449](bugs/BUG-3449-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
 | [BUG-3448](bugs/BUG-3448-popup-nowrap-group-overflows-card.md) | ✅ | ✅ | 查词卡里词典 nowrap 词组整组画到卡片外 |
-> 共 3072 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3417](bugs/BUG-3417-recommended-pack-schema.md) | ✅ | ✅ | 推荐包重新导出抬高schema导致旧版强制更新 |
-> 共 3101 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3447](bugs/BUG-3447-rail-toggle-right-edge-flicker.md) | ✅ | ✅ | rail-toggle-right-edge-flicker |
 | [BUG-3446](bugs/BUG-3446-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
 | [BUG-3445](bugs/BUG-3445-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
@@ -77,7 +69,7 @@
 | [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
 | [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
 | [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
-| [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
+| [BUG-3417](bugs/BUG-3417-recommended-pack-schema.md) | ✅ | ✅ | 推荐包重新导出抬高schema导致旧版强制更新 |
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
 | [BUG-3414](bugs/BUG-3414-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |
