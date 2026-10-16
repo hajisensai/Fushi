@@ -40,7 +40,6 @@
 | [BUG-3420](bugs/BUG-3420-subtitle-delay-readout-focus-ring.md) | ✅ | ✅ | 字幕调轴读数胶囊的焦点环四角残缺 |
 | [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
 | [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
-| [BUG-3417](bugs/BUG-3417-apkg-unicase-collation.md) | ✅ | ✅ | 导入 Anki 新格式卡组报 no such collation sequence: unicase |
 > 共 3071 条。点号进各自文件。
 > 共 3072 条。点号进各自文件。
 
