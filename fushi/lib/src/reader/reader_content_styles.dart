@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 class ReaderLayoutDefaults {
@@ -160,6 +161,7 @@ class ReaderContentStyles {
     bool einkMode = false,
     bool einkDark = false,
     String? contentLanguage,
+    bool motionEnabled = true,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -177,6 +179,7 @@ class ReaderContentStyles {
       themeOverride: themeOverride,
       einkMode: einkMode,
       einkDark: einkDark,
+      motionEnabled: motionEnabled,
     )}\n</style>';
   }
 
@@ -430,6 +433,10 @@ body::after {
     /// 正文的内容语言（BCP-47，来自 EpubBooks.language：OPF 的 dc:language
     /// 回填或用户手动指定）。null = 未知，此时不写语言字体链，保持既有行为。
     String? contentLanguage,
+
+    /// 页面的 `fushiMotionEnabled`（系统「减弱动态效果」/ 墨水屏为 false）：为 false 时
+    /// 高亮笔触不放落笔动画（见 [highlightStrokeCssVariables]）。
+    bool motionEnabled = true,
   }) {
     final _ThemeColors themedColors = _themeColors(
         themeOverride ?? settings.theme,
@@ -692,7 +699,7 @@ $pageBreakCss
 :root {
   --fushi-sentence-audio-text-color: ${sentenceAudioTextColor ?? colors.textColor};
   --fushi-sentence-audio-background-color: ${sentenceAudioHighlightColor ?? colors.sentenceAudioHighlightColor};
-}
+${highlightStrokeCssVariables(settings.highlightStrokeConfigs, einkMode: einkMode, darkBackground: isDarkBackground(colors.backgroundColor), paperColor: colors.backgroundColor, motionEnabled: motionEnabled)}}
 html {
   /* TODO-1308 (BUG): the legacy WebKit property
      `-webkit-line-box-contain: block glyphs replaced` (cargo-ported from Hoshi
@@ -937,7 +944,7 @@ ${_favoriteHighlightCss('green', 'rgb(0, 126, 54)')}
 ${_favoriteHighlightCss('blue', 'rgb(36, 92, 190)')}
 ${_favoriteHighlightCss('pink', 'rgb(196, 38, 92)')}
 ${_favoriteHighlightCss('purple', 'rgb(126, 0, 190)')}
-.fushi-dict-highlight {
+${favoriteHighlightUnderlineOverrideCss(settings.highlightStrokeConfig(HighlightKind.favorite), einkMode: einkMode)}.fushi-dict-highlight {
   background-color: transparent !important;
   color: inherit;
 }
@@ -998,6 +1005,22 @@ fushi-hl-lanes-group {
 fushi-hl-lane {
   position: absolute !important;
   display: block !important;
+  pointer-events: none !important;
+}
+/* 笔触样式（马克笔等）的 SVG：1×1 定在 host 原点、overflow 可见，路径坐标就是 host 局部坐标。
+   必须压过上面给插图的通用 svg 规则（width/height:100% → 在 0 宽的层里算成 0×0，SVG 规范里
+   0 尺寸的 svg 整张不渲染）。 */
+fushi-hl-lanes svg.fushi-mark-ink {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 1px !important;
+  height: 1px !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  display: block !important;
+  overflow: visible !important;
   pointer-events: none !important;
 }
 /* 用户 10-09：有声书当前句的高亮条做圆角，每一行一条、两端圆。 */

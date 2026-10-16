@@ -119,6 +119,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_display.font_size',
           'reading_display.font_weight',
           'reading_display.furigana_mode',
+          'reading_display.highlight_style',
         ],
       ),
       // ── 排版 ──

@@ -1906,6 +1906,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderPreciseLocateQueue();
 
   double _stableTopInset = 0;
+
+  /// 上次写进正文 CSS 的 `fushiMotionEnabled`（didChangeDependencies 维护）。
+  bool _readerMotionEnabled = true;
   double _stableBottomInset = 0;
 
   /// 底栏内容行的自然（未缩放）高度。
@@ -3809,6 +3812,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     if (insetChanged) {
       unawaited(_applyChromeInsets());
     }
+    // 系统「减弱动态效果」/ 墨水屏切换：正文 CSS 里的高亮落笔开关跟着变，必须重下发样式表
+    // （样式缓存与已缓存章节 HTML 都烤进了旧值）。
+    final bool motionEnabled = fushiMotionEnabled(context);
+    if (motionEnabled != _readerMotionEnabled) {
+      _readerMotionEnabled = motionEnabled;
+      if (_settings != null) {
+        _invalidateStyleCache();
+        unawaited(_applyStylesLive());
+      }
+    }
     // 系统「减弱动态效果」/ 墨水屏主题切换：翻页效果按 [effectivePageTurnAnimation]
     // 降级成「无」或恢复，必须立即热下发——否则已加载的正文仍按旧效果播动画。
     // 首次（null）只记录，install 时的完整配置已带当前值。
@@ -4250,6 +4263,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
       einkMode: appModel.einkMode,
       einkDark: appModel.isDarkMode,
+      // 高亮笔触的落笔动画开关与节奏只认 Dart 侧 fushiMotionEnabled（减弱动态效果 / 墨水屏
+      // 归零）；切换时 didChangeDependencies 重下发样式表。
+      motionEnabled: _readerMotionEnabled,
     );
   }
 

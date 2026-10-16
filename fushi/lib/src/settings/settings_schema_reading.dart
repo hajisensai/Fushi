@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
@@ -391,6 +392,29 @@ SettingsDestination buildReadingDestination() {
               await pushSettingsPage(
                 c,
                 (_) => const CustomFontsPage(target: FontTarget.body),
+              );
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          // 高亮样式：收藏 / 查词 / 有声书当前句 / 搜索四类高亮各自的笔触样式 + 粗细 / 浓度 / 抖动 /
+          // 盖住振假名 / 落笔动画，子页带实时预览。子页写偏好经
+          // ReaderFushiSource.setHighlightStrokeConfig 触发正文样式热替换。
+          SettingsNavigationItem(
+            id: 'reading_display.highlight_style',
+            title: t.reader_highlight_title,
+            subtitleBuilder: (SettingsContext c) =>
+                highlightStyleSummary(c.readerSource),
+            icon: kHighlightStyleIcon,
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 27),
+            onTap: (SettingsContext c) async {
+              await pushSettingsPage(
+                c,
+                (_) => HighlightStylePage(
+                  source: c.readerSource,
+                  initiallyVertical: c.readerSource.readerWritingMode
+                      .startsWith('vertical'),
+                  lineHeight: c.readerSource.readerLineHeight,
+                ),
               );
               notifyReaderSettingsChanged(c);
             },
