@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Mantén esto activado con el bloqueo de posición si aún quieres consultar palabras.",
   "floating_lyric_close": "Cerrar",
   "floating_lyric_corner_radius": "Radio de esquinas del subtítulo flotante",
-  "floating_lyric_corner_radius_hint": "0 mantiene las esquinas predeterminadas de cada plataforma; aumente para redondear más la barra y los botones",
+  "floating_lyric_corner_radius_hint": "0 deja las esquinas rectas; aumente para redondear más la barra y los botones (predeterminado 24)",
   "floating_lyric_font_size": "Tamaño de fuente del subtítulo flotante",
   "floating_lyric_hint": "Mostrar la oración actual sobre otras apps.",
   "floating_lyric_lock": "Bloquear",

@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Gardez cette option activée avec le verrouillage de position si vous voulez conserver la recherche de mots.",
   "floating_lyric_close": "Fermer",
   "floating_lyric_corner_radius": "Rayon des coins du sous-titre flottant",
-  "floating_lyric_corner_radius_hint": "0 garde les coins par défaut de chaque plateforme ; augmentez pour arrondir la barre et les boutons",
+  "floating_lyric_corner_radius_hint": "0 donne des coins droits ; augmentez pour arrondir la barre et les boutons (24 par défaut)",
   "floating_lyric_font_size": "Taille de police du sous-titre flottant",
   "floating_lyric_hint": "Afficher la phrase actuelle par-dessus les autres applications.",
   "floating_lyric_lock": "Verrouiller",
