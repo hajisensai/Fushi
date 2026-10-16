@@ -43,6 +43,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
@@ -3185,6 +3187,9 @@ class AppModel with ChangeNotifier {
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
+      // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
+      // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
+      installCollectionAiOrderSettings(_prefsRepo);
       final BaseAnkiRepository ankiRepo =
           platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(

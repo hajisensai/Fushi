@@ -46,6 +46,8 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
@@ -756,6 +758,15 @@ class SourceLibraryScanner {
             sourceId: source.id,
             groupingMode: source.videoGroupingMode,
             sourceRoot: scanRoot,
+          );
+          // 归组按季 → 集排完后，没有集号的 SP / OVA / 特别篇交 AI 定位（只在
+          // 指派了提供商、用户没手动排过时才发请求）；后台跑，不阻塞扫描。
+          scheduleAutomaticCollectionAiOrder(
+            db: _db,
+            collectionIds: <int>[
+              ...grouping.createdCollectionIds,
+              ...grouping.updatedCollectionIds,
+            ],
           );
           mediaCount += await _importPlaylists(plan, source.id, files);
           mediaCount += await _importBlurayDiscs(plan, source.id);
