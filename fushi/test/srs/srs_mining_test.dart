@@ -706,7 +706,8 @@ void main() {
   });
 
   test('偏好 wire 值', () {
-    expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.anki);
+    // 没设过 = 新默认 Fushi 复习（所有者 2026-10-16）；认不出的显式值仍按 Anki。
+    expect(SrsMiningTarget.fromWire(null), SrsMiningTarget.srs);
     expect(SrsMiningTarget.fromWire('garbage'), SrsMiningTarget.anki);
     // 只有二选一两档。
     expect(SrsMiningTarget.values, <SrsMiningTarget>[

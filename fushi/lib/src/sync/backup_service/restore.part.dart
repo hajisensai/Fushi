@@ -1158,6 +1158,11 @@ class BackupRestoreService {
         if (preservedSync.isNotEmpty) {
           await _applyPreservedConfig(dbDirectory, preservedSync);
         }
+        // 本安装的一次性判定键：设置层换成了备份的，判定所依据的数据也随之换了——
+        // 外来值与本机旧值都不留，下次启动按恢复后的数据重判（全新安装
+        // haveCurrent=false 时也必须走这一步）。必须排在上面两步之后：它们会把本机
+        // 旧值写回来。
+        await _clearInstallScopedPrefs(dbDirectory);
       } else if (haveCurrent) {
         // Keep this device's whole settings layer.
         await _reapplySettingsLayer(dbDirectory);
@@ -1669,6 +1674,7 @@ class BackupRestoreService {
             (decoded['prefs'] as Map<String, dynamic>?) ?? decoded;
         final prefs = prefsRaw.map((k, v) => MapEntry(k, v as String));
         if (prefs.isNotEmpty) await _applyPreservedConfig(dbDirectory, prefs);
+        await _clearInstallScopedPrefs(dbDirectory);
       }
       sidecarStateApplied = true;
     } on FormatException catch (e, st) {
@@ -1910,6 +1916,36 @@ class BackupRestoreService {
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } finally {
       await db.close();
+    }
+  }
+
+  /// 导入设置的覆盖恢复（含崩溃恢复重放）收尾：删掉导入库里全部
+  /// [SyncRepository.installScopedPrefKeys]，让下次启动按恢复后的数据重新判定。
+  ///
+  /// 两种值都不能留：外来值是另一台机器（或打包机）的结论；本机旧值依据的是恢复
+  /// **前**的数据——新装判成 'srs' 后恢复一份老 Anki 用户的完整备份，留着旧值就会
+  /// 把这位老用户的卡送进复习。重判时推荐包回执照旧只认制卡数据信号；用户显式设过
+  /// 的 `srs_mining_target` 是普通偏好、随设置恢复，判定只给它兜默认值，不覆盖。
+  /// 不导入设置的恢复（设置层整层写回本机）不调本方法，本机判定原样保留。
+  static Future<void> _clearInstallScopedPrefs(String dbDirectory) async {
+    const List<String> keys = SyncRepository.installScopedPrefKeys;
+    FushiDatabase? db;
+    try {
+      db = FushiDatabase(dbDirectory);
+      await (db.delete(db.preferences)..where((t) => t.key.isIn(keys))).go();
+      await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (e, st) {
+      // 导入的库打不开（不是 SQLite / 已损坏）：与 [_readDeviceLocalPrefs] 同口径，
+      // 不因这一步把整次恢复判失败——那样的库本来就读不出任何偏好。
+      debugPrint(
+        'BackupRestoreService._clearInstallScopedPrefs failed: $e\n$st',
+      );
+    } finally {
+      try {
+        await db?.close();
+      } catch (_) {
+        /* db may have failed to open */
+      }
     }
   }
 

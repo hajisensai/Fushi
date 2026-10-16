@@ -47,6 +47,7 @@ import 'package:fushi/src/media/override_thumbnail_migration.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
@@ -3222,6 +3223,20 @@ class AppModel with ChangeNotifier {
       await prefsRepo.settleMiningImageModeInstallDefault();
       // 阅读器工具栏样式一次性强制悬浮（含各 Profile 快照），之后尊重用户选择。
       await prefsRepo.settleReaderToolbarStyleFloating();
+      // 「挖词目标」出厂默认：新装 Fushi 复习、老用户照旧 Anki 且复习模块保持关（不提醒）。
+      // 推荐包回执是设备本地文件、不随备份恢复消失：据它认出「新用户在引导里导入了推荐包」。
+      await prefsRepo.settleSrsMiningTargetInstallDefault(
+        freshOnboardingPackImport: await RecommendedPackTutorialState(
+          appDirectory,
+        ).hasImportReceipt,
+      );
+      // 复习默认开之后，新装用户从不经过 [setModuleEnabled] 打开复习，那里「第一次打开
+      // 复习时把日界设成凌晨 4 点（与 Anki 一致）」的落点就够不着：在这里补同一条规则。
+      // 只在日界从没设过时写（老用户迁移后复习是关的，走不到这里）。
+      if (prefsRepo.moduleEnabled(ModuleId.srs) &&
+          prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
+        await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
+      }
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -7928,16 +7943,16 @@ class AppModel with ChangeNotifier {
 
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
-  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]：除复习外都开，
-  /// fail-open；复习默认关，未就绪时同样不该露出）。模块门控读得比 `initialise()`
+  /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]，fail-open）；复习
+  /// 例外按关：此刻还不知道本安装是不是老用户（老用户升级后复习保持关、不提醒，见
+  /// `PreferencesRepository.settleSrsMiningTargetInstallDefault`）。模块门控读得比 `initialise()`
   /// 早：设置 schema 的 `visible` 谓词同时喂渲染与搜索索引，展平索引这条路径在弹窗
   /// 词典入口与纯 widget 测试里都会撞上一个未初始化的 AppModel。裸 `prefsRepo!` 会
   /// 在那里抛 null check——而「读不到用户意愿」的安全方向是全都显示，不是把整个设置
   /// 页藏掉（与 module_registry 里「漏写映射默认恒在」同一个方向）。
-  bool moduleEnabled(ModuleId module) =>
-      isPreferencesReady
+  bool moduleEnabled(ModuleId module) => isPreferencesReady
       ? prefsRepo.moduleEnabled(module)
-      : module.defaultEnabled;
+      : module != ModuleId.srs && module.defaultEnabled;
 
   Future<void> setModuleEnabled(ModuleId module, bool value) async {
     await prefsRepo.setModuleEnabled(module, value);
@@ -8271,9 +8286,11 @@ class AppModel with ChangeNotifier {
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
   // 复习模块的「挖词目标」（透传 prefsRepo）。与 [mineToServerEnabled] 同理用可空读：
-  // `ankiRepositoryProvider` 构建期就会读它，prefs 未装配时等于从没选过 = Anki。
-  SrsMiningTarget get srsMiningTarget =>
-      SrsMiningTarget.fromWire(_prefsRepo?.srsMiningTarget);
+  // `ankiRepositoryProvider` 构建期就会读它。prefs 未装配时按 Anki（此刻不会有制卡，
+  // 万一有，宁可照旧发 Anki）；装配后没设过取本安装的出厂默认（新装 srs / 老用户 anki）。
+  SrsMiningTarget get srsMiningTarget => _prefsRepo == null
+      ? SrsMiningTarget.anki
+      : SrsMiningTarget.fromWire(_prefsRepo!.srsMiningTarget);
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
