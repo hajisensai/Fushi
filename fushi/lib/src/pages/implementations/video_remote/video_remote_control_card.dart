@@ -230,6 +230,10 @@ class VideoRemoteControlCard extends StatelessWidget {
     if (item == VideoRemoteControlItem.speed) {
       return '$label ${formatVideoRemoteSpeed(nowPlaying.speed)}';
     }
+    final int? volume = nowPlaying.volume;
+    if (item == VideoRemoteControlItem.volume && volume != null) {
+      return '$label $volume';
+    }
     return label;
   }
 

@@ -100,6 +100,10 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             : null,
         'primaryDelayMs': controller.delayMs,
         'secondaryDelayMs': controller.effectiveSecondaryDelayMs,
+        // 音量 / 选集的显示值（手机音量条、选集按钮可用与否）。
+        'volume': _volumeDisplay.value.round(),
+        'episodeIndex': _currentEpisode,
+        'episodeCount': _episodes.length,
       },
       command: (String action, Map<String, dynamic> body) async {
         switch (action) {
@@ -130,12 +134,101 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       },
       stopAudio: controller.stopPlayRange,
       openFavorite: _openRemoteVideoFavorite,
-      addListener: controller.addListener,
-      removeListener: controller.removeListener,
+      // 音量不经 controller 通知（见 [_volumeDisplay]），电脑上调音量也要推给手机。
+      addListener: (VoidCallback listener) {
+        controller.addListener(listener);
+        _volumeDisplay.addListener(listener);
+      },
+      removeListener: (VoidCallback listener) {
+        controller.removeListener(listener);
+        _volumeDisplay.removeListener(listener);
+      },
       favoritesChanged: _refreshFavoritedCueCache,
+      // 以下三组与桌面控制通道（[_playbackRemote]）/ 剧集列表同一批执行体。
+      setVolume: (int volume) => _applyUserVideoVolume(volume.toDouble()),
+      episodes: _remoteEpisodes,
+      switchEpisode: _switchRemoteControlledEpisode,
+      subtitleTracks: _remoteSubtitleOptions,
+      selectSubtitleTrack: _selectRemoteSubtitleOption,
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
+  }
+
+  /// 手机选集列表：与剧集轨道同一份 [_episodes]（单视频为空）。
+  List<VideoRemoteEpisode> _remoteEpisodes() => <VideoRemoteEpisode>[
+    for (int i = 0; i < _episodes.length; i++)
+      VideoRemoteEpisode(
+        index: i,
+        title: _episodes[i].displayTitle ?? _episodes[i].title,
+        current: i == _currentEpisode,
+      ),
+  ];
+
+  /// 手机选集：与剧集列表点选同一入口（[_switchEpisode]，listSelect）。不等它
+  /// 完成——本地换集是 pushReplacement 到新页，其 Future 要等新页退出才 settle，
+  /// 等它会把遥控宿主的串行队列一直卡住；新集的会话经新页登记推给手机。
+  Future<void> _switchRemoteControlledEpisode(int index) async {
+    if (!mounted) throw const VideoRemoteException(409, 'no_video');
+    unawaited(
+      _switchEpisode(index, intent: EpisodeStartIntent.listSelect).catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        ErrorLogService.instance.log(
+          'VideoFushiPage.remoteSwitchEpisode',
+          error,
+          stack,
+        );
+      }),
+    );
+  }
+
+  /// 手机字幕轨列表：与桌面控制通道 `video subs` 同一份轨表（本机视频首次会枚举
+  /// 内封轨，与打开设置面板「字幕」分类同一条枚举）。轨的 source 可能是本机文件
+  /// 路径，只把它的摘要交给手机。
+  Future<List<VideoRemoteSubtitleOption>> _remoteSubtitleOptions() async {
+    final VideoRemoteSubtitleState state;
+    try {
+      state = await _playbackRemote.subtitleState();
+    } on VideoRemoteFailure catch (failure) {
+      throw _remoteSubtitleException(failure);
+    }
+    return <VideoRemoteSubtitleOption>[
+      for (final VideoRemoteSubtitleTrack track in state.tracks)
+        VideoRemoteSubtitleOption(
+          id: _remoteSubtitleOptionId(track.source),
+          label: track.label,
+          kind: track.kind.name,
+          selected: track.primary,
+          selectable: track.selectable,
+        ),
+    ];
+  }
+
+  /// 手机选主字幕（null = 关闭）：与字幕面板主字幕行 / 「关闭」行同一入口。
+  Future<void> _selectRemoteSubtitleOption(String? id) async {
+    try {
+      if (id == null) {
+        await _playbackRemote.subtitleOff(secondary: false);
+        return;
+      }
+      final VideoRemoteSubtitleState state = await _playbackRemote
+          .subtitleState();
+      final VideoRemoteSubtitleTrack? track = state.tracks.firstWhereOrNull(
+        (VideoRemoteSubtitleTrack t) => _remoteSubtitleOptionId(t.source) == id,
+      );
+      if (track == null) {
+        throw const VideoRemoteException(404, 'subtitle_track_missing');
+      }
+      if (!track.selectable) {
+        throw const VideoRemoteException(409, 'subtitle_track_unavailable');
+      }
+      if (track.primary) return;
+      await _playbackRemote.selectSubtitle(track.source, secondary: false);
+    } on VideoRemoteFailure catch (failure) {
+      throw _remoteSubtitleException(failure);
+    }
   }
 
   /// 遥控制卡 / 试听共用的音频与画面窗：字幕时基区间 `[startMs, endMs]`（[anchor] 所在
@@ -397,3 +490,16 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     navigator.removeRoute<Object?>(currentRoute!);
   }
 }
+
+/// 字幕轨在遥控协议里的不透明 id：source 的摘要（source 可能是本机路径）。
+String _remoteSubtitleOptionId(String source) =>
+    sha256.convert(utf8.encode(source)).toString().substring(0, 16);
+
+/// 桌面控制通道的字幕失败 → 遥控协议错误码（手机按码本地化）。
+VideoRemoteException _remoteSubtitleException(VideoRemoteFailure failure) =>
+    switch (failure.code) {
+      'no_video' => const VideoRemoteException(409, 'no_video'),
+      'busy' => const VideoRemoteException(409, 'subtitle_busy'),
+      'not_found' => const VideoRemoteException(404, 'subtitle_track_missing'),
+      _ => const VideoRemoteException(409, 'subtitle_track_unavailable'),
+    };

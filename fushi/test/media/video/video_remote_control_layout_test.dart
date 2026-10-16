@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 必需项、编解码与偏好持久化。
 void main() {
   group('模型', () {
-    test('出厂：主组 上一句 / 播放 / 下一句，次组 重播 / 收藏 / 回到当前句 / 制卡', () {
+    test('出厂：主组 上一句 / 播放 / 下一句，次组 重播 / 收藏 / 回到当前句 / 制卡 / 选集 / 字幕轨 / 音量', () {
       final VideoRemoteControlLayout layout = VideoRemoteControlLayout.defaults;
       expect(layout.primaryItems, <VideoRemoteControlItem>[
         VideoRemoteControlItem.previousCue,
@@ -23,6 +23,9 @@ void main() {
         VideoRemoteControlItem.favorite,
         VideoRemoteControlItem.followCurrent,
         VideoRemoteControlItem.mine,
+        VideoRemoteControlItem.episodes,
+        VideoRemoteControlItem.subtitleTrack,
+        VideoRemoteControlItem.volume,
       ]);
       expect(
         layout.removedItems,
