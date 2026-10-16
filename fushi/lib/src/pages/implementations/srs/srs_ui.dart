@@ -330,6 +330,21 @@ const List<String> kSrsLapisPrimaryFields = <String>[
   'Sentence',
 ];
 
+/// Fushi 卡片编辑页默认展开的字段（按卡面区块分组显示，其余折进「更多字段」）：
+/// 词条、读音与单词音频、图片、例句（含注音 / 翻译 / 音频）、主释义。
+const Set<String> kSrsFushiCardPrimaryFields = <String>{
+  'Expression',
+  'ExpressionFurigana',
+  'ExpressionReading',
+  'ExpressionAudio',
+  'Picture',
+  'SentenceFurigana',
+  'Sentence',
+  'SentenceTranslation',
+  'SentenceAudio',
+  'MainDefinition',
+};
+
 /// 旗标值 → 标签（0 = 无旗标；1–7 与 Anki 同序）。
 String srsFlagLabel(int flag) => switch (flag) {
   1 => t.srs_flag_red,
