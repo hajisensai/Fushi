@@ -475,8 +475,38 @@ void main() {
       find.byKey(const ValueKey<String>('srs-mining-field-fm')),
       findsOneWidget,
     );
+    // 没映射过的「Meaning」按字段名预填到释义槽，而不是「未映射」。
+    expect(find.text('{glossary-first}'), findsOneWidget);
+    expect(find.text(t.anki_field_not_mapped), findsNothing);
+    // 必填字段（第一个字段）都映射上了：不提示。
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-required-unmapped')),
+      findsNothing,
+    );
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, t.anki_allow_duplicates),
+      findsOneWidget,
+    );
+
+    // 用户把第一个字段明确改成不填：显眼提示必填字段未映射。
+    await tester.runAsync(
+      () => appModel.setSrsMiningFieldMapping('nt-vocab', 'fw', ''),
+    );
+    await pumpDestination(
+      tester,
+      SettingsDestinationId.cardCreation,
+      <SettingsDestination>[],
+      extraOverrides: <Override>[
+        srsStoreProvider.overrideWith((Ref ref) async => store),
+      ],
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump();
+    expect(find.text(t.anki_field_not_mapped), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('srs-mining-required-unmapped')),
       findsOneWidget,
     );
   });

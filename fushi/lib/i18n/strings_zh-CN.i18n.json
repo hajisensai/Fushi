@@ -8080,5 +8080,7 @@
   "srs_migrate_fushi_adjust": "调整映射…",
   "srs_migrate_fushi_done": "已迁移 $n 条笔记",
   "srs_migrate_fushi_none": "没有可迁移的 Lapis 笔记",
-  "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记"
+  "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记",
+  "srs_mining_required_unmapped": "必填字段尚未映射：$fields。现在制卡会得到空卡（第一个字段为空时直接拒绝制卡）。",
+  "srs_mining_field_required": "必填"
 }

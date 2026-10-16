@@ -8080,5 +8080,7 @@
   "srs_migrate_fushi_adjust": "Adjust mapping…",
   "srs_migrate_fushi_done": "Migrated $n notes",
   "srs_migrate_fushi_none": "No Lapis notes to migrate",
-  "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated"
+  "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated",
+  "srs_mining_required_unmapped": "Required fields are not mapped: $fields. Cards mined now would be empty (a card whose first field is empty is refused).",
+  "srs_mining_field_required": "Required"
 }

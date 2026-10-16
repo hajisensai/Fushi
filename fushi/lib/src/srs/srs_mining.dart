@@ -169,14 +169,156 @@ Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
 }
 
 /// 非 Lapis 笔记类型实际生效的字段映射（fieldId → 模板）：用户映射过的字段用用户的
-/// （映射成空串 = 明确不填）；没映射过、且字段名与 Lapis 同名的，沿用 Lapis 默认模板。
+/// （映射成空串 = 明确不填）；没映射过的按字段名猜（[srsGuessFieldMapping]：Lapis
+/// 同名字段沿用 Lapis 默认模板，常见的「Front / Word / 单词」「Back / 意味」等
+/// 同义名对到对应的制卡内容槽）；猜不到的留空。
+///
+/// 此前只认与 Lapis **完全同名**的字段，自建的「正面 / 背面」「Front / Back」类型
+/// 设为挖词目标后所有字段都是「未映射」，不配置就制出空卡（截图巡检）。猜测只是
+/// 默认值、不落库：用户在设置里改过的映射一律优先。
 Map<String, String> srsEffectiveFieldMappings(
   SrsNoteTypeView noteType,
   Map<String, String>? stored,
 ) => <String, String>{
   for (final SrsFieldDef f in noteType.fields)
-    f.id: stored?[f.id] ?? LapisNoteType.defaultFieldMappings[f.name] ?? '',
+    f.id: stored?[f.id] ?? srsGuessFieldMapping(f.name) ?? '',
 };
+
+/// 字段名归一：小写、去掉空白与常见分隔符（`Expression Audio` = `expression_audio`）。
+String _normalizeFieldName(String name) =>
+    name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
+
+/// Lapis 字段按归一名索引。
+final Map<String, String> _lapisByNormalizedName = <String, String>{
+  for (final MapEntry<String, String> e
+      in LapisNoteType.defaultFieldMappings.entries)
+    _normalizeFieldName(e.key): e.value,
+};
+
+/// 常见字段名（英 / 中 / 日，已归一）→ 制卡内容槽。只收语义明确的名字；拿不准的
+/// （如裸 `notes` / `extra`）不猜，宁可留「未映射」让用户自己选。
+const Map<String, String> _fieldNameSynonyms = <String, String>{
+  // 词形
+  'front': '{expression}',
+  'word': '{expression}',
+  'term': '{expression}',
+  'vocab': '{expression}',
+  'vocabulary': '{expression}',
+  'targetword': '{expression}',
+  'kanji': '{expression}',
+  '单词': '{expression}',
+  '生词': '{expression}',
+  '词语': '{expression}',
+  '词汇': '{expression}',
+  '正面': '{expression}',
+  '単語': '{expression}',
+  '語彙': '{expression}',
+  '表面': '{expression}',
+  '見出し語': '{expression}',
+  // 读音
+  'reading': '{reading}',
+  'kana': '{reading}',
+  'hiragana': '{reading}',
+  'wordreading': '{reading}',
+  '读音': '{reading}',
+  '读法': '{reading}',
+  '假名': '{reading}',
+  '読み': '{reading}',
+  '読み方': '{reading}',
+  'よみ': '{reading}',
+  // 注音
+  'furigana': '{furigana-plain}',
+  'wordfurigana': '{furigana-plain}',
+  '注音': '{furigana-plain}',
+  '振假名': '{furigana-plain}',
+  'ふりがな': '{furigana-plain}',
+  // 释义
+  'back': '{glossary-first}',
+  'meaning': '{glossary-first}',
+  'definition': '{glossary-first}',
+  'translation': '{glossary-first}',
+  'english': '{glossary-first}',
+  '释义': '{glossary-first}',
+  '意思': '{glossary-first}',
+  '词义': '{glossary-first}',
+  '翻译': '{glossary-first}',
+  '中文': '{glossary-first}',
+  '背面': '{glossary-first}',
+  '意味': '{glossary-first}',
+  '定義': '{glossary-first}',
+  '訳': '{glossary-first}',
+  '裏面': '{glossary-first}',
+  'definitions': '{glossary}',
+  'dictionary': '{glossary}',
+  '词典': '{glossary}',
+  '辞書': '{glossary}',
+  // 例句
+  'sentence': '{sentence}',
+  'example': '{sentence}',
+  'examplesentence': '{sentence}',
+  'context': '{sentence}',
+  '例句': '{sentence}',
+  '句子': '{sentence}',
+  '例文': '{sentence}',
+  '文': '{sentence}',
+  // 音频
+  'audio': '{audio}',
+  'sound': '{audio}',
+  'wordaudio': '{audio}',
+  'pronunciation': '{audio}',
+  '发音': '{audio}',
+  '音频': '{audio}',
+  '音声': '{audio}',
+  '発音': '{audio}',
+  'sentenceaudio': '{sentence-audio}',
+  'sentencesound': '{sentence-audio}',
+  '例句音频': '{sentence-audio}',
+  '例句发音': '{sentence-audio}',
+  '例文音声': '{sentence-audio}',
+  // 图片
+  'picture': '{card-image}',
+  'image': '{card-image}',
+  'screenshot': '{card-image}',
+  '图片': '{card-image}',
+  '截图': '{card-image}',
+  '图像': '{card-image}',
+  '画像': '{card-image}',
+  // 来源
+  'source': '{source-link}',
+  '来源': '{source-link}',
+  '出典': '{source-link}',
+  '出处': '{source-link}',
+};
+
+/// 按字段名猜一个制卡内容槽：Lapis 同名字段（大小写 / 分隔符不敏感）→ Lapis 默认；
+/// 再查常见同义名表。猜不到返回 null。
+String? srsGuessFieldMapping(String fieldName) {
+  final String key = _normalizeFieldName(fieldName);
+  if (key.isEmpty) return null;
+  return _lapisByNormalizedName[key] ?? _fieldNameSynonyms[key];
+}
+
+/// 必须映射的字段：第一个字段（为空时制卡被拒，与 Anki 同规则）+ 任一卡片模板
+/// **正面**直接引用的字段（`{{字段}}` / `{{kanji:字段}}`；只出现在 `{{#字段}}`
+/// 条件段里的不算）——正面为空的卡片不会生成，那张卡就白建了。
+Set<String> srsRequiredFieldIds(SrsNoteTypeView noteType) {
+  final List<SrsFieldDef> fields = noteType.fields;
+  if (fields.isEmpty) return const <String>{};
+  final Map<String, String> idByName = <String, String>{
+    for (final SrsFieldDef f in fields) f.name: f.id,
+  };
+  final Set<String> out = <String>{fields.first.id};
+  final RegExp ref = RegExp(r'\{\{([^{}#^/!][^{}]*)\}\}');
+  for (final SrsTemplateDef tpl in noteType.templates) {
+    for (final RegExpMatch m in ref.allMatches(tpl.front)) {
+      final String raw = m.group(1)!.trim();
+      final String name = raw.substring(raw.lastIndexOf(':') + 1).trim();
+      final String? id = idByName[name];
+      if (id != null) out.add(id);
+    }
+  }
+  return out;
+}
 
 /// 一次制卡落进 Fushi 复习（见文件头）。永不抛：失败一律变成 [MineOutcome]。
 class SrsMiner with AnkiNoteComposer {
