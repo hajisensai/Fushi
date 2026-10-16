@@ -2977,6 +2977,17 @@ class $SrtBooksTable extends SrtBooks
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _bookKeyMeta = const VerificationMeta(
     'bookKey',
   );
@@ -3011,6 +3022,7 @@ class $SrtBooksTable extends SrtBooks
     srtPath,
     coverPath,
     importedAt,
+    localAddedAt,
     bookKey,
     language,
   ];
@@ -3088,6 +3100,15 @@ class $SrtBooksTable extends SrtBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('book_key')) {
       context.handle(
         _bookKeyMeta,
@@ -3145,6 +3166,10 @@ class $SrtBooksTable extends SrtBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       )!,
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       bookKey: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}book_key'],
@@ -3171,7 +3196,14 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
   final String? audioPathsJson;
   final String srtPath;
   final String? coverPath;
+
+  /// 原始入库时刻（毫秒，跨设备保留、展示与排序用；同步资产包导入时沿用包内值）。
   final int importedAt;
+
+  /// v118：本机开始拥有这条字幕书的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertSrtBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写。v118 迁移以 importedAt 回填存量行。
+  final int? localAddedAt;
   final String bookKey;
 
   /// v88：字幕书/有声书的内容语言（BCP-47）。SRT 文件本身不声明语言，所以这一列
@@ -3187,6 +3219,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     required this.srtPath,
     this.coverPath,
     required this.importedAt,
+    this.localAddedAt,
     required this.bookKey,
     this.language,
   });
@@ -3210,6 +3243,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       map['cover_path'] = Variable<String>(coverPath);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
+    }
     map['book_key'] = Variable<String>(bookKey);
     if (!nullToAbsent || language != null) {
       map['language'] = Variable<String>(language);
@@ -3236,6 +3272,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ? const Value.absent()
           : Value(coverPath),
       importedAt: Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       bookKey: Value(bookKey),
       language: language == null && nullToAbsent
           ? const Value.absent()
@@ -3258,6 +3297,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       srtPath: serializer.fromJson<String>(json['srtPath']),
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       bookKey: serializer.fromJson<String>(json['bookKey']),
       language: serializer.fromJson<String?>(json['language']),
     );
@@ -3275,6 +3315,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       'srtPath': serializer.toJson<String>(srtPath),
       'coverPath': serializer.toJson<String?>(coverPath),
       'importedAt': serializer.toJson<int>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'bookKey': serializer.toJson<String>(bookKey),
       'language': serializer.toJson<String?>(language),
     };
@@ -3290,6 +3331,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     String? srtPath,
     Value<String?> coverPath = const Value.absent(),
     int? importedAt,
+    Value<int?> localAddedAt = const Value.absent(),
     String? bookKey,
     Value<String?> language = const Value.absent(),
   }) => SrtBookRow(
@@ -3304,6 +3346,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     srtPath: srtPath ?? this.srtPath,
     coverPath: coverPath.present ? coverPath.value : this.coverPath,
     importedAt: importedAt ?? this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     bookKey: bookKey ?? this.bookKey,
     language: language.present ? language.value : this.language,
   );
@@ -3322,6 +3365,9 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       bookKey: data.bookKey.present ? data.bookKey.value : this.bookKey,
       language: data.language.present ? data.language.value : this.language,
     );
@@ -3339,6 +3385,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('bookKey: $bookKey, ')
           ..write('language: $language')
           ..write(')'))
@@ -3356,6 +3403,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
     srtPath,
     coverPath,
     importedAt,
+    localAddedAt,
     bookKey,
     language,
   );
@@ -3372,6 +3420,7 @@ class SrtBookRow extends DataClass implements Insertable<SrtBookRow> {
           other.srtPath == this.srtPath &&
           other.coverPath == this.coverPath &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.bookKey == this.bookKey &&
           other.language == this.language);
 }
@@ -3386,6 +3435,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
   final Value<String> srtPath;
   final Value<String?> coverPath;
   final Value<int> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String> bookKey;
   final Value<String?> language;
   const SrtBooksCompanion({
@@ -3398,6 +3448,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     this.srtPath = const Value.absent(),
     this.coverPath = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.bookKey = const Value.absent(),
     this.language = const Value.absent(),
   });
@@ -3411,6 +3462,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     required String srtPath,
     this.coverPath = const Value.absent(),
     required int importedAt,
+    this.localAddedAt = const Value.absent(),
     this.bookKey = const Value.absent(),
     this.language = const Value.absent(),
   }) : uid = Value(uid),
@@ -3427,6 +3479,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     Expression<String>? srtPath,
     Expression<String>? coverPath,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? bookKey,
     Expression<String>? language,
   }) {
@@ -3440,6 +3493,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       if (srtPath != null) 'srt_path': srtPath,
       if (coverPath != null) 'cover_path': coverPath,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (bookKey != null) 'book_key': bookKey,
       if (language != null) 'language': language,
     });
@@ -3455,6 +3509,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     Value<String>? srtPath,
     Value<String?>? coverPath,
     Value<int>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String>? bookKey,
     Value<String?>? language,
   }) {
@@ -3468,6 +3523,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
       srtPath: srtPath ?? this.srtPath,
       coverPath: coverPath ?? this.coverPath,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       bookKey: bookKey ?? this.bookKey,
       language: language ?? this.language,
     );
@@ -3503,6 +3559,9 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (bookKey.present) {
       map['book_key'] = Variable<String>(bookKey.value);
     }
@@ -3524,6 +3583,7 @@ class SrtBooksCompanion extends UpdateCompanion<SrtBookRow> {
           ..write('srtPath: $srtPath, ')
           ..write('coverPath: $coverPath, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('bookKey: $bookKey, ')
           ..write('language: $language')
           ..write(')'))
@@ -7526,6 +7586,17 @@ class $EpubBooksTable extends EpubBooks
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _languageMeta = const VerificationMeta(
     'language',
   );
@@ -7606,6 +7677,7 @@ class $EpubBooksTable extends EpubBooks
     tocJson,
     sourceMetadata,
     importedAt,
+    localAddedAt,
     language,
     format,
     mangaReadingMode,
@@ -7720,6 +7792,15 @@ class $EpubBooksTable extends EpubBooks
     } else if (isInserting) {
       context.missing(_importedAtMeta);
     }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('language')) {
       context.handle(
         _languageMeta,
@@ -7819,6 +7900,10 @@ class $EpubBooksTable extends EpubBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       )!,
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       language: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}language'],
@@ -7875,7 +7960,25 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   final String chaptersJson;
   final String? tocJson;
   final String? sourceMetadata;
+
+  /// 条目的**原始入库时刻**（毫秒）：跨设备保留、用户可见——书架「导入时间」排序、
+  /// 「最近阅读」对没读过的书的回落键、合集组内回退序都按它。互联下载的书写对端的
+  /// 入库时刻（BUG-3452），所以它**不是**「本机从什么时候起拥有这本书」，那件事见
+  /// [localAddedAt]。
   final int importedAt;
+
+  /// v118：本机**开始拥有**这本书的时刻（毫秒）。与 [importedAt] 是两个事实：
+  /// 互联下载把 importedAt 写成对端入库时刻，而删除墓碑仲裁（「删除发生在本机
+  /// 拥有之后才管得着它」，BUG-2044）与首页「最近添加」要的是本机落地那一刻——
+  /// 共用一列时，对端早已入库、本机刚下载的书会被第三台设备在其间的「从所有设备
+  /// 删除」追着弹确认，也进不了「最近添加」。
+  ///
+  /// 设备本地语义：不进互联 / 云同步 wire。备份按整行随包、恢复时保留备份内的值
+  /// （恢复 = 重现快照时刻的拥有事实，见 `FushiDatabase.insertEpubBook`）。写入
+  /// 单点是 [FushiDatabase.insertEpubBook]（未携带 → 当时 now）；此后不再改写。
+  /// null = 时刻未知（墓碑仲裁按「无从仲裁」处理，宁可多问一次）。v118 迁移以
+  /// importedAt 回填存量行。
+  final int? localAddedAt;
 
   /// v87：书的内容语言（BCP-47，如 `ja` / `zh-Hant`），决定正文用哪条字体链。
   ///
@@ -7927,6 +8030,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     this.tocJson,
     this.sourceMetadata,
     required this.importedAt,
+    this.localAddedAt,
     this.language,
     required this.format,
     this.mangaReadingMode,
@@ -7957,6 +8061,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       map['source_metadata'] = Variable<String>(sourceMetadata);
     }
     map['imported_at'] = Variable<int>(importedAt);
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
+    }
     if (!nullToAbsent || language != null) {
       map['language'] = Variable<String>(language);
     }
@@ -7998,6 +8105,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? const Value.absent()
           : Value(sourceMetadata),
       importedAt: Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       language: language == null && nullToAbsent
           ? const Value.absent()
           : Value(language),
@@ -8033,6 +8143,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       tocJson: serializer.fromJson<String?>(json['tocJson']),
       sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       language: serializer.fromJson<String?>(json['language']),
       format: serializer.fromJson<String>(json['format']),
       mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
@@ -8057,6 +8168,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'tocJson': serializer.toJson<String?>(tocJson),
       'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
       'importedAt': serializer.toJson<int>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'language': serializer.toJson<String?>(language),
       'format': serializer.toJson<String>(format),
       'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
@@ -8079,6 +8191,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     Value<String?> tocJson = const Value.absent(),
     Value<String?> sourceMetadata = const Value.absent(),
     int? importedAt,
+    Value<int?> localAddedAt = const Value.absent(),
     Value<String?> language = const Value.absent(),
     String? format,
     Value<String?> mangaReadingMode = const Value.absent(),
@@ -8100,6 +8213,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         ? sourceMetadata.value
         : this.sourceMetadata,
     importedAt: importedAt ?? this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     language: language.present ? language.value : this.language,
     format: format ?? this.format,
     mangaReadingMode: mangaReadingMode.present
@@ -8133,6 +8247,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       language: data.language.present ? data.language.value : this.language,
       format: data.format.present ? data.format.value : this.format,
       mangaReadingMode: data.mangaReadingMode.present
@@ -8161,6 +8278,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
@@ -8185,6 +8303,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     tocJson,
     sourceMetadata,
     importedAt,
+    localAddedAt,
     language,
     format,
     mangaReadingMode,
@@ -8208,6 +8327,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.tocJson == this.tocJson &&
           other.sourceMetadata == this.sourceMetadata &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.language == this.language &&
           other.format == this.format &&
           other.mangaReadingMode == this.mangaReadingMode &&
@@ -8229,6 +8349,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> tocJson;
   final Value<String?> sourceMetadata;
   final Value<int> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String?> language;
   final Value<String> format;
   final Value<String?> mangaReadingMode;
@@ -8249,6 +8370,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
@@ -8270,6 +8392,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.tocJson = const Value.absent(),
     this.sourceMetadata = const Value.absent(),
     required int importedAt,
+    this.localAddedAt = const Value.absent(),
     this.language = const Value.absent(),
     this.format = const Value.absent(),
     this.mangaReadingMode = const Value.absent(),
@@ -8297,6 +8420,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? tocJson,
     Expression<String>? sourceMetadata,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? language,
     Expression<String>? format,
     Expression<String>? mangaReadingMode,
@@ -8318,6 +8442,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (tocJson != null) 'toc_json': tocJson,
       if (sourceMetadata != null) 'source_metadata': sourceMetadata,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (language != null) 'language': language,
       if (format != null) 'format': format,
       if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
@@ -8341,6 +8466,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Value<String?>? tocJson,
     Value<String?>? sourceMetadata,
     Value<int>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String?>? language,
     Value<String>? format,
     Value<String?>? mangaReadingMode,
@@ -8362,6 +8488,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       tocJson: tocJson ?? this.tocJson,
       sourceMetadata: sourceMetadata ?? this.sourceMetadata,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       language: language ?? this.language,
       format: format ?? this.format,
       mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
@@ -8411,6 +8538,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (language.present) {
       map['language'] = Variable<String>(language.value);
     }
@@ -8450,6 +8580,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('tocJson: $tocJson, ')
           ..write('sourceMetadata: $sourceMetadata, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('language: $language, ')
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
@@ -10922,6 +11053,17 @@ class $VideoBooksTable extends VideoBooks
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _localAddedAtMeta = const VerificationMeta(
+    'localAddedAt',
+  );
+  @override
+  late final GeneratedColumn<int> localAddedAt = GeneratedColumn<int>(
+    'local_added_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _playlistJsonMeta = const VerificationMeta(
     'playlistJson',
   );
@@ -11030,6 +11172,7 @@ class $VideoBooksTable extends VideoBooks
     lastPositionMs,
     lastPlayedAt,
     importedAt,
+    localAddedAt,
     playlistJson,
     currentEpisode,
     audioTrackId,
@@ -11154,6 +11297,15 @@ class $VideoBooksTable extends VideoBooks
       context.handle(
         _importedAtMeta,
         importedAt.isAcceptableOrUnknown(data['imported_at']!, _importedAtMeta),
+      );
+    }
+    if (data.containsKey('local_added_at')) {
+      context.handle(
+        _localAddedAtMeta,
+        localAddedAt.isAcceptableOrUnknown(
+          data['local_added_at']!,
+          _localAddedAtMeta,
+        ),
       );
     }
     if (data.containsKey('playlist_json')) {
@@ -11283,6 +11435,10 @@ class $VideoBooksTable extends VideoBooks
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
       ),
+      localAddedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_added_at'],
+      ),
       playlistJson: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}playlist_json'],
@@ -11367,8 +11523,15 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
 
   /// 导入时间（毫秒戳，同 [EpubBooks].importedAt / [SrtBooks].importedAt int
   /// 范式）；null = 旧数据无导入时间。v57 前是 drift DateTime（Unix 秒存储），
-  /// v57 迁移统一为 int 毫秒。
+  /// v57 迁移统一为 int 毫秒。互联下载登记镜像 host 的值（BUG-2463），所以它是
+  /// 「原始入库时刻」，不是「本机从什么时候起拥有」——后者见 [localAddedAt]。
   final int? importedAt;
+
+  /// v118：本机开始拥有这条视频的时刻（毫秒，设备本地，同 [EpubBooks.localAddedAt]
+  /// 的语义与理由）。写入单点 [FushiDatabase.upsertVideoBook]：插入时未携带 → now；
+  /// 冲突转更新时永不改写（重复登记同一 bookUid 不算重新拥有）。v118 迁移以
+  /// importedAt 回填存量行；importedAt 为 null 的旧行仍为 null（时刻未知）。
+  final int? localAddedAt;
 
   /// m3u8 多集播放列表 JSON：`[{title,path}]`（绝对路径）。单视频导入时为 null。
   final String? playlistJson;
@@ -11419,6 +11582,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     required this.lastPositionMs,
     this.lastPlayedAt,
     this.importedAt,
+    this.localAddedAt,
     this.playlistJson,
     required this.currentEpisode,
     this.audioTrackId,
@@ -11463,6 +11627,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     }
     if (!nullToAbsent || importedAt != null) {
       map['imported_at'] = Variable<int>(importedAt);
+    }
+    if (!nullToAbsent || localAddedAt != null) {
+      map['local_added_at'] = Variable<int>(localAddedAt);
     }
     if (!nullToAbsent || playlistJson != null) {
       map['playlist_json'] = Variable<String>(playlistJson);
@@ -11520,6 +11687,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       importedAt: importedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(importedAt),
+      localAddedAt: localAddedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localAddedAt),
       playlistJson: playlistJson == null && nullToAbsent
           ? const Value.absent()
           : Value(playlistJson),
@@ -11568,6 +11738,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       lastPositionMs: serializer.fromJson<int>(json['lastPositionMs']),
       lastPlayedAt: serializer.fromJson<int?>(json['lastPlayedAt']),
       importedAt: serializer.fromJson<int?>(json['importedAt']),
+      localAddedAt: serializer.fromJson<int?>(json['localAddedAt']),
       playlistJson: serializer.fromJson<String?>(json['playlistJson']),
       currentEpisode: serializer.fromJson<int>(json['currentEpisode']),
       audioTrackId: serializer.fromJson<String?>(json['audioTrackId']),
@@ -11597,6 +11768,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       'lastPositionMs': serializer.toJson<int>(lastPositionMs),
       'lastPlayedAt': serializer.toJson<int?>(lastPlayedAt),
       'importedAt': serializer.toJson<int?>(importedAt),
+      'localAddedAt': serializer.toJson<int?>(localAddedAt),
       'playlistJson': serializer.toJson<String?>(playlistJson),
       'currentEpisode': serializer.toJson<int>(currentEpisode),
       'audioTrackId': serializer.toJson<String?>(audioTrackId),
@@ -11622,6 +11794,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     int? lastPositionMs,
     Value<int?> lastPlayedAt = const Value.absent(),
     Value<int?> importedAt = const Value.absent(),
+    Value<int?> localAddedAt = const Value.absent(),
     Value<String?> playlistJson = const Value.absent(),
     int? currentEpisode,
     Value<String?> audioTrackId = const Value.absent(),
@@ -11654,6 +11827,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     lastPositionMs: lastPositionMs ?? this.lastPositionMs,
     lastPlayedAt: lastPlayedAt.present ? lastPlayedAt.value : this.lastPlayedAt,
     importedAt: importedAt.present ? importedAt.value : this.importedAt,
+    localAddedAt: localAddedAt.present ? localAddedAt.value : this.localAddedAt,
     playlistJson: playlistJson.present ? playlistJson.value : this.playlistJson,
     currentEpisode: currentEpisode ?? this.currentEpisode,
     audioTrackId: audioTrackId.present ? audioTrackId.value : this.audioTrackId,
@@ -11698,6 +11872,9 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
+      localAddedAt: data.localAddedAt.present
+          ? data.localAddedAt.value
+          : this.localAddedAt,
       playlistJson: data.playlistJson.present
           ? data.playlistJson.value
           : this.playlistJson,
@@ -11737,6 +11914,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
@@ -11764,6 +11942,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
     lastPositionMs,
     lastPlayedAt,
     importedAt,
+    localAddedAt,
     playlistJson,
     currentEpisode,
     audioTrackId,
@@ -11790,6 +11969,7 @@ class VideoBookRow extends DataClass implements Insertable<VideoBookRow> {
           other.lastPositionMs == this.lastPositionMs &&
           other.lastPlayedAt == this.lastPlayedAt &&
           other.importedAt == this.importedAt &&
+          other.localAddedAt == this.localAddedAt &&
           other.playlistJson == this.playlistJson &&
           other.currentEpisode == this.currentEpisode &&
           other.audioTrackId == this.audioTrackId &&
@@ -11814,6 +11994,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
   final Value<int> lastPositionMs;
   final Value<int?> lastPlayedAt;
   final Value<int?> importedAt;
+  final Value<int?> localAddedAt;
   final Value<String?> playlistJson;
   final Value<int> currentEpisode;
   final Value<String?> audioTrackId;
@@ -11837,6 +12018,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.lastPositionMs = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
@@ -11861,6 +12043,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     this.lastPositionMs = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
     this.importedAt = const Value.absent(),
+    this.localAddedAt = const Value.absent(),
     this.playlistJson = const Value.absent(),
     this.currentEpisode = const Value.absent(),
     this.audioTrackId = const Value.absent(),
@@ -11887,6 +12070,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Expression<int>? lastPositionMs,
     Expression<int>? lastPlayedAt,
     Expression<int>? importedAt,
+    Expression<int>? localAddedAt,
     Expression<String>? playlistJson,
     Expression<int>? currentEpisode,
     Expression<String>? audioTrackId,
@@ -11913,6 +12097,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       if (lastPositionMs != null) 'last_position_ms': lastPositionMs,
       if (lastPlayedAt != null) 'last_played_at': lastPlayedAt,
       if (importedAt != null) 'imported_at': importedAt,
+      if (localAddedAt != null) 'local_added_at': localAddedAt,
       if (playlistJson != null) 'playlist_json': playlistJson,
       if (currentEpisode != null) 'current_episode': currentEpisode,
       if (audioTrackId != null) 'audio_track_id': audioTrackId,
@@ -11939,6 +12124,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     Value<int>? lastPositionMs,
     Value<int?>? lastPlayedAt,
     Value<int?>? importedAt,
+    Value<int?>? localAddedAt,
     Value<String?>? playlistJson,
     Value<int>? currentEpisode,
     Value<String?>? audioTrackId,
@@ -11965,6 +12151,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
       lastPositionMs: lastPositionMs ?? this.lastPositionMs,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
       importedAt: importedAt ?? this.importedAt,
+      localAddedAt: localAddedAt ?? this.localAddedAt,
       playlistJson: playlistJson ?? this.playlistJson,
       currentEpisode: currentEpisode ?? this.currentEpisode,
       audioTrackId: audioTrackId ?? this.audioTrackId,
@@ -12023,6 +12210,9 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
+    if (localAddedAt.present) {
+      map['local_added_at'] = Variable<int>(localAddedAt.value);
+    }
     if (playlistJson.present) {
       map['playlist_json'] = Variable<String>(playlistJson.value);
     }
@@ -12069,6 +12259,7 @@ class VideoBooksCompanion extends UpdateCompanion<VideoBookRow> {
           ..write('lastPositionMs: $lastPositionMs, ')
           ..write('lastPlayedAt: $lastPlayedAt, ')
           ..write('importedAt: $importedAt, ')
+          ..write('localAddedAt: $localAddedAt, ')
           ..write('playlistJson: $playlistJson, ')
           ..write('currentEpisode: $currentEpisode, ')
           ..write('audioTrackId: $audioTrackId, ')
@@ -62432,6 +62623,7 @@ typedef $$SrtBooksTableCreateCompanionBuilder =
       required String srtPath,
       Value<String?> coverPath,
       required int importedAt,
+      Value<int?> localAddedAt,
       Value<String> bookKey,
       Value<String?> language,
     });
@@ -62446,6 +62638,7 @@ typedef $$SrtBooksTableUpdateCompanionBuilder =
       Value<String> srtPath,
       Value<String?> coverPath,
       Value<int> importedAt,
+      Value<int?> localAddedAt,
       Value<String> bookKey,
       Value<String?> language,
     });
@@ -62501,6 +62694,11 @@ class $$SrtBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -62569,6 +62767,11 @@ class $$SrtBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get bookKey => $composableBuilder(
     column: $table.bookKey,
     builder: (column) => ColumnOrderings(column),
@@ -62620,6 +62823,11 @@ class $$SrtBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get bookKey =>
       $composableBuilder(column: $table.bookKey, builder: (column) => column);
 
@@ -62667,6 +62875,7 @@ class $$SrtBooksTableTableManager
                 Value<String> srtPath = const Value.absent(),
                 Value<String?> coverPath = const Value.absent(),
                 Value<int> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String> bookKey = const Value.absent(),
                 Value<String?> language = const Value.absent(),
               }) => SrtBooksCompanion(
@@ -62679,6 +62888,7 @@ class $$SrtBooksTableTableManager
                 srtPath: srtPath,
                 coverPath: coverPath,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 bookKey: bookKey,
                 language: language,
               ),
@@ -62693,6 +62903,7 @@ class $$SrtBooksTableTableManager
                 required String srtPath,
                 Value<String?> coverPath = const Value.absent(),
                 required int importedAt,
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String> bookKey = const Value.absent(),
                 Value<String?> language = const Value.absent(),
               }) => SrtBooksCompanion.insert(
@@ -62705,6 +62916,7 @@ class $$SrtBooksTableTableManager
                 srtPath: srtPath,
                 coverPath: coverPath,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 bookKey: bookKey,
                 language: language,
               ),
@@ -65440,6 +65652,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder =
       Value<String?> tocJson,
       Value<String?> sourceMetadata,
       required int importedAt,
+      Value<int?> localAddedAt,
       Value<String?> language,
       Value<String> format,
       Value<String?> mangaReadingMode,
@@ -65462,6 +65675,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder =
       Value<String?> tocJson,
       Value<String?> sourceMetadata,
       Value<int> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> language,
       Value<String> format,
       Value<String?> mangaReadingMode,
@@ -65559,6 +65773,11 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -65680,6 +65899,11 @@ class $$EpubBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get language => $composableBuilder(
     column: $table.language,
     builder: (column) => ColumnOrderings(column),
@@ -65784,6 +66008,11 @@ class $$EpubBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get language =>
       $composableBuilder(column: $table.language, builder: (column) => column);
 
@@ -65867,6 +66096,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> tocJson = const Value.absent(),
                 Value<String?> sourceMetadata = const Value.absent(),
                 Value<int> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> language = const Value.absent(),
                 Value<String> format = const Value.absent(),
                 Value<String?> mangaReadingMode = const Value.absent(),
@@ -65887,6 +66117,7 @@ class $$EpubBooksTableTableManager
                 tocJson: tocJson,
                 sourceMetadata: sourceMetadata,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 language: language,
                 format: format,
                 mangaReadingMode: mangaReadingMode,
@@ -65909,6 +66140,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> tocJson = const Value.absent(),
                 Value<String?> sourceMetadata = const Value.absent(),
                 required int importedAt,
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> language = const Value.absent(),
                 Value<String> format = const Value.absent(),
                 Value<String?> mangaReadingMode = const Value.absent(),
@@ -65929,6 +66161,7 @@ class $$EpubBooksTableTableManager
                 tocJson: tocJson,
                 sourceMetadata: sourceMetadata,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 language: language,
                 format: format,
                 mangaReadingMode: mangaReadingMode,
@@ -68528,6 +68761,7 @@ typedef $$VideoBooksTableCreateCompanionBuilder =
       Value<int> lastPositionMs,
       Value<int?> lastPlayedAt,
       Value<int?> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> playlistJson,
       Value<int> currentEpisode,
       Value<String?> audioTrackId,
@@ -68553,6 +68787,7 @@ typedef $$VideoBooksTableUpdateCompanionBuilder =
       Value<int> lastPositionMs,
       Value<int?> lastPlayedAt,
       Value<int?> importedAt,
+      Value<int?> localAddedAt,
       Value<String?> playlistJson,
       Value<int> currentEpisode,
       Value<String?> audioTrackId,
@@ -68807,6 +69042,11 @@ class $$VideoBooksTableFilterComposer
 
   ColumnFilters<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -69098,6 +69338,11 @@ class $$VideoBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get playlistJson => $composableBuilder(
     column: $table.playlistJson,
     builder: (column) => ColumnOrderings(column),
@@ -69218,6 +69463,11 @@ class $$VideoBooksTableAnnotationComposer
 
   GeneratedColumn<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get localAddedAt => $composableBuilder(
+    column: $table.localAddedAt,
     builder: (column) => column,
   );
 
@@ -69484,6 +69734,7 @@ class $$VideoBooksTableTableManager
                 Value<int> lastPositionMs = const Value.absent(),
                 Value<int?> lastPlayedAt = const Value.absent(),
                 Value<int?> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> playlistJson = const Value.absent(),
                 Value<int> currentEpisode = const Value.absent(),
                 Value<String?> audioTrackId = const Value.absent(),
@@ -69507,6 +69758,7 @@ class $$VideoBooksTableTableManager
                 lastPositionMs: lastPositionMs,
                 lastPlayedAt: lastPlayedAt,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 playlistJson: playlistJson,
                 currentEpisode: currentEpisode,
                 audioTrackId: audioTrackId,
@@ -69532,6 +69784,7 @@ class $$VideoBooksTableTableManager
                 Value<int> lastPositionMs = const Value.absent(),
                 Value<int?> lastPlayedAt = const Value.absent(),
                 Value<int?> importedAt = const Value.absent(),
+                Value<int?> localAddedAt = const Value.absent(),
                 Value<String?> playlistJson = const Value.absent(),
                 Value<int> currentEpisode = const Value.absent(),
                 Value<String?> audioTrackId = const Value.absent(),
@@ -69555,6 +69808,7 @@ class $$VideoBooksTableTableManager
                 lastPositionMs: lastPositionMs,
                 lastPlayedAt: lastPlayedAt,
                 importedAt: importedAt,
+                localAddedAt: localAddedAt,
                 playlistJson: playlistJson,
                 currentEpisode: currentEpisode,
                 audioTrackId: audioTrackId,

@@ -3134,6 +3134,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `importedAt` / `completedAt` 镜像 host 值（旧 host 不带 importedAt 时才用本机
   /// now）：远端占位卡按 host 的 importedAt 排序、按 host 的 completedAt 画已看完角标，
   /// 下载落地后同一条目不该在「按导入时间」里跳位、也不该丢掉已看完标记。
+  /// 本机开始拥有的时刻 `localAddedAt` 不经这里传：由 `upsertVideoBook` 单点记成
+  /// 落地那一刻（v118，删除墓碑仲裁与首页「最近添加」读它）。
   Future<void> _registerDownloadedVideo(
     RemoteVideoClient client,
     RemoteVideoInfo video,

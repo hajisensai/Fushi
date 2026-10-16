@@ -101,7 +101,8 @@ class DeletionPropagationCandidate {
 ///
 /// 值可空：`null` = 这类资产不记录存在起始时刻（当前是 `localaudio` 与 `audiobook`），
 /// 该条目退化为旧的纯集合语义（只看在不在库）。其余资产都有真实时刻可用——书 / 字幕书 /
-/// 视频用 `importedAt`，收藏词 / 收藏句用 `createdAt`。
+/// 视频用 `localAddedAt`（v118，本机开始拥有的时刻；**不是** `importedAt`——互联下载
+/// 把后者写成对端入库时刻），收藏词 / 收藏句用 `createdAt`。
 typedef DeletionPresentEntries = Map<String, Map<String, int?>>;
 
 /// 一端的删除墓碑：`itemKey → deletedAt`（毫秒纪元）。

@@ -448,9 +448,20 @@ mixin _FushiDbPrefsMedia
       });
 
   // ── video_books ─────────────────────────────────────────────────
+  /// v118：`localAddedAt`（本机开始拥有的时刻）插入时未携带 → now；冲突转更新
+  /// （同 bookUid 重复登记、互联重下覆盖同一副本）时**永不改写**——那不是重新
+  /// 拥有。互联下载登记把 `importedAt` 镜像成 host 值（BUG-2463），本列仍记本机
+  /// 落地时刻（语义见 [FushiDatabase.insertEpubBook]）。
   Future<void> upsertVideoBook(VideoBooksCompanion vb) async {
-    await into(videoBooks).insert(vb,
-        onConflict: DoUpdate((_) => vb, target: [videoBooks.bookUid]));
+    await into(videoBooks).insert(
+        vb.localAddedAt.present
+            ? vb
+            : vb.copyWith(
+                localAddedAt:
+                    Value<int?>(DateTime.now().millisecondsSinceEpoch)),
+        onConflict: DoUpdate(
+            (_) => vb.copyWith(localAddedAt: const Value<int?>.absent()),
+            target: [videoBooks.bookUid]));
     // 删除传播：重新加入同 bookUid 的视频清除其 sync 删除墓碑（防误判待删）。
     if (vb.bookUid.present) {
       await clearSyncDeletionTombstone('video', vb.bookUid.value);

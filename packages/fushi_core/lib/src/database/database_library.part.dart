@@ -1512,8 +1512,18 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (select(srtBooks)..where((t) => t.bookKey.equals(bookKey)))
           .getSingleOrNull();
 
-  Future<void> upsertSrtBook(SrtBooksCompanion book) =>
-      into(srtBooks).insertOnConflictUpdate(book);
+  /// 冲突解析与 `insertOnConflictUpdate` 相同（按主键 `id`），只多一条 v118 规则：
+  /// `localAddedAt`（本机开始拥有的时刻）插入时未携带 → now，冲突转更新时**永不
+  /// 改写**——整行 save 是编辑，不是重新拥有（语义见 [FushiDatabase.insertEpubBook]）。
+  Future<void> upsertSrtBook(SrtBooksCompanion book) => into(srtBooks).insert(
+        book.localAddedAt.present
+            ? book
+            : book.copyWith(
+                localAddedAt:
+                    Value<int?>(DateTime.now().millisecondsSinceEpoch)),
+        onConflict: DoUpdate(
+            (_) => book.copyWith(localAddedAt: const Value<int?>.absent())),
+      );
 
   /// Deletes the SRT book row + its cues. Returns the number of srt_books rows
   /// actually removed (0 when [uid] matched no row) so batch deletion can count

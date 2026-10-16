@@ -2,6 +2,8 @@
 // ① 下载完的书在合集外多出一张「未下载」占位卡；
 // ② 合集册数逐渐涨到两倍，很久后或重启才恢复；
 // ④ 「最近阅读」排序下刚下载的书排最前，而不是按它在对端的阅读时间。
+// ⑤（审查补记）沿用对端入库时刻后，第三台设备在「对端入库 < 删除 < 本机下载」之间
+//    做的「从所有设备删除」让本机下载完就弹删除确认——仲裁改读本机拥有时刻（v118）。
 import 'dart:async';
 import 'dart:io';
 
@@ -18,14 +20,20 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_orchestrator.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../sync/fake_asset_store.dart';
 
 void main() {
   group('去重与收养（数据层）', () {
@@ -411,6 +419,103 @@ void main() {
     );
     await unmount(tester);
   });
+
+  testWidgets('⑤ 第三台设备在对端入库后、本机下载前「从所有设备删除」：本机下载后不弹删除确认',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // 对端很早以前入库（1000）；第三台设备在 5000 删了它（经云通道发布墓碑），
+    // 本机此刻（远晚于 5000）才从对端把它下载下来。
+    const String title = 'DeletedElsewhere';
+    final _ProgressGatedClient client = _ProgressGatedClient(
+      const <RemoteBookInfo>[
+        RemoteBookInfo(title: title, hasContent: true, importedAt: 1000),
+      ],
+      gated: false,
+    );
+    await tester.pumpWidget(buildApp(client));
+    await settle(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('remote_book_download_$title')),
+    );
+    await settle(tester);
+    final EpubBookRow landed = (await tester.runAsync<EpubBookRow?>(
+      () => db.getEpubBook(sanitizeTtuFilename(title)),
+    ))!;
+    expect(landed.importedAt, 1000, reason: '前置：沿用对端入库时刻（BUG-3452）');
+    await unmount(tester);
+
+    final _TombstoneBackend backend = _TombstoneBackend(FakeAssetStore());
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'fushi_remote_followups_sync',
+    );
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final SyncRunReport report = SyncRunReport();
+    await tester.runAsync(() async {
+      final String ns = await backend.ensureNamespace(kSyncTombstonesNamespace);
+      await backend.putJsonAsset(
+        ns,
+        deletionTombstoneAssetName(
+          SyncTombstoneKind.book.dbValue,
+          landed.bookKey,
+        ),
+        deletionTombstoneJson(
+          SyncTombstoneKind.book.dbValue,
+          landed.bookKey,
+          5000,
+        ),
+      );
+      await SyncOrchestrator(
+        db: db,
+        backend: backend,
+        dictionaryResourceRoot: tmp,
+        audioDatabaseRoot: tmp,
+        tempDir: tmp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+      ).syncDeletionTombstones(report);
+    });
+
+    expect(
+      report.deletionCandidates,
+      isEmpty,
+      reason:
+          '删除发生在本机拥有之前：用户是之后才从对端取回的，'
+          '不能一下完就问「其他设备已删除，本地也删？」',
+    );
+  });
+}
+
+/// 只实现删除墓碑消费路径走到的成员（同 deletion_tombstone_rearm_orchestrator_test）。
+class _TombstoneBackend implements SyncBackend {
+  _TombstoneBackend(this._store);
+  final FakeAssetStore _store;
+
+  @override
+  Future<String> ensureNamespace(String name) => _store.ensureNamespace(name);
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) =>
+      _store.listChildren(namespaceId);
+  @override
+  Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
+  @override
+  Future<void> putJsonAsset(String namespaceId, String name, Object? json) =>
+      _store.putJsonAsset(namespaceId, name, json);
+
+  @override
+  Future<bool> get isAuthenticated async => true;
+  @override
+  Future<bool> restoreAuth(SyncRepository repo) async => true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('_TombstoneBackend.${invocation.memberName}');
 }
 
 /// 下载体立即写盘；[gated] 时「拉对端进度」挂起，模拟落地后任务还没收尾的空窗。

@@ -10,11 +10,15 @@
 ///
 /// 覆盖两类资产：
 /// - `favoritesentence`（用户实报的那类，时刻源 = `FavoriteSentence.createdAt`）；
-/// - `book`（时刻源 = `epub_books.importedAt`），证明这不是一个资产的偶然。
+/// - `book`（时刻源 = `epub_books.localAddedAt`），证明这不是一个资产的偶然；
+/// - v118 起 book / srtbook / video 的时刻源是 `localAddedAt`（本机开始拥有的时刻），
+///   **不是** `importedAt`（原始入库时刻，互联下载 = 对端入库时刻）——两者故意错开的
+///   用例钉住读的是哪一列。
 library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -83,7 +87,9 @@ void main() {
     return FavoriteSentenceRepository.itemKeyOf(s);
   }
 
-  Future<String> addBook(String bookKey, int importedAt) =>
+  /// [localAddedAt] = 本机开始拥有的时刻（仲裁读它）；[importedAt] = 原始入库时刻，
+  /// 缺省与之相同（本地导入的书两者同义）。
+  Future<String> addBook(String bookKey, int localAddedAt, {int? importedAt}) =>
       db.insertEpubBook(EpubBooksCompanion.insert(
         bookKey: bookKey,
         title: bookKey,
@@ -91,7 +97,8 @@ void main() {
         extractDir: '/tmp/$bookKey',
         chapterCount: 1,
         chaptersJson: '["ch1"]',
-        importedAt: importedAt,
+        importedAt: importedAt ?? localAddedAt,
+        localAddedAt: Value<int?>(localAddedAt),
       ));
 
   group('favoritesentence（BUG-2044 用户实报的资产类）', () {
@@ -139,7 +146,7 @@ void main() {
     });
   });
 
-  group('book（时刻源 = epub_books.importedAt）', () {
+  group('book（时刻源 = epub_books.localAddedAt）', () {
     test('重新导入晚于墓碑 → 不产候选', () async {
       await addBook('BookRearmed', 9000);
       await putRemoteTombstone(
@@ -149,7 +156,35 @@ void main() {
       await orchestrator().syncDeletionTombstones(report);
 
       expect(report.deletionCandidates, isEmpty,
-          reason: 'importedAt 接不上（退化成 null）时这里会产出 1 条候选');
+          reason: 'localAddedAt 接不上（退化成 null）时这里会产出 1 条候选');
+    });
+
+    test('对端入库早于墓碑、本机落地晚于墓碑（互联下载）→ 不产候选', () async {
+      // 第三台设备在「对端入库(1000) < 删除(5000) < 本机下载(9000)」之间做了
+      // 「从所有设备删除」：用户是在那之后才把书取到本机的，墓碑管不着它。
+      await addBook('PeerDownloaded', 9000, importedAt: 1000);
+      await putRemoteTombstone(
+          SyncTombstoneKind.book.dbValue, 'PeerDownloaded', 5000);
+
+      final SyncRunReport report = SyncRunReport();
+      await orchestrator().syncDeletionTombstones(report);
+
+      expect(report.deletionCandidates, isEmpty,
+          reason: '仲裁若读 importedAt（对端入库时刻 1000），本机刚下载完就会弹'
+              '「其他设备已删除，本地也删？」');
+    });
+
+    test('importedAt 晚于墓碑、本机拥有早于墓碑 → 仍产候选（读的是本机拥有时刻）',
+        () async {
+      await addBook('OwnedBefore', 3000, importedAt: 9000);
+      await putRemoteTombstone(
+          SyncTombstoneKind.book.dbValue, 'OwnedBefore', 5000);
+
+      final SyncRunReport report = SyncRunReport();
+      await orchestrator().syncDeletionTombstones(report);
+
+      expect(report.deletionCandidates, hasLength(1));
+      expect(report.deletionCandidates.single.itemKey, 'OwnedBefore');
     });
 
     test('导入早于墓碑 → 仍产 deleteLocal 候选', () async {
@@ -165,6 +200,65 @@ void main() {
       expect(report.deletionCandidates.single.direction,
           DeletionPropagationDirection.deleteLocal);
     });
+  });
+
+  test('video：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）',
+      () async {
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value<String>('vid-peer'),
+      title: Value<String>('Vid'),
+      videoPath: Value<String>('/tmp/vid.mp4'),
+      importedAt: Value<int?>(1000),
+      localAddedAt: Value<int?>(9000),
+    ));
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value<String>('vid-stale'),
+      title: Value<String>('Stale'),
+      videoPath: Value<String>('/tmp/stale.mp4'),
+      importedAt: Value<int?>(9000),
+      localAddedAt: Value<int?>(3000),
+    ));
+    await putRemoteTombstone(SyncTombstoneKind.video.dbValue, 'vid-peer', 5000);
+    await putRemoteTombstone(
+        SyncTombstoneKind.video.dbValue, 'vid-stale', 5000);
+
+    final SyncRunReport report = SyncRunReport();
+    await orchestrator().syncDeletionTombstones(report);
+
+    expect(
+        report.deletionCandidates
+            .map((DeletionPropagationCandidate c) => c.itemKey),
+        <String>['vid-stale']);
+  });
+
+  test('srtbook：对端入库早于墓碑、本机落地晚于墓碑 → 不产候选（时刻源 = localAddedAt）',
+      () async {
+    await db.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: 'srt-peer',
+      title: 'Srt',
+      srtPath: '/tmp/a.srt',
+      importedAt: 1000,
+      localAddedAt: const Value<int?>(9000),
+    ));
+    await db.upsertSrtBook(SrtBooksCompanion.insert(
+      uid: 'srt-stale',
+      title: 'Stale',
+      srtPath: '/tmp/b.srt',
+      importedAt: 9000,
+      localAddedAt: const Value<int?>(3000),
+    ));
+    await putRemoteTombstone(
+        SyncTombstoneKind.srtbook.dbValue, 'srt-peer', 5000);
+    await putRemoteTombstone(
+        SyncTombstoneKind.srtbook.dbValue, 'srt-stale', 5000);
+
+    final SyncRunReport report = SyncRunReport();
+    await orchestrator().syncDeletionTombstones(report);
+
+    expect(
+        report.deletionCandidates
+            .map((DeletionPropagationCandidate c) => c.itemKey),
+        <String>['srt-stale']);
   });
 
   test('audiobook 无自身时刻列 → 保持旧的纯集合语义（缺时刻宁可多问一次）', () async {
