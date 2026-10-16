@@ -40,6 +40,34 @@ bool isTouchLikePointerKind(PointerDeviceKind? kind) =>
     kind == PointerDeviceKind.stylus ||
     kind == PointerDeviceKind.invertedStylus;
 
+/// Height, measured up from the bottom of the controls surface, of the strip in
+/// which a click must not toggle play / pause (the bottom bar plus the seek
+/// bar's full hit area).
+///
+/// Fushi patch (seek-bar click pauses): the seek bar receives pointers through
+/// a [Listener], which never enters the gesture arena, so the surrounding tap
+/// router still wins a click on it and relies solely on this strip to stay
+/// quiet. Upstream used `bottomBarOffset + 10`, but the seek bar's transparent
+/// hit area is [seekBarContainerHeight] tall and only pushed
+/// [seekBarBottomButtonBarOverlap] down into the button bar, so its top edge
+/// sticks out `seekBarContainerHeight - overlap` (20px by default) above the
+/// bar: clicking that upper band both seeked and toggled pause.
+double desktopControlsBottomStripHeight({
+  required double bottomBarOffset,
+  required bool displaySeekBar,
+  required bool hasBottomButtonBar,
+  required double seekBarContainerHeight,
+  required double seekBarBottomButtonBarOverlap,
+  double tapPadding = 10.0,
+}) {
+  final double padded = bottomBarOffset + tapPadding;
+  if (!displaySeekBar) return padded;
+  final double seekBarTop = bottomBarOffset +
+      seekBarContainerHeight -
+      (hasBottomButtonBar ? seekBarBottomButtonBarOverlap : 0.0);
+  return seekBarTop > padded ? seekBarTop : padded;
+}
+
 /// Pure decision for one tap. [inPlayPauseRegion] is false when the tap landed
 /// on the bottom bar strip while the bar is mounted (the upstream
 /// "don't pause when clicking next to the seek bar" exclusion).
