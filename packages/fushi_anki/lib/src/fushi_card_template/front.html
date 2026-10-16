@@ -1,0 +1,73 @@
+<!--
+  Fushi 卡片模板 · 正面（初版，尚未注册进 app）。
+  字段名与 Lapis（lapis_note_type.dart）逐字一致，Lapis 笔记可零映射迁入；
+  卡型开关沿用 Lapis 语义：IsSentenceCard / IsWordAndSentenceCard / IsClickCard /
+  IsAudioCard 都为空时是单词卡，各开关块彼此独立（与 Lapis 相同）。
+  宿主可选类名（挂在 .card 上）：
+    fushi-srs-front-reading  正面词条显示注音与音调
+    fushi-srs-front-freq     正面显示词频序位
+-->
+<div class="fc fc-front" lang="ja">
+  {{#FreqSort}}<div class="fc-front-freq"><span class="fc-chip fc-chip--freq">{{FreqSort}}</span></div>{{/FreqSort}}
+
+  {{^IsSentenceCard}}{{^IsWordAndSentenceCard}}{{^IsClickCard}}{{^IsAudioCard}}
+  <div class="fc-front-term">
+    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
+    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-front-pitch">{{PitchPosition}}</div>
+  </div>
+  {{/IsAudioCard}}{{/IsClickCard}}{{/IsWordAndSentenceCard}}{{/IsSentenceCard}}
+
+  {{#IsSentenceCard}}
+  <div class="fc-front-sentence">{{kanji:Sentence}}</div>
+  {{/IsSentenceCard}}
+
+  {{#IsWordAndSentenceCard}}
+  <div class="fc-front-term">
+    <div class="fc-term fc-term--hero fc-term--plain">{{Expression}}</div>
+    {{#ExpressionFurigana}}<div class="fc-term fc-term--hero fc-term--ruby">{{furigana:ExpressionFurigana}}</div>{{/ExpressionFurigana}}
+    <div class="fc-front-pitch">{{PitchPosition}}</div>
+  </div>
+  <div class="fc-front-context">{{kanji:Sentence}}</div>
+  {{/IsWordAndSentenceCard}}
+
+  {{#IsClickCard}}
+  <div class="fc-click" role="button" tabindex="0">
+    <div class="fc-term fc-term--hero fc-click-term">{{Expression}}</div>
+    <div class="fc-front-sentence fc-click-sentence">{{kanji:Sentence}}</div>
+  </div>
+  {{/IsClickCard}}
+
+  {{#IsAudioCard}}
+  <div class="fc-front-audio">
+    <div class="fc-front-sentence fc-front-sentence--masked">{{kanji:Sentence}}</div>
+    <div class="fc-audio fc-audio--large">
+      {{#SentenceAudio}}{{SentenceAudio}}{{/SentenceAudio}}
+      {{^SentenceAudio}}{{ExpressionAudio}}{{/SentenceAudio}}
+    </div>
+  </div>
+  {{/IsAudioCard}}
+
+  {{#Hint}}<div class="fc-hint">{{Hint}}</div>{{/Hint}}
+</div>
+
+<script>
+  /* 点击卡：点一下 / 按 C 在「词条」与「例句」之间切换（Lapis ClickCard 的等价物）。
+     键盘监听只挂一次：外壳换卡时会重放本脚本，监听器查的是当下的 DOM。 */
+  (function () {
+    var click = document.querySelector(".fc-click");
+    if (click) {
+      click.addEventListener("click", function () {
+        click.classList.toggle("fc-click--open");
+      });
+    }
+    if (!window.__fushiCardClickKey) {
+      window.__fushiCardClickKey = true;
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "c" && e.key !== "C") return;
+        var el = document.querySelector(".fc-click");
+        if (el) el.classList.toggle("fc-click--open");
+      });
+    }
+  })();
+</script>

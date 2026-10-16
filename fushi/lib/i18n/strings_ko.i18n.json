@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "위치를 고정해도 단어 찾기를 쓰려면 이 옵션을 켜 두세요.",
   "floating_lyric_close": "닫기",
   "floating_lyric_corner_radius": "플로팅 자막 모서리 둥글기",
-  "floating_lyric_corner_radius_hint": "0은 각 플랫폼의 기본 모서리를 유지합니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다",
+  "floating_lyric_corner_radius_hint": "0은 직각 모서리입니다; 값을 높이면 바와 버튼을 더 둥글게 만듭니다 (기본값 24)",
   "floating_lyric_font_size": "플로팅 자막 글꼴 크기",
   "floating_lyric_hint": "다른 앱 위에 현재 문장을 표시합니다.",
   "floating_lyric_lock": "잠금",
