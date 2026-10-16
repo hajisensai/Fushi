@@ -2335,6 +2335,12 @@ class _NavPagedRowState extends State<_NavPagedRow>
   int _edgeDirection = 0;
   Timer? _edgeTimer;
 
+  /// 焦点（方向键 / 手柄 / Tab）此刻停在哪一页的哪一格（null = 不在本行）。
+  /// 停在当前页首格 / 末格时，相邻那一页放进焦点遍历（[_pageFocusable]），
+  /// 方向键再往外走就能进去、进去即翻页（[_onCellFocusChange]）。
+  int? _focusPage;
+  int? _focusSlot;
+
   @override
   void initState() {
     super.initState();
@@ -2348,6 +2354,8 @@ class _NavPagedRowState extends State<_NavPagedRow>
     if (!_samePages(oldWidget.pages, widget.pages)) {
       _page = _pageOf(widget.currentIndex) ?? 0;
       _position.value = _page.toDouble();
+      _focusPage = null;
+      _focusSlot = null;
       return;
     }
     if (oldWidget.currentIndex != widget.currentIndex && !_selecting) {
@@ -2388,6 +2396,41 @@ class _NavPagedRowState extends State<_NavPagedRow>
         velocity: velocity,
       ),
     );
+  }
+
+  /// 第 [page] 页的格此刻是否进焦点遍历。
+  ///
+  /// 当前页恒进；别页默认**不进**——被动焦点修复（进页 / 焦点丢失时自动落点）
+  /// 按阅读顺序挑首个目标，看不见的页若一直可聚焦，修复会把焦点落到屏幕外、再
+  /// 把整排翻走。只在焦点停在当前页的边缘格时放开紧挨着的那一页：此时主焦点
+  /// 可用、被动修复不会动它，而显式方向输入（几何上最近的就是相邻页紧挨着的
+  /// 那一格）终于够得着别页的目的地。
+  bool _pageFocusable(int page) {
+    if (page == _page) return true;
+    final int? slot = _focusSlot;
+    if (_focusPage != _page || slot == null) return false;
+    if (page == _page + 1) return slot == widget.pages[_page].length - 1;
+    if (page == _page - 1) return slot == 0;
+    return false;
+  }
+
+  /// 焦点进 / 出某一格。进了别页的格（方向键越过当前页边缘）就翻到那一页。
+  void _onCellFocusChange(int page, int slot, bool hasFocus) {
+    if (!mounted) return;
+    if (!hasFocus) {
+      if (page == _focusPage && slot == _focusSlot) {
+        setState(() {
+          _focusPage = null;
+          _focusSlot = null;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _focusPage = page;
+      _focusSlot = slot;
+    });
+    if (page != _page && !_selecting) _settleTo(page);
   }
 
   // ---- 横滑翻页 ----
@@ -2488,15 +2531,23 @@ class _NavPagedRowState extends State<_NavPagedRow>
     });
   }
 
-  Widget _pageRow(List<int> page) {
+  Widget _pageRow(int p) {
+    final List<int> page = widget.pages[p];
     return Row(
       children: <Widget>[
         for (int k = 0; k < _kNavPageSize; k++)
           Expanded(
             child: k < page.length
-                ? widget.cellBuilder(
-                    page[k],
-                    _selecting ? page[k] == _hover : null,
+                // 只听焦点进出（定位「焦点在哪页哪格」），自己不是落点。
+                ? Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    includeSemantics: false,
+                    onFocusChange: (bool has) => _onCellFocusChange(p, k, has),
+                    child: widget.cellBuilder(
+                      page[k],
+                      _selecting ? page[k] == _hover : null,
+                    ),
                   )
                 : const SizedBox.shrink(),
           ),
@@ -2566,14 +2617,19 @@ class _NavPagedRowState extends State<_NavPagedRow>
                         for (int p = 0; p < widget.pages.length; p++)
                           if ((p - pos).abs() < 1.5)
                             Positioned.fill(
+                              // 按页号保身份：窗口里的页集合随翻页增减，按下标
+                              // 复用元素会把别页的格（及其焦点节点）错配过来。
+                              key: ValueKey<int>(p),
                               child: Transform.translate(
                                 offset: Offset((p - pos) * _width, 0),
-                                // 看不见的页不进焦点遍历 / 命中。
+                                // 看不见的页不接指针；焦点遍历见
+                                // [_pageFocusable]（焦点停在边缘格时放开相邻
+                                // 页，否则键盘 / 手柄永远够不着别页的目的地）。
                                 child: ExcludeFocus(
-                                  excluding: p != _page,
+                                  excluding: !_pageFocusable(p),
                                   child: IgnorePointer(
                                     ignoring: p != _page,
-                                    child: _pageRow(widget.pages[p]),
+                                    child: _pageRow(p),
                                   ),
                                 ),
                               ),

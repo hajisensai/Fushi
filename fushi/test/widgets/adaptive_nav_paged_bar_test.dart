@@ -308,6 +308,41 @@ void main() {
         expect(<int>[...drags, ...taps], <int>[6]);
       });
     });
+
+    group('${design.name} 方向键 / 手柄', () {
+      // 分页是出厂默认（2026-10-16）：键盘 / 手柄用户只能靠焦点在栏上走，
+      // 别页的目的地必须够得着（此前别页整页 ExcludeFocus，焦点停在第 5 格
+      // 再往右就走不动，第 6~9 个目的地对键盘 / 手柄永远不可达）。
+      testWidgets('从第一页走到最后一个目的地再走回来，焦点所在页随之翻过去', (WidgetTester tester) async {
+        await pumpBar(tester, design);
+        final FushiFocusController focus = FushiFocusRoot.controllerOf(
+          tester.element(shown(0)),
+        );
+        expect(focus.requestById(const FushiFocusId('nav-bar-0')), isTrue);
+        await tester.pumpAndSettle();
+        String? primary() => FocusManager.instance.primaryFocus?.debugLabel;
+        for (int i = 1; i < 9; i++) {
+          expect(focus.move(FushiFocusDirection.right), isTrue);
+          await tester.pumpAndSettle();
+          expect(primary(), 'nav-bar-$i');
+          // 焦点格一定在胶囊里看得见。
+          expect(bar(), contains(i));
+        }
+        expect(bar(), <int>[5, 6, 7, 8]);
+        expect(
+          focus.move(FushiFocusDirection.right),
+          isFalse,
+          reason: '最后一个目的地往右没有下一格',
+        );
+        for (int i = 7; i >= 0; i--) {
+          expect(focus.move(FushiFocusDirection.left), isTrue);
+          await tester.pumpAndSettle();
+          expect(primary(), 'nav-bar-$i');
+          expect(bar(), contains(i));
+        }
+        expect(bar(), <int>[0, 1, 2, 3, 4]);
+      });
+    });
   }
 
   testWidgets('MD3 没接 onDragSelect 时拖选落地走 onTap', (WidgetTester tester) async {
