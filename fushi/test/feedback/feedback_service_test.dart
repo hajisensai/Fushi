@@ -54,6 +54,7 @@ void main() {
       }),
     ),
     meta: () async => <String, Object?>{'platform': 'test'},
+    installId: () async => '0f8fad5b-d9cb-469f-a165-70867728950e',
     logText: () => 'E/boom',
     logEncoder: _fakeGzip,
   );
@@ -114,6 +115,8 @@ void main() {
       'logs_attached': true,
       'screenshots': 2,
     });
+    // 勾选「附带设备信息」（默认）时一并带上安装统计的安装 id。
+    expect(body['installId'], '0f8fad5b-d9cb-469f-a165-70867728950e');
     expect(requests.last.bodyBytes, _fakeGzip('E/boom'));
     // 落盘：新开一个服务也读得到回执。
     final List<FeedbackTicket> stored = await FeedbackTicketStore(root).read();
@@ -121,7 +124,7 @@ void main() {
     expect(stored.single.hasUnseenReply, isFalse);
   });
 
-  test('关掉日志与设备信息：不传日志、meta 只剩计数', () async {
+  test('关掉日志与设备信息：不传日志、meta 只剩计数、不带安装 id', () async {
     handler = (http.Request r) async => _json(<String, dynamic>{
       'id': 'abcdefghij',
       'ticket': 'T' * 32,
@@ -142,6 +145,12 @@ void main() {
     expect(
       (jsonDecode(requests.single.body) as Map<String, dynamic>)['meta'],
       <String, dynamic>{'logs_attached': false, 'screenshots': 0},
+    );
+    expect(
+      (jsonDecode(requests.single.body) as Map<String, dynamic>).containsKey(
+        'installId',
+      ),
+      isFalse,
     );
   });
 

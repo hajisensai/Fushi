@@ -27,6 +27,7 @@ import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -128,6 +129,7 @@ class FeedbackService extends ChangeNotifier {
     required Future<Directory> Function() supportRoot,
     required LeaderboardClient Function() client,
     Future<Map<String, Object?>> Function()? meta,
+    Future<String?> Function()? installId,
     String Function()? logText,
     Uint8List Function(String log)? logEncoder,
     FeedbackVideoPreparer? prepareVideo,
@@ -135,6 +137,7 @@ class FeedbackService extends ChangeNotifier {
   }) : _supportRoot = supportRoot,
        _client = client,
        _meta = meta ?? collectFeedbackMeta,
+       _installId = installId ?? _noInstallId,
        _logText = logText ?? collectFeedbackLogText,
        _logEncoder = logEncoder ?? buildFeedbackLogGzip,
        _prepareVideo = prepareVideo ?? _defaultPrepareVideo;
@@ -142,6 +145,12 @@ class FeedbackService extends ChangeNotifier {
   final Future<Directory> Function() _supportRoot;
   final LeaderboardClient Function() _client;
   final Future<Map<String, Object?>> Function() _meta;
+
+  /// 安装统计的本机安装 id（[usageStatsInstallIdForFeedback]）；null = 不附带。只在勾选
+  /// 「附带设备信息」时取，开发者处理台据此关联该安装的版本轨迹与它的其它反馈。
+  final Future<String?> Function() _installId;
+
+  static Future<String?> _noInstallId() async => null;
   final String Function() _logText;
   final Uint8List Function(String log) _logEncoder;
   final FeedbackVideoPreparer _prepareVideo;
@@ -418,6 +427,9 @@ class FeedbackService extends ChangeNotifier {
     final Map<String, Object?> meta = draft.includeDeviceInfo
         ? await _meta()
         : const <String, Object?>{};
+    final String? installId = draft.includeDeviceInfo
+        ? await _installId()
+        : null;
     // 重新提交：凭原反馈自己的 ticket 证明是本人的反馈（服务端还会核对原反馈已结案）。
     FeedbackTicket? parent;
     if (draft.reopenOf != null) {
@@ -439,6 +451,7 @@ class FeedbackService extends ChangeNotifier {
       },
       linkAccount: draft.linkAccount,
       reopenOf: parent == null ? null : (id: parent.id, ticket: parent.ticket),
+      installId: installId,
     );
     final FeedbackTicket ticket = FeedbackTicket(
       id: receipt.id,
@@ -916,6 +929,7 @@ final ChangeNotifierProvider<FeedbackService> feedbackServiceProvider =
       final FeedbackService service = FeedbackService(
         supportRoot: () async => app.databaseDirectory,
         client: () => ref.read(leaderboardServiceProvider).feedbackClient(),
+        installId: () => usageStatsInstallIdForFeedback(app.prefsRepo),
         // 用时现取（不在建 provider 时读）：提醒编排反过来依赖本服务。
         onSubmitted: () async {
           final FeedbackReplyAlerts alerts = ref.read(
