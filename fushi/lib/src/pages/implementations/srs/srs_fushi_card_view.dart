@@ -107,10 +107,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   final ScrollController _scroll = ScrollController();
   double? _defsHeight;
 
-  /// 释义 WebView 的子树：翻回正面时挪进 Offstage 保活（GlobalKey 换父不重建平台视图），
-  /// 下一次翻面不用重新起 WebView。第一次翻到背面之前正面不建 WebView。
+  /// 释义 WebView 的子树：正面时在 Offstage 里预建 / 保活（GlobalKey 换父不重建平台
+  /// 视图），翻面只是换父，不用现起 WebView。
   final GlobalKey _defsKey = GlobalKey(debugLabel: 'srs-fushi-defs');
-  bool _defsCreated = false;
 
   /// 卡面可用高度（LayoutBuilder 给出）：矮视口收小图片；窄版式把长释义收起高度换成像素。
   double _viewport = 800;
@@ -595,7 +594,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       return null;
     }
     final SrsCardFaceBuilder builder = ref.watch(srsCardFaceBuilderProvider);
-    _defsCreated = true;
     return KeyedSubtree(
       key: _defsKey,
       child: KeyedSubtree(
@@ -605,7 +603,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  /// 正面：原生卡面；释义 WebView 若已建过，挪进 Offstage 保活并预载这张卡的释义。
+  /// 正面：原生卡面；释义 WebView 在 Offstage 里预先建好并预载这张卡的释义——
+  /// WebView2 起一个控件要几百毫秒，等翻面才建会让背面的释义区明显晚出。
   Widget _frontWithWarmDefs(
     BuildContext context,
     _SrsCardStyle s,
@@ -613,7 +612,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     required bool wide,
   }) {
     final Widget front = _buildFront(context, s, c);
-    if (!_defsCreated) return front;
     final Widget? defs = _definitions(context, wide: wide);
     if (defs == null) return front;
     return Stack(
@@ -797,6 +795,15 @@ class _SrsCardStyle {
     fallbackWhenUnknown: true,
   );
 
+  /// Windows 的游ゴシック Regular 笔画极细：浏览器靠 DirectWrite hinting 把它画实，
+  /// Flutter 自绘没有这一步，同一字体在原生区比旁边 WebView 释义区明显发虚。日文
+  /// 网页对游ゴシック的通行做法就是正文用 Medium（500）；只在实际落到系统游ゴシック
+  /// （用户没从字体库选字体）时提，用户自选字体保持其原字重。
+  late final bool _thinSystemJaFace =
+      defaultTargetPlatform == TargetPlatform.windows &&
+      fontFamilies.isEmpty &&
+      (_contentFamilies.firstOrNull?.startsWith('Yu Gothic') ?? false);
+
   TextStyle body({
     double size = 16,
     double? height,
@@ -810,6 +817,7 @@ class _SrsCardStyle {
       color: color ?? scheme.onSurface,
       fontFamily: families.firstOrNull,
       fontFamilyFallback: families.length > 1 ? families.sublist(1) : null,
+      fontWeight: !ui && _thinSystemJaFace ? FontWeight.w500 : null,
       locale: ui ? null : _locale,
     );
   }

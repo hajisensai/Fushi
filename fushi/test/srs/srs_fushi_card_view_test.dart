@@ -119,9 +119,18 @@ void main() {
     return faces;
   }
 
-  testWidgets('正面完全原生：不建释义 WebView', (WidgetTester tester) async {
+  testWidgets('正面原生显示；释义 WebView 在 Offstage 预建（翻面不现起 WebView）', (
+    WidgetTester tester,
+  ) async {
     final List<SrsCardFace> faces = await pump(tester, answer: false);
-    expect(faces, isEmpty);
+    // 预建的是背面释义（showingAnswer=true），但挂在 Offstage 下、正面看不见。
+    expect(faces, isNotEmpty);
+    expect(faces.last.showingAnswer, isTrue);
+    expect(find.byKey(const ValueKey<String>('defs-webview')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('defs-webview'), skipOffstage: false),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey<String>('srs-fushi-front')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('srs-fushi-front-term')),
@@ -149,6 +158,10 @@ void main() {
           reason: key,
         );
         expect(style.locale, const Locale('ja'), reason: key);
+        // 系统游ゴシック Regular 在自绘下过细：正文提到 Medium 与 WebView 视觉对齐。
+        if (key == 'srs-fushi-sentence') {
+          expect(style.fontWeight, FontWeight.w500, reason: key);
+        }
       }
     } finally {
       debugDefaultTargetPlatformOverride = null;
