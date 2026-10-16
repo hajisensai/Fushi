@@ -356,5 +356,42 @@ function findChildByClass(root, className) {
   assert.strictEqual(rtNode.style.fontSize, "0.6em",
     "rt keeps its legitimate fontSize");
 
+  // ---- inline nowrap group: atomic inline-block, never wider than the card --
+  // 日本語シソーラス wraps `肝所　0412.05 ≪勘所（意味）≫` in one nowrap span; nowrap
+  // defeats .glossary-group overflow-wrap:anywhere (BUG-1827) and the whole group
+  // painted past the card edge. It must become an atomic inline-block capped at
+  // max-width:100% that wraps with the parent's white-space.
+  for (const tag of ["span", "a"]) {
+    const group = sb.window.__test.renderSc({
+      tag,
+      style: { whiteSpace: "nowrap", fontWeight: "bold" },
+      content: "肝所　0412.05 ≪勘所（意味）≫",
+    });
+    assert.ok(!group.style.whiteSpace,
+      `inline <${tag}> nowrap must be dropped (it disables overflow-wrap)`);
+    assert.strictEqual(group.style.display, "inline-block",
+      `inline <${tag}> nowrap group must stay atomic as inline-block`);
+    assert.strictEqual(group.style.maxWidth, "100%",
+      `inline <${tag}> nowrap group must be capped at the card width`);
+    assert.strictEqual(group.style.fontWeight, "bold",
+      "unrelated styles on the nowrap group are preserved");
+  }
+  const explicitDisplay = sb.window.__test.renderSc({
+    tag: "span",
+    style: { whiteSpace: "nowrap", display: "block" },
+    content: "x",
+  });
+  assert.strictEqual(explicitDisplay.style.whiteSpace, "nowrap",
+    "a nowrap span with an explicit dictionary display is left untouched");
+  assert.strictEqual(explicitDisplay.style.display, "block");
+  const blockNowrap = sb.window.__test.renderSc({
+    tag: "div",
+    style: { whiteSpace: "nowrap" },
+    content: "x",
+  });
+  assert.strictEqual(blockNowrap.style.whiteSpace, "nowrap",
+    "block-level nowrap is not rewritten");
+  assert.strictEqual(blockNowrap.style.display, undefined);
+
   console.log("popup_glossary_link_scope_test.js: all assertions passed");
 })();
