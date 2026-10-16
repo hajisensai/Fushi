@@ -1,7 +1,7 @@
 // 反馈 XFsZIWYbr8：手机竖屏上资源搜索页 / 番剧下载选种页的结果区太扁——
 // 查询 / 筛选头部固定在上方，结果只能在中间一条窄缝里滚。
-// 契约：结果列表与头部同属一个滚动视图（结果视口吃满头部以下的屏幕），上滑时
-// 头部随结果滚走，资源搜索页的顶栏标题保持原位不动。
+// 契约：窄屏（< 600）结果列表与头部同属一个滚动视图（结果视口吃满头部以下的屏幕），
+// 上滑时头部随结果滚走；宽屏头部固定在滚动区外只滚结果。资源搜索页的顶栏标题保持原位不动。
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -202,6 +202,63 @@ void main() {
       findsOneWidget,
       reason: '提交按钮固定在滚动视图之外，滚到哪都能提交',
     );
+  });
+
+  testWidgets('资源搜索页：宽屏（1280）搜索头固定在滚动区外，只有结果滚', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800) * _dpr;
+    tester.view.devicePixelRatio = _dpr;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: VideoDiscoveryResourceSearchPage(
+            item: _item(),
+            registry: VideoResourceRegistry(<VideoResourceProvider>[
+              _SeededProvider(_resources()),
+            ]),
+            sources: const <MediaSourceRow>[_source],
+            defaultSourceId: 1,
+            onSubmit: (VideoDiscoveryDownloadSelection selection) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder scroll = find.byKey(
+      const ValueKey<String>('video-resource-scroll'),
+    );
+    final Finder query = find.byKey(
+      const ValueKey<String>('video-resource-query'),
+    );
+    final Finder firstCard = find
+        .byWidgetPredicate(
+          (Widget w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith(
+                'resource-version-',
+              ),
+        )
+        .first;
+    expect(firstCard, findsOneWidget);
+    expect(
+      find.descendant(of: scroll, matching: query),
+      findsNothing,
+      reason: '宽屏搜索头应在滚动视图之外',
+    );
+    final double queryTopBefore = tester.getTopLeft(query).dy;
+
+    await tester.drag(scroll, const Offset(0, -500));
+    await tester.pumpAndSettle();
+
+    expect(
+      Scrollable.of(tester.element(firstCard)).position.pixels,
+      greaterThan(0),
+      reason: '结果应当滚动了',
+    );
+    expect(query, findsOneWidget);
+    expect(tester.getTopLeft(query).dy, queryTopBefore);
   });
 
   testWidgets('番剧下载选种段：种子列表与查询 / 筛选头部同滚', (WidgetTester tester) async {

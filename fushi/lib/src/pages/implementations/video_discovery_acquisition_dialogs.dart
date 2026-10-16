@@ -1060,19 +1060,30 @@ class _VideoResourceSearchSurfaceState
             ),
             SizedBox(height: tokens.spacing.card),
           ],
-          // 查询 / 筛选头部与结果列表同属一个滚动视图：头部随结果整体上滑让出
-          // 屏幕，结果区不再被压成头部与底部选项之间的一条窄缝（反馈
-          // XFsZIWYbr8）。底部的落地目录 / 字幕策略 / 提交仍固定在滚动视图外，
-          // 选了什么随时都能提交。
-          Expanded(
-            child: CustomScrollView(
-              key: const ValueKey<String>('video-resource-scroll'),
-              slivers: <Widget>[
-                SliverToBoxAdapter(child: _buildQueryHeader(tokens, manual)),
-                ..._buildResultSlivers(),
-              ],
+          // 窄屏（与首页手机布局同一断点，窗口宽 < 600）：查询 / 筛选头部与结果
+          // 列表同属一个滚动视图，头部随结果上滑让出屏幕，结果区不再被压成头部与
+          // 底部选项之间的一条窄缝（反馈 XFsZIWYbr8）。桌面 / 宽屏：头部固定在
+          // 滚动区外，只有结果自己滚（#2245 之前的行为）。两种布局共用同一份头部
+          // 与结果 sliver。底部的落地目录 / 字幕策略 / 提交两种布局都固定在外。
+          if (_isPhoneLayout(context))
+            Expanded(
+              child: CustomScrollView(
+                key: const ValueKey<String>('video-resource-scroll'),
+                slivers: <Widget>[
+                  SliverToBoxAdapter(child: _buildQueryHeader(tokens, manual)),
+                  ..._buildResultSlivers(),
+                ],
+              ),
+            )
+          else ...<Widget>[
+            _buildQueryHeader(tokens, manual),
+            Expanded(
+              child: CustomScrollView(
+                key: const ValueKey<String>('video-resource-scroll'),
+                slivers: _buildResultSlivers(),
+              ),
             ),
-          ),
+          ],
           SizedBox(height: tokens.spacing.gap),
           _buildOptions(filter),
           SizedBox(height: tokens.spacing.card),
@@ -1081,6 +1092,15 @@ class _VideoResourceSearchSurfaceState
       ),
     );
   }
+
+  /// 是否走手机布局：与首页底栏 / 手机布局同一断点（[WindowSizeClass.compact]，
+  /// 按界面缩放折算后的真实窗口宽 < 600）。
+  bool _isPhoneLayout(BuildContext context) =>
+      windowSizeClassReal(
+        MediaQuery.sizeOf(context).width,
+        FushiAppUiScale.of(context),
+      ) ==
+      WindowSizeClass.compact;
 
   /// 查询 / 筛选头部：手动模式的检索字段，或作品模式的搜索框 + 分类 + 拼写
   /// chip，外加逐源回执。放在结果滚动视图的首个 sliver 里随结果一起滚走。
