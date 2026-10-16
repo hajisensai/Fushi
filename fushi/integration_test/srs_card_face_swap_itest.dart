@@ -54,6 +54,28 @@ const String _probeScript =
 })();
 ''';
 
+/// 滚动容器与其滚动条占位宽度（offsetWidth − clientWidth − 左右边框）、
+/// `::-webkit-scrollbar` 是否生效（伪元素宽度经 getComputedStyle 读不到，只能
+/// 看占位：经典滚动条 ≈ 17 CSS px，本主题 8px，叠加滚动条 0）。
+const String _scrollMetricsScript = '''
+(function(){
+  var out = {dpr: window.devicePixelRatio, innerWidth: window.innerWidth,
+    rootGutter: window.innerWidth - document.documentElement.clientWidth,
+    rootScrollable: document.scrollingElement.scrollHeight > document.scrollingElement.clientHeight,
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
+    scrollers: []};
+  var all = document.querySelectorAll('*');
+  for (var i = 0; i < all.length; i++) {
+    var el = all[i], cs = getComputedStyle(el);
+    if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+      out.scrollers.push({tag: el.tagName, id: el.id, cls: el.className,
+        gutter: el.offsetWidth - el.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth)});
+    }
+  }
+  return JSON.stringify(out);
+})()
+''';
+
 Future<void> _pumpFor(WidgetTester tester, Duration d) async {
   final Stopwatch sw = Stopwatch()..start();
   while (sw.elapsed < d) {
@@ -178,6 +200,11 @@ void main() {
           await File(path).writeAsBytes(png, flush: true);
           debugPrint('[srs-face-probe] screenshot $path');
         }
+        // 抓图（CapturePreview）不含滚动条：滚动条实际占位宽度与样式直接量。
+        final Object? metrics = await controller.evaluateJavascript(
+          source: _scrollMetricsScript,
+        );
+        debugPrint('[srs-face-probe] scrollbar $metrics');
       }
       nexts.add(
         await step(
