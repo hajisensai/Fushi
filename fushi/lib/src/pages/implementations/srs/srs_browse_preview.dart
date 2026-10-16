@@ -19,6 +19,7 @@ import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -141,76 +142,124 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
       if (detail != null && detail.deckName.isNotEmpty) detail.deckName,
       if (detail?.template != null) detail!.template!.name,
     ].join(' · ');
-    return Column(
+    final Widget surface = FushiCard(
+      key: const ValueKey<String>('srs-browse-preview-surface'),
+      padding: EdgeInsets.zero,
+      pressScale: false,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: KeyedSubtree(key: ValueKey<bool>(_loading), child: face),
+      ),
+    );
+    final Widget? captionText = caption.isEmpty
+        ? null
+        : Text(
+            caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.labelLarge.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          );
+    final Widget prev = FushiIconButton(
+      key: const ValueKey<String>('srs-preview-prev'),
+      icon: FushiIcons.chevronLeft,
+      tooltip: '${t.srs_browse_preview_prev} (←)',
+      enabled: widget.hasPrevious,
+      onTap: () => widget.onCommand(SrsPreviewCommand.previous),
+    );
+    final Widget flip = FushiFilledButton.tonal(
+      key: const ValueKey<String>('srs-preview-flip'),
+      onPressed: detail == null
+          ? null
+          : () => widget.onCommand(SrsPreviewCommand.flip),
+      child: Text(
+        widget.showAnswer
+            ? t.srs_browse_preview_question
+            : t.srs_review_show_answer,
+        textAlign: TextAlign.center,
+      ),
+    );
+    final Widget next = FushiIconButton(
+      key: const ValueKey<String>('srs-preview-next'),
+      icon: FushiIcons.chevronRight,
+      tooltip: '${t.srs_browse_preview_next} (→)',
+      enabled: widget.hasNext,
+      onTap: () => widget.onCommand(SrsPreviewCommand.next),
+    );
+    final Widget edit = FushiIconButton(
+      key: const ValueKey<String>('srs-preview-edit'),
+      icon: FushiIcons.edit,
+      tooltip: t.srs_note_edit,
+      enabled: detail != null,
+      onTap: widget.onEdit,
+    );
+    return LayoutBuilder(
       key: const ValueKey<String>('srs-browse-preview'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        if (caption.isNotEmpty)
-          Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: Text(
-              caption,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: context.fushiType.labelLarge.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        Expanded(
-          child: FushiCard(
-            key: const ValueKey<String>('srs-browse-preview-surface'),
-            padding: EdgeInsets.zero,
-            pressScale: false,
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: KeyedSubtree(key: ValueKey<bool>(_loading), child: face),
-            ),
-          ),
-        ),
-        SizedBox(height: tokens.spacing.gap * 1.5),
-        Row(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            FushiIconButton(
-              key: const ValueKey<String>('srs-preview-prev'),
-              icon: FushiIcons.chevronLeft,
-              tooltip: '${t.srs_browse_preview_prev} (←)',
-              enabled: widget.hasPrevious,
-              onTap: () => widget.onCommand(SrsPreviewCommand.previous),
-            ),
-            Expanded(
-              child: FushiFilledButton.tonal(
-                key: const ValueKey<String>('srs-preview-flip'),
-                onPressed: detail == null
-                    ? null
-                    : () => widget.onCommand(SrsPreviewCommand.flip),
-                child: Text(
-                  widget.showAnswer
-                      ? t.srs_browse_preview_question
-                      : t.srs_review_show_answer,
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (srsIsShortLandscape(constraints)) {
+          // 横屏矮区域：按钮竖排在卡面右侧，把高度全留给卡面。
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: tokens.spacing.gap * 1.5,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (captionText != null)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                        child: captionText,
+                      ),
+                    Expanded(child: surface),
+                  ],
                 ),
               ),
-            ),
-            FushiIconButton(
-              key: const ValueKey<String>('srs-preview-next'),
-              icon: FushiIcons.chevronRight,
-              tooltip: '${t.srs_browse_preview_next} (→)',
-              enabled: widget.hasNext,
-              onTap: () => widget.onCommand(SrsPreviewCommand.next),
-            ),
-            FushiIconButton(
-              key: const ValueKey<String>('srs-preview-edit'),
-              icon: FushiIcons.edit,
-              tooltip: t.srs_note_edit,
-              enabled: detail != null,
-              onTap: widget.onEdit,
+              SizedBox(
+                key: const ValueKey<String>('srs-browse-preview-rail'),
+                width: 136,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    edit,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[prev, next],
+                    ),
+                    flip,
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (captionText != null)
+              Padding(
+                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                child: captionText,
+              ),
+            Expanded(child: surface),
+            SizedBox(height: tokens.spacing.gap * 1.5),
+            Row(
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                prev,
+                Expanded(child: flip),
+                next,
+                edit,
+              ],
             ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 }

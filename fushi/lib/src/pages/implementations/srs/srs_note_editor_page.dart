@@ -21,7 +21,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -398,69 +397,65 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       type,
     );
     final SrsNoteView? note = _note;
-    final List<Widget> sections = <Widget>[
-      if (note != null && note.deletedAt != null) _buildDeletedBanner(note),
-      _buildPickers(context, type),
-      FushiCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: tokens.spacing.gap * 1.5,
-          children: <Widget>[
-            for (final SrsFieldDef f in primary) _buildField(context, f),
-          ],
-        ),
-      ),
-      if (rest.isNotEmpty)
+    // 宽窗（手机横屏 / 桌面）：左栏字段（正文），右栏删除提示、类型 / 牌组与标签；
+    // 窄窗仍按 删除提示 → 类型 / 牌组 → 字段 → 更多字段 → 标签 单列。
+    final List<SrsSection> sections = <SrsSection>[
+      if (note != null && note.deletedAt != null)
+        SrsSection(pane: SrsPane.secondary, _buildDeletedBanner(note)),
+      SrsSection(pane: SrsPane.secondary, _buildPickers(context, type)),
+      SrsSection(
         FushiCard(
-          padding: EdgeInsets.zero,
-          child: FushiExpansionTile(
-            key: const ValueKey<String>('srs-note-more-fields'),
-            leading: const FushiIcon(FushiIcons.expandMore),
-            title: Text(t.srs_note_more_fields(n: rest.length)),
-            // 折起来的字段也要保住输入框状态（光标 / 撤销栈）。
-            maintainState: true,
-            childrenPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: tokens.spacing.gap * 1.5,
             children: <Widget>[
-              for (final SrsFieldDef f in rest)
-                Padding(
-                  padding: EdgeInsets.only(top: tokens.spacing.gap * 1.5),
-                  child: _buildField(context, f),
-                ),
+              for (final SrsFieldDef f in primary) _buildField(context, f),
             ],
           ),
         ),
-      FushiCard(
-        child: FushiTextField(
-          key: const ValueKey<String>('srs-note-tags'),
-          controller: _tags,
-          labelText: t.srs_note_tags,
-          helperText: t.srs_note_tags_hint,
+      ),
+      if (rest.isNotEmpty)
+        SrsSection(
+          FushiCard(
+            padding: EdgeInsets.zero,
+            child: FushiExpansionTile(
+              key: const ValueKey<String>('srs-note-more-fields'),
+              leading: const FushiIcon(FushiIcons.expandMore),
+              title: Text(t.srs_note_more_fields(n: rest.length)),
+              // 折起来的字段也要保住输入框状态（光标 / 撤销栈）。
+              maintainState: true,
+              childrenPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+              children: <Widget>[
+                for (final SrsFieldDef f in rest)
+                  Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.gap * 1.5),
+                    child: _buildField(context, f),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      SrsSection(
+        pane: SrsPane.secondary,
+        FushiCard(
+          child: FushiTextField(
+            key: const ValueKey<String>('srs-note-tags'),
+            controller: _tags,
+            labelText: t.srs_note_tags,
+            helperText: t.srs_note_tags_hint,
+          ),
         ),
       ),
     ];
-    return FushiEntranceScope(
-      child: ListView.separated(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-        ),
-        itemCount: sections.length,
-        separatorBuilder: (BuildContext context, int index) =>
-            SizedBox(height: tokens.spacing.gap * 1.5),
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int index) => sections[index],
-        ),
-      ),
+    return SrsAdaptiveSections(
+      sections: sections,
+      primaryFlex: 3,
+      secondaryFlex: 2,
     );
   }
 

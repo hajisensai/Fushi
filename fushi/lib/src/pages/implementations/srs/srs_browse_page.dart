@@ -1016,6 +1016,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           srsRunLogged('SrsBrowse.contextMenu', _openBatchMenu);
         },
         child: FushiListItem(
+          density: srsListDensityOf(context),
           selected: current || selected,
           leading: _selecting
               ? FushiCheckbox(

@@ -726,6 +726,7 @@ class _DeckRow extends StatelessWidget {
             count: count,
             onTap: () => onOpen(deck),
             child: FushiListItem(
+              density: srsListDensityOf(context),
               leading: _leading(tokens, compact: compact),
               // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
               titleMaxLines: compact ? 2 : 1,

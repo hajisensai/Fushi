@@ -399,6 +399,7 @@ class _TypeRow extends StatelessWidget {
         count: count,
         onTap: onOpen,
         child: FushiListItem(
+          density: srsListDensityOf(context),
           leading: FushiListLeadingIcon(
             FushiIcons.ankiCard,
             tone: type.builtinKey != null

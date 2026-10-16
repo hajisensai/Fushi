@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -122,6 +123,137 @@ class SrsCountTriple extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 页面分区在宽窗下落在哪一栏。
+enum SrsPane { primary, secondary }
+
+/// [SrsAdaptiveSections] 的一块分区：窄窗按 [SrsAdaptiveSections.sections] 的
+/// 顺序单列排；宽窗按 [pane] 分进左（primary）/ 右（secondary）两栏。
+class SrsSection {
+  const SrsSection(this.child, {this.pane = SrsPane.primary});
+
+  final Widget child;
+  final SrsPane pane;
+}
+
+/// SRS 表单类页面是否分成两栏：走全仓唯一的 MD3 window size class 断点
+/// （[windowSizeClassOf]，expanded ≥ 840），与浏览页的列表 + 预览分栏同一阈值。
+/// 手机横屏（~840–930 宽）与桌面窗口都落在这里。
+bool srsUsesTwoPane(BoxConstraints constraints) =>
+    windowSizeClassOf(constraints) == WindowSizeClass.expanded;
+
+/// MD3 window height class 的 compact 上限（矮于此为 compact height）。
+const double kSrsCompactHeight = 480;
+
+/// 又宽又矮的区域（手机横屏、横屏下的分栏预览）：卡面下方再压一排按钮会把
+/// 卡面挤成一条，按钮应改到卡面右侧竖排。
+bool srsIsShortLandscape(BoxConstraints constraints) =>
+    constraints.maxHeight < kSrsCompactHeight &&
+    constraints.maxWidth > constraints.maxHeight;
+
+/// SRS 列表页（牌组 / 浏览 / 笔记类型）的行密度：整窗又宽又矮（手机横屏）时用
+/// 紧凑行，一屏多放一两行；其余照旧。
+FushiListDensity srsListDensityOf(BuildContext context) =>
+    srsIsShortLandscape(BoxConstraints.tight(MediaQuery.sizeOf(context)))
+    ? FushiListDensity.compact
+    : FushiListDensity.standard;
+
+/// SRS 各表单页（牌组选项、笔记编辑、更改笔记类型、笔记类型编辑……）共用的正文：
+/// 窄窗一列卡片纵向滚动；宽窗左右两栏各自滚动——手机横屏只有 ~400 高，两栏并排
+/// 把滚动距离减半，桌面宽窗也不再是一条两侧大片留白的长卡片。
+///
+/// 两栏各是一个焦点遍历组（Tab 先走完左栏再进右栏），都接错峰进场。某一栏没有
+/// 分区时退回单列。
+class SrsAdaptiveSections extends StatelessWidget {
+  const SrsAdaptiveSections({
+    super.key,
+    required this.sections,
+    this.primaryFlex = 1,
+    this.secondaryFlex = 1,
+  });
+
+  final List<SrsSection> sections;
+  final int primaryFlex;
+  final int secondaryFlex;
+
+  /// 宽窗两栏的 key（测试按它量两栏位置）。
+  static const ValueKey<String> primaryPaneKey = ValueKey<String>(
+    'srs-pane-primary',
+  );
+  static const ValueKey<String> secondaryPaneKey = ValueKey<String>(
+    'srs-pane-secondary',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
+    EdgeInsets padding(double left, double right) => withBottomSafeInset(
+      context,
+      EdgeInsets.fromLTRB(left, top, right, tokens.spacing.section),
+    );
+    Widget column(List<Widget> items, EdgeInsets insets, {Key? key}) =>
+        ListView.separated(
+          key: key,
+          padding: insets,
+          itemCount: items.length,
+          separatorBuilder: (BuildContext context, int index) =>
+              SizedBox(height: tokens.spacing.gap * 1.5),
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int index) => items[index],
+          ),
+        );
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final List<Widget> primary = <Widget>[
+          for (final SrsSection s in sections)
+            if (s.pane == SrsPane.primary) s.child,
+        ];
+        final List<Widget> secondary = <Widget>[
+          for (final SrsSection s in sections)
+            if (s.pane == SrsPane.secondary) s.child,
+        ];
+        if (!srsUsesTwoPane(constraints) ||
+            primary.isEmpty ||
+            secondary.isEmpty) {
+          return FushiEntranceScope(
+            child: column(<Widget>[
+              for (final SrsSection s in sections) s.child,
+            ], padding(tokens.spacing.page, tokens.spacing.page)),
+          );
+        }
+        final double half = tokens.spacing.gap * 0.75;
+        return FushiEntranceScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                flex: primaryFlex,
+                child: FocusTraversalGroup(
+                  child: column(
+                    primary,
+                    padding(tokens.spacing.page, half),
+                    key: primaryPaneKey,
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: secondaryFlex,
+                child: FocusTraversalGroup(
+                  child: column(
+                    secondary,
+                    padding(half, tokens.spacing.page),
+                    key: secondaryPaneKey,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
