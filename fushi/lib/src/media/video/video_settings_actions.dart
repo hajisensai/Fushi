@@ -764,6 +764,9 @@ Widget buildVideoSubtitleBgColorRow(SettingsContext context) {
 /// 着色器内嵌管理视图（导入/发现/下载/勾选/一键选档）。启用集 / 画质增强开关 /
 /// mpv 目录均以 pref 为权威（页面回调持久化后同步缓存立即可读），切分类重建后回显
 /// 正确，无需面板级本地镜像。
+///
+/// 视图自带三个卡片外标题的分组，面板把它作为「画质增强」页的整页正文承载
+/// （video_quick_settings_sheet 的 `_panelDestination`），不套进 schema 行卡片。
 Widget buildVideoShaderManager(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   return VideoShaderManagerView(
@@ -786,7 +789,6 @@ Widget buildVideoShaderManager(SettingsContext context) {
       context.refresh();
     },
     initialMpvDir: context.appModel.videoMpvShaderDir,
-    embedded: true,
     onMpvDirChanged: (String dir) async {
       await host.onMpvShaderDirChanged?.call(dir);
       context.refresh();
