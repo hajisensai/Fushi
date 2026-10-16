@@ -40,7 +40,7 @@ typedef ServerDictPathEntry = ({String type, String path, bool exists, bool hidd
 
 /// 把词典分桶成引擎要的四组路径（与 app 的 `bucketDictPaths` 同一规则）：
 /// 隐藏的词典（四种类型）一律不进引擎——隐藏的 term 若进桶，引擎在结果过滤之前就按
-/// 最长匹配截断，会把可见词典的结果挤掉（BUG-3453）；不存在的目录跳过；含汉字记录的 term 词典
+/// 最长匹配截断，会把可见词典的结果挤掉（BUG-3454）；不存在的目录跳过；含汉字记录的 term 词典
 /// （metadata `hasKanji`）同时进 kanji 桶。
 ({List<String> term, List<String> freq, List<String> pitch, List<String> kanji}) bucketServerDictPaths(
   List<ServerDictPathEntry> entries,

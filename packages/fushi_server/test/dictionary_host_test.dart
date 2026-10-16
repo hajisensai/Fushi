@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 /// job 用随包那份），没有时整组 skip 并说明原因。
 void main() {
   group('bucketServerDictPaths（与 app bucketDictPaths 同规则）', () {
-    test('隐藏的词典四种类型都不进桶（BUG-3453）；不存在的目录跳过；hasKanji 双桶', () {
+    test('隐藏的词典四种类型都不进桶（BUG-3454）；不存在的目录跳过；hasKanji 双桶', () {
       final b = bucketServerDictPaths(<ServerDictPathEntry>[
         (type: 'term', path: 't1', exists: true, hidden: true, hasKanji: false),
         (type: 'term', path: 't2', exists: true, hidden: false, hasKanji: true),
@@ -223,7 +223,7 @@ void main() {
       );
       await db.upsertDictionaryMeta(row.toCompanion(true).copyWith(hiddenLanguagesJson: const Value<String>('["ja"]')));
       await host.refresh();
-      // BUG-3453：隐藏词典根本不装进引擎——唯一的词典被关掉就是「无结果」，而不是
+      // BUG-3454：隐藏词典根本不装进引擎——唯一的词典被关掉就是「无结果」，而不是
       // 引擎命中后再在 popupJson 里滤空（那样它的长匹配仍占 top-N 与高亮长度）。
       expect(host.search('食べる', maximumTerms: 10), isNull);
       await db.upsertDictionaryMeta(row.toCompanion(true));

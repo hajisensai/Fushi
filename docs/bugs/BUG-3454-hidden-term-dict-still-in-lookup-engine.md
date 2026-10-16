@@ -1,4 +1,4 @@
-## BUG-3453 · hidden-term-dict-still-in-lookup-engine
+## BUG-3454 · hidden-term-dict-still-in-lookup-engine
 - **报告**：2026-10-16（用户：Discord 社区反馈转述——「关掉的词典仍然被查」「有时整词高亮，释义却只是词的一部分」）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/models/app_model.dart` `bucketDictPaths` 的 `DictionaryType.term` 分支（及服务端同规则的 `packages/fushi_server/lib/src/dictionary_host.dart` `bucketServerDictPaths` `default` 分支）：被关掉的 term 词典照样装进 FFI 引擎，设计上靠查询后各输出路径再按 `hiddenDictionaryNames` 过滤。
   - 引擎 `native/fushidicts/fushidicts_src/lookup.cpp:410` 先按最长匹配 `partial_sort` 再截断到 `max_results`（= 本次词头预算，默认 10），截断发生在 Dart 过滤**之前**：关掉的词典贡献 ≥ N 个更长匹配的词头（人名词典一个表记几十种读音最典型）时，可见词典的结果被整批挤出 top-N，弹窗显示无结果 / 缺结果，且 `truncated=false` 不出「加载更多」。
