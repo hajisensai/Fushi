@@ -26,6 +26,10 @@ Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_
 # BUG-3296: vo=gpu dumb mode ignored the hwdec surface padding (1080p H.264 on
 # d3d11va zero-copy rendered the 1088-row surface squashed into 1080 rows).
 Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\gpu-dumb-mode-hwdec-crop.patch'))
+# BUG-3453: laced Matroska audio without DefaultDuration (mkvmerge Opus) left
+# every lace frame after the first without a timestamp, so dump-cache dropped
+# them and the mining snapshot kept ~1/8 of the audio.
+Run 'git' @('-C', $source, 'apply', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\patches\mkv-laced-audio-timestamps.patch'))
 New-Item -ItemType Directory -Path $angle | Out-Null
 Push-Location $angle
 try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\vendored\ANGLE.7z')) }
@@ -41,5 +45,8 @@ Run $python @((Join-Path $PSScriptRoot 'package_libmpv.py'), '--build', $build,
   '--source', $source, '--prefix', $prefix, '--output', $package)
 Copy-Item (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\bdj\libbluray*.jar') $package
 Run $python @((Join-Path $PSScriptRoot 'probe_libmpv.py'), (Join-Path $package 'libmpv-2.dll'))
+# BUG-3453: dump-cache must keep every frame of laced Matroska audio.
+Run $python @((Join-Path $PSScriptRoot 'verify_mkv_lace_dump.py'), '--library', $package,
+  '--ffmpeg', (Join-Path $repoRoot 'third_party\ffmpeg-min\windows\ffmpeg.exe'))
 Write-Output "Verified native runtime directory: $package"
 Write-Output 'Run verify_menu_render.py against a readable real disc before repinning an archive.'

@@ -30,6 +30,9 @@ cp "$ROOT/tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch" \
   "$WORK/checkout/patches/mpv-gl-dovi-p5-menu.patch"
 cp "$ROOT/third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch" \
   "$WORK/checkout/patches/disc-navigation-state.patch"
+# BUG-3453: laced Matroska audio without DefaultDuration (mkvmerge Opus).
+cp "$ROOT/third_party/media_kit_libs_windows_video/patches/mkv-laced-audio-timestamps.patch" \
+  "$WORK/checkout/patches/mpv-mkv-laced-audio-timestamps.patch"
 # Nix flakes deliberately ignore untracked files. Stage only this overlay in
 # the isolated dependency worktree, otherwise Nix cannot see the new recipes.
 git -C "$WORK/checkout" add nix/packages/mk-pkg-mpv nix/packages/mk-pkg-libbluray \
@@ -38,7 +41,7 @@ git -C "$WORK/checkout" add nix/packages/mk-pkg-mpv nix/packages/mk-pkg-libblura
   patches/libbluray-ios-files.patch patches/libpng-modern-apple-math.patch \
   patches/mpv-audiounit-shared-session-menu.patch \
   patches/mpv-darwin-cross-sdk.patch patches/mpv-gl-dovi-p5-menu.patch \
-  patches/disc-navigation-state.patch
+  patches/disc-navigation-state.patch patches/mpv-mkv-laced-audio-timestamps.patch
 if [ "$PREPARE_ONLY" = 1 ]; then
   echo "Prepared dependency checkout: $WORK/checkout"
   exit 0

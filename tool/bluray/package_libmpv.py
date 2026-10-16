@@ -99,9 +99,12 @@ def main():
     patch_file = patches / "disc-navigation-state.patch"
     # BUG-3296: render-path fixes applied on top of the navigation patch.
     render_patches = ["gpu-dumb-mode-hwdec-crop.patch"]
+    # BUG-3453: demuxer fixes (timestamps of laced Matroska audio frames).
+    demux_patches = ["mkv-laced-audio-timestamps.patch"]
     (args.output / "source-provenance.json").write_text(json.dumps({
         "mpv_commit": commit, "patch_sha256": sha256(patch_file),
         "render_patches": {name: sha256(patches / name) for name in render_patches},
+        "demux_patches": {name: sha256(patches / name) for name in demux_patches},
         "native_menu_schema": 1, "runtime_manifest": "runtime-manifest.json",
         "dependency_packages": "msys2-packages.json",
     }, indent=2) + "\n")
