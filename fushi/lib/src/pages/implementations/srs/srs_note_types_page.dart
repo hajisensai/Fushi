@@ -15,6 +15,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -405,17 +406,18 @@ class _TypeRow extends StatelessWidget {
                 : FushiCardTone.neutral,
           ),
           title: Text(type.name),
-          subtitle: Text(
-            <String>[
-              if (type.builtinKey != null) t.srs_note_types_builtin,
-              if (type.isCloze) t.srs_note_types_kind_cloze,
+          // 逐段不可拆：窄屏不会在「1」与「种卡片」之间断行。
+          subtitle: SrsMetaLine(<String>[
+            if (type.builtinKey != null) t.srs_note_types_builtin,
+            if (type.isCloze) t.srs_note_types_kind_cloze,
+            ...SrsMetaLine.split(
               t.srs_note_types_summary(
                 notes: notes,
                 fields: type.fields.length,
                 cards: type.templates.length,
               ),
-            ].join(' · '),
-          ),
+            ),
+          ]),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             spacing: tokens.spacing.gap / 2,

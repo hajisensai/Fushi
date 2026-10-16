@@ -29,6 +29,43 @@ import 'package:fushi/utils.dart';
   return (fresh: scheme.primary, learn: scheme.error, review: scheme.tertiary);
 }
 
+/// 元信息行（「12 条笔记 · 4 个字段 · 1 种卡片」）：每一段是不可拆的整体，只在
+/// 段与段之间折行。整串交给一个 [Text] 时，窄屏会在「1」和「种卡片」之间断开
+/// （段内的空格是普通断行点），数字与单位分居两行。
+///
+/// 每段单行、放不下时自身省略号收尾（不会溢出）；样式继承上层 [DefaultTextStyle]
+/// （列表行副标题的字号 / 颜色）。
+class SrsMetaLine extends StatelessWidget {
+  const SrsMetaLine(this.segments, {super.key});
+
+  /// 段间分隔符，与各页 `join(' · ')` 同形。
+  static const String separator = ' · ';
+
+  /// 把已用 [separator] 拼好的本地化串（如 i18n 摘要）拆回各段。
+  static List<String> split(String joined) => joined.split(separator);
+
+  final List<String> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> parts = <String>[
+      for (final String s in segments)
+        if (s.isNotEmpty) s,
+    ];
+    return Wrap(
+      children: <Widget>[
+        for (int i = 0; i < parts.length; i++)
+          Text(
+            i == parts.length - 1 ? parts[i] : '${parts[i]}$separator',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          ),
+      ],
+    );
+  }
+}
+
 /// 三个计数并排（等宽数字，0 显示成弱化色）。
 class SrsCountTriple extends StatelessWidget {
   const SrsCountTriple({

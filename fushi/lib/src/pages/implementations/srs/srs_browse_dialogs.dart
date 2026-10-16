@@ -229,6 +229,18 @@ String srsBrowseCardStatus(SrsCardSearchSubject c) {
   return t.srs_status_review_in(n: days);
 }
 
+/// 卡片状态的标签色调：浏览页手机行把状态画成行首小标签（不再拼进副标题末尾被省略号吃掉）。
+FushiTagTone srsBrowseCardStatusTone(SrsCardSearchSubject c) {
+  if (c.isSuspended || c.isBuried) return FushiTagTone.neutral;
+  if (c.isNew) return FushiTagTone.accent;
+  if (c.queue == SrsQueue.learning || c.queue == SrsQueue.relearning) {
+    return FushiTagTone.warning;
+  }
+  final int? days = c.dueInDays;
+  if (days == null || days <= 0) return FushiTagTone.success;
+  return FushiTagTone.neutral;
+}
+
 /// 旗标颜色（0 = 无）。与 Anki 的七色同序。
 Color? srsFlagColor(int flag) => switch (flag) {
   1 => const Color(0xFFE53935),
