@@ -26,6 +26,8 @@
 /// GetTickCount64 毫秒，外部通道用行的接收时刻），只用差值。
 library;
 
+import 'package:fushi_engine/stats/study_char_count.dart';
+
 /// 一行台词从出现到被下一行替换的最短可阅读停留。
 ///
 /// 依据：人从看到新文本到点击推进，单是视觉识别 + 选择反应 + 按键就要约 200ms 以上
@@ -200,9 +202,11 @@ class GalgameLineStudyGate {
   _CloseResult _close(_GateLine line, int atMs) {
     final int dwellMs = atMs - line.firstAtMs;
     // 重复行入账为 0，但它的停留同样要按「读完这句要多久」判，否则快进流里夹着的
-    // 已读行一律按下限判、把整串打断成几截。
+    // 已读行一律按下限判、把整串打断成几截。字数走与入账同一口径
+    // [countStudyChars]：规范化文本去掉了空白，按码点数会把西文按字母计、与
+    // 非重复行（按学习单位入账）的速度门不同源。
     final int charsForRate = line.duplicate
-        ? line.normalized.runes.length
+        ? countStudyChars(line.text)
         : line.credited;
     // 时刻倒退（时钟源切换）= 停留未知，按慢行处理，不撤回。
     final bool fast =

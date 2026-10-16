@@ -135,6 +135,41 @@ void main() {
     expect(normalizeGalStudyLine('「Hello, World!」\n'), 'helloworld');
   });
 
+  test('重复行的速度门与入账同口径（学习单位），西文 Backlog 不被按字母误判成快进', () {
+    // 每行 10 个词：按学习单位可读停留 = max(200, 10/40s) = 250ms；按去空白码点
+    // （40+ 字母）却要 1000ms 以上。500ms 一行是正常读速。
+    const List<String> lines = <String>[
+      'this is a very long english sentence that goes on',
+      'we walked along the river until the sun went down',
+      'she said nothing and looked out of the old window',
+    ];
+    const String tail =
+        'and then we finally went back home together once again';
+
+    // 首读：500ms 一行，照计、不判快进。
+    final _Ledger fresh = _Ledger();
+    for (int i = 0; i < lines.length; i++) {
+      fresh.line(lines[i], i * 500);
+    }
+    fresh.line(tail, lines.length * 500);
+    expect(fresh.skippedMs, 0);
+    expect(fresh.chars, 40);
+
+    // Backlog 按同样节奏回看：重复行字数为 0，但停留判据必须与首读一致——
+    // 不是快进流，不扣游玩时长。
+    final _Ledger replay = _Ledger();
+    for (int i = 0; i < lines.length; i++) {
+      replay.line(lines[i], i * 4000);
+    }
+    const int base = 20000;
+    for (int i = 0; i < lines.length; i++) {
+      replay.line(lines[i], base + i * 500);
+    }
+    replay.line(tail, base + lines.length * 500);
+    expect(replay.skippedMs, 0);
+    expect(replay.chars, 40);
+  });
+
   test('reset 后跨会话的重读照计', () {
     final _Ledger l = _Ledger();
     l.line('同じ台詞', 0);
