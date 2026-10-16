@@ -1,4 +1,4 @@
-## BUG-3451 · Windows 截屏识字在系统开 HDR 时截图发白过曝
+## BUG-3453 · Windows 截屏识字在系统开 HDR 时截图发白过曝
 - **报告**：2026-10-16（用户：应用内反馈 QR44j9TGPc，Windows 10 Pro 19045，DPI 1.5，附冻结层截图整屏发白）
 - **真实性**：✅ 真 bug（用户路径 Win10 19045）。根因 `fushi/windows/runner/screen_ocr_overlay.cpp:91`（基线 74ea3425fb）：悬浮球「截屏识字」用 GDI `BitBlt(CAPTUREBLT)` 取整块显示器。系统开 HDR 时 DWM 在 scRGB（FP16 线性，1.0 = 80 nit）里合成，SDR 窗口按「SDR 内容亮度」抬亮；Win10 上 GDI 读回这张合成帧时没有按 SDR 白电平还原，SDR 内容整体被抬亮 → 冻结层与喂给 OCR 的 PNG 都发白（同一份 `capture().bgra`）。
   本机（Windows 11 build 29683，LG ULTRAGEAR+，HDR 下 SDR 白 240 nit）实测 **BitBlt 在 HDR 下读回的 16 级灰阶与 SDR 下逐级相同**——新版 Windows 已在 GDI 读回时做了还原，所以本机复现不了「发白」，只能复现 HDR 取帧链路本身；Win10 19045 的发白以用户截图为证。
