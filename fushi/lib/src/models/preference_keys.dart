@@ -415,7 +415,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki / Fushi
   // 复习 / 两者。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
+  // bool：旧开关「启动时打开查词」，已由 startup_module 取代；只读不写，
+  // startup_module 从未写过时据此迁移（PreferencesRepository.startupModule）。
   'startup_default_dictionary_tab',
+  // String：启动页模块（ModuleId.prefKey，'' = 底栏第一个页面）。设备本地，
+  // 与 module_nav_order 同族（ModuleId.devicePrefKeys）。
+  'startup_module',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张
   // 投影表 + activity_events 学习行）归属哪个 Profile。由 v105 迁移一次性写下
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。

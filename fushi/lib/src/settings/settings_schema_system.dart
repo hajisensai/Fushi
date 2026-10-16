@@ -7,6 +7,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show openFeedbackCenter;
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart'
@@ -24,7 +25,8 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_export.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
-import 'package:fushi/src/updates/app_update_cli.dart' show checkAppUpdateForCli;
+import 'package:fushi/src/updates/app_update_cli.dart'
+    show checkAppUpdateForCli;
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -81,6 +83,49 @@ SettingsSection _homeShortcutsSection() {
       ),
     ],
   );
+}
+
+/// 启动页下拉的「默认」项 token（底栏第一个可见页）。其余项的 token 是
+/// [ModuleId.name]——只是设置行 / ctl 的取值，持久化走 [ModuleId.prefKey]
+/// （见 `PreferencesRepository.setStartupModule`）。
+const String _kStartupModuleDefault = 'default';
+
+/// 启动页可选项：默认 + 有底栏 tab 的模块，按用户排的底栏顺序。[visibility] 为
+/// null 时给静态全集（仅供恢复默认的标签格式化），否则只列此刻可见的模块——
+/// 被关掉 / 本平台不存在的模块选不了（反馈 #PwEC1evz1E）。
+List<SettingsSegmentOption<String>> _startupModuleOptions(
+  ModuleVisibility? visibility,
+) => <SettingsSegmentOption<String>>[
+  SettingsSegmentOption<String>(
+    value: _kStartupModuleDefault,
+    label: t.startup_module_default,
+  ),
+  for (final ModuleId module in visibility?.ordered ?? ModuleId.values)
+    if (homeTabOfModule(module) case final HomeTab tab
+        when visibility == null || visibility.isEnabled(module))
+      SettingsSegmentOption<String>(
+        value: module.name,
+        label: homeNavItemFor(tab).label,
+      ),
+];
+
+/// 当前生效的启动页 token：所选模块此刻不可见时显示默认，与启动时的实际落点
+/// （`homeInitialTab` 回退到第一个可见页）一致。
+String _startupModuleToken(AppModel appModel) {
+  final ModuleId? module = appModel.startupModule;
+  if (module == null ||
+      homeTabOfModule(module) == null ||
+      !appModel.moduleVisibility.isEnabled(module)) {
+    return _kStartupModuleDefault;
+  }
+  return module.name;
+}
+
+ModuleId? _startupModuleOfToken(String token) {
+  for (final ModuleId module in ModuleId.values) {
+    if (module.name == token) return module;
+  }
+  return null;
 }
 
 SettingsDestination buildSystemDestination() {
@@ -253,25 +298,29 @@ SettingsDestination buildSystemDestination() {
               settingsContext.refresh();
             },
           ),
-          // 「启动时打开查词」从「外观 · 应用」分区归位到此处（启动落地页/导航行为，
-          // 与键盘/手柄焦点导航同属通用应用项）。item id 保持 'appearance.
-          // startup_default_dictionary_tab' 不变（历史命名，非持久化 key），仅换分区。
-          SettingsSwitchItem(
+          // 启动页（反馈 #PwEC1evz1E）：取代旧开关「启动时打开查词」，可选任一此刻
+          // 可见、有底栏 tab 的模块（选项随功能模块开关与排序实时变化）。所选模块
+          // 被关掉时这里显示「底栏第一个页面」，与启动时的实际落点（homeInitialTab）
+          // 一致；重新打开该模块后用户原先的选择照旧生效。
+          // item id 沿用旧开关的 'appearance.startup_default_dictionary_tab'（设置
+          // 搜索锚点，历史命名，非持久化 key）；持久化见 ModuleId.startupPrefKey。
+          SettingsSegmentedItem<String>(
             id: 'appearance.startup_default_dictionary_tab',
-            title: t.startup_default_dictionary_tab,
-            subtitle: t.startup_default_dictionary_tab_hint,
-            icon: Icons.manage_search_outlined,
-            // 反馈 #PwEC1evz1E：查词模块被关掉时这个开关没有落点（启动落地只认可见 tab，
-            // 见 homeInitialTab），留着只会开了不生效，所以随模块开关隐藏。
-            visible: (SettingsContext settingsContext) => settingsContext
-                .appModel
-                .moduleVisibility
-                .isEnabled(ModuleId.lookup),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.startupDefaultDictionaryTab,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setStartupDefaultDictionaryTab(
-                value,
+            title: t.startup_module,
+            subtitle: t.startup_module_hint,
+            icon: FushiIcons.home,
+            dropdown: true,
+            defaultValue: _kStartupModuleDefault,
+            options: _startupModuleOptions(null),
+            optionsBuilder: (SettingsContext settingsContext) =>
+                _startupModuleOptions(
+                  settingsContext.appModel.moduleVisibility,
+                ),
+            selected: (SettingsContext settingsContext) =>
+                _startupModuleToken(settingsContext.appModel),
+            onChanged: (SettingsContext settingsContext, String token) async {
+              await settingsContext.appModel.setStartupModule(
+                _startupModuleOfToken(token),
               );
               settingsContext.refresh();
             },

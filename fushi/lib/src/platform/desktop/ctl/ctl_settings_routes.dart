@@ -487,7 +487,9 @@ Map<String, Object?> _settingJson(
           value = ctlSettingOptionToken(item.selected(context));
           display = '$value';
           options = <String>[
-            for (final SettingsSegmentOption<Object> option in item.options)
+            for (final SettingsSegmentOption<Object> option in item.optionsFor(
+              context,
+            ))
               ctlSettingOptionToken(option.value),
           ];
         case SettingsSliderItem():
@@ -698,18 +700,21 @@ Future<void> _applySetting(
     case SettingsSwitchItem():
       await item.onChanged(context, parseCtlSettingBool(raw));
     case SettingsSegmentedItem<Object>():
+      final List<SettingsSegmentOption<Object>> choices = item.optionsFor(
+        context,
+      );
       final int index = indexOfCtlSettingOption(
         raw,
         tokens: <String>[
-          for (final SettingsSegmentOption<Object> option in item.options)
+          for (final SettingsSegmentOption<Object> option in choices)
             ctlSettingOptionToken(option.value),
         ],
         labels: <String>[
-          for (final SettingsSegmentOption<Object> option in item.options)
+          for (final SettingsSegmentOption<Object> option in choices)
             option.label,
         ],
       );
-      await item.dispatchChange(context, item.options[index].value);
+      await item.dispatchChange(context, choices[index].value);
     case SettingsSliderItem():
       final double value = parseCtlSettingNumber(
         raw,

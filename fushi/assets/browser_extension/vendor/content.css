@@ -4430,13 +4430,29 @@
     z-index: 2147483637;
     /* top 给的是底边锚点（JS 默认写 88% 处，用户拖过则是记住的分数）：-100% 让文字向上长，
        短视频不溢出视频下缘。 */
-    transform: translate(-50%, -100%);
+    transform: translate(-50%, -100%) !important;
     /* 触屏拖字幕时不让浏览器把手势抢去滚页面/缩放：覆盖层压在视频上，本就不该从这里滚页。 */
     touch-action: none;
     /* 底板宽 / 高由 subtitle-panel.js placeOverlay 按视频盒百分比写成 style.width / min-height
        （subtitle-style.js applyBox；默认不写 = 随内容）。border-box 让写进来的宽高就是底板的外
        尺寸；grid + align-content 让底板高于文字时文字垂直居中，文字层随之成为块级项。 */
     box-sizing: border-box;
+    /* BUG-3450：几何由 JS 独占——left/top/position 由 video-target.js 视频锚定写成内联 !important，
+       max-width 与底板 width/min-height 写在 style 上；其余几何属性在这里钉回默认并加 !important。
+       覆盖层全屏时挂进站点的全屏元素，站点对子元素的通配规则会直接落到它身上——anichan 的
+       `.wp-stage.fs>*{height:100%;aspect-ratio:auto}` 让底板在全屏里恒与屏幕同高（底边锚定，
+       于是整块向上飞出屏幕，拖把手也改不了高）。ID + !important 压得过站点的类 / 通配规则（含
+       它们自己的 !important）；JS 要写的 width / min-height 不能加（会压过内联值），只钉默认。 */
+    width: auto;
+    min-height: 0;
+    height: auto !important;
+    min-width: 0 !important;
+    max-height: none !important;
+    right: auto !important;
+    bottom: auto !important;
+    margin: 0 !important;
+    aspect-ratio: auto !important;
+    float: none !important;
     display: grid;
     align-content: center;
     padding: var(--fushi-sub-padding);

@@ -669,6 +669,7 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     this.dropdown = false,
     this.defaultValue,
     this.enabled,
+    this.optionsBuilder,
   });
 
   /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
@@ -679,7 +680,17 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
 
   bool isEnabled(SettingsContext context) => enabled?.call(context) ?? true;
 
+  /// 全部可能的选项（静态值域）：恢复默认的标签格式化按它查。
   final List<SettingsSegmentOption<T>> options;
+
+  /// 渲染时求值的**此刻可选**选项；null = 恒为 [options]。用于值域随设置组合变化的
+  /// 行（启动页只能从已开启的模块里选）。渲染、设置搜索、ctl 一律读 [optionsFor]。
+  final List<SettingsSegmentOption<T>> Function(SettingsContext context)?
+  optionsBuilder;
+
+  List<SettingsSegmentOption<T>> optionsFor(SettingsContext context) =>
+      optionsBuilder?.call(context) ?? options;
+
   final SettingsValueGetter<T> selected;
   final SettingsValueChanged<T> onChanged;
   final bool controlBelow;

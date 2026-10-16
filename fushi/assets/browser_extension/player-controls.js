@@ -406,13 +406,10 @@
     if (!btnEl) btnEl = makeButton();
     btnEl.classList.toggle('is-floating', generic);
     if (generic) {
-      var parent = document.fullscreenElement || document.body;
-      // 与 openMenu 同一条护栏：全屏目标是 <video> 时不能往里塞（媒体元素的子节点
-      // 是 fallback 内容，永远不渲染）。很多站点直接 video.requestFullscreen()，
-      // 漏了这条按钮会在全屏下静默消失——而全屏正是最需要它的时候。
-      if (parent && parent.tagName === 'VIDEO') parent = document.body;
+      var parent = floatingHost();
       if (parent && btnEl.parentNode !== parent) parent.appendChild(btnEl);
       placeFloatingButton();
+      watchFloating();
     } else if (
       btnEl.parentNode !== anchor.parent ||
       (anchor.before && anchor.before !== btnEl && btnEl.nextSibling !== anchor.before)
@@ -424,7 +421,47 @@
       // 上的焦点每秒被清一次（Tab 过去就用不了）、hover/transition 每秒重置。
       anchor.parent.insertBefore(btnEl, anchor.before);
     }
+    if (!generic) {
+      unwatchFloating();
+      // 悬浮态写过的内联定位（!important）不能带进站点控制栏，否则按钮在控制栏里还是浮着的。
+      try {
+        btnEl.style.removeProperty('position');
+        btnEl.style.removeProperty('left');
+        btnEl.style.removeProperty('top');
+      } catch (_) { /* no-op */ }
+    }
     paintButton();
+  }
+
+  // 悬浮按钮的挂载点：与字幕覆盖层同一处（video-target.js 视频锚定：全屏元素，它本身是
+  // <video> 时退回 <html>；非全屏 <html>）。契约缺席（单测壳）时回落旧取法：全屏元素或 body，
+  // 全屏目标是 <video> 时不能往里塞（媒体元素的子节点是 fallback 内容，永远不渲染）。
+  function floatingHost() {
+    var VA = window.fushiVideoAnchor;
+    if (VA && typeof VA.host === 'function') {
+      var h = VA.host();
+      if (h) return h;
+    }
+    var parent = document.fullscreenElement || document.body;
+    if (parent && parent.tagName === 'VIDEO') parent = document.body;
+    return parent;
+  }
+
+  // BUG-3450：悬浮按钮在位期间订阅视频锚定的帧观察——播放器尺寸 / 位置一变（剧场模式、
+  // SPA 换片、侧栏收起）下一帧就跟上，不再停在旧位置等 1 秒轮询（用户看到的「按钮乱飘」）。
+  var floatingUnwatch = null;
+  function watchFloating() {
+    if (floatingUnwatch) return;
+    var VA = window.fushiVideoAnchor;
+    if (!VA || typeof VA.watch !== 'function') return;
+    floatingUnwatch = VA.watch(function () {
+      if (btnEl && btnEl.parentNode && btnEl.classList.contains('is-floating')) placeFloatingButton();
+    });
+  }
+  function unwatchFloating() {
+    if (!floatingUnwatch) return;
+    try { floatingUnwatch(); } catch (_) { /* no-op */ }
+    floatingUnwatch = null;
   }
 
   // 通用站点的悬浮按钮：贴视频画面右上角，鼠标不在视频上就淡出（站点控件也是这个作息）。
@@ -434,13 +471,23 @@
     var v = videoEl();
     if (!btnEl || !v || typeof v.getBoundingClientRect !== 'function') return;
     var r = v.getBoundingClientRect();
-    var o = fixedOriginOf(btnEl);
-    btnEl.style.left = Math.round((r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET - o.x) / o.sx) + 'px';
-    btnEl.style.top = Math.round((r.top + FLOAT_BTN_INSET - o.y) / o.sy) + 'px';
+    var x = r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET;
+    var y = r.top + FLOAT_BTN_INSET;
+    var VA = window.fushiVideoAnchor;
+    var placed = false;
+    if (VA && typeof VA.placeAt === 'function') {
+      try { VA.placeAt(btnEl, x, y, v); placed = true; } catch (_) { placed = false; }
+    }
+    if (!placed) {
+      var o = fixedOriginOf(btnEl);
+      btnEl.style.left = Math.round((x - o.x) / o.sx) + 'px';
+      btnEl.style.top = Math.round((y - o.y) / o.sy) + 'px';
+    }
     btnEl.dataset.visible = (st.open || st.hoverVideo) ? '1' : '';
   }
 
   function teardown() {
+    unwatchFloating();
     closeMenu();
     if (btnEl && btnEl.parentNode) btnEl.parentNode.removeChild(btnEl);
     btnEl = null;
