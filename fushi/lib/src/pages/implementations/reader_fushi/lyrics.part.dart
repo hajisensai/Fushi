@@ -1297,7 +1297,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     appModel.requestHomeDictionaryTab();
   }
 
-  /// 歌词模式的「上 N 句 / 下 N 句」制卡上下文（BUG-3417）。
+  /// 歌词模式的「上 N 句 / 下 N 句」制卡上下文（BUG-3434）。
   ///
   /// 歌词视图一行就是一条 cue，查词锚点是 [_lookupCue]（歌词查词时取自
   /// `__lyricsCueContext.cueIndex`，见 lookup.part.dart）。上下文直接取它在

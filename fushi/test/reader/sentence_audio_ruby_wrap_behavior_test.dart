@@ -105,7 +105,7 @@ void main() {
         isTrue,
         reason: '${body.key} must wrap through the shared helper',
       );
-      // BUG-3369：整章逐句包裹在一个 live-range 批里跑，原生选区只读一次。
+      // BUG-3432：整章逐句包裹在一个 live-range 批里跑，原生选区只读一次。
       expect(
         body.value,
         contains('withLiveRangeBatch('),

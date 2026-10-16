@@ -85,6 +85,9 @@ import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show scheduleAutomaticCollectionAiOrder;
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
@@ -1127,7 +1130,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 书架 / 漫画库：本地分卷按系列自动收进合集（「志乃と恋」1–4 卷叠成一张卡）。
     // 每次导入 / 合集变化都会重载到这里，所以这一处覆盖全部导入入口；归组幂等，
     // 已在合集里的卷与用户删过 / 移出过的不动。
-    await BookSeriesGrouper(appModel.database).groupAll();
+    final BookSeriesGroupSummary grouped =
+        await BookSeriesGrouper(appModel.database).groupAll();
+    // 归组器按卷号排完后，卷号判不出的卷（汉字卷号 / 上下卷 / 外传）交 AI 定位：
+    // 只在指派了提供商、用户没手动排过时才发请求，后台跑、不阻塞书架加载。
+    scheduleAutomaticCollectionAiOrder(
+      db: appModel.database,
+      collectionIds: <int>[
+        ...grouped.createdCollectionIds,
+        ...grouped.updatedCollectionIds,
+      ],
+    );
     final List<MediaCollectionRow> collections =
         await appModel.database.getAllMediaCollections();
     final Map<String, int> primaryMap =
@@ -2342,6 +2355,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           memberInfoOf: _collectionMemberInfo,
           memberInfoRefresh: _memberInfoRevision,
           onSetMembersCompleted: _setCollectionMembersCompleted,
+          collectionAiSettings: isAiModuleEnabled(appModel.moduleVisibility)
+              ? appModel.prefsRepo
+              : null,
         ),
       ),
     );

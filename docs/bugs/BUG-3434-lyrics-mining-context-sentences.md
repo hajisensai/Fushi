@@ -1,4 +1,4 @@
-## BUG-3417 · 歌词模式高级制卡无法前后加句
+## BUG-3434 · 歌词模式高级制卡无法前后加句
 - **报告**：2026-10-16（用户：应用内反馈 miuMwosYbx，Windows，2.10.0-debug.19353；附录屏）
 - **真实性**：✅ 真 bug。录屏：有声书歌词模式点词 → 高级制卡，「前加一句 / 后加一句」点一下即变灰、句数仍为 1。
   根因 `fushi/lib/src/pages/implementations/reader_fushi_page.dart` `onSetSentenceContextToDraft`：只在**正文** WebView

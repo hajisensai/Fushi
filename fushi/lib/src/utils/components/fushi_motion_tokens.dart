@@ -442,6 +442,12 @@ abstract final class FushiMotion {
   /// 「一条一条往外蹦」拖慢首屏可用时间。
   static const int staggerMaxItems = 8;
 
+  /// 笔触落笔（阅读器高亮条沿书写方向「画」出来）：每 1em 行长追加的书写时长。
+  /// 单行时长 = [micro] + 行长(em) × 本值，行与行之间隔 [staggerStep]——一行约
+  /// 20 字 ≈ 0.6s，像一笔划过而不是一下闪现。正文（WebView SMIL）与设置页预览
+  /// 共用，见 `highlightStrokeSweepLineDuration`。
+  static const Duration strokeSweepPerEm = Duration(milliseconds: 26);
+
   /// 进入：临界阻尼弹簧形状（快起步、柔落点，不过冲，可驱动透明度）。
   static const Curve enter = FushiSpringCurve.effects;
 

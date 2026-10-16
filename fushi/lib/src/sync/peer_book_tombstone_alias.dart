@@ -9,7 +9,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 /// 同一本书两端键不同时，对端「从所有设备删除」写的墓碑键与本机在库键求交恒空：
 /// 不出候选、不弹确认框，删除在本机静默丢失。两类来源：
 ///
-/// * **经互联收下的章节式在线漫画**（BUG-3428）：本机行键由对端键单向推导成
+/// * **经互联收下的章节式在线漫画**（BUG-3443）：本机行键由对端键单向推导成
 ///   `interconnect-…`（[InterconnectMangaCatalog.localBookKeyFor]），只对 `book`；
 /// * **从对端下载、落地键不同的书**（对端同名书带 `(2)` 后缀、EPUB 无 dc:title
 ///   回落到临时文件名…）：下载入库时记进 `collection_book_aliases` 的对端键，经

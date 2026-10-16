@@ -111,6 +111,14 @@ else {
     }
 }
 
+# --- 注册 i18n json 的按 key 三方合并驱动 -----------------------------------
+# .gitattributes 把 fushi/lib/i18n/*.i18n.json 标成 merge=fushi-i18n-json；驱动命令
+# 本身只能放 git config(不入库)。写的是仓库级 config，主 checkout 与所有 worktree
+# 共用，幂等。没注册时 git 退回按行合并，不会出错，只是相邻 key 照样冲突。
+& git -C $here config merge.fushi-i18n-json.name "Fushi i18n JSON key-level merge"
+& git -C $here config merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"
+Write-Host "OK i18n json 合并驱动已注册(merge.fushi-i18n-json)" -ForegroundColor Green
+
 # --- bootstrap(pub get + 打补丁) ------------------------------------------
 if ($SkipBootstrap) {
     Write-Host "`n已跳过 bootstrap。跑 flutter test 前请先: pwsh -File tool/bootstrap.ps1" -ForegroundColor Cyan

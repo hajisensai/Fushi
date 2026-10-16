@@ -25,6 +25,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
         bookTagMapProvider,
         filteredBookIdsProvider,
         filteredSrtBookUidsProvider;
+import 'package:fushi/src/platform/desktop/ctl/ctl_collection_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_shelf.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
@@ -57,6 +58,9 @@ List<CtlRoute> buildLibraryManageCtlRoutes(DesktopCtlContext context) {
     CtlRoute.put('$root/collections/:id/cover', h.collectionCover),
     CtlRoute.post('$root/collections/:id/tags', h.tagCollection),
     CtlRoute.delete('$root/collections/:id/tags', h.untagCollection),
+    // 合集定序（手动 order / 一键 sort 含 AI）：同一前缀、同一 `collection` CLI 组；
+    // 实现在 ctl_collection_routes.dart（AI 指派来源要能注入，单独成文件便于测试）。
+    ...buildCollectionCtlRoutes(context),
     CtlRoute.get('$root/tags', h.listTags),
     CtlRoute.post('$root/tags', h.createTag),
     CtlRoute.put('$root/tags/:id', h.updateTag),

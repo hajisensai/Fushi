@@ -2903,7 +2903,7 @@ $kReaderPageTurnJs
   },
   // 与 exploredCharsBeforeScroll 同口径（节点粒度、含锚字所在节点全部），但按章内
   // 字符偏移查而不按滚动位置：几何锚持有期间进度要描述锚，不描述临时排版的页
-  // （BUG-3429）。progressStops 按滚动序排列，exploredChars 单调不减。
+  // （BUG-3446）。progressStops 按滚动序排列，exploredChars 单调不减。
   exploredCharsThroughCharOffset: function(charOffset) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var stops = metrics.progressStops;

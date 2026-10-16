@@ -1793,7 +1793,7 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     // 分页持几何锚、而视口没从锚起（系统栏 / inset / 尺寸变化把页挪到了临时排版上）：
     // 读到哪里以锚为准，落库的字符偏移与进度都报锚；这一页是几何补偿不是阅读，不报
     // 可见终点（-1 = Dart 不 arrive）。安卓切后台时系统栏让排版在后台临时缩水，旧实现
-    // 把临时页首字落库，进程在后台被回收后重开就退到前一页（BUG-3429）。
+    // 把临时页首字落库，进程在后台被回收后重开就退到前一页（BUG-3446）。
     var held = typeof r.heldReadingAnchorCharOffset === 'function'
         ? r.heldReadingAnchorCharOffset() : -1;
     if (held >= 0 && held !== off && !atEnd) {

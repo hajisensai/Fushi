@@ -33,7 +33,7 @@ void main() {
       '<ruby>自嘲<rt>じちょう</rt></ruby>気味に笑った彼女は、'
       '<ruby>烏滸<rt>おこ</rt></ruby>がましいと<ruby>呟<rt>つぶや</rt></ruby>'
       'いて窓の外を見つめ続けていたが、やがて静かに目を閉じた。';
-  // BUG-3417：西文上伸（F l h t k b）/ 下延（g q y p j）要整个包在条里；Tokyo 带注音，
+  // BUG-3435：西文上伸（F l h t k b）/ 下延（g q y p j）要整个包在条里；Tokyo 带注音，
   // 条同时不能碰振假名（F-JNEJVkuC）。基线真值由 harness 在行首插零尺寸 inline-block 量。
   const String p3 =
       'Flight <ruby>Tokyo<rt>とうきょう</rt></ruby> gets quickly by jolly piers';

@@ -1,4 +1,4 @@
-## BUG-3429 · 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页
+## BUG-3446 · 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页
 - **报告**：2026-10-15（群反馈：「安卓手机阅读时，有时候返回主菜单把 fushi 放在后台，再切回来书会跳页，通常往前跳一页」；用户补充复现路径「切后台 → 杀进程 → 重开」）
 - **真实性**：✅ 真 bug，真机取证。小米 Pad 5（Android 17）模拟手机形态（`wm size 1080x2400` + `wm density 420`），竖排分页，第 7 章第 4 页、页首 814（另一轮 973）。按 HOME 后系统栏出现，阅读器 chrome inset 从 0/0 变为 34/20（另一轮 40/16），分页步长 936→881.5。BUG-2943 的几何锚正确记下了 814（973），视口回前台时也能复原；但后台期间落库的 `charOffset` 被写成临时排版的页首字（973→920），回前台后直到下一次翻页都一直留在库里。进程在后台被回收后重开，按 920 恢复，落在前一页。
   - 根因：`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` 的 `window.fushiProgressDetails` 恒把「视口首字」当阅读位置上报（第三段 = `getFirstVisibleCharOffset()`）。几何事件（inset / 尺寸）把视口挪到临时排版上时，首字不是用户读到的位置；Dart 侧 `_refreshProgress` / `_syncAndFlushPosition` 原样落库。

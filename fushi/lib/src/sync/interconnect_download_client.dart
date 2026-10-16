@@ -22,7 +22,7 @@ class HostDownloadTarget {
   });
 
   /// host 的 `DELETE /api/downloads/<id>` 认不认 `deleteFiles` 参数（能力位
-  /// `downloads.deleteFilesParam`，BUG-3417）。false = 老 host：删不删文件由它的
+  /// `downloads.deleteFilesParam`，BUG-3437）。false = 老 host：删不删文件由它的
   /// 历史缺省决定（app 当 host 保留、无头服务端连数据一起删），客户端无从选择。
   final bool deleteFilesParam;
 

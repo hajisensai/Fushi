@@ -18,6 +18,7 @@
 - 根因修复：遇到功能异常、测试失败、运行时报错或用户要求修复，先复现或沿真实代码路径定位，再修数据结构、状态同步、生命周期、平台边界或依赖契约。不允许用延迟、重试、吞异常、硬编码、特例分支掩盖症状；只有外部系统或平台限制不可控时才允许临时兼容层，并说明影响范围和清理条件。
 - **新模块 / 重设计页面必须带动效（用户 2026-10-04 拍板）**：动效是 UI 交付的一部分，不能只改静态样式。列表 / 网格错峰进场用 `FushiEntranceScope` + `fushiStaggeredItemBuilder` / `FushiStaggeredEntrance`（守卫 `fushi/test/**/fushi_entrance_wiring_guard_test.dart`），按压 / 悬停用 `FushiPressScale` / `FushiHoverLift`，页面切换走现有共享轴转场，时长一律取 `fushiMotionDuration` / `FushiMotion`（墨水屏与系统「减弱动态效果」自动归零）；不另立动效常量。MD3 与 Apple 两套设计系统都要接。
 - **工具栏 / 顶栏动作默认展开、空间不足才收起（用户 2026-10-06 拍板）**：顶栏、阅读器 / 播放器 / 库页的动作按钮默认全部平铺显示，**只有宽度放不下时**才按优先级把放不下的收进「⋯」溢出菜单（最常用的最后收）；不许固定写死成「收起 / 更多」菜单。一律复用 `FushiFloatingTopBar` 的 `adaptiveOverflow`（`fushi/lib/src/utils/components/fushi_floating_toolbar.dart`，测试 `fushi/test/widgets/fushi_floating_top_bar_adaptive_overflow_test.dart`），不另写测宽逻辑。**底部浮动工具栏 / 主导航底栏默认纯图标**：文字只进 tooltip 与无障碍语义（Semantics label 用原文案），命中区 ≥48dp，不画组间分隔线。
+- **分段选择一律用设计系统组件，禁止裸 `SegmentedButton`（用户 2026-10-16 拍板：「分段选择器还是老样式，用 m3e，写进规则吧都用新的」）**：单选分段用 `adaptiveSegmentedButton(...)`（`fushi/lib/src/utils/adaptive/adaptive_widgets.dart`；Material = M3E 胶囊分段、Apple = iOS 分段），设置行用 `AdaptiveSettingsSegmentedRow`；多选 / 竖排 / 允许空选等 `SegmentedButton` 同参需求用 `FushiSegmentedButton`（Material = M3E 连接式按钮组）。页面里直接 `SegmentedButton(...)` 会绕过设计系统分派、画出旧版 MD3 描边分段。守卫 `fushi/test/build/segmented_button_m3e_guard_test.dart`（只豁免组件实现文件自身）。
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
 - 发现问题直接说，不要为了顺滑把风险说轻。
@@ -111,7 +112,8 @@
 
 - 新增/删除 i18n key **禁止手动逐文件编辑**，必须用 `fushi/tool/i18n_sync.dart`（Slang 要求 17 个文件 key 完整，缺 key 报错）：`--add <key> <en> <zh>` / `--remove <key>` / `--rename <old> <new>` / `--sort` / 无参补全缺失 / `--dry-run` 预览。四个操作 flag **可重复、可混用**，按给出顺序执行、每个文件只读写一次（`--remove a --remove b --add c en zh`）；任何没被 flag 消费的参数一律报 usage error 退出，不会像旧实现那样把多出来的 key 静默吞掉（契约测试 `fushi/test/tools/i18n_sync_ops_test.dart`）。
 - 批量删 key 后**必须按精确键名复核**（`grep '"<key>"'` 带引号）：裸子串会被同前缀的 key 假阳性命中（如 `..._favorites` 命中 `..._favorites_empty`）。
-- `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪到文件末尾。改名只能用 `--rename`（逐语言保留原翻译、原位替换）。
+- **17 份 i18n json 顶层 key 全排序（2026-10-15 起）**，守卫 `fushi/test/i18n/i18n_keys_sorted_guard_test.dart` 钉死：`--add`（及无参补全）插到字典序位置而不是末尾，不同 PR 的新增落在文件各处、按行就能合并；手改 json 往末尾追加会让守卫变红，修法 `--sort`。字典序相邻的 key 剩下的冲突交给**按 key 三方合并驱动** `fushi/tool/i18n_merge_driver.dart`（`.gitattributes` 已接，驱动命令由 `tool/setup_worktree.ps1` 写进仓库级 git config；主 checkout 没跑过 setup 就手动 `git config merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"`）。驱动只对**本地** merge 生效，GitHub 网页合并不认——PR 页显示 i18n 冲突时本地 `git merge origin/develop` 即可自动解决；两边把同一 key 改成不同值（或一改一删）时驱动退出 1、在该 key 处留 `<<<<<<< ours` / `>>>>>>> theirs` 冲突块（文件此时不是合法 JSON），手工选值后再 `--sort`。`strings.g.dart` 冲突一律取任一侧后 `dart run slang` + `dart format` 重新生成（slang 已关 `timestamp`，但 3.17 的「Strings: 总数」那行还在）。
+- `--remove` + `--add` **不等于**改名：它会把 16 种语言的既有翻译降级成英文值并把 key 挪离原位。改名只能用 `--rename`（逐语言保留原翻译，挪到新名字的字典序位置）。
 - 改完 key 跑 `dart run slang` 重新生成 `strings.g.dart`，再 `dart format` 生成文件；不要手改生成文件。
 
 ## 验证

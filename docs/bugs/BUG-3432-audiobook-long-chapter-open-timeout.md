@@ -1,4 +1,4 @@
-## BUG-3369 · 长章有声书开书白屏、「内容加载超时」
+## BUG-3432 · 长章有声书开书白屏、「内容加载超时」
 - **报告**：2026-10-14（用户录屏，Windows：点开带有声书的《また、同じ夢を見ていた》空白约 8 秒 →「内容加载超时，如显示异常请重新打开」→ 正文仍空白；同会话不带有声书的竖排书 1 秒内打开）
 - **真实性**：✅ 真 bug，离屏 Windows itest 复现（隔离数据根，原书 + 合成 5089 条 SRT + 静音音频，生产对齐路径）：`applySentenceAudioCues payloadCues=2696` 后 WebView 主线程同步卡约 52 秒，8s 兜底超时触发，`onRestoreComplete` 不回、无 JS 异常。headless Chrome 真引擎二分：`applySentenceAudioCues` 13.8 s，其中 `__fushiLiveRanges.moveNodes`（2829 次）13.2 s；把包裹换回 v2.9.1 写法同章 0.65 s；横排同样慢。
   - 根因：`fushi/lib/src/reader/reader_selection_scripts.dart` `__fushiLiveRanges.moveNodes` 每次都读原生选区（`getSelection().rangeCount` / `anchorNode`）。DOM 刚改过时这一读让 Blink 对整章同步排版（长章约 5ms/次），开章逐句包裹每条 cue 一次 → O(cue 数 × 整章排版)。由 c3030be9d7（BUG-3326 审查：句子包裹改走 live-range guard）引入；这本书全书正文只有两个巨型 section（一章 2696 / 2331 条 cue），所以最重。

@@ -818,7 +818,7 @@ List<CtlRoute> _downloadRoutes(DesktopCtlContext context) => <CtlRoute>[
     if (remote != null) {
       // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
       // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
-      // BUG-3417）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
+      // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
       final bool supported = remote.target.deleteFilesParam;
       if (deleteFiles && !supported) {
         throw CtlFailure.rejected(

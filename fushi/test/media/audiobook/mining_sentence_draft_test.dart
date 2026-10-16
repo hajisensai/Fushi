@@ -696,7 +696,7 @@ void main() {
     });
   });
 
-  // BUG-3417：歌词模式与视频字幕共用的「相邻 cue 作上下文」切法。
+  // BUG-3434：歌词模式与视频字幕共用的「相邻 cue 作上下文」切法。
   group('cueContextNeighbors', () {
     List<AudioCue> cues(int n) => <AudioCue>[
       for (int i = 0; i < n; i++)
@@ -757,7 +757,7 @@ void main() {
     });
   });
 
-  // BUG-3417 复核：歌词模式上下文句的音频区间必须取相邻 cue 自己的坐标，不能按
+  // BUG-3434 复核：歌词模式上下文句的音频区间必须取相邻 cue 自己的坐标，不能按
   // 查词句的章节号 / 文本去推断（跨章被换算进本章 → 整章区间；同文短句取到更早一句）。
   group('cueContextDraftSentences', () {
     AudioCue cue(

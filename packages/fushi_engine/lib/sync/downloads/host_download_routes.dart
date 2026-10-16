@@ -11,7 +11,7 @@
 /// DELETE /api/downloads/<id>[?deleteFiles=true|false]
 /// ```
 ///
-/// `deleteFiles` 缺省 = 旧客户端，host 按各自的历史缺省处理（BUG-3417）。
+/// `deleteFiles` 缺省 = 旧客户端，host 按各自的历史缺省处理（BUG-3437）。
 library;
 
 import 'dart:convert';

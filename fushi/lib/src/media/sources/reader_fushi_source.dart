@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
+import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
@@ -1082,7 +1083,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
       }
 
-      // 跨端删除墓碑键：两端键不同的书写**对端键**（BUG-3428 同类）——经互联收下的
+      // 跨端删除墓碑键：两端键不同的书写**对端键**（BUG-3443 同类）——经互联收下的
       // 在线漫画取描述符里的对端键（本机键是单向哈希），从对端下载、落地键不同的书取
       // 别名表。必须删行前取：deleteEpubBook 会级联删掉别名。
       final String syncTombstoneKey = scope == DeleteScope.syncEverywhere
@@ -2068,6 +2069,84 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<void> setAudioHighlightTextColor(int v) async {
     await (readerSettings?.setAudioHighlightTextColor(v) ??
         setPreference<int>(key: 'audio_highlight_text_color', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  /// 一类高亮的笔触配置（键见 [ReaderSettings.highlightStrokeConfig]）。
+  HighlightStrokeConfig highlightStrokeConfig(HighlightKind kind) {
+    final ReaderSettings? s = readerSettings;
+    if (s != null) return s.highlightStrokeConfig(kind);
+    final String p = kind.prefPrefix;
+    final HighlightStrokeConfig d = kind.defaults;
+    return HighlightStrokeConfig(
+      style: HighlightStrokeStyle.fromWire(
+        getPreference<String>(key: '${p}_style', defaultValue: d.style.wireName),
+      ),
+      thickness: getPreference<double>(
+        key: '${p}_thickness',
+        defaultValue: d.thickness,
+      ),
+      opacity: getPreference<double>(
+        key: '${p}_opacity',
+        defaultValue: d.opacity,
+      ),
+      coverRuby: getPreference<bool>(
+        key: '${p}_cover_ruby',
+        defaultValue: d.coverRuby,
+      ),
+      roughness: getPreference<double>(
+        key: '${p}_roughness',
+        defaultValue: d.roughness,
+      ),
+      animate: getPreference<bool>(
+        key: '${p}_animate',
+        defaultValue: d.animate,
+      ),
+    );
+  }
+
+  /// 写一类高亮的笔触配置（设置页一次改一项也走这里，只写变了的键），写完热刷新正文。
+  Future<void> setHighlightStrokeConfig(
+    HighlightKind kind,
+    HighlightStrokeConfig next,
+  ) async {
+    final ReaderSettings? s = readerSettings;
+    if (s != null) {
+      await s.setHighlightStrokeConfig(kind, next);
+    } else {
+      final String p = kind.prefPrefix;
+      final HighlightStrokeConfig prev = highlightStrokeConfig(kind);
+      if (next.style != prev.style) {
+        await setPreference<String>(
+          key: '${p}_style',
+          value: next.style.wireName,
+        );
+      }
+      if (next.thickness != prev.thickness) {
+        await setPreference<double>(
+          key: '${p}_thickness',
+          value: next.thickness,
+        );
+      }
+      if (next.opacity != prev.opacity) {
+        await setPreference<double>(key: '${p}_opacity', value: next.opacity);
+      }
+      if (next.coverRuby != prev.coverRuby) {
+        await setPreference<bool>(
+          key: '${p}_cover_ruby',
+          value: next.coverRuby,
+        );
+      }
+      if (next.roughness != prev.roughness) {
+        await setPreference<double>(
+          key: '${p}_roughness',
+          value: next.roughness,
+        );
+      }
+      if (next.animate != prev.animate) {
+        await setPreference<bool>(key: '${p}_animate', value: next.animate);
+      }
+    }
     onSettingsChangedLive?.call();
   }
 

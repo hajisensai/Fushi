@@ -26,11 +26,17 @@ import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart'
     show deleteMediaCollectionWithAssets;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 
+import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
+    show CollectionMemberVisibility, countVisibleCollectionMembers;
+import 'package:fushi/src/media/collections/collection_episode_slot.dart'
+    show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
     show addTagToHost, removeTagFromHost, tagsForMediaRef;
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/pages/implementations/games_library_page.dart'
+    show isGameCollectionMemberVisible;
 import 'package:fushi/src/pages/implementations/tag_management_page.dart'
     show kTagPresetColors;
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
@@ -126,23 +132,81 @@ class LibraryCtlShelf {
 
   /// 合集成员行 → 条目键（epub 的 uid 反查回 bookKey；反查不上沿用原值）。未知种类
   /// （对端新种类透传行）返回 null。
-  Future<LibraryCtlKey?> keyForCollectionMember(
-    MediaCollectionItemRow row,
+  Future<LibraryCtlKey?> keyForCollectionMember(MediaCollectionItemRow row) =>
+      keyForCollectionMemberRef(row.mediaType, row.entryKey);
+
+  /// [keyForCollectionMember] 的原值版：成员表的 `media_type` / `entry_key` →
+  /// 条目键（AI 排序结论只带这两个值）。
+  Future<LibraryCtlKey?> keyForCollectionMemberRef(
+    String mediaType,
+    String entryKey,
   ) async {
-    switch (MediaKind.tryParse(row.mediaType)) {
+    switch (MediaKind.tryParse(mediaType)) {
       case MediaKind.epub:
         final String bookKey =
-            await _db.resolveEpubBookKeyByUid(row.entryKey) ?? row.entryKey;
+            await _db.resolveEpubBookKeyByUid(entryKey) ?? entryKey;
         return LibraryCtlKey(LibraryCtlStore.book, bookKey);
       case MediaKind.srt:
-        return LibraryCtlKey(LibraryCtlStore.srt, row.entryKey);
+        return LibraryCtlKey(LibraryCtlStore.srt, entryKey);
       case MediaKind.video:
-        return LibraryCtlKey(LibraryCtlStore.video, row.entryKey);
+        return LibraryCtlKey(LibraryCtlStore.video, entryKey);
       case MediaKind.game:
-        return LibraryCtlKey(LibraryCtlStore.game, row.entryKey);
+        return LibraryCtlKey(LibraryCtlStore.game, entryKey);
       case null:
         return null;
     }
+  }
+
+  /// 合集成员在库页上是否画得出来——与「加入合集」弹窗 / 合集详情页同一口径
+  /// （BUG-3361），成员数只数这些行：
+  ///
+  /// - video：[videoCollectionMemberVisibility]（视频库同一判据）。控制通道不拉远端
+  ///   目录，远端清单按空集传，等同详情页离线 / 关掉「显示远端条目」时的结果；
+  /// - game：[isGameCollectionMemberVisible]（游戏库同一判据）；
+  /// - srt：本机有这本有声书；
+  /// - epub：本机有这本书（成员行 entryKey 认 uid 或透传的 bookKey），且它不是某本
+  ///   有声书的伴生 EPUB——书架只画有声书卡、不单独画伴生 EPUB（书架页
+  ///   `_resolveCollectionMember` 同一规则）。
+  ///
+  /// 删掉的条目、未知种类的透传行一律不数。库页的搜索 / 标签 / 阅读状态筛选是界面
+  /// 瞬时状态，不进这里。
+  Future<CollectionMemberVisibility> collectionMemberVisibility() async {
+    final List<SrtBook> srtBooks = await SrtBookRepository(_db).listAll();
+    final Set<String> srtUids = <String>{
+      for (final SrtBook book in srtBooks) book.uid,
+    };
+    final Set<String> srtBookKeys = <String>{
+      for (final SrtBook book in srtBooks)
+        if (book.bookKey.isNotEmpty) book.bookKey,
+    };
+    final Set<String> epubEntryKeys = <String>{
+      for (final EpubBookRow row in await _db.getAllEpubBooks())
+        if (!srtBookKeys.contains(row.bookKey)) ...<String>[
+          row.uid,
+          row.bookKey,
+        ],
+    };
+    final CollectionMemberVisibility video = videoCollectionMemberVisibility(
+      localBookUids: <String>{
+        for (final VideoBookRow row in await VideoBookRepository(_db).listAll())
+          row.bookUid,
+      },
+      remoteOnlyIds: const <String>{},
+    );
+    if (!_games.isLoaded) await _games.load();
+    final List<GalgameEntry> games = _games.games;
+    return (String mediaType, String entryKey) =>
+        switch (MediaKind.tryParse(mediaType)) {
+          MediaKind.video => video(mediaType, entryKey),
+          MediaKind.game => isGameCollectionMemberVisible(
+            games: games,
+            mediaType: mediaType,
+            entryKey: entryKey,
+          ),
+          MediaKind.srt => srtUids.contains(entryKey),
+          MediaKind.epub => epubEntryKeys.contains(entryKey),
+          null => false,
+        };
   }
 
   // ── 合集 ─────────────────────────────────────────────────────────────
@@ -153,12 +217,15 @@ class LibraryCtlShelf {
     return row;
   }
 
+  /// [members] 是可见成员数（[collectionMemberVisibility]）；`manualOrder` = 成员
+  /// 顺序被手动 / 一键 / AI 排过（`orderUpdatedAt` 非零）。
   Map<String, Object?> _collectionJson(MediaCollectionRow row, int members) =>
       <String, Object?>{
         'id': row.id,
         'name': row.name,
         'type': row.collectionType,
         'members': members,
+        'manualOrder': row.orderUpdatedAt > 0,
         if (row.coverPath != null) 'coverPath': row.coverPath,
       };
 
@@ -168,10 +235,10 @@ class LibraryCtlShelf {
   }) async {
     final List<MediaCollectionItemRow> items = await _db
         .getAllCollectionItems();
-    final Map<int, int> counts = <int, int>{};
-    for (final MediaCollectionItemRow item in items) {
-      counts[item.collectionId] = (counts[item.collectionId] ?? 0) + 1;
-    }
+    final Map<int, int> counts = countVisibleCollectionMembers(
+      items,
+      await collectionMemberVisibility(),
+    );
     Set<int>? only;
     if (containing != null) {
       final MediaRef ref = await collectionRefFor(containing);
@@ -194,10 +261,14 @@ class LibraryCtlShelf {
     ];
   }
 
-  /// 合集详情：成员按组内顺序，附条目键与标签。
+  /// 合集详情：成员按组内顺序，附条目键与标签。`members` 只数可见成员（与库页
+  /// 同口径），`items` 仍列出全部成员行并以 `visible` 标出库页画不出来的那些——
+  /// 它们照样能被 `remove` / `order` 点名。
   Future<Map<String, Object?>> collectionDetail(int id) async {
     final MediaCollectionRow row = await _requireCollection(id);
     final List<MediaCollectionItemRow> items = await _db.getCollectionItems(id);
+    final CollectionMemberVisibility isVisible =
+        await collectionMemberVisibility();
     final List<Map<String, Object?>> members = <Map<String, Object?>>[];
     for (final MediaCollectionItemRow item in items) {
       final LibraryCtlKey? key = await keyForCollectionMember(item);
@@ -206,10 +277,14 @@ class LibraryCtlShelf {
         'mediaType': item.mediaType,
         'entryKey': item.entryKey,
         'title': key == null ? null : await _titleOf(key),
+        'visible': isVisible(item.mediaType, item.entryKey),
       });
     }
     return <String, Object?>{
-      ..._collectionJson(row, items.length),
+      ..._collectionJson(
+        row,
+        countVisibleCollectionMembers(items, isVisible)[id] ?? 0,
+      ),
       'tags': <String>[
         for (final BookTagRow tag in await _db.getTagsForCollection(id))
           tag.name,

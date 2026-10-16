@@ -20,6 +20,9 @@ import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show CollectionAiClientFactory;
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show CollectionSortMeta, compareCollectionMembers;
 import 'package:fushi/src/media/collections/collection_relation.dart';
@@ -90,10 +93,19 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.collectionAiSettings,
+    this.aiClientFactory,
     super.key,
   });
 
   final FushiDatabase database;
+
+  /// 「排序」菜单的「AI 排序」用的 AI 指派来源。null = 不显示该项（AI 模块关着，
+  /// 调用方按 `isAiModuleEnabled` 求值后传）。构造注入的理由同 [videoSpecs]。
+  final AiSettingsSource? collectionAiSettings;
+
+  /// 测试注入假 AI 客户端；生产为 null（默认构造）。
+  final CollectionAiClientFactory? aiClientFactory;
 
   /// 视频规格服务（v95）。**构造注入而不是从 riverpod 取**：本页是普通
   /// StatefulWidget，它的既有 widget 测试没有也不需要 `ProviderScope`，在页内塞
@@ -964,7 +976,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         (CollectionEpisodeSlot a, CollectionEpisodeSlot b) =>
             compareCollectionMembers(metaOf(a), metaOf(b), byTitle: false),
       ),
+      onSortByAi: switch (widget.collectionAiSettings) {
+        final AiSettingsSource settings => () => _sortWithAi(settings),
+        null => null,
+      },
     );
+  }
+
+  /// 「AI 排序」：SP / OVA / 特别篇等没有集号的成员交 AI 定位后整表落盘，再重取
+  /// 成员槽（顺序真相在 sortIndex，不在页内另排一份）。
+  Future<void> _sortWithAi(AiSettingsSource settings) async {
+    final bool persisted = await runDetailAiSort(
+      settings: settings,
+      clientFactory: widget.aiClientFactory,
+    );
+    if (persisted && mounted) await _reload();
   }
 
   /// 「为整个合集获取字幕」：全屏字幕工作台（合集作用域）——绑定 AniList 系列后经
@@ -1077,6 +1103,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
           // 远端上下文原样传下去：相关作品也可能是「只在对端」的那一部。
           remote: widget.remote,
+          collectionAiSettings: widget.collectionAiSettings,
+          aiClientFactory: widget.aiClientFactory,
           onOpenEpisode: (VideoBookRow episode) {
             Navigator.push<void>(
               context,

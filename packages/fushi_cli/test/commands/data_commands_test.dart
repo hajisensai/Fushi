@@ -372,7 +372,7 @@ void main() {
         build('dl', 'rm', <String>['j1', '-y', '--device', 'h1']).query,
         <String, String>{'confirm': 'true', 'device': 'h1'},
       );
-      // BUG-3417：远端任务也能选删不删文件（host 不支持时由 app 侧明确报错）。
+      // BUG-3437：远端任务也能选删不删文件（host 不支持时由 app 侧明确报错）。
       expect(
         build('dl', 'rm', <String>[
           'j1',

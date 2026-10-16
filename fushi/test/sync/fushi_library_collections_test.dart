@@ -69,7 +69,7 @@ void main() {
     });
 
     test(
-        'BUG-3427 listBooks 出清单前先按系列归组：host 没开过书架时散着的 3、4 卷 '
+        'BUG-3441 listBooks 出清单前先按系列归组：host 没开过书架时散着的 3、4 卷 '
         '也带上系列合集归属（只走同步状态窄锁，不碰整轮同步锁）', () async {
       final FushiDatabase db = memDb();
       Future<void> volume(String title) => db.insertEpubBook(

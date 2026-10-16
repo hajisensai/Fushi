@@ -114,7 +114,7 @@ AudioPlaybackRange? miningSentenceAudioRange({
 ///
 /// Unlike [miningSentenceAudioRange] this never consults a section index, a
 /// normalized char span or the cue text, so it cannot be steered onto another
-/// chapter or onto an earlier cue with the same text (BUG-3417: lyrics-mode
+/// chapter or onto an earlier cue with the same text (BUG-3434: lyrics-mode
 /// context sentences resolved through the lookup sentence's chapter and merged
 /// into a "chapter start -> lookup sentence" clip). [cues] only bounds the
 /// padding against same-file neighbours.

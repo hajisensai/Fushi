@@ -16,7 +16,7 @@ fushi_cli quit              # 落库后退出 app（与关窗口同一条路径�
 | 域 | 覆盖 |
 |---|---|
 | `library` | 书架 / 媒体库条目 ls / get / rm、导入、打开到指定位置（`--chapter` / `--page` / `--at`）、改名、换封面、标记完成、重置进度、来源库增删改与扫描、最近打开 |
-| `collection` / `tag` / `bookmark` / `favorite` | 合集（含播放列表）建删改与成员、标签、书签、收藏句管理与导出 |
+| `collection` / `tag` / `bookmark` / `favorite` | 合集（含播放列表）建删改与成员（成员数只计库页画得出来的成员）、手动定序 `collection order`、一键排序 `collection sort --by title\|imported\|ai`（`ai` = SP / OVA / 汉字卷号等规则判不出的成员交 AI 定位，`--dry-run` 只打印建议序）；标签、书签、收藏句管理与导出 |
 | `reader` | 遥控当前打开的 EPUB / PDF / 漫画阅读器：状态、翻页、按章 / 页 / 百分比跳转 |
 | `audiobook` / `ocr` | 有声书附着 / 替换音频与字幕、重新匹配、转录（含挂到已有书 `--into`）及任务；漫画整卷 OCR（`--force` / `--engine` / `--consent-upload`） |
 | `dict` / `anki` | 词典管理、推荐词典与推荐包下载导入、改名与语言覆盖；Anki 制卡、待发队列（pending / send / retry / discard）、内置同步客户端登录与同步 |

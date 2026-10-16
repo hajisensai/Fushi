@@ -437,7 +437,7 @@ Map<String, Object?> downloadHostToWire(
     if (hostId != null) 'hostId': hostId,
     'backend': target.backend,
     'kinds': target.kinds,
-    // 能否在 `dl rm --device` 时选择删不删文件（BUG-3417；老 host 为 false）。
+    // 能否在 `dl rm --device` 时选择删不删文件（BUG-3437；老 host 为 false）。
     'deleteFilesParam': target.deleteFilesParam,
   };
 }
