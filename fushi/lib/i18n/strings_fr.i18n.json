@@ -2436,7 +2436,7 @@
   "floating_lyric_context_opacity": "Other sentences opacity",
   "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
   "floating_lyric_corner_radius": "Rayon des coins du sous-titre flottant",
-  "floating_lyric_corner_radius_hint": "0 garde les coins par défaut de chaque plateforme ; augmentez pour arrondir la barre et les boutons",
+  "floating_lyric_corner_radius_hint": "0 donne des coins droits ; augmentez pour arrondir la barre et les boutons (24 par défaut)",
   "floating_lyric_current_line_color": "Current sentence color",
   "floating_lyric_font": "Floating subtitle font",
   "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",

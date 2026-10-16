@@ -292,6 +292,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               initialDelayMs: _delayMs,
               cues: host.subtitleWaveformCues,
               durationMs: host.videoDurationMs,
+              probeLimitMs: host.subtitleProbeLimitMs,
               loadWaveform: host.loadSubtitleWaveform!,
               onCommitDelay: _commitDelay,
               // TODO-1316：放大波形对轴视图内的「自动对轴」按钮复用与顶部同一 onAutoAlign

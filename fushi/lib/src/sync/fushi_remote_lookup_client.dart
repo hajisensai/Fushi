@@ -50,6 +50,7 @@ class FushiRemoteLookupClient {
     Future<Directory> Function()? pinnedAudioCacheDirectoryProvider,
     Duration timeout = const Duration(seconds: 3),
     Duration audioTransferTimeout = kInterconnectAssetTransferTimeout,
+    bool trackDictionaryStyles = false,
   })  : _transport = InterconnectPostTransport(
           repo: repo,
           httpClient: httpClient,
@@ -58,6 +59,7 @@ class FushiRemoteLookupClient {
         _onlyCandidate = onlyCandidate,
         _timeout = timeout,
         _audioTransferTimeout = audioTransferTimeout,
+        _trackDictionaryStyles = trackDictionaryStyles,
         _pinnedAudioCacheDirectoryProvider =
             pinnedAudioCacheDirectoryProvider ??
                 _defaultPinnedAudioCacheDirectory;
@@ -73,6 +75,24 @@ class FushiRemoteLookupClient {
   /// 音频资产整包下载预算：量的是字节传输，与 [_timeout] 不同量纲（BUG-1811 续）。
   final Duration _audioTransferTimeout;
   final Future<Directory> Function() _pinnedAudioCacheDirectoryProvider;
+
+  /// BUG-3425：查词时是否按 `stylesRevision` 门控顺带取 host 的词典自带样式。
+  ///
+  /// 只给**在本端渲染并导出远端结果**、且实例活过整个会话的调用方开（游戏串流）：
+  /// 首查发空指纹，host 整表下发一次；之后带上缓存的指纹，host 只回指纹。每次
+  /// 查词都新建实例的调用方开了等于每次整表重下，所以默认关、请求体不变。
+  final bool _trackDictionaryStyles;
+  String? _dictionaryStylesRevision;
+  Map<String, String>? _hostDictionaryStyles;
+
+  /// host 最近一次下发的词典样式（词典名 → CSS）。指纹不变期间保持**同一个**
+  /// 不可变实例（弹窗按身份判断要不要重注入）。null = 还没查过，或 host 不认识
+  /// `stylesRevision`（老 host：回包里没有 `dictionaryStylesRevision`）——调用方
+  /// 此时自行回落 [dictionaryStyles] 端点。
+  Map<String, String>? get hostDictionaryStyles => _hostDictionaryStyles;
+
+  /// [hostDictionaryStyles] 对应的 host 指纹。
+  String? get dictionaryStylesRevision => _dictionaryStylesRevision;
 
   static Future<Directory> _defaultPinnedAudioCacheDirectory() async {
     final Directory supportRoot = await AppPaths.supportRootDirectory();
@@ -100,6 +120,9 @@ class FushiRemoteLookupClient {
         'term': term,
         'wildcards': wildcards,
         'maximumTerms': maximumTerms,
+        // 空串 ≠ 任何 host 指纹 ⇒ 首查必拿到整表。
+        if (_trackDictionaryStyles)
+          'stylesRevision': _dictionaryStylesRevision ?? '',
       },
     );
     if (outcome.allUnreachable) {
@@ -109,6 +132,9 @@ class FushiRemoteLookupClient {
       );
     }
     final Map<String, dynamic>? json = outcome.json;
+    if (_trackDictionaryStyles && json != null) {
+      _adoptHostDictionaryStyles(json);
+    }
     if (json == null || json['type'] != 'dictionaryResult') return null;
     final dynamic resultJson = json['result'];
     if (resultJson is! Map) return null;
@@ -121,6 +147,25 @@ class FushiRemoteLookupClient {
     return (result.entries.isEmpty && result.kanjiResults.isEmpty)
         ? null
         : result;
+  }
+
+  /// 读回包里的 `dictionaryStylesRevision` / `dictionaryStyles`（BUG-3425）：
+  /// - 没有指纹（老 host）⇒ 什么都不动；
+  /// - 指纹与缓存相同 ⇒ 沿用缓存实例（host 本就不会重发正文）；
+  /// - 指纹变了且带正文 ⇒ 换成新的不可变实例并记下指纹；只有指纹没有正文（不该
+  ///   发生）⇒ 不记指纹，下次照旧要整表。
+  void _adoptHostDictionaryStyles(Map<String, dynamic> json) {
+    final Object? revision = json['dictionaryStylesRevision'];
+    if (revision is! String) return;
+    if (revision == _dictionaryStylesRevision) return;
+    final Object? styles = json['dictionaryStyles'];
+    if (styles is! Map) return;
+    _hostDictionaryStyles = Map<String, String>.unmodifiable(<String, String>{
+      for (final MapEntry<Object?, Object?> e in styles.entries)
+        if (e.key is String && e.value is String)
+          e.key! as String: e.value! as String,
+    });
+    _dictionaryStylesRevision = revision;
   }
 
   DictionarySearchResult _parseDictionaryResult(Map<String, dynamic> json) {

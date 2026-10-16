@@ -2436,7 +2436,7 @@
   "floating_lyric_context_opacity": "Other sentences opacity",
   "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
   "floating_lyric_corner_radius": "Bán kính bo góc phụ đề nổi",
-  "floating_lyric_corner_radius_hint": "0 giữ góc mặc định của mỗi nền tảng; tăng lên để bo tròn thanh và nút hơn",
+  "floating_lyric_corner_radius_hint": "0 là góc vuông; tăng lên để bo tròn thanh và nút hơn (mặc định 24)",
   "floating_lyric_current_line_color": "Current sentence color",
   "floating_lyric_font": "Floating subtitle font",
   "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",

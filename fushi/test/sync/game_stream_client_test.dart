@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -414,6 +415,9 @@ Future<GameStreamPostResult> _postStream(
 );
 
 class _DeferredLookup implements GameStreamDictionaryLookup {
+  @override
+  DictionaryPopupResourceSource? get popupResources => null;
+
   final List<String> terms = <String>[];
   final Completer<DictionarySearchResult?> pending =
       Completer<DictionarySearchResult?>();

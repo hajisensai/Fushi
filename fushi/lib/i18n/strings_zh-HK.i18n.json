@@ -2436,7 +2436,7 @@
   "floating_lyric_context_opacity": "其餘句不透明度",
   "floating_lyric_context_opacity_hint": "同時顯示多句時，非目前句的淡化程度。",
   "floating_lyric_corner_radius": "懸浮字幕圓角",
-  "floating_lyric_corner_radius_hint": "0 = 各平台預設圓角；調大讓字幕條與按鈕更圓",
+  "floating_lyric_corner_radius_hint": "0 = 直角；調大讓字幕條與按鈕更圓（預設 24）",
   "floating_lyric_current_line_color": "目前句顏色",
   "floating_lyric_font": "懸浮字幕字型",
   "floating_lyric_font_hint": "從管理字型庫中選擇，依序使用第一個啟用的 TTF/OTF 字型。",

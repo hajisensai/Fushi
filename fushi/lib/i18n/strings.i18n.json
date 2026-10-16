@@ -2436,7 +2436,7 @@
   "floating_lyric_context_opacity": "Other sentences opacity",
   "floating_lyric_context_opacity_hint": "How strongly sentences other than the current one are dimmed when several are shown.",
   "floating_lyric_corner_radius": "Floating subtitle corner radius",
-  "floating_lyric_corner_radius_hint": "0 keeps each platform's default corners; raise it to round the bar and buttons more",
+  "floating_lyric_corner_radius_hint": "0 gives square corners; raise it to round the bar and buttons more (default 24)",
   "floating_lyric_current_line_color": "Current sentence color",
   "floating_lyric_font": "Floating subtitle font",
   "floating_lyric_font_hint": "Pick from the managed font library; the first enabled TTF/OTF font is used.",
