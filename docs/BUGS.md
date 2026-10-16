@@ -33,6 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3086 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-downloaded-book-key-mismatch-delete-lost.md) | ✅ | ✅ | 从对端下载的书落地键不同导致跨设备删除丢失 |
+| [BUG-3428](bugs/BUG-3428-adopted-online-manga-delete-not-propagated.md) | ✅ | ✅ | 互联收下的在线漫画收不到对端从所有设备删除 |
+| [BUG-3427](bugs/BUG-3427-remote-series-volumes-not-in-collection.md) | ✅ | ✅ | 远端占位分卷不进本地同系列合集 |
 > 共 3084 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

@@ -104,9 +104,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       final List<RemoteBookInfo> notAdopted = <RemoteBookInfo>[
         for (final RemoteBookInfo book in withContent)
           if (!book.hasMangaChapters ||
-              !localKeys.contains(OnlineMangaLibraryService.bookKeyOf(
-                InterconnectMangaCatalog.entryFor(book),
-              )))
+              !localKeys.contains(
+                  InterconnectMangaCatalog.localBookKeyFor(book.downloadId)))
             book,
       ];
       // 纯 SRT（standalone）远端有声书：仅互联后端有 live 有声书 API。列出对端全部
