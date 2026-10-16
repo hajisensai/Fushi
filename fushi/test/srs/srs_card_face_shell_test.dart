@@ -266,7 +266,7 @@ async function loadNext(){
   s.dispatch('load');
   for (let i = 0; i < 5; i++) await Promise.resolve();
 }
-${kSrsCardShellScript}
+$kSrsCardShellScript
 (async () => {
 $body
 })().catch(e => { console.error(e); process.exit(1); });

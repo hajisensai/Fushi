@@ -8,7 +8,6 @@
 //   .\tool\run_windows_itest.ps1 integration_test/srs_card_face_swap_itest.dart
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
