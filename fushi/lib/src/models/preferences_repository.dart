@@ -2920,6 +2920,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页卡面缩放倍率。默认 1.0。
+  double get srsReviewZoom =>
+      (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();
+
+  Future<void> setSrsReviewZoom(double value) async {
+    await setPref('srs_review_zoom', value);
+    notifyListeners();
+  }
+
   static const String srsMiningTargetKey = 'srs_mining_target';
 
   /// 本安装「挖词目标」的出厂默认（'anki' / 'srs'），兼一次性判定的已跑标记。

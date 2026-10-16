@@ -14,6 +14,8 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,12 +26,14 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -75,7 +79,30 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
 
+/// 卡面缩放：每档 10%，范围 60%–200%。
+const double _kZoomStep = 0.1;
+const double _kZoomMin = 0.6;
+const double _kZoomMax = 2.0;
+
 class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
+  /// 卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）：原生区按倍率放大文字，WebView
+  /// 走页面 `zoom`（随主题样式原地更新，不重放卡片）。持久化为偏好，下次打开沿用。
+  void _setZoom(double value) {
+    final double z =
+        (value.clamp(_kZoomMin, _kZoomMax) * 20).roundToDouble() / 20;
+    if ((z - ref.read(srsReviewZoomProvider)).abs() < 0.001) return;
+    unawaited(ref.read(appProvider).setSrsReviewZoom(z));
+  }
+
+  void _zoomBy(double delta) =>
+      _setZoom(ref.read(srsReviewZoomProvider) + delta);
+
+  /// 滚轮一格放大 / 缩小一档（向上 = 放大，与浏览器一致）。
+  void _zoomWheel(double deltaY) {
+    if (deltaY == 0) return;
+    _zoomBy(deltaY < 0 ? _kZoomStep : -_kZoomStep);
+  }
+
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-review');
   late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
     node: _focusNode,
@@ -563,6 +590,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _undoLast();
       return KeyEventResult.handled;
     }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.equal ||
+            key == LogicalKeyboardKey.add ||
+            key == LogicalKeyboardKey.numpadAdd)) {
+      _zoomBy(_kZoomStep);
+      return KeyEventResult.handled;
+    }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.minus ||
+            key == LogicalKeyboardKey.numpadSubtract)) {
+      _zoomBy(-_kZoomStep);
+      return KeyEventResult.handled;
+    }
+    if (ctrl &&
+        (key == LogicalKeyboardKey.digit0 ||
+            key == LogicalKeyboardKey.numpad0)) {
+      _setZoom(1);
+      return KeyEventResult.handled;
+    }
     if (ctrl ||
         HardwareKeyboard.instance.isAltPressed ||
         HardwareKeyboard.instance.isShiftPressed) {
@@ -615,6 +661,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         _primary();
       case 'Ctrl+KeyZ' || 'Meta+KeyZ':
         _undoLast();
+      case 'Ctrl+Equal' || 'Ctrl+NumpadAdd' || 'Meta+Equal':
+        _zoomBy(_kZoomStep);
+      case 'Ctrl+Minus' || 'Ctrl+NumpadSubtract' || 'Meta+Minus':
+        _zoomBy(-_kZoomStep);
+      case 'Ctrl+Digit0' || 'Meta+Digit0':
+        _setZoom(1);
       default:
         final String digit = token.substring(token.length - 1);
         final int? rating = int.tryParse(digit);
@@ -661,7 +713,32 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         label: t.srs_note_edit,
         onPressed: () => unawaited(_onCardAction(_CardAction.edit)),
       ),
+    if (_detail != null)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_browse'),
+        icon: FushiIcons.search,
+        label: t.srs_browse_title,
+        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+      ),
   ];
+
+  /// 像 Anki 一样从复习跳到浏览、直接落在正在复习的这张卡上（旁边就是预览与编辑）；
+  /// 回来后按库里最新内容重载这张卡（浏览里可能改了它、挂起了它或删了它）。
+  Future<void> _openBrowse() async {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null) return;
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => SrsBrowsePage(
+          initialCardId: detail.card.id,
+          onChangeNoteType: showSrsChangeNoteTypeFlow,
+          onMigrateToFushiCard: srsMigrateNotesToFushiCard,
+        ),
+      ),
+    );
+    if (mounted) await _reloadCurrent();
+  }
 
   /// 卡面样式入口，按当前这张卡的笔记类型分流：Fushi 卡片 → 可视化外观页；其它类型 →
   /// 这张卡所用模板的编辑器（正面 / 背面 / 样式 + 预览，即 Anki 式的渲染规则自定义）。
@@ -911,6 +988,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       srsCardFaceBuilderProvider,
     );
     final String language = ref.read(appProvider).defaultContentLanguage;
+    final double zoom = ref.watch(srsReviewZoomProvider);
     final SrsCardFace face = SrsCardFace(
       cardId: detail.card.id,
       showingAnswer: _showingAnswer,
@@ -923,26 +1001,51 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
       fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+      pageZoom: zoom == 1 ? null : zoom,
+      onZoomWheel: _zoomWheel,
     );
+    final MediaQueryData media = MediaQuery.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         Expanded(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            child: FushiCard(
-              key: const ValueKey<String>('srs-card-surface'),
-              padding: EdgeInsets.zero,
-              pressScale: false,
-              // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-              child: rendered?.fushiCardDefinitions != null
-                  ? SrsFushiCardView(
-                      key: const ValueKey<String>('srs-fushi-card-view'),
-                      face: face,
-                      fields: rendered!.fields,
-                      definitionsHtml: rendered.fushiCardDefinitions!,
-                    )
-                  : faceBuilder(context, face),
+            // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
+            // 并认领这次滚轮，外层不再滚动。
+            child: Listener(
+              onPointerSignal: (PointerSignalEvent event) {
+                if (event is! PointerScrollEvent) return;
+                final HardwareKeyboard kb = HardwareKeyboard.instance;
+                if (!kb.isControlPressed && !kb.isMetaPressed) return;
+                GestureBinding.instance.pointerSignalResolver.register(
+                  event,
+                  (PointerSignalEvent e) =>
+                      _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
+                );
+              },
+              child: FushiCard(
+                key: const ValueKey<String>('srs-card-surface'),
+                padding: EdgeInsets.zero,
+                pressScale: false,
+                // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+                child: rendered?.fushiCardDefinitions != null
+                    ? MediaQuery(
+                        // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
+                        data: media.copyWith(
+                          textScaler: TextScaler.linear(
+                            media.textScaler.scale(1) * zoom,
+                          ),
+                        ),
+                        child: SrsFushiCardView(
+                          key: const ValueKey<String>('srs-fushi-card-view'),
+                          face: face,
+                          fields: rendered!.fields,
+                          definitionsHtml: rendered.fushiCardDefinitions!,
+                        ),
+                      )
+                    : faceBuilder(context, face),
+              ),
             ),
           ),
         ),

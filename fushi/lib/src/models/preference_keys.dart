@@ -431,13 +431,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsMiningTarget.wire）：复习模块开着时制卡发往 Anki 还是 Fushi 复习（二选一；
   // 存量 'both' 读成 'anki'）。没设过取下面的安装默认。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
-  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
-  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
-  'srs_review_hide_hard_easy',
   // String 'anki' | 'srs'：本安装「挖词目标」的出厂默认，兼一次性判定标记（2026-10-16：
   // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
   // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
   'srs_mining_target_install_default',
+  // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
+  // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
+  'srs_review_hide_hard_easy',
+  // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
+  'srs_review_zoom',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张
   // 投影表 + activity_events 学习行）归属哪个 Profile。由 v105 迁移一次性写下

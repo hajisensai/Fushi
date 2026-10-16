@@ -179,26 +179,29 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
     return Theme(
       data: base.copyWith(colorScheme: scheme),
-      child: ColoredBox(
-        color: scheme.surface,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints c) {
-            if (c.maxHeight.isFinite) _viewport = c.maxHeight;
-            final bool wide = switch (widget.face.layout) {
-              SrsCardLayout.wide => true,
-              SrsCardLayout.narrow => false,
-              SrsCardLayout.auto => c.maxWidth >= kSrsFushiCardWideBreakpoint,
-            };
-            return FushiEntranceScope(
-              replayKey:
-                  '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
-              child: widget.face.showingAnswer
-                  ? (wide
-                        ? _buildWideBack(context, style, c)
-                        : _buildNarrowBack(context, style, c))
-                  : _frontWithWarmDefs(context, style, c, wide: wide),
-            );
-          },
+      // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
+      child: SelectionArea(
+        child: ColoredBox(
+          color: scheme.surface,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              if (c.maxHeight.isFinite) _viewport = c.maxHeight;
+              final bool wide = switch (widget.face.layout) {
+                SrsCardLayout.wide => true,
+                SrsCardLayout.narrow => false,
+                SrsCardLayout.auto => c.maxWidth >= kSrsFushiCardWideBreakpoint,
+              };
+              return FushiEntranceScope(
+                replayKey:
+                    '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
+                child: widget.face.showingAnswer
+                    ? (wide
+                          ? _buildWideBack(context, style, c)
+                          : _buildNarrowBack(context, style, c))
+                    : _frontWithWarmDefs(context, style, c, wide: wide),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -578,10 +581,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     pageZoom: widget.face.pageZoom,
     fushiCard: true,
     onContentHeight: wide ? null : _onDefsHeight,
+    // 释义页只有释义区：纵向排、撑满宿主给的栏宽（模板的 flex 横排会让释义块按内容
+    // 收缩，宽屏下右栏空一大片）。模板 CSS 不动——原生渲染按「笔记类型 CSS 与内置
+    // 模板逐字一致」判定，改模板会让库里已有的 Fushi 卡片退回整面 WebView。
     // 窄版式释义 WebView 跟内容等高，页内 vh 不再是屏高：收起高度按外层视口给像素值。
-    hostCss: wide
-        ? ''
-        : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}',
+    hostCss:
+        '.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
+        '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
   );
 
@@ -713,7 +719,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       ?sentence,
       ..._footer(s),
     ];
-    final double leftWidth = (c.maxWidth * 5 / 12).clamp(260.0, 460.0);
+    // 宽窗铺满：左栏按比例跟着窗口长（不再 460 封顶），释义栏吃剩下的——桌面最大化时
+    // 两栏都更宽、一屏看到的内容更多，而不是居中留出两侧空白。
+    final double leftWidth = (c.maxWidth * 0.4).clamp(300.0, 640.0);
+    return _wideRow(leftWidth, left, defs, s);
+  }
+
+  Widget _wideRow(
+    double leftWidth,
+    List<Widget> left,
+    Widget? defs,
+    _SrsCardStyle s,
+  ) {
     return Row(
       key: const ValueKey<String>('srs-fushi-back-wide'),
       crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -56,12 +56,17 @@ class SrsBrowsePage extends ConsumerStatefulWidget {
   const SrsBrowsePage({
     super.key,
     this.initialQuery,
+    this.initialCardId,
     this.onChangeNoteType,
     this.onMigrateToFushiCard,
   });
 
   /// 打开时带上的查询（AnkiConnect guiBrowse）。
   final String? initialQuery;
+
+  /// 打开时定位到的卡片（复习页顶栏「浏览」：像 Anki 一样直接落在正在复习的这张卡上，
+  /// 预览 / 编辑就在旁边）。不在当前查询结果里时按默认落到第一行。
+  final String? initialCardId;
 
   /// 批量菜单的「更改笔记类型」；null = 不显示这一项。
   final SrsChangeNoteTypeFlow? onChangeNoteType;
@@ -102,7 +107,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   String? _searchField;
 
   /// 当前行（预览目标 / 键盘位置）的 ID；见 [_idOf]。
-  String? _currentId;
+  late String? _currentId = widget.initialCardId;
   final Set<String> _selected = <String>{};
   bool _selectMode = false;
   String? _anchorId;
@@ -157,12 +162,21 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     if (store == null) return;
     final SrsBrowseSnapshot snap = await SrsBrowseSnapshot.load(store);
     if (!mounted) return;
+    final bool first = _snapshot == null;
     setState(() {
       _snapshot = snap;
       _canSchedule = store.canSchedule;
       _loading = false;
       _applyQuery();
     });
+    // 带着 initialCardId 打开：列表首次出现后把这一行滚进视口。
+    if (first && widget.initialCardId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final int i = _currentIndex;
+        if (i >= 0) _scrollToIndex(i);
+      });
+    }
   }
 
   /// 按当前查询 / 排序 / 模式重算列表（同步，调用方负责 setState）。

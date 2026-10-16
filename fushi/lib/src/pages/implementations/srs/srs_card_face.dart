@@ -45,6 +45,7 @@ class SrsCardFace {
     this.fushiCard = false,
     this.onContentHeight,
     this.onWheel,
+    this.onZoomWheel,
     this.hostCss = '',
   });
 
@@ -84,6 +85,10 @@ class SrsCardFace {
   /// 指针停在释义上滚滚轮，外层卡面照样滚）。
   final void Function(double deltaY)? onWheel;
 
+  /// 非 null 时页面截下 Ctrl（⌘）+ 滚轮交给宿主缩放卡面（WebView 自身缩放已关，且
+  /// 平台视图吃掉的滚轮到不了 Flutter）。
+  final void Function(double deltaY)? onZoomWheel;
+
   /// 宿主追加进主题样式的 CSS（随主题原地换，不重放卡片）。混合渲染的窄版式用它把
   /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
   final String hostCss;
@@ -103,6 +108,7 @@ class SrsCardFace {
         fushiCard: fushiCard,
         onContentHeight: onContentHeight,
         onWheel: onWheel,
+        onZoomWheel: onZoomWheel,
         hostCss: hostCss,
       );
 }
@@ -110,11 +116,16 @@ class SrsCardFace {
 /// 页面 → 宿主的内容高度 / 滚轮转交（见 [SrsCardFace.onContentHeight] / [SrsCardFace.onWheel]）。
 const String kSrsContentHeightHandler = 'onSrsContentHeight';
 const String kSrsWheelHandler = 'onSrsWheel';
+const String kSrsZoomWheelHandler = 'onSrsZoomWheel';
 
 /// 上报内容高度（ResizeObserver 盯 body；换卡 / 展开收起 / 图片加载都会触发）与
 /// 不可滚动时转交滚轮。幂等：外壳重放时不重复挂。
 @visibleForTesting
-String srsCardMetricsScript({required bool height, required bool wheel}) =>
+String srsCardMetricsScript({
+  required bool height,
+  required bool wheel,
+  bool zoom = false,
+}) =>
     '''
 (function(){
   if (window.__fushiSrsMetrics) return;
@@ -137,10 +148,18 @@ String srsCardMetricsScript({required bool height, required bool wheel}) =>
   }
   if ($wheel) {
     window.addEventListener('wheel', function(e){
+      if (e.ctrlKey || e.metaKey) return;
       var el = document.scrollingElement || document.documentElement;
       if (el.scrollHeight > window.innerHeight + 1) return;
       call('$kSrsWheelHandler', e.deltaY);
     }, {passive: true});
+  }
+  if ($zoom) {
+    window.addEventListener('wheel', function(e){
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      call('$kSrsZoomWheelHandler', e.deltaY);
+    }, {passive: false});
   }
 })();
 ''';
@@ -191,6 +210,15 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Numpad4',
   'Ctrl+KeyZ',
   'Meta+KeyZ',
+  // 卡面缩放（Ctrl / ⌘ + 加号 / 减号 / 0）。
+  'Ctrl+Equal',
+  'Ctrl+Minus',
+  'Ctrl+Digit0',
+  'Ctrl+NumpadAdd',
+  'Ctrl+NumpadSubtract',
+  'Meta+Equal',
+  'Meta+Minus',
+  'Meta+Digit0',
 ];
 
 /// 浏览页预览持焦时要交回 Dart 的键：翻面（Enter / 空格）、上一张 / 下一张（方向键）、
@@ -1183,9 +1211,14 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
       );
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
-      if (height || wheel) {
+      final bool zoom = widget.face.onZoomWheel != null;
+      if (height || wheel || zoom) {
         await controller.evaluateJavascript(
-          source: srsCardMetricsScript(height: height, wheel: wheel),
+          source: srsCardMetricsScript(
+            height: height,
+            wheel: wheel,
+            zoom: zoom,
+          ),
         );
       }
     } catch (_) {
@@ -1250,6 +1283,16 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
               final Object? dy = arguments.isEmpty ? null : arguments.first;
               if (dy is num && mounted) {
                 widget.face.onWheel?.call(dy.toDouble());
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsZoomWheelHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? dy = arguments.isEmpty ? null : arguments.first;
+              if (dy is num && mounted) {
+                widget.face.onZoomWheel?.call(dy.toDouble());
               }
               return null;
             },

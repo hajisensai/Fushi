@@ -109,6 +109,12 @@ final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
   ),
 );
 
+/// 复习页卡面缩放倍率（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0），按 profile 偏好。
+final Provider<double> srsReviewZoomProvider = Provider<double>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewZoom)),
+);
+
 /// 卡面可供给的导入字体目录（app 字体库目录；测试覆写）。null = 不供给导入字体。
 final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {
   try {

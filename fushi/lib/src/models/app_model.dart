@@ -8323,6 +8323,9 @@ class AppModel with ChangeNotifier {
   bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
   Future<void> setSrsReviewHideHardEasy(bool value) =>
       prefsRepo.setSrsReviewHideHardEasy(value);
+  double get srsReviewZoom => _prefsRepo?.srsReviewZoom ?? 1.0;
+  Future<void> setSrsReviewZoom(double value) =>
+      prefsRepo.setSrsReviewZoom(value);
 
   // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非内置类型的字段映射）。
   // 同样可空读：prefs 未装配 = 默认牌组 + Fushi 卡片。
