@@ -62,9 +62,60 @@ enum SrsCardPreviewWidth { phone, desktop }
 /// 宽屏两栏布局的断点（逻辑像素）。
 const double kSrsCardAppearanceWideBreakpoint = 840;
 
-/// 预览宽度档位对应的卡面宽度（逻辑像素）。
-double srsCardPreviewWidth(SrsCardPreviewWidth w) =>
-    w == SrsCardPreviewWidth.phone ? 390 : 1100;
+/// 手机预览的卡面宽度上限（逻辑像素）。
+const double kSrsCardPreviewPhoneWidth = 390;
+
+/// 桌面版式需要的最小排版宽度（CSS px）：预览区比它窄时用页面内 zoom 缩到这个宽度排版。
+const double kSrsCardPreviewDesktopMinWidth = 760;
+
+/// 桌面版式在窄预览区里模拟的视口宽度（CSS px）。
+const double kSrsCardPreviewDesktopViewport = 1100;
+
+/// 预览框：卡面宽度、左边距（已对齐到整设备像素）、强制版式与页面内 zoom。
+class SrsCardPreviewFrame {
+  const SrsCardPreviewFrame({
+    required this.width,
+    required this.left,
+    required this.layout,
+    this.pageZoom,
+  });
+
+  final double width;
+  final double left;
+  final SrsCardLayout layout;
+  final double? pageZoom;
+}
+
+/// 按预览档位与可用宽度算预览框（纯函数，测试直接调）。
+SrsCardPreviewFrame srsCardPreviewFrame(
+  SrsCardPreviewWidth w, {
+  required double availableWidth,
+  required double devicePixelRatio,
+}) {
+  double snap(double v) =>
+      (v * devicePixelRatio).floorToDouble() / devicePixelRatio;
+  if (w == SrsCardPreviewWidth.phone) {
+    final double width = snap(
+      availableWidth < kSrsCardPreviewPhoneWidth
+          ? availableWidth
+          : kSrsCardPreviewPhoneWidth,
+    );
+    return SrsCardPreviewFrame(
+      width: width,
+      left: snap((availableWidth - width) / 2),
+      layout: SrsCardLayout.narrow,
+    );
+  }
+  final double width = snap(availableWidth);
+  return SrsCardPreviewFrame(
+    width: width,
+    left: 0,
+    layout: SrsCardLayout.wide,
+    pageZoom: width < kSrsCardPreviewDesktopMinWidth
+        ? width / kSrsCardPreviewDesktopViewport
+        : null,
+  );
+}
 
 /// 打开卡面外观页（复习页 ⋯、笔记类型管理页 Fushi 卡片那一行共用）。
 Future<void> openSrsCardAppearancePage(BuildContext context) =>
@@ -85,6 +136,7 @@ class SrsCardAppearancePage extends ConsumerStatefulWidget {
 
 class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
   bool _answer = true;
+  bool _previewCollapsed = false;
   bool? _dark;
   SrsCardPreviewWidth? _width;
   SrsCardPreviewSource _source = SrsCardPreviewSource.sample;
@@ -367,7 +419,7 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SizedBox(width: 400, child: _controls(context)),
+                SizedBox(width: 400, child: _keepHeader(_controls(context))),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -383,7 +435,10 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             ),
           );
         }
-        final double previewHeight = (c.maxHeight * 0.42).clamp(260.0, 460.0);
+        // 窄屏：预览在上、控件在下。预览高度取可用高度的 36%，夹在 [200, 340]：
+        // 矮屏少占、高屏也不超过上限，控件区始终至少留六成以上；预览工具条右端可整块
+        // 收起（收起时连 WebView 一起卸掉，只留工具条）。
+        final double previewHeight = (c.maxHeight * 0.36).clamp(200.0, 340.0);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -394,21 +449,34 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
                 tokens.spacing.page,
                 tokens.spacing.gap,
               ),
-              child: SizedBox(
-                height: previewHeight,
-                child: _preview(context, width),
-              ),
+              child: _previewCollapsed
+                  ? _previewToolbar(context, width, collapsible: true)
+                  : SizedBox(
+                      height: previewHeight,
+                      child: _preview(context, width, collapsible: true),
+                    ),
             ),
-            Expanded(child: _controls(context)),
+            Expanded(child: _keepHeader(_controls(context))),
           ],
         );
       },
     );
   }
 
+  /// 控件列表的滚动不往上冒：页面顶栏不随滚动隐藏（这页的预览钉在顶栏下方，顶栏一藏
+  /// 就在预览上方留出一条空白）。
+  Widget _keepHeader(Widget child) => NotificationListener<ScrollNotification>(
+    onNotification: (ScrollNotification _) => true,
+    child: child,
+  );
+
   // ---------------------------------------------------------------- 预览
 
-  Widget _preview(BuildContext context, SrsCardPreviewWidth width) {
+  Widget _preview(
+    BuildContext context,
+    SrsCardPreviewWidth width, {
+    bool collapsible = false,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData base = Theme.of(context);
     final bool dark = _dark ?? base.brightness == Brightness.dark;
@@ -443,91 +511,13 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
         }
       },
       bridgeKeys: kSrsBrowseBridgeKeys,
+      fushiCard: true,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: tokens.spacing.gap,
       children: <Widget>[
-        Wrap(
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap / 2,
-          alignment: WrapAlignment.center,
-          children: <Widget>[
-            FushiSegmentedButton<bool>(
-              key: const ValueKey<String>('srs-card-preview-side'),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<bool>>[
-                ButtonSegment<bool>(
-                  value: false,
-                  label: Text(t.srs_card_appearance_preview_front),
-                ),
-                ButtonSegment<bool>(
-                  value: true,
-                  label: Text(t.srs_card_appearance_preview_back),
-                ),
-              ],
-              selected: <bool>{_answer},
-              onSelectionChanged: (Set<bool> s) =>
-                  setState(() => _answer = s.first),
-            ),
-            FushiSegmentedButton<bool>(
-              key: const ValueKey<String>('srs-card-preview-brightness'),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<bool>>[
-                ButtonSegment<bool>(
-                  value: false,
-                  icon: const Icon(FushiIcons.lightMode),
-                  tooltip: t.srs_card_appearance_preview_light,
-                ),
-                ButtonSegment<bool>(
-                  value: true,
-                  icon: const Icon(FushiIcons.darkMode),
-                  tooltip: t.srs_card_appearance_preview_dark,
-                ),
-              ],
-              selected: <bool>{dark},
-              onSelectionChanged: (Set<bool> s) =>
-                  setState(() => _dark = s.first),
-            ),
-            FushiSegmentedButton<SrsCardPreviewWidth>(
-              key: const ValueKey<String>('srs-card-preview-width'),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<SrsCardPreviewWidth>>[
-                ButtonSegment<SrsCardPreviewWidth>(
-                  value: SrsCardPreviewWidth.phone,
-                  icon: const Icon(FushiIcons.phone),
-                  tooltip: t.srs_card_appearance_preview_phone,
-                ),
-                ButtonSegment<SrsCardPreviewWidth>(
-                  value: SrsCardPreviewWidth.desktop,
-                  icon: const Icon(FushiIcons.laptop),
-                  tooltip: t.srs_card_appearance_preview_desktop,
-                ),
-              ],
-              selected: <SrsCardPreviewWidth>{width},
-              onSelectionChanged: (Set<SrsCardPreviewWidth> s) =>
-                  setState(() => _width = s.first),
-            ),
-            if (_mine != null)
-              FushiSegmentedButton<SrsCardPreviewSource>(
-                key: const ValueKey<String>('srs-card-preview-source'),
-                showSelectedIcon: false,
-                segments: <ButtonSegment<SrsCardPreviewSource>>[
-                  ButtonSegment<SrsCardPreviewSource>(
-                    value: SrsCardPreviewSource.sample,
-                    label: Text(t.srs_card_appearance_preview_sample),
-                  ),
-                  ButtonSegment<SrsCardPreviewSource>(
-                    value: SrsCardPreviewSource.mine,
-                    label: Text(t.srs_card_appearance_preview_mine),
-                  ),
-                ],
-                selected: <SrsCardPreviewSource>{_source},
-                onSelectionChanged: (Set<SrsCardPreviewSource> s) =>
-                    setState(() => _source = s.first),
-              ),
-          ],
-        ),
+        _previewToolbar(context, width, collapsible: collapsible),
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(tokens.radii.group),
@@ -535,38 +525,40 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints c) {
-                  final double cardWidth = srsCardPreviewWidth(width);
-                  final Widget card = Theme(
-                    data: previewTheme,
-                    child: ColoredBox(
-                      color: srsCardColorScheme(
-                        _appearance,
-                        previewTheme.colorScheme,
-                      ).surface,
-                      child: faceBuilder(context, face),
-                    ),
+                  final SrsCardPreviewFrame frame = srsCardPreviewFrame(
+                    width,
+                    availableWidth: c.maxWidth,
+                    devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
                   );
-                  // 放得下就按真宽度居中；放不下（手机上看桌面版）整体等比缩小，
-                  // 卡面里仍按 1100 的宽度排版（才看得到双栏）。
-                  if (c.maxWidth >= cardWidth) {
-                    return Center(
+                  // 卡面 WebView 一律 1:1 设备像素渲染：不在 Flutter 侧缩放平台视图（缩放的是
+                  // 已栅格化的纹理，文字必糊）；位置对齐到整设备像素（亚像素偏移同样会让纹理
+                  // 采样发虚）。「手机 / 桌面」由宿主类名强制版式，桌面版式在窄预览区里用页面内
+                  // CSS zoom 按缩小后的尺寸重排重绘。
+                  return Padding(
+                    padding: EdgeInsets.only(left: frame.left),
+                    child: Align(
+                      alignment: Alignment.topLeft,
                       child: SizedBox(
                         key: const ValueKey<String>('srs-card-preview-frame'),
-                        width: cardWidth,
+                        width: frame.width,
                         height: c.maxHeight,
-                        child: card,
+                        child: Theme(
+                          data: previewTheme,
+                          child: ColoredBox(
+                            color: srsCardColorScheme(
+                              _appearance,
+                              previewTheme.colorScheme,
+                            ).surface,
+                            child: faceBuilder(
+                              context,
+                              face.withLayout(
+                                frame.layout,
+                                pageZoom: frame.pageZoom,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    );
-                  }
-                  final double scale = c.maxWidth / cardWidth;
-                  return FittedBox(
-                    fit: BoxFit.contain,
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(
-                      key: const ValueKey<String>('srs-card-preview-frame'),
-                      width: cardWidth,
-                      height: c.maxHeight / scale,
-                      child: card,
                     ),
                   );
                 },
@@ -574,6 +566,105 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  /// 预览工具条：正反面、深浅色、手机 / 桌面、样例 / 我的卡；[collapsible] 时末尾带
+  /// 收起 / 展开预览的按钮（窄屏）。
+  Widget _previewToolbar(
+    BuildContext context,
+    SrsCardPreviewWidth width, {
+    bool collapsible = false,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool dark = _dark ?? Theme.of(context).brightness == Brightness.dark;
+    return Wrap(
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap / 2,
+      alignment: WrapAlignment.center,
+      children: <Widget>[
+        FushiSegmentedButton<bool>(
+          key: const ValueKey<String>('srs-card-preview-side'),
+          showSelectedIcon: false,
+          segments: <ButtonSegment<bool>>[
+            ButtonSegment<bool>(
+              value: false,
+              label: Text(t.srs_card_appearance_preview_front),
+            ),
+            ButtonSegment<bool>(
+              value: true,
+              label: Text(t.srs_card_appearance_preview_back),
+            ),
+          ],
+          selected: <bool>{_answer},
+          onSelectionChanged: (Set<bool> s) =>
+              setState(() => _answer = s.first),
+        ),
+        FushiSegmentedButton<bool>(
+          key: const ValueKey<String>('srs-card-preview-brightness'),
+          showSelectedIcon: false,
+          segments: <ButtonSegment<bool>>[
+            ButtonSegment<bool>(
+              value: false,
+              icon: const Icon(FushiIcons.lightMode),
+              tooltip: t.srs_card_appearance_preview_light,
+            ),
+            ButtonSegment<bool>(
+              value: true,
+              icon: const Icon(FushiIcons.darkMode),
+              tooltip: t.srs_card_appearance_preview_dark,
+            ),
+          ],
+          selected: <bool>{dark},
+          onSelectionChanged: (Set<bool> s) => setState(() => _dark = s.first),
+        ),
+        FushiSegmentedButton<SrsCardPreviewWidth>(
+          key: const ValueKey<String>('srs-card-preview-width'),
+          showSelectedIcon: false,
+          segments: <ButtonSegment<SrsCardPreviewWidth>>[
+            ButtonSegment<SrsCardPreviewWidth>(
+              value: SrsCardPreviewWidth.phone,
+              icon: const Icon(FushiIcons.phone),
+              tooltip: t.srs_card_appearance_preview_phone,
+            ),
+            ButtonSegment<SrsCardPreviewWidth>(
+              value: SrsCardPreviewWidth.desktop,
+              icon: const Icon(FushiIcons.laptop),
+              tooltip: t.srs_card_appearance_preview_desktop,
+            ),
+          ],
+          selected: <SrsCardPreviewWidth>{width},
+          onSelectionChanged: (Set<SrsCardPreviewWidth> s) =>
+              setState(() => _width = s.first),
+        ),
+        if (_mine != null)
+          FushiSegmentedButton<SrsCardPreviewSource>(
+            key: const ValueKey<String>('srs-card-preview-source'),
+            showSelectedIcon: false,
+            segments: <ButtonSegment<SrsCardPreviewSource>>[
+              ButtonSegment<SrsCardPreviewSource>(
+                value: SrsCardPreviewSource.sample,
+                label: Text(t.srs_card_appearance_preview_sample),
+              ),
+              ButtonSegment<SrsCardPreviewSource>(
+                value: SrsCardPreviewSource.mine,
+                label: Text(t.srs_card_appearance_preview_mine),
+              ),
+            ],
+            selected: <SrsCardPreviewSource>{_source},
+            onSelectionChanged: (Set<SrsCardPreviewSource> s) =>
+                setState(() => _source = s.first),
+          ),
+        if (collapsible)
+          FushiIconButton(
+            key: const ValueKey<String>('srs-card-preview-collapse'),
+            icon: _previewCollapsed
+                ? FushiIcons.expandMore
+                : FushiIcons.expandLess,
+            tooltip: t.srs_note_types_preview,
+            onTap: () => setState(() => _previewCollapsed = !_previewCollapsed),
+          ),
       ],
     );
   }

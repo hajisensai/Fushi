@@ -349,6 +349,62 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 复习页 ⋯：卡面样式入口按笔记类型分流（Fushi 卡片 → 外观页；其它 → 模板编辑器）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await tester.runAsync(
+        () => store.createNote(
+          noteTypeId: store.fushiCardNoteTypeId,
+          fieldsById: <String, String>{
+            srsFushiCardFieldId(_kProfile, 'Expression'): '飲む',
+          },
+        ),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
+      );
+      final String lapisLabel = t.srs_card_edit_template(name: 'Lapis');
+      // 菜单项在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮（文字进 tooltip）。
+      Future<bool> hasItem(String label) async {
+        final String key = label == t.srs_card_appearance_title
+            ? 'srs_review_appearance'
+            : 'srs_review_edit_template';
+        if (find.text(label).evaluate().isNotEmpty ||
+            find.byKey(ValueKey<String>(key)).evaluate().isNotEmpty) {
+          return true;
+        }
+        final Finder more = find.byKey(
+          const ValueKey<String>('fushi_floating_toolbar_overflow'),
+        );
+        if (more.evaluate().isEmpty) return false;
+        await tester.tap(more.first);
+        await _settle(tester);
+        final bool found = find.text(label).evaluate().isNotEmpty;
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _settle(tester);
+        return found;
+      }
+
+      final bool firstIsLapis = find
+          .textContaining('食べる')
+          .evaluate()
+          .isNotEmpty;
+      final String expected = firstIsLapis
+          ? lapisLabel
+          : t.srs_card_appearance_title;
+      final String unexpected = firstIsLapis
+          ? t.srs_card_appearance_title
+          : lapisLabel;
+      expect(await hasItem(expected), isTrue);
+      expect(await hasItem(unexpected), isFalse);
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 复习页：显示答案 → 评分预览 → 评分', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await _addLapis(tester, store, '食べる');

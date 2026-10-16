@@ -8032,7 +8032,6 @@
   "srs_card_label_all_definitions": "全部释义",
   "srs_card_label_frequency": "词频",
   "srs_card_label_source": "来源",
-  "srs_card_appearance_title": "卡面外观",
   "srs_card_appearance_hint": "作用于「Fushi 卡片」笔记类型",
   "srs_card_appearance_section_fonts": "字体",
   "srs_card_appearance_font_ja": "日文字体",
@@ -8080,5 +8079,7 @@
   "srs_migrate_fushi_adjust": "调整映射…",
   "srs_migrate_fushi_done": "已迁移 $n 条笔记",
   "srs_migrate_fushi_none": "没有可迁移的 Lapis 笔记",
-  "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记"
+  "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记",
+  "srs_card_appearance_title": "Fushi 卡片外观",
+  "srs_card_edit_template": "编辑 $name 模板"
 }

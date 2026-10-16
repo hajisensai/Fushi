@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -128,6 +129,7 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
           bodyHtml: widget.showAnswer ? rendered.answer : rendered.question,
           css: rendered.css,
           languageCode: language.isEmpty ? null : language,
+          fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
           bridgeKeys: kSrsBrowseBridgeKeys,
           onBridgeKey: (String token) {
             final SrsPreviewCommand? c = srsPreviewCommandOfToken(token);

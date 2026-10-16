@@ -1,6 +1,7 @@
 <!--
   Fushi 卡片 · 背面。字段名与 Lapis 逐字一致；唯一的扩展字段 SentenceTranslation（为空时整块不出现）。
-  版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义。
+  版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义
+  （宿主可用 fushi-srs-layout-wide / -narrow 强制）。
   脚本只做四件事：音调图、释义按词典分组 / 去重、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
   音调解析与分类改写自 Lapis v1.7.0（donkuri/lapis，GPL-3.0）。
 -->
@@ -70,7 +71,10 @@
       return document.body.classList.contains(name) || !!document.querySelector(".card." + name);
     }
     var WIDE = "(min-width: 720px)";
+    /* 双栏与否：宿主强制（外观页预览的「桌面 / 手机」）优先，否则按视口宽度。 */
     function isWide() {
+      if (hostHas("fushi-srs-layout-wide")) return true;
+      if (hostHas("fushi-srs-layout-narrow")) return false;
       return !!(window.matchMedia && window.matchMedia(WIDE).matches);
     }
 
@@ -227,6 +231,7 @@
     function applyLayout() {
       var expanded = hostHas("fushi-srs-gloss-expanded");
       var wide = isWide();
+      root.classList.toggle("fc-layout-wide", wide);
       var aside = root.querySelector(".fc-aside");
       if (aside) {
         /* 宽屏左栏能整个放进视口时吸顶：往下翻释义时词条与例句一直在眼前。 */

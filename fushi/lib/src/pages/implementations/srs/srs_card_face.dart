@@ -40,6 +40,9 @@ class SrsCardFace {
     required this.languageCode,
     required this.onBridgeKey,
     this.bridgeKeys = kSrsReviewBridgeKeys,
+    this.layout = SrsCardLayout.auto,
+    this.pageZoom,
+    this.fushiCard = false,
   });
 
   final String cardId;
@@ -58,6 +61,49 @@ class SrsCardFace {
   /// WebView 持焦时要交回 Dart 的键：复习页用 [kSrsReviewBridgeKeys]，浏览页的预览用
   /// [kSrsBrowseBridgeKeys]。
   final List<String> bridgeKeys;
+
+  /// 卡面版式：默认按卡面宽度自动（模板的断点）；外观页预览强制成手机 / 桌面版式。
+  final SrsCardLayout layout;
+
+  /// 页面内 CSS `zoom`（外观页在窄预览区里看桌面版式时用：按缩小后的尺寸重排重绘，
+  /// 文字清晰；**不**在 Flutter 侧缩放平台视图的纹理）。null = 不缩放。
+  final double? pageZoom;
+
+  /// 这张卡是内置「Fushi 卡片」类型：只有它吃外观设置（变量 / 类名 / 字体 / 自定义配色）。
+  /// 其它类型（Lapis、用户自建、Anki 导入）按自身 HTML/CSS 原样渲染，与 Anki 一致。
+  final bool fushiCard;
+
+  /// 同一面卡，换版式 / 页面 zoom。
+  SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
+      SrsCardFace(
+        cardId: cardId,
+        showingAnswer: showingAnswer,
+        bodyHtml: bodyHtml,
+        css: css,
+        languageCode: languageCode,
+        onBridgeKey: onBridgeKey,
+        bridgeKeys: bridgeKeys,
+        layout: layout,
+        pageZoom: pageZoom,
+        fushiCard: fushiCard,
+      );
+}
+
+/// 卡面版式。
+enum SrsCardLayout {
+  /// 按卡面宽度自动（模板断点）。
+  auto(''),
+
+  /// 强制手机（单栏）版式。
+  narrow('fushi-srs-layout-narrow'),
+
+  /// 强制桌面（双栏）版式。
+  wide('fushi-srs-layout-wide');
+
+  const SrsCardLayout(this.hostClass);
+
+  /// 挂在 `.card` 上的宿主类名（模板脚本据此覆盖自动断点）。
+  final String hostClass;
 }
 
 /// 卡面视图构造器。
@@ -586,11 +632,16 @@ class SrsCardFaceDocument {
       accent: accent,
       onAccent: onAccent,
       themedScrollbar: themedScrollbar,
-      appearanceCss: appearanceCss,
+      appearanceCss: face.pageZoom == null
+          ? appearanceCss
+          : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}',
     ),
     classes: srsCardHostClasses(
       dark: dark,
-      appearanceClasses: appearanceClasses,
+      appearanceClasses: <String>[
+        appearanceClasses,
+        face.layout.hostClass,
+      ].where((String c) => c.isNotEmpty).join(' '),
     ),
     cardId: face.cardId,
     showingAnswer: face.showingAnswer,
@@ -854,6 +905,47 @@ Future<WebResourceResponse?> srsCardFontResponse(
   );
 }
 
+/// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
+/// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
+/// HTML/CSS 原样渲染（与 Anki 一致）。
+SrsCardFaceDocument srsCardFaceDocumentFor(
+  SrsCardFace face, {
+  required ThemeData theme,
+  required SrsCardAppearance appearance,
+  required SrsCardLabels labels,
+  required String mediaUrlPrefix,
+  required bool themedScrollbar,
+  required String Function(String path) fontUrl,
+  String? fontRoot,
+}) {
+  final bool dark = theme.brightness == Brightness.dark;
+  final bool fushi = face.fushiCard;
+  final ColorScheme scheme = fushi
+      ? srsCardColorScheme(appearance, theme.colorScheme)
+      : theme.colorScheme;
+  return SrsCardFaceDocument.of(
+    face,
+    dark: dark,
+    background: scheme.surface,
+    foreground: scheme.onSurface,
+    accent: scheme.primary,
+    onAccent: scheme.onPrimary,
+    mediaUrlPrefix: mediaUrlPrefix,
+    themedScrollbar: themedScrollbar,
+    appearanceCss: fushi
+        ? srsCardAppearanceCss(
+            appearance: appearance,
+            appScheme: theme.colorScheme,
+            dark: dark,
+            labels: labels,
+            fontUrl: fontUrl,
+            fontRoot: fontRoot,
+          )
+        : '',
+    appearanceClasses: fushi ? srsCardAppearanceClasses(appearance) : '',
+  );
+}
+
 /// 卡面标签文字（按 app 界面语言）。
 SrsCardLabels srsCardLabels() => SrsCardLabels(
   allDefinitions: t.srs_card_label_all_definitions,
@@ -908,37 +1000,17 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
     },
   );
 
-  SrsCardFaceDocument _document(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool dark = theme.brightness == Brightness.dark;
-    final SrsCardAppearance appearance = ref.read(srsCardAppearanceProvider);
-    final ColorScheme scheme = srsCardColorScheme(
-      appearance,
-      theme.colorScheme,
-    );
-    return SrsCardFaceDocument.of(
-      widget.face,
-      dark: dark,
-      background: scheme.surface,
-      foreground: scheme.onSurface,
-      accent: scheme.primary,
-      onAccent: scheme.onPrimary,
-      mediaUrlPrefix: _mediaPrefix,
-      themedScrollbar: srsCardUsesThemedScrollbar,
-      appearanceCss: srsCardAppearanceCss(
-        appearance: appearance,
-        appScheme: theme.colorScheme,
-        dark: dark,
-        labels: srsCardLabels(),
-        fontUrl: (String path) => srsCardFontUrl(
-          path,
-          customScheme: webViewUsesCustomSchemeTransport,
-        ),
-        fontRoot: ref.read(srsCardFontRootProvider),
-      ),
-      appearanceClasses: srsCardAppearanceClasses(appearance),
-    );
-  }
+  SrsCardFaceDocument _document(BuildContext context) => srsCardFaceDocumentFor(
+    widget.face,
+    theme: Theme.of(context),
+    appearance: ref.read(srsCardAppearanceProvider),
+    labels: srsCardLabels(),
+    mediaUrlPrefix: _mediaPrefix,
+    themedScrollbar: srsCardUsesThemedScrollbar,
+    fontUrl: (String path) =>
+        srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
+    fontRoot: ref.read(srsCardFontRootProvider),
+  );
 
   Future<SrsMediaStore?> _mediaStore() async {
     try {
@@ -954,7 +1026,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
       return srsCardFontResponse(
         url,
         fontRoot: ref.read(srsCardFontRootProvider),
-        whitelist: ref.read(srsCardAppearanceProvider).fontFilePaths,
+        // 只有 Fushi 卡片的卡面供给外观字体。
+        whitelist: widget.face.fushiCard
+            ? ref.read(srsCardAppearanceProvider).fontFilePaths
+            : const <String>{},
       );
     }
     if (srsMediaNameFromUrl(url) == null) return null;

@@ -18,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -26,6 +27,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -660,19 +662,45 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
   ];
 
-  /// 卡面外观（不依赖当前卡：没有卡时也能调）。
-  FushiToolbarItem get _appearanceItem => FushiToolbarItem(
-    key: const ValueKey<String>('srs_review_appearance'),
-    icon: FushiIcons.appearance,
-    label: t.srs_card_appearance_title,
-    onPressed: () => srsRunLogged(
-      'SrsReview.appearance',
-      () => openSrsCardAppearancePage(context),
-    ),
-  );
+  /// 卡面样式入口，按当前这张卡的笔记类型分流：Fushi 卡片 → 可视化外观页；其它类型 →
+  /// 这张卡所用模板的编辑器（正面 / 背面 / 样式 + 预览，即 Anki 式的渲染规则自定义）。
+  FushiToolbarItem? get _appearanceItem {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null) return null;
+    if (detail.noteType.builtinKey == kSrsBuiltinFushiCardKey) {
+      return FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_appearance'),
+        icon: FushiIcons.appearance,
+        label: t.srs_card_appearance_title,
+        onPressed: () => srsRunLogged(
+          'SrsReview.appearance',
+          () => openSrsCardAppearancePage(context),
+        ),
+      );
+    }
+    final SrsTemplateDef? tpl = detail.template;
+    if (tpl == null) return null;
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_review_edit_template'),
+      icon: FushiIcons.appearance,
+      label: t.srs_card_edit_template(name: detail.noteType.name),
+      onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
+        await Navigator.of(context).push<void>(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => SrsTemplateEditorPage(
+              noteTypeId: detail.noteType.id,
+              templateId: tpl.id,
+            ),
+          ),
+        );
+        if (mounted) bumpSrsRevision(ref);
+      }),
+    );
+  }
 
   List<FushiToolbarItem> _menuItems() => _detail == null
-      ? <FushiToolbarItem>[_appearanceItem]
+      ? const <FushiToolbarItem>[]
       : <FushiToolbarItem>[
           FushiToolbarItem(
             icon: FushiIcons.pause,
@@ -704,7 +732,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             label: t.srs_note_delete,
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
-          _appearanceItem,
+          ?_appearanceItem,
         ];
 
   Widget _buildTopBar(BuildContext context) {
@@ -876,6 +904,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       css: rendered?.css ?? '',
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
+      fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

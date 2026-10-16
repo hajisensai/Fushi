@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         renderAnkiCard,
         templateIdsToNames,
         templateNamesToIds;
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -562,6 +563,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                       bodyHtml: _previewAnswer ? card.answer : card.question,
                       css: _css.text,
                       languageCode: language.isEmpty ? null : language,
+                      fushiCard: _type?.builtinKey == kSrsBuiltinFushiCardKey,
                       onBridgeKey: (_) {},
                     ),
                   ),

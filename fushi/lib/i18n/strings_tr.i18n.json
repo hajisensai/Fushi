@@ -8032,7 +8032,6 @@
   "srs_card_label_all_definitions": "All definitions",
   "srs_card_label_frequency": "Frequency",
   "srs_card_label_source": "Source",
-  "srs_card_appearance_title": "Card appearance",
   "srs_card_appearance_hint": "Applies to the Fushi Card note type",
   "srs_card_appearance_section_fonts": "Fonts",
   "srs_card_appearance_font_ja": "Japanese font",
@@ -8080,5 +8079,7 @@
   "srs_migrate_fushi_adjust": "Adjust mapping…",
   "srs_migrate_fushi_done": "Migrated $n notes",
   "srs_migrate_fushi_none": "No Lapis notes to migrate",
-  "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated"
+  "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated",
+  "srs_card_appearance_title": "Fushi Card appearance",
+  "srs_card_edit_template": "Edit $name template"
 }

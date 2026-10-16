@@ -109,6 +109,14 @@ void main() {
       contains('fushi-srs-density-comfortable'),
     );
     expect(FushiCardNoteType.template.css, contains('fushi-srs-dict-unified'));
+    // 外观页预览强制版式用的宿主类名由背面脚本识别（覆盖自动断点）。
+    for (final SrsCardLayout l in <SrsCardLayout>[
+      SrsCardLayout.narrow,
+      SrsCardLayout.wide,
+    ]) {
+      expect(FushiCardNoteType.template.back, contains(l.hostClass));
+    }
+    expect(FushiCardNoteType.template.css, contains('.fc-back.fc-layout-wide'));
   });
 
   test('style registry: consecutive cards send each style body once', () async {
@@ -259,6 +267,50 @@ void main() {
           }
         }
       }
+    }
+    // 外观页预览的强制版式：桌面版式在窄预览区里靠页面内 zoom（forced-wide-zoom，按 600px
+    // 宽截图）、手机版式在宽预览区里强制单栏（forced-narrow）。
+    final AnkiRenderedCard sample = _render(srsSampleCardFields());
+    final ColorScheme light = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF386A58),
+    );
+    for (final (String name, SrsCardLayout layout, double? zoom)
+        in <(String, SrsCardLayout, double?)>[
+          ('forced-wide-zoom', SrsCardLayout.wide, 600 / 1100),
+          ('forced-narrow', SrsCardLayout.narrow, null),
+        ]) {
+      const SrsCardAppearance appearance = SrsCardAppearance();
+      final SrsCardFaceDocument doc = SrsCardFaceDocument.of(
+        SrsCardFace(
+          cardId: name,
+          showingAnswer: true,
+          bodyHtml: sample.answer,
+          css: FushiCardNoteType.template.css,
+          languageCode: 'ja',
+          onBridgeKey: (_) {},
+          layout: layout,
+          pageZoom: zoom,
+        ),
+        dark: false,
+        background: light.surface,
+        foreground: light.onSurface,
+        accent: light.primary,
+        onAccent: light.onPrimary,
+        mediaUrlPrefix: 'https://srs.local/media/',
+        themedScrollbar: true,
+        appearanceCss: srsCardAppearanceCss(
+          appearance: appearance,
+          appScheme: light,
+          dark: false,
+          labels: zh,
+          fontUrl: (String p) => p,
+        ),
+        appearanceClasses: srsCardAppearanceClasses(appearance),
+      );
+      final String call = doc.fullCardScript.replaceAll('</', r'<\/');
+      File('${dir.path}/sample-$name.html').writeAsStringSync(
+        doc.shellHtml.replaceFirst('</body>', '<script>$call</script></body>'),
+      );
     }
   });
 }

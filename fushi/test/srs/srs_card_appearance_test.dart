@@ -258,6 +258,127 @@ void main() {
     });
   });
 
+  group('外观只作用于 Fushi 卡片', () {
+    SrsCardFaceDocument docFor({required bool fushiCard}) =>
+        srsCardFaceDocumentFor(
+          SrsCardFace(
+            cardId: 'c',
+            showingAnswer: true,
+            bodyHtml: '<b>x</b>',
+            css: '.card{}',
+            languageCode: 'ja',
+            onBridgeKey: (_) {},
+            fushiCard: fushiCard,
+          ),
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          ),
+          appearance: const SrsCardAppearance(
+            fontJa: SrsCardFontChoice(name: 'Klee One'),
+            colorSource: SrsCardColorSource.custom,
+            customAccent: 0xFFB3261E,
+            showPicture: false,
+          ),
+          labels: _labels,
+          mediaUrlPrefix: 'https://srs.local/media/',
+          themedScrollbar: false,
+          fontUrl: (String path) => path,
+        );
+
+    test('Fushi 卡片：变量 / 类名 / 字体 / 自定义配色都注入', () {
+      final SrsCardFaceDocument d = docFor(fushiCard: true);
+      expect(d.themeCss, contains('--fushi-srs-font-ja:"Klee One"'));
+      expect(d.themeCss, contains('--fushi-srs-label-more:'));
+      expect(d.classes, contains('fushi-srs-hide-picture'));
+      expect(d.classes, contains('fushi-srs-dict-unified'));
+    });
+
+    test('Lapis / 自建类型：拿不到任何外观变量、类名与字体，配色就是 app 主题', () {
+      final SrsCardFaceDocument d = docFor(fushiCard: false);
+      expect(d.themeCss, isNot(contains('--fushi-srs-font')));
+      expect(d.themeCss, isNot(contains('--fushi-srs-label')));
+      expect(d.themeCss, isNot(contains('--fushi-srs-text-scale')));
+      expect(d.themeCss, isNot(contains('@font-face')));
+      expect(d.classes, isNot(contains('fushi-srs-')));
+      final ColorScheme app = ColorScheme.fromSeed(seedColor: Colors.teal);
+      expect(
+        d.themeCss,
+        contains(
+          '--fushi-srs-accent:#${(app.primary.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}',
+        ),
+      );
+    });
+  });
+
+  group('预览框（1:1 渲染，不缩放平台视图）', () {
+    test('手机：宽 = min(390, 可用宽)，居中且对齐整设备像素，强制单栏', () {
+      final SrsCardPreviewFrame narrow = srsCardPreviewFrame(
+        SrsCardPreviewWidth.phone,
+        availableWidth: 351.3,
+        devicePixelRatio: 2,
+      );
+      expect(narrow.width, 351);
+      expect(narrow.left, 0);
+      expect(narrow.layout, SrsCardLayout.narrow);
+      expect(narrow.pageZoom, isNull);
+      final SrsCardPreviewFrame roomy = srsCardPreviewFrame(
+        SrsCardPreviewWidth.phone,
+        availableWidth: 861,
+        devicePixelRatio: 1.25,
+      );
+      // 宽与左边距都落在整设备像素上（1.25 倍屏：390 → 389.6）。
+      expect(roomy.width, closeTo(390, 0.8));
+      expect(roomy.width * 1.25, (roomy.width * 1.25).roundToDouble());
+      expect(roomy.left * 1.25, (roomy.left * 1.25).roundToDouble());
+      expect(roomy.left, closeTo((861 - roomy.width) / 2, 0.8));
+    });
+
+    test('桌面：占满可用宽、强制双栏；比 760 窄时用页面内 zoom 模拟 1100 视口', () {
+      final SrsCardPreviewFrame wide = srsCardPreviewFrame(
+        SrsCardPreviewWidth.desktop,
+        availableWidth: 840,
+        devicePixelRatio: 1,
+      );
+      expect(wide.width, 840);
+      expect(wide.layout, SrsCardLayout.wide);
+      expect(wide.pageZoom, isNull);
+      final SrsCardPreviewFrame phoneScreen = srsCardPreviewFrame(
+        SrsCardPreviewWidth.desktop,
+        availableWidth: 350,
+        devicePixelRatio: 3,
+      );
+      expect(phoneScreen.pageZoom, closeTo(350 / 1100, 1e-6));
+    });
+
+    test('强制版式与 zoom 进外壳主题部分（换版式不重放卡片）', () {
+      final SrsCardFace face = SrsCardFace(
+        cardId: 'c',
+        showingAnswer: true,
+        bodyHtml: '<b>x</b>',
+        css: '',
+        languageCode: 'ja',
+        onBridgeKey: (_) {},
+      );
+      SrsCardFaceDocument doc(SrsCardFace f) => SrsCardFaceDocument.of(
+        f,
+        dark: false,
+        background: Colors.white,
+        foreground: Colors.black,
+        accent: Colors.teal,
+        onAccent: Colors.white,
+        mediaUrlPrefix: 'https://srs.local/media/',
+        themedScrollbar: false,
+      );
+      final SrsCardFaceDocument wide = doc(
+        face.withLayout(SrsCardLayout.wide, pageZoom: 0.5),
+      );
+      expect(wide.classes, contains('fushi-srs-layout-wide'));
+      expect(wide.themeCss, contains('html{zoom:0.5000;}'));
+      expect(doc(face).classes, isNot(contains('fushi-srs-layout')));
+      expect(doc(face).themeCss, isNot(contains('zoom')));
+    });
+  });
+
   group('字体供给', () {
     late Directory root;
     late File good;
@@ -341,7 +462,8 @@ void main() {
                 srsCardFaceBuilderProvider.overrideWithValue(
                   (BuildContext context, SrsCardFace face) => Consumer(
                     builder: (BuildContext context, WidgetRef ref, _) => Text(
-                      'face:${face.showingAnswer ? 'back' : 'front'}:'
+                      'face:${face.layout.name}:'
+                      '${face.showingAnswer ? 'back' : 'front'}:'
                       '${srsCardAppearanceClasses(ref.watch(srsCardAppearanceProvider))}',
                       key: const ValueKey<String>('preview-face'),
                     ),
@@ -376,11 +498,32 @@ void main() {
           String faceText() => tester
               .widget<Text>(find.byKey(const ValueKey<String>('preview-face')))
               .data!;
-          expect(faceText(), 'face:back:fushi-srs-dict-unified');
+          final String layout = size.width >= 840 ? 'wide' : 'narrow';
+          expect(faceText(), 'face:$layout:back:fushi-srs-dict-unified');
           expect(
             find.byKey(const ValueKey<String>('srs-card-preview-frame')),
             findsOneWidget,
           );
+          // 预览链路里不许缩放卡面平台视图（缩放纹理 = 文字发糊）。
+          final Finder faceFinder = find.byKey(
+            const ValueKey<String>('preview-face'),
+          );
+          expect(
+            find.ancestor(of: faceFinder, matching: find.byType(FittedBox)),
+            findsNothing,
+          );
+          for (final Transform tr in tester.widgetList<Transform>(
+            find.ancestor(of: faceFinder, matching: find.byType(Transform)),
+          )) {
+            expect(tr.transform.isIdentity(), isTrue);
+          }
+          // 卡面框左缘落在整设备像素上。
+          final double left = tester
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('srs-card-preview-frame')),
+              )
+              .dx;
+          expect(left, left.roundToDouble());
 
           // 关掉统一词典样式：偏好立即变、预览立即跟。
           final Finder unify = find.byKey(
@@ -402,12 +545,12 @@ void main() {
           tester.widget<AdaptiveSettingsSwitchRow>(unify).onChanged!(false);
           await tester.pump(const Duration(milliseconds: 300));
           expect(app.value.dictUnified, isFalse);
-          expect(faceText(), 'face:back:');
+          expect(faceText(), 'face:$layout:back:');
 
           // 正面 / 背面切换。
           await tester.tap(find.text(t.srs_card_appearance_preview_front));
           await tester.pump(const Duration(milliseconds: 300));
-          expect(faceText(), startsWith('face:front:'));
+          expect(faceText(), startsWith('face:$layout:front:'));
           expect(tester.takeException(), isNull);
         });
       }

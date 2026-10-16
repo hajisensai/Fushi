@@ -77,7 +77,8 @@ const String kFushiCardFrontTemplate = r'''<!--
 /// Fushi 卡片模板 · 背面。
 const String kFushiCardBackTemplate = r'''<!--
   Fushi 卡片 · 背面。字段名与 Lapis 逐字一致；唯一的扩展字段 SentenceTranslation（为空时整块不出现）。
-  版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义。
+  版式按卡面宽度自适应：窄（手机）单栏、宽（≥720px，电脑 / 平板横屏）左栏词条 + 例句、右栏释义
+  （宿主可用 fushi-srs-layout-wide / -narrow 强制）。
   脚本只做四件事：音调图、释义按词典分组 / 去重、折叠与版式随外观 / 宽度更新、图片放大；脚本不跑时卡面照常可读。
   音调解析与分类改写自 Lapis v1.7.0（donkuri/lapis，GPL-3.0）。
 -->
@@ -147,7 +148,10 @@ const String kFushiCardBackTemplate = r'''<!--
       return document.body.classList.contains(name) || !!document.querySelector(".card." + name);
     }
     var WIDE = "(min-width: 720px)";
+    /* 双栏与否：宿主强制（外观页预览的「桌面 / 手机」）优先，否则按视口宽度。 */
     function isWide() {
+      if (hostHas("fushi-srs-layout-wide")) return true;
+      if (hostHas("fushi-srs-layout-narrow")) return false;
       return !!(window.matchMedia && window.matchMedia(WIDE).matches);
     }
 
@@ -304,6 +308,7 @@ const String kFushiCardBackTemplate = r'''<!--
     function applyLayout() {
       var expanded = hostHas("fushi-srs-gloss-expanded");
       var wide = isWide();
+      root.classList.toggle("fc-layout-wide", wide);
       var aside = root.querySelector(".fc-aside");
       if (aside) {
         /* 宽屏左栏能整个放进视口时吸顶：往下翻释义时词条与例句一直在眼前。 */
@@ -442,6 +447,8 @@ const String kFushiCardStylingCss = r'''/*
   --fc-gap: 16px;
   --fc-pad: 16px;
   --fc-tap: 40px;
+  /* 窄屏标题区右上角的图片缩略图边长 */
+  --fc-thumb: var(--fushi-srs-thumb, 84px);
 
   /* ---- 标签文字（宿主按界面语言注入；这里是英文兜底） ---- */
   --fc-label-more: var(--fushi-srs-label-more, "All definitions");
@@ -810,6 +817,7 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-reading-row {
   display: flex;
+  /* 读音、音调、播放、词频优先排在一行；放不下才折行 */
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
@@ -905,19 +913,18 @@ const String kFushiCardStylingCss = r'''/*
 .fc-pitch-num[data-type="odaka"] { background: var(--fc-pitch-odaka); }
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
-/* 图片：标题区右侧缩略图，点按放大 */
+/* 图片：窄屏是标题区右上角的紧凑方形缩略图（裁切填满），不挤占词条行；点按放大看全图 */
 .fc-picture {
   flex: 0 0 auto;
-  max-width: 38%;
+  width: var(--fc-thumb);
+  height: var(--fc-thumb);
   margin: 0;
 }
 
 .fc-picture img {
   display: block;
-  max-width: 100%;
-  max-height: 120px;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 100%;
   border-radius: var(--fc-radius-small);
   object-fit: cover;
   cursor: zoom-in;
@@ -1178,8 +1185,8 @@ const String kFushiCardStylingCss = r'''/*
     --fc-size-gloss: calc(16px * var(--fc-text-scale));
   }
 
-  .fc-picture img {
-    max-height: 170px;
+  .card {
+    --fc-thumb: var(--fushi-srs-thumb, 104px);
   }
 
   .fc-sentence-block {
@@ -1187,63 +1194,71 @@ const String kFushiCardStylingCss = r'''/*
   }
 }
 
-/* ---------- 背面：宽屏（≥720px，电脑 / 平板横屏）双栏 ----------
+/* ---------- 背面：宽屏双栏（电脑 / 平板横屏） ----------
    左栏：词条、读音、图片、例句（一眼看清「这是哪个词、在哪句话里」）；
-   右栏：释义（最长的部分单独成栏，少滚动）；左栏能放进视口时吸顶（脚本判定）。 */
+   右栏：释义（最长的部分单独成栏，少滚动）；左栏能放进视口时吸顶（脚本判定）。
+   是否双栏由背面脚本给 .fc-back 挂 fc-layout-wide 决定：默认按视口宽度 ≥720px，宿主
+   类名 fushi-srs-layout-wide / -narrow 可强制（外观页预览切「桌面 / 手机」）。脚本不跑
+   时保持单栏，照样可读。 */
+.fc-back.fc-layout-wide {
+  display: grid;
+  grid-template-columns: minmax(260px, 5fr) minmax(0, 7fr);
+  grid-template-areas:
+    "aside defs"
+    "foot defs";
+  grid-template-rows: auto 1fr;
+  column-gap: calc(var(--fc-gap) * 1.75);
+  row-gap: var(--fc-gap);
+  align-items: start;
+  max-width: 1160px;
+}
+
+.fc-layout-wide .fc-aside {
+  grid-area: aside;
+}
+
+.fc-layout-wide .fc-aside--sticky {
+  position: sticky;
+  top: 0;
+}
+
+.fc-layout-wide .fc-defs {
+  grid-area: defs;
+}
+
+.fc-layout-wide .fc-foot {
+  grid-area: foot;
+}
+
+/* 左栏里图片放到词条下方整宽显示（栏宽有限，不再挤在标题右侧） */
+.fc-layout-wide .fc-head {
+  flex-direction: column;
+  gap: var(--fc-gap);
+}
+
+.fc-layout-wide .fc-picture {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+}
+
+.fc-layout-wide .fc-picture img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 220px;
+}
+
+.fc-layout-wide .fc-meta-row {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fc-layout-wide .fc-meta-label {
+  flex: 0 0 auto;
+}
+
 @media (min-width: 720px) {
-  .fc-back {
-    display: grid;
-    grid-template-columns: minmax(260px, 5fr) minmax(0, 7fr);
-    grid-template-areas:
-      "aside defs"
-      "foot defs";
-    grid-template-rows: auto 1fr;
-    column-gap: calc(var(--fc-gap) * 1.75);
-    row-gap: var(--fc-gap);
-    align-items: start;
-    max-width: 1160px;
-  }
-
-  .fc-aside {
-    grid-area: aside;
-  }
-
-  .fc-aside--sticky {
-    position: sticky;
-    top: 0;
-  }
-
-  .fc-defs {
-    grid-area: defs;
-  }
-
-  .fc-foot {
-    grid-area: foot;
-  }
-
-  /* 左栏里图片放到词条下方整宽显示（栏宽有限，不再挤在标题右侧） */
-  .fc-head {
-    flex-direction: column;
-    gap: var(--fc-gap);
-  }
-
-  .fc-picture {
-    max-width: 100%;
-  }
-
-  .fc-picture img {
-    max-height: 220px;
-  }
-
-  .fc-meta-row {
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .fc-meta-label {
-    flex: 0 0 auto;
-  }
-
   .fc-front {
     max-width: 1000px;
   }
