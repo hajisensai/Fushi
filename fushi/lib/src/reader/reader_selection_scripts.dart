@@ -1636,6 +1636,50 @@ window.fushiSelection = {
       }
     });
   },
+  // BUG-3452：createWalker 跳过的纯空白文本节点在排版上是真实的词间空格。有声书句子
+  // 高亮（sentenceAudioWrapItems / wrapSentenceAudioGroup）把每条 cue 的文字各自包进
+  // wrapper，cue 之间的空格落在两个 wrapper 之间，成了独立的纯空白节点——walker 一跳过
+  // 它，前向取词就把「…greeted us」和下一条 cue 的「belonged」粘成 usbelonged（英文整词
+  // 查不到），句子里也丢掉这个空格。cue 以标点收尾时（hair.）标点先终止扫描，所以只有
+  // 每条 cue 的最后一个词出问题。
+  //
+  // 本谓词回答：对 createWalker 相邻的两个文本节点 a → b（文档序），两者之间是否夹着被
+  // 跳过的纯空白节点（振假名 / 注音不算）。中间只会是被拒的节点，guard 只防异常 DOM。
+  hasSkippedWhitespaceBetween: function(a, b) {
+    if (!a || !b || a === b) return false;
+    var self = this;
+    var raw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) {
+        return self.isFurigana(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    raw.currentNode = a;
+    var guard = 0;
+    for (var n = raw.nextNode(); n && n !== b && guard < 256; n = raw.nextNode(), guard++) {
+      var v = n.nodeValue;
+      if (v && /^[\s　]+$/.test(v)) return true;
+    }
+    return false;
+  },
+  // 被跳过的空白缝是否算一个词间空格：缝前（及缝后，若给出）都是非空白、非日文字符。
+  // 日文排版里 HTML 换行缝历来按无缝处理（取词跨过、句子不加空格），此处保持不变。
+  isWordGapBetweenChars: function(beforeText, afterText) {
+    var before = this.lastCodePointOf(beforeText);
+    if (before === null || this.isScanWhitespace(String.fromCodePoint(before)) ||
+        this.isCodePointJapanese(before)) return false;
+    if (afterText === undefined) return true;
+    if (!afterText) return false;
+    var after = afterText.codePointAt(0);
+    return !this.isScanWhitespace(String.fromCodePoint(after)) &&
+      !this.isCodePointJapanese(after);
+  },
+  lastCodePointOf: function(text) {
+    if (!text) return null;
+    var i = text.length - 1;
+    var unit = text.charCodeAt(i);
+    if (unit >= 0xDC00 && unit <= 0xDFFF && i > 0) i--;
+    return text.codePointAt(i);
+  },
   // BUG-1797：可见正文盒 = body 的 content box ∩ 视口。
   //
   // 分页模式把整章内容当**一根** multicol，靠移动 scrollLeft/scrollTop 看每一页，所以
@@ -2144,8 +2188,16 @@ window.fushiSelection = {
       partsBefore.push(text.slice(0, limit));
       sStartNode = node;
       sStartOffset = 0;
+      var laterNode = node;
       node = walker.previousNode();
-      if (node) limit = node.textContent.length;
+      if (node) {
+        limit = node.textContent.length;
+        // BUG-3452：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
+        if (this.hasSkippedWhitespaceBetween(node, laterNode) &&
+            this.isWordGapBetweenChars(node.textContent, laterNode.textContent)) {
+          partsBefore.push(' ');
+        }
+      }
     }
     walker.currentNode = startNode;
     var partsAfter = [];
@@ -2171,8 +2223,14 @@ window.fushiSelection = {
       partsAfter.push(afterText.slice(start));
       sEndNode = node;
       sEndOffset = afterText.length;
+      var earlierNode = node;
       node = walker.nextNode();
       start = 0;
+      // BUG-3452：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
+      if (node && this.hasSkippedWhitespaceBetween(earlierNode, node) &&
+          this.isWordGapBetweenChars(earlierNode.textContent, node.textContent)) {
+        partsAfter.push(' ');
+      }
     }
     var beforeText = partsBefore.reverse().join('');
     // BUG-2196：换行在 HTML 里等价于空格。**等长**替换（1 字符换 1 字符），
@@ -2273,7 +2331,13 @@ window.fushiSelection = {
       } else {
         parts.push(text);
       }
+      var prevNode = node;
       node = walker.nextNode();
+      // BUG-3452：与 getSentenceContext 同一规则还原被跳过的词间空白缝。
+      if (node && this.hasSkippedWhitespaceBetween(prevNode, node) &&
+          this.isWordGapBetweenChars(prevNode.textContent, node.textContent)) {
+        parts.push(' ');
+      }
     }
     if (!reachedEnd) return '';
     return parts.join('');
@@ -2693,8 +2757,13 @@ window.fushiSelection = {
       }
       if (scanOffset > start) ranges.push({ node: scanNode, start: start, end: scanOffset });
       if (scanOffset < content.length || text.length >= maxLength) break;
+      var scannedNode = scanNode;
       scanNode = walker.nextNode();
       scanOffset = 0;
+      // BUG-3452：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
+      // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
+      if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
+          this.isWordGapBetweenChars(text)) break;
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
