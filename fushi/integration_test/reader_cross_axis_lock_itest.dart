@@ -21,7 +21,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-3453 真 app 回归：阅读器正文的交叉轴（竖排的上下 / 横排的左右）没有任何可
+/// BUG-3482 真 app 回归：阅读器正文的交叉轴（竖排的上下 / 横排的左右）没有任何可
 /// 滚动范围——即使正文里有东西沿交叉轴越出视口。
 ///
 /// 用户在 iOS 滚动模式下手指上下拖动，整页跟着上下移了约 9pt（关了回弹，所以停在

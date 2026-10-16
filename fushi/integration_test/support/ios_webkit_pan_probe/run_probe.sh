@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# BUG-3453 真 WebKit 真触摸对照实验（Mac，iOS 模拟器）。
+# BUG-3482 真 WebKit 真触摸对照实验（Mac，iOS 模拟器）。
 #
 #   bash run_probe.sh <udid>
 #

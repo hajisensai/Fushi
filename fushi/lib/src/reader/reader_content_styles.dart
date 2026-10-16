@@ -1490,7 +1490,7 @@ body {
     // window.scrollBy / root.scroll* / window.scroll* 全部一致生效。
     final String overflowRule =
         'html {\n  $hiddenOverflowAxis: hidden !important;\n}';
-    // BUG-3453：交叉轴（竖排的上下 / 横排的左右）必须顶死。上面 html 的 hidden 只锁住
+    // BUG-3482：交叉轴（竖排的上下 / 横排的左右）必须顶死。上面 html 的 hidden 只锁住
     // 了「滚动条」，锁不住 iOS 的手指：WKWebView 的 UIScrollView 内容尺寸取文档的可滚
     // 动溢出，只要正文里有东西沿交叉轴越出视口（有声书句高亮窄条、注音、书自带的块
     // 等，body 的后代），WebKit 就照样让手指把整页沿交叉轴拖开几像素（关了回弹也只是

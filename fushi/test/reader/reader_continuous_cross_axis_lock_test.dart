@@ -4,7 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
-// BUG-3453：iOS 滚动模式下手指沿交叉轴（竖排上下 / 横排左右）拖动，整页跟着移了
+// BUG-3482：iOS 滚动模式下手指沿交叉轴（竖排上下 / 横排左右）拖动，整页跟着移了
 // 约 9pt。`html { overflow-<交叉轴>: hidden }` 锁不住 WKWebView 的 UIScrollView——它
 // 的内容尺寸取文档的可滚动溢出，正文里任何沿交叉轴越界的后代都让交叉轴可拖。
 //
@@ -33,7 +33,7 @@ Future<String> _css({
 }
 
 void main() {
-  group('BUG-3453 continuous mode locks the cross axis', () {
+  group('BUG-3482 continuous mode locks the cross axis', () {
     test('vertical-rl: pan-x only + body overflow-y: clip', () async {
       final String css = await _css(
         viewMode: 'continuous',

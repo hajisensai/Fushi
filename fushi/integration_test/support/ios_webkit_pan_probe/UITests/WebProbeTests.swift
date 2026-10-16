@@ -1,6 +1,6 @@
 import XCTest
 
-/// BUG-3453 真 WebKit 真触摸对照实验：对 `/tmp/fushi-xaxis/variants/*.html` 逐页装进
+/// BUG-3482 真 WebKit 真触摸对照实验：对 `/tmp/fushi-xaxis/variants/*.html` 逐页装进
 /// WebProbe（纯 WKWebView，配置对齐 flutter_inappwebview 在阅读器上的设置），做 5 次
 /// 真触摸拖动（上 / 下 / 左 / 右 / 斜），WebProbe 把 UIScrollView 的 contentOffset /
 /// contentSize 写进 `/tmp/fushi-xaxis/offsets.log`，这里在其中插 VARIANT / STEP 标记。
