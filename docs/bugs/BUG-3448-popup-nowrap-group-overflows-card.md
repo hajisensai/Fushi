@@ -1,4 +1,4 @@
-## BUG-3430 · 查词卡里词典 nowrap 词组整组画到卡片外
+## BUG-3448 · 查词卡里词典 nowrap 词组整组画到卡片外
 - **报告**：2026-10-16（用户：「这个字典出框了」，截图为日本語シソーラス 類語検索辞典「0231.06 山場」条目，`肝所　0412.05 ≪勘所（意味）≫` 一整行越出词典卡右缘约 115px；前一行 `詰所` 后面留有大片空白，这一组却整体被推到下一行）
 - **真实性**：✅ 真 bug。根因 `fushi/assets/popup/popup.js` `setStructuredContentElementStyle`（及 `definition.js` 同名副本）把词典 structured-content 的 `whiteSpace: nowrap` 原样落到行内 span 上。`white-space: nowrap` 会让 `.glossary-group` 的 `overflow-wrap: anywhere`（BUG-1827）失效，CJK 原本到处可断的断点也被一并关掉。词组宽度一旦超过卡片宽度，就只能整组越界。masonry 卡片是 `position:absolute` 加 JS 硬设的 `width`，撑不大。
   - 证据：从截图的排版特征推断，这一组是「整组换行」的原子单元。CJK 文本只有在 nowrap 下才会出现这种表现。本机这本词典在排查期间已不在 `dictionaryResources` 下，**没有拿到它的原始 structured-content JSON**。
