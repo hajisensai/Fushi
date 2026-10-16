@@ -235,6 +235,7 @@ class SrsAnkiNoteType {
     required this.fields,
     required this.templates,
     this.originalId,
+    this.mtimeSecs = 0,
   });
 
   final int id;
@@ -250,6 +251,10 @@ class SrsAnkiNoteType {
 
   /// NotetypeConfig.original_id（导入别人的笔记类型后 Anki 记下的来源 id）。
   final int? originalId;
+
+  /// 来源最后修改时刻（秒；旧 schema 的 `mod` / 新 schema 的 `mtime_secs`）。
+  /// 导入选项「更新笔记类型：较新时」按它比。
+  final int mtimeSecs;
 
   /// 身份用的 ankiNum：config.original_id，没有就取来源笔记类型 id。
   int get ankiNum => originalId ?? id;
@@ -474,6 +479,7 @@ class SrsAnkiCollection {
         fields: fields,
         templates: tmpls,
         originalId: _int(m['originalId']),
+        mtimeSecs: _int(m['mod']) ?? 0,
       );
     }
   }
@@ -559,7 +565,9 @@ class SrsAnkiCollection {
         ),
       );
     }
-    for (final Row row in db.select('SELECT id, name, config FROM notetypes')) {
+    for (final Row row in db.select(
+      'SELECT id, name, mtime_secs, config FROM notetypes',
+    )) {
       // NotetypeConfig: kind = 1（1 = cloze）、css = 3、original_id = 10（optional int64）。
       final SrsProtoMessage cfg = SrsProtoMessage.parse(_blob(row['config']));
       final int id = row['id'] as int;
@@ -575,6 +583,7 @@ class SrsAnkiCollection {
             (SrsAnkiTemplate a, SrsAnkiTemplate b) => a.ord.compareTo(b.ord),
           ),
         originalId: cfg.optInt(10),
+        mtimeSecs: (row['mtime_secs'] as int?) ?? 0,
       );
     }
   }
@@ -591,11 +600,14 @@ class SrsAnkiCollection {
       );
       final bool filtered = kind.has(2);
       final int id = row['id'] as int;
+      // proto3：config_id 缺失 = 0（BUG-3418，解码层不填非零默认）。0 不是任何
+      // 预设的 id；Anki 取不到牌组的预设时用默认预设 1，这里照它在语义层换算。
+      final int configId = filtered ? 0 : kind.messageOf(1).intOf(1);
       decks[id] = SrsAnkiDeck(
         id: id,
         name: (row['name'] as String).replaceAll('\x1f', '::'),
         filtered: filtered,
-        configId: filtered ? 0 : kind.messageOf(1).intOf(1, 1),
+        configId: filtered || configId != 0 ? configId : 1,
         collapsed: common.boolOf(1),
       );
     }
@@ -609,6 +621,11 @@ class SrsAnkiCollection {
       // new_per_day = 9, reviews_per_day = 10, maximum_review_interval = 16,
       // desired_retention = 37；JSchoreels fork: fsrs_params_7 = 52,
       // fsrs_version = 53, rwkv_review_enabled = 67。
+      //
+      // BUG-3418：除 fork 的 optional fsrs_version 外都是 proto3 标量，proto3 不写
+      // 零值——字段缺失就是 0 / false / 空，不是「没设置」。一律按零值解码：每日
+      // 新卡上限设成 0 的预设绝不能读成 20。非零默认只属于旧格式 JSON 缺键
+      // （_loadPresetsJson）。最大间隔 0 是无效值，导入时不写、走本机默认。
       final SrsProtoMessage c = SrsProtoMessage.parse(_blob(row['config']));
       final int id = row['id'] as int;
       presets[id] = SrsAnkiPreset(
@@ -616,9 +633,9 @@ class SrsAnkiCollection {
         name: row['name'] as String,
         learnSteps: c.floatsOf(1).map(_f32).toList(),
         relearnSteps: c.floatsOf(2).map(_f32).toList(),
-        newPerDay: c.intOf(9, 20),
-        reviewsPerDay: c.intOf(10, 200),
-        maxIntervalDays: c.intOf(16, 36500),
+        newPerDay: c.intOf(9),
+        reviewsPerDay: c.intOf(10),
+        maxIntervalDays: c.intOf(16),
         desiredRetention: _f32(c.floatOf(37)),
         fsrs6Params: c.floatsOf(6).map(_f32).toList(),
         fsrs7Params: c.floatsOf(52).map(_f32).toList(),

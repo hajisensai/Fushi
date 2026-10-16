@@ -20,11 +20,13 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
+import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
 export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show SrsImportException, SrsZstdDecoder;
+export 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 export 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 
 /// 媒体落盘回调：返回存储后的文件名（例如按内容哈希改名），字段里的引用按它改写。
@@ -33,14 +35,16 @@ typedef SrsImportMediaSink =
 
 /// 导入一个 .apkg / .colpkg（新旧格式都支持）。
 ///
-/// - [updateExisting]：同 guid 的笔记已存在时写来源的新字段值 / 标签 / 卡片牌组与暂停；默认不覆盖本地。
+/// - [options]：对齐 Anki 导入页的五个选项（合并笔记类型 / 更新笔记 / 更新笔记类型 /
+///   包含排程 / 包含牌组预设），默认值与 Anki 相同，见 [SrsAnkiImportOptions]。
+///   .colpkg（整库包）也走这条合并路径：Anki 会用它替换整个集合，Fushi 不替换、不删本机任何数据。
 /// - [zstdDecompress]：新格式需要的 zstd 解码，缺省用排程内核（FfiFsrsEngine.zstdDecompress）；
 ///   内核不可用时新格式抛 [SrsImportException]（code = needsKernel）。
 Future<SrsImportReport> importAnkiPackage({
   required SrsDbStore store,
   required Uint8List bytes,
   required SrsImportMediaSink storeMedia,
-  bool updateExisting = false,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
 }) async {
@@ -57,7 +61,7 @@ Future<SrsImportReport> importAnkiPackage({
       pkg: pkg,
       col: col,
       storeMedia: storeMedia,
-      updateExisting: updateExisting,
+      options: options,
       onProgress: onProgress,
     );
     return await imp.run();
@@ -71,14 +75,14 @@ Future<SrsImportReport> importAnkiPackageFile({
   required SrsDbStore store,
   required File file,
   required SrsImportMediaSink storeMedia,
-  bool updateExisting = false,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
 }) async => importAnkiPackage(
   store: store,
   bytes: await file.readAsBytes(),
   storeMedia: storeMedia,
-  updateExisting: updateExisting,
+  options: options,
   onProgress: onProgress,
   zstdDecompress: zstdDecompress,
 );
@@ -176,7 +180,7 @@ class _Importer {
     required this.pkg,
     required this.col,
     required this.storeMedia,
-    required this.updateExisting,
+    required this.options,
     required this.onProgress,
   }) : srcDay = SrsDayContext(
          utcOffsetMin: col.utcOffsetMin,
@@ -187,7 +191,7 @@ class _Importer {
   final SrsAnkiPackage pkg;
   final SrsAnkiCollection col;
   final SrsImportMediaSink storeMedia;
-  final bool updateExisting;
+  final SrsAnkiImportOptions options;
   final void Function(double progress)? onProgress;
 
   /// 来源集合的「今天」口径（日志里的 utcOffset / 翻日也取它，保证多台设备导出同一份内容）。
@@ -212,8 +216,12 @@ class _Importer {
 
   String get profileUid => store.profileUid;
 
+  /// Anki 的排程系统标签（gather.rs `remove_system_tags`）。
+  static const Set<String> _schedulingTags = <String>{'marked', 'leech'};
+
   Future<SrsImportReport> run() async {
     report.latestFormat = pkg.latestFormat;
+    report.options = options;
     // Anki review 卡的 due 是「相对 crt 的天数」：crt（秒）在来源时区 / 翻日下的日历日。
     final DateTime crtDate = DateTime.fromMillisecondsSinceEpoch(
       col.crtSecs * 1000 +
@@ -232,6 +240,10 @@ class _Importer {
     }
     await _mapDecks();
     await _importNotes();
+    if (!options.withScheduling) {
+      report.reviewLogsSkipped =
+          col.db.select('SELECT count(*) AS n FROM revlog').first['n'] as int;
+    }
     await _flush(force: true);
     onProgress?.call(1);
     return report;
@@ -302,15 +314,172 @@ class _Importer {
 
   // ------------------------------------------------------------------ 笔记类型
 
+  /// 本机最后一次改某实体「内容」的时刻（导入选项「较新时」的比较基准）：
+  /// [relevant] 选出的键里所有在场修改记录的 HLC 物理时刻取最大，没有就取 [fallback]。
+  static int _lastEditMs(
+    SrsEntityEdits edits,
+    bool Function(String key) relevant,
+    int fallback,
+  ) {
+    int out = fallback;
+    for (final SrsRegister r in edits.registers) {
+      if (!relevant(r.key)) continue;
+      for (final SrsFieldEdit e in r.live) {
+        if (e.hlc.physical > out) out = e.hlc.physical;
+      }
+    }
+    return out;
+  }
+
+  static bool _isNoteTypeContentKey(String key) =>
+      key == SrsFieldKeys.name ||
+      key == SrsFieldKeys.css ||
+      key.startsWith('fieldDef/') ||
+      key.startsWith('tmplDef/');
+
+  static bool _sameList(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static bool _isNoteContentKey(String key) =>
+      key.startsWith('f/') || key == SrsFieldKeys.noteTags;
+
+  /// 字段 / 模板 → 本机 ID（铁律 C）。
+  static String _resolveId(
+    int? configId,
+    String name,
+    Iterable<(String, int?)> have,
+    String Function(int) byNum,
+    String Function(String) byName,
+  ) {
+    final Map<String, int?> h = <String, int?>{
+      for (final (String id, int? n) in have) id: n,
+    };
+    if (configId != null) {
+      // ankiNum 已记成某项的别名 → 那一项。
+      for (final MapEntry<String, int?> e in h.entries) {
+        if (e.value == configId) return e.key;
+      }
+      final String direct = byNum(configId);
+      if (h.containsKey(direct)) return direct;
+      // 先前按名字回退生成、还没有 ankiNum 的项：只把 ankiNum 记成它的别名，ID 不换。
+      final String named = byName(name);
+      if (h.containsKey(named) && h[named] == null) return named;
+      return direct;
+    }
+    return byName(name);
+  }
+
+  /// 本机已有的全部定义（含已删除的、内置默认值）。
+  static (Map<String, SrsFieldDef>, Map<String, SrsTemplateDef>) _haveDefs(
+    SrsNoteTypeView? view,
+  ) {
+    final Map<String, SrsFieldDef> fields = <String, SrsFieldDef>{
+      if (view != null)
+        for (final SrsFieldDef f in view.fields) f.id: f,
+    };
+    final Map<String, SrsTemplateDef> tmpls = <String, SrsTemplateDef>{
+      if (view != null)
+        for (final SrsTemplateDef t in view.templates) t.id: t,
+    };
+    if (view == null) return (fields, tmpls);
+    for (final String key in view.edits.keys) {
+      if (key.startsWith('fieldDef/')) {
+        final String id = key.substring('fieldDef/'.length);
+        fields[id] = SrsFieldDef.fromValue(id, view.edits.value(key));
+      } else if (key.startsWith('tmplDef/')) {
+        final String id = key.substring('tmplDef/'.length);
+        tmpls[id] = SrsTemplateDef.fromValue(id, view.edits.value(key));
+      }
+    }
+    return (fields, tmpls);
+  }
+
+  static List<String> _resolveFields(
+    String ntId,
+    SrsAnkiNoteType src,
+    Map<String, SrsFieldDef> have,
+  ) => <String>[
+    for (final SrsAnkiField f in src.fields)
+      _resolveId(
+        f.configId,
+        f.name,
+        have.values.map((SrsFieldDef d) => (d.id, d.ankiNum)),
+        (int n) => SrsIds.field(ntId, n),
+        (String n) => SrsIds.fieldByName(ntId, n),
+      ),
+  ];
+
+  static Map<int, String> _resolveTemplates(
+    String ntId,
+    SrsAnkiNoteType src,
+    Map<String, SrsTemplateDef> have,
+  ) => <int, String>{
+    for (final SrsAnkiTemplate t in src.templates)
+      t.ord: _resolveId(
+        t.configId,
+        t.name,
+        have.values.map((SrsTemplateDef d) => (d.id, d.ankiNum)),
+        (int n) => SrsIds.template(ntId, n),
+        (String n) => SrsIds.templateByName(ntId, n),
+      ),
+  };
+
+  /// 来源与本机笔记类型的字段 / 模板是不是同一组（Anki `equal_schema` 的对应：
+  /// 来源的每一项都解析到本机一个未删除的项，且本机没有多出来的未删除项）。
+  static bool _equalSchema(SrsNoteTypeView view, SrsAnkiNoteType src) {
+    final (
+      Map<String, SrsFieldDef> haveFields,
+      Map<String, SrsTemplateDef> haveTmpls,
+    ) = _haveDefs(
+      view,
+    );
+    final Set<String> liveFields = <String>{
+      for (final SrsFieldDef f in haveFields.values)
+        if (!f.deleted) f.id,
+    };
+    final Set<String> liveTmpls = <String>{
+      for (final SrsTemplateDef t in haveTmpls.values)
+        if (!t.deleted) t.id,
+    };
+    final List<String> fields = _resolveFields(view.id, src, haveFields);
+    final Iterable<String> tmpls = _resolveTemplates(
+      view.id,
+      src,
+      haveTmpls,
+    ).values;
+    return fields.length == liveFields.length &&
+        fields.toSet().length == fields.length &&
+        liveFields.containsAll(fields) &&
+        tmpls.length == liveTmpls.length &&
+        tmpls.toSet().length == tmpls.length &&
+        liveTmpls.containsAll(tmpls);
+  }
+
+  /// 「不合并笔记类型」时另建的那一份的 ankiNum：由来源身份 + 字段 / 模板组成确定性派生，
+  /// 两台设备导入同一个包得到同一个 ID（铁律 C）；同一种结构再导入回到同一份副本
+  /// （对应 Anki 的 get_previously_duplicated_notetype）。
+  static int _duplicateAnkiNum(SrsAnkiNoteType src) => hash53(
+    'notetype-dup/${src.ankiNum}/${srsCanonicalJson(<String, Object?>{
+      'cloze': src.isCloze,
+      'fields': <Object?>[for (final SrsAnkiField f in src.fields) f.configId ?? 'name:${f.name}'],
+      'tmpls': <Object?>[for (final SrsAnkiTemplate t in src.templates) t.configId ?? 'name:${t.name}'],
+    })}',
+  );
+
   Future<_NtMap> _mapNoteType(SrsAnkiNoteType src) async {
-    final String ntId = SrsIds.noteType(profileUid, src.ankiNum);
+    final String baseId = SrsIds.noteType(profileUid, src.ankiNum);
     final String kind = src.isCloze
         ? SrsNoteTypeKind.cloze
         : SrsNoteTypeKind.standard;
-    SrsNoteTypeView? view = await store.noteType(ntId);
-    if (view != null && view.kind != kind) {
+    final SrsNoteTypeView? base = await store.noteType(baseId);
+    if (base != null && base.kind != kind) {
       return _NtMap(
-        id: ntId,
+        id: baseId,
         name: src.name,
         isCloze: src.isCloze,
         fieldIds: const <String>[],
@@ -318,8 +487,38 @@ class _Importer {
         conflict: SrsImportIssueReason.noteTypeKindMismatch,
       );
     }
-    final bool created = view == null;
-    if (created) {
+    if (base != null && !options.mergeNoteTypes && !_equalSchema(base, src)) {
+      // 不合并：本机那一个不动，来源笔记类型另建一份。
+      final int dupNum = _duplicateAnkiNum(src);
+      final String dupId = SrsIds.noteType(profileUid, dupNum);
+      final SrsNoteTypeView? dup = await store.noteType(dupId);
+      if (dup == null) report.noteTypesDuplicated.add(src.name);
+      return _mapInto(src, dupId, dupNum, dup);
+    }
+    return _mapInto(src, baseId, src.ankiNum, base);
+  }
+
+  Future<_NtMap> _mapInto(
+    SrsAnkiNoteType src,
+    String ntId,
+    int ankiNum,
+    SrsNoteTypeView? existing,
+  ) async {
+    final String kind = src.isCloze
+        ? SrsNoteTypeKind.cloze
+        : SrsNoteTypeKind.standard;
+    final bool created = existing == null;
+    // 来源较新 / 总是 / 从不：只管名字、CSS、模板正文、已有项的名字与顺序。
+    final bool update =
+        existing == null ||
+        options.updateNoteTypes.shouldUpdate(
+          localMs: _lastEditMs(existing.edits, _isNoteTypeContentKey, 0),
+          sourceMs: src.mtimeSecs * 1000,
+        );
+    final SrsNoteTypeView view;
+    if (existing != null) {
+      view = existing;
+    } else {
       await store.importEvents(<SrsEvent>[
         SrsEntityEvent(
           SrsEntityRecord(
@@ -327,7 +526,7 @@ class _Importer {
             profileUid: profileUid,
             kind: SrsEntityKind.noteType,
             payload: <String, Object?>{
-              'ankiNum': src.ankiNum,
+              'ankiNum': ankiNum,
               'ntKind': kind,
               'createdAt': src.ankiNum,
             },
@@ -337,66 +536,26 @@ class _Importer {
       view = (await store.noteType(ntId))!;
     }
 
-    // 本机已有的全部定义（含已删除的、内置默认值）。
-    final Map<String, SrsFieldDef> haveFields = <String, SrsFieldDef>{
-      for (final SrsFieldDef f in view.fields) f.id: f,
-    };
-    final Map<String, SrsTemplateDef> haveTmpls = <String, SrsTemplateDef>{
-      for (final SrsTemplateDef t in view.templates) t.id: t,
-    };
-    for (final String key in view.edits.keys) {
-      if (key.startsWith('fieldDef/')) {
-        final String id = key.substring('fieldDef/'.length);
-        haveFields[id] = SrsFieldDef.fromValue(id, view.edits.value(key));
-      } else if (key.startsWith('tmplDef/')) {
-        final String id = key.substring('tmplDef/'.length);
-        haveTmpls[id] = SrsTemplateDef.fromValue(id, view.edits.value(key));
-      }
-    }
-
-    String resolve(
-      int? configId,
-      String name,
-      Iterable<(String, int?)> have,
-      String Function(int) byNum,
-      String Function(String) byName,
-    ) {
-      final Map<String, int?> h = <String, int?>{
-        for (final (String id, int? n) in have) id: n,
-      };
-      if (configId != null) {
-        // ankiNum 已记成某项的别名 → 那一项。
-        for (final MapEntry<String, int?> e in h.entries) {
-          if (e.value == configId) return e.key;
-        }
-        final String direct = byNum(configId);
-        if (h.containsKey(direct)) return direct;
-        // 先前按名字回退生成、还没有 ankiNum 的项：只把 ankiNum 记成它的别名，ID 不换。
-        final String named = byName(name);
-        if (h.containsKey(named) && h[named] == null) return named;
-        return direct;
-      }
-      return byName(name);
-    }
+    final (
+      Map<String, SrsFieldDef> haveFields,
+      Map<String, SrsTemplateDef> haveTmpls,
+    ) = _haveDefs(
+      view,
+    );
+    final List<String> fieldIds = _resolveFields(ntId, src, haveFields);
+    final Map<int, String> tmplByOrd = _resolveTemplates(ntId, src, haveTmpls);
 
     final Map<String, Object?> edits = <String, Object?>{};
-    final List<String> fieldIds = <String>[];
     final Map<String, String> nameToId = <String, String>{};
-    for (final SrsAnkiField f in src.fields) {
-      final String id = resolve(
-        f.configId,
-        f.name,
-        haveFields.values.map((SrsFieldDef d) => (d.id, d.ankiNum)),
-        (int n) => SrsIds.field(ntId, n),
-        (String n) => SrsIds.fieldByName(ntId, n),
-      );
-      fieldIds.add(id);
+    for (final (int i, SrsAnkiField f) in src.fields.indexed) {
+      final String id = fieldIds[i];
       nameToId[f.name] = id;
       final SrsFieldDef? have = haveFields[id];
+      final bool keepLocal = have != null && !update;
       final SrsFieldDef want = SrsFieldDef(
         id: id,
-        name: f.name,
-        ord: f.ord,
+        name: keepLocal ? have.name : f.name,
+        ord: keepLocal ? have.ord : f.ord,
         ankiNum: f.configId ?? have?.ankiNum,
       );
       if (have == null ||
@@ -406,22 +565,14 @@ class _Importer {
       }
     }
 
-    final Map<int, String> tmplByOrd = <int, String>{};
     for (final SrsAnkiTemplate t in src.templates) {
-      final String id = resolve(
-        t.configId,
-        t.name,
-        haveTmpls.values.map((SrsTemplateDef d) => (d.id, d.ankiNum)),
-        (int n) => SrsIds.template(ntId, n),
-        (String n) => SrsIds.templateByName(ntId, n),
-      );
-      tmplByOrd[t.ord] = id;
+      final String id = tmplByOrd[t.ord]!;
       final SrsTemplateDef? have = haveTmpls[id];
-      final bool writeBody = have == null || updateExisting;
+      final bool writeBody = have == null || update;
       final SrsTemplateDef want = SrsTemplateDef(
         id: id,
-        name: t.name,
-        ord: t.ord,
+        name: writeBody ? t.name : have.name,
+        ord: writeBody ? t.ord : have.ord,
         front: writeBody
             ? templateNamesToIds(
                 await _withMedia(t.qfmt, includeStatic: true),
@@ -469,13 +620,14 @@ class _Importer {
       }
     }
 
-    if (created || updateExisting) {
+    if (update) {
       if (view.name != src.name) edits[SrsFieldKeys.name] = src.name;
       final String css = await _withMedia(src.css, includeStatic: true);
       if (view.css != css) edits[SrsFieldKeys.css] = css;
     }
     if (edits.isNotEmpty) {
       await store.editFields(SrsEntityKind.noteType, ntId, edits);
+      if (!created) report.noteTypesUpdated++;
     }
     return _NtMap(
       id: ntId,
@@ -564,6 +716,16 @@ class _Importer {
     for (final SrsAnkiDeck d in col.decks.values) {
       final String? id = idByName[d.name];
       if (id != null) _deckOf[d.id] = id;
+    }
+
+    // 不含牌组预设：新建的牌组用本机默认设置（Anki：预设 id 重置为默认预设）。
+    if (!options.withDeckConfigs) {
+      report.deckPresetsSkipped = <int>{
+        for (final String full in ordered)
+          if (created.contains(full) && byName[full] != null)
+            byName[full]!.configId,
+      }.where(col.presets.containsKey).length;
+      return;
     }
 
     // 牌组设置：只在首次建牌组时写。
@@ -727,7 +889,7 @@ class _Importer {
       'SELECT id, ease, ivl, factor, time, type FROM revlog WHERE cid = ? ORDER BY id',
     );
     final PreparedStatement notes = col.db.prepare(
-      'SELECT id, guid, mid, tags, flds FROM notes ORDER BY id',
+      'SELECT id, guid, mid, mod, tags, flds FROM notes ORDER BY id',
     );
     try {
       final IteratingCursor cur = notes.selectCursor();
@@ -781,6 +943,12 @@ class _Importer {
     final List<String> tags = (n['tags'] as String)
         .split(RegExp(r'\s+'))
         .where((String t) => t.isNotEmpty)
+        // 不含排程：与 Anki 相同，去掉 marked / leech 这两个排程系统标签。
+        .where(
+          (String t) =>
+              options.withScheduling ||
+              !_schedulingTags.contains(t.toLowerCase()),
+        )
         .toList();
     final String noteId = SrsIds.note(profileUid, guid);
     final SrsNoteView? existing = await store.note(noteId);
@@ -789,6 +957,7 @@ class _Importer {
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
 
     final bool isNew = existing == null;
+    bool update = false;
     if (isNew) {
       await store.createNote(
         noteTypeId: nt.id,
@@ -810,9 +979,31 @@ class _Importer {
         ),
       );
       return;
-    } else if (updateExisting) {
-      await store.updateNote(noteId, fieldsById: fields, tags: tags);
-      report.notesUpdated++;
+    } else if (options.updateNotes.shouldUpdate(
+      localMs: _lastEditMs(
+        existing.edits,
+        _isNoteContentKey,
+        existing.createdAt,
+      ),
+      sourceMs: ((n['mod'] as int?) ?? 0) * 1000,
+    )) {
+      update = true;
+      final List<SrsFieldEdit>? written = await store.editFields(
+        SrsEntityKind.note,
+        noteId,
+        <String, Object?>{
+          // 只写与本机物化值不同的项（缺记录的字段读作空、空标签不必再写一遍）。
+          for (final MapEntry<String, String> f in fields.entries)
+            if (existing.field(f.key) != f.value)
+              SrsFieldKeys.noteField(f.key): f.value,
+          if (!_sameList(existing.tags, tags)) SrsFieldKeys.noteTags: tags,
+        },
+      );
+      if (written != null && written.isNotEmpty) {
+        report.notesUpdated++;
+      } else {
+        report.notesSkipped++;
+      }
     } else {
       report.notesSkipped++;
     }
@@ -829,8 +1020,18 @@ class _Importer {
         tplId,
         nt.isCloze ? c.ord + 1 : 0,
       );
-      await _importCardFlags(cardId, c, firstDeck, isNew: isNew);
-      await _importCardSchedule(cardId, c, revlogOf, noteExisted: !isNew);
+      await _importCardFlags(
+        cardId,
+        c,
+        firstDeck,
+        isNew: isNew,
+        update: update,
+      );
+      if (options.withScheduling) {
+        await _importCardSchedule(cardId, c, revlogOf, noteExisted: !isNew);
+      } else if (isNew && (c.type != 0 || c.queue < 0)) {
+        report.cardsResetToNew++;
+      }
     }
   }
 
@@ -839,19 +1040,24 @@ class _Importer {
     _SrcCard c,
     String noteDeck, {
     required bool isNew,
+    required bool update,
   }) async {
-    if (!isNew && !updateExisting) return;
+    if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
+    // 暂停属于排程（Anki 不含排程时整卡 schedule_as_new，暂停一并清掉）。
     final bool suspended = c.queue == -1;
+    final bool withSuspend = options.withScheduling;
     if (isNew) {
       if (deck != noteDeck) await store.moveCard(cardId, deck);
-      if (suspended) await store.setSuspended(cardId, true);
+      if (withSuspend && suspended) await store.setSuspended(cardId, true);
       return;
     }
     final SrsCardCacheRow? row = await store.cardRow(cardId);
     if (row == null) return;
     if (row.deckId != deck) await store.moveCard(cardId, deck);
-    if (row.suspended != suspended) await store.setSuspended(cardId, suspended);
+    if (withSuspend && row.suspended != suspended) {
+      await store.setSuspended(cardId, suspended);
+    }
   }
 
   Future<void> _importCardSchedule(

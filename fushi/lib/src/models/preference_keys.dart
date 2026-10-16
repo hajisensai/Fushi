@@ -408,8 +408,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_floating_lyric',
   'show_media_notification',
   'show_remote_entries',
-  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
-  // 复习（二选一；存量 'both' 读成 'anki'）。模块关着时不读。非凭据、跨设备。
+  // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
+  // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
+  'srs_import_anki_options',
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
   'srs_mining_deck_id',
@@ -419,6 +420,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SRS 笔记类型 id，'' = 内置 Lapis）：挖词目标 = Fushi 复习时用的笔记
   // 类型。被删时回落 Lapis。非凭据、跨设备。
   'srs_mining_note_type_id',
+  // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
+  // 复习（二选一；存量 'both' 读成 'anki'）。模块关着时不读。非凭据、跨设备。
   'srs_mining_target',
   'startup_default_dictionary_tab',
   // int（profiles.id）：v105 统计按 Profile 隔离——legacy 统计家族（v92 前的四张

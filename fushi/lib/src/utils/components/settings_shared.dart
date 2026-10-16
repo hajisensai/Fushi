@@ -2,6 +2,7 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -121,6 +122,15 @@ const double kSettingsStepperTrailingWidth =
 /// 的判断同一条：截断即失效，宁可让控件换到下一行（[AdaptiveSettingsRow] 本来就
 /// 有这条堆叠退路）。96dp ≈ 7 个 CJK 字（bodyMedium 14）。
 const double kSettingsRowLabelMinWidth = 96;
+
+/// [AdaptiveSettingsRow] 回答 intrinsic 宽度时，标题的「舒展」宽度（1x；随文字
+/// 缩放放大）。只在父级做 intrinsic 测量时用（对话框的 `IntrinsicWidth`），
+/// 普通设置页不问 intrinsic，不受影响（BUG-3417）。
+const double kSettingsRowIntrinsicLabelWidth = 280;
+
+/// 同上：没有声明 [AdaptiveSettingsRow.trailingWidth] 的 trailing 按这个宽度估
+/// （开关 / 小按钮一类）。
+const double kSettingsRowIntrinsicTrailingWidth = 64;
 const double kSettingsPickerDefaultWidth = 220;
 const double kSettingsPickerMinInlineWidth = 120;
 
@@ -1066,7 +1076,34 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
     final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
-    final Widget content = LayoutBuilder(
+    // BUG-3417：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
+    // 而 Material AlertDialog 把正文包在 IntrinsicWidth 里——设置行直接当对话框正文
+    // 时对话框被量成只有标题 / 按钮那么宽。这里替 LayoutBuilder 回答：宽度按「行内
+    // 布局舒展时」估（标题舒展宽 + trailing），最小宽按堆叠布局；高度只是给父级算
+    // 交叉轴用的估值（单行行高），真正的高度仍由布局决定。
+    final double labelPreferred = (kSettingsRowIntrinsicLabelWidth * textScale)
+        .clamp(
+          kSettingsRowIntrinsicLabelWidth,
+          2 * kSettingsRowIntrinsicLabelWidth,
+        );
+    final double trailingPreferred = trailing == null
+        ? 0
+        : (tokens.spacing.gap + 4) +
+              (declaredTrailingWidth ?? kSettingsRowIntrinsicTrailingWidth);
+    final double intrinsicMax =
+        2 * horizontalInset + iconExtra + labelPreferred + trailingPreferred;
+    final double intrinsicMin =
+        2 * horizontalInset +
+        iconExtra +
+        (kSettingsRowLabelMinWidth * textScale).clamp(
+          kSettingsRowLabelMinWidth,
+          2 * kSettingsRowLabelMinWidth,
+        );
+    final double intrinsicHeight =
+        tokens.density.controlHeight +
+        tokens.spacing.gap +
+        2 * tokens.spacing.rowVertical;
+    final Widget layout = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // BUG-1184：flexible trailing 此前被排除在堆叠判定外（`!trailingFlexible`），
         // 理由是它「会自己 shrink-and-scroll，不会溢出」。不溢出 ≠ 看得清：flexible
@@ -1096,6 +1133,12 @@ class AdaptiveSettingsRow extends StatelessWidget {
               : _buildRowLayout(context),
         );
       },
+    );
+    final Widget content = _SettingsRowIntrinsics(
+      minWidth: intrinsicMin,
+      maxWidth: intrinsicMax,
+      height: intrinsicHeight,
+      child: layout,
     );
 
     if (onTap == null) return content;
@@ -1187,9 +1230,14 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 
   Widget _buildInlineTrailing(Widget child, {required bool flexible}) {
+    // heightFactor 必须是 1（BUG-3417）：Align 不给 heightFactor 时在有界高度下
+    // 撑满最大高度。设置页里行高无界看不出来；行一旦直接放进有界高度的容器（对话框
+    // 正文的 Flexible），trailing 就把整行撑到容器那么高，标题孤零零居中。竖直居中
+    // 由外层 Row 的 crossAxisAlignment.center 负责。
     final Widget aligned = Align(
       alignment: Alignment.centerRight,
       widthFactor: flexible ? null : 1,
+      heightFactor: 1,
       child: child,
     );
     if (!flexible) return aligned;
@@ -1205,6 +1253,8 @@ class AdaptiveSettingsRow extends StatelessWidget {
             : tokens.density.controlHeight + tokens.spacing.gap + 4,
       ),
       child: Column(
+        // 有界高度下也按内容收高（BUG-3417，同 _buildInlineTrailing 的说明）。
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1231,6 +1281,87 @@ class AdaptiveSettingsRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 替 [AdaptiveSettingsRow] 里的 LayoutBuilder 回答 intrinsic 尺寸（BUG-3417）。
+///
+/// 布局 / 绘制 / 命中全部原样交给子树；只有 intrinsic 查询不往下问（往下问就撞上
+/// LayoutBuilder：release 答 0、debug 抛「LayoutBuilder does not support returning
+/// intrinsic dimensions」）。
+class _SettingsRowIntrinsics extends SingleChildRenderObjectWidget {
+  const _SettingsRowIntrinsics({
+    required this.minWidth,
+    required this.maxWidth,
+    required this.height,
+    required super.child,
+  });
+
+  final double minWidth;
+  final double maxWidth;
+  final double height;
+
+  @override
+  _RenderSettingsRowIntrinsics createRenderObject(BuildContext context) =>
+      _RenderSettingsRowIntrinsics(
+        minWidth: minWidth,
+        maxWidth: maxWidth,
+        height: height,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSettingsRowIntrinsics renderObject,
+  ) {
+    renderObject
+      ..minWidth = minWidth
+      ..maxWidth = maxWidth
+      ..height = height;
+  }
+}
+
+class _RenderSettingsRowIntrinsics extends RenderProxyBox {
+  _RenderSettingsRowIntrinsics({
+    required double minWidth,
+    required double maxWidth,
+    required double height,
+  }) : _minWidth = minWidth,
+       _maxWidth = maxWidth,
+       _height = height;
+
+  double _minWidth;
+  set minWidth(double v) {
+    if (v == _minWidth) return;
+    _minWidth = v;
+    markNeedsLayout();
+  }
+
+  double _maxWidth;
+  set maxWidth(double v) {
+    if (v == _maxWidth) return;
+    _maxWidth = v;
+    markNeedsLayout();
+  }
+
+  double _height;
+  set height(double v) {
+    if (v == _height) return;
+    _height = v;
+    markNeedsLayout();
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _minWidth;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _maxWidth < _minWidth ? _minWidth : _maxWidth;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => _height;
 }
 
 class _SettingsRowFocusTarget extends StatefulWidget {
@@ -4074,6 +4205,10 @@ class _SettingsLabel extends StatelessWidget {
       );
     }
     return Column(
+      // BUG-3417：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
+      // Flexible）里标题列撑满、整行被撑高；设置页行高无界看不出来。竖直居中由
+      // 外层 Row 的 crossAxisAlignment.center 负责。
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -4141,6 +4276,7 @@ class _CompactSettingsLabel extends StatelessWidget {
           maxLines: kSettingsRowTitleMaxLines,
         );
         return Column(
+          mainAxisSize: MainAxisSize.min, // 同 _SettingsLabel（BUG-3417）。
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
