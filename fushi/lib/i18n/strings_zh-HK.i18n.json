@@ -7777,5 +7777,7 @@
   "srs_ankiconnect_generate_key": "產生金鑰",
   "srs_mining_deck_fallback": "The selected deck was deleted; cards go to the default deck.",
   "srs_mining_note_type_fallback": "The selected note type was deleted; cards use Lapis.",
-  "srs_mining_lapis_mapping_hint": "Lapis uses its built-in field mapping."
+  "srs_mining_lapis_mapping_hint": "Lapis uses its built-in field mapping.",
+  "srs_deck_expand": "Expand subdecks",
+  "srs_deck_collapse": "Collapse subdecks"
 }

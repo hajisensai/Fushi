@@ -250,6 +250,93 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 牌组列表：父牌组箭头收起 / 展开子牌组，键盘 ←/→ 同样生效并写库', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String child = (await tester.runAsync(
+        () => store.ensureDeckPath('Parent::Child'),
+      ))!;
+      final String parent = (await tester.runAsync(
+        () async => (await store.deckTree()).parentOf(child)!,
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      final Finder childRow = find.byKey(ValueKey<String>('srs-deck-$child'));
+      final Finder toggle = find.byKey(
+        ValueKey<String>('srs-deck-toggle-$parent'),
+      );
+      double childHeight() => tester.getSize(childRow).height;
+      expect(toggle, findsOneWidget, reason: '有子牌组的行才有箭头');
+      expect(
+        find.byKey(ValueKey<String>('srs-deck-toggle-$child')),
+        findsNothing,
+      );
+      // 首次（无状态）默认展开。
+      expect(childHeight(), greaterThan(0));
+      expect(
+        tester.getSize(toggle).width,
+        greaterThanOrEqualTo(apple ? 36 : 48),
+      );
+
+      await tester.tap(toggle);
+      await _settle(tester);
+      expect(childHeight(), 0, reason: '收起后后代消失');
+      expect(
+        await tester.runAsync(
+          () async => (await store.deckTree())[parent]!.collapsed,
+        ),
+        isTrue,
+        reason: '折叠写进牌组本身',
+      );
+
+      await tester.tap(toggle);
+      await _settle(tester);
+      expect(childHeight(), greaterThan(0), reason: '再展开后代出现');
+
+      // 键盘：焦点在父牌组行内（这里取行首箭头按钮；真 app 里整行卡片的焦点目标同在行内）
+      // ← 收起、→ 展开。测试没挂 FushiFocusRoot，Apple 卡片不挂焦点目标，所以不用标题找焦点。
+      final Element toggleElement = tester.element(toggle);
+      final FocusNode rowFocus = FocusManager.instance.rootScope.descendants
+          .firstWhere((FocusNode n) {
+            bool inside = false;
+            n.context?.visitAncestorElements((Element e) {
+              if (identical(e, toggleElement)) {
+                inside = true;
+                return false;
+              }
+              return true;
+            });
+            return inside && n.canRequestFocus;
+          });
+      rowFocus.requestFocus();
+      await tester.pump();
+      expect(rowFocus.hasPrimaryFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await _settle(tester);
+      expect(childHeight(), 0);
+      expect(
+        await tester.runAsync(
+          () async => (await store.deckTree())[parent]!.collapsed,
+        ),
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await _settle(tester);
+      expect(childHeight(), greaterThan(0));
+      expect(
+        await tester.runAsync(
+          () async => (await store.deckTree())[parent]!.collapsed,
+        ),
+        isFalse,
+      );
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 复习页：显示答案 → 评分预览 → 评分', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await _addLapis(tester, store, '食べる');

@@ -41,11 +41,15 @@ class SrsDeckSummary {
     required this.reviewCount,
     required this.newBudget,
     required this.totalCards,
+    this.parentId,
   });
 
   final SrsDeckView deck;
   final String fullName;
   final int depth;
+
+  /// 牌组树里解析后的父牌组（成环已打破；顶层 = null）。列表的折叠按它找后代。
+  final String? parentId;
   final int newCount;
   final int learnCount;
   final int reviewCount;
@@ -1208,51 +1212,112 @@ class SrsDbStore implements SrsSyncReplica {
     return d;
   }
 
-  /// 一个牌组（含子树）的计数。[cards] 至少包含该子树的全部卡片。
-  SrsDeckSummary _summarize(
-    SrsDeckView d,
+  /// 牌组树计数（对齐 Anki v3 的 limit tree，rslib scheduler/queue/limits.rs）：
+  ///
+  /// - 每个牌组的「今日剩余上限」= 自己的每日上限（新卡另经 [srsComputeNewCardBudget] 按复习量缩减）
+  ///   − 今天在**整棵子树**里已学的新卡 / 已复习的卡（Anki 把学习计数记在卡所在牌组及其全部祖先上）；
+  /// - 新卡 / 到期数自底向上：min(本牌组剩余上限, 本牌组自己的卡 + Σ 子牌组**已截断后**的数)；
+  /// - 学习中（learn）不受上限截断，同样逐层求和；
+  /// - 只看 [root] 这棵子树（null = 全部顶层）：点子牌组复习时祖先的上限不参与，与 Anki 一致。
+  ///
+  /// 以前每个牌组各自拿整棵子树的卡数去比自己的上限，子牌组的上限不往上截断，
+  /// 于是会出现「子牌组都是 0、父牌组却有 50」（BUG-3417）。
+  Map<String, _DeckCount> _countTree(
     _CountContext ctx,
-    Iterable<SrsCardCacheRow> cards,
-  ) {
-    final Set<String> sub = ctx.tree.subtree(d.id).toSet();
-    int newAvail = 0,
-        learn = 0,
-        due = 0,
-        total = 0,
-        newDone = 0,
-        reviewDone = 0;
+    Iterable<SrsCardCacheRow> cards, {
+    String? root,
+  }) {
+    final SrsDeckTree tree = ctx.tree;
+    final List<String> ids = root == null
+        ? <String>[for (final SrsDeckView d in tree.decks) d.id]
+        : tree.subtree(root);
+    final Set<String> scope = ids.toSet();
+    final Map<String, _DeckTally> own = <String, _DeckTally>{
+      for (final String id in ids) id: _DeckTally(),
+    };
     for (final SrsCardCacheRow c in cards) {
-      if (!sub.contains(c.deckId) || c.hidden) continue;
-      total++;
-      if (ctx.introducedToday.contains(c.id)) newDone++;
-      if (ctx.reviewedToday.contains(c.id)) reviewDone++;
+      final _DeckTally? t = own[c.deckId];
+      if (t == null || c.hidden) continue;
+      t.total++;
+      if (ctx.introducedToday.contains(c.id)) t.newDone++;
+      if (ctx.reviewedToday.contains(c.id)) t.reviewDone++;
       if (!_isLive(c, ctx.today)) continue;
       switch (SrsQueue.parse(c.queue)) {
         case SrsQueue.newCard:
-          newAvail++;
+          t.newAvail++;
         case SrsQueue.learning:
         case SrsQueue.relearning:
-          if ((c.dueAt ?? 0) <= ctx.nowMs + 20 * 60000) learn++;
+          if ((c.dueAt ?? 0) <= ctx.nowMs + 20 * 60000) t.learn++;
         case SrsQueue.review:
-          if ((c.dueDay ?? 0) <= ctx.today) due++;
+          if ((c.dueDay ?? 0) <= ctx.today) t.due++;
       }
     }
-    final SrsNewCardBudget budget = srsComputeNewCardBudget(
-      newPerDayLimit: d.newPerDay,
-      dueReviews: due,
-      reviewsPerDayLast30: ctx.last30,
-    );
-    return SrsDeckSummary(
-      deck: d,
-      fullName: ctx.tree.fullName(d.id),
-      depth: _depthOf(ctx.tree, d.id),
-      newCount: min(newAvail, max(0, budget.allowed - newDone)),
-      learnCount: learn,
-      reviewCount: min(due, max(0, d.reviewsPerDay - reviewDone)),
-      newBudget: budget,
-      totalCards: total,
-    );
+    final Map<String, List<String>> children = <String, List<String>>{};
+    final List<String> tops = <String>[];
+    for (final String id in ids) {
+      final String? p = tree.parentOf(id);
+      if (id != root && p != null && scope.contains(p)) {
+        (children[p] ??= <String>[]).add(id);
+      } else {
+        tops.add(id);
+      }
+    }
+    final Map<String, _DeckCount> out = <String, _DeckCount>{};
+    // 后序遍历（树已由 SrsDeckTree 打破成环）。
+    _DeckCount visit(String id) {
+      final _DeckTally sub = _DeckTally()..add(own[id]!);
+      int newSum = own[id]!.newAvail;
+      int reviewSum = own[id]!.due;
+      int learnSum = own[id]!.learn;
+      for (final String c in children[id] ?? const <String>[]) {
+        final _DeckCount cc = visit(c);
+        sub.add(cc.subtree);
+        newSum += cc.newCount;
+        reviewSum += cc.reviewCount;
+        learnSum += cc.learnCount;
+      }
+      final SrsDeckView d = tree[id]!;
+      final SrsNewCardBudget budget = srsComputeNewCardBudget(
+        newPerDayLimit: d.newPerDay,
+        dueReviews: sub.due,
+        reviewsPerDayLast30: ctx.last30,
+      );
+      final int newRemaining = max(0, budget.allowed - sub.newDone);
+      final int reviewRemaining = max(0, d.reviewsPerDay - sub.reviewDone);
+      final _DeckCount r = _DeckCount(
+        subtree: sub,
+        budget: budget,
+        newRemaining: newRemaining,
+        reviewRemaining: reviewRemaining,
+        newCount: min(newRemaining, newSum),
+        reviewCount: min(reviewRemaining, reviewSum),
+        learnCount: learnSum,
+      );
+      out[id] = r;
+      return r;
+    }
+
+    for (final String id in tops) {
+      visit(id);
+    }
+    return out;
   }
+
+  SrsDeckSummary _summaryOf(
+    SrsDeckView d,
+    _CountContext ctx,
+    _DeckCount count,
+  ) => SrsDeckSummary(
+    deck: d,
+    fullName: ctx.tree.fullName(d.id),
+    depth: _depthOf(ctx.tree, d.id),
+    parentId: ctx.tree.parentOf(d.id),
+    newCount: count.newCount,
+    learnCount: count.learnCount,
+    reviewCount: count.reviewCount,
+    newBudget: count.budget,
+    totalCards: count.subtree.total,
+  );
 
   /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。卡片缓存只读一次。
   Future<List<SrsDeckSummary>> deckSummaries() async {
@@ -1260,14 +1325,32 @@ class SrsDbStore implements SrsSyncReplica {
     final List<SrsCardCacheRow> cards = await (db.select(
       db.srsCardsCache,
     )..where((c) => c.profileUid.equals(profileUid))).get();
+    final Map<String, _DeckCount> counts = _countTree(ctx, cards);
     final List<SrsDeckSummary> out =
         <SrsDeckSummary>[
-          for (final SrsDeckView d in ctx.tree.decks) _summarize(d, ctx, cards),
+          for (final SrsDeckView d in ctx.tree.decks)
+            _summaryOf(d, ctx, counts[d.id]!),
         ]..sort(
           (SrsDeckSummary a, SrsDeckSummary b) =>
-              a.fullName.compareTo(b.fullName),
+              _treeOrderKey(a.fullName).compareTo(_treeOrderKey(b.fullName)),
         );
     return out;
+  }
+
+  /// 先序（父在前、子紧跟父）的排序键：按层级逐段比较，与 Anki 把「::」存成 \x1f 再排序同一口径。
+  /// 直接比全名时「Lang2」会插进「Lang」与「Lang::JP」之间，子牌组就离开了父牌组。
+  static String _treeOrderKey(String fullName) =>
+      fullName.replaceAll('::', '\x1f');
+
+  /// 牌组列表里收起 / 展开子牌组（Anki 的 deck collapsed）。走修改记录，随同步到其它设备；
+  /// 并发开合不进冲突记录（[SrsFieldClass.viewState]）。
+  Future<void> setDeckCollapsed(String deckId, bool collapsed) async {
+    await editField(
+      SrsEntityKind.deck,
+      deckId,
+      SrsFieldKeys.deckCollapsed,
+      collapsed,
+    );
   }
 
   /// 今天的活动：从新卡学起的卡（新卡配额）与复习了的复习卡（复习上限）。
@@ -1313,7 +1396,26 @@ class SrsDbStore implements SrsSyncReplica {
                   c.hidden.equals(false),
             ))
             .get();
-    final SrsDeckSummary sum = _summarize(deck, ctx, inSubtree);
+    final Map<String, _DeckCount> counts = _countTree(
+      ctx,
+      inSubtree,
+      root: deckId,
+    );
+    final _DeckCount sum = counts[deckId]!;
+    // 一张卡能出，当且仅当它所在牌组到所点牌组这一路上每一层都还有剩余上限（Anki v3 的 limit tree；
+    // 层层上限构成层状拟阵，按任何顺序贪心取都恰好取到 sum 的数，列表数字与实际出卡一致）。
+    bool pathHasRoom(String cardDeck, int Function(_DeckCount c) remaining) {
+      String? cur = cardDeck;
+      int guard = 0;
+      while (cur != null && guard++ < 64) {
+        final _DeckCount? c = counts[cur];
+        if (c == null || remaining(c) <= 0) return false;
+        if (cur == deckId) return true;
+        cur = ctx.tree.parentOf(cur);
+      }
+      return false;
+    }
+
     final int nowMs = ctx.nowMs;
     final List<SrsCardCacheRow> cards = <SrsCardCacheRow>[
       for (final SrsCardCacheRow c in inSubtree)
@@ -1339,7 +1441,9 @@ class SrsDbStore implements SrsSyncReplica {
       final List<SrsCardCacheRow> due = cards
           .where(
             (SrsCardCacheRow c) =>
-                c.queue == SrsQueue.review.wire && (c.dueDay ?? 0) <= ctx.today,
+                c.queue == SrsQueue.review.wire &&
+                (c.dueDay ?? 0) <= ctx.today &&
+                pathHasRoom(c.deckId, (_DeckCount x) => x.reviewRemaining),
           )
           .toList();
       double r(SrsCardCacheRow c) {
@@ -1358,6 +1462,7 @@ class SrsDbStore implements SrsSyncReplica {
       SrsCardCacheRow? first;
       for (final SrsCardCacheRow c in cards) {
         if (c.queue != SrsQueue.newCard.wire) continue;
+        if (!pathHasRoom(c.deckId, (_DeckCount x) => x.newRemaining)) continue;
         if (first == null ||
             c.noteCreatedAt < first.noteCreatedAt ||
             (c.noteCreatedAt == first.noteCreatedAt &&
@@ -1530,7 +1635,7 @@ class SrsDbStore implements SrsSyncReplica {
           ))
           .get();
 
-  /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）。
+  /// 标志类 / 设置类的同步冲突（被覆盖的候选），不含机器产出（第六轮审查第 10 条）与界面状态（折叠）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
     final List<SrsFieldEditRow> rows = await (db.select(
       db.srsFieldEdits,
@@ -1555,7 +1660,8 @@ class SrsDbStore implements SrsSyncReplica {
       );
       if (reg.visibleLosers.isEmpty) continue;
       final SrsFieldEdit w = reg.winner!;
-      if (srsFieldClassOf(w.entityKind, w.fieldKey) == SrsFieldClass.content) {
+      final SrsFieldClass cls = srsFieldClassOf(w.entityKind, w.fieldKey);
+      if (cls == SrsFieldClass.content || cls == SrsFieldClass.viewState) {
         continue;
       }
       out.add((w.entityKind, w.entityId, reg));
@@ -1915,6 +2021,51 @@ class SrsDbStore implements SrsSyncReplica {
 }
 
 /// [SrsDbStore] 计数用的一次性上下文。
+/// 一个牌组自己（或整棵子树）的原始卡数与今天的学习量。
+class _DeckTally {
+  int total = 0;
+  int newAvail = 0;
+  int learn = 0;
+  int due = 0;
+  int newDone = 0;
+  int reviewDone = 0;
+
+  void add(_DeckTally o) {
+    total += o.total;
+    newAvail += o.newAvail;
+    learn += o.learn;
+    due += o.due;
+    newDone += o.newDone;
+    reviewDone += o.reviewDone;
+  }
+}
+
+/// 牌组树里一个节点的计数（见 `SrsDbStore._countTree`）。
+class _DeckCount {
+  const _DeckCount({
+    required this.subtree,
+    required this.budget,
+    required this.newRemaining,
+    required this.reviewRemaining,
+    required this.newCount,
+    required this.reviewCount,
+    required this.learnCount,
+  });
+
+  /// 整棵子树的原始数（未截断）。
+  final _DeckTally subtree;
+  final SrsNewCardBudget budget;
+
+  /// 本牌组今天还能出的新卡 / 复习卡（只看自己的上限与子树已学量）。
+  final int newRemaining;
+  final int reviewRemaining;
+
+  /// 自底向上截断后的数（列表显示的数，也是点本牌组能出的卡数）。
+  final int newCount;
+  final int reviewCount;
+  final int learnCount;
+}
+
 class _CountContext {
   const _CountContext({
     required this.tree,

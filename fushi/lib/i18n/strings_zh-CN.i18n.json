@@ -7777,5 +7777,7 @@
   "srs_ankiconnect_generate_key": "生成密钥",
   "srs_mining_deck_fallback": "所选牌组已被删除，制卡改用默认牌组。",
   "srs_mining_note_type_fallback": "所选笔记类型已被删除，制卡改用 Lapis。",
-  "srs_mining_lapis_mapping_hint": "Lapis 使用内置字段映射。"
+  "srs_mining_lapis_mapping_hint": "Lapis 使用内置字段映射。",
+  "srs_deck_expand": "展开子牌组",
+  "srs_deck_collapse": "收起子牌组"
 }
