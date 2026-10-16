@@ -569,8 +569,16 @@ body::after {
     // 与长音 ー）在 `strict` 下也不许出现在行首，于是「たった」「コート」恰好落在列尾时，
     // 浏览器只能把前一个字一起推到下一列，本列留出一格空白、视觉上像被错误换行。
     // 。、」） 等标点在 `normal` 下仍然禁止行首，与日文出版的常规排版一致。
+    //
+    // 「两端对齐」（BUG-3450）：开关开时必须**主动**注入 `text-align: justify`，不能只是
+    // 「不注入 start」——那样对齐完全取决于书自带 CSS，Standard Ebooks 这类不给正文写
+    // text-align 的书就始终左对齐、行尾参差。声明只挂在 `body` 上靠继承下放（与关闭时的
+    // `start` 同一层级）：书里**显式**给元素写了 text-align 的（标题/页眉居中、署名/引文
+    // 出处右对齐、诗行/版权页左对齐等）是元素自己的声明、优先于继承值，原样保留；只有
+    // 没写对齐、靠继承的正文段落被两端对齐。末行仍按 `text-align-last: auto` 落在行首。
+    // 开关开时不注入 hanging-punctuation / line-break，与修复前一致（不改日文排版既有行为）。
     final String gridCss = settings.enableTextJustification
-        ? ''
+        ? 'text-align: justify !important;'
         : '''
 text-align: start !important;
 hanging-punctuation: allow-end !important;
