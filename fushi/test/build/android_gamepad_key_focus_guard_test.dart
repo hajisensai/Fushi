@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3450：Android 原生层的两条焦点契约（Java 侧无单测宿主，只能源码守卫）。
+/// BUG-3485：Android 原生层的两条焦点契约（Java 侧无单测宿主，只能源码守卫）。
 ///
 /// 1. 触摸模式下窗口没有任何聚焦 view 时，手柄键到不了 FlutterView，系统按
 ///    `Generic.kcm` 把 BUTTON_B 兜底成 BACK——绕过快捷键注册表直接退页面。
@@ -38,7 +38,7 @@ void main() {
     expect(
       ensure,
       isNonNegative,
-      reason: 'dispatchKeyEvent 必须调用 ensureKeyFocusTarget()（BUG-3450）',
+      reason: 'dispatchKeyEvent 必须调用 ensureKeyFocusTarget()（BUG-3485）',
     );
     expect(
       ensure,

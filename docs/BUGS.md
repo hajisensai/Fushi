@@ -44,7 +44,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3450](bugs/BUG-3450-android-gamepad-b-focus-ring.md) | ✅ | ✅ | Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框 |
+| [BUG-3485](bugs/BUG-3485-android-gamepad-b-focus-ring.md) | ✅ | ✅ | Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框 |
 | [BUG-3449](bugs/BUG-3449-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
 | [BUG-3448](bugs/BUG-3448-popup-nowrap-group-overflows-card.md) | ✅ | ✅ | 查词卡里词典 nowrap 词组整组画到卡片外 |
 | [BUG-3447](bugs/BUG-3447-rail-toggle-right-edge-flicker.md) | ✅ | ✅ | rail-toggle-right-edge-flicker |

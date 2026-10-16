@@ -165,7 +165,7 @@ public class MainActivity extends AudioServiceActivity {
     // direct setDefaultFocusHighlightEnabled(false) on the window's view hierarchy is
     // the deterministic place to kill it.
     //
-    // BUG-3450: defaultFocusHighlightEnabled is a PER-VIEW flag -- setting it on the
+    // BUG-3485: defaultFocusHighlightEnabled is a PER-VIEW flag -- setting it on the
     // decorView never reached the full-screen FlutterView, which is the view that
     // actually holds focus. Once a gamepad press left touch mode, the system drew
     // its frame around the FlutterView (= a faint ring along the screen edges) even
@@ -200,7 +200,7 @@ public class MainActivity extends AudioServiceActivity {
         }
     }
 
-    // BUG-3450: key events only reach Flutter through the FOCUSED view chain
+    // BUG-3485: key events only reach Flutter through the FOCUSED view chain
     // (ViewGroup.dispatchKeyEvent forwards to mFocused). Since API 28 a window in
     // touch mode is not given initial focus, so after launch (or after a focused
     // platform view went away) no view is focused: a gamepad BUTTON_B never reaches

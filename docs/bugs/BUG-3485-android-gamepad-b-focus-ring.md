@@ -1,4 +1,4 @@
-## BUG-3450 · Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框
+## BUG-3485 · Android 手柄 B 在触摸模式下变系统返回 + 屏幕外缘系统焦点框
 - **报告**：2026-10-16（用户：应用内反馈 bxsTQRaamU，vivo V2339FA / Android 14 / Xbox 手柄）
 - **真实性**：✅ 真 bug，模拟器 `hibiki_nav`（Android 15）+ uinput 虚拟 Xbox 手柄（vendor 045e，落 Generic.kl/kcm）两条都复现。
   - **现象 1（B = 系统返回）**：启动后处于触摸模式（`mInTouchMode=true`），`dumpsys activity top` 里 FlutterView 无 focused 标志（`VFE...... ........`）；按 B 后 logcat 出现 `AutofillManagerService: onBackKeyPressed()`（系统收到 BACK），更新弹窗被关掉 / 首页直接退回桌面。先按一次 A 后 `mInTouchMode=false`、FlutterView 变为 focused（`.F......`），再按 B 不再出现 `onBackKeyPressed`、app 留在前台。
