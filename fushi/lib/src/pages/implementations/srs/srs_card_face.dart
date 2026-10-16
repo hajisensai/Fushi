@@ -5,6 +5,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -132,6 +133,366 @@ String srsCardHtml({
       '<body class="card$night"><div class="card$night">$body</div></body></html>';
 }
 
+// ---------------------------------------------------------------- 外壳 + 原地换内容
+//
+// 复习页的卡面对齐 Anki / AnkiDroid reviewer：外壳页（基础样式、媒体脚本、按键桥、
+// 卡片 CSS 槽、卡面根节点）只加载一次，换卡 / 翻面 / 换主题都经 JS 原地替换内容，
+// 不再每次 `loadData` 整页重载（重载 = 新文档首帧前一帧空白 + 样式 / 脚本全重来）。
+
+String _cssRgba(Color c, double alpha) {
+  final int argb = c.toARGB32();
+  return 'rgba(${(argb >> 16) & 0xFF},${(argb >> 8) & 0xFF},${argb & 0xFF},'
+      '${alpha.toStringAsFixed(2)})';
+}
+
+/// 卡面细滚动条（WebView2 / Android WebView / Linux WebKit 的经典滚动条默认是带
+/// 上下箭头的粗灰条）。形状与 popup.css 的主题滚动条一致：8px、透明 track、
+/// 2px 内缩的全圆头 thumb、去掉箭头按钮；颜色取前景色低透明度，悬停加深。
+///
+/// 标准属性 `scrollbar-width` / `scrollbar-color` 只给不认 `::-webkit-scrollbar`
+/// 的引擎：Chromium 121+ 一旦标准属性生效会整族禁用 `::-webkit-scrollbar` 伪元素
+/// （BUG-753），悬停加深与去箭头就都没了。
+@visibleForTesting
+String srsCardScrollbarCss(Color foreground) {
+  final String thumb = _cssRgba(foreground, 0.28);
+  final String thumbActive = _cssRgba(foreground, 0.5);
+  return '::-webkit-scrollbar{width:8px;height:8px;background:transparent;}'
+      '::-webkit-scrollbar-track,::-webkit-scrollbar-track-piece,'
+      '::-webkit-scrollbar-corner{background:transparent;border:0;}'
+      '::-webkit-scrollbar-button{display:none;width:0;height:0;}'
+      '::-webkit-scrollbar-thumb{min-height:36px;border:2px solid transparent;'
+      'border-radius:999px;background-color:$thumb;background-clip:padding-box;}'
+      '::-webkit-scrollbar-thumb:hover,::-webkit-scrollbar-thumb:active'
+      '{background-color:$thumbActive;}'
+      '@supports not selector(::-webkit-scrollbar){html{scrollbar-width:thin;'
+      'scrollbar-color:$thumb transparent;}}';
+}
+
+/// iOS / macOS 的 WKWebView 用系统叠加滚动条，不改（macOS 上写了
+/// `::-webkit-scrollbar` 反而会把叠加滚动条换成常驻的自绘条）。
+bool get srsCardUsesThemedScrollbar => !(isIOSPlatform || isMacOSPlatform);
+
+/// 卡面主题样式（外壳里 `#fushi-theme-css` 的内容）：配色、`color-scheme`、
+/// 播放按钮配色变量，以及 [themedScrollbar] 时的细滚动条。
+@visibleForTesting
+String srsCardThemeCss({
+  required bool dark,
+  required Color background,
+  required Color foreground,
+  required Color accent,
+  required Color onAccent,
+  required bool themedScrollbar,
+}) =>
+    ':root{color-scheme:${dark ? 'dark' : 'light'};'
+    '--fushi-srs-accent:${_cssColor(accent)};'
+    '--fushi-srs-on-accent:${_cssColor(onAccent)};}'
+    'html,body{background:${_cssColor(background)};'
+    'color:${_cssColor(foreground)};}'
+    '${themedScrollbar ? srsCardScrollbarCss(foreground) : ''}';
+
+/// 卡面根节点 / body 上的附加类名（Anki 的两种夜间类名）。
+String srsCardNightClasses({required bool dark}) =>
+    dark ? 'nightMode night_mode' : '';
+
+/// 外壳页里的换内容脚本：定义 `__fushiSrsSetTheme` / `__fushiSrsSetCard`。
+///
+/// `__fushiSrsSetCard(css, html, classes)` 对齐 Anki reviewer 的 `_updateQA`：
+/// 清空 `onUpdateHook` / `onShownHook`、停掉旧卡的音视频、换卡片 CSS 与根节点
+/// innerHTML、滚回顶部，然后**按文档顺序重放**正文里的 `<script>`（innerHTML 插入
+/// 的脚本不执行，要重建 script 元素）；外部 `<script src>` 等它加载完（或失败）再
+/// 跑后面的。全是内联脚本时整个过程同步完成，换卡后的第一帧就是脚本跑完的样子。
+/// 脚本全部跑完后依次执行卡片脚本压进 `onUpdateHook` / `onShownHook` 的函数。
+/// 换卡期间又来了新卡（外部脚本还没加载完）时旧卡剩下的脚本与钩子不再执行。
+const String kSrsCardShellScript = r'''
+(function(){
+  if (window.__fushiSrsSetCard) return;
+  var seq = 0;
+  window.onUpdateHook = [];
+  window.onShownHook = [];
+  function root(){ return document.getElementById('fushi-card-root'); }
+  function setClasses(classes){
+    var c = classes ? 'card ' + classes : 'card';
+    document.body.className = c;
+    var r = root();
+    if (r) r.className = c;
+  }
+  function stopMedia(el){
+    var list = el.querySelectorAll('video,audio');
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      try {
+        m.pause();
+        m.removeAttribute('src');
+        while (m.firstChild) m.removeChild(m.firstChild);
+        m.load();
+      } catch (e) {}
+    }
+  }
+  // 内联脚本同步执行、返回 null；外部脚本返回加载完（或失败）时 resolve 的 Promise。
+  function replayScript(old){
+    if (!old.parentNode) return null;
+    var s = document.createElement('script');
+    var attrs = old.attributes;
+    for (var i = 0; i < attrs.length; i++) {
+      s.setAttribute(attrs[i].name, attrs[i].value);
+    }
+    var external = old.hasAttribute('src');
+    var done = null;
+    if (external) {
+      done = new Promise(function(resolve){
+        s.addEventListener('load', function(){ resolve(); });
+        s.addEventListener('error', function(){ resolve(); });
+      });
+    }
+    s.text = old.text;
+    old.parentNode.replaceChild(s, old);
+    return done;
+  }
+  // 从第 i 个脚本起重放：同步跑完返回 true，被新卡打断返回 false，遇到外部脚本返回 Promise。
+  function replayFrom(scripts, i, my){
+    for (; i < scripts.length; i++) {
+      if (my !== seq) return false;
+      var pending = replayScript(scripts[i]);
+      if (pending) {
+        var next = i + 1;
+        return pending.then(function(){ return replayFrom(scripts, next, my); });
+      }
+    }
+    return my === seq;
+  }
+  function runHooks(list){
+    for (var i = 0; i < list.length; i++) {
+      try {
+        if (typeof list[i] === 'function') list[i]();
+      } catch (e) {
+        if (window.console) console.error(e);
+      }
+    }
+  }
+  function finish(my, ok){
+    if (ok !== true || my !== seq) return;
+    runHooks(window.onUpdateHook);
+    runHooks(window.onShownHook);
+  }
+  window.__fushiSrsSetTheme = function(themeCss, classes){
+    document.getElementById('fushi-theme-css').textContent = themeCss;
+    setClasses(classes);
+  };
+  window.__fushiSrsSetCard = function(css, html, classes){
+    var my = ++seq;
+    var r = root();
+    window.onUpdateHook = [];
+    window.onShownHook = [];
+    stopMedia(r);
+    document.getElementById('fushi-card-css').textContent = css;
+    setClasses(classes);
+    r.innerHTML = html;
+    window.scrollTo(0, 0);
+    var scripts = Array.prototype.slice.call(r.getElementsByTagName('script'));
+    var result = replayFrom(scripts, 0, my);
+    if (result && typeof result.then === 'function') {
+      result.then(function(ok){ finish(my, ok); });
+    } else {
+      finish(my, result);
+    }
+  };
+})();
+''';
+
+/// 卡面外壳页：只在 WebView 创建（以及 renderer 死亡重建）时加载一次，内容随后由
+/// [srsCardSetCardScript] / [srsCardSetThemeScript] 原地换。
+@visibleForTesting
+String srsCardShellHtml({required String themeCss, required String classes}) {
+  final String cls = classes.isEmpty ? 'card' : 'card $classes';
+  return '<!doctype html><html><head><meta charset="utf-8">'
+      '<meta name="viewport" content="width=device-width, initial-scale=1">'
+      '<style>html,body{margin:0;padding:0;}'
+      'body{padding:16px;box-sizing:border-box;}</style>'
+      '<style id="fushi-theme-css">$themeCss</style>'
+      '<style>$kSrsCardMediaCss</style>'
+      '<script>$kSrsCardMediaScript</script>'
+      '<style id="fushi-card-css"></style>'
+      '<script>$kSrsCardShellScript</script>'
+      '</head><body class="$cls"><div id="fushi-card-root" class="$cls">'
+      '</div></body></html>';
+}
+
+/// 把 Dart 字符串变成 JS 字符串字面量（JSON 子集；U+2028 / U+2029 也转义，
+/// 老引擎里它们在字符串字面量中是非法换行）。
+String _jsString(String s) =>
+    jsonEncode(s).replaceAll(' ', r' ').replaceAll(' ', r' ');
+
+/// 换卡调用（参数全部 JSON 编码，卡面内容里的引号 / 反斜杠 / `</script>` 都不会逃出字面量）。
+@visibleForTesting
+String srsCardSetCardScript({
+  required String css,
+  required String bodyHtml,
+  required String classes,
+}) =>
+    'window.__fushiSrsSetCard(${_jsString(css)},${_jsString(bodyHtml)},'
+    '${_jsString(classes)});';
+
+/// 换主题调用。
+@visibleForTesting
+String srsCardSetThemeScript({
+  required String themeCss,
+  required String classes,
+}) =>
+    'window.__fushiSrsSetTheme(${_jsString(themeCss)},${_jsString(classes)});';
+
+/// 外壳当前该显示的东西：主题部分与卡片部分分开比对，各自只在变了时下发。
+@immutable
+class SrsCardFaceDocument {
+  const SrsCardFaceDocument({
+    required this.themeCss,
+    required this.classes,
+    required this.cardId,
+    required this.showingAnswer,
+    required this.cardCss,
+    required this.bodyHtml,
+  });
+
+  /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
+  factory SrsCardFaceDocument.of(
+    SrsCardFace face, {
+    required bool dark,
+    required Color background,
+    required Color foreground,
+    required Color accent,
+    required Color onAccent,
+    required String mediaUrlPrefix,
+    required bool themedScrollbar,
+  }) => SrsCardFaceDocument(
+    themeCss: srsCardThemeCss(
+      dark: dark,
+      background: background,
+      foreground: foreground,
+      accent: accent,
+      onAccent: onAccent,
+      themedScrollbar: themedScrollbar,
+    ),
+    classes: srsCardNightClasses(dark: dark),
+    cardId: face.cardId,
+    showingAnswer: face.showingAnswer,
+    cardCss: srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
+    bodyHtml: wrapAnkiCardHtmlWithLang(
+      srsLocalizeCardHtml(face.bodyHtml, urlPrefix: mediaUrlPrefix),
+      face.languageCode,
+    ),
+  );
+
+  final String themeCss;
+  final String classes;
+  final String cardId;
+  final bool showingAnswer;
+  final String cardCss;
+  final String bodyHtml;
+
+  String get _themeKey => '$themeCss\u0000$classes';
+
+  /// 换了卡（哪怕正文一字不差）也要重放：滚回顶部、重跑卡片脚本。夜间类名不在
+  /// 里面：只换主题时走 `__fushiSrsSetTheme` 改类名，不重跑卡片脚本。
+  String get _cardKey =>
+      '$cardId\u0000$showingAnswer\u0000$cardCss\u0000$bodyHtml';
+
+  String get shellHtml =>
+      srsCardShellHtml(themeCss: themeCss, classes: classes);
+}
+
+/// 外壳与「该显示什么」之间的同步：外壳就绪（首次 onLoadStop）前只记下最后一次
+/// 内容，就绪后一次下发；之后主题 / 卡片各自变了才下发对应调用。WebView 无关，
+/// 单测直接驱动。
+@visibleForTesting
+class SrsCardFaceSync {
+  SrsCardFaceSync({required this.evaluate, required this.reloadShell});
+
+  /// 在外壳里执行一段 JS，返回其值（平台视图没了返回 null）。
+  final Future<Object?> Function(String source) evaluate;
+
+  /// 外壳没了（卡片里的链接把页面导航走了）时重新加载外壳。
+  final void Function() reloadShell;
+
+  bool _ready = false;
+  SrsCardFaceDocument? _wanted;
+  String? _appliedTheme;
+  String? _appliedCard;
+  int _generation = 0;
+  bool _reloadedShell = false;
+
+  bool get shellReady => _ready;
+
+  /// 当前该显示的内容（外壳没就绪时排队，只留最后一次）。
+  void update(SrsCardFaceDocument document) {
+    _wanted = document;
+    _flush();
+  }
+
+  /// 新的平台视图 / renderer 重建 / 页面被导航走：外壳要重新加载，已下发的都作废。
+  void detach() {
+    _ready = false;
+    _appliedTheme = null;
+    _appliedCard = null;
+    _generation++;
+  }
+
+  /// 一次加载完成（onLoadStop）：外壳就绪，把当前内容整份下发一次。
+  void shellLoaded() {
+    detach();
+    _ready = true;
+    _flush();
+  }
+
+  void _flush() {
+    final SrsCardFaceDocument? doc = _wanted;
+    if (!_ready || doc == null) return;
+    final StringBuffer calls = StringBuffer();
+    if (doc._themeKey != _appliedTheme) {
+      calls.write(
+        srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
+      );
+    }
+    if (doc._cardKey != _appliedCard) {
+      calls.write(
+        srsCardSetCardScript(
+          css: doc.cardCss,
+          bodyHtml: doc.bodyHtml,
+          classes: doc.classes,
+        ),
+      );
+    }
+    if (calls.isEmpty) return;
+    _appliedTheme = doc._themeKey;
+    _appliedCard = doc._cardKey;
+    final int generation = ++_generation;
+    final String source =
+        '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
+        'return false;$calls return true;})()';
+    unawaited(
+      evaluate(source).then(
+        (Object? result) {
+          if (generation != _generation) return;
+          if (result == false) {
+            // 页面已不是外壳（被卡片链接导航走了）：重载外壳一次，onLoadStop 后重放。
+            if (_reloadedShell) return;
+            _reloadedShell = true;
+            detach();
+            reloadShell();
+          } else if (result == true) {
+            _reloadedShell = false;
+          }
+        },
+        onError: (Object e, StackTrace stack) {
+          ErrorLogService.instance.log('SrsWebCardFace.setCard', e, stack);
+          // 下发失败：下次 update 整份重发（同一代之后没有新下发时才作废）。
+          if (generation != _generation) return;
+          _appliedTheme = null;
+          _appliedCard = null;
+        },
+      ),
+    );
+  }
+}
+
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
@@ -172,12 +533,17 @@ Future<WebResourceResponse?> srsCardMediaResponse(
   );
 }
 
-/// WebView 卡面。保留同一个平台视图，换卡 / 翻面时 `loadData` 换内容（不重建
-/// 平台视图，避免每翻一次面闪白）。
+/// WebView 卡面。保留同一个平台视图、外壳页只加载一次；换卡 / 翻面 / 换主题经
+/// [SrsCardFaceSync] 原地换内容（对齐 Anki reviewer，不整页重载，不闪空帧）。
 class SrsWebCardFace extends ConsumerStatefulWidget {
   const SrsWebCardFace({super.key, required this.face});
 
   final SrsCardFace face;
+
+  /// 集成测试探针：当前卡面 WebView 的 controller（仅 debug / profile 注册，
+  /// 卡面销毁时清空）。用于抓卡面像素与量换卡首帧耗时。
+  @visibleForTesting
+  static InAppWebViewController? debugController;
 
   @override
   ConsumerState<SrsWebCardFace> createState() => _SrsWebCardFaceState();
@@ -185,36 +551,46 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
 
 class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
   InAppWebViewController? _controller;
-  String? _loadedHtml;
 
   /// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
   static final String _mediaPrefix = srsMediaUrlPrefix(
     customScheme: webViewUsesCustomSchemeTransport,
   );
 
+  late final SrsCardFaceSync _sync = SrsCardFaceSync(
+    evaluate: (String source) async {
+      final InAppWebViewController? controller = _controller;
+      if (controller == null) return null;
+      return controller.evaluateJavascript(source: source);
+    },
+    reloadShell: _reloadShell,
+  );
+
   /// renderer 死亡处置：卡面是纯只读渲染，内容全在 [widget.face] 里，重建零损失；
-  /// flush 只需丢掉报废的 controller，重建后 initialData 就是当前这一面。
+  /// flush 只需丢掉报废的 controller，重建后 initialData 是外壳，onLoadStop 时
+  /// [SrsCardFaceSync] 把当前这一面整份重放。
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
     surface: 'srs_card_face',
     flushBeforeRebuild: () async {
       _controller = null;
-      _loadedHtml = null;
+      _sync.detach();
     },
     afterRebuild: () {
       if (mounted) setState(() {});
     },
   );
 
-  String _html(BuildContext context) {
+  SrsCardFaceDocument _document(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return srsCardHtml(
-      face: widget.face,
+    return SrsCardFaceDocument.of(
+      widget.face,
       dark: theme.brightness == Brightness.dark,
       background: theme.colorScheme.surface,
       foreground: theme.colorScheme.onSurface,
-      mediaUrlPrefix: _mediaPrefix,
       accent: theme.colorScheme.primary,
       onAccent: theme.colorScheme.onPrimary,
+      mediaUrlPrefix: _mediaPrefix,
+      themedScrollbar: srsCardUsesThemedScrollbar,
     );
   }
 
@@ -258,26 +634,36 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _syncContent();
+    _sync.update(_document(context));
+  }
+
+  @override
+  void dispose() {
+    if (identical(SrsWebCardFace.debugController, _controller)) {
+      SrsWebCardFace.debugController = null;
+    }
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(SrsWebCardFace oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _syncContent();
+    _sync.update(_document(context));
   }
 
-  void _syncContent() {
+  /// 页面被卡片里的链接导航走了：把外壳装回来（onLoadStop 后重放当前内容）。
+  void _reloadShell() {
     final InAppWebViewController? controller = _controller;
-    if (controller == null) return;
-    final String html = _html(context);
-    if (html == _loadedHtml) return;
-    _loadedHtml = html;
+    if (controller == null || !mounted) return;
     unawaited(
       controller
-          .loadData(data: html, mimeType: 'text/html', encoding: 'utf-8')
+          .loadData(
+            data: _document(context).shellHtml,
+            mimeType: 'text/html',
+            encoding: 'utf-8',
+          )
           .catchError((Object e, StackTrace stack) {
-            ErrorLogService.instance.log('SrsWebCardFace.loadData', e, stack);
+            ErrorLogService.instance.log('SrsWebCardFace.loadShell', e, stack);
           }),
     );
   }
@@ -286,18 +672,18 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
     try {
       await controller.evaluateJavascript(source: srsReviewKeyBridgeScript);
     } catch (_) {
-      // 页面正在换内容 / 平台视图重建：下一次 onLoadStop 会再注入。
+      // 平台视图正在重建：下一次 onLoadStop 会再注入（脚本自带幂等守卫）。
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final String html = _html(context);
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
+        // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
-          data: html,
+          data: _document(context).shellHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         ),
@@ -318,7 +704,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
                 _interceptCustomScheme(request),
         onWebViewCreated: (InAppWebViewController controller) {
           _controller = controller;
-          _loadedHtml = html;
+          _sync.detach();
+          assert(() {
+            SrsWebCardFace.debugController = controller;
+            return true;
+          }());
           controller.addJavaScriptHandler(
             handlerName: _kSrsBridgeHandler,
             callback: (List<dynamic> arguments) {
@@ -341,8 +731,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
             },
           );
         },
-        onLoadStop: (InAppWebViewController controller, _) =>
-            _injectBridge(controller),
+        onLoadStop: (InAppWebViewController controller, _) {
+          // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
+          if (_controller == null) return;
+          _sync.shellLoaded();
+          unawaited(_injectBridge(controller));
+        },
         // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),

@@ -46,6 +46,14 @@ class _UndoStep {
   final Future<void> Function(SrsDbStore store)? revert;
 }
 
+/// 预取好的下一张（数据层：详情 + 渲染结果）。
+class _PrefetchedCard {
+  const _PrefetchedCard({required this.detail, required this.rendered});
+
+  final SrsCardDetail detail;
+  final SrsRenderedCard? rendered;
+}
+
 /// 卡片菜单动作。
 enum _CardAction { edit, suspend, bury, flag, move, reset, deleteNote }
 
@@ -121,24 +129,77 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     await _loadNext();
   }
 
-  Future<void> _refreshCounts() async {
-    final SrsDbStore store = _store!;
-    final SrsDeckSummary? sum = (await store.deckSummaries())
-        .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
-        .firstOrNull;
+  Future<SrsDeckSummary?> _deckSummary() async =>
+      (await _store!.deckSummaries())
+          .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
+          .firstOrNull;
+
+  void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
   }
 
+  Future<void> _refreshCounts() async => _applyCounts(await _deckSummary());
+
+  /// 显示当前卡时在后台取好的「下一张」候选（只在评分后消费，见 [_loadNext]）。
+  Future<_PrefetchedCard?>? _prefetch;
+
+  /// 每显示一张卡 +1：后台补算（计数 / 预览）只落到它出发时的那张卡上。
+  int _shownGeneration = 0;
+
+  /// 后台预取「当前这张之外的下一张」并渲染好（数据层）。排程不变：真正的下一张
+  /// 仍由评分后的 [SrsDbStore.nextCard] 决定，预取只是它的猜测，不一致就丢。
+  void _startPrefetch(String currentCardId) {
+    final SrsDbStore? store = _store;
+    if (store == null) {
+      _prefetch = null;
+      return;
+    }
+    _prefetch = () async {
+      try {
+        final String? id = await store.nextCard(
+          widget.deckId,
+          exclude: <String>{currentCardId},
+        );
+        if (id == null) return null;
+        final SrsCardDetail? detail = await store.cardDetail(id);
+        if (detail == null) return null;
+        final SrsRenderedCard? rendered = await store.renderCard(id);
+        return _PrefetchedCard(detail: detail, rendered: rendered);
+      } catch (e, stack) {
+        ErrorLogService.instance.log('SrsReviewPage.prefetch', e, stack);
+        return null;
+      }
+    }();
+  }
+
+  /// 预取的卡还能不能直接用：必须正是排程选出的 [id]，且卡片行没被改过
+  /// （同步 / 别处写入改了它就按常规路径重取）。
+  Future<_PrefetchedCard?> _takePrefetch(
+    Future<_PrefetchedCard?>? pending,
+    String id,
+  ) async {
+    if (pending == null) return null;
+    final _PrefetchedCard? hit = await pending;
+    if (hit == null || hit.detail.card.id != id) return null;
+    final SrsCardCacheRow? row = await _store!.cardRow(id);
+    return row == hit.detail.card ? hit : null;
+  }
+
   /// 取下一张（或 [cardId] 指定的那张，撤销后回到被撤的卡）并显示问题面。
-  Future<void> _loadNext({String? cardId}) async {
+  ///
+  /// [usePrefetch]：评分后的常规前进。排程选出的下一张正是预取的那张时直接显示
+  /// 预取好的内容，计数 / 间隔预览随后在后台补齐（预览只在翻面后才看得到）。
+  Future<void> _loadNext({String? cardId, bool usePrefetch = false}) async {
     final SrsDbStore? store = _store;
     if (store == null) return;
+    final Future<_PrefetchedCard?>? pending = usePrefetch ? _prefetch : null;
+    _prefetch = null;
     try {
       final String? id = cardId ?? await store.nextCard(widget.deckId);
-      await _refreshCounts();
       if (id == null) {
+        await _refreshCounts();
         if (!mounted) return;
         setState(() {
           _loading = false;
@@ -149,6 +210,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         });
         return;
       }
+      final _PrefetchedCard? hit = await _takePrefetch(pending, id);
+      if (hit != null) {
+        if (!mounted) return;
+        _show(hit.detail, hit.rendered, preview: null, day: _day);
+        unawaited(_completeShown(id, _shownGeneration));
+        return;
+      }
+      await _refreshCounts();
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
       final SrsDayContext day = await store.dayContext();
@@ -156,20 +225,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           ? await store.preview(id)
           : null;
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _finished = false;
-        _error = null;
-        _detail = detail;
-        _rendered = rendered;
-        _preview = preview;
-        _day = day;
-        _showingAnswer = false;
-      });
-      _answerClock
-        ..reset()
-        ..start();
-      _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
+      _show(detail, rendered, preview: preview, day: day);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -178,6 +234,52 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _error = e;
         });
       }
+    }
+  }
+
+  /// 显示一张卡的问题面，并开始预取它之后的那张。
+  void _show(
+    SrsCardDetail? detail,
+    SrsRenderedCard? rendered, {
+    required SrsAnswerPreview? preview,
+    required SrsDayContext? day,
+  }) {
+    _shownGeneration++;
+    setState(() {
+      _loading = false;
+      _finished = false;
+      _error = null;
+      _detail = detail;
+      _rendered = rendered;
+      _preview = preview;
+      _day = day;
+      _showingAnswer = false;
+    });
+    _answerClock
+      ..reset()
+      ..start();
+    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
+    if (detail != null) _startPrefetch(detail.card.id);
+  }
+
+  /// 预取命中后补齐计数与间隔预览（只落到仍在显示的那张卡上）。
+  Future<void> _completeShown(String cardId, int generation) async {
+    final SrsDbStore? store = _store;
+    if (store == null) return;
+    try {
+      final SrsDeckSummary? sum = await _deckSummary();
+      final SrsDayContext day = await store.dayContext();
+      final SrsAnswerPreview? preview = store.canSchedule
+          ? await store.preview(cardId)
+          : null;
+      if (!mounted || generation != _shownGeneration) return;
+      setState(() {
+        _applyCounts(sum);
+        _day = day;
+        _preview = preview;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsReviewPage.completeShown', e, stack);
     }
   }
 
@@ -221,7 +323,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         );
         _undo.add(_UndoStep(cardId: detail.card.id, logId: log.id));
         _reviewedThisSession++;
-        await _loadNext();
+        await _loadNext(usePrefetch: true);
       }),
     );
   }
@@ -441,6 +543,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _rendered = rendered;
       _showingAnswer = showing;
     });
+    // 编辑可能改了同一笔记的兄弟卡：预取作废重来。
+    _startPrefetch(detail.card.id);
   }
 
   // ------------------------------------------------------------------ 键盘
