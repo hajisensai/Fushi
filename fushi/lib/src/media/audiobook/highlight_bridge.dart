@@ -251,11 +251,21 @@ class HighlightBridge {
   function _unwrapFallbackHighlights(selector) {
     var guard = window.__fushiLiveRanges;
     var parents = [];
-    document.querySelectorAll(selector).forEach(function(el) {
-      var parent = guard.unwrap(el);
-      if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+    guard.batch(function() {
+      document.querySelectorAll(selector).forEach(function(el) {
+        var parent = guard.unwrap(el);
+        if (parent && parents.indexOf(parent) < 0) parents.push(parent);
+      });
     });
     parents.forEach(function(parent) { guard.normalize(parent); });
+  }
+
+  // BUG-3369: a whole chapter's favourites move text nodes once per highlight
+  // (fallback wrapping, WebKit anonymous-block moves); read the native
+  // selection once for the batch instead of forcing a full layout per move.
+  function _liveRangeBatch(fn) {
+    var guard = window.__fushiLiveRanges;
+    return guard && typeof guard.batch === 'function' ? guard.batch(fn) : fn();
   }
 
   var ALL_COLORS = ['yellow','green','blue','pink','purple'];
@@ -311,6 +321,10 @@ class HighlightBridge {
 
   // ── 应用高亮 ──
   window.__fushiApplyHighlights = function(highlightsJson) {
+    _liveRangeBatch(function() { _applyHighlightsInBatch(highlightsJson); });
+  };
+
+  function _applyHighlightsInBatch(highlightsJson) {
     _syncHighlightVars();
     if (window.__fushiCssHighlightsSupported) {
       window.__fushiHighlightRangeMap = {};
@@ -406,7 +420,7 @@ class HighlightBridge {
       }
       _reapplyFallbackRubyHighlights();
     }
-  };
+  }
 
   // ── 文本搜索回退：为没有偏移量的收藏查找位置 ──
   window.__fushiFindTextNormRange = function(text, studyHint) {

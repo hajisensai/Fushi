@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3369](bugs/BUG-3369-audiobook-long-chapter-open-timeout.md) | ✅ | ✅ | 长章有声书开书白屏、「内容加载超时」 |
 | [BUG-3370](bugs/BUG-3370-lyrics-illustrations-scan-on-ui-isolate.md) | ✅ | ✅ | 歌词模式 / 插图册在 UI isolate 上同步扫整本书插图 |
 > 共 3086 条。点号进各自文件。
 

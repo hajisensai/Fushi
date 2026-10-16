@@ -99,9 +99,17 @@ void main() {
     };
     for (final MapEntry<String, String> body in wrapBodies.entries) {
       expect(
-        body.value,
-        contains('this.wrapSentenceAudioGroup(items[g], wrapper)'),
+        RegExp(
+          r'(this|self)\.wrapSentenceAudioGroup\(items\[g\], wrapper\)',
+        ).hasMatch(body.value),
+        isTrue,
         reason: '${body.key} must wrap through the shared helper',
+      );
+      // BUG-3369：整章逐句包裹在一个 live-range 批里跑，原生选区只读一次。
+      expect(
+        body.value,
+        contains('withLiveRangeBatch('),
+        reason: '${body.key} must wrap a whole chapter inside one batch',
       );
       expect(
         body.value,

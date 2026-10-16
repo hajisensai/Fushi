@@ -423,6 +423,21 @@ if (!window.__fushiLiveRanges) {
       }
       return tail;
     },
+    // BUG-3369：批量手术（开章逐句包裹 / 拆包裹、套收藏）期间为真 = 进批时确认过没有原生选区。
+    // DOM 刚改过时读 getSelection().rangeCount / anchorNode 会让 Blink 对整章同步排版一次
+    // （长章约 5ms），moveNodes 每次都读：一章 2700 句的有声书逐句包裹就是 2700 次整章排版，
+    // WebView 主线程卡几十秒、开书超时白屏。批内是同步执行、不会有用户输入新建选区，读一次就够。
+    noNativeSelection: false,
+    batch: function(fn) {
+      if (this.noNativeSelection) return fn();
+      var sel = window.getSelection ? window.getSelection() : null;
+      this.noNativeSelection = !sel || !sel.rangeCount;
+      try {
+        return fn();
+      } finally {
+        this.noNativeSelection = false;
+      }
+    },
     // mutate() 把 moved 里的节点（连同子孙）移走再插回文档，节点身份不变；返回前必须已插回文档
     // （落在游离子树上的边界会被 setEnd 跨树塌缩）。remap(container, offset) 换算不在 moved 里、
     // 却被这次搬移改了含义的端点（如原父节点里切点之后的子节点序号），返回 [node, offset] 或 null。
@@ -455,7 +470,7 @@ if (!window.__fushiLiveRanges) {
       var read = function(h) {
         return h.pinned || [h.probe.startContainer, h.probe.startOffset];
       };
-      var sel = window.getSelection ? window.getSelection() : null;
+      var sel = !this.noNativeSelection && window.getSelection ? window.getSelection() : null;
       var native = null;
       if (sel && sel.rangeCount && sel.anchorNode && sel.focusNode) {
         var a = pin(sel.anchorNode, sel.anchorOffset);

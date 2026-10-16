@@ -1873,30 +1873,33 @@ window.__fushiInstallShell = function(C) {
     // （__fushiLanes）画，同一行里同一句的片段并成一条。
     // 包裹走共享的 wrapSentenceAudioGroup（切开 / 搬移经 __fushiLiveRanges，不用 extractContents）：
     // 收藏 / 搜索高亮等 live Range 不随包裹塌缩。
-    for (var i = cueSegments.length - 1; i >= 0; i--) {
-      var id = cueSegments[i].id;
-      var segments = cueSegments[i].ranges;
-      if (!segments.length) continue;
-      var items = this.sentenceAudioWrapItems(segments);
-      var wrappers = [];
-      var rubyElements = [];
-      for (var g = items.length - 1; g >= 0; g--) {
-        try {
-          var wrapper = document.createElement('span');
-          wrapper.className = 'fushi-sentence-audio-cue';
-          wrappers.push(this.wrapSentenceAudioGroup(items[g], wrapper));
-        } catch (e) {
-          for (var k = 0; k < items[g].length; k++) {
-            var ruby = this.rubyForNode(items[g][k].node);
-            if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+    var self = this;
+    this.withLiveRangeBatch(function() {
+      for (var i = cueSegments.length - 1; i >= 0; i--) {
+        var id = cueSegments[i].id;
+        var segments = cueSegments[i].ranges;
+        if (!segments.length) continue;
+        var items = self.sentenceAudioWrapItems(segments);
+        var wrappers = [];
+        var rubyElements = [];
+        for (var g = items.length - 1; g >= 0; g--) {
+          try {
+            var wrapper = document.createElement('span');
+            wrapper.className = 'fushi-sentence-audio-cue';
+            wrappers.push(self.wrapSentenceAudioGroup(items[g], wrapper));
+          } catch (e) {
+            for (var k = 0; k < items[g].length; k++) {
+              var ruby = self.rubyForNode(items[g][k].node);
+              if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
+            }
           }
         }
+        wrappers.reverse();
+        rubyElements.reverse();
+        if (wrappers.length) self.cueWrappers.set(id, wrappers);
+        if (rubyElements.length) self.cueRubyElements.set(id, rubyElements);
       }
-      wrappers.reverse();
-      rubyElements.reverse();
-      if (wrappers.length) this.cueWrappers.set(id, wrappers);
-      if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
-    }
+    });
     this.buildNodeOffsets();
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
@@ -2004,7 +2007,9 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
     var self = this;
-    this.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    this.withLiveRangeBatch(function() {
+      self.cueWrappers.forEach(function(wrappers) { self.unwrap(wrappers); });
+    });
     this.cueWrappers.clear();
     this.activeCueId = null;
   },
