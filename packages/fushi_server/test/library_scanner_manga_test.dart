@@ -147,7 +147,7 @@ void main() {
     await expectMangaArtifacts(book);
   });
 
-  test('BUG-3417 扫描入库后分卷按系列持久归组（无头服务端没有书架页，不在这里归 '
+  test('BUG-3427 扫描入库后分卷按系列持久归组（无头服务端没有书架页，不在这里归 '
       '互联 client 永远拿不到系列归属）', () async {
     _writePage(p.join(libraryRoot.path, '志乃と恋 1'), '001.png');
     _writePage(p.join(libraryRoot.path, '志乃と恋 2'), '001.png');

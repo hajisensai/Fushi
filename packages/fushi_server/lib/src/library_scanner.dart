@@ -280,7 +280,7 @@ class LibraryScanner {
     );
   }
 
-  /// 书 / 漫画根入库后，分卷按系列持久归组（与 app 来源扫描同步，BUG-3417）：
+  /// 书 / 漫画根入库后，分卷按系列持久归组（与 app 来源扫描同步，BUG-3427）：
   /// 无头服务端没有书架页，不在这里归，互联 client 拿到的清单就永远不带系列归属。
   Future<void> _groupBookSeries(ScanSummary summary) async {
     try {

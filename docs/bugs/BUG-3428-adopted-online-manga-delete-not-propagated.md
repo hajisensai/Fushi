@@ -1,4 +1,4 @@
-## BUG-3418 · 互联收下的在线漫画收不到对端从所有设备删除
+## BUG-3428 · 互联收下的在线漫画收不到对端从所有设备删除
 - **报告**：2026-10-15（用户：电脑上删除一部在线漫画并勾选「从所有设备删除」，手机上没有删除）
 - **真实性**：✅ 真 bug（代码路径确认 + 电脑正式库里确有 `book/mihon-…` 删除墓碑）。手机「下载」电脑的章节式在线漫画时，用 `InterconnectMangaCatalog.entryFor` 建了一行 runtime=interconnect 的条目。它的 bookKey 由对端 bookKey **单向哈希推导**成 `interconnect-…`（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart:101-104` 的注释已写明「与对端 bookKey 不同」）。
   - **消费方向**（电脑删 → 手机）：墓碑消费端用本机 `r.bookKey` 作在库键（`fushi/lib/src/sync/sync_orchestrator/tombstones.part.dart:23`），电脑墓碑键是 `mihon-…`，求交恒空：不出候选、确认框都不弹。互联 live 与云盘两条通道都有这个问题。
@@ -11,7 +11,7 @@
     - 新增 `InterconnectMangaCatalog.peerBookKeyOf`，从描述符 `series.key` 取对端键；
     - `deleteBook` 在删行前选定墓碑键，这类行写对端键；
     - 其它也收下了同一部的设备，经消费端别名照样命中。
-  - 消费端函数随 BUG-3419 泛化为 `aliasPeerBookTombstones`（`fushi/lib/src/sync/peer_book_tombstone_alias.dart`）。
+  - 消费端函数随 BUG-3429 泛化为 `aliasPeerBookTombstones`（`fushi/lib/src/sync/peer_book_tombstone_alias.dart`）。
 - **[x] ② 已加自动化测试** —
   - `fushi/test/sync/peer_book_tombstone_alias_test.dart`：
     - 换算结果与实际建行键逐字一致；

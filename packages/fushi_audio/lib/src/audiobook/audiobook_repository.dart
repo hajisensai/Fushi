@@ -199,7 +199,7 @@ class AudiobookRepository {
     final Audiobook? before =
         deleteLocalFiles ? await findByBookKey(bookKey) : null;
     // 有声书与书共享 bookKey：书从对端下载、落地键不同时墓碑写对端键（别名表），
-    // 否则推给 host（只按 bookKey 精确匹配）与对端消费都对不上（BUG-3418 同类）。
+    // 否则推给 host（只按 bookKey 精确匹配）与对端消费都对不上（BUG-3428 同类）。
     final String syncTombstoneKey = propagateDeletion
         ? await _db.syncDeletionBookKeyOf(bookKey)
         : bookKey;
