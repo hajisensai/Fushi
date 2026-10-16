@@ -45,7 +45,28 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       body,
       lookup: service,
       history: _historyService,
+      // BUG-3417：对端（游戏串流）在它那边渲染、导出本机的查词结果，必须用本机的
+      // 词典样式。与浏览器扩展同一套 `stylesRevision` 门控：请求不带该字段（老
+      // 客户端）一个字节都不多发；带了且指纹不同才整表下发一次。
+      popupDictionaryCssProvider:
+          _dictionaryStylesProvider == null ? null : _peerDictionaryCss,
     ));
+  }
+
+  /// 只含词典自带 CSS 的弹窗样式快照：用户自定义 CSS 属于**对端**自己的弹窗设置，
+  /// 不从 host 下发。按 provider 返回的 map 身份缓存（`FushiDicts.dictionaryStyles`
+  /// 只在词典集合变化时换实例），避免每次查词重新哈希数百 KB 的 CSS。
+  RemotePopupDictionaryCss _peerDictionaryCss() {
+    final Map<String, String> styles = _dictionaryStylesProvider!();
+    final RemotePopupDictionaryCss? cached = _peerPopupDictionaryCss;
+    if (cached != null && identical(cached.dictionaryStyles, styles)) {
+      return cached;
+    }
+    return _peerPopupDictionaryCss = RemotePopupDictionaryCss(
+      dictionaryStyles: styles,
+      globalDictCss: '',
+      customDictCss: const <String, String>{},
+    );
   }
 
   /// `POST /api/lookup/dictionary/styles {dictionaries:[name…]}` →
