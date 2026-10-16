@@ -62,6 +62,52 @@ final class VideoRemoteMineSelection {
   final bool adjusted;
 }
 
+/// One episode of the playing work, as the phone's episode picker lists it.
+final class VideoRemoteEpisode {
+  const VideoRemoteEpisode({
+    required this.index,
+    required this.title,
+    required this.current,
+  });
+
+  /// Position in the player's episode list (what `episode` commands name).
+  final int index;
+  final String title;
+  final bool current;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'index': index,
+    'title': title,
+    'current': current,
+  };
+}
+
+/// One primary-subtitle choice of the playing video. [id] is opaque to the
+/// phone: the player derives it from its own track source, which can be a
+/// local file path that must not leave the computer.
+final class VideoRemoteSubtitleOption {
+  const VideoRemoteSubtitleOption({
+    required this.id,
+    required this.label,
+    required this.kind,
+    required this.selected,
+    required this.selectable,
+  });
+  final String id;
+  final String label;
+
+  /// `embedded` / `graphic` / `external` / `host` / `youtube`.
+  final String kind;
+  final bool selected;
+  final bool selectable;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'label': label,
+    'kind': kind,
+    'selected': selected,
+    'selectable': selectable,
+  };
+}
+
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
 final class VideoRemotePlaybackBinding {
   const VideoRemotePlaybackBinding({
@@ -79,6 +125,11 @@ final class VideoRemotePlaybackBinding {
     this.favoritesChanged,
     this.previewAudio,
     this.stopAudio,
+    this.setVolume,
+    this.episodes,
+    this.switchEpisode,
+    this.subtitleTracks,
+    this.selectSubtitleTrack,
   });
   final String Function() identity;
   final String Function() title;
@@ -106,6 +157,36 @@ final class VideoRemotePlaybackBinding {
 
   /// Stops [previewAudio]. Null falls back to the `pause` command.
   final Future<void> Function()? stopAudio;
+
+  /// Sets the desktop volume (0..100) the way its own volume slider does.
+  /// Null: the `volume` action is unsupported.
+  final Future<void> Function(int volume)? setVolume;
+
+  /// The work's episodes (empty for a single video). Together with
+  /// [switchEpisode] it enables the `episode` action.
+  final List<VideoRemoteEpisode> Function()? episodes;
+
+  /// Switches to episode [index] the way the desktop episode list does. May
+  /// complete before the new episode is playing; the new session reaches the
+  /// phone through the state journal.
+  final Future<void> Function(int index)? switchEpisode;
+
+  /// Primary-subtitle choices. Together with [selectSubtitleTrack] it enables
+  /// the `subtitleTrack` action.
+  final Future<List<VideoRemoteSubtitleOption>> Function()? subtitleTracks;
+
+  /// Selects the primary subtitle [trackId] from [subtitleTracks], or turns
+  /// it off when null. Fails with a [VideoRemoteException].
+  final Future<void> Function(String? trackId)? selectSubtitleTrack;
+
+  /// Optional controls this player supports (snapshot `capabilities`).
+  List<String> get capabilities => <String>[
+    if (setVolume != null) videoRemoteCapabilityVolume,
+    if (episodes != null && switchEpisode != null)
+      videoRemoteCapabilityEpisodes,
+    if (subtitleTracks != null && selectSubtitleTrack != null)
+      videoRemoteCapabilitySubtitleTracks,
+  ];
 }
 
 /// One selected desktop player, one authenticated controller and fixed drafts.
@@ -222,6 +303,9 @@ final class VideoRemoteHost implements VideoRemoteService {
         oldVersion != _subtitleVersion ||
         state['playing'] != _lastState['playing'] ||
         state['speed'] != _lastState['speed'] ||
+        // Volume has no periodic tick of its own: a paused player would
+        // otherwise keep the phone's volume stale until the next change.
+        state['volume'] != _lastState['volume'] ||
         state['controlRevision'] != _lastState['controlRevision'];
     if (immediate ||
         _lastPublish == null ||
@@ -238,6 +322,7 @@ final class VideoRemoteHost implements VideoRemoteService {
     // Public library identity only, never local paths or signed media URLs.
     'identity': _binding?.bookUid() ?? '', 'cueCount': _cues.length,
     'sectionIndex': _binding?.sectionIndex(),
+    'capabilities': _binding?.capabilities ?? const <String>[],
     ...?_binding?.state(),
   };
 
@@ -328,6 +413,9 @@ final class VideoRemoteHost implements VideoRemoteService {
     }
     if (operation == 'favorites') {
       return _listFavorites(body);
+    }
+    if (operation == 'playbackOptions') {
+      return _playbackOptions(body);
     }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
@@ -519,8 +607,57 @@ final class VideoRemoteHost implements VideoRemoteService {
     final VideoRemotePlaybackBinding binding = _requireSession(body);
     if (operation == 'command') {
       final String action = body['action']?.toString() ?? '';
-      if (!<String>{'play', 'pause', 'seek', 'seekCue'}.contains(action)) {
+      if (!videoRemoteCommandActions.contains(action)) {
         throw const VideoRemoteException(400, 'invalid_action');
+      }
+      if (action == 'volume') {
+        // Not a playback intent: an open lookup keeps its pause.
+        final Future<void> Function(int)? setVolume = binding.setVolume;
+        if (setVolume == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? volume = body['volume'];
+        if (volume is! int || volume < 0 || volume > 100) {
+          throw const VideoRemoteException(400, 'invalid_number');
+        }
+        await setVolume(volume);
+        _publish();
+        return <String, Object?>{'ok': true};
+      }
+      if (action == 'episode') {
+        final List<VideoRemoteEpisode> Function()? episodes = binding.episodes;
+        final Future<void> Function(int)? switchEpisode = binding.switchEpisode;
+        if (episodes == null || switchEpisode == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? index = body['episodeIndex'];
+        if (index is! int) {
+          throw const VideoRemoteException(400, 'invalid_number');
+        }
+        if (!episodes().any((VideoRemoteEpisode e) => e.index == index)) {
+          throw const VideoRemoteException(404, 'episode_missing');
+        }
+        _lookup = null;
+        await switchEpisode(index);
+        _refresh();
+        _publish();
+        return <String, Object?>{'ok': true};
+      }
+      if (action == 'subtitleTrack') {
+        final Future<void> Function(String?)? select =
+            binding.selectSubtitleTrack;
+        if (binding.subtitleTracks == null || select == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? trackId = body['trackId'];
+        if (trackId != null && (trackId is! String || trackId.isEmpty)) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        _lookup = null;
+        await select(trackId as String?);
+        _refresh();
+        _publish();
+        return <String, Object?>{'ok': true};
       }
       _lookup = null; // Explicit playback intent supersedes automatic resume.
       final Map<String, dynamic> command = <String, dynamic>{};
@@ -643,6 +780,34 @@ final class VideoRemoteHost implements VideoRemoteService {
       };
     }
     throw const VideoRemoteException(404, 'unknown_operation');
+  }
+
+  /// `playbackOptions`: the lists behind the phone's episode and subtitle-track
+  /// pickers. Re-validated after the (possibly slow) track enumeration so a
+  /// list never describes a session the phone no longer sees.
+  Future<Map<String, Object?>> _playbackOptions(
+    Map<String, dynamic> body,
+  ) async {
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    final List<VideoRemoteSubtitleOption> tracks =
+        await binding.subtitleTracks?.call() ??
+        const <VideoRemoteSubtitleOption>[];
+    if (!identical(binding, _requireSession(body))) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    final List<VideoRemoteEpisode> episodes =
+        binding.episodes?.call() ?? const <VideoRemoteEpisode>[];
+    return <String, Object?>{
+      'episodes': <Map<String, Object?>>[
+        for (final VideoRemoteEpisode episode in episodes) episode.toJson(),
+      ],
+      'subtitleTracks': <Map<String, Object?>>[
+        for (final VideoRemoteSubtitleOption track in tracks) track.toJson(),
+      ],
+      'subtitleOff': !tracks.any(
+        (VideoRemoteSubtitleOption track) => track.selected,
+      ),
+    };
   }
 
   /// The open lookup [body] names, still bound to the current session and
