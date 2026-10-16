@@ -127,7 +127,7 @@ Get-CimInstance Win32_Process |
 
 **只枚举某个子树**的同样不进（`lib/src/sync` 的空 catch / PIN / TLS 三条、`lib/src/settings` 的旧 pref key、5 个媒体页根的焦点所有权……）：改动落在那个子树时，定向测试本来就会挑到它。
 
-### 清单（51 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条）
+### 清单（52 条，2026-08-02 反向枚举全量得出；TODO-2707 补入三份新语料守卫；BUG-1498 补入出站装配守卫；BUG-2064 补入分享入口守卫；2026-09-03 反向枚举复核补入 14 条；2026-10-16 补入正式版复习构建通道守卫）
 
 | 测试 | 扫描根 | 守什么 |
 |---|---|---|
@@ -183,6 +183,7 @@ Get-CimInstance Win32_Process |
 | `test/tools/tests_for_changes_guard_test.dart` | `test/` 全树 + 全仓路径索引 | 「按触发条件加跑」的推导规则本身：索引规模 + 逐树下界 + 声明 glob 有效 |
 | `test/torrent/download_http_client_proxy_test.dart` | `lib` + 4 个 `packages/*/lib` | 下载链路的 HttpClient 必须走统一代理装配 |
 | `test/utils/net/network_image_proxy_guard_test.dart` | `lib` 全树 | 远端图片必须走 `AppHttpImage`/`AppCachedHttpImage`，裸 provider 会绕过全应用代理装配（自带 `expectScanScale` 哨兵） |
+| `test/build/prerelease_only_capability_guard_test.dart` | `lib` 全树 | 正式版屏蔽复习：构建通道判据只在 `PrereleaseOnlyCapability` 写一次，复习消费端不得自己读 `FUSHI_BUILD_VERSION` / 推通道（2026-10-16 补入，自带两处 `expectScanScale` + 合成语料自校验） |
 
 一条命令跑完，**当前基线 362 tests**（2026-09-03 反向枚举复核后实测，51 条 ~62 秒；上一基线 256 / 37 条）——比争论「这条该不该跑」便宜得多，所以**不要挑，整批跑**：
 
