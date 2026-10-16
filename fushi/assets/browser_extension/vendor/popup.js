@@ -3571,7 +3571,7 @@ function isRedirectGlossary(glossary) {
 
 function createGlossarySectionWrapper(entry) {
     // TODO-804: a term dictionary disabled in 词典管理 (its show/hide switch off)
-    // is added to hiddenDictionaryNames by the host. Since BUG-3451 hidden
+    // is added to hiddenDictionaryNames by the host. Since BUG-3453 hidden
     // dictionaries are no longer loaded into the native engine at all
     // (AppModel.bucketDictPaths); this filter stays as a second line of defence
     // for the window between a toggle and the scheduled engine reload. Drop them

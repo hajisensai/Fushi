@@ -425,7 +425,7 @@ typedef DictPathEntry = ({
 /// 渲染期隐藏过滤，进了就会直接冒出来（BUG-177 / TODO-094 S4）；term 以前故意仍进桶、
 /// 靠渲染期过滤，但引擎在 Dart 过滤**之前**就按最长匹配排序并截断到 maxResults——
 /// 关掉的词典的长匹配会把可见词典的结果挤出 top-N，且每条新输出路径都得记得再滤一遍
-/// （BUG-419 / TODO-865 / BUG-2997 都是漏滤）。BUG-3451：源头不装载。不存在的目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
+/// （BUG-419 / TODO-865 / BUG-2997 都是漏滤）。BUG-3453：源头不装载。不存在的目录跳过。同步 [AppModel._rebuildDictPathsCache] 与异步 `_rebuildDictPathsCacheAsync`
 /// 只差「怎么判目录存在」，分桶 switch 收口于此（之前两份逐字复制，改一处忘另一处即漂移）。
 @visibleForTesting
 ({List<String> term, List<String> freq, List<String> pitch, List<String> kanji})
@@ -2072,7 +2072,7 @@ class AppModel with ChangeNotifier {
 
   /// 被用户在词典管理里关掉的词典名集合，查词结果生成与弹窗注入共用这一个真相源。
   ///
-  /// 隐藏词典已不进 FFI 引擎（[bucketDictPaths]，BUG-3451），这份名单只是查询后
+  /// 隐藏词典已不进 FFI 引擎（[bucketDictPaths]，BUG-3453），这份名单只是查询后
   /// 过滤的第二道保险：引擎重载是排期的，切换开关到下次装载之间引擎里仍是旧集合。
   /// 收口到这里是为了防漂移：之前这个表达式只在 `popup_settings_injection` 里有一份，
   /// 别的消费者（浏览器扩展的 HTTP 路径）拿不到它。
@@ -2265,7 +2265,7 @@ class AppModel with ChangeNotifier {
     }
   }
 
-  // 隐藏的词典（四种类型）一律不进引擎（BUG-177/TODO-094/BUG-3451）。always rebuild 即使全空：删掉最后一本要落进空引擎让
+  // 隐藏的词典（四种类型）一律不进引擎（BUG-177/TODO-094/BUG-3453）。always rebuild 即使全空：删掉最后一本要落进空引擎让
   // 旧 in-memory 索引失效，查询不再命中（BUG-171）。分桶 switch 收口在 [bucketDictPaths]。
   void _rebuildDictPathsCache() {
     _migrateDictionaryTypes();
@@ -6777,7 +6777,7 @@ class AppModel with ChangeNotifier {
         dictionary, JapaneseLanguage.instance.languageCode);
     // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
     // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
-    // dictionary (any type, BUG-3451). But a popupJson cached while the dict was still
+    // dictionary (any type, BUG-3453). But a popupJson cached while the dict was still
     // enabled would keep showing its values on the next (cache-hit) lookup, so
     // drop the search caches too — mirrors the delete paths (BUG-171/BUG-177).
     dictRepo.clearDictionaryResultsCache();
