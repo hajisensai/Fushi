@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.10.0-debug.19358",
-  "tag": "v2.10.0-debug.19358+6b2ff9a",
+  "version": "2.10.0-debug.19360",
+  "tag": "v2.10.0-debug.19360+f18dc96",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 19358,
-  "notes": "Automated release-signed debug-channel build from develop @ 6b2ff9a. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 19360,
+  "notes": "Automated desktop debug-channel build from develop @ f18dc96. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.10.0-debug.19355-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "63d87e37a5afeed64c7cf0796c085c6bb2ff92b61df8ec4ac599c4cd62a0aed8"
     },
     {
-      "name": "fushi-2.10.0-debug.19355-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19355-windows-setup.exe",
-      "releaseSequence": 19355,
-      "tag": "v2.10.0-debug.19355+6e9da80",
-      "version": "2.10.0-debug.19355",
-      "size": 308317408,
-      "sha256": "aaeee1c873d6275c24bc3d8ee2d5102c9c8577f3287c69a66622679385359be9"
-    },
-    {
       "name": "fushi-2.10.0-debug.19358-6b2ff9a-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19358-6b2ff9a-debug.apk",
       "releaseSequence": 19358,
@@ -51,6 +42,15 @@
       "version": "2.10.0-debug.19358",
       "size": 391669656,
       "sha256": "69a028139a57d23da467821017a6b7b37398264a1b6344086d159bf43d24c399"
+    },
+    {
+      "name": "fushi-2.10.0-debug.19360-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.10.0-debug.19360-windows-setup.exe",
+      "releaseSequence": 19360,
+      "tag": "v2.10.0-debug.19360+f18dc96",
+      "version": "2.10.0-debug.19360",
+      "size": 308309728,
+      "sha256": "276a89ffc8d6114b5142f62dd21303ace97fb26c0cfc098fc8789928a9c5d2d3"
     }
   ]
 }
