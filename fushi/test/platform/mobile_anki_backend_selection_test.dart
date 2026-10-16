@@ -33,72 +33,64 @@ void main() {
     expect(services.createAnkiRepository(), isA<AnkiRepository>());
   });
 
-  test('mobile renders AnkiConnect settings collapsed by default', () {
-    final String source = File(
-      'lib/src/pages/implementations/anki_settings_page.dart',
-    ).readAsStringSync();
+  test(
+    'AnkiConnect settings stay one sub-page entry inside the Anki group',
+    () {
+      final String source = File(
+        'lib/src/pages/implementations/anki_settings_page.dart',
+      ).readAsStringSync();
 
-    final SettingsDestination destination = buildCardCreationDestination();
-    final SettingsSection connection = destination.sections.firstWhere(
-      (SettingsSection section) => section.id == 'card_creation.connection',
-    );
-    expect(
-      connection.presentation,
-      Platform.isAndroid || Platform.isIOS
-          ? SettingsSectionPresentation.collapsed
-          : SettingsSectionPresentation.alwaysExpanded,
-    );
-    // 本机只能执行一个平台分支，另锁两个移动系统共享的 schema 分支，防止 iOS 漏门控。
-    final String schema = maskComments(
-      File(
-        'lib/src/settings/settings_schema_card_creation.dart',
-      ).readAsStringSync(),
-    );
-    expect(
-      schema,
-      matches(
-        RegExp(
-          r'presentation:\s*Platform\.isAndroid\s*\|\|\s*Platform\.isIOS\s*'
-          r'\?\s*SettingsSectionPresentation\.collapsed\s*'
-          r':\s*SettingsSectionPresentation\.alwaysExpanded',
-        ),
-      ),
-    );
-    final SettingsNavigationItem entry =
-        connection.items.single as SettingsNavigationItem;
-    expect(entry.id, 'card_creation.connection.open');
-    final SettingsDestination child = entry.child!();
-    expect(child.id, SettingsDestinationId.cardCreation);
-    expect(child.body, isNotNull);
-    expect(
-      child.bodySearchEntries.map((SettingsBodySearchEntry item) => item.id),
-      containsAll(<String>[
-        'card_creation.anki.connect_host',
-        'card_creation.anki.connect_port',
-        'card_creation.anki.connect_api_key',
-      ]),
-    );
-    // 连接子页先放「直连同步」一节，AnkiConnect 字段收在 _buildAnkiConnectSection。
-    final String connectionPanel = methodBody(
-      source,
-      'Widget _buildConnectionPanel(',
-    );
-    expect(connectionPanel, contains('_buildAnkiConnectSection('));
-    final String panel = methodBody(source, 'Widget _buildAnkiConnectSection(');
-    expect(panel, contains('if (_isMobileAnkiPlatform)'));
-    expect(panel, contains('label: t.anki_connect_host'));
-    expect(panel, contains('label: t.anki_connect_port'));
-    expect(panel, contains('label: t.anki_connect_api_key'));
-    expect(
-      panel,
-      isNot(contains('collapsible:')),
-      reason: '进入子页后直接显示连接字段，折叠仅由上层入口管理',
-    );
-    expect(source, contains('t.anki_connect_use_on_mobile'));
-    expect(source, contains('obscureText: true'));
-    // 清空 API key 必须经页面自己的处置入口，不能直接接 vm（BUG-1608）。
-    expect(source, contains('onChanged: _updateAnkiConnectApiKey'));
-  });
+      final SettingsDestination destination = buildCardCreationDestination();
+      // 制卡页重做（2026-10-16）：AnkiConnect 不再是独立分组，而是「Anki」分组里的
+      // 一行子页入口——手机上（AnkiDroid / AnkiMobile 为主）它也只占一行，连接字段
+      // 收在子页里，不会在正文里铺开。
+      final SettingsSection connection = destination.sections.firstWhere(
+        (SettingsSection section) => section.id == 'card_creation.anki',
+      );
+      expect(connection.title, isNotNull);
+      final SettingsNavigationItem entry = connection.items
+          .whereType<SettingsNavigationItem>()
+          .firstWhere(
+            (SettingsNavigationItem item) =>
+                item.id == 'card_creation.connection.open',
+          );
+      expect(entry.id, 'card_creation.connection.open');
+      final SettingsDestination child = entry.child!();
+      expect(child.id, SettingsDestinationId.cardCreation);
+      expect(child.body, isNotNull);
+      expect(
+        child.bodySearchEntries.map((SettingsBodySearchEntry item) => item.id),
+        containsAll(<String>[
+          'card_creation.anki.connect_host',
+          'card_creation.anki.connect_port',
+          'card_creation.anki.connect_api_key',
+        ]),
+      );
+      // 连接子页先放「直连同步」一节，AnkiConnect 字段收在 _buildAnkiConnectSection。
+      final String connectionPanel = methodBody(
+        source,
+        'Widget _buildConnectionPanel(',
+      );
+      expect(connectionPanel, contains('_buildAnkiConnectSection('));
+      final String panel = methodBody(
+        source,
+        'Widget _buildAnkiConnectSection(',
+      );
+      expect(panel, contains('if (_isMobileAnkiPlatform)'));
+      expect(panel, contains('label: t.anki_connect_host'));
+      expect(panel, contains('label: t.anki_connect_port'));
+      expect(panel, contains('label: t.anki_connect_api_key'));
+      expect(
+        panel,
+        isNot(contains('collapsible:')),
+        reason: '进入子页后直接显示连接字段，折叠仅由上层入口管理',
+      );
+      expect(source, contains('t.anki_connect_use_on_mobile'));
+      expect(source, contains('obscureText: true'));
+      // 清空 API key 必须经页面自己的处置入口，不能直接接 vm（BUG-1608）。
+      expect(source, contains('onChanged: _updateAnkiConnectApiKey'));
+    },
+  );
 
   test('mobile can switch to authenticated AnkiConnect immediately', () {
     final services = fakePlatformServices(

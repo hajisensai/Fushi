@@ -25,8 +25,10 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -428,68 +430,135 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? error = _preview.error;
-    return ListView(
-      padding: withBottomSafeInset(
-        context,
-        EdgeInsets.fromLTRB(
-          tokens.spacing.page,
-          tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-          tokens.spacing.page,
-          tokens.spacing.section,
+    final Widget tabs = FushiSegmentedButton<SrsTemplateEditorTab>(
+      key: const ValueKey<String>('srs-template-tabs'),
+      showSelectedIcon: false,
+      segments: <ButtonSegment<SrsTemplateEditorTab>>[
+        ButtonSegment<SrsTemplateEditorTab>(
+          value: SrsTemplateEditorTab.front,
+          label: Text(t.srs_note_types_front),
         ),
-      ),
-      children: <Widget>[
-        FushiSegmentedButton<SrsTemplateEditorTab>(
-          key: const ValueKey<String>('srs-template-tabs'),
-          showSelectedIcon: false,
-          segments: <ButtonSegment<SrsTemplateEditorTab>>[
-            ButtonSegment<SrsTemplateEditorTab>(
-              value: SrsTemplateEditorTab.front,
-              label: Text(t.srs_note_types_front),
-            ),
-            ButtonSegment<SrsTemplateEditorTab>(
-              value: SrsTemplateEditorTab.back,
-              label: Text(t.srs_note_types_back),
-            ),
-            ButtonSegment<SrsTemplateEditorTab>(
-              value: SrsTemplateEditorTab.styling,
-              label: Text(t.srs_note_types_styling),
-            ),
-          ],
-          selected: <SrsTemplateEditorTab>{_tab},
-          onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
-              setState(() => _tab = s.first),
+        ButtonSegment<SrsTemplateEditorTab>(
+          value: SrsTemplateEditorTab.back,
+          label: Text(t.srs_note_types_back),
         ),
-        SizedBox(height: tokens.spacing.gap * 1.5),
-        AnimatedSwitcher(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          switchInCurve: FushiMotion.enter,
-          switchOutCurve: FushiMotion.exit,
-          child: FushiTextField(
-            key: ValueKey<String>('srs-template-${_tab.name}'),
-            controller: _current,
-            minLines: 8,
-            maxLines: 16,
-            keyboardType: TextInputType.multiline,
-            style: context.fushiType.bodyMedium.copyWith(
-              fontFamily: 'monospace',
-              fontFamilyFallback: const <String>['Consolas', 'Menlo'],
-            ),
-            helperText: _tab == SrsTemplateEditorTab.styling
-                ? t.srs_note_types_styling_hint
-                : null,
-            errorText: _tab == SrsTemplateEditorTab.styling || error == null
-                ? null
-                : t.srs_note_types_template_error(error: error),
-          ),
+        ButtonSegment<SrsTemplateEditorTab>(
+          value: SrsTemplateEditorTab.styling,
+          label: Text(t.srs_note_types_styling),
         ),
-        SizedBox(height: tokens.spacing.section),
-        _buildPreview(context, type),
       ],
+      selected: <SrsTemplateEditorTab>{_tab},
+      onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
+          setState(() => _tab = s.first),
+    );
+    Widget editor({required bool wide}) => AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      child: FushiTextField(
+        key: ValueKey<String>('srs-template-${_tab.name}'),
+        controller: _current,
+        minLines: 8,
+        // 宽窗左栏整栏都给源码，多放几行再滚。
+        maxLines: wide ? 28 : 16,
+        keyboardType: TextInputType.multiline,
+        style: context.fushiType.bodyMedium.copyWith(
+          fontFamily: 'monospace',
+          fontFamilyFallback: const <String>['Consolas', 'Menlo'],
+        ),
+        helperText: _tab == SrsTemplateEditorTab.styling
+            ? t.srs_note_types_styling_hint
+            : null,
+        errorText: _tab == SrsTemplateEditorTab.styling || error == null
+            ? null
+            : t.srs_note_types_template_error(error: error),
+      ),
+    );
+    final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!srsUsesTwoPane(constraints)) {
+          return ListView(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                top,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+            ),
+            children: <Widget>[
+              tabs,
+              SizedBox(height: tokens.spacing.gap * 1.5),
+              editor(wide: false),
+              SizedBox(height: tokens.spacing.section),
+              _buildPreview(context, type),
+            ],
+          );
+        }
+        // 宽窗（手机横屏 / 桌面）：左栏源码、右栏预览并排，改一行就能在旁边看到
+        // 结果，不必上下来回滚；预览卡片撑满右栏高度。
+        final double half = tokens.spacing.gap * 0.75;
+        final EdgeInsets bottom = withBottomSafeInset(
+          context,
+          EdgeInsets.only(bottom: tokens.spacing.page),
+        );
+        return FushiEntranceScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: FocusTraversalGroup(
+                  child: ListView(
+                    key: SrsAdaptiveSections.primaryPaneKey,
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      top,
+                      half,
+                      bottom.bottom,
+                    ),
+                    children: <Widget>[
+                      FushiStaggeredEntrance(index: 0, child: tabs),
+                      SizedBox(height: tokens.spacing.gap * 1.5),
+                      FushiStaggeredEntrance(
+                        index: 1,
+                        child: editor(wide: true),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: FocusTraversalGroup(
+                  child: Padding(
+                    key: SrsAdaptiveSections.secondaryPaneKey,
+                    padding: EdgeInsets.fromLTRB(
+                      half,
+                      top,
+                      tokens.spacing.page,
+                      bottom.bottom,
+                    ),
+                    child: FushiStaggeredEntrance(
+                      index: 2,
+                      child: _buildPreview(context, type, fill: true),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildPreview(BuildContext context, SrsNoteTypeView type) {
+  /// [fill]：宽窗右栏里预览卡片撑满剩余高度（否则固定 280 高）。
+  Widget _buildPreview(
+    BuildContext context,
+    SrsNoteTypeView type, {
+    bool fill = false,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AnkiRenderedCard? card = _preview.card;
     final SrsCardFaceBuilder faceBuilder = ref.watch(
@@ -539,8 +608,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           ],
         ),
         Text(sampleLabel, style: context.fushiType.bodySmall),
-        SizedBox(
-          height: 280,
+        _sized(
+          fill: fill,
           child: FushiCard(
             key: const ValueKey<String>('srs-template-preview'),
             padding: EdgeInsets.zero,
@@ -579,4 +648,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       ],
     );
   }
+
+  Widget _sized({required bool fill, required Widget child}) =>
+      fill ? Expanded(child: child) : SizedBox(height: 280, child: child);
 }

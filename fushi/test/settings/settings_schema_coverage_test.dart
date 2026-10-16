@@ -647,6 +647,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 fushi_anki 真制卡
   // 测试咬住（tagIncludeHibiki/tagIncludeCategory 开/关各分支）。
+  // 制卡页重做（2026-10-16）：「卡片内容」分组两种目标都生效、不再藏在「Anki 已
+  // 配置」门控后，焦点驱动现能驱动到这三项；同上写 AnkiSettings（SharedPreferences，
+  // 非本测试的内存 DB），故 changed=false。行为本体由专项测试咬住。
+  'cardCreation/Allow duplicates':
+      'test/anki/anki_duplicate_check_cooldown_test.dart + '
+      'test/srs/srs_mining_test.dart',
+  'cardCreation/Overwrite range':
+      'test/anki/anki_overwrite_scope_test.dart + test/srs/srs_mining_test.dart',
+  'cardCreation/Compact glossaries':
+      'test/anki/anki_compact_glossaries_guard_test.dart',
   'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':

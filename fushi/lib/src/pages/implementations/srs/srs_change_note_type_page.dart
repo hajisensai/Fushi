@@ -14,9 +14,9 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -292,129 +292,193 @@ class _SrsChangeNoteTypePageState extends ConsumerState<SrsChangeNoteTypePage> {
     );
   }
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) =>
+        _buildSections(context, wide: srsUsesTwoPane(constraints)),
+  );
+
+  /// [wide]：宽窗两栏，映射行收成单行（「新 ← 旧」同一行），字段多时少滚一半。
+  Widget _buildSections(BuildContext context, {required bool wide}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsNoteTypeChangePreview? preview = _preview;
     final List<String> unused = _unusedFields;
-    final List<Widget> sections = <Widget>[
-      FushiCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          children: <Widget>[
-            FushiListItem(
-              leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
-              title: Text(t.srs_change_type_current(name: widget.from.name)),
-              subtitle: Text(t.srs_change_type_notes(n: widget.noteIds.length)),
-            ),
-            FushiListItem(
-              key: const ValueKey<String>('srs-change-type-target'),
-              leading: const FushiListLeadingIcon(FushiIcons.swap),
-              title: Text(t.srs_change_type_target),
-              subtitle: Text(_to.name),
-              onTap: () =>
-                  srsRunLogged('SrsChangeNoteType.target', _pickTarget),
-              trailing: const FushiIcon(FushiIcons.chevronRight),
-            ),
-          ],
-        ),
-      ),
-      FushiCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _header(
-              context,
-              t.srs_note_types_fields,
-              t.srs_change_type_fields_hint,
-            ),
-            for (final SrsFieldDef f in _to.fields)
-              FushiListItem(
-                key: ValueKey<String>('srs-change-type-field-${f.name}'),
-                leading: const FushiListLeadingIcon(FushiIcons.textFields),
-                title: Text(f.name),
-                subtitle: Text('← ${_nameOfOldField(_fieldMap[f.id])}'),
-                onTap: () => srsRunLogged(
-                  'SrsChangeNoteType.field',
-                  () => _pickField(f),
-                ),
-                trailing: const FushiIcon(FushiIcons.chevronRight),
-              ),
-            if (unused.isNotEmpty)
-              Padding(
-                padding: EdgeInsets.all(tokens.spacing.card),
-                child: Text(
-                  t.srs_change_type_unused(names: unused.join('、')),
-                  key: const ValueKey<String>('srs-change-type-unused'),
-                  style: context.fushiType.bodySmall.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-      FushiCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _header(
-              context,
-              t.srs_note_types_templates,
-              _standardPair
-                  ? t.srs_change_type_templates_hint
-                  : t.srs_change_type_cloze_hint,
-            ),
-            if (_standardPair)
-              for (final SrsTemplateDef x in _to.templates)
-                FushiListItem(
-                  key: ValueKey<String>('srs-change-type-template-${x.name}'),
-                  leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
-                  title: Text(x.name),
-                  subtitle: Text('← ${_nameOfOldTemplate(_templateMap[x.id])}'),
-                  onTap: () => srsRunLogged(
-                    'SrsChangeNoteType.template',
-                    () => _pickTemplate(x),
-                  ),
-                  trailing: const FushiIcon(FushiIcons.chevronRight),
-                ),
-          ],
-        ),
-      ),
-      if (preview != null && preview.droppedCards > 0)
+    // 窄窗按 概要 → 字段 → 模板 → 警告 单列；宽窗（手机横屏 / 桌面）左栏放目标类型、
+    // 卡片模板映射与警告，右栏放（通常最长的）字段映射，两栏各自滚动。
+    final List<SrsSection> sections = <SrsSection>[
+      SrsSection(
         FushiCard(
-          key: const ValueKey<String>('srs-change-type-dropped'),
-          tone: FushiCardTone.error,
-          child: Row(
-            spacing: tokens.spacing.gap * 1.5,
+          key: const ValueKey<String>('srs-change-type-summary'),
+          padding: EdgeInsets.zero,
+          child: Column(
             children: <Widget>[
-              const FushiIcon(FushiIcons.warning),
-              Expanded(
-                child: Text(t.srs_change_type_dropped(n: preview.droppedCards)),
+              FushiListItem(
+                leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
+                title: Text(t.srs_change_type_current(name: widget.from.name)),
+                subtitle: Text(
+                  t.srs_change_type_notes(n: widget.noteIds.length),
+                ),
+              ),
+              FushiListItem(
+                key: const ValueKey<String>('srs-change-type-target'),
+                leading: const FushiListLeadingIcon(FushiIcons.swap),
+                title: Text(t.srs_change_type_target),
+                subtitle: Text(_to.name),
+                onTap: () =>
+                    srsRunLogged('SrsChangeNoteType.target', _pickTarget),
+                trailing: const FushiIcon(FushiIcons.chevronRight),
               ),
             ],
           ),
         ),
-    ];
-    return FushiEntranceScope(
-      child: ListView.separated(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-            tokens.spacing.page,
-            tokens.spacing.section,
+      ),
+      SrsSection(
+        pane: SrsPane.secondary,
+        FushiCard(
+          key: const ValueKey<String>('srs-change-type-fields'),
+          padding: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _header(
+                context,
+                t.srs_note_types_fields,
+                t.srs_change_type_fields_hint,
+              ),
+              for (final SrsFieldDef f in _to.fields)
+                _mappingRow(
+                  context,
+                  key: ValueKey<String>('srs-change-type-field-${f.name}'),
+                  dense: wide,
+                  icon: FushiIcons.textFields,
+                  target: f.name,
+                  source: _nameOfOldField(_fieldMap[f.id]),
+                  onTap: () => srsRunLogged(
+                    'SrsChangeNoteType.field',
+                    () => _pickField(f),
+                  ),
+                ),
+              if (unused.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.all(tokens.spacing.card),
+                  child: Text(
+                    t.srs_change_type_unused(names: unused.join('、')),
+                    key: const ValueKey<String>('srs-change-type-unused'),
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-        itemCount: sections.length,
-        separatorBuilder: (BuildContext context, int index) =>
-            SizedBox(height: tokens.spacing.gap * 1.5),
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int index) => sections[index],
+      ),
+      SrsSection(
+        FushiCard(
+          key: const ValueKey<String>('srs-change-type-templates'),
+          padding: EdgeInsets.zero,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _header(
+                context,
+                t.srs_note_types_templates,
+                _standardPair
+                    ? t.srs_change_type_templates_hint
+                    : t.srs_change_type_cloze_hint,
+              ),
+              if (_standardPair)
+                for (final SrsTemplateDef x in _to.templates)
+                  _mappingRow(
+                    context,
+                    key: ValueKey<String>('srs-change-type-template-${x.name}'),
+                    dense: wide,
+                    icon: FushiIcons.ankiCard,
+                    target: x.name,
+                    source: _nameOfOldTemplate(_templateMap[x.id]),
+                    onTap: () => srsRunLogged(
+                      'SrsChangeNoteType.template',
+                      () => _pickTemplate(x),
+                    ),
+                  ),
+            ],
+          ),
         ),
       ),
+      if (preview != null && preview.droppedCards > 0)
+        SrsSection(
+          FushiCard(
+            key: const ValueKey<String>('srs-change-type-dropped'),
+            tone: FushiCardTone.error,
+            child: Row(
+              spacing: tokens.spacing.gap * 1.5,
+              children: <Widget>[
+                const FushiIcon(FushiIcons.warning),
+                Expanded(
+                  child: Text(
+                    t.srs_change_type_dropped(n: preview.droppedCards),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+    return SrsAdaptiveSections(
+      sections: sections,
+      primaryFlex: 2,
+      secondaryFlex: 3,
+    );
+  }
+
+  /// 一条映射：新类型的 [target] 取自旧类型的 [source]。窄窗两行（名字 + 「← 来源」），
+  /// [dense]（宽窗）时一行：名字在左、「← 来源」靠右，与 Anki 桌面映射表同一读法。
+  Widget _mappingRow(
+    BuildContext context, {
+    required Key key,
+    required bool dense,
+    required IconData icon,
+    required String target,
+    required String source,
+    required VoidCallback onTap,
+  }) {
+    final Widget from = Text(
+      '← $source',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    if (!dense) {
+      return FushiListItem(
+        key: key,
+        leading: FushiListLeadingIcon(icon),
+        title: Text(target),
+        subtitle: from,
+        onTap: onTap,
+        trailing: const FushiIcon(FushiIcons.chevronRight),
+      );
+    }
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiListItem(
+      key: key,
+      leading: FushiListLeadingIcon(icon),
+      title: Row(
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Expanded(
+            child: Text(target, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          Expanded(
+            child: DefaultTextStyle.merge(
+              style: context.fushiType.bodyMedium.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.end,
+              child: from,
+            ),
+          ),
+        ],
+      ),
+      onTap: onTap,
+      trailing: const FushiIcon(FushiIcons.chevronRight),
     );
   }
 

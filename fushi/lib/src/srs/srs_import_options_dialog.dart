@@ -12,11 +12,13 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -201,11 +203,97 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsAnkiImportOptions o = _options;
+    // 手机宽度：下拉换到标题下方整行（行内时被「恢复默认」再挤掉一截，DropdownMenu
+    // 只剩 ~120 宽，「较新时」都被截成「较新」）。
+    final bool narrow = MediaQuery.sizeOf(context).width < 600;
     int step = 0;
     Widget stagger(Widget child) =>
         FushiStaggeredEntrance(index: step++, child: child);
 
+    final Size screen = MediaQuery.sizeOf(context);
+    final double insetX = (screen.width * 0.05).clamp(16.0, 40.0);
+    final bool twoColumn = srsIsShortLandscape(BoxConstraints.tight(screen));
+    final List<Widget> basic = <Widget>[
+      if (widget.wholeCollection) ...<Widget>[
+        stagger(FushiInlineNotice(message: t.srs_import_colpkg_note)),
+        SizedBox(height: tokens.spacing.gap),
+      ],
+      stagger(
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-with-scheduling'),
+              title: t.srs_import_with_scheduling,
+              value: o.withScheduling,
+              onChanged: (bool v) => _set(o.copyWith(withScheduling: v)),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-with-deck-configs'),
+              title: t.srs_import_with_deck_configs,
+              value: o.withDeckConfigs,
+              onChanged: (bool v) => _set(o.copyWith(withDeckConfigs: v)),
+            ),
+          ],
+        ),
+      ),
+    ];
+    final Widget updates = stagger(
+      AdaptiveSettingsSection(
+        title: t.srs_import_section_updates,
+        titlePlacement: SettingsSectionTitlePlacement.inside,
+        collapsible: true,
+        children: <Widget>[
+          _withReset(
+            key: const ValueKey<String>('srs-import-merge-notetypes'),
+            isDefault: o.mergeNoteTypes == _defaults.mergeNoteTypes,
+            onReset: () =>
+                _set(o.copyWith(mergeNoteTypes: _defaults.mergeNoteTypes)),
+            row: AdaptiveSettingsSwitchRow(
+              // 行宽被右侧「恢复默认」占去 52：声明开关实宽，开关与
+              // 同组其它行一样留在标题右侧，不被挤到标题下方。
+              trailingWidth: kSettingsRowIntrinsicTrailingWidth,
+              title: t.srs_import_merge_notetypes,
+              value: o.mergeNoteTypes,
+              onChanged: (bool v) => _set(o.copyWith(mergeNoteTypes: v)),
+            ),
+          ),
+          _withReset(
+            key: const ValueKey<String>('srs-import-update-notes'),
+            isDefault: o.updateNotes == _defaults.updateNotes,
+            onReset: () => _set(o.copyWith(updateNotes: _defaults.updateNotes)),
+            row: AdaptiveSettingsPickerRow<SrsImportUpdateCondition>(
+              title: t.srs_import_update_notes,
+              options: _conditionOptions,
+              selected: o.updateNotes,
+              materialWidth: 160,
+              controlBelow: narrow,
+              onChanged: (SrsImportUpdateCondition c) =>
+                  _set(o.copyWith(updateNotes: c)),
+            ),
+          ),
+          _withReset(
+            key: const ValueKey<String>('srs-import-update-notetypes'),
+            isDefault: o.updateNoteTypes == _defaults.updateNoteTypes,
+            onReset: () =>
+                _set(o.copyWith(updateNoteTypes: _defaults.updateNoteTypes)),
+            row: AdaptiveSettingsPickerRow<SrsImportUpdateCondition>(
+              title: t.srs_import_update_notetypes,
+              options: _conditionOptions,
+              selected: o.updateNoteTypes,
+              materialWidth: 160,
+              controlBelow: narrow,
+              onChanged: (SrsImportUpdateCondition c) =>
+                  _set(o.copyWith(updateNoteTypes: c)),
+            ),
+          ),
+        ],
+      ),
+    );
     return FushiAlertDialog(
+      // 窄屏收窄对话框外边距（与 [FushiDialogFrame] 同一条比例：屏宽 5%，16～40）：
+      // 共享默认的 40 在手机上白丢 80dp，开关标签「导入所有学习进度信息」因此折出
+      // 一个孤字。
+      insetPadding: EdgeInsets.symmetric(horizontal: insetX, vertical: 24),
       title: Row(
         children: <Widget>[
           Expanded(
@@ -236,106 +324,50 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
         ],
       ),
       content: SizedBox(
-        width: SrsImportOptionsDialog.contentWidth,
+        width: twoColumn
+            ? math.min(
+                SrsImportOptionsDialog.contentWidth * 2,
+                screen.width - insetX * 2 - 48,
+              )
+            : SrsImportOptionsDialog.contentWidth,
         child: SingleChildScrollView(
           child: FushiEntranceScope(
-            child: Column(
-              key: const ValueKey<String>('srs-import-options'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (widget.wholeCollection) ...<Widget>[
-                  stagger(FushiInlineNotice(message: t.srs_import_colpkg_note)),
-                  SizedBox(height: tokens.spacing.gap),
-                ],
-                stagger(
-                  AdaptiveSettingsSection(
+            child: twoColumn
+                // 手机横屏（又宽又矮）：基础开关与「更新」两组并排，不必在 ~250 高的
+                // 正文里上下滚。
+                ? Row(
+                    key: const ValueKey<String>('srs-import-options'),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: tokens.spacing.gap * 2,
                     children: <Widget>[
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-import-with-scheduling',
-                        ),
-                        title: t.srs_import_with_scheduling,
-                        value: o.withScheduling,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withScheduling: v)),
-                      ),
-                      AdaptiveSettingsSwitchRow(
-                        key: const ValueKey<String>(
-                          'srs-import-with-deck-configs',
-                        ),
-                        title: t.srs_import_with_deck_configs,
-                        value: o.withDeckConfigs,
-                        onChanged: (bool v) =>
-                            _set(o.copyWith(withDeckConfigs: v)),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                stagger(
-                  AdaptiveSettingsSection(
-                    title: t.srs_import_section_updates,
-                    titlePlacement: SettingsSectionTitlePlacement.inside,
-                    collapsible: true,
-                    children: <Widget>[
-                      _withReset(
-                        key: const ValueKey<String>(
-                          'srs-import-merge-notetypes',
-                        ),
-                        isDefault: o.mergeNoteTypes == _defaults.mergeNoteTypes,
-                        onReset: () => _set(
-                          o.copyWith(mergeNoteTypes: _defaults.mergeNoteTypes),
-                        ),
-                        row: AdaptiveSettingsSwitchRow(
-                          title: t.srs_import_merge_notetypes,
-                          value: o.mergeNoteTypes,
-                          onChanged: (bool v) =>
-                              _set(o.copyWith(mergeNoteTypes: v)),
-                        ),
-                      ),
-                      _withReset(
-                        key: const ValueKey<String>('srs-import-update-notes'),
-                        isDefault: o.updateNotes == _defaults.updateNotes,
-                        onReset: () => _set(
-                          o.copyWith(updateNotes: _defaults.updateNotes),
-                        ),
-                        row:
-                            AdaptiveSettingsPickerRow<SrsImportUpdateCondition>(
-                              title: t.srs_import_update_notes,
-                              options: _conditionOptions,
-                              selected: o.updateNotes,
-                              materialWidth: 160,
-                              onChanged: (SrsImportUpdateCondition c) =>
-                                  _set(o.copyWith(updateNotes: c)),
-                            ),
-                      ),
-                      _withReset(
-                        key: const ValueKey<String>(
-                          'srs-import-update-notetypes',
-                        ),
-                        isDefault:
-                            o.updateNoteTypes == _defaults.updateNoteTypes,
-                        onReset: () => _set(
-                          o.copyWith(
-                            updateNoteTypes: _defaults.updateNoteTypes,
+                      Expanded(
+                        child: Column(
+                          key: const ValueKey<String>(
+                            'srs-import-options-basic',
                           ),
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: basic,
                         ),
-                        row:
-                            AdaptiveSettingsPickerRow<SrsImportUpdateCondition>(
-                              title: t.srs_import_update_notetypes,
-                              options: _conditionOptions,
-                              selected: o.updateNoteTypes,
-                              materialWidth: 160,
-                              onChanged: (SrsImportUpdateCondition c) =>
-                                  _set(o.copyWith(updateNoteTypes: c)),
-                            ),
+                      ),
+                      Expanded(
+                        key: const ValueKey<String>(
+                          'srs-import-options-updates',
+                        ),
+                        child: updates,
                       ),
                     ],
+                  )
+                : Column(
+                    key: const ValueKey<String>('srs-import-options'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      ...basic,
+                      SizedBox(height: tokens.spacing.gap),
+                      updates,
+                    ],
                   ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

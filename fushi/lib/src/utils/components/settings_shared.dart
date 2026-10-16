@@ -1426,11 +1426,18 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     this.showIcon = false,
     this.horizontalPadding,
     this.subtitleMaxLines,
+    this.trailingWidth,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 透传给 [AdaptiveSettingsRow.trailingWidth]：声明开关的固有宽度，让窄行按真实
+  /// 需求判断要不要把开关换到标题下方。默认 null = 维持经验阈值（既有窄屏行为不变）；
+  /// 行宽被同排的附加按钮（如「恢复默认」）压窄的调用点传
+  /// [kSettingsRowIntrinsicTrailingWidth]，避免开关被无谓地挤到标题下方。
+  final double? trailingWidth;
 
   /// 透传给 [AdaptiveSettingsRow.subtitleMaxLines]：null = 说明完整换行（默认），
   /// 给值时超出部分省略号截断（调用方负责把完整说明放进提示里）。
@@ -1453,6 +1460,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
       icon: icon,
       showIcon: showIcon,
       horizontalPadding: horizontalPadding,
+      trailingWidth: trailingWidth,
       trailing: isGlassDesign(context) && !isCupertinoPlatform(context)
           ? glassSettingsSwitch(
               context: context,
@@ -3077,17 +3085,24 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
     // (a polled gamepad's D-pad is focus-traversal, not arrow keys, so it can't
     // enter a stock DropdownMenu's menu). Index-keyed so the Android path stays
     // DropdownMenu<int> — entries map option index → label.
+    //
+    // 不传浮动 `label`：这一行的 [AdaptiveSettingsRow] 已经把 [title] 画在下拉
+    // 左侧 / 上方，DropdownMenu 再带同名浮动标签就是同一行标题重复两次（导入
+    // 选项对话框、设置 › 制卡的截图巡检）。无障碍名仍由外层 [Semantics] 给出，
+    // 读屏照旧能把下拉与标题对上。
     Widget buildDropdown(double? width) {
-      return GamepadMenuDropdown<int>(
-        width: width,
+      return Semantics(
         label: title,
-        hintText: placeholder,
-        selected: _selectedIndex,
-        onChanged: (int index) => onChanged(options[index].value),
-        entries: <GamepadDropdownEntry<int>>[
-          for (int i = 0; i < options.length; i++)
-            (value: i, label: options[i].label),
-        ],
+        child: GamepadMenuDropdown<int>(
+          width: width,
+          hintText: placeholder,
+          selected: _selectedIndex,
+          onChanged: (int index) => onChanged(options[index].value),
+          entries: <GamepadDropdownEntry<int>>[
+            for (int i = 0; i < options.length; i++)
+              (value: i, label: options[i].label),
+          ],
+        ),
       );
     }
 

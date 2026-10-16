@@ -963,15 +963,37 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     final String id = _idOf(item);
     final bool selected = _selected.contains(id);
     final bool current = id == _currentId && (wide || _selecting);
-    final String subtitle = <String>[
+    final bool cardsMode = _mode == SrsBrowseMode.cards;
+    final String subtitleText = <String>[
       if (c.deckName.isNotEmpty) c.deckName,
       c.noteType.name,
-      if (_mode == SrsBrowseMode.cards) ...<String>[
+      if (cardsMode) ...<String>[
         if (c.templateName.isNotEmpty) c.templateName,
-        srsBrowseCardStatus(c),
       ] else
         t.srs_browse_count_cards(n: item.cards.length),
     ].join(' · ');
+    // 卡片状态（新卡 / 已暂停 / 到期…）放在副标题行首的小标签里：拼在末尾时手机上
+    // 牌组名 + 类型 + 模板就把一行占满，状态整个被省略号吃掉（截图巡检）。
+    final Widget subtitle = cardsMode
+        ? Row(
+            children: <Widget>[
+              FushiTag(
+                key: ValueKey<String>('srs-browse-status-$id'),
+                text: srsBrowseCardStatus(c),
+                tone: srsBrowseCardStatusTone(c),
+                dense: true,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  subtitleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          )
+        : Text(subtitleText, maxLines: 1);
     final Color? flag = srsFlagColor(c.flag);
     final bool pending = c.note.hasPendingDecision;
     return FushiPressScale(
@@ -994,6 +1016,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           srsRunLogged('SrsBrowse.contextMenu', _openBatchMenu);
         },
         child: FushiListItem(
+          density: srsListDensityOf(context),
           selected: current || selected,
           leading: _selecting
               ? FushiCheckbox(
@@ -1006,11 +1029,12 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                   tone: pending ? FushiCardTone.error : FushiCardTone.neutral,
                 ),
           title: Text(c.sortText.isEmpty ? '—' : c.sortText),
-          subtitle: Text(subtitle, maxLines: 1),
+          subtitle: subtitle,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (c.isSuspended)
+              // 卡片模式下「已暂停」已是行首状态标签，不再重复画图标占行尾宽度。
+              if (c.isSuspended && !cardsMode)
                 FushiIcon(
                   FushiIcons.pauseCircle,
                   size: 18,
