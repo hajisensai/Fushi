@@ -983,6 +983,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           _buildLyricsTextColorRow(context),
           _buildLyricsHighlightColorRow(context),
           _lyricsSweepRow(),
+          _lyricsSkippedTextRow(),
         ],
       ),
       AdaptiveSettingsSection(
@@ -2253,6 +2254,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         _buildLyricsTextColorRow(context),
         _buildLyricsHighlightColorRow(context),
         _lyricsSweepRow(),
+        _lyricsSkippedTextRow(),
         ..._lyricsMarginRows(),
       ],
     );
@@ -2485,6 +2487,24 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       value: _src.lyricsSweep,
       onChanged: (bool enabled) async {
         await _src.setLyricsSweep(enabled);
+        if (!mounted) return;
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+    );
+  }
+
+  /// 歌词模式「显示未朗读的原文」（`lyrics_show_skipped_text`，默认开）：两句之间
+  /// 没被任何字幕认领的原文以灰色小字显示。live 维度：写偏好 →
+  /// `_updateLyricsStyleLive` 换 body class，不重建歌词页。
+  Widget _lyricsSkippedTextRow() {
+    return AdaptiveSettingsSwitchRow(
+      key: const ValueKey<String>('reader_lyrics_skipped_text'),
+      title: t.lyrics_skipped_text_show,
+      subtitle: t.lyrics_skipped_text_show_hint,
+      value: _src.lyricsShowSkippedText,
+      onChanged: (bool enabled) async {
+        await _src.setLyricsShowSkippedText(enabled);
         if (!mounted) return;
         setState(() {});
         widget.onStyleChanged?.call();

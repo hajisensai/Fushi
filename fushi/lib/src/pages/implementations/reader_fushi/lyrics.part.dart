@@ -242,6 +242,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       textColorOverride: _lyricsCustomTextColor(),
       currentColorOverride: _lyricsCustomHighlightColor(),
       sweep: ReaderFushiSource.instance.lyricsSweep,
+      showSkippedText: ReaderFushiSource.instance.lyricsShowSkippedText,
       followLabel: t.audiobook_follow_audio,
       // 标点字形 / 竖排朝向与正文同源（BUG-3281）：同一份内容语言字体链、同一个
       // 竖排字形朝向设置。
@@ -350,6 +351,11 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       // TODO-908: 模糊态是独立维度，单独热更（不重建整页），与样式同一路下发。
       await lyricsController.evaluateJavascript(
         source: 'window.__lyricsSetBlur && window.__lyricsSetBlur($blur);',
+      );
+      // 跳读灰显开关同为 live 维度（只换 body class）。
+      await lyricsController.evaluateJavascript(
+        source: 'window.__lyricsSetShowSkipped && '
+            'window.__lyricsSetShowSkipped(${src.lyricsShowSkippedText});',
       );
       final LyricsHtmlTheme? theme = _lyricsHtmlTheme;
       if (theme != null) {
