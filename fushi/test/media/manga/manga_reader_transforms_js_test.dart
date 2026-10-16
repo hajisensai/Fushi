@@ -227,7 +227,8 @@ var document = {
 $retry
 function check(cond, msg){ if (!cond) { console.error(msg); process.exit(1); } }
 check(!_retryFailedPageAt(200, 200), 'tap outside the failed page must not retry');
-check(_retryFailedPageAt(50, 50), 'tap on the failed page retries it');
+check(!_retryFailedPageAt(5, 50), 'tap on the failed page away from the retry icon must not retry');
+check(_retryFailedPageAt(50, 50), 'tap on the retry icon retries it');
 check(img.src === 'https://fushi.local/img/a.png?v=3&retry=1', 'retry url: ' + img.src);
 check(img.attrs.loading === 'eager', 'retry is requested now, not lazily');
 check(page.getAttribute('data-load-failed') === null, 'failure mark cleared');
@@ -235,6 +236,82 @@ check(!_retryPageImage(page), 'a page that did not fail is never re-requested');
 page.setAttribute('data-load-failed', '1');
 _retryFailedPagesWhere(function(p){ return Number(p.getAttribute('data-spread')) === 0; });
 check(img.src === 'https://fushi.local/img/a.png?v=3&retry=2', 'second retry keeps base url: ' + img.src);
+''');
+  });
+
+  test('失败页上左右翻页热区照常翻页，只有中央重试符号触发重取', () async {
+    final String retry = section('  var RETRY_SERIAL = 0;', '  // 摆位是「重投影」');
+    final String tap = section(
+      '  var TAP_ZONE_PAGING = ',
+      '  function _end(x, y){',
+    );
+    await runJs('''
+function el(attrs){
+  return {
+    attrs: attrs,
+    getAttribute: function(k){ return k in this.attrs ? this.attrs[k] : null; },
+    setAttribute: function(k, v){ this.attrs[k] = String(v); },
+    removeAttribute: function(k){ delete this.attrs[k]; },
+    appendChild: function(){},
+    remove: function(){},
+    style: {},
+  };
+}
+var img = el({src: 'https://fushi.local/img/a.png', loading: 'lazy'});
+Object.defineProperty(img, 'src', {
+  get: function(){ return this.attrs.src; },
+  set: function(v){ this.attrs.src = v; },
+});
+// 单页模式：失败页铺满 1000x1000 视口。
+var page = el({'data-page': '0', 'data-spread': '0', 'data-load-failed': '1'});
+page.querySelector = function(){ return img; };
+page.getBoundingClientRect = function(){ return {left: 0, top: 0, right: 1000, bottom: 1000}; };
+var document = {
+  querySelectorAll: function(){
+    return page.getAttribute('data-load-failed') === '1' ? [page] : [];
+  },
+  createElement: function(){ return el({}); },
+  getElementById: function(){ return null; },
+  addEventListener: function(){},
+  body: {appendChild: function(){}},
+};
+var calls = [];
+var window = {
+  innerWidth: 1000, innerHeight: 1000,
+  flutter_inappwebview: {callHandler: function(name, arg){ calls.push([name, arg]); }},
+};
+var timers = [];
+var setTimeout = function(fn){ timers.push(fn); return timers.length; };
+var clearTimeout = function(){};
+var IS_WEBTOON = false;
+function _bridge(){ return window.flutter_inappwebview; }
+function _selectOcrChar(){ return false; }
+function _doubleTapZoom(){}
+$retry
+$tap
+function check(cond, msg){ if (!cond) { console.error(msg); process.exit(1); } }
+function failAgain(){ page.setAttribute('data-load-failed', '1'); }
+// 左右热区：失败页上照常翻页，且不重取。
+_onTap(20, 500);
+check(calls.length === 1 && calls[0][0] === 'onMangaTurn', 'left zone must turn on a failed page: ' + JSON.stringify(calls));
+check(page.getAttribute('data-load-failed') === '1', 'left zone tap must not retry');
+_onTap(980, 500);
+check(calls.length === 2 && calls[1][0] === 'onMangaTurn' && calls[1][1] !== calls[0][1], 'right zone must turn the other way: ' + JSON.stringify(calls));
+check(page.getAttribute('data-load-failed') === '1', 'right zone tap must not retry');
+// 重取后源仍挂、马上又失败：热区依旧能翻走（不会卡在失败页上）。
+_onTap(500, 500);
+check(page.getAttribute('data-load-failed') === null, 'tap on the centre retry icon retries');
+check(calls.length === 2, 'retry tap does nothing else: ' + JSON.stringify(calls));
+failAgain();
+_onTap(20, 500);
+check(calls.length === 3 && calls[2][0] === 'onMangaTurn', 'still turns after a failed retry');
+// 命中区 ≥48dp：图标外缘 ±30px 内仍算重试。
+_onTap(530, 470);
+check(page.getAttribute('data-load-failed') === null, 'retry hit area is at least 48dp');
+failAgain();
+// 中央空白但不在图标上：不重取，走空白单击。
+_onTap(500, 200);
+check(page.getAttribute('data-load-failed') === '1', 'blank centre away from the icon must not retry');
 ''');
   });
 

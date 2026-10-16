@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Tienilo attivo con il blocco posizione se vuoi comunque la ricerca parole.",
   "floating_lyric_close": "Chiudi",
   "floating_lyric_corner_radius": "Raggio angoli sottotitoli flottanti",
-  "floating_lyric_corner_radius_hint": "0 mantiene gli angoli predefiniti della piattaforma; aumenta per arrotondare di più la barra e i pulsanti",
+  "floating_lyric_corner_radius_hint": "0 lascia gli angoli retti; aumenta per arrotondare di più la barra e i pulsanti (predefinito 24)",
   "floating_lyric_font_size": "Dimensione carattere sottotitolo flottante",
   "floating_lyric_hint": "Mostra la frase corrente sopra altre app.",
   "floating_lyric_lock": "Blocca",

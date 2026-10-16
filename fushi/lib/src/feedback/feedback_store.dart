@@ -198,7 +198,25 @@ class FeedbackTicketStore {
     }
   }
 
-  Future<void> write(List<FeedbackTicket> tickets) async {
+  /// 文件路径 → 该文件最后一次排队的写入。同一个文件的写入按调用顺序串行：临时文件名
+  /// 固定（`<文件>.tmp`），并发的两次写会互相把对方的临时文件 rename 走，后一次 rename
+  /// 就找不到源文件（打开详情时的「已读」落盘与「从本机移除」同时发生就会撞上）。
+  static final Map<String, Future<void>> _writeTails = <String, Future<void>>{};
+
+  /// 整份覆盖写入。同一文件的并发调用按调用顺序依次落盘，最后一次调用的内容为准。
+  Future<void> write(List<FeedbackTicket> tickets) {
+    final String key = file.path;
+    final Future<void> previous = _writeTails[key] ?? Future<void>.value();
+    final Future<void> next = previous
+        .catchError((Object _) {})
+        .then((_) => _writeNow(tickets));
+    _writeTails[key] = next;
+    return next.whenComplete(() {
+      if (identical(_writeTails[key], next)) _writeTails.remove(key);
+    });
+  }
+
+  Future<void> _writeNow(List<FeedbackTicket> tickets) async {
     final File f = file;
     await f.parent.create(recursive: true);
     final File tmp = File('${f.path}.tmp');
