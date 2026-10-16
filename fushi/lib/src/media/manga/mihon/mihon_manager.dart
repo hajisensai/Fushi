@@ -755,9 +755,9 @@ class MihonManager extends ChangeNotifier {
   ///   的意义是铺满一个语言的可用源，不是替用户决定升级。
   /// - **升级**（[upgrade] = true，扩展页「一键更新」，BUG-2481）：只处理已装且仓库
   ///   里版本更高的（[hasMihonExtensionUpdate]，与角标同一判据），没装的 / 已是最新
-  ///   的跳过。签名换了的那条会以 `SIGNER_NOT_TRUSTED` 落进 `failed`（调用方传
-  ///   `trustSigner: false`），让用户回到单条流程看着指纹确认——一键更新不能
-  ///   顺手信任新签名。
+  ///   的跳过。签名换了的那条在 [_prepareInstallBytes] 以 `SIGNATURE_CHANGED`
+  ///   落进 `failed`（与已装版本签名不符，这道门不看 `trustSigner`），让用户回到
+  ///   单条流程看着指纹确认——一键更新 / 后台自动更新都不能顺手接受新签名。
   ///
   /// 两种模式都把整批的运行时失效攒到最后一次（见
   /// [MihonRuntime.invalidateExtensions]）：桌面 sidecar 每次失效都要重启，逐个
@@ -779,6 +779,7 @@ class MihonManager extends ChangeNotifier {
     final List<String> installedPackages = <String>[];
     final List<String> skippedPackages = <String>[];
     final Map<String, String> failedPackages = <String, String>{};
+    final Map<String, String> failureCodes = <String, String>{};
     final Map<String, MangaExtensionRow> installedByPackage =
         <String, MangaExtensionRow>{
           for (final MangaExtensionRow row in installed) row.packageName: row,
@@ -867,6 +868,9 @@ class MihonManager extends ChangeNotifier {
             alreadyInstalled.add(target.packageName);
           } catch (exception) {
             failedPackages[target.packageName] = '$exception';
+            if (exception is MihonRuntimeException) {
+              failureCodes[target.packageName] = exception.code;
+            }
             // 失败的提案连着一份 tmp/*.apk.part，当场删掉而不是等下次启动兜底：
             // 一百条里失败十条就是十份最大 100 MiB 的残骸。
             if (proposal != null) {
@@ -895,6 +899,7 @@ class MihonManager extends ChangeNotifier {
       installed: List<String>.unmodifiable(installedPackages),
       skipped: List<String>.unmodifiable(skippedPackages),
       failed: Map<String, String>.unmodifiable(failedPackages),
+      failureCodes: Map<String, String>.unmodifiable(failureCodes),
     );
   }
 
@@ -1535,6 +1540,7 @@ class MihonBulkInstallReport {
     required this.installed,
     required this.skipped,
     required this.failed,
+    this.failureCodes = const <String, String>{},
   });
 
   /// 这一轮真正装上的包名。
@@ -1545,6 +1551,11 @@ class MihonBulkInstallReport {
 
   /// 包名 → 失败原因。逐条独立，不影响同批其它扩展。
   final Map<String, String> failed;
+
+  /// 包名 → 失败的 [MihonRuntimeException.code]（只有运行时异常有码；网络错误等
+  /// 不在这里）。给后台自动更新判「换了签名」这类需要用户亲自处理的失败，不靠
+  /// 解析 [failed] 里的人读文本。
+  final Map<String, String> failureCodes;
 
   int get attempted => installed.length + skipped.length + failed.length;
 }

@@ -311,6 +311,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_zoom_percent',
   'manga_zoom_sensitivity',
   'maximum_terms',
+  // bool（默认 false）：启动时在后台把签名未变的 Mihon 漫画 / 视频扩展更新到
+  // 仓库新版（`kMihonExtensionAutoUpdatePref`，update_probes.dart）。
+  'mihon_extension_auto_update',
   'mine_to_server',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
@@ -452,11 +455,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'update_debug_channel',
   'update_download_source',
   'update_never_remind',
-  // bool ×5（v101 统一更新提醒）：四个域各一个「要不要提醒」开关 + 系统通知总
+  // bool ×6（v101 统一更新提醒）：各域一个「要不要提醒」开关 + 系统通知总
   // 开关。默认全 true（装了订阅功能就是想被告知）。域开关关掉 = 该域整批不投递
   // （不进更新页、不出红点、不发通知）；总开关只掐系统通知，红点照常。
   // 调用点走 `UpdateFeedKind.enabledPrefKey` / [kUpdateSystemNotificationsPref]
   // 常量，不是裸字面量——守卫扫不到，但纪律要求登记。
+  'updates_notify_anime_extension',
   'updates_notify_app_release',
   'updates_notify_manga_chapter',
   'updates_notify_manga_extension',
