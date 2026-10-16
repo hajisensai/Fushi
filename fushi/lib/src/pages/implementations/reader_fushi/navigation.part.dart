@@ -502,6 +502,15 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     if (!_navigationFromPageTurn) {
       _pageTurnQueue.clear();
     }
+    // 翻页动画（跨章）：只有翻页触发的跨章（不含目录 / 书签 / 搜索 / 恢复）在新章恢复完
+    // 位置后让正文整体淡入；效果为无 / 墨水屏 / 非翻页模式不淡入。见
+    // [_buildChapterTransitionOverlay]。
+    _chapterFadeInPending =
+        _navigationFromPageTurn &&
+        readerChapterFadeInEnabled(
+          viewMode: _settings?.viewMode,
+          effect: _effectivePageTurnAnimation,
+        );
     _navigationFromPageTurn = false;
     // TODO-718 重设计：删除 _continuousSettleGuardArmed 武装——非自愿 reflow 归零判据已改无状态
     // （直接看 fromUserScroll），不再需要「导航武装/用户滚动解武装」状态机。

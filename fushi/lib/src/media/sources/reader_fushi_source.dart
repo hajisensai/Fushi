@@ -19,6 +19,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -1631,6 +1632,62 @@ class ReaderFushiSource extends ReaderMediaSource {
   Future<void> setWheelPageTurnInterval(int value) async {
     await (readerSettings?.setWheelPageTurnInterval(value) ??
         setPreference<int>(key: 'wheel_page_turn_interval', value: value));
+  }
+
+  /// 翻页动画效果（只在翻页模式生效；小说默认淡入淡出）。落盘 key 与
+  /// [ReaderSettings.pageTurnAnimation] 同一个，`readerSettings` 为 null 的旁路
+  /// entry point 走偏好表兜底。
+  PageTurnAnimation get pageTurnAnimation =>
+      readerSettings?.pageTurnAnimation ??
+      PageTurnAnimation.fromKey(
+        getPreference<String?>(
+          key: ReaderSettings.pageTurnAnimationKey,
+          defaultValue: null,
+        ),
+        fallback: ReaderSettings.defaultPageTurnAnimation,
+      );
+
+  Future<void> setPageTurnAnimation(PageTurnAnimation value) async {
+    await (readerSettings?.setPageTurnAnimation(value) ??
+        setPreference<String>(
+          key: ReaderSettings.pageTurnAnimationKey,
+          value: value.key,
+        ));
+  }
+
+  PageTurnAnimationSpeed get pageTurnAnimationSpeed {
+    final ReaderSettings? settings = readerSettings;
+    if (settings != null) return settings.pageTurnAnimationSpeed;
+    final String? stored = getPreference<String?>(
+      key: ReaderSettings.pageTurnAnimationSpeedKey,
+      defaultValue: null,
+    );
+    return stored == null
+        ? ReaderSettings.defaultPageTurnAnimationSpeed
+        : PageTurnAnimationSpeed.fromKey(stored);
+  }
+
+  Future<void> setPageTurnAnimationSpeed(PageTurnAnimationSpeed value) async {
+    await (readerSettings?.setPageTurnAnimationSpeed(value) ??
+        setPreference<String>(
+          key: ReaderSettings.pageTurnAnimationSpeedKey,
+          value: value.key,
+        ));
+  }
+
+  bool get pageTurnFollowDrag =>
+      readerSettings?.pageTurnFollowDrag ??
+      getPreference<bool>(
+        key: ReaderSettings.pageTurnFollowDragKey,
+        defaultValue: ReaderSettings.defaultPageTurnFollowDrag,
+      );
+
+  Future<void> setPageTurnFollowDrag(bool value) async {
+    await (readerSettings?.setPageTurnFollowDrag(value) ??
+        setPreference<bool>(
+          key: ReaderSettings.pageTurnFollowDragKey,
+          value: value,
+        ));
   }
 
   /// 翻页滑动**灵敏度**（TODO-113 / BUG-2563），缩放 JS `_gestureEnd` 的距离阈值；

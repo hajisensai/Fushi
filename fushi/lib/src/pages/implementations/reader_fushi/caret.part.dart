@@ -1136,8 +1136,14 @@ extension _ReaderCaret on _ReaderFushiPageState {
     final String edge = direction == ReaderNavigationDirection.forward
         ? 'forward'
         : 'backward';
+    // 翻页动画：新位置在 View Transition 的 update 回调里才写进 DOM（旧页快照之后），
+    // 光标必须落在新页上——经 whenPageTurnApplied 排到落位之后（无在途翻页时立即执行）。
+    final String reanchor = ReaderCaretScripts.reanchorInvocation(edge);
     await _controller!.evaluateJavascript(
-      source: ReaderCaretScripts.reanchorInvocation(edge),
+      source:
+          '(window.fushiReader && typeof window.fushiReader.whenPageTurnApplied '
+          '=== "function") ? window.fushiReader.whenPageTurnApplied(function() '
+          '{ $reanchor; }) : ($reanchor);',
     );
   }
 

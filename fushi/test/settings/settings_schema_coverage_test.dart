@@ -170,6 +170,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
+  // 翻页动画速度 / 拖动跟手：同上，生效点是注入文档的 PAGE_ANIM_MS / FOLLOW_DRAG
+  // 与跟手手势机。注入串由 overlay 用例咬住，跟手的提交 / 回弹 / 阻尼由真跑生成
+  // 脚本的 node 用例咬住，偏好映射另有专项。
+  'manga/Animation speed':
+      'test/media/manga/manga_overlay_html_test.dart（PAGE_ANIM_MS 三档）'
+      ' + test/media/manga/manga_page_animation_prefs_test.dart（值域）',
+  'manga/Follow finger while dragging':
+      'test/media/manga/manga_swipe_follow_js_test.dart（跟手行为）'
+      ' + test/media/manga/manga_overlay_html_test.dart（FOLLOW_DRAG 注入）',
   'manga/Tap edges to turn pages':
       'test/media/manga/manga_overlay_html_test.dart',
   // 跨页偏移 / 宽页独占：写 prefsRepo（changed=true），生效点是阅读器打开书时
@@ -1043,6 +1052,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'DEVICE: WebView wheel page-turn throttle',
   'reading/Swipe page-turn sensitivity':
       'test/reader/swipe_page_turn_sensitivity_test.dart',
+  // 小说翻页动画：效果 / 速度 / 跟手经 C（ReaderEngineConfig + updateLive）下发分页
+  // shell，持久化 / 置灰由专项测试守，JS 行为（View Transition / 跟手阈值）由 node
+  // 真跑生产 shell 的行为测试覆盖；真实动画观感是 WebView 设备项。
+  'reading/Page turn animation':
+      'test/settings/reader_page_turn_animation_settings_test.dart'
+      ' + test/reader/page_turn_animation_behavior_test.dart',
+  'reading/Animation speed':
+      'test/settings/reader_page_turn_animation_settings_test.dart'
+      ' + test/reader/page_turn_animation_behavior_test.dart',
+  'reading/Follow finger while dragging':
+      'test/settings/reader_page_turn_animation_settings_test.dart'
+      ' + test/reader/page_turn_animation_behavior_test.dart',
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',

@@ -3,6 +3,7 @@ import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -1194,17 +1195,120 @@ void main() {
             inlineSelectionJs: '',
             pageAnimation: animation,
           );
-      expect(docFor(MangaPageAnimation.slide).contains('transition:transform '),
+      // 默认速度 normal（FushiMotion token），缓动统一 cubic-bezier(.2,.7,.2,1)。
+      final int normalMs = PageTurnAnimationSpeed.normal.durationMs;
+      expect(
+          docFor(MangaPageAnimation.slide).contains(
+              'transition:transform ${normalMs}ms cubic-bezier(.2,.7,.2,1);'),
           isTrue);
       // none = 完全不声明过渡（要极限响应的用户）。
       final String none = docFor(MangaPageAnimation.none);
       expect(none.contains('transition:transform '), isFalse);
       expect(none.contains('transition:opacity '), isFalse);
-      // fade 只过渡 opacity，位移在淡出后瞬时完成，否则会同时看到滑动与淡入淡出。
+      // fade 只过渡 opacity（淡出 / 淡入各半程），位移在淡出后瞬时完成。
       final String fade = docFor(MangaPageAnimation.fade);
-      expect(fade.contains('transition:opacity '), isTrue);
+      expect(fade.contains('transition:opacity ${(normalMs / 2).round()}ms '),
+          isTrue);
       expect(fade.contains('transition:transform '), isFalse);
-      expect(fade.contains("PAGE_ANIM !== 'fade'"), isTrue);
+      expect(fade.contains("if (PAGE_ANIM === 'fade') { _fadeTurn(ms); return; }"),
+          isTrue);
+      // cover：strip 本身瞬时定位（root 不声明过渡），动的是克隆覆盖层。
+      final String cover = docFor(MangaPageAnimation.cover);
+      expect(cover.contains("var PAGE_ANIM = 'cover';"), isTrue);
+      expect(cover.contains('transition:transform '), isFalse);
+      expect(cover.contains('transition:opacity '), isFalse);
+      expect(cover.contains('.manga-cover-layer{position:absolute;'), isTrue);
+      expect(cover.contains('function _coverBegin(from, to){'), isTrue);
+    });
+
+    test('翻页动画速度三档注入 PAGE_ANIM_MS 与过渡时长', () {
+      String docFor(PageTurnAnimationSpeed speed) => mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+            pageAnimationSpeed: speed,
+          );
+      for (final PageTurnAnimationSpeed speed in PageTurnAnimationSpeed.values) {
+        final String doc = docFor(speed);
+        expect(doc.contains('var PAGE_ANIM_MS = ${speed.durationMs};'), isTrue,
+            reason: '$speed');
+        expect(
+            doc.contains('transition:transform ${speed.durationMs}ms '
+                'cubic-bezier(.2,.7,.2,1);'),
+            isTrue,
+            reason: '$speed');
+      }
+      // 不再写死 180 / 160ms。
+      expect(docFor(PageTurnAnimationSpeed.normal).contains('180ms'), isFalse);
+    });
+
+    test('拖动跟手开关、阈值与长距离跳页上限注入 JS', () {
+      String docFor({bool followDrag = true}) => mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+            followDrag: followDrag,
+          );
+      final String on = docFor();
+      expect(on.contains('var FOLLOW_DRAG = true;'), isTrue);
+      expect(docFor(followDrag: false).contains('var FOLLOW_DRAG = false;'),
+          isTrue);
+      expect(on.contains('var FOLLOW_COMMIT = 0.25;'), isTrue);
+      expect(on.contains('var FOLLOW_FLING = 0.6;'), isTrue);
+      expect(on.contains('var MAX_ANIM_DIST = 1;'), isTrue);
+      // 跟手只对有位移的效果生效，阈值分支按是否真跟了手选择。
+      expect(
+          on.contains("(PAGE_ANIM === 'slide' || PAGE_ANIM === 'cover')"),
+          isTrue);
+      expect(on.contains('commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1)'),
+          isTrue);
+      // 运行中换设置的入口（设置面板 / 系统减弱动态效果）与独立的过渡样式表。
+      expect(on.contains('window.__mangaSetPageAnimation = function'), isTrue);
+      expect(on.contains('<style id="manga-anim-css">#manga-root{'), isTrue);
+    });
+
+    test('墨水屏强制无动画；animateTransitions 不再参与判定', () {
+      String docFor(MangaReaderPreferences prefs) => mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: MangaReadingMode.spread,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+            pageAnimation: MangaPageAnimation.cover,
+            readerPreferences: prefs,
+          );
+      expect(
+          docFor(const MangaReaderPreferences(einkMode: true))
+              .contains("var PAGE_ANIM = 'none';"),
+          isTrue);
+      expect(
+          docFor(const MangaReaderPreferences(animateTransitions: false))
+              .contains("var PAGE_ANIM = 'cover';"),
+          isTrue,
+          reason: '翻页动画只认 manga_page_animation，旧开关只是它的投影');
+    });
+
+    test('纵向分页相邻翻页平滑滚动，条漫不动', () {
+      String docFor(MangaReadingMode mode) => mangaWindowDocument(
+            <MokuroImage>[_pageWithTwoBlocks()],
+            <String>['p.jpg'],
+            mode: mode,
+            spreadDirection: 'rtl',
+            inlineSelectionJs: '',
+          );
+      final String paged = docFor(MangaReadingMode.pagedVertical);
+      expect(paged.contains('var IS_VERTICAL_PAGED = true;'), isTrue);
+      expect(paged.contains('Math.abs(target - from) === 1'), isTrue);
+      expect(paged.contains('_animateScrollTo(top, ms);'), isTrue);
+      expect(docFor(MangaReadingMode.webtoon).contains(
+              'var IS_VERTICAL_PAGED = false;'),
+          isTrue);
+      // 条漫 / 纵向分页没有 strip，不出过渡样式表。
+      expect(paged.contains('id="manga-anim-css"'), isFalse);
     });
 
     test('window document exposes its navigation generation', () {

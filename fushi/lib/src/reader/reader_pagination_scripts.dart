@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_turn_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
@@ -805,6 +806,9 @@ class ReaderPaginationScripts {
 
   static String stableProgressInvocation() =>
       'window.fushiReader && !window.fushiReader._reanchorPending '
+      // 翻页动画回调还没落位 / 拖动跟手中：几何停在旧页或两页之间，返 null 等落定后的
+      // 滚动事件补刷（reader_page_turn_script.dart 的 pageTurnBusy）。
+      '&& !(window.fushiReader.pageTurnBusy && window.fushiReader.pageTurnBusy()) '
       '&& window.fushiProgressDetails ? window.fushiProgressDetails() : null';
 
   static String updatePageSizeInvocation(double width, double height) =>
@@ -1918,8 +1922,18 @@ window.__fushiInstallShell = function(C) {
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
-      if (target && this.revealElement && this.revealElement(target)) {
-        return this.calculateProgress();
+      // 分页 shell：跟读落到相邻页时固定淡入（_alignRangeToPage 读这面旗）。翻页动画
+      // 在途时新位置还没写进 DOM，进度按待落定的目标页算（不读几何、不打断动画）。
+      this._audioRevealPageTurn = true;
+      var revealed = false;
+      try {
+        revealed = !!(target && this.revealElement && this.revealElement(target));
+      } finally {
+        this._audioRevealPageTurn = false;
+      }
+      if (revealed) {
+        return this.calculateProgress(
+          this.pendingPageTurnTarget ? this.pendingPageTurnTarget() : undefined);
       }
     }
     return null;
@@ -2433,12 +2447,16 @@ window.fushiReader = {
   paginationMetrics: null,
 $_sharedJs
 $kSentenceAudioRubyGapJs
+$kReaderPageTurnJs
   revealElement: function(element) {
     var range = document.createRange();
     range.selectNodeContents(element);
     return this.scrollToRange(range);
   },
   getScrollContext: function() {
+    // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
+    // 动画——读方拿到的必须是新页，绝不能是旧位置（见 reader_page_turn_script.dart）。
+    this._flushPendingPageTurn();
     // TODO-729：单一量纲（对齐安卓 reader-paginated.js getScrollContext）。
     // 列周期 = column-width + column-gap。CSS column-width 已等于 content-box
     // （reader_content_styles.dart 按书写轴分支扣 turn 轴 padding），单列正好填满
@@ -2586,7 +2604,13 @@ $kSentenceAudioRubyGapJs
     }
     this.lockRootViewport();
   },
+  // 瞬时定位的唯一入口（恢复 / 跳转 / 重锚 / 搜索 / 有声书跨多页）：先结束正在播的翻页
+  // 动画（落点已写死），再瞬时赋值。只有相邻翻页经 turnPageAnimated 播动画。
   setPagePosition: function(context, position) {
+    this.finishPageTurnAnimation();
+    return this._setPagePositionNow(context, position);
+  },
+  _setPagePositionNow: function(context, position) {
     var before = this.getPagePosition(context);
     var clamped = Math.min(Math.max(0, position), context.physicalMaxScroll);
     window.lastPageScroll = clamped;
@@ -2610,6 +2634,8 @@ $kSentenceAudioRubyGapJs
     }, { passive: true });
     document.body.addEventListener('scroll', () => {
       this.lockRootViewport();
+      // 拖动跟手 / 松手待翻 / 回弹期间 scroll 本就停在两页之间，不得被吸回旧页。
+      if (this._followDrag || this._followDragRelease || this._followRebound) return;
       var context = this.getScrollContext();
       if (context.pageSize <= 0) return;
       var currentScroll = this.getPagePosition(context);
@@ -2708,8 +2734,22 @@ $kSentenceAudioRubyGapJs
     // 网格相位（见那里的注释）：补上相位后，`targetScroll === currentScroll` 已经精确表达
     // 「句首就在本页」，两个方向的错判同时消失，这条特例短路不再需要，删除。
     if (targetScroll === currentScroll) return false;
-    this.setPagePosition(context, targetScroll);
     var self = this;
+    // 有声书跟读（highlightSentenceAudioCue 揭示期间才置 _audioRevealPageTurn）落到**相邻页**
+    // 时固定淡入；跨多页、搜索命中、插图揭示等其余 reveal 一律瞬时。
+    if (this._audioRevealPageTurn === true && this.pageTurnEffect() !== 'none' &&
+        Math.round(Math.abs(targetScroll - currentScroll) / context.pageSize) === 1) {
+      this.turnPageAnimated(context, targetScroll, targetScroll > currentScroll, 'fade');
+      this.whenPageTurnApplied(function() {
+        requestAnimationFrame(function() {
+          if (self.getPagePosition(context) !== targetScroll) {
+            self._setPagePositionNow(context, targetScroll);
+          }
+        });
+      });
+      return true;
+    }
+    this.setPagePosition(context, targetScroll);
     requestAnimationFrame(function() {
       self.setPagePosition(context, targetScroll);
     });
@@ -3130,19 +3170,21 @@ $kSentenceAudioRubyGapJs
     // 是结构性正确的——不再需要旧的二次 settle 复核（那是双量纲下 maxScroll 低估的
     // 补救，根因消除后即多余）。安卓 reader-paginated.js paginate(814-840) 即直接
     // return "limit"。
+    // 相邻翻页落点经 turnPageAnimated（快照动画，reader_page_turn_script.dart）；不支持 /
+    // 墨水屏 / 效果为无时退化为与原来逐字等价的瞬时 setPagePosition。
     if (direction === "forward") {
       var targetForward = (Math.floor(pageCoordinate) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
-      this.setPagePosition(context, targetForward);
+      this.turnPageAnimated(context, targetForward, true);
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
       if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
-      this.setPagePosition(context, targetBack);
+      this.turnPageAnimated(context, targetBack, false);
       return "scrolled";
     }
   },

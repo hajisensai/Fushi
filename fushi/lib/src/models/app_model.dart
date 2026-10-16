@@ -9563,6 +9563,14 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaPageAnimation(String value) =>
       prefsRepo.setMangaPageAnimation(value);
 
+  String get mangaPageAnimationSpeed => prefsRepo.mangaPageAnimationSpeed;
+  Future<void> setMangaPageAnimationSpeed(String value) =>
+      prefsRepo.setMangaPageAnimationSpeed(value);
+
+  bool get mangaPageTurnFollowDrag => prefsRepo.mangaPageTurnFollowDrag;
+  Future<void> setMangaPageTurnFollowDrag(bool value) =>
+      prefsRepo.setMangaPageTurnFollowDrag(value);
+
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>
       prefsRepo.setMangaVolumeKeyPaging(value);

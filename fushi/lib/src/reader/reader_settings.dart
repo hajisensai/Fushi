@@ -7,6 +7,7 @@ import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/reader/font_catalog.dart';
+import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -628,6 +629,45 @@ class ReaderSettings {
   int get wheelPageTurnInterval => _get<int>('wheel_page_turn_interval', 450);
   Future<void> setWheelPageTurnInterval(int v) =>
       _set<int>('wheel_page_turn_interval', v);
+
+  // ── 翻页动画（只在翻页 / paginated 模式生效）────────────────────────
+  // 值域与降级规则唯一出处 page_turn_animation.dart（与漫画阅读器共用）；小说默认淡入淡出。
+
+  static const String pageTurnAnimationKey = 'page_turn_animation';
+  static const String pageTurnAnimationSpeedKey = 'page_turn_animation_speed';
+  static const String pageTurnFollowDragKey = 'page_turn_follow_drag';
+
+  /// 小说阅读器翻页效果的出厂默认（用户拍板：淡入淡出）。
+  static const PageTurnAnimation defaultPageTurnAnimation =
+      PageTurnAnimation.fade;
+  static const PageTurnAnimationSpeed defaultPageTurnAnimationSpeed =
+      PageTurnAnimationSpeed.normal;
+  static const bool defaultPageTurnFollowDrag = true;
+
+  /// 用户选的翻页效果（未经墨水屏 / 减弱动态效果降级，降级见
+  /// [effectivePageTurnAnimation]）。存字符串 key，未知值回落默认。
+  PageTurnAnimation get pageTurnAnimation => PageTurnAnimation.fromKey(
+    _cache[pageTurnAnimationKey]?.toString(),
+    fallback: defaultPageTurnAnimation,
+  );
+  Future<void> setPageTurnAnimation(PageTurnAnimation v) =>
+      _set<String>(pageTurnAnimationKey, v.key);
+
+  PageTurnAnimationSpeed get pageTurnAnimationSpeed {
+    final dynamic stored = _cache[pageTurnAnimationSpeedKey];
+    return stored == null
+        ? defaultPageTurnAnimationSpeed
+        : PageTurnAnimationSpeed.fromKey(stored.toString());
+  }
+
+  Future<void> setPageTurnAnimationSpeed(PageTurnAnimationSpeed v) =>
+      _set<String>(pageTurnAnimationSpeedKey, v.key);
+
+  /// 拖动跟手（只对平移 / 覆盖两种有位移的效果有意义）。
+  bool get pageTurnFollowDrag =>
+      _get<bool>(pageTurnFollowDragKey, defaultPageTurnFollowDrag);
+  Future<void> setPageTurnFollowDrag(bool v) =>
+      _set<bool>(pageTurnFollowDragKey, v);
 
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>

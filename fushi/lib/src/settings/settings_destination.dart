@@ -616,10 +616,20 @@ class SettingsSwitchItem extends SettingsItem {
     super.reader,
     super.video,
     this.defaultValue,
+    this.enabled,
   });
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
+  /// 渲染时求值的可交互性；null / 返回 true = 可操作，false = 置灰禁用（值照旧显示）。
+  ///
+  /// 只用于「这个偏好在当前**设置组合**下不生效」（例如翻页动画只在翻页模式生效），
+  /// 说明原因走 [subtitleBuilder]。**不要**拿运行期能力（本局游戏用不了等）禁用开关——
+  /// 那是用户意图与会话能力两件正交的事（见 settings_schema_game.dart 的说明）。
+  final SettingsSwitchGetter? enabled;
+
+  bool isEnabled(SettingsContext context) => enabled?.call(context) ?? true;
 
   /// 出厂默认值；非 null 时渲染层在值偏离默认时标「已改过」并提供单项恢复默认
   /// （见 settings_kit 的 settingsResetSpecFor）。只是 UI 元数据，与持久化无关——
@@ -650,6 +660,7 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     required this.selected,
     required this.onChanged,
     super.subtitle,
+    super.subtitleBuilder,
     super.icon,
     super.visible,
     super.reader,
@@ -657,10 +668,16 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     this.controlBelow = true,
     this.dropdown = false,
     this.defaultValue,
+    this.enabled,
   });
 
   /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
   final T? defaultValue;
+
+  /// 可交互性；语义同 [SettingsSwitchItem.enabled]（false = 整条分段置灰）。
+  final SettingsSwitchGetter? enabled;
+
+  bool isEnabled(SettingsContext context) => enabled?.call(context) ?? true;
 
   final List<SettingsSegmentOption<T>> options;
   final SettingsValueGetter<T> selected;
