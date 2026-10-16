@@ -41,6 +41,10 @@
 | [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
 | [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
 | [BUG-3417](bugs/BUG-3417-apkg-unicase-collation.md) | ✅ | ✅ | 导入 Anki 新格式卡组报 no such collation sequence: unicase |
+> 共 3071 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
 | [BUG-3414](bugs/BUG-3414-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |

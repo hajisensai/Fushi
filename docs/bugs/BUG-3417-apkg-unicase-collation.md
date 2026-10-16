@@ -1,6 +1,0 @@
-## BUG-3417 · 导入 Anki 新格式卡组报 no such collation sequence: unicase
-- **报告**：2026-10-16（用户反馈 `miEk7ghVSg`，Android 9 vivo：「卡片导入失败」，日志 5 次 `openSrsImport` 同一错误）
-- **真实性**：✅ 真 bug。日志：`SrsImportException(corrupt): SqliteException(257): no such collation sequence: unicase … Causing statement: SELECT ntid, ord, name, config FROM fields`，栈 `SrsAnkiCollection.open` ← `importAnkiPackage` ← `openSrsImport`。根因 `packages/fushi_engine/lib/srs/apkg/srs_anki_package.dart` `SrsAnkiCollection.open`：真实 Anki schema 18（2.1.28+ / AnkiDroid 2.15+ 导出的 `.apkg` / `.colpkg`）把 notetypes / fields / templates / decks / config 的名字列声明成 `COLLATE unicase`（Anki Rust 端自注册的排序规则），导入方用 `sqlite3.open` 打开后没注册这条规则，prepare 任何引用这些表的语句就失败，整包导入报「损坏」。测试夹具 `apkg_test_support.dart` 的 `schema18Extra` 没带 `COLLATE unicase`，所以既有端到端测试测不到。
-- **[x] ① 已修复** — 打开集合后 `db.createCollation(name: 'unicase', function: ankiUnicaseCompare)`（忽略大小写比较，与 Rust `UniCase` 的判据一致）；提交见本分支 `fix(srs): register Anki unicase collation for apkg import`。
-- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/apkg/srs_anki_unicase_collation_test.dart`：照 Anki rslib DDL 造带 `COLLATE unicase` + 唯一索引的 schema 18 集合，断言 `SrsAnkiCollection.open` 能读出笔记类型字段 / 牌组，且按名字忽略大小写查得到。
-- **备注**：未在 Android 9 真机用用户的原卡组复测（反馈未附卡组文件）。
