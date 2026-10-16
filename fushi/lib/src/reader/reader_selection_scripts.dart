@@ -625,7 +625,8 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
 // - 来源：CSS.highlights 里登记的 Range，加上带高亮 class 的元素（见 GROUPS），逐文本节点（跳过 rt / rp
 //   注音与 VN 未显现的字）取行片段。各路径自己的底色一律透明（reader_content_styles.dart），字色、收藏
 //   下划线、墨水屏线式标记仍由原来的 ::highlight / class 规则负责。
-// - 形状：沿块方向居中、厚 1em 的窄条；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
+// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3417）；有注音时收到振假名
+//   墨迹之外（见 blockExtent / lanes）；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
 //   wrapper 时也不留缝、不叠色，取代逐缝补 box-shadow 的旧做法）。
 // - 位置：body 里一个 z-index:-1 的绝对定位层，在正文之下、body 背景之上（body 是层叠上下文与包含块），
 //   跟正文一起滚动 / 翻页；不切文本节点，拖选每帧重画也不碰正文 DOM。
@@ -675,29 +676,117 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       }
       return host;
     };
-    // 横排时文字盒中线不是汉字的中线：盒 = 字体 ascent + descent，多数日文字体 ascent 偏大，盒中线
-    // 比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体实测，Noto Serif TC 墨迹下沿出条 0.05em）。
-    // 含 CJK 的片段按这款字体里「国」的墨迹中线居中（canvas measureText，按字体缓存，字体加载完清空）；
-    // 纯西文与竖排（中心基线，盒本来就对称）按盒中线。返回盒中线 → 墨迹中线的偏移，向下为正。
+    // 条的块方向范围按这款字体的真实度量算（canvas measureText，按字体缓存，字体加载完清空）：
+    // - CJK（与 CJK 标点）：沿块方向 1em、按墨迹中线居中。横排时盒中线不是汉字的中线——盒 = 字体
+    //   ascent + descent，多数日文字体 ascent 偏大，盒中线比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体
+    //   实测，Noto Serif TC 墨迹下沿出条 0.05em），所以按「国」的墨迹中线居中；竖排（中心基线）按盒中线。
+    // - 西文等其它文字（BUG-3417）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
+    //   下延（g j p q y）落到基线下 ~0.25em，1em 居中条会削掉 p/g/y 的尾巴和 f/l/t 的头。改为从盒推出
+    //   基线（盒顶 + 字体 ascent），条盖住「上伸 + 下延参考字形」与这一段自己（带重音符等）的墨迹，各留
+    //   LATIN_PAD。同一字体的西文行厚度一致，不随这一行有没有 p/g/y 忽粗忽细。竖排横躺的西文同理
+    //   （顺时针转 90°，ascent 一侧朝右）；竖排直立（text-orientation: upright / 纵中横）仍按 CJK 算。
+    // 无论哪种都不出文字盒；有注音时再由 lanes() 收到振假名墨迹之外（F-JNEJVkuC：贴字、不碰振假名）。
     var CJK = /[぀-ヿ㐀-鿿豈-﫿가-힯]/;
+    // 不是空白、CJK、CJK 标点（U+3000–303F）或全角形（U+FF00–FFEF）的字。
+    var NON_CJK = /[^\s　-〿぀-ヿ㐀-鿿豈-﫿가-힯＀-￯]/;
+    var LATIN_REF = 'bdfhkltgjpqy';
+    var LATIN_PAD = 0.04;
     var measureCtx = null;
-    var shiftCache = {};
-    var cjkShift = function(cs, text) {
-      if (!CJK.test(text)) return 0;
-      var font = cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
-      if (Object.prototype.hasOwnProperty.call(shiftCache, font)) return shiftCache[font];
-      var shift = 0;
+    var metricCache = {};
+    var fontKey = function(cs) {
+      return cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    };
+    var measureText = function(font, text) {
       try {
         if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
         measureCtx.font = font;
-        var m = measureCtx.measureText('国');
-        if (m.fontBoundingBoxAscent > 0 && m.actualBoundingBoxAscent > 0) {
-          shift = ((m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) -
-              (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent)) / 2;
+        return measureCtx.measureText(text);
+      } catch (e) {
+        return null;
+      }
+    };
+    // 字体级度量：fa/fd 字体 ascent/descent，shift 盒中线 → 汉字墨迹中线（向下为正），cjkInk 汉字墨迹厚，
+    // la/ld 西文参考字形的墨迹上伸/下延（相对基线）。量不到时 ok=false，调用方退回盒几何。
+    var fontMetrics = function(cs) {
+      var font = fontKey(cs);
+      if (Object.prototype.hasOwnProperty.call(metricCache, font)) return metricCache[font];
+      var res = { ok: false, fa: 0, fd: 0, shift: 0, cjkInk: 0, la: 0, ld: 0 };
+      var m = measureText(font, '国');
+      if (m && m.fontBoundingBoxAscent > 0 && m.actualBoundingBoxAscent > 0) {
+        res.ok = true;
+        res.fa = m.fontBoundingBoxAscent;
+        res.fd = m.fontBoundingBoxDescent;
+        res.shift = ((m.fontBoundingBoxAscent - m.fontBoundingBoxDescent) -
+            (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent)) / 2;
+        res.cjkInk = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+        var l = measureText(font, LATIN_REF);
+        if (l) {
+          res.la = l.actualBoundingBoxAscent;
+          res.ld = l.actualBoundingBoxDescent;
         }
-      } catch (e) {}
-      shiftCache[font] = shift;
-      return shift;
+      }
+      metricCache[font] = res;
+      return res;
+    };
+    // 片段的块方向范围 [lo, hi]（横排是纵坐标，竖排是横坐标）。
+    var blockExtent = function(r, cs, em, vertical, text) {
+      var thick = vertical ? r.width : r.height;
+      var boxStart = vertical ? r.left : r.top;
+      var mt = fontMetrics(cs);
+      var lane = Math.min(thick, em * LANE_EM);
+      var upright = vertical && (cs.textOrientation === 'upright' ||
+          (cs.textCombineUpright && cs.textCombineUpright !== 'none'));
+      var latin = NON_CJK.test(text) && !upright && mt.ok && mt.fa + mt.fd > 0;
+      var lo = Infinity, hi = -Infinity;
+      if (!latin || CJK.test(text)) {
+        var mid = boxStart + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
+        lo = mid - lane / 2;
+        hi = mid + lane / 2;
+      }
+      if (latin) {
+        var own = measureText(fontKey(cs), text);
+        var asc = Math.max(mt.la, own ? own.actualBoundingBoxAscent : 0);
+        var desc = Math.max(mt.ld, own ? own.actualBoundingBoxDescent : 0);
+        var pad = em * LATIN_PAD;
+        var ascentPart = thick * mt.fa / (mt.fa + mt.fd);
+        if (vertical) {
+          var baseX = boxStart + thick - ascentPart;
+          lo = Math.min(lo, baseX - desc - pad);
+          hi = Math.max(hi, baseX + asc + pad);
+        } else {
+          var baseY = boxStart + ascentPart;
+          lo = Math.min(lo, baseY - asc - pad);
+          hi = Math.max(hi, baseY + desc + pad);
+        }
+      }
+      return { lo: Math.max(lo, boxStart), hi: Math.min(hi, boxStart + thick) };
+    };
+    // 振假名的墨迹范围：rt 文本盒按注音字体的汉字墨迹厚居中（与 CJK 条同一口径），一个 ruby 只量一次。
+    var annotationInk = function(ruby, cache) {
+      for (var c = 0; c < cache.length; c++) if (cache[c].ruby === ruby) return cache[c].ink;
+      var ink = [];
+      var walker = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT);
+      for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+        var rt = n.parentElement && n.parentElement.closest('rt');
+        if (!rt || !ruby.contains(rt) || !n.data.trim()) continue;
+        var cs = getComputedStyle(rt);
+        if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+        var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
+        var mt = fontMetrics(cs);
+        var range = document.createRange();
+        range.selectNodeContents(n);
+        var rects = range.getClientRects();
+        for (var i = 0; i < rects.length; i++) {
+          var r = rects[i];
+          if (r.width <= 0.5 || r.height <= 0.5) continue;
+          var thick = vertical ? r.width : r.height;
+          var half = (mt.ok && mt.cjkInk > 0 ? Math.min(thick, mt.cjkInk) : thick) / 2;
+          var mid = (vertical ? r.left : r.top) + thick / 2 + (vertical || !mt.ok ? 0 : mt.shift);
+          ink.push({ lo: mid - half, hi: mid + half, a: vertical ? r.top : r.left, b: vertical ? r.bottom : r.right });
+        }
+      }
+      cache.push({ ruby: ruby, ink: ink });
+      return ink;
     };
     // 一个文本节点 [start, end) 的行片段。
     var nodeRects = function(node, start, end, seen, out) {
@@ -715,10 +804,13 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var cs = getComputedStyle(parent);
       var em = parseFloat(cs.fontSize) || 16;
       var vertical = (cs.writingMode || '').indexOf('vertical') === 0;
-      var shift = vertical ? 0 : cjkShift(cs, node.data.slice(start, end));
+      var text = node.data.slice(start, end);
+      var ruby = parent.closest('ruby');
       var rects = r.getClientRects();
       for (var i = 0; i < rects.length; i++) {
-        if (rects[i].width > 0.5 && rects[i].height > 0.5) out.push({ r: rects[i], em: em, v: vertical, shift: shift });
+        if (rects[i].width > 0.5 && rects[i].height > 0.5) {
+          out.push({ r: rects[i], em: em, v: vertical, x: blockExtent(rects[i], cs, em, vertical, text), ruby: ruby });
+        }
       }
     };
     // Range 的可见正文片段。整个元素被包住时 Range.getClientRects 还会带上元素边框盒（含注音的 ruby 盒），
@@ -741,32 +833,48 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       for (var n = walker.nextNode(); n; n = walker.nextNode()) nodeRects(n, 0, n.data.length, seen, out);
     };
-    // 行片段 → 块方向居中的 1em 窄条（盒本身比 1em 薄就按盒厚）。同一行（中线、厚度一致）里相隔不超过
-    // join 个字的片段并成一条。
+    // 行片段 → 窄条（块方向范围见 blockExtent）。同一行（文字盒中线一致、字号一致）里相隔不超过 join 个字的
+    // 片段并成一条，块方向取并集（一行里 CJK 与西文混排也是一条等厚的条）；最后把条收到这一行振假名的
+    // 墨迹之外，贴字而不碰注音。
     var lanes = function(pieces, join) {
+      var annCache = [];
       var items = pieces.map(function(p) {
         var r = p.r;
-        var thick = p.v ? r.width : r.height;
         return {
           v: p.v, em: p.em,
-          lane: Math.min(thick, p.em * LANE_EM),
-          mid: p.v ? r.left + r.width / 2 : r.top + r.height / 2 + p.shift,
+          line: p.v ? r.left + r.width / 2 : r.top + r.height / 2,
+          lo: p.x.lo, hi: p.x.hi,
           a: p.v ? r.top : r.left,
-          b: p.v ? r.bottom : r.right
+          b: p.v ? r.bottom : r.right,
+          rubies: p.ruby ? [p.ruby] : []
         };
       });
-      items.sort(function(x, y) { return Math.abs(x.mid - y.mid) >= 1 ? x.mid - y.mid : x.a - y.a; });
+      items.sort(function(x, y) { return Math.abs(x.line - y.line) >= 1 ? x.line - y.line : x.a - y.a; });
       var out = [];
       items.forEach(function(it) {
         var prev = out[out.length - 1];
-        if (prev && prev.v === it.v && Math.abs(prev.mid - it.mid) < 1 && Math.abs(prev.lane - it.lane) < 1 &&
+        if (prev && prev.v === it.v && Math.abs(prev.line - it.line) < 1 && Math.abs(prev.em - it.em) < 0.5 &&
             it.a <= prev.b + join * it.em) {
           prev.b = Math.max(prev.b, it.b);
+          prev.lo = Math.min(prev.lo, it.lo);
+          prev.hi = Math.max(prev.hi, it.hi);
+          it.rubies.forEach(function(rb) { if (prev.rubies.indexOf(rb) < 0) prev.rubies.push(rb); });
           return;
         }
         out.push(it);
       });
-      return out;
+      out.forEach(function(l) {
+        var mid = (l.lo + l.hi) / 2;
+        l.rubies.forEach(function(rb) {
+          annotationInk(rb, annCache).forEach(function(ink) {
+            if (ink.b <= l.a || ink.a >= l.b) return;
+            var inkMid = (ink.lo + ink.hi) / 2;
+            if (inkMid < mid) l.lo = Math.max(l.lo, Math.min(ink.hi, mid));
+            else l.hi = Math.min(l.hi, Math.max(ink.lo, mid));
+          });
+        });
+      });
+      return out.filter(function(l) { return l.hi - l.lo > 0.5; });
     };
     var paintGroup = function(group, reg, origin) {
       var el = host.querySelector(':scope > [data-hl-group="' + group.name + '"]');
@@ -780,10 +888,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       }
       var html = '';
       lanes(pieces, group.join).forEach(function(l) {
-        var x = l.v ? l.mid - l.lane / 2 : l.a;
-        var y = l.v ? l.a : l.mid - l.lane / 2;
-        var w = l.v ? l.lane : l.b - l.a;
-        var h = l.v ? l.b - l.a : l.lane;
+        var x = l.v ? l.lo : l.a;
+        var y = l.v ? l.a : l.lo;
+        var w = l.v ? l.hi - l.lo : l.b - l.a;
+        var h = l.v ? l.b - l.a : l.hi - l.lo;
         html += '<' + LANE + ' data-hl="' + group.name + '" style="left:' + (x - origin.left).toFixed(2) +
             'px;top:' + (y - origin.top).toFixed(2) + 'px;width:' + w.toFixed(2) +
             'px;height:' + h.toFixed(2) + 'px"></' + LANE + '>';
@@ -846,7 +954,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     var repaintAll = function() { schedule(); };
     if (typeof window.addEventListener === 'function') window.addEventListener('resize', repaintAll);
     if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
-      document.fonts.addEventListener('loadingdone', function() { shiftCache = {}; repaintAll(); });
+      document.fonts.addEventListener('loadingdone', function() { metricCache = {}; repaintAll(); });
     }
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('load', function(e) {
