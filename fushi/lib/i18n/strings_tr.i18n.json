@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "Fare tekerleğinin bir tıkının açılır pencereyi ne kadar atlattığı, yüksekliğinin payı olarak (ayrıca açılır pencere kaydırma hızıyla ölçeklenir).",
   "popup_max_height": "Açılır pencere maksimum yüksekliği",
   "popup_max_width": "Açılır pencere maks. genişlik",
+  "popup_mine_still_queued": "Added for mining, but not confirmed in Anki yet, so it can't be overwritten yet.",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "ป๊อปอัปกระโดดไปไกลเท่าใดต่อหนึ่งคลิกของล้อเมาส์ เป็นสัดส่วนของความสูง (ปรับตามความเร็วเลื่อนของป๊อปอัปด้วย)",
   "popup_max_height": "ความสูงสูงสุดของหน้าต่างค้นคำ",
   "popup_max_width": "ความกว้างสูงสุดของป๊อปอัป",
+  "popup_mine_still_queued": "Added for mining, but not confirmed in Anki yet, so it can't be overwritten yet.",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

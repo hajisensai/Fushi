@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "Quanto um clique da roda do mouse faz o pop-up saltar, como proporção da altura dele (também escalonado pela velocidade de rolagem do pop-up).",
   "popup_max_height": "Altura máxima do pop-up",
   "popup_max_width": "Largura máxima do popup",
+  "popup_mine_still_queued": "Added for mining, but not confirmed in Anki yet, so it can't be overwritten yet.",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

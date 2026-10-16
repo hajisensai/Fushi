@@ -5055,6 +5055,7 @@
   "popup_instant_scroll_wheel_step_hint": "マウスホイール 1 目盛りでポップアップが動く距離で、ポップアップの高さに対する割合です（ポップアップのスクロール速度も掛かります）。",
   "popup_max_height": "ポップアップの最大高さ",
   "popup_max_width": "ポップアップの最大幅",
+  "popup_mine_still_queued": "カード作成に追加済みですが、まだ Anki への書き込みを確認できていないため上書きできません。",
   "popup_mining_target_empty": "No profiles or decks yet. Connect Anki in settings first.",
   "popup_mining_target_switch": "Switch profile or deck",
   "popup_mining_target_switch_failed": "Could not switch the mining target: $error",

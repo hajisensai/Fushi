@@ -4563,10 +4563,14 @@ function createEntryHeader(entry, idx) {
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
     let queuedLocally = false;
-    const isEntryQueued = () => typeof window.fushiIsEntryQueued === 'function'
+    const hostOwnsQueue = () => typeof window.fushiIsEntryQueued === 'function';
+    const isEntryQueued = () => hostOwnsQueue()
         ? window.fushiIsEntryQueued({ expression, reading }) === true
         : queuedLocally;
     const setMineState = (isMined) => {
+        // BUG-3492：Anki 里已经有这张卡 = 后台那次制卡已经落地，本弹窗记的「已加入」
+        // 标记就此作废（宿主落地后推来的刷新、点击时的回问都经这里）。
+        if (isMined) queuedLocally = false;
         // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
         // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
         mineButton.__fushiMineStateKnown = true;
@@ -4629,13 +4633,32 @@ function createEntryHeader(entry, idx) {
             // in finally — it is the ONLY thing that disables the button, never a
             // permanent lock (BUG-077).
             if (mineButton.dataset.mining === '1') return;
-            if (isEntryQueued()) {
+            // 宿主自己持有制卡队列（浏览器扩展）：排队中就是排队中，它的队列会如实回答。
+            if (hostOwnsQueue() && isEntryQueued()) {
                 setMineState(mineButton.dataset.mined === '1');
                 return;
             }
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
+                // BUG-3492：app 内（在线视频后台制卡）的「已加入」只是本弹窗记下的一个
+                // 标记，卡落地后没有任何东西会把它撤掉——以前这里一律 return，于是同一个
+                // 弹窗里再点 ✓、或从「高级制卡」回点，都永远没反应，只有关掉弹窗重新查词
+                // （新弹窗没有这个标记）才能走覆盖。现在先问一次 Anki：卡已经在了 →
+                // setMineState(true) 撤掉标记，落到下面已制卡的正常路径（操作单 / 覆盖）；
+                // 还没落地 → 就地说一声，不装作点了。
+                if (queuedLocally && !hostOwnsQueue()) {
+                    const landed = await window.flutter_inappwebview.callHandler(
+                        'duplicateCheck', { expression, reading });
+                    if (landed !== true) {
+                        setMineState(false);
+                        showInlineHint(
+                            mineButton,
+                            window.i18nMineStillQueued || '已加入制卡，还没确认写进 Anki，暂时不能覆盖。');
+                        return;
+                    }
+                    setMineState(true);
+                }
                 // IntersectionObserver may not have delivered its first callback
                 // yet. Join/start the scheduled duplicateCheck before consulting
                 // data-mined, then invalidate late decoration work for this click.
