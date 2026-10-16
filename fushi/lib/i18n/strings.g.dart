@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 132328 (7784 per locale)
 ///
-/// Built on 2026-10-16 at 10:28 UTC
+/// Built on 2026-10-16 at 10:29 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -30046,30 +30046,32 @@ class _StringsAr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'ترتيب المجموعة';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'عندما لا تستطيع قواعد الترقيم تحديد موضع الحلقات الخاصة أو OVA أو المجلدات، دع الذكاء الاصطناعي يقرر مكانها في المجموعة';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'ترتيب بالذكاء الاصطناعي';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running =>
+      'جارٍ سؤال الذكاء الاصطناعي عن الترتيب…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'تم تحديث الترتيب بالذكاء الاصطناعي';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'أرقام الحلقات والمجلدات تحدد الترتيب بالفعل؛ تم الترتيب وفقًا لها';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged =>
+      'أبقى الذكاء الاصطناعي الترتيب الحالي';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'لم يجتز رد الذكاء الاصطناعي التحقق؛ لم يتغير الترتيب';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'هذه المجموعة كبيرة جدًا على الترتيب بالذكاء الاصطناعي';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'لم يتعرف الذكاء الاصطناعي على هذا العمل ولم يجد شيئًا على الإنترنت؛ لم يتغير الترتيب';
 }
 
 // Path: <root>
@@ -49259,30 +49261,32 @@ class _StringsDe extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Sammlungsreihenfolge';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Wenn Nummerierungsregeln Specials, OVAs oder Bände nicht einordnen können, entscheidet die KI über ihre Position in der Sammlung';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Mit KI sortieren';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running =>
+      'KI wird nach der Reihenfolge gefragt…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Reihenfolge mit KI aktualisiert';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Folgen- und Bandnummern legen die Reihenfolge bereits fest; danach sortiert';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged =>
+      'Die KI hat die aktuelle Reihenfolge beibehalten';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Die Antwort der KI hat die Prüfung nicht bestanden; Reihenfolge unverändert';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Diese Sammlung ist zu groß für die KI-Sortierung';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'Die KI kennt dieses Werk nicht und hat online nichts gefunden; Reihenfolge unverändert';
 }
 
 // Path: <root>
@@ -68531,30 +68535,30 @@ class _StringsEs extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Orden de la colección';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Cuando las reglas de numeración no pueden ubicar especiales, OVA o volúmenes, deja que la IA decida su lugar en la colección';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Ordenar con IA';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Consultando el orden a la IA…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Orden actualizado con IA';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Los números de episodio y volumen ya determinan el orden; se ordenó según ellos';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'La IA mantuvo el orden actual';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'La respuesta de la IA no superó la validación; el orden no cambió';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Esta colección es demasiado grande para ordenarla con IA';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'La IA no reconoció esta obra ni encontró nada en línea; el orden no cambió';
 }
 
 // Path: <root>
@@ -87884,30 +87888,30 @@ class _StringsFr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Ordre de la collection';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Quand les règles de numérotation ne peuvent pas placer les spéciaux, OVA ou volumes, l\'IA décide de leur place dans la collection';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Trier avec l\'IA';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Demande de l\'ordre à l\'IA…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Ordre mis à jour par l\'IA';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Les numéros d\'épisode et de volume déterminent déjà l\'ordre ; trié selon ceux-ci';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'L\'IA a conservé l\'ordre actuel';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'La réponse de l\'IA n\'a pas passé la validation ; ordre inchangé';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Cette collection est trop grande pour le tri par IA';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'L\'IA ne connaît pas cette œuvre et n\'a rien trouvé en ligne ; ordre inchangé';
 }
 
 // Path: <root>
@@ -106890,30 +106894,31 @@ class _StringsId extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Urutan koleksi';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Jika aturan penomoran tidak bisa menempatkan spesial, OVA, atau volume, biarkan AI menentukan posisinya di koleksi';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Urutkan dengan AI';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Menanyakan urutan ke AI…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Urutan diperbarui dengan AI';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Nomor episode dan volume sudah menentukan urutan; diurutkan berdasarkan itu';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged =>
+      'AI mempertahankan urutan saat ini';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Jawaban AI tidak lolos validasi; urutan tidak berubah';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Koleksi ini terlalu besar untuk diurutkan dengan AI';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'AI tidak mengenali karya ini dan tidak menemukan apa pun daring; urutan tidak berubah';
 }
 
 // Path: <root>
@@ -126062,30 +126067,31 @@ class _StringsIt extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Ordine della raccolta';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Quando le regole di numerazione non riescono a collocare speciali, OVA o volumi, lascia che sia l\'IA a decidere la loro posizione nella raccolta';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Ordina con IA';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Richiesta dell\'ordine all\'IA…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Ordine aggiornato con l\'IA';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'I numeri di episodio e volume determinano già l\'ordine; ordinato in base a essi';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged =>
+      'L\'IA ha mantenuto l\'ordine attuale';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'La risposta dell\'IA non ha superato la verifica; ordine invariato';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Questa raccolta è troppo grande per l\'ordinamento con IA';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'L\'IA non riconosce quest\'opera e non ha trovato nulla online; ordine invariato';
 }
 
 // Path: <root>
@@ -144234,30 +144240,27 @@ class _StringsJa extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'コレクションの並び順';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      '番号のルールで SP・OVA・特別編や巻の位置を決められないとき、コレクション内の位置を AI に決めてもらいます';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'AI で並べ替え';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'AI に並び順を問い合わせています…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'AI の提案で並び順を更新しました';
   @override
-  String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+  String get collection_sort_ai_rules_only => '話数・巻数で順番が決まるため、それに従って並べ替えました';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'AI は現在の並び順のままにしました';
   @override
-  String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+  String get collection_sort_ai_invalid => 'AI の回答が検証を通らなかったため、並び順は変更していません';
   @override
-  String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+  String get collection_sort_ai_too_large => 'このコレクションは大きすぎるため、AI で並べ替えできません';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'AI はこの作品を知らず、オンラインでも資料が見つからなかったため、並び順は変更していません';
 }
 
 // Path: <root>
@@ -162442,30 +162445,27 @@ class _StringsKo extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => '컬렉션 순서';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      '번호 규칙으로 스페셜, OVA, 권의 위치를 정할 수 없을 때 AI가 컬렉션 안의 위치를 정하게 합니다';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'AI로 정렬';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'AI에게 순서를 묻는 중…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'AI 제안으로 순서를 업데이트했습니다';
   @override
-  String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+  String get collection_sort_ai_rules_only => '화수와 권수로 이미 순서가 정해져 그에 따라 정렬했습니다';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'AI가 현재 순서를 유지했습니다';
   @override
-  String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+  String get collection_sort_ai_invalid => 'AI 응답이 검증을 통과하지 못해 순서를 바꾸지 않았습니다';
   @override
-  String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+  String get collection_sort_ai_too_large => '이 컬렉션은 너무 커서 AI로 정렬할 수 없습니다';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'AI가 이 작품을 알지 못하고 온라인에서도 찾지 못해 순서를 바꾸지 않았습니다';
 }
 
 // Path: <root>
@@ -181562,30 +181562,31 @@ class _StringsNl extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Volgorde van verzameling';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Als nummeringsregels specials, OVA\'s of delen niet kunnen plaatsen, laat de AI bepalen waar ze in de verzameling horen';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Sorteren met AI';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'AI wordt om de volgorde gevraagd…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Volgorde bijgewerkt met AI';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Aflevering- en deelnummers bepalen de volgorde al; daarop gesorteerd';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged =>
+      'De AI heeft de huidige volgorde behouden';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Het antwoord van de AI kwam niet door de controle; volgorde ongewijzigd';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Deze verzameling is te groot om met AI te sorteren';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'De AI kent dit werk niet en vond online niets; volgorde ongewijzigd';
 }
 
 // Path: <root>
@@ -200751,30 +200752,30 @@ class _StringsPtBr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Ordem da coleção';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Quando as regras de numeração não conseguem posicionar especiais, OVAs ou volumes, deixe a IA decidir o lugar deles na coleção';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Ordenar com IA';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Consultando a IA sobre a ordem…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Ordem atualizada com IA';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Os números de episódio e volume já definem a ordem; ordenado por eles';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'A IA manteve a ordem atual';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'A resposta da IA não passou na validação; ordem inalterada';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Esta coleção é grande demais para ordenar com IA';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'A IA não reconheceu esta obra e não encontrou nada online; ordem inalterada';
 }
 
 // Path: <root>
@@ -219885,30 +219886,30 @@ class _StringsRu extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Порядок в коллекции';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Когда правила нумерации не могут определить место спешлов, OVA или томов, ИИ решает, где они должны стоять в коллекции';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Упорядочить с ИИ';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Запрашиваем порядок у ИИ…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Порядок обновлён с помощью ИИ';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Номера серий и томов уже задают порядок; упорядочено по ним';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'ИИ оставил текущий порядок';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Ответ ИИ не прошёл проверку; порядок не изменён';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Коллекция слишком велика для упорядочивания с ИИ';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'ИИ не знает это произведение и ничего не нашёл в сети; порядок не изменён';
 }
 
 // Path: <root>
@@ -238697,30 +238698,30 @@ class _StringsTh extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'ลำดับในคอลเลกชัน';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'เมื่อกฎการนับเลขระบุตำแหน่งตอนพิเศษ OVA หรือเล่มไม่ได้ ให้ AI ตัดสินว่าควรอยู่ตรงไหนในคอลเลกชัน';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'เรียงด้วย AI';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'กำลังถาม AI เรื่องลำดับ…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'อัปเดตลำดับตามที่ AI แนะนำแล้ว';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'เลขตอนและเลขเล่มกำหนดลำดับได้อยู่แล้ว จึงเรียงตามนั้น';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'AI คงลำดับปัจจุบันไว้';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'คำตอบของ AI ไม่ผ่านการตรวจสอบ ลำดับไม่เปลี่ยน';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'คอลเลกชันนี้ใหญ่เกินกว่าจะเรียงด้วย AI';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'AI ไม่รู้จักผลงานนี้และค้นหาทางออนไลน์ไม่พบ ลำดับไม่เปลี่ยน';
 }
 
 // Path: <root>
@@ -257713,30 +257714,30 @@ class _StringsTr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Koleksiyon sırası';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Numaralandırma kuralları özel bölümleri, OVA\'ları veya ciltleri yerleştiremediğinde, koleksiyondaki yerlerine yapay zeka karar versin';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Yapay zeka ile sırala';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Sıra için yapay zekaya soruluyor…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Sıra yapay zeka ile güncellendi';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Bölüm ve cilt numaraları sırayı zaten belirliyor; bunlara göre sıralandı';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'Yapay zeka mevcut sırayı korudu';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Yapay zekanın yanıtı doğrulamadan geçemedi; sıra değişmedi';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Bu koleksiyon yapay zeka ile sıralamak için çok büyük';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'Yapay zeka bu eseri tanımadı ve çevrimiçi bir şey bulamadı; sıra değişmedi';
 }
 
 // Path: <root>
@@ -276656,30 +276657,30 @@ class _StringsVi extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => 'Thứ tự bộ sưu tập';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      'Khi quy tắc đánh số không xếp được tập đặc biệt, OVA hay tập sách, hãy để AI quyết định vị trí của chúng trong bộ sưu tập';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'Sắp xếp bằng AI';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => 'Đang hỏi AI về thứ tự…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => 'Đã cập nhật thứ tự theo AI';
   @override
   String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+      'Số tập và số quyển đã xác định thứ tự; đã sắp xếp theo đó';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'AI giữ nguyên thứ tự hiện tại';
   @override
   String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+      'Câu trả lời của AI không qua được kiểm tra; thứ tự không đổi';
   @override
   String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+      'Bộ sưu tập này quá lớn để sắp xếp bằng AI';
   @override
   String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+      'AI không nhận ra tác phẩm này và không tìm thấy gì trên mạng; thứ tự không đổi';
 }
 
 // Path: <root>
@@ -311557,30 +311558,26 @@ class _StringsZhHk extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
-  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order => '合集排序';
   @override
   String get ai_feature_collection_order_summary =>
-      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+      '規則排不出 SP / OVA / 特別篇或卷序時，讓 AI 決定它們在合集裡的位置';
   @override
-  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai => 'AI 排序';
   @override
-  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_running => '正在讓 AI 排序…';
   @override
-  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_applied => '已按 AI 建議調整順序';
   @override
-  String get collection_sort_ai_rules_only =>
-      'Episode and volume numbers already decide the order; sorted by them';
+  String get collection_sort_ai_rules_only => '集號 / 卷號已能確定順序，已按規則排好';
   @override
-  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unchanged => 'AI 認為目前順序無需調整';
   @override
-  String get collection_sort_ai_invalid =>
-      'AI\'s answer didn\'t pass validation; order unchanged';
+  String get collection_sort_ai_invalid => 'AI 的回覆沒通過校驗，順序未改';
   @override
-  String get collection_sort_ai_too_large =>
-      'This collection is too large for AI sorting';
+  String get collection_sort_ai_too_large => '合集太大，無法用 AI 排序';
   @override
-  String get collection_sort_ai_unknown =>
-      'AI didn\'t recognise this work and found nothing online; order unchanged';
+  String get collection_sort_ai_unknown => 'AI 不認識這部作品，也沒查到資料，順序未改';
 }
 
 /// Flat map(s) containing all translations.
@@ -343853,25 +343850,25 @@ extension on _StringsAr {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'ترتيب المجموعة';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'عندما لا تستطيع قواعد الترقيم تحديد موضع الحلقات الخاصة أو OVA أو المجلدات، دع الذكاء الاصطناعي يقرر مكانها في المجموعة';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'ترتيب بالذكاء الاصطناعي';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'جارٍ سؤال الذكاء الاصطناعي عن الترتيب…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'تم تحديث الترتيب بالذكاء الاصطناعي';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'أرقام الحلقات والمجلدات تحدد الترتيب بالفعل؛ تم الترتيب وفقًا لها';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'أبقى الذكاء الاصطناعي الترتيب الحالي';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'لم يجتز رد الذكاء الاصطناعي التحقق؛ لم يتغير الترتيب';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'هذه المجموعة كبيرة جدًا على الترتيب بالذكاء الاصطناعي';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'لم يتعرف الذكاء الاصطناعي على هذا العمل ولم يجد شيئًا على الإنترنت؛ لم يتغير الترتيب';
       default:
         return null;
     }
@@ -360072,25 +360069,25 @@ extension on _StringsDe {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Sammlungsreihenfolge';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Wenn Nummerierungsregeln Specials, OVAs oder Bände nicht einordnen können, entscheidet die KI über ihre Position in der Sammlung';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Mit KI sortieren';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'KI wird nach der Reihenfolge gefragt…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Reihenfolge mit KI aktualisiert';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Folgen- und Bandnummern legen die Reihenfolge bereits fest; danach sortiert';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'Die KI hat die aktuelle Reihenfolge beibehalten';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Die Antwort der KI hat die Prüfung nicht bestanden; Reihenfolge unverändert';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Diese Sammlung ist zu groß für die KI-Sortierung';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'Die KI kennt dieses Werk nicht und hat online nichts gefunden; Reihenfolge unverändert';
       default:
         return null;
     }
@@ -376273,25 +376270,25 @@ extension on _StringsEs {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Orden de la colección';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Cuando las reglas de numeración no pueden ubicar especiales, OVA o volúmenes, deja que la IA decida su lugar en la colección';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Ordenar con IA';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Consultando el orden a la IA…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Orden actualizado con IA';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Los números de episodio y volumen ya determinan el orden; se ordenó según ellos';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'La IA mantuvo el orden actual';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'La respuesta de la IA no superó la validación; el orden no cambió';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Esta colección es demasiado grande para ordenarla con IA';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'La IA no reconoció esta obra ni encontró nada en línea; el orden no cambió';
       default:
         return null;
     }
@@ -392492,25 +392489,25 @@ extension on _StringsFr {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Ordre de la collection';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Quand les règles de numérotation ne peuvent pas placer les spéciaux, OVA ou volumes, l\'IA décide de leur place dans la collection';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Trier avec l\'IA';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Demande de l\'ordre à l\'IA…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Ordre mis à jour par l\'IA';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Les numéros d\'épisode et de volume déterminent déjà l\'ordre ; trié selon ceux-ci';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'L\'IA a conservé l\'ordre actuel';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'La réponse de l\'IA n\'a pas passé la validation ; ordre inchangé';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Cette collection est trop grande pour le tri par IA';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'L\'IA ne connaît pas cette œuvre et n\'a rien trouvé en ligne ; ordre inchangé';
       default:
         return null;
     }
@@ -408655,25 +408652,25 @@ extension on _StringsId {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Urutan koleksi';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Jika aturan penomoran tidak bisa menempatkan spesial, OVA, atau volume, biarkan AI menentukan posisinya di koleksi';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Urutkan dengan AI';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Menanyakan urutan ke AI…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Urutan diperbarui dengan AI';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Nomor episode dan volume sudah menentukan urutan; diurutkan berdasarkan itu';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI mempertahankan urutan saat ini';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Jawaban AI tidak lolos validasi; urutan tidak berubah';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Koleksi ini terlalu besar untuk diurutkan dengan AI';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI tidak mengenali karya ini dan tidak menemukan apa pun daring; urutan tidak berubah';
       default:
         return null;
     }
@@ -424854,25 +424851,25 @@ extension on _StringsIt {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Ordine della raccolta';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Quando le regole di numerazione non riescono a collocare speciali, OVA o volumi, lascia che sia l\'IA a decidere la loro posizione nella raccolta';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Ordina con IA';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Richiesta dell\'ordine all\'IA…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Ordine aggiornato con l\'IA';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'I numeri di episodio e volume determinano già l\'ordine; ordinato in base a essi';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'L\'IA ha mantenuto l\'ordine attuale';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'La risposta dell\'IA non ha superato la verifica; ordine invariato';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Questa raccolta è troppo grande per l\'ordinamento con IA';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'L\'IA non riconosce quest\'opera e non ha trovato nulla online; ordine invariato';
       default:
         return null;
     }
@@ -440926,25 +440923,25 @@ extension on _StringsJa {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'コレクションの並び順';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return '番号のルールで SP・OVA・特別編や巻の位置を決められないとき、コレクション内の位置を AI に決めてもらいます';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'AI で並べ替え';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'AI に並び順を問い合わせています…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'AI の提案で並び順を更新しました';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return '話数・巻数で順番が決まるため、それに従って並べ替えました';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI は現在の並び順のままにしました';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'AI の回答が検証を通らなかったため、並び順は変更していません';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'このコレクションは大きすぎるため、AI で並べ替えできません';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI はこの作品を知らず、オンラインでも資料が見つからなかったため、並び順は変更していません';
       default:
         return null;
     }
@@ -457006,25 +457003,25 @@ extension on _StringsKo {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return '컬렉션 순서';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return '번호 규칙으로 스페셜, OVA, 권의 위치를 정할 수 없을 때 AI가 컬렉션 안의 위치를 정하게 합니다';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'AI로 정렬';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'AI에게 순서를 묻는 중…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'AI 제안으로 순서를 업데이트했습니다';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return '화수와 권수로 이미 순서가 정해져 그에 따라 정렬했습니다';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI가 현재 순서를 유지했습니다';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'AI 응답이 검증을 통과하지 못해 순서를 바꾸지 않았습니다';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return '이 컬렉션은 너무 커서 AI로 정렬할 수 없습니다';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI가 이 작품을 알지 못하고 온라인에서도 찾지 못해 순서를 바꾸지 않았습니다';
       default:
         return null;
     }
@@ -473200,25 +473197,25 @@ extension on _StringsNl {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Volgorde van verzameling';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Als nummeringsregels specials, OVA\'s of delen niet kunnen plaatsen, laat de AI bepalen waar ze in de verzameling horen';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Sorteren met AI';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'AI wordt om de volgorde gevraagd…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Volgorde bijgewerkt met AI';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Aflevering- en deelnummers bepalen de volgorde al; daarop gesorteerd';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'De AI heeft de huidige volgorde behouden';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Het antwoord van de AI kwam niet door de controle; volgorde ongewijzigd';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Deze verzameling is te groot om met AI te sorteren';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'De AI kent dit werk niet en vond online niets; volgorde ongewijzigd';
       default:
         return null;
     }
@@ -489386,25 +489383,25 @@ extension on _StringsPtBr {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Ordem da coleção';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Quando as regras de numeração não conseguem posicionar especiais, OVAs ou volumes, deixe a IA decidir o lugar deles na coleção';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Ordenar com IA';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Consultando a IA sobre a ordem…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Ordem atualizada com IA';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Os números de episódio e volume já definem a ordem; ordenado por eles';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'A IA manteve a ordem atual';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'A resposta da IA não passou na validação; ordem inalterada';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Esta coleção é grande demais para ordenar com IA';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'A IA não reconheceu esta obra e não encontrou nada online; ordem inalterada';
       default:
         return null;
     }
@@ -505577,25 +505574,25 @@ extension on _StringsRu {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Порядок в коллекции';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Когда правила нумерации не могут определить место спешлов, OVA или томов, ИИ решает, где они должны стоять в коллекции';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Упорядочить с ИИ';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Запрашиваем порядок у ИИ…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Порядок обновлён с помощью ИИ';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Номера серий и томов уже задают порядок; упорядочено по ним';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'ИИ оставил текущий порядок';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Ответ ИИ не прошёл проверку; порядок не изменён';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Коллекция слишком велика для упорядочивания с ИИ';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'ИИ не знает это произведение и ничего не нашёл в сети; порядок не изменён';
       default:
         return null;
     }
@@ -521724,25 +521721,25 @@ extension on _StringsTh {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'ลำดับในคอลเลกชัน';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'เมื่อกฎการนับเลขระบุตำแหน่งตอนพิเศษ OVA หรือเล่มไม่ได้ ให้ AI ตัดสินว่าควรอยู่ตรงไหนในคอลเลกชัน';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'เรียงด้วย AI';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'กำลังถาม AI เรื่องลำดับ…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'อัปเดตลำดับตามที่ AI แนะนำแล้ว';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'เลขตอนและเลขเล่มกำหนดลำดับได้อยู่แล้ว จึงเรียงตามนั้น';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI คงลำดับปัจจุบันไว้';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'คำตอบของ AI ไม่ผ่านการตรวจสอบ ลำดับไม่เปลี่ยน';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'คอลเลกชันนี้ใหญ่เกินกว่าจะเรียงด้วย AI';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI ไม่รู้จักผลงานนี้และค้นหาทางออนไลน์ไม่พบ ลำดับไม่เปลี่ยน';
       default:
         return null;
     }
@@ -537902,25 +537899,25 @@ extension on _StringsTr {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Koleksiyon sırası';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Numaralandırma kuralları özel bölümleri, OVA\'ları veya ciltleri yerleştiremediğinde, koleksiyondaki yerlerine yapay zeka karar versin';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Yapay zeka ile sırala';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Sıra için yapay zekaya soruluyor…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Sıra yapay zeka ile güncellendi';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Bölüm ve cilt numaraları sırayı zaten belirliyor; bunlara göre sıralandı';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'Yapay zeka mevcut sırayı korudu';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Yapay zekanın yanıtı doğrulamadan geçemedi; sıra değişmedi';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Bu koleksiyon yapay zeka ile sıralamak için çok büyük';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'Yapay zeka bu eseri tanımadı ve çevrimiçi bir şey bulamadı; sıra değişmedi';
       default:
         return null;
     }
@@ -554063,25 +554060,25 @@ extension on _StringsVi {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return 'Thứ tự bộ sưu tập';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return 'Khi quy tắc đánh số không xếp được tập đặc biệt, OVA hay tập sách, hãy để AI quyết định vị trí của chúng trong bộ sưu tập';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'Sắp xếp bằng AI';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return 'Đang hỏi AI về thứ tự…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return 'Đã cập nhật thứ tự theo AI';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return 'Số tập và số quyển đã xác định thứ tự; đã sắp xếp theo đó';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI giữ nguyên thứ tự hiện tại';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'Câu trả lời của AI không qua được kiểm tra; thứ tự không đổi';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return 'Bộ sưu tập này quá lớn để sắp xếp bằng AI';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI không nhận ra tác phẩm này và không tìm thấy gì trên mạng; thứ tự không đổi';
       default:
         return null;
     }
@@ -586057,25 +586054,25 @@ extension on _StringsZhHk {
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
       case 'ai_feature_collection_order':
-        return 'Collection order';
+        return '合集排序';
       case 'ai_feature_collection_order_summary':
-        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
+        return '規則排不出 SP / OVA / 特別篇或卷序時，讓 AI 決定它們在合集裡的位置';
       case 'collection_sort_ai':
-        return 'Sort with AI';
+        return 'AI 排序';
       case 'collection_sort_ai_running':
-        return 'Asking AI for the order…';
+        return '正在讓 AI 排序…';
       case 'collection_sort_ai_applied':
-        return 'Order updated with AI';
+        return '已按 AI 建議調整順序';
       case 'collection_sort_ai_rules_only':
-        return 'Episode and volume numbers already decide the order; sorted by them';
+        return '集號 / 卷號已能確定順序，已按規則排好';
       case 'collection_sort_ai_unchanged':
-        return 'AI kept the current order';
+        return 'AI 認為目前順序無需調整';
       case 'collection_sort_ai_invalid':
-        return 'AI\'s answer didn\'t pass validation; order unchanged';
+        return 'AI 的回覆沒通過校驗，順序未改';
       case 'collection_sort_ai_too_large':
-        return 'This collection is too large for AI sorting';
+        return '合集太大，無法用 AI 排序';
       case 'collection_sort_ai_unknown':
-        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
+        return 'AI 不認識這部作品，也沒查到資料，順序未改';
       default:
         return null;
     }
