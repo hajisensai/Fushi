@@ -5,7 +5,6 @@ import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -121,15 +120,14 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
+    // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
     expect(
-      find.text(t.collection_rescrape),
+      find.byTooltip(t.collection_rescrape),
       findsNothing,
       reason: '没有 controller 就渲染重刮入口 = 点了必然什么都不发生',
     );
-    expect(find.text(t.collection_sort_by_season), findsOneWidget);
+    expect(find.byTooltip(t.collection_sort_by_season), findsOneWidget);
   });
 
   testWidgets('注入 controller 后管理菜单必须有 canonical 重刮入口',
@@ -142,16 +140,15 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
+    // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
     expect(
-      find.text(t.collection_rescrape),
+      find.byTooltip(t.collection_rescrape),
       findsOneWidget,
       reason: '「重刮这一个合集」是 BUG-1662 的诉求，来源页的扫描根作用域替代不了',
     );
 
-    await tester.tap(find.text(t.collection_rescrape));
+    await tester.tap(find.byTooltip(t.collection_rescrape));
     await tester.pumpAndSettle();
     expect(rescraped, <int>[collectionId],
         reason: '菜单项必须真的把当前合集交给注入的重刮实现，不能只是长得像');
@@ -162,13 +159,12 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
+    // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
-    expect(find.text(t.collection_cover_set), findsOneWidget,
+    expect(find.byTooltip(t.collection_cover_set), findsOneWidget,
         reason: '合集封面此前没有任何用户入口，只有刮削和下载导入会写');
     expect(
-      find.text(t.collection_cover_reset),
+      find.byTooltip(t.collection_cover_reset),
       findsNothing,
       reason: 'coverPath 为空时没有可恢复的东西，不该占一行菜单',
     );
@@ -182,12 +178,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
+    // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
-    expect(find.text(t.collection_cover_set), findsOneWidget);
+    expect(find.byTooltip(t.collection_cover_set), findsOneWidget);
     expect(
-      find.text(t.video_cover_online_search),
+      find.byTooltip(t.video_cover_online_search),
       findsNothing,
       reason: '拿不到刮削 controller 时画在线入口 = 点了必然什么都不发生',
     );
@@ -205,15 +200,14 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(FushiIcons.more));
-    await tester.pumpAndSettle();
+    // 宽屏：管理动作默认平铺成页头图标钮（label 在 tooltip），不再藏在「⋯」里。
 
-    expect(find.text(t.collection_cover_set), findsOneWidget,
+    expect(find.byTooltip(t.collection_cover_set), findsOneWidget,
         reason: '本地选图入口照旧在场');
-    expect(find.text(t.video_cover_online_search), findsOneWidget,
+    expect(find.byTooltip(t.video_cover_online_search), findsOneWidget,
         reason: '设置封面不能只剩本地文件');
 
-    await tester.tap(find.text(t.video_cover_online_search));
+    await tester.tap(find.byTooltip(t.video_cover_online_search));
     await tester.pumpAndSettle();
     expect(searched, <String>['Show'], reason: '菜单项必须真的调用注入的在线选图，并以合集名作初始搜索词');
     expect(
@@ -221,6 +215,27 @@ void main() {
       isNull,
       reason: '取消时不得写任何封面',
     );
+  });
+
+  testWidgets('管理动作默认展开：宽屏平铺不画「⋯」，窄屏放不下才收进「⋯」', (
+    WidgetTester tester,
+  ) async {
+    const Key moreKey = ValueKey<String>('collection-detail-manage-more');
+    useSurface(tester);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    expect(find.byKey(moreKey), findsNothing, reason: '宽屏放得下，不该收起');
+    expect(find.byTooltip(t.collection_cover_set), findsOneWidget);
+    expect(find.byTooltip(t.rename_collection), findsOneWidget);
+
+    tester.view.physicalSize = const Size(420, 1600);
+    await tester.pumpAndSettle();
+    expect(find.byKey(moreKey), findsOneWidget, reason: '窄屏放不下，收进「⋯」');
+    expect(find.byTooltip(t.rename_collection), findsNothing);
+    await tester.tap(find.byKey(moreKey));
+    await tester.pumpAndSettle();
+    expect(find.text(t.rename_collection), findsOneWidget);
+    expect(find.text(t.collection_cover_set), findsOneWidget);
   });
 
   testWidgets('集卡菜单不暴露 legacy 条目信息重刮入口', (WidgetTester tester) async {

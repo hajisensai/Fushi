@@ -186,6 +186,43 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         : _flushAll(),
   );
 
+  /// 只补发队列里的一张（控制通道 `anki pending send <id>` / `retry`）。
+  ///
+  /// 与 [flush] 同一把串行锁、同一个 [_sendOne]，所以 `failed` 的卡（[flush] 不碰）也能
+  /// 单独重发：[_sendOne] 的 `markSending` 只拒绝已落地 / 已上传给落地设备的卡。
+  /// 每张卡都要切 app 的后端（AnkiMobile）时和 [flush] 一样只在 [interactive] 下拉起。
+  Future<PendingFlushReport> flushOne(String id, {bool interactive = false}) =>
+      _serialized(() async {
+        final PendingMineRow? row = await _store.byId(id);
+        if (row == null || (inner.switchesAppPerNote && !interactive)) {
+          return const PendingFlushReport(skipped: true);
+        }
+        final _SendResult result = await _sendOne(row);
+        final int remaining = (await _store.sendable()).length;
+        return switch (result) {
+          _SendResult.delivered => PendingFlushReport(
+            delivered: 1,
+            remaining: remaining,
+          ),
+          _SendResult.failed => PendingFlushReport(
+            failed: 1,
+            remaining: remaining,
+          ),
+          _SendResult.unreachable => PendingFlushReport(
+            remaining: remaining,
+            unreachable: true,
+          ),
+          _SendResult.opened => PendingFlushReport(
+            remaining: remaining,
+            awaitingConfirmation: true,
+          ),
+          _SendResult.skipped => PendingFlushReport(
+            remaining: remaining,
+            skipped: true,
+          ),
+        };
+      });
+
   /// AnkiMobile 加完卡回跳（`fushi://ankiSuccess?expression=…`）：确认那张已进 Anki、
   /// 出队；还有就拉起下一张。连发链到此为止（发完了，或下一张没能拉起）时请 AnkiMobile
   /// 同步一次——此刻至少这一张确实已经存进 AnkiMobile。

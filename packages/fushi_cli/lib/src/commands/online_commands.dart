@@ -1,11 +1,14 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'ai_download_commands.dart';
 
 /// online 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_online_routes.dart`）。
 ///
-/// 五组：`ext`（扩展仓库 / 扩展）、`source`（在线源搜索 / 作品 / 入库 / 下载）、
-/// `discover`（发现源搜索与一键获取）、`play`（播放遥控）、`nav`（顶层页面导航）。
+/// 六组：`ext`（扩展仓库 / 扩展 / 启停）、`source`（在线源启停 / 置顶 / 偏好 /
+/// 筛选浏览 / 搜索 / 作品 / 入库 / 下载）、`discover`（发现源搜索与一键获取）、
+/// `aidl`（AI 下载会话，见 `ai_download_commands.dart`）、`play`（播放遥控）、
+/// `nav`（顶层页面导航）。
 const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'ext',
@@ -49,6 +52,22 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
         configure: _configureExtRm,
         build: _buildExtRm,
         render: _renderOk,
+      ),
+      CtlCommandSpec(
+        name: 'enable',
+        summary: '启用已装扩展（小说：插件本身）',
+        usage: '<id>',
+        configure: _configureKindOnly,
+        build: _buildExtEnable,
+        render: _renderEnabled,
+      ),
+      CtlCommandSpec(
+        name: 'disable',
+        summary: '停用已装扩展（其下的源一并不可用）',
+        usage: '<id>',
+        configure: _configureKindOnly,
+        build: _buildExtDisable,
+        render: _renderEnabled,
       ),
     ],
   ),
@@ -97,10 +116,93 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'task',
-        summary: '查看 CLI 发起的小说下载任务（不给 id 即全部）',
+        summary: '查看 CLI 发起的小说下载任务（不给 id 即全部；--cancel 取消）',
         usage: '[taskId]',
+        configure: _configureSourceTask,
         build: _buildSourceTask,
         render: _renderSourceTask,
+      ),
+      CtlCommandSpec(
+        name: 'manga-dl',
+        summary:
+            '漫画章节下载队列：ls | cancel <id> | retry <id> | rm <id> | clear（rm / clear 需 --yes）',
+        usage: '<ls|cancel|retry|rm|clear> [jobId]',
+        configure: _configureMangaDl,
+        build: _buildMangaDl,
+        render: _renderMangaDl,
+      ),
+      CtlCommandSpec(
+        name: 'anime-dl',
+        summary:
+            '视频源剧集下载：ls | get <id> | pause <id> | resume <id> | rm <id>（rm 需 --yes）',
+        usage: '<ls|get|pause|resume|rm> [taskId]',
+        configure: _configureAnimeDl,
+        build: _buildAnimeDl,
+        render: _renderAnimeDl,
+      ),
+      CtlCommandSpec(
+        name: 'enable',
+        summary: '启用一个源',
+        usage: '<sourceId>',
+        configure: _configureKindOnly,
+        build: _buildSourceEnable,
+        render: _renderSourceSettings,
+      ),
+      CtlCommandSpec(
+        name: 'disable',
+        summary: '停用一个源',
+        usage: '<sourceId>',
+        configure: _configureKindOnly,
+        build: _buildSourceDisable,
+        render: _renderSourceSettings,
+      ),
+      CtlCommandSpec(
+        name: 'pin',
+        summary: '置顶一个源',
+        usage: '<sourceId>',
+        configure: _configureKindOnly,
+        build: _buildSourcePin,
+        render: _renderSourceSettings,
+      ),
+      CtlCommandSpec(
+        name: 'unpin',
+        summary: '取消置顶',
+        usage: '<sourceId>',
+        configure: _configureKindOnly,
+        build: _buildSourceUnpin,
+        render: _renderSourceSettings,
+      ),
+      CtlCommandSpec(
+        name: 'prefs',
+        summary: '源偏好：不给 key 列出；给 key 与取值即设置（漫画 / 视频）',
+        usage: '<sourceId> [<key> <取值...>]',
+        configure: _configureSourcePrefs,
+        build: _buildSourcePrefs,
+        render: _renderSourcePrefs,
+      ),
+      CtlCommandSpec(
+        name: 'clear-data',
+        summary: '清除源数据（漫画 / 视频：运行时数据与偏好；小说：插件登录态）（需 --yes）',
+        usage: '<sourceId>',
+        configure: _configureSourceClearData,
+        build: _buildSourceClearData,
+        render: _renderOk,
+      ),
+      CtlCommandSpec(
+        name: 'filters',
+        summary: '列出源支持的筛选项（漫画 / 视频作用于搜索，小说作用于热门 / 最新）',
+        usage: '<sourceId>',
+        configure: _configureKindOnly,
+        build: _buildSourceFilters,
+        render: _renderSourceFilters,
+      ),
+      CtlCommandSpec(
+        name: 'browse',
+        summary: '浏览源：热门 / 最新 / 关键词 + 筛选，分页',
+        usage: '<sourceId>',
+        configure: _configureSourceBrowse,
+        build: _buildSourceBrowse,
+        render: _renderSourceBrowse,
       ),
     ],
   ),
@@ -132,6 +234,7 @@ const List<CtlCommandGroup> onlineCommandGroups = <CtlCommandGroup>[
       ),
     ],
   ),
+  aiDownloadCommandGroup,
   CtlCommandGroup(
     name: 'play',
     summary: '播放遥控（视频播放页 / 有声书，缺省视频页开着就控制视频）',
@@ -429,6 +532,24 @@ CtlRequestSpec _buildExtRm(CtlCommandContext context) {
   );
 }
 
+CtlRequestSpec _extEnabled(CtlCommandContext context, bool enabled) {
+  final String id = context.positional(0, 'id');
+  return CtlRequestSpec.post(
+    '/api/admin/extensions/${_seg(id)}/enabled',
+    body: <String, Object?>{'kind': _kind(context), 'enabled': enabled},
+  );
+}
+
+CtlRequestSpec _buildExtEnable(CtlCommandContext context) =>
+    _extEnabled(context, true);
+
+CtlRequestSpec _buildExtDisable(CtlCommandContext context) =>
+    _extEnabled(context, false);
+
+String _renderEnabled(Object? data) => data is Map
+    ? '${data['id']}：${data['enabled'] == true ? '已启用' : '已停用'}'
+    : '完成';
+
 // ── source ───────────────────────────────────────────────────────────────
 
 CtlRequestSpec _buildSourceLs(CtlCommandContext context) => CtlRequestSpec.get(
@@ -566,12 +687,24 @@ String _renderSourceDl(Object? data) {
         '（fushi_cli source task ${data['id']} 查看进度）';
   }
   final Object? locked = data['lockedSkipped'];
+  final String hint = data['taskIds'] is List
+      ? '\n进度：fushi_cli source anime-dl ls（任务 id 即剧集 id）'
+      : data['bookKey'] != null
+      ? '\n进度：fushi_cli source manga-dl ls --book ${data['bookKey']}'
+      : '';
   return '已加入下载队列：${data['title']} ${data['queued']} 项'
-      '${locked is int && locked > 0 ? '（跳过 $locked 个锁定章节）' : ''}';
+      '${locked is int && locked > 0 ? '（跳过 $locked 个锁定章节）' : ''}$hint';
 }
+
+void _configureSourceTask(ArgParser parser) =>
+    parser.addFlag('cancel', negatable: false, help: '取消这个任务（在下一章之前停下）');
 
 CtlRequestSpec _buildSourceTask(CtlCommandContext context) {
   final String? id = context.optionalPositional(0);
+  if (context.flag('cancel')) {
+    if (id == null) throw const CtlUsageError('--cancel 需要 <taskId>');
+    return CtlRequestSpec.post('/api/admin/online/tasks/${_seg(id)}/cancel');
+  }
   return CtlRequestSpec.get(
     id == null
         ? '/api/admin/online/tasks'
@@ -598,10 +731,387 @@ String _renderSourceTask(Object? data) {
   if (data is Map) {
     return '${data['id']} ${data['title']}：${data['status']} '
         '${data['done']}/${data['total']}'
+        '${data['cancelRequested'] == true ? '（已请求取消，下一章前停下）' : ''}'
         '${data['error'] == null ? '' : '\n  错误：${data['error']}'}'
         '${data['resultKey'] == null ? '' : '\n  书：${data['resultKey']}'}';
   }
   return renderCtlJson(data);
+}
+
+// ── source 下载任务：漫画章节队列 / 视频源剧集 ──────────────────────────────
+
+const String _mangaDl = '/api/admin/online/manga-downloads';
+const String _animeDl = '/api/admin/online/episode-downloads';
+
+void _configureMangaDl(ArgParser parser) {
+  _addYes(parser);
+  parser
+    ..addOption('book', help: 'ls：只看这本书（bookKey，source dl / add 的输出）')
+    ..addOption(
+      'status',
+      help: 'ls：按状态过滤，逗号分隔（queued,running,done,failed,cancelled）',
+    );
+}
+
+CtlRequestSpec _buildMangaDl(CtlCommandContext context) {
+  final String verb = context.positional(0, 'ls|cancel|retry|rm|clear');
+  String job() => _seg(context.positional(1, 'jobId'));
+  switch (verb) {
+    case 'ls':
+      return CtlRequestSpec.get(
+        _mangaDl,
+        query: <String, String>{
+          if (context.option('book') case final String b) 'book': b,
+          if (context.option('status') case final String s) 'status': s,
+        },
+      );
+    case 'cancel':
+      return CtlRequestSpec.post('$_mangaDl/${job()}/cancel');
+    case 'retry':
+      return CtlRequestSpec.post('$_mangaDl/${job()}/retry');
+    case 'rm':
+      final String id = job();
+      _requireYes(context, '删除下载任务');
+      return CtlRequestSpec.delete(
+        '$_mangaDl/$id',
+        query: const <String, String>{'confirm': 'true'},
+      );
+    case 'clear':
+      _requireYes(context, '清除已结束的任务');
+      return const CtlRequestSpec.delete(
+        _mangaDl,
+        query: <String, String>{'finished': 'true', 'confirm': 'true'},
+      );
+  }
+  throw CtlUsageError('未知操作：$verb（ls | cancel | retry | rm | clear）');
+}
+
+String _renderMangaDl(Object? data) {
+  if (data is Map && data['jobs'] is List) {
+    return renderCtlTable(
+      <String, Object?>{
+        'rows': <Map<String, Object?>>[
+          for (final Object? j in data['jobs'] as List)
+            if (j is Map)
+              <String, Object?>{
+                ...j.cast<String, Object?>(),
+                'pages': '${j['pagesDone']}/${j['pagesTotal']}',
+              },
+        ],
+      },
+      const <(String, String)>[
+        ('id', 'id'),
+        ('作品', 'title'),
+        ('章节', 'chapter'),
+        ('状态', 'status'),
+        ('页', 'pages'),
+        ('错误', 'error'),
+      ],
+      listKey: 'rows',
+      empty: '没有漫画下载任务',
+    );
+  }
+  if (data is Map && data['id'] != null) {
+    return '${data['id']} ${data['title']} ${data['chapter'] ?? ''}：'
+        '${data['status']} ${data['pagesDone']}/${data['pagesTotal']}';
+  }
+  return '完成';
+}
+
+void _configureAnimeDl(ArgParser parser) {
+  _addYes(parser);
+  parser
+    ..addFlag(
+      'all',
+      negatable: false,
+      help: 'ls：连同互联设备 / 媒体服务器拉取的任务（缺省只看视频扩展源）',
+    )
+    ..addFlag(
+      'delete-files',
+      negatable: false,
+      help:
+          'rm：未完成任务连同已下的 .part 一起删（缺省保留以便续传）；'
+          '已完成剧集连同成品删（媒体库行 + 文件，同下载页「删除并删文件」）',
+    );
+}
+
+CtlRequestSpec _buildAnimeDl(CtlCommandContext context) {
+  final String verb = context.positional(0, 'ls|get|pause|resume|rm');
+  String task() => _seg(context.positional(1, 'taskId'));
+  switch (verb) {
+    case 'ls':
+      return CtlRequestSpec.get(
+        _animeDl,
+        query: <String, String>{if (context.flag('all')) 'all': 'true'},
+      );
+    case 'get':
+      return CtlRequestSpec.get('$_animeDl/${task()}');
+    case 'pause':
+      return CtlRequestSpec.post('$_animeDl/${task()}/pause');
+    case 'resume':
+      return CtlRequestSpec.post('$_animeDl/${task()}/resume');
+    case 'rm':
+      final String id = task();
+      _requireYes(context, '删除剧集下载任务');
+      return CtlRequestSpec.delete(
+        '$_animeDl/$id',
+        query: <String, String>{
+          'confirm': 'true',
+          if (context.flag('delete-files')) 'deleteFiles': 'true',
+        },
+      );
+  }
+  throw CtlUsageError('未知操作：$verb（ls | get | pause | resume | rm）');
+}
+
+String _percent(Object? progress) =>
+    progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : '--';
+
+String _renderAnimeDl(Object? data) {
+  if (data is Map && data['tasks'] is List) {
+    return renderCtlTable(
+      <String, Object?>{
+        'rows': <Map<String, Object?>>[
+          for (final Object? t in data['tasks'] as List)
+            if (t is Map)
+              <String, Object?>{
+                ...t.cast<String, Object?>(),
+                'pct': _percent(t['progress']),
+              },
+        ],
+      },
+      const <(String, String)>[
+        ('id', 'id'),
+        ('标题', 'title'),
+        ('状态', 'status'),
+        ('进度', 'pct'),
+        ('来源', 'origin'),
+        ('错误', 'error'),
+      ],
+      listKey: 'rows',
+      empty: '没有剧集下载任务',
+    );
+  }
+  if (data is Map && data['deletedFile'] != null) {
+    return '已删除成品 ${data['deletedFile']}'
+        '${data['deletedRows'] is int && (data['deletedRows'] as int) > 0 ? '（连同 ${data['deletedRows']} 条媒体库行）' : ''}';
+  }
+  if (data is Map && data['id'] != null) {
+    return '${data['id']} ${data['title']}：${data['status']} '
+        '${_percent(data['progress'])}'
+        '${data['error'] == null ? '' : '\n  错误：${data['error']}'}';
+  }
+  return '完成';
+}
+
+// ── source 管理：启停 / 置顶 / 偏好 / 筛选浏览 ──────────────────────────────
+
+CtlRequestSpec _sourceSettings(
+  CtlCommandContext context,
+  Map<String, Object?> change,
+) => CtlRequestSpec.post(
+  _workPath(context, 'settings'),
+  body: <String, Object?>{'kind': _kind(context), ...change},
+);
+
+CtlRequestSpec _buildSourceEnable(CtlCommandContext context) =>
+    _sourceSettings(context, const <String, Object?>{'enabled': true});
+
+CtlRequestSpec _buildSourceDisable(CtlCommandContext context) =>
+    _sourceSettings(context, const <String, Object?>{'enabled': false});
+
+CtlRequestSpec _buildSourcePin(CtlCommandContext context) =>
+    _sourceSettings(context, const <String, Object?>{'pinned': true});
+
+CtlRequestSpec _buildSourceUnpin(CtlCommandContext context) =>
+    _sourceSettings(context, const <String, Object?>{'pinned': false});
+
+String _renderSourceSettings(Object? data) => data is Map
+    ? '${data['id']}：${data['enabled'] == true ? '启用' : '停用'}'
+          '${data['pinned'] == true ? ' · 置顶' : ''}'
+    : '完成';
+
+void _configureSourcePrefs(ArgParser parser) {
+  _addKind(parser);
+  parser.addOption('value', help: '取值（可为空串；不给时取 <key> 之后的位置参数）');
+}
+
+CtlRequestSpec _buildSourcePrefs(CtlCommandContext context) {
+  final String? key = context.optionalPositional(1);
+  final String kind = _kind(context);
+  if (key == null) {
+    return CtlRequestSpec.get(
+      _workPath(context, 'preferences'),
+      query: <String, String>{'kind': kind},
+    );
+  }
+  // 直接读原始值：`option()` 会把空串当作没给，而清空文本偏好正需要空串。
+  final String? explicit = context.args['value'] as String?;
+  final String value =
+      explicit ??
+      (context.rest.length > 2
+          ? context.rest.sublist(2).join(' ')
+          : throw CtlUsageError('偏好 $key 缺少取值（或用 --value）'));
+  return CtlRequestSpec.post(
+    _workPath(context, 'preferences'),
+    body: <String, Object?>{'kind': kind, 'key': key, 'value': value},
+  );
+}
+
+String _renderSourcePrefs(Object? data) {
+  final String table = renderCtlTable(
+    data is Map
+        ? <String, Object?>{
+            'preferences': <Map<String, Object?>>[
+              for (final Object? p
+                  in (data['preferences'] as List<Object?>? ??
+                      const <Object?>[]))
+                if (p is Map)
+                  <String, Object?>{
+                    ...p.cast<String, Object?>(),
+                    'shown': p['valueLabel'] ?? p['value'],
+                    'choices': p['entries'],
+                  },
+            ],
+          }
+        : data,
+    const <(String, String)>[
+      ('key', 'key'),
+      ('名称', 'title'),
+      ('类型', 'kind'),
+      ('当前值', 'shown'),
+      ('可选', 'choices'),
+    ],
+    listKey: 'preferences',
+    empty: '这个源没有偏好',
+  );
+  if (data is Map && data['key'] != null) return '已设置 ${data['key']}\n$table';
+  return table;
+}
+
+void _configureSourceClearData(ArgParser parser) {
+  _addKind(parser);
+  _addYes(parser);
+}
+
+CtlRequestSpec _buildSourceClearData(CtlCommandContext context) {
+  final String path = _workPath(context, 'data');
+  final String kind = _kind(context);
+  _requireYes(context, '清除源数据');
+  return CtlRequestSpec.delete(
+    path,
+    query: <String, String>{'kind': kind, 'confirm': 'true'},
+  );
+}
+
+CtlRequestSpec _buildSourceFilters(CtlCommandContext context) =>
+    CtlRequestSpec.get(
+      _workPath(context, 'filters'),
+      query: <String, String>{'kind': _kind(context)},
+    );
+
+/// 把嵌套的筛选器（Mihon 分组）拍平成表格行。
+List<Map<String, Object?>> _flattenFilters(
+  Object? raw, [
+  String indent = '',
+]) => <Map<String, Object?>>[
+  if (raw is List)
+    for (final Object? f in raw)
+      if (f is Map) ...<Map<String, Object?>>[
+        <String, Object?>{
+          'key': '$indent${f['path'] ?? f['key']}',
+          'name': f['name'],
+          'kind': f['kind'],
+          'state': f['state'] is Map ? renderCtlJson(f['state']) : f['state'],
+          'options': f['options'] is List
+              ? <String>[
+                  for (final Object? o in f['options'] as List)
+                    o is Map ? '${o['label']}=${o['value']}' : '$o',
+                ]
+              : null,
+        },
+        ..._flattenFilters(f['children'], '$indent  '),
+      ],
+];
+
+String _renderSourceFilters(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final String scope = data['appliesTo'] == 'search'
+      ? '作用于搜索（source browse --query / 只给 --filter 即空关键词搜索）'
+      : '作用于热门 / 最新（source browse --listing popular|latest）';
+  return <String>[
+    '筛选$scope；--filter <key>=<取值>，选项可写显示名或 #N',
+    renderCtlTable(
+      <String, Object?>{'rows': _flattenFilters(data['filters'])},
+      const <(String, String)>[
+        ('key', 'key'),
+        ('名称', 'name'),
+        ('类型', 'kind'),
+        ('当前', 'state'),
+        ('选项', 'options'),
+      ],
+      listKey: 'rows',
+      empty: '这个源没有筛选项',
+    ),
+  ].join('\n');
+}
+
+void _configureSourceBrowse(ArgParser parser) {
+  _addKind(parser);
+  parser
+    ..addOption(
+      'listing',
+      allowed: const <String>['popular', 'latest'],
+      help: '热门 / 最新（与 --query 二选一；都不给 = 热门）',
+    )
+    ..addOption('query', help: '关键词搜索')
+    ..addMultiOption(
+      'filter',
+      splitCommas: false,
+      help: '筛选 <key>=<取值>（key 见 source filters；可重复）',
+    )
+    ..addOption('page', help: '页码（从 1 开始）');
+}
+
+CtlRequestSpec _buildSourceBrowse(CtlCommandContext context) {
+  final String path = _workPath(context, 'browse');
+  final String kind = _kind(context);
+  final int? page = context.intOption('page');
+  if (page != null && page < 1) throw const CtlUsageError('--page 从 1 开始');
+  final String? listing = context.option('listing');
+  final String? query = context.option('query');
+  if (listing != null && query != null) {
+    throw const CtlUsageError('--listing 与 --query 二选一');
+  }
+  final Map<String, String> filters = <String, String>{};
+  for (final String raw in context.multiOption('filter')) {
+    final int eq = raw.indexOf('=');
+    if (eq <= 0) throw CtlUsageError('--filter 要写成 <key>=<取值>：$raw');
+    filters[raw.substring(0, eq).trim()] = raw.substring(eq + 1);
+  }
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      'kind': kind,
+      if (listing != null) 'listing': listing,
+      if (query != null) 'query': query,
+      if (filters.isNotEmpty) 'filters': filters,
+      if (page != null) 'page': page,
+    },
+  );
+}
+
+String _renderSourceBrowse(Object? data) {
+  final String table = renderCtlTable(
+    data,
+    const <(String, String)>[('标题', 'title'), ('url', 'url')],
+    listKey: 'items',
+    empty: '没有结果',
+  );
+  if (data is Map && data['hasNextPage'] == true) {
+    return '$table\n（还有下一页：--page ${(data['page'] as int? ?? 1) + 1}）';
+  }
+  return table;
 }
 
 // ── discover ─────────────────────────────────────────────────────────────
@@ -676,7 +1186,9 @@ CtlRequestSpec _buildDiscoverGet(CtlCommandContext context) =>
 String _renderDiscoverGet(Object? data) => data is Map
     ? (data['started'] == true
           ? '已开始获取：${data['title']}'
-          : '未开始：${data['title']}（已在队列或被取消，见 app 内提示）')
+                '${data['message'] == null ? '' : '（${data['message']}）'}'
+          : '未开始：${data['title']}'
+                '${data['reason'] == null ? '' : '（${data['reason']}）'}')
     : '完成';
 
 // ── play ─────────────────────────────────────────────────────────────────
@@ -806,9 +1318,23 @@ String _renderPlayback(Object? data) {
   if (data['ready'] == false) return '[$kind] 加载中…';
   return <String>[
     '[$kind] ${data['playing'] == true ? '▶ 播放中' : '⏸ 已暂停'}  ${data['title'] ?? ''}',
-    '${_clock(data['positionMs'])} / ${_clock(data['durationMs'])}  ×${data['speed']}',
+    '${_clock(data['positionMs'])} / ${_clock(data['durationMs'])}  ×${data['speed']}'
+        '${data['volume'] is num ? '  音量 ${(data['volume'] as num).round()}' : ''}',
+    if (data['audioTrack'] != null) '音轨：${data['audioTrack']}',
+    if (data['subtitle'] != null) '字幕：${_subtitleLabel(data['subtitle'])}',
+    if (data['secondarySubtitle'] != null)
+      '副字幕：${_subtitleLabel(data['secondarySubtitle'])}',
     if (data['cue'] != null) '「${data['cue']}」',
   ].join('\n');
+}
+
+/// 字幕源的持久化值 → 可读：`off:` 哨兵 = 关闭，`embedded:<n>` = 内嵌第 n 轨，
+/// 其余是外挂文件路径（原样）。
+String _subtitleLabel(Object? source) {
+  final String text = '$source';
+  if (text.startsWith('off:')) return '关闭';
+  if (text.startsWith('embedded:')) return '内嵌轨 ${text.substring(9)}';
+  return text;
 }
 
 // ── nav ──────────────────────────────────────────────────────────────────

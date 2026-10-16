@@ -41,8 +41,13 @@ void main() {
     expect(preparation, contains('audioStreamCount: audio.audioStreamCount'));
     expect(preparation, contains('audioPaths: <String>[audioPath]'));
     // Both generating text and correcting existing text use that same track.
+    // The call may forward the caller's `transcribe:` override (desktop CLI runs
+    // the same transcription service headless) — the track preparation above is
+    // still the single shared path, so match the call with optional named args.
     expect(
-      '_transcribeVideoSpeech(controller)'.allMatches(source),
+      RegExp(
+        r'_transcribeVideoSpeech\(\s*controller\s*(?:,\s*transcribe:\s*transcribe\s*,?\s*)?\)',
+      ).allMatches(source),
       hasLength(2),
     );
     final String retiming = source

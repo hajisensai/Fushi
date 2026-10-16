@@ -20,13 +20,365 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/settings/settings_cli_tasks.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/sync/jellyfin_settings_widget.dart'
+    show findMediaServerById;
 import 'package:fushi/src/sync/plex_video_client.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
 import 'package:fushi_engine/media/video/media_server/plex/plex_tv_auth.dart';
+
+/// 手动连接阶段 `/identity` 不通：页面按 [cause] 给出「无法连接」文案。
+class PlexConnectFailure implements Exception {
+  const PlexConnectFailure(this.url, this.cause);
+
+  final String url;
+  final Object cause;
+
+  @override
+  String toString() => '无法连接 $url: $cause';
+}
+
+/// 地址 + `X-Plex-Token` 手动连接一台 Plex 服务器并落库（配置页「手动连接」与
+/// CLI `config items ... add` 共用）：先 `/identity` 探连通与身份，再
+/// `/library/sections` 验 token；账号信息 best-effort 从 plex.tv 补。
+///
+/// `/identity` 不通抛 [PlexConnectFailure]；token 无效等原样抛 [PlexApi] 的异常；
+/// 地址 / token 为空抛 [ArgumentError]。
+Future<PlexServerConfig> connectPlexServerManually(
+  SyncRepository syncRepo, {
+  required String url,
+  required String token,
+  http.Client Function()? httpClientFactory,
+}) async {
+  final String serverUrl = PlexApi.normalizeServerUrl(url);
+  final String plexToken = token.trim();
+  if (serverUrl.isEmpty || plexToken.isEmpty) {
+    throw ArgumentError('地址与 token 不能为空');
+  }
+  final PlexClientInfo info = PlexClientInfo(
+    clientIdentifier: await syncRepo.getOrCreateDeviceId(),
+  );
+  final PlexApi api = PlexApi(
+    serverUrl: serverUrl,
+    token: plexToken,
+    clientInfo: info,
+    client: httpClientFactory?.call(),
+  );
+  final PlexTvApi tv = PlexTvApi(
+    clientInfo: info,
+    client: httpClientFactory?.call(),
+  );
+  try {
+    final String machineIdentifier;
+    try {
+      machineIdentifier = await api.identity();
+    } catch (e) {
+      throw PlexConnectFailure(serverUrl, e);
+    }
+    if (machineIdentifier.isEmpty) {
+      throw const FormatException('Plex /identity has no machineIdentifier');
+    }
+    // `/identity` 不验 token；列库才是真正的鉴权请求。
+    await api.sections();
+    String? serverName;
+    try {
+      serverName = await api.friendlyName();
+    } catch (_) {
+      // 服务器名只用于展示。
+    }
+    PlexTvUser? user;
+    try {
+      user = await tv.user(plexToken);
+    } catch (_) {
+      // 服务器本地 token 在 plex.tv 查不到账号：身份只按服务器区分。
+    }
+    final PlexServerConfig saved = PlexServerConfig(
+      machineIdentifier: machineIdentifier,
+      token: plexToken,
+      clientIdentifier: info.clientIdentifier,
+      connections: <String>[serverUrl],
+      serverName: serverName,
+      accountId: user?.id ?? '',
+      accountName: user?.username ?? '',
+    );
+    await syncRepo.upsertMediaServer(saved);
+    return saved;
+  } finally {
+    api.close();
+    tv.close();
+  }
+}
+
+/// [uri] 可达且确实是 [machineIdentifier] 那台服务器（`/identity` 比对）。
+Future<bool> probePlexConnection(
+  String uri,
+  String token,
+  String machineIdentifier,
+  PlexClientInfo info, {
+  required Duration timeout,
+  http.Client Function()? httpClientFactory,
+}) async {
+  final PlexApi api = PlexApi(
+    serverUrl: uri,
+    token: token,
+    clientInfo: info,
+    client: httpClientFactory?.call(),
+  );
+  try {
+    final String id = await api.identity().timeout(timeout);
+    return id == machineIdentifier;
+  } finally {
+    api.close();
+  }
+}
+
+/// plex.tv 账号授权拿到账号 token 之后：列出账号下的服务器，逐台按连接优先级探测
+/// 第一条可达地址，把可达的存成媒体服务器（设置页 PIN 登录与控制通道共用这一处
+/// 落库）。返回存下的配置；一台都不可达返回空表。
+Future<List<PlexServerConfig>> savePlexAccountServers(
+  SyncRepository repo, {
+  required PlexTvApi tv,
+  required String accountToken,
+  required PlexClientInfo info,
+  required Future<bool> Function(
+    String uri,
+    String token,
+    String machineIdentifier,
+  )
+  probe,
+}) async {
+  PlexTvUser? user;
+  try {
+    user = await tv.user(accountToken);
+  } catch (_) {
+    // 账号名只用于卡片副标题，查不到不妨碍登录。
+  }
+  final List<PlexResource> resources = await tv.resources(accountToken);
+  final List<PlexServerConfig> saved = <PlexServerConfig>[];
+  for (final PlexResource r in resources) {
+    final String token = r.accessToken ?? accountToken;
+    final List<String> ordered = <String>[
+      for (final PlexConnection c in orderPlexConnections(r.connections))
+        if (c.uri.isNotEmpty) c.uri,
+    ];
+    final String? reachable = await firstReachablePlexConnection(
+      orderPlexConnections(r.connections),
+      (String uri) => probe(uri, token, r.clientIdentifier),
+    );
+    if (reachable == null || ordered.isEmpty) continue;
+    final PlexServerConfig config = PlexServerConfig(
+      machineIdentifier: r.clientIdentifier,
+      token: token,
+      clientIdentifier: info.clientIdentifier,
+      connections: ordered,
+      serverName: r.name,
+      accountId: user?.id ?? '',
+      accountName: user?.username ?? '',
+    ).withActiveRoute(reachable);
+    await repo.upsertMediaServer(config);
+    saved.add(config);
+  }
+  return saved;
+}
+
+/// 控制通道（`fushi_cli mediaserver plex-login`）的 plex.tv 账号授权任务种类名。
+const String kPlexSignInTaskKind = 'plex-sign-in';
+
+/// plex.tv 账号 PIN 授权（同设置页「用 Plex 账号登录」）：在请求里先向 plex.tv 申请
+/// PIN，立即返回带授权链接与 PIN 的后台任务；任务在后台轮询（与页面同一个
+/// [pollPlexPin]：2 秒一次，PIN 过期 / [timeout] 到点即结束），用户在浏览器里点
+/// 同意后用 [savePlexAccountServers] 落库（与页面同一处）。`task cancel` 停止轮询。
+/// [openBrowser] = 在本机默认浏览器里打开授权页（同页面）。
+Future<SettingsCliTask> startPlexAccountSignInForCli(
+  SettingsContext c, {
+  bool openBrowser = false,
+  Duration timeout = const Duration(minutes: 10),
+  Duration pollInterval = const Duration(seconds: 2),
+  Duration probeTimeout = const Duration(seconds: 5),
+  http.Client Function()? httpClientFactory,
+  SettingsCliTaskRegistry? registry,
+}) async {
+  final SettingsCliTaskRegistry tasks =
+      registry ?? SettingsCliTaskRegistry.instance;
+  final SettingsCliTask? active = tasks.activeOf(kPlexSignInTaskKind);
+  if (active != null) {
+    throw StateError('已有一轮 Plex 账号授权在等待（任务 ${active.id}）');
+  }
+  final SyncRepository repo = SyncRepository(c.appModel.database);
+  final PlexClientInfo info = PlexClientInfo(
+    clientIdentifier: await repo.getOrCreateDeviceId(),
+  );
+  final PlexTvApi tv = PlexTvApi(
+    clientInfo: info,
+    client: httpClientFactory?.call(),
+  );
+  final PlexPin pin;
+  try {
+    pin = await tv.createPin();
+  } catch (_) {
+    tv.close();
+    rethrow;
+  }
+  final String authUrl = tv.authUrl(pin);
+  if (openBrowser) {
+    unawaited(
+      launchUrl(
+        Uri.parse(authUrl),
+        mode: LaunchMode.externalApplication,
+      ).catchError((Object _) => false),
+    );
+  }
+  return tasks.start(
+    kind: kPlexSignInTaskKind,
+    run: (SettingsCliTask task) async {
+      bool cancelled = false;
+      task
+        ..onCancel = (() => cancelled = true)
+        ..detail['authUrl'] = authUrl
+        ..detail['pin'] = pin.code
+        ..report(phase: 'waiting_authorization');
+      try {
+        final ({PlexPinPollOutcome outcome, String? token}) result =
+            await pollPlexPin(
+              check: () => tv.checkPin(pin),
+              isCancelled: () => cancelled,
+              interval: pollInterval,
+              timeout: timeout,
+            );
+        switch (result.outcome) {
+          case PlexPinPollOutcome.cancelled:
+            throw const SettingsCliTaskCancelled();
+          case PlexPinPollOutcome.expired:
+            throw StateError(t.plex_pin_expired);
+          case PlexPinPollOutcome.authorized:
+            break;
+        }
+        task
+          ..report(phase: 'saving')
+          ..markCommitting();
+        final List<PlexServerConfig> saved = await savePlexAccountServers(
+          repo,
+          tv: tv,
+          accountToken: result.token!,
+          info: info,
+          probe: (String uri, String token, String machineIdentifier) =>
+              probePlexConnection(
+                uri,
+                token,
+                machineIdentifier,
+                info,
+                timeout: probeTimeout,
+                httpClientFactory: httpClientFactory,
+              ),
+        );
+        if (saved.isEmpty) throw StateError(t.plex_servers_none_reachable);
+        return <String, Object?>{
+          'added': saved.length,
+          'servers': <Map<String, Object?>>[
+            for (final PlexServerConfig s in saved) plexServerCliRecord(s),
+          ],
+        };
+      } finally {
+        tv.close();
+      }
+    },
+  );
+}
+
+/// Plex 服务器列表记录（**不含** token）。
+Map<String, Object?> plexServerCliRecord(PlexServerConfig c) =>
+    <String, Object?>{
+      'id': c.sourceId,
+      'kind': c.kind.wireName,
+      'serverName': c.serverName,
+      'accountName': c.accountName,
+      'activeServerUrl': c.effectiveServerUrl,
+      'connections': c.connections,
+    };
+
+/// CLI 的 `config items services.media_server.plex ls|add|set|rm`。
+///
+/// add 只支持手填 token 方式（`url` + `token`，token 走 secret）；plex.tv 账号的
+/// PIN 授权另走 [startPlexAccountSignInForCli]（后台任务：打印链接与 PIN，等用户在
+/// 浏览器里点同意）。set 只支持
+/// `switch_route`（切到已存在的连接地址）；rm = 登出（与页面「登出」同一方法）。
+SettingsCliList buildPlexCliList() {
+  SyncRepository repoOf(SettingsContext c) =>
+      SyncRepository(c.appModel.database);
+  void invalidate(SettingsContext c, String sourceId) =>
+      c.ref.read(remoteLibraryCacheProvider).invalidateSource(sourceId);
+  return SettingsCliList(
+    fields: const <SettingsCliParam>[
+      SettingsCliParam('url', help: '服务器地址（add 必填）', required: false),
+      SettingsCliParam(
+        'token',
+        help: 'X-Plex-Token（add 必填，只走 stdin / 环境变量）',
+        required: false,
+        secret: true,
+      ),
+      SettingsCliParam(
+        'switch_route',
+        help: 'set：切换当前连接（已存在的连接地址）',
+        required: false,
+      ),
+    ],
+    list: (SettingsContext c) async => <Map<String, Object?>>[
+      for (final MediaServerConfig s in await repoOf(c).getMediaServers())
+        if (s is PlexServerConfig) plexServerCliRecord(s),
+    ],
+    add: (SettingsContext c, Map<String, String> fields) async {
+      final String url = (fields['url'] ?? '').trim();
+      final String token = (fields['token'] ?? '').trim();
+      if (url.isEmpty || token.isEmpty) {
+        throw ArgumentError('add 需要 url 与 token');
+      }
+      final PlexServerConfig saved;
+      try {
+        saved = await connectPlexServerManually(
+          repoOf(c),
+          url: url,
+          token: token,
+        );
+      } on PlexConnectFailure catch (e) {
+        throw ArgumentError(e.toString());
+      }
+      invalidate(c, saved.sourceId);
+      return plexServerCliRecord(saved);
+    },
+    update: (SettingsContext c, String id, Map<String, String> fields) async {
+      final SyncRepository repo = repoOf(c);
+      PlexServerConfig config = await findMediaServerById<PlexServerConfig>(
+        repo,
+        id,
+      );
+      final String switchRoute = (fields['switch_route'] ?? '').trim();
+      if (switchRoute.isNotEmpty) {
+        final String url = PlexApi.normalizeServerUrl(switchRoute);
+        if (!config.connections.contains(url)) {
+          throw ArgumentError('不是这台服务器的连接地址: $url');
+        }
+        config = config.withActiveRoute(url);
+        await repo.upsertMediaServer(config);
+        invalidate(c, config.sourceId);
+      }
+      return plexServerCliRecord(config);
+    },
+    remove: (SettingsContext c, String id) async {
+      final SyncRepository repo = repoOf(c);
+      final PlexServerConfig config = await findMediaServerById<PlexServerConfig>(
+        repo,
+        id,
+      );
+      await repo.removeMediaServer(config.sourceId);
+      invalidate(c, config.sourceId);
+    },
+  );
+}
 
 /// Plex 服务器配置块。
 class PlexConfigWidget extends StatefulWidget {
@@ -98,13 +450,6 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
   Future<PlexClientInfo> _clientInfo() async =>
       PlexClientInfo(clientIdentifier: await _syncRepo.getOrCreateDeviceId());
 
-  PlexApi _api(String serverUrl, String token, PlexClientInfo info) => PlexApi(
-    serverUrl: serverUrl,
-    token: token,
-    clientInfo: info,
-    client: widget.httpClientFactory?.call(),
-  );
-
   PlexTvApi _tvApi(PlexClientInfo info) =>
       PlexTvApi(clientInfo: info, client: widget.httpClientFactory?.call());
 
@@ -131,15 +476,14 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
     String token,
     String machineIdentifier,
     PlexClientInfo info,
-  ) async {
-    final PlexApi api = _api(uri, token, info);
-    try {
-      final String id = await api.identity().timeout(widget.probeTimeout);
-      return id == machineIdentifier;
-    } finally {
-      api.close();
-    }
-  }
+  ) => probePlexConnection(
+    uri,
+    token,
+    machineIdentifier,
+    info,
+    timeout: widget.probeTimeout,
+    httpClientFactory: widget.httpClientFactory,
+  );
 
   Future<void> _signInWithAccount() async {
     setState(() {
@@ -174,39 +518,14 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         case PlexPinPollOutcome.authorized:
           break;
       }
-      final String accountToken = result.token!;
-      PlexTvUser? user;
-      try {
-        user = await tv.user(accountToken);
-      } catch (_) {
-        // 账号名只用于卡片副标题，查不到不妨碍登录。
-      }
-      final List<PlexResource> resources = await tv.resources(accountToken);
-      int added = 0;
-      for (final PlexResource r in resources) {
-        final String token = r.accessToken ?? accountToken;
-        final List<String> ordered = <String>[
-          for (final PlexConnection c in orderPlexConnections(r.connections))
-            if (c.uri.isNotEmpty) c.uri,
-        ];
-        final String? reachable = await firstReachablePlexConnection(
-          orderPlexConnections(r.connections),
-          (String uri) => _probe(uri, token, r.clientIdentifier, info),
-        );
-        if (reachable == null || ordered.isEmpty) continue;
-        await _syncRepo.upsertMediaServer(
-          PlexServerConfig(
-            machineIdentifier: r.clientIdentifier,
-            token: token,
-            clientIdentifier: info.clientIdentifier,
-            connections: ordered,
-            serverName: r.name,
-            accountId: user?.id ?? '',
-            accountName: user?.username ?? '',
-          ).withActiveRoute(reachable),
-        );
-        added++;
-      }
+      final int added = (await savePlexAccountServers(
+        _syncRepo,
+        tv: tv,
+        accountToken: result.token!,
+        info: info,
+        probe: (String uri, String token, String machineIdentifier) =>
+            _probe(uri, token, machineIdentifier, info),
+      )).length;
       if (!mounted) return;
       if (added == 0) {
         await _showError(t.plex_servers_none_reachable);
@@ -244,46 +563,12 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
       return;
     }
     setState(() => _busy = true);
-    final PlexClientInfo info = await _clientInfo();
-    final PlexApi api = _api(serverUrl, token, info);
-    final PlexTvApi tv = _tvApi(info);
     try {
-      final String machineIdentifier;
-      try {
-        machineIdentifier = await api.identity();
-      } catch (e) {
-        await _showError(
-          t.jellyfin_server_unreachable(url: serverUrl, reason: '$e'),
-        );
-        return;
-      }
-      if (machineIdentifier.isEmpty) {
-        throw const FormatException('Plex /identity has no machineIdentifier');
-      }
-      // `/identity` 不验 token；列库才是真正的鉴权请求。
-      await api.sections();
-      String? serverName;
-      try {
-        serverName = await api.friendlyName();
-      } catch (_) {
-        // 服务器名只用于展示。
-      }
-      PlexTvUser? user;
-      try {
-        user = await tv.user(token);
-      } catch (_) {
-        // 服务器本地 token 在 plex.tv 查不到账号：身份只按服务器区分。
-      }
-      await _syncRepo.upsertMediaServer(
-        PlexServerConfig(
-          machineIdentifier: machineIdentifier,
-          token: token,
-          clientIdentifier: info.clientIdentifier,
-          connections: <String>[serverUrl],
-          serverName: serverName,
-          accountId: user?.id ?? '',
-          accountName: user?.username ?? '',
-        ),
+      await connectPlexServerManually(
+        _syncRepo,
+        url: serverUrl,
+        token: token,
+        httpClientFactory: widget.httpClientFactory,
       );
       if (!mounted) return;
       _urlController.clear();
@@ -293,11 +578,13 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         msg: t.sync_connection_success,
         severity: ToastSeverity.success,
       );
+    } on PlexConnectFailure catch (e) {
+      await _showError(
+        t.jellyfin_server_unreachable(url: e.url, reason: '${e.cause}'),
+      );
     } catch (e) {
       await _showError('$e');
     } finally {
-      api.close();
-      tv.close();
       if (mounted) setState(() => _busy = false);
     }
   }

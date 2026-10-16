@@ -7,14 +7,28 @@
 library;
 
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show MediaSourceRow, VideoDownloadJobLifecycle;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart'
+    show TorrentFileEntry, TorrentSnapshot;
+import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
+    show VideoDownloadJobDetails;
+import 'package:fushi_engine/sync/downloads/host_download_host.dart'
+    show kHostDownloadDiscoveryKinds;
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
+    show InterconnectHostAddress;
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart'
+    show HostDownloadJob, HostDownloadTarget;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show interconnectPeerRepresentatives;
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
     show SyncAssetChannelScope, SyncChannel, syncAssetChannelScopeOf;
@@ -344,3 +358,202 @@ Map<String, Object?> mediaServerPageToWire(MediaServerPage page) =>
       'nextStartIndex': page.nextStartIndex,
       'hasMore': page.hasMore,
     };
+
+// ── 下载（第二轮：完整参数 / 执行设备 / 详情）──────────────────────────
+
+/// `dl add --kind` 拆成管线的两个维度：`movie` / `tv`（缺省 movie）是视频任务的
+/// 组织形态；其余是按域入库的非视频内容（`HostDownloadAddRequest` 的 discoveryKind）。
+({String mediaKind, String? discoveryKind}) splitDownloadKind(String? kind) {
+  if (kind == null || kind == 'movie' || kind == 'tv') {
+    return (mediaKind: kind ?? 'movie', discoveryKind: null);
+  }
+  if (kHostDownloadDiscoveryKinds.contains(kind)) {
+    return (mediaKind: 'movie', discoveryKind: kind);
+  }
+  throw CtlFailure.badRequest(
+    '未知的内容类型：$kind（可选：movie / tv / '
+    '${kHostDownloadDiscoveryKinds.join(' / ')}）',
+  );
+}
+
+/// `--files 0,2,5` → 文件下标列表（范围交给 `HostDownloadAddRequest.fromJson` 按种子校验）。
+List<int>? parseDownloadFileIndexes(List<String> raw) {
+  final List<int> out = <int>[];
+  for (final String item in raw) {
+    for (final String part in item.split(',')) {
+      final String trimmed = part.trim();
+      if (trimmed.isEmpty) continue;
+      final int? index = int.tryParse(trimmed);
+      if (index == null || index < 0) {
+        throw CtlFailure.badRequest('文件下标必须是非负整数：$trimmed');
+      }
+      out.add(index);
+    }
+  }
+  return out.isEmpty ? null : out;
+}
+
+/// `dl add --device <x>` 的执行设备匹配：先按 hostId（同一台 host 的全部地址都认），
+/// 再按 host 的任一地址、设备名。找不到返回 null。
+HostDownloadTarget? matchDownloadHost(
+  List<HostDownloadTarget> targets,
+  List<FushiClientUrl> pairedUrls,
+  String selector,
+) {
+  final List<String> hostUrls = <String>[
+    for (final FushiClientUrl u in pairedUrls)
+      if (u.hostId != null && u.hostId == selector) u.url,
+  ];
+  if (hostUrls.isNotEmpty) {
+    for (final HostDownloadTarget target in targets) {
+      if (hostUrls.any(target.isPeer)) return target;
+    }
+    return null;
+  }
+  for (final HostDownloadTarget target in targets) {
+    if (target.isPeer(selector)) return target;
+  }
+  for (final HostDownloadTarget target in targets) {
+    if (target.deviceName == selector) return target;
+  }
+  return null;
+}
+
+/// 能代下载的 host（`dl targets` 的执行设备列表）；hostId 取自配对清单。
+Map<String, Object?> downloadHostToWire(
+  HostDownloadTarget target,
+  List<FushiClientUrl> pairedUrls,
+) {
+  String? hostId;
+  for (final FushiClientUrl u in pairedUrls) {
+    if (u.hostId != null && target.isPeer(u.url)) {
+      hostId = u.hostId;
+      break;
+    }
+  }
+  return <String, Object?>{
+    'device': target.label,
+    'url': target.baseUrl,
+    if (hostId != null) 'hostId': hostId,
+    'backend': target.backend,
+    'kinds': target.kinds,
+    // 能否在 `dl rm --device` 时选择删不删文件（BUG-3417；老 host 为 false）。
+    'deleteFilesParam': target.deleteFilesParam,
+  };
+}
+
+/// 互联 host 上的一条代下载任务（`dl ls --device <host>`）。字段与本机任务同名，
+/// 外加执行设备；动作可用性与下载页「远端任务」卡同一判据。
+Map<String, Object?> hostDownloadJobToWire(
+  HostDownloadJob job, {
+  required String device,
+}) => <String, Object?>{
+  'jobId': job.jobId,
+  'title': job.title,
+  'lifecycle': job.lifecycle,
+  'stage': job.stage,
+  'stageProgress': job.stageProgress,
+  'updatedAt': job.updatedAt,
+  if (job.lastError != null) 'lastError': redactCtlSecrets(job.lastError!),
+  'device': device,
+  'remote': true,
+};
+
+/// 远端任务卡的「已结束」判据：已结束的只能删，未结束的只能取消。
+bool hostDownloadJobFinished(HostDownloadJob job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.completed ||
+    job.lifecycle == VideoDownloadJobLifecycle.cancelled ||
+    job.lifecycle == VideoDownloadJobLifecycle.failed;
+
+/// 远端任务卡的「可重试」判据。
+bool hostDownloadJobRetryable(HostDownloadJob job) =>
+    job.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+    job.lifecycle == VideoDownloadJobLifecycle.failed;
+
+/// 视频下载的目标库（受管视频来源）。
+Map<String, Object?> downloadSourceToWire(
+  MediaSourceRow source, {
+  required bool isDefault,
+}) => <String, Object?>{
+  'id': source.id,
+  'label': source.label,
+  'rootPath': source.rootPath,
+  'default': isDefault,
+};
+
+/// 下载任务详情：种子快照 + 文件清单（与下载页任务详情对话框同一份数据）。
+Map<String, Object?> downloadJobDetailsToWire(
+  VideoDownloadJobDetails details, {
+  String? location,
+}) {
+  final TorrentSnapshot s = details.snapshot;
+  return <String, Object?>{
+    'backendOnline': details.backendOnline,
+    'liveData': details.liveDataAbsence.name,
+    'torrent': <String, Object?>{
+      'hash': s.hash,
+      'name': s.name,
+      'state': s.state,
+      'progress': s.progress,
+      if (s.totalSizeBytes >= 0) 'totalBytes': s.totalSizeBytes,
+      if (s.amountLeft >= 0) 'leftBytes': s.amountLeft,
+      'downRateBps': s.downRateBps,
+      'upRateBps': s.upRateBps,
+      if (s.savePath.isNotEmpty) 'savePath': s.savePath,
+    },
+    'location': ?location,
+    'files': <Map<String, Object?>>[
+      for (final TorrentFileEntry f in details.files)
+        <String, Object?>{
+          'index': f.index,
+          'name': f.name,
+          'bytes': f.size,
+          'progress': f.progress,
+        },
+    ],
+  };
+}
+
+/// `dl priority` 的取值：high / normal / low（下载页任务卡菜单的三档）或整数。
+int parseDownloadPriority(String raw) => switch (raw.trim()) {
+  'high' => 1,
+  'normal' => 0,
+  'low' => -1,
+  final String other =>
+    int.tryParse(other) ??
+        (throw CtlFailure.badRequest('优先级只认 high / normal / low 或整数：$raw')),
+};
+
+// ── 互联（第二轮）───────────────────────────────────────────────────
+
+/// `peer forget <hostId|url|设备名>` → 要删的那一行 URL 与它的 hostId（有 hostId 时
+/// 整台 host 的地址一起删，见 [withoutInterconnectHost]）。按 hostId 认优先：同一台
+/// host 的地址会随它换 IP 被自动增删，URL 不是稳定身份。
+({String url, String? hostId}) resolveForgetHost(
+  List<FushiClientUrl> urls,
+  String selector,
+) {
+  for (final FushiClientUrl u in urls) {
+    if (u.hostId != null && u.hostId == selector) {
+      return (url: u.url, hostId: u.hostId);
+    }
+  }
+  for (final FushiClientUrl u in urls) {
+    if (u.url == selector) return (url: u.url, hostId: u.hostId);
+  }
+  final List<FushiClientUrl> byName = <FushiClientUrl>[
+    for (final FushiClientUrl u in interconnectPeerRepresentatives(urls))
+      if (u.deviceName == selector) u,
+  ];
+  if (byName.length > 1) {
+    throw CtlFailure.conflict('有多台 host 叫「$selector」，请改用 hostId（peer ls 查看）');
+  }
+  if (byName.isEmpty) {
+    throw CtlFailure.notFound('没有这台 host：$selector（peer ls 查看）');
+  }
+  return (url: byName.single.url, hostId: byName.single.hostId);
+}
+
+/// 配对链接里的一条地址（公开值：二维码里本来就有）。
+Map<String, Object?> pairLinkAddressToWire(InterconnectHostAddress address) =>
+    <String, Object?>{'url': address.url, 'kind': address.kind.name};

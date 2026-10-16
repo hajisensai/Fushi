@@ -57,8 +57,32 @@ class BookSeriesGrouper {
       if (v.members.any((m) => inCollection.contains(m.id))) continue;
       loose.putIfAbsent(v.groupKey, () => <_Volume>[]).add(v);
     }
+    if (loose.isEmpty) {
+      return (
+        createdCollectionIds: const <int>[],
+        updatedCollectionIds: const <int>[],
+      );
+    }
+    // 同名 playlist 一趟预取（与 getMediaCollectionByNaturalKey 同判据：名字精确相等、
+    // 取 id 最小者）。互联 host 每次出清单都会调本方法，逐系列查一次会让大库（满架
+    // 单卷书）每刷一次清单打上千次查询。
+    final Map<String, MediaCollectionRow> playlistByName =
+        <String, MediaCollectionRow>{};
+    for (final MediaCollectionRow c
+        in (await _database.getAllMediaCollections())
+          ..sort((a, b) => a.id.compareTo(b.id))) {
+      if (c.collectionType == 'playlist') {
+        playlistByName.putIfAbsent(c.name, () => c);
+      }
+    }
     for (final List<_Volume> group in loose.values) {
-      final int? id = await _groupSeries(group, items, byMember, created);
+      final int? id = await _groupSeries(
+        group,
+        items,
+        byMember,
+        created,
+        playlistByName,
+      );
       if (id != null && !created.contains(id)) updated.add(id);
     }
     return (
@@ -123,6 +147,7 @@ class BookSeriesGrouper {
     List<MediaCollectionItemRow> items,
     Map<String, _Volume> byMember,
     List<int> created,
+    Map<String, MediaCollectionRow> playlistByName,
   ) async {
     final String groupKey = volumes.first.groupKey;
     MediaCollectionRow? collection = await _collectionHoldingSeries(
@@ -131,10 +156,7 @@ class BookSeriesGrouper {
       byMember,
     );
     final String name = volumes.first.key.seriesTitle;
-    collection ??= await _database.getMediaCollectionByNaturalKey(
-      name,
-      'playlist',
-    );
+    collection ??= playlistByName[name];
     if (collection == null) {
       if (volumes.length < 2) return null;
       if (await _database.hasCollectionDeletionTombstone(name, 'playlist')) {
@@ -146,6 +168,7 @@ class BookSeriesGrouper {
       );
       created.add(id);
       collection = (await _database.getMediaCollectionById(id))!;
+      playlistByName[name] = collection;
     }
     final Set<String> removed = await _removedMembers(collection);
     bool added = false;

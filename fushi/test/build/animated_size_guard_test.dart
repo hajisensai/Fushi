@@ -220,8 +220,6 @@ const Map<String, int> _legacy = <String, int>{
       1,
   'lib/src/reader/reader_control_layout_editor.dart|fushiMotionDuration(context,FushiMotion.medium)':
       1,
-  'lib/src/settings/master_detail_settings_sheet.dart|constDuration(milliseconds:200)':
-      1,
   'lib/src/sync/jellyfin_settings_widget.dart|motion.spatialDefault.duration':
       1,
   'lib/src/sync/sync_compare_dialog.dart|motion.spatialDefault.duration': 1,

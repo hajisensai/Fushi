@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
@@ -263,15 +264,19 @@ String discoveryTorrentResolveFailureMessage(Object error) {
 /// 下载一条发现资源（发现页「下载」与「AI 下载」共用的唯一路径）：按 payloadKind
 /// 分流——torrent 先经来源解析 payload，再交给 [pushGenericMagnet] /
 /// [enqueueSelectedDiscoveryTorrent]；http 直链进 `discoveryDownloadQueue`
-/// （下完自动入库）。结果一律 toast，失败记日志。返回是否已交给下载后端。
+/// （下完自动入库）。失败记日志。返回 [DownloadStartResult]：是否已交给下载后端
+/// + 要告诉用户的话——这里**不弹 toast**，页面用 [showDownloadStartNotices] 显示，
+/// 桌面控制通道把同一份原因回给 CLI。
 ///
 /// [context] 用于上传同意框等交互；调用方负责「解析中」这类页内状态。
-Future<bool> startDiscoveryItemDownload({
+Future<DownloadStartResult> startDiscoveryItemDownload({
   required BuildContext context,
   required AppModel appModel,
   required DiscoveryResourceItem item,
 }) async {
-  if (!item.isDownloadable) return false;
+  if (!item.isDownloadable) {
+    return const DownloadStartResult.declined('这条资源不可下载');
+  }
   // 第三方游戏资源站（真红小站 / 内置 AList）：压缩包、安装程序有恶意软件风险，
   // 先给一次风险说明（勾过「不再提示」就跳过），取消 = 这次不下。
   if (item.kind == DiscoveryMediaKind.game &&
@@ -282,24 +287,28 @@ Future<bool> startDiscoveryItemDownload({
           method: discoveryTransferMethodOf(item.payloadKind),
         ) ||
         !context.mounted) {
-      return false;
+      return const DownloadStartResult.declined('未确认游戏资源风险说明（app 内已取消）');
     }
   }
   switch (item.payloadKind) {
     case DiscoveryPayloadKind.torrent:
       // BT / 磁力是 P2P：先说明（勾过「不再提示」就跳过），取消 = 这次不下。
       if (!await confirmP2pDownloadNotice(context) || !context.mounted) {
-        return false;
+        return const DownloadStartResult.declined('未确认 P2P 下载说明（app 内已取消）');
       }
       bool resolving = true;
       try {
         final MediaDiscoverySource? source = appModel.mediaDiscoveryService
             .sourceById(item.sourceId);
-        if (source == null) return false;
+        if (source == null) {
+          return DownloadStartResult.declined('发现源 ${item.sourceId} 已不可用');
+        }
         final DiscoveryPayload payload =
             item.payload ?? await source.resolvePayload(item);
         resolving = false;
-        if (!context.mounted) return false;
+        if (!context.mounted) {
+          return const DownloadStartResult.declined('页面已关闭');
+        }
         final GenericPushOutcome outcome;
         if (payload is DiscoveryTorrentPayload) {
           outcome = await pushGenericMagnet(
@@ -329,42 +338,46 @@ Future<bool> startDiscoveryItemDownload({
             externalId: item.id,
           );
         } else {
-          return false;
+          return DownloadStartResult.declined(
+            '不支持的种子载荷：${payload.runtimeType}',
+          );
         }
-        FushiToast.show(
-          msg: genericPushMessage(outcome),
-          severity: outcome.isSuccess
-              ? ToastSeverity.success
-              : outcome == GenericPushOutcome.alreadyQueued
-              ? ToastSeverity.info
-              : ToastSeverity.error,
+        return DownloadStartResult(
+          started: outcome.isSuccess,
+          notices: <DownloadStartNotice>[
+            DownloadStartNotice(
+              genericPushMessage(outcome),
+              outcome.isSuccess
+                  ? ToastSeverity.success
+                  : outcome == GenericPushOutcome.alreadyQueued
+                  ? ToastSeverity.info
+                  : ToastSeverity.error,
+            ),
+          ],
         );
-        return outcome.isSuccess;
       } on Object catch (error, stack) {
         ErrorLogService.instance.log(
           'DiscoveryTorrent.${resolving ? 'resolve' : 'enqueue'}.${item.sourceId}',
           error,
           stack,
         );
-        FushiToast.show(
-          msg: resolving
-              ? discoveryTorrentResolveFailureMessage(error)
-              : genericPushMessage(GenericPushOutcome.pushFailed),
-          severity: ToastSeverity.error,
-        );
-        return false;
+        return DownloadStartResult.failed(<DownloadStartNotice>[
+          DownloadStartNotice.error(
+            resolving
+                ? discoveryTorrentResolveFailureMessage(error)
+                : genericPushMessage(GenericPushOutcome.pushFailed),
+          ),
+        ]);
       }
     case DiscoveryPayloadKind.httpFile:
       final bool added = appModel.discoveryDownloadQueue.enqueue(
         item,
         destinationDir: appModel.discoveryDownloadDirFor(item.kind),
       );
-      if (added) {
-        FushiToast.show(
-          msg: t.discovery_download_queued,
-          severity: ToastSeverity.success,
-        );
-      }
-      return added;
+      return added
+          ? DownloadStartResult.started(<DownloadStartNotice>[
+              DownloadStartNotice.success(t.discovery_download_queued),
+            ])
+          : const DownloadStartResult.declined('同一地址已在直链下载队列中');
   }
 }

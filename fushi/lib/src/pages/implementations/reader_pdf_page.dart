@@ -23,6 +23,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
@@ -42,9 +43,15 @@ class ReaderPdfPage extends BaseSourcePage {
     super.key,
     required super.item,
     required this.bookKey,
+    this.initialPageIndex,
   });
 
   final String bookKey;
+
+  /// 调用方点名的起始页（0 起计，越界钳到末页）；取代保存位置，只作用于首次装载。
+  /// 经 `openMedia(initialBookmarkJump:)` 的书签 `sectionIndex` 传入（PDF 书签的
+  /// sectionIndex 本就是 0 起计页码），桌面控制通道 `library open --page` 用它。
+  final int? initialPageIndex;
 
   @override
   BaseSourcePageState<ReaderPdfPage> createState() => _ReaderPdfPageState();
@@ -81,6 +88,9 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 当前页（0-based）。pdfrx 的 `pageNumber` 是 1-based，落库统一 0-based
   /// （与 `ReaderPositions.sectionIndex` 的 EPUB 章 index 口径一致）。
   int _currentPageIndex = 0;
+
+  /// 桌面控制通道遥控面（见 [_PdfPageSessionRemote]）。
+  late final _PdfPageSessionRemote _sessionRemote = _PdfPageSessionRemote(this);
   int _lastSavedPageIndex = -1;
 
   /// 「读过」判据的唯一账本（2026-09-06 裁定，三域共用，见
@@ -126,11 +136,14 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     WidgetsBinding.instance.addObserver(this);
     // 进程退出兜底：把未落盘的页码 + 学习段 flush 掉（与 EPUB 阅读器同纪律）。
     ExitFlushRegistry.instance.register(_flushForExit);
+    // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
+    readerSessionRemotes.register(_sessionRemote);
   }
 
   @override
   void dispose() {
     ExitFlushRegistry.instance.unregister(_flushForExit);
+    readerSessionRemotes.unregister(_sessionRemote);
     WidgetsBinding.instance.removeObserver(this);
     _saveDebounce?.cancel();
     // 崩溃 / 异常拆栈的兜底（正常退出走 onSourcePagePop 的 await 路径）：dispose
@@ -196,6 +209,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       _restorePageIndex = saved.sectionIndex;
       _currentPageIndex = saved.sectionIndex;
       _lastSavedPageIndex = saved.sectionIndex;
+    }
+    final int? requested = widget.initialPageIndex;
+    if (requested != null && row.chapterCount > 0) {
+      final int page = requested.clamp(0, row.chapterCount - 1);
+      _restorePageIndex = page;
+      _currentPageIndex = page;
     }
 
     // v92：唯一时钟（同 EPUB 侧）；空闲门 + 生命周期前台门只对阅读面生效。
@@ -1098,4 +1117,62 @@ class _PdfOutlineSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+/// PDF 阅读页对桌面控制通道（`fushi_cli reader ...`）的遥控实现：翻页与跳页都转调
+/// 浮动翻页条上「上一页 / 下一页 / 拖动滑块」背后的同一个
+/// `PdfViewerController.goToPage`。文档还没就绪时快照为 null、动作为 no-op。
+class _PdfPageSessionRemote implements ReaderSessionRemote {
+  _PdfPageSessionRemote(this._state);
+
+  final _ReaderPdfPageState _state;
+
+  PdfViewerController? get _ready {
+    if (!_state.mounted) return null;
+    final PdfViewerController controller = _state._pdfController;
+    return controller.isReady ? controller : null;
+  }
+
+  @override
+  ReaderSessionSnapshot? snapshot() {
+    final PdfViewerController? controller = _ready;
+    if (controller == null) return null;
+    return ReaderSessionSnapshot(
+      kind: ReaderSessionKind.pdf,
+      bookKey: _state.widget.bookKey,
+      title: _state._bookRow?.title,
+      contentReady: true,
+      pageIndex: (controller.pageNumber ?? 1) - 1,
+      pageCount: controller.pageCount,
+    );
+  }
+
+  @override
+  Future<void> turnPage({required bool forward}) async {
+    final PdfViewerController? controller = _ready;
+    if (controller == null) return;
+    final int page = controller.pageNumber ?? 1;
+    final int target = forward ? page + 1 : page - 1;
+    if (target < 1 || target > controller.pageCount) return;
+    await controller.goToPage(pageNumber: target);
+  }
+
+  @override
+  Future<bool> goToPage(int pageIndex) async {
+    final PdfViewerController? controller = _ready;
+    if (controller == null ||
+        pageIndex < 0 ||
+        pageIndex >= controller.pageCount) {
+      return false;
+    }
+    await controller.goToPage(pageNumber: pageIndex + 1);
+    return true;
+  }
+
+  @override
+  Future<bool> goToChapter(int chapterIndex, {double progress = 0}) async =>
+      false;
+
+  @override
+  Future<bool> goToBookPercent(double percent) async => false;
 }

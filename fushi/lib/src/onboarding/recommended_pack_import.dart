@@ -2,7 +2,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show runBackupImportFlowForFile;
+    show BackupImportPreset, runBackupImportFlowForFile;
 
 /// 就地导入已下好的推荐包，走备份导入的共享编排（确认覆盖/合并 → 导入 → 重启）。
 ///
@@ -14,12 +14,19 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 /// 动作漏一处就意味着重启后那 9.5 GB 残包永远留在盘上（BUG-2109 的形状）。
 /// controller 自己**不发起**导入——导入要用户确认覆盖/合并并重启进程，它不能替
 /// 用户按。
-Future<void> importDownloadedRecommendedPack(AppModel appModel) async {
+///
+/// [preset] 非 null 时跳过覆盖 / 合并确认框（控制通道 `dict pack-import --merge|--replace`，
+/// 调用方已拿到等价确认）；成功后的待办教程与残包清理回调不变。
+Future<void> importDownloadedRecommendedPack(
+  AppModel appModel, {
+  BackupImportPreset? preset,
+}) async {
   final RecommendedPackDownloadController controller =
       appModel.recommendedPackDownloadController;
   await runBackupImportFlowForFile(
     appModel: appModel,
     filePath: controller.packFile.path,
+    preset: preset,
     onImportSucceeded: () async {
       await RecommendedPackTutorialState(
         appModel.appDirectory,

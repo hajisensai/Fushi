@@ -18,6 +18,8 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/settings/audio_sources_cli.dart'
+    show listAudioSourcesForCli;
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/port_kill_confirm.dart';
@@ -243,6 +245,41 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.custom_css',
             title: t.dict_style_title,
             icon: Icons.palette_outlined,
+            // CLI：读 / 写手写 CSS（全局或某本词典），与编辑对话框保存同一组 setter。
+            // 可视化规则编辑器是交互式编辑，CLI 只管手写 CSS。
+            cli: SettingsCliAction(
+              params: const <SettingsCliParam>[
+                SettingsCliParam(
+                  'value',
+                  help: '要写入的 CSS 全文（不给 = 只读当前值；空串 = 清空）',
+                  required: false,
+                ),
+                SettingsCliParam(
+                  'dictionary',
+                  help: '词典名（不给 = 全局 CSS）',
+                  required: false,
+                ),
+              ],
+              run: (SettingsContext c, Map<String, String> args) async {
+                final String? dictionary = args['dictionary']?.trim();
+                final bool global = dictionary == null || dictionary.isEmpty;
+                final String? css = args['value'];
+                if (css != null) {
+                  if (global) {
+                    await c.appModel.setGlobalDictCSS(css);
+                  } else {
+                    await c.appModel.setCustomCSSForDict(dictionary, css);
+                  }
+                }
+                return <String, Object?>{
+                  'dictionary': global ? null : dictionary,
+                  'css': global
+                      ? c.appModel.globalDictCSS
+                      : c.appModel.getCustomCSSForDict(dictionary),
+                  'written': css != null,
+                };
+              },
+            ),
             onTap: (SettingsContext settingsContext) {
               return showSettingsDialog(
                 settingsContext,
@@ -405,6 +442,12 @@ SettingsDestination buildLookupDestination() {
             icon: Icons.accessibility_new_outlined,
             visible: (SettingsContext settingsContext) =>
                 SelectionCapture.needsAccessibilityTrust,
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> args) async =>
+                  <String, Object?>{
+                    'trusted': await SelectionCapture.requestAccessibilityTrust(),
+                  },
+            ),
             onTap: (SettingsContext settingsContext) async {
               final bool trusted =
                   await SelectionCapture.requestAccessibilityTrust();
@@ -1246,6 +1289,13 @@ SettingsItem buildManageAudioSourcesItem() {
     id: 'lookup.audio_sources',
     title: t.manage_audio_sources,
     icon: Icons.volume_up_outlined,
+    // 对话框的主视图 = 当前来源列表；增删改 / 启停 / 排序走
+    // `config items lookup.audio_sources.items`，重置 / 本地子来源见
+    // ctl_settings_body_audio_sources.dart（同一套 audio_sources_cli.dart）。
+    cli: SettingsCliAction(
+      run: (SettingsContext c, Map<String, String> _) async =>
+          <String, Object?>{'sources': listAudioSourcesForCli(c.appModel)},
+    ),
     onTap: (SettingsContext settingsContext) {
       return showAudioSourcesManagerDialog(
         context: settingsContext.context,

@@ -11,8 +11,11 @@
 /// - 清洗后超过 [GalgameLineCharCounter.maxCountedChars] 的行视为脚本 dump
 ///   垃圾，计 0。
 ///
-/// 非相邻重复（回想/二周目重读）照计——与 Luna/exSTATic 社区口径一致：
-/// "hook 到即读过"，不做阅读器式高水位。
+/// 本计数器只回答「这一行有几个字」，非相邻重复在**这一层**照计。「这一行读过
+/// 没有」由统计层的下一道门回答：同一 hook 会话内已入账的台词（Backlog 回看）不
+/// 再计、快于可阅读速度的连续快速流（快进 / 跳过）撤回，见
+/// `stats/galgame_line_study_gate.dart`（反馈 LUgHjyc8By）。跨会话的重读（次日重
+/// 玩、二周目）仍照计。
 library;
 
 import 'package:fushi_engine/stats/study_char_count.dart';

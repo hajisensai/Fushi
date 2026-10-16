@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 132175 (7775 per locale)
+/// Strings: 132209 (7777 per locale)
 ///
-/// Built on 2026-10-16 at 10:27 UTC
+/// Built on 2026-10-16 at 11:12 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11232,6 +11232,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get backup_category_srs => 'Review';
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  String home_continue_volume({required Object n}) => 'Vol. ${n}';
   String get video_setting_subtitle_no_outline => 'No outline';
 }
 
@@ -30031,6 +30034,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'المجلد ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'بلا حدود للنص';
 }
@@ -49221,6 +49229,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Band ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'Keine Kontur';
 }
@@ -68470,6 +68483,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Tomo ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'Sin contorno';
 }
@@ -87801,6 +87819,11 @@ class _StringsFr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Tome ${n}';
+  @override
   String get video_setting_subtitle_no_outline => 'Sans contour';
 }
 
@@ -106783,6 +106806,11 @@ class _StringsId extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Jilid ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'Tanpa garis tepi';
 }
@@ -125933,6 +125961,11 @@ class _StringsIt extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Volume ${n}';
+  @override
   String get video_setting_subtitle_no_outline => 'Nessun contorno';
 }
 
@@ -144081,6 +144114,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => '第${n}巻';
   @override
   String get video_setting_subtitle_no_outline => '縁取りなし';
 }
@@ -162266,6 +162304,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => '${n}권';
   @override
   String get video_setting_subtitle_no_outline => '외곽선 없음';
 }
@@ -181363,6 +181406,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Deel ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'Geen omlijning';
 }
@@ -200530,6 +200578,11 @@ class _StringsPtBr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Volume ${n}';
+  @override
   String get video_setting_subtitle_no_outline => 'Sem contorno';
 }
 
@@ -219641,6 +219694,11 @@ class _StringsRu extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Том ${n}';
+  @override
   String get video_setting_subtitle_no_outline => 'Без обводки';
 }
 
@@ -238429,6 +238487,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+  @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'เล่ม ${n}';
   @override
   String get video_setting_subtitle_no_outline => 'ไม่มีขอบตัวอักษร';
 }
@@ -257423,6 +257486,11 @@ class _StringsTr extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => '${n}. cilt';
+  @override
   String get video_setting_subtitle_no_outline => 'Kontur yok';
 }
 
@@ -276343,6 +276411,11 @@ class _StringsVi extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => 'Quyển ${n}';
+  @override
   String get video_setting_subtitle_no_outline => 'Không viền';
 }
 
@@ -293611,6 +293684,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get backup_category_srs_desc =>
       '复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案';
+  @override
+  String get download_remote_delete_files_host_default =>
+      '这台主机版本较旧，删除任务时无法选择是否保留文件：Fushi 应用当主机会保留文件，无头 fushi_server 会连文件一起删除。';
+  @override
+  String home_continue_volume({required Object n}) => '第 ${n} 卷';
   @override
   String get video_setting_subtitle_no_outline => '无描边';
 }
@@ -311202,6 +311280,11 @@ class _StringsZhHk extends _StringsEn {
   String get backup_category_srs_desc =>
       'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
   @override
+  String get download_remote_delete_files_host_default =>
+      'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+  @override
+  String home_continue_volume({required Object n}) => '第 ${n} 卷';
+  @override
   String get video_setting_subtitle_no_outline => '無描邊';
 }
 
@@ -327331,6 +327414,10 @@ extension on _StringsEn {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Vol. ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'No outline';
       default:
@@ -343456,6 +343543,10 @@ extension on _StringsAr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'المجلد ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'بلا حدود للنص';
       default:
@@ -359657,6 +359748,10 @@ extension on _StringsDe {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Band ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Keine Kontur';
       default:
@@ -375840,6 +375935,10 @@ extension on _StringsEs {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Tomo ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Sin contorno';
       default:
@@ -392041,6 +392140,10 @@ extension on _StringsFr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Tome ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Sans contour';
       default:
@@ -408186,6 +408289,10 @@ extension on _StringsId {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Jilid ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Tanpa garis tepi';
       default:
@@ -424367,6 +424474,10 @@ extension on _StringsIt {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Volume ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Nessun contorno';
       default:
@@ -440421,6 +440532,10 @@ extension on _StringsJa {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第${n}巻';
       case 'video_setting_subtitle_no_outline':
         return '縁取りなし';
       default:
@@ -456483,6 +456598,10 @@ extension on _StringsKo {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => '${n}권';
       case 'video_setting_subtitle_no_outline':
         return '외곽선 없음';
       default:
@@ -472659,6 +472778,10 @@ extension on _StringsNl {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Deel ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Geen omlijning';
       default:
@@ -488827,6 +488950,10 @@ extension on _StringsPtBr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Volume ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Sem contorno';
       default:
@@ -505000,6 +505127,10 @@ extension on _StringsRu {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Том ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Без обводки';
       default:
@@ -521129,6 +521260,10 @@ extension on _StringsTh {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'เล่ม ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'ไม่มีขอบตัวอักษร';
       default:
@@ -537289,6 +537424,10 @@ extension on _StringsTr {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => '${n}. cilt';
       case 'video_setting_subtitle_no_outline':
         return 'Kontur yok';
       default:
@@ -553432,6 +553571,10 @@ extension on _StringsVi {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => 'Quyển ${n}';
       case 'video_setting_subtitle_no_outline':
         return 'Không viền';
       default:
@@ -569391,6 +569534,10 @@ extension on _StringsZhCn {
         return '复习';
       case 'backup_category_srs_desc':
         return '复习笔记与复习记录，以及卡片里的图片和音频（数量为笔记数与媒体文件数之和）。归属于配置方案：没有一并恢复配置方案时，会自动并入本机对应的方案';
+      case 'download_remote_delete_files_host_default':
+        return '这台主机版本较旧，删除任务时无法选择是否保留文件：Fushi 应用当主机会保留文件，无头 fushi_server 会连文件一起删除。';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第 ${n} 卷';
       case 'video_setting_subtitle_no_outline':
         return '无描边';
       default:
@@ -585390,6 +585537,10 @@ extension on _StringsZhHk {
         return 'Review';
       case 'backup_category_srs_desc':
         return 'Review notes and history, plus card images and audio (count = notes + media files). Tied to profiles: if profiles aren\'t restored too, it\'s merged into the matching profile on this device';
+      case 'download_remote_delete_files_host_default':
+        return 'This host runs an older version, so deleting a task can\'t choose whether its files are kept: a Fushi app host keeps them, a headless fushi_server deletes them.';
+      case 'home_continue_volume':
+        return ({required Object n}) => '第 ${n} 卷';
       case 'video_setting_subtitle_no_outline':
         return '無描邊';
       default:

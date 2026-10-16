@@ -1459,12 +1459,22 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     if (path == null) return;
+    await _importRemoteSubtitleFile(controller, path);
+  }
+
+  /// 远端模式按路径导入主字幕（文件选择器与桌面 CLI `video sub-import` 共用）：
+  /// 拷进字幕目录 → 并入字幕轨列表 → 内存应用并按集持久化 → 同步到互联 host。
+  /// 返回是否真的应用上了。
+  Future<bool> _importRemoteSubtitleFile(
+    VideoPlayerController controller,
+    String path,
+  ) async {
     if (subtitleFormatForPath(path) == null) {
       _showOsd(
         t.video_subtitle_import_unsupported,
         severity: ToastSeverity.error,
       );
-      return;
+      return false;
     }
     // 复制到 video_subtitles/ 持久目录再应用：远端选择按文件路径持久化（见
     // _applyRemoteSubtitle），原始 pick 可能是 SAF 临时缓存，退出后失效；复制到 app
@@ -1486,6 +1496,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final bool applied = await _applyRemoteSubtitle(controller, applyPath);
     // 用户给远端视频导入的字幕同步到 host，成为这一集在所有设备上的默认字幕。
     if (applied) await _uploadRemoteSubtitleToHost(applyPath);
+    return applied;
   }
 
   /// 互联 host 上当前远端视频的定位：`(后端, 视频 id, host 集下标)`。合集连播的成员各是
@@ -2016,6 +2027,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
     if (path == null) return;
+    await _importRemoteSecondarySubtitleFile(controller, path);
+  }
+
+  /// 远端模式按路径导入副字幕（文件选择器与桌面 CLI 共用）。
+  Future<void> _importRemoteSecondarySubtitleFile(
+    VideoPlayerController controller,
+    String path,
+  ) async {
     if (subtitleFormatForPath(path) == null) {
       _showOsd(
         t.video_subtitle_import_unsupported,
@@ -2254,8 +2273,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 本地图形轨整轨 OCR（取数见 [_graphicTrackOcrInput]，流程见 [_runGraphicTrackOcr]）。
   Future<void> _generateSubtitleFromGraphicTrack(
     VideoPlayerController controller,
-    SubtitleSource source,
-  ) async {
+    SubtitleSource source, {
+    bool startConfirmed = false,
+    _GraphicOcrConsentGates? consent,
+  }) async {
     final int? streamIndex = source.streamIndex;
     final GraphicSubtitleTimingInput? input = _graphicTrackOcrInput(
       controller,
@@ -2270,6 +2291,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       applyResult: (String target) =>
           _importExternalSubtitle(controller, target),
       restoreGraphic: () => _selectSubtitleSource(controller, source),
+      startConfirmed: startConfirmed,
+      consent: consent,
     );
   }
 
@@ -2277,8 +2300,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 媒体服务器 / URL 流按流地址 + 请求头）。产物落本机字幕目录，按远端字幕选择持久化。
   Future<void> _generateSubtitleFromRemoteGraphicTrack(
     VideoPlayerController controller,
-    RemoteVideoEmbeddedSubtitleTrack track,
-  ) async {
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    bool startConfirmed = false,
+    _GraphicOcrConsentGates? consent,
+  }) async {
     final GraphicSubtitleTimingInput? input = _remoteGraphicTrackOcrInput(
       controller,
       track,
@@ -2299,6 +2324,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         source: _remoteEmbeddedSubtitleSource(track),
         label: _remoteEmbeddedSubtitleLabel(track),
       ),
+      startConfirmed: startConfirmed,
+      consent: consent,
     );
   }
 
@@ -2310,6 +2337,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 全程挂一张进度卡（[_graphicSubtitleOcrJob]）：阶段 + 百分比 + 实际引擎 / AI 重读来源
   /// + 取消。引擎与模型复用漫画 OCR 设置（开始前的确认框可直达），不另起一套。
   /// 实时补进的半截文字没落成产物（取消 / 失败）时经 [restoreGraphic] 还原图形字幕。
+  ///
+  /// [startConfirmed]：调用方已经替用户确认过开始（桌面 CLI 的 `--yes`），跳过开始
+  /// 前的确认框。[consent] 给出「默认交给 LLM」与 Lens 上传两个一次性同意的无头答案
+  /// （桌面 CLI 的 `--consent-llm` / `--consent-upload`），缺省在 app 内弹框询问。
   Future<void> _runGraphicTrackOcr(
     VideoPlayerController controller, {
     required GraphicSubtitleTimingInput input,
@@ -2317,6 +2348,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required Future<void> Function(String target) applyResult,
     required Future<void> Function() restoreGraphic,
     String? language,
+    bool startConfirmed = false,
+    _GraphicOcrConsentGates? consent,
   }) async {
     final String? videoPath = _currentVideoPath;
     if (_graphicSubtitleOcrRunning) return;
@@ -2333,7 +2366,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     bool cancelled() => cancel.isCompleted;
     final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
       prepare: (String dir) =>
-          _prepareGraphicSubtitleOcr(dir, language: language),
+          _prepareGraphicSubtitleOcr(dir, language: language, consent: consent),
     );
     Directory? work;
     Future<bool>? extraction;
@@ -2344,7 +2377,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 用户中途自己换了字幕轨就不再往播放器里塞 OCR 结果。
     bool userKeepsSource() => _currentSubtitleSource == startSource;
     try {
-      if (!await _confirmGraphicSubtitleOcrStart() || !isCurrent()) return;
+      if (!startConfirmed && !await _confirmGraphicSubtitleOcrStart()) return;
+      if (!isCurrent()) return;
       final int durationMs = controller.durationMs ?? 0;
       _graphicSubtitleOcrJob.value = GraphicSubtitleOcrJobState(
         phase: GraphicSubtitleOcrJobPhase.preparing,
@@ -2633,9 +2667,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 从视频音轨生成文字字幕，允许无字幕或仅有 PGS 的视频直接进入查词和制卡链路。
+  ///
+  /// [transcribe] 见 [_transcribeVideoSpeech]。
   Future<void> _generateSubtitleWithSpeechModel(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    _VideoSpeechTranscriber? transcribe,
+  }) async {
     final int loadSeq = _episodeLoadSeq;
     final String? videoPath = _currentVideoPath;
     bool isCurrent() =>
@@ -2645,7 +2682,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _currentVideoPath == videoPath;
 
     try {
-      final String? transcriptSrt = await _transcribeVideoSpeech(controller);
+      final String? transcriptSrt = await _transcribeVideoSpeech(
+        controller,
+        transcribe: transcribe,
+      );
       // 转录可能持续数分钟；取消、换集或重建播放器后保留产物，但不串到新视频。
       if (transcriptSrt == null || !isCurrent()) return;
       final Directory directory = await AppPaths.videoSubtitlesDirectory();
@@ -2688,9 +2728,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// ASR 只接单音轨文件；先抽当前所选音轨，避免双语盘识别到默认配音。
+  ///
+  /// [transcribe] 替换最后「把这条音轨转成 SRT」那一步：缺省弹转录弹层
+  /// （[showAsrTranscribeSheet]，模型下载 / 语言 / 进度 / 取消都在里面）；桌面 CLI
+  /// 传无界面的同一转录服务（见 [_VideoPagePlaybackRemote]）。抽音轨与之后的落盘 /
+  /// 选中链路不变。
   Future<String?> _transcribeVideoSpeech(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    _VideoSpeechTranscriber? transcribe,
+  }) async {
     if (!_discExtractionAllowed(controller)) return null;
     final int loadSeq = _episodeLoadSeq;
     bool isCurrent() =>
@@ -2741,6 +2787,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       }
     }
     if (!isCurrent() || !context.mounted) return null;
+    if (transcribe != null) return transcribe(audioPath);
     return showAsrTranscribeSheet(
       context: context,
       audioPaths: <String>[audioPath],
@@ -2762,8 +2809,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 的文本锚点、推不出来的段原样保留，所以**低命中率不会毁字幕**——但会得到一份
   /// 几乎没改过的新档，那种情况下明确告诉用户去查语言 / 集数，别让他自己发现。
   Future<void> _retimeSubtitleWithSpeechModel(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    _VideoSpeechTranscriber? transcribe,
+  }) async {
     final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
     if (cues.isEmpty) {
       _showOsd(
@@ -2781,7 +2829,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final String baseName = _isRemote
         ? (_title ?? _effectiveRemoteInfo?.title ?? 'subtitle')
         : p.basename(_currentVideoPath ?? 'subtitle');
-    final String? transcriptSrt = await _transcribeVideoSpeech(controller);
+    final String? transcriptSrt = await _transcribeVideoSpeech(
+      controller,
+      transcribe: transcribe,
+    );
     if (transcriptSrt == null || !isCurrent()) return;
     _showOsd(
       t.video_subtitle_retime_running,
@@ -2851,9 +2902,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 与自动下载路径同一套判定，多一档：证据不足以自动写（needsConfirmation）时弹窗
   /// 让用户定。结果另存新档，原档不动（与 [_retimeSubtitleWithSpeechModel] 同理）。
   /// 当前这份若是下载时自动对齐写下的，改为提供「恢复原始时间轴」。
+  ///
+  /// [confirm] 替换两处确认框（证据不足时「仍要应用」、对齐产物「恢复原始时间轴」）：
+  /// 缺省弹框问用户；桌面 CLI 按 `--yes` 给出答案。
   Future<void> _alignSubtitleToEmbeddedTracks(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    _VideoAlignConfirm? confirm,
+  }) async {
     // 抽轨可能要几十秒（大容器整片 demux），期间连点不重入。
     if (_referenceSyncRunning) return;
     final String? videoPath = _currentVideoPath;
@@ -2871,6 +2926,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         controller,
         videoPath,
         subtitlePath,
+        confirm: confirm,
       );
     } catch (error, stack) {
       // 读写字幕文件失败（文件中途被删 / 字幕目录不可写）：说出来，不静默。
@@ -2889,8 +2945,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _alignSubtitleFileToEmbeddedTracks(
     VideoPlayerController controller,
     String videoPath,
-    String subtitlePath,
-  ) async {
+    String subtitlePath, {
+    _VideoAlignConfirm? confirm,
+  }) async {
     final Uint8List bytes = await File(subtitlePath).readAsBytes();
     final Uint8List? original = await findSubtitleAlignmentOriginal(bytes);
     if (original != null) {
@@ -2899,6 +2956,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath,
         subtitlePath,
         original,
+        confirm: confirm,
       );
       return;
     }
@@ -2923,7 +2981,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleSyncDecision decision = result.decision!;
     final String offsets = formatAlignmentOffsets(decision.segments);
     if (decision.kind == SubtitleSyncDecisionKind.needsConfirmation &&
-        !await _confirmReferenceSync(
+        !await (confirm ?? _confirmReferenceSync)(
           title: t.video_subtitle_reference_sync_confirm_title,
           body: t.video_subtitle_reference_sync_confirm_body(
             offset: offsets,
@@ -2986,9 +3044,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     String videoPath,
     String subtitlePath,
-    Uint8List original,
-  ) async {
-    if (!await _confirmReferenceSync(
+    Uint8List original, {
+    _VideoAlignConfirm? confirm,
+  }) async {
+    if (!await (confirm ?? _confirmReferenceSync)(
       title: t.video_subtitle_reference_sync_restore_title,
       body: t.video_subtitle_reference_sync_restore_body,
       action: t.video_subtitle_reference_sync_restore,
@@ -4071,4 +4130,31 @@ GraphicSubtitleTimingInput? buildRemoteGraphicSubtitleTimingInput({
       );
     },
   );
+}
+
+/// [_VideoFushiPageState._transcribeVideoSpeech] 的「转录这一步」：单音轨文件 → SRT
+/// 路径；取消返回 null。
+typedef _VideoSpeechTranscriber = Future<String?> Function(String audioPath);
+
+/// [_VideoFushiPageState._alignSubtitleToEmbeddedTracks] 的确认答案提供者（与
+/// `_confirmReferenceSync` 同签名）。
+typedef _VideoAlignConfirm =
+    Future<bool> Function({
+      required String title,
+      required String body,
+      required String action,
+    });
+
+/// 图形字幕 OCR 两个一次性同意的无头答案（替换 app 内询问框，写入同一份同意状态）。
+class _GraphicOcrConsentGates {
+  const _GraphicOcrConsentGates({
+    required this.decideAiDefault,
+    required this.confirmLensUpload,
+  });
+
+  /// 替换「低置信度默认交给 LLM」询问（`ensureMangaAiOcrDefaultDecided`）。
+  final Future<void> Function() decideAiDefault;
+
+  /// 替换 Google Lens 上传披露（`ensureGoogleLensDisclosure`）；false = 未同意。
+  final Future<bool> Function() confirmLensUpload;
 }

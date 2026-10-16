@@ -16,6 +16,8 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
+    show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -1079,6 +1081,14 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
       }
 
+      // 跨端删除墓碑键：两端键不同的书写**对端键**（BUG-3428 同类）——经互联收下的
+      // 在线漫画取描述符里的对端键（本机键是单向哈希），从对端下载、落地键不同的书取
+      // 别名表。必须删行前取：deleteEpubBook 会级联删掉别名。
+      final String syncTombstoneKey = scope == DeleteScope.syncEverywhere
+          ? InterconnectMangaCatalog.peerBookKeyOf(bookRow?.sourceMetadata) ??
+              await db.syncDeletionBookKeyOf(bookKey)
+          : bookKey;
+
       // TODO-1195 part B: a user shelf delete records a tombstone so a later
       // backup MERGE import never resurrects this book from an old backup.
       final int deletedRows = await db.deleteEpubBook(bookKey, tombstone: true);
@@ -1090,7 +1100,7 @@ class ReaderFushiSource extends ReaderMediaSource {
       if (deletedRows > 0 && scope == DeleteScope.syncEverywhere) {
         try {
           await db.writeSyncDeletionTombstone(
-              'book', bookKey, DateTime.now().millisecondsSinceEpoch);
+              'book', syncTombstoneKey, DateTime.now().millisecondsSinceEpoch);
         } catch (_) {
           // best-effort：删除墓碑记账失败不影响书已删。
         }

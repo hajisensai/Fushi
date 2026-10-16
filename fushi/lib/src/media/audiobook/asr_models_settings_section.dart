@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
+import 'package:fushi/src/asr_host/asr_model_downloads.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -24,39 +25,54 @@ import 'package:fushi/utils.dart';
 /// 服务经构造参数注入，最小 widget 测试注 fake；真实接线在
 /// `settings_schema_listening.dart`。
 class AsrModelsSettingsSection extends StatefulWidget {
-  const AsrModelsSettingsSection({required this.service, super.key});
+  const AsrModelsSettingsSection({
+    required this.service,
+    this.downloads,
+    super.key,
+  });
 
   final AsrTranscriptionService service;
+
+  /// 下载登记表；缺省全应用单例 [asrModelDownloads]（与 `fushi_cli models`
+  /// 同一份）。测试可注入独立实例。
+  final AsrModelDownloads? downloads;
 
   @override
   State<AsrModelsSettingsSection> createState() =>
       _AsrModelsSettingsSectionState();
 }
 
-/// 一行（一个语言包）的运行态。
+/// 全应用唯一的语音转录模型下载登记表：设置页与控制通道（`fushi_cli models`）
+/// 共用。下载失败时在这里弹全局提示——页面可能早已关闭。
+final AsrModelDownloads asrModelDownloads = AsrModelDownloads(
+  onFinished: (AsrModelPack pack, {Object? error}) {
+    if (error == null) return;
+    FushiToast.show(
+      msg: t.asr_models_download_failed(error: '$error'),
+      severity: ToastSeverity.error,
+    );
+  },
+);
+
+/// 一行（一个语言包）的运行态。下载态读全局登记表（下载不归页面所有）。
 class _PackRow {
-  _PackRow(this.pack);
+  _PackRow(this.pack, this.downloads);
 
   final AsrModelPack pack;
+  final AsrModelDownloads downloads;
   AsrTranscribePlan? plan;
   bool loading = true;
   bool deleting = false;
 
-  // 下载态：按「之前文件的总量 + 当前文件已收」累计成整包进度（与转录弹层同一
-  // 套算法：下载器事件是逐文件 0→100% 的，直接照搬进度条会来回跑好几趟）。
-  StreamSubscription<ModelDownloadEvent>? downloadSub;
-  int downloadReceived = 0;
-  int downloadTotal = 0;
-  String downloadFile = '';
+  bool get downloading => downloads.isActive(pack.id);
+  int get downloadReceived =>
+      downloads.progressOf(pack.id)?.receivedBytes ?? 0;
+  int get downloadTotal => downloads.progressOf(pack.id)?.totalBytes ?? 0;
+  String get downloadFile => downloads.progressOf(pack.id)?.currentFile ?? '';
 
-  bool get downloading => downloadSub != null;
-
-  /// 取消进行中的下载订阅（没有则无事）。已落盘的 `.part` 留着，下次「下载」
-  /// 由下载器 Range 续上。
-  Future<void> cancelDownload() async {
-    await downloadSub?.cancel();
-    downloadSub = null;
-  }
+  /// 取消进行中的下载（没有则无事）。已落盘的 `.part` 留着，下次「下载」由下载
+  /// 器 Range 续上。
+  Future<void> cancelDownload() => downloads.cancel(pack.id);
 }
 
 /// 设置页要列出来的包：本仓基础清单 + 用户手动接入的包，按 id 去重。
@@ -65,7 +81,7 @@ class _PackRow {
 /// 「只声明那一种语言」的窄包（见 `asr_model_catalog.dart` 文件头），它与原包同
 /// id。按 id 取第一个就会把 Omnilingual 那行的语言列表从「德语 · 西语 · 法语 …」
 /// 缩成只剩「日本語」，而这一行的副标题本来就是要把它服务的语言全列出来。
-List<AsrModelPack> _listedPacks() {
+List<AsrModelPack> listedAsrModelPacks() {
   final List<AsrModelPack> out = <AsrModelPack>[];
   final Set<String> seen = <String>{};
   final Map<String, AsrModelPack> custom = <String, AsrModelPack>{
@@ -81,25 +97,52 @@ List<AsrModelPack> _listedPacks() {
 }
 
 class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
-  late List<_PackRow> _rows = <_PackRow>[
-    // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
-    // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
-    for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
-  ];
+  late final AsrModelDownloads _downloads =
+      widget.downloads ?? asrModelDownloads;
+
+  late List<_PackRow> _rows = _buildRows();
+
+  /// 上一次通知时在下载的包：用来发现「下载刚结束」（含别处发起的下载）并重查。
+  Set<String> _activeIds = <String>{};
+
+  // 读注册表而不是内置常量表：用户自带的包与「给某语言换了模型」都只体现在
+  // 注册表里，照着 kAsrModelPacks 画会让自带模型在设置页整个不可见。
+  List<_PackRow> _buildRows() => <_PackRow>[
+        for (final AsrModelPack pack in listedAsrModelPacks())
+          _PackRow(pack, _downloads),
+      ];
 
   @override
   void initState() {
     super.initState();
+    _activeIds = _currentActiveIds();
+    _downloads.addListener(_onDownloadsChanged);
     for (final _PackRow row in _rows) {
       unawaited(_refresh(row));
     }
   }
 
+  Set<String> _currentActiveIds() => <String>{
+        for (final _PackRow row in _rows)
+          if (row.downloading) row.pack.id,
+      };
+
+  void _onDownloadsChanged() {
+    if (!mounted) return;
+    final Set<String> now = _currentActiveIds();
+    final Set<String> finished = _activeIds.difference(now);
+    _activeIds = now;
+    setState(() {});
+    // 下载结束（成功 / 失败 / 取消，不论谁发起的）：重查状态给出准数。
+    for (final _PackRow row in _rows) {
+      if (finished.contains(row.pack.id)) unawaited(_refresh(row));
+    }
+  }
+
   @override
   void dispose() {
-    for (final _PackRow row in _rows) {
-      unawaited(row.cancelDownload());
-    }
+    // 下载归全局登记表所有：离开页面照跑，不取消。
+    _downloads.removeListener(_onDownloadsChanged);
     super.dispose();
   }
 
@@ -124,46 +167,9 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   void _startDownload(_PackRow row) {
     final AsrTranscribePlan? plan = row.plan;
     if (plan == null || row.downloading) return;
-    int completedBytes = 0;
-    String lastFile = '';
-    int lastFileTotal = 0;
-    setState(() {
-      row.downloadTotal = plan.modelStatus.totalBytes;
-      row.downloadReceived = plan.modelStatus.obtainedBytes;
-      row.downloadFile = '';
-    });
-    row.downloadSub = widget.service
-        .downloadModel(language: row.pack.language, variant: plan.variant)
-        .listen(
-      (ModelDownloadEvent e) {
-        if (e.fileName != lastFile) {
-          completedBytes += lastFileTotal;
-          lastFile = e.fileName;
-          lastFileTotal = e.totalBytes;
-        }
-        if (!mounted) return;
-        setState(() {
-          row.downloadFile = e.fileName;
-          row.downloadReceived = completedBytes + e.receivedBytes;
-        });
-      },
-      onError: (Object e, StackTrace _) {
-        row.downloadSub = null;
-        if (!mounted) return;
-        setState(() {});
-        FushiToast.show(
-          msg: t.asr_models_download_failed(error: '$e'),
-          severity: ToastSeverity.error,
-        );
-        unawaited(_refresh(row));
-      },
-      onDone: () {
-        row.downloadSub = null;
-        if (!mounted) return;
-        unawaited(_refresh(row));
-      },
-    );
-    setState(() {});
+    // 登记表通知 → [_onDownloadsChanged] 刷新进度；结束时由它重查状态，失败的
+    // 全局提示由登记表的 onFinished 负责（页面关了也提示）。
+    _downloads.start(row.pack, service: widget.service, plan: plan);
   }
 
   Future<void> _cancelDownload(_PackRow row) async {
@@ -200,9 +206,8 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     if (!mounted) return;
     await row.cancelDownload();
     setState(() {
-      _rows = <_PackRow>[
-        for (final AsrModelPack pack in _listedPacks()) _PackRow(pack),
-      ];
+      _rows = _buildRows();
+      _activeIds = _currentActiveIds();
     });
     for (final _PackRow fresh in _rows) {
       unawaited(_refresh(fresh));

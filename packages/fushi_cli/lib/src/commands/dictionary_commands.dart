@@ -1,6 +1,7 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'settings_ops_commands.dart' show ankiSyncClientCommands;
 
 /// dictionary 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_dictionary_routes.dart`）。
 ///
@@ -61,6 +62,69 @@ const List<CtlCommandGroup> dictionaryCommandGroups = <CtlCommandGroup>[
         configure: _configureDictUpdate,
         build: _buildDictUpdate,
         render: _renderDictUpdate,
+      ),
+      CtlCommandSpec(
+        name: 'recommended',
+        summary: '列出推荐词典目录（key 用于 install；* 为默认勾选）',
+        configure: _configureRecommendedCatalog,
+        build: _buildDictRecommended,
+        render: _renderDictRecommended,
+      ),
+      CtlCommandSpec(
+        name: 'install',
+        summary: '在线下载并导入推荐词典（后台任务，--wait 等完；dict job 查进度、dict cancel 取消）',
+        usage: '[key...]',
+        configure: _configureDictInstall,
+        build: _buildDictInstall,
+        render: _renderDictInstall,
+      ),
+      CtlCommandSpec(
+        name: 'pack',
+        summary: '推荐包（词典 + 发音库整包，约 9.5 GB）下载进度与状态',
+        build: _buildPackStatus,
+        render: _renderPackStatus,
+      ),
+      CtlCommandSpec(
+        name: 'pack-download',
+        summary: '下载（或续传）推荐包；后台任务，--wait 等完（pack 查进度、pack-cancel 取消）',
+        configure: _configurePackDownload,
+        build: _buildPackDownload,
+        render: _renderPackStatus,
+      ),
+      CtlCommandSpec(
+        name: 'pack-cancel',
+        summary: '取消推荐包下载（保留半截文件，下次 pack-download 续传）',
+        build: _buildPackCancel,
+        render: _renderPackCancel,
+      ),
+      CtlCommandSpec(
+        name: 'pack-import',
+        summary: '导入已下载的推荐包（必须显式给 --merge 或 --replace，需 --yes；完成后 app 自动重启）',
+        configure: _configurePackImport,
+        build: _buildPackImport,
+        render: _renderPackImport,
+      ),
+      CtlCommandSpec(
+        name: 'pack-discard',
+        summary: '放弃已暂停的推荐包半截下载并删除文件（需 --yes）',
+        configure: _configureYes,
+        build: _buildPackDiscard,
+        render: _renderPackStatus,
+      ),
+      CtlCommandSpec(
+        name: 'rename',
+        summary: '修改词典显示名（--reset 恢复包内名称）',
+        usage: '<name>',
+        configure: _configureDictRename,
+        build: _buildDictRename,
+        render: _renderDictOne,
+      ),
+      CtlCommandSpec(
+        name: 'lang',
+        summary: '设置词典内容语言覆盖（BCP-47，如 ja / en；auto 恢复自动）',
+        usage: '<name> <language|auto>',
+        build: _buildDictLang,
+        render: _renderDictOne,
       ),
       CtlCommandSpec(
         name: 'job',
@@ -130,11 +194,41 @@ const List<CtlCommandGroup> dictionaryCommandGroups = <CtlCommandGroup>[
         render: _renderAnkiDuplicate,
       ),
       CtlCommandSpec(
+        name: 'pending',
+        summary: '列出待发卡片队列（Anki 暂不可达 / 批量制卡时入队的卡）',
+        configure: _configureAnkiPending,
+        build: _buildAnkiPending,
+        render: _renderAnkiPending,
+      ),
+      CtlCommandSpec(
+        name: 'send',
+        summary: '补发待发卡片（缺省全部；给 id 只发那一张）',
+        usage: '[id]',
+        build: _buildAnkiSend,
+        render: _renderAnkiSend,
+      ),
+      CtlCommandSpec(
+        name: 'retry',
+        summary: '重试一张失败的待发卡片（重置为待发并立即补发）',
+        usage: '<id>',
+        build: _buildAnkiRetry,
+        render: _renderAnkiRetry,
+      ),
+      CtlCommandSpec(
+        name: 'discard',
+        summary: '丢弃待发卡片（需 --yes；--failed 丢弃全部失败的）',
+        usage: '[id]',
+        configure: _configureAnkiDiscard,
+        build: _buildAnkiDiscard,
+        render: _renderAnkiDiscard,
+      ),
+      CtlCommandSpec(
         name: 'sync',
         summary: '触发 Anki 同步（仅「Anki 同步客户端」后端）',
         build: _buildAnkiSync,
         render: _renderAnkiSync,
       ),
+      ...ankiSyncClientCommands,
     ],
   ),
 ];
@@ -163,6 +257,55 @@ void _configureDictSearch(ArgParser parser) {
     ..addOption('limit', abbr: 'n', help: '最多返回多少个词头（缺省 10）')
     ..addOption('max-meaning', help: '单条释义最多多少字（缺省不截断）')
     ..addFlag('wildcards', negatable: false, help: '启用通配符（* ?）');
+}
+
+void _configureRecommendedCatalog(ArgParser parser) {
+  parser
+    ..addOption('learning', help: '学习语言（缺省 ja）')
+    ..addOption('gloss', help: '释义语言（缺省取 app 界面语言，不支持则 en）');
+}
+
+void _configureDictInstall(ArgParser parser) {
+  _configureRecommendedCatalog(parser);
+  parser
+    ..addFlag('defaults', negatable: false, help: '安装默认勾选的那几本（跳过已装的）')
+    ..addFlag('wait', negatable: false, help: '等安装跑完再返回逐本结果');
+}
+
+void _configurePackDownload(ArgParser parser) =>
+    parser.addFlag('wait', negatable: false, help: '等下载跑完再返回');
+
+void _configurePackImport(ArgParser parser) {
+  _configureYes(parser);
+  parser
+    ..addFlag('merge', negatable: false, help: '合并：保留本机数据，只补上包里有而本机没有的')
+    ..addFlag('replace', negatable: false, help: '覆盖：用推荐包替换本机资料库')
+    ..addMultiOption(
+      'category',
+      help: '只导入这些可挑选分类（可重复 / 逗号分隔，同 backup restore）；缺省全部',
+    )
+    ..addFlag(
+      'import-settings',
+      negatable: false,
+      help: '配合 --replace：连设置层一起导入（缺省保留本机设置）',
+    );
+}
+
+void _configureDictRename(ArgParser parser) {
+  parser
+    ..addOption('to', help: '新的显示名')
+    ..addFlag('reset', negatable: false, help: '清掉自定义显示名');
+}
+
+void _configureAnkiPending(ArgParser parser) => parser.addOption(
+  'status',
+  allowed: <String>['pending', 'sending', 'failed'],
+  help: '只列某一状态',
+);
+
+void _configureAnkiDiscard(ArgParser parser) {
+  _configureYes(parser);
+  parser.addFlag('failed', negatable: false, help: '丢弃全部失败的待发卡片');
 }
 
 void _configureAnkiStatus(ArgParser parser) => parser.addFlag(
@@ -268,6 +411,120 @@ CtlRequestSpec _buildDictJob(CtlCommandContext c) =>
 CtlRequestSpec _buildDictCancel(CtlCommandContext c) =>
     const CtlRequestSpec.post('$_dictionaries/job/cancel');
 
+CtlRequestSpec _buildDictRecommended(CtlCommandContext c) =>
+    CtlRequestSpec.get('$_dictionaries/recommended', query: _catalogQuery(c));
+
+Map<String, String>? _catalogQuery(CtlCommandContext c) {
+  final String? learning = c.option('learning');
+  final String? gloss = c.option('gloss');
+  if (learning == null && gloss == null) return null;
+  return <String, String>{
+    if (learning != null) 'learning': learning,
+    if (gloss != null) 'gloss': gloss,
+  };
+}
+
+CtlRequestSpec _buildDictInstall(CtlCommandContext c) {
+  final List<String> keys = <String>[
+    for (final String k in c.rest)
+      if (k.trim().isNotEmpty) k,
+  ];
+  if (keys.isEmpty && !c.flag('defaults')) {
+    throw const CtlUsageError(
+      '至少给一个 key（fushi_cli dict recommended 查看），或加 --defaults',
+    );
+  }
+  final String? learning = c.option('learning');
+  final String? gloss = c.option('gloss');
+  return CtlRequestSpec.post(
+    '$_dictionaries/install',
+    body: <String, Object?>{
+      'names': keys,
+      if (c.flag('defaults')) 'defaults': true,
+      if (learning != null) 'learning': learning,
+      if (gloss != null) 'gloss': gloss,
+      if (c.flag('wait')) 'wait': true,
+    },
+  );
+}
+
+const String _pack = '/api/admin/dictionary-pack';
+
+CtlRequestSpec _buildPackStatus(CtlCommandContext c) =>
+    const CtlRequestSpec.get(_pack);
+
+CtlRequestSpec _buildPackDownload(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_pack/download',
+  body: <String, Object?>{if (c.flag('wait')) 'wait': true},
+);
+
+CtlRequestSpec _buildPackCancel(CtlCommandContext c) =>
+    const CtlRequestSpec.post('$_pack/cancel');
+
+CtlRequestSpec _buildPackImport(CtlCommandContext c) {
+  final bool merge = c.flag('merge');
+  final bool replace = c.flag('replace');
+  if (merge == replace) {
+    throw const CtlUsageError('必须二选一：--merge（合并）或 --replace（覆盖）');
+  }
+  final List<String> categories = c.multiOption('category');
+  final bool importSettings = c.flag('import-settings');
+  if (importSettings && !replace) {
+    throw const CtlUsageError('--import-settings 只用于 --replace');
+  }
+  if (!c.flag('yes')) throw const CtlUsageError('导入推荐包会重启 app，需要 --yes 确认');
+  return CtlRequestSpec.post(
+    '$_pack/import',
+    body: <String, Object?>{
+      'confirm': true,
+      'mode': merge ? 'merge' : 'replace',
+      if (categories.isNotEmpty) 'categories': categories,
+      if (importSettings) 'importSettings': true,
+    },
+  );
+}
+
+CtlRequestSpec _buildPackDiscard(CtlCommandContext c) {
+  if (!c.flag('yes')) throw const CtlUsageError('放弃半截下载需要 --yes 确认');
+  return const CtlRequestSpec.delete(
+    _pack,
+    query: <String, String>{'confirm': 'true'},
+  );
+}
+
+CtlRequestSpec _buildDictRename(CtlCommandContext c) {
+  final String name = c.joinedRest(0, 'name');
+  final String? to = c.option('to');
+  if (to == null && !c.flag('reset')) {
+    throw const CtlUsageError('需要 --to <新显示名> 或 --reset');
+  }
+  if (to != null && c.flag('reset')) {
+    throw const CtlUsageError('--to 与 --reset 不能同时给');
+  }
+  return CtlRequestSpec.put(
+    _dictPath(name),
+    body: <String, Object?>{
+      if (to != null) 'displayName': to,
+      if (c.flag('reset')) 'resetDisplayName': true,
+    },
+  );
+}
+
+CtlRequestSpec _buildDictLang(CtlCommandContext c) {
+  if (c.rest.length < 2) {
+    throw const CtlUsageError('需要 <name> 和 <language|auto>');
+  }
+  final String language = c.rest.last.trim();
+  // 名字可能带空格：除最后一个参数外都算名字。
+  final String name = c.rest.sublist(0, c.rest.length - 1).join(' ').trim();
+  if (name.isEmpty) throw const CtlUsageError('缺少参数 <name>');
+  if (language.isEmpty) throw const CtlUsageError('缺少参数 <language|auto>');
+  return CtlRequestSpec.put(
+    _dictPath(name),
+    body: <String, Object?>{'language': language},
+  );
+}
+
 CtlRequestSpec _buildDictSearch(CtlCommandContext c) {
   final String term = c.joinedRest(0, '词');
   final int? limit = c.intOption('limit');
@@ -370,17 +627,100 @@ String _renderDictJob(Object? data) {
   ];
   final Object? last = data['last'];
   if (last is Map) {
+    final bool install = last['kind'] == 'install';
     lines.add(
-      '最近一次更新 #${last['id']}：${last['finished'] == true ? '已完成' : '进行中'}',
+      '最近一次${install ? '安装' : '更新'} #${last['id']}：'
+      '${last['finished'] == true ? '已完成' : '进行中'}',
     );
+    final List<Object?> lastResults =
+        (last['results'] as List?) ?? const <Object?>[];
     lines.addAll(
-      _updateResultLines((last['results'] as List?) ?? const <Object?>[]),
+      install
+          ? _installResultLines(lastResults)
+          : _updateResultLines(lastResults),
     );
   }
   return lines.join('\n');
 }
 
 String _renderDictCancel(Object? data) => '已请求取消词典任务';
+
+String _renderDictRecommended(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final List<Object?> rows =
+      (data['recommended'] as List?) ?? const <Object?>[];
+  final Object? table = <String, Object?>{
+    'recommended': <Object?>[
+      for (final Object? r in rows)
+        r is Map
+            ? <String, Object?>{
+                ...r.cast<String, Object?>(),
+                'mark': r['default'] == true ? '*' : '',
+                'state': r['installed'] == true ? '已装' : '',
+              }
+            : r,
+    ],
+  };
+  return '学习语言 ${data['learning']}，释义语言 ${data['gloss']}\n'
+      '${renderCtlTable(table, const <(String, String)>[('', 'mark'), ('已装', 'state'), ('key', 'key'), ('大小', 'size'), ('名称', 'name')], listKey: 'recommended')}';
+}
+
+String _renderDictInstall(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final String head = data['finished'] == true
+      ? '安装任务 #${data['id']} 已完成'
+      : '安装任务 #${data['id']} 已在后台开始（fushi_cli dict job 查看进度，dict cancel 取消）';
+  final List<Object?> results = (data['results'] as List?) ?? const <Object?>[];
+  if (results.isEmpty) {
+    return '$head：${((data['targets'] as List?) ?? const <Object?>[]).join('、')}';
+  }
+  return <String>[head, ..._installResultLines(results)].join('\n');
+}
+
+Iterable<String> _installResultLines(List<Object?> results) sync* {
+  const Map<String, String> label = <String, String>{
+    'installed': '已安装',
+    'alreadyInstalled': '已装过，跳过',
+    'failed': '失败',
+    'cancelled': '已取消',
+  };
+  for (final Object? r in results) {
+    if (r is! Map) continue;
+    final String status = '${r['status']}';
+    final String extra = r['error'] != null
+        ? '（${r['stage'] == 'import' ? '导入' : '下载'}阶段）：${r['error']}'
+        : '';
+    yield '  ${r['key']}：${label[status] ?? status}$extra';
+  }
+}
+
+String _renderPackStatus(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  const Map<String, String> stage = <String, String>{
+    'idle': '未下载',
+    'downloading': '下载中',
+    'paused': '已暂停（有半截文件，pack-download 续传）',
+    'downloaded': '已下载完成，等待导入（pack-import）',
+  };
+  final num progress = (data['progress'] as num?) ?? 0;
+  final num bytes = (data['receivedBytes'] as num?) ?? 0;
+  final List<String> lines = <String>[
+    '推荐包：${stage[data['stage']] ?? data['stage']}',
+    if (bytes > 0 || progress > 0)
+      '已收 ${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
+          '${progress > 0 ? '（${(progress * 100).round()}%）' : ''}',
+    if (data['error'] != null) '错误：${data['error']}',
+    if (data['finished'] == true && data['downloaded'] == false)
+      '下载未完成（被取消或失败）',
+    if (data['discarded'] == true) '已删除半截文件',
+  ];
+  return lines.join('\n');
+}
+
+String _renderPackCancel(Object? data) => '已请求取消推荐包下载（保留半截文件，可续传）';
+
+String _renderPackImport(Object? data) =>
+    data is Map ? '${data['message']}' : renderCtlJson(data);
 
 String _renderDictSearch(Object? data) {
   if (data is! Map) return renderCtlJson(data);
@@ -474,6 +814,43 @@ CtlRequestSpec _buildAnkiDuplicate(CtlCommandContext c) {
       'expression': expression,
       if (reading != null) 'reading': reading,
     },
+  );
+}
+
+CtlRequestSpec _buildAnkiPending(CtlCommandContext c) {
+  final String? status = c.option('status');
+  return CtlRequestSpec.get(
+    '$_anki/pending',
+    query: status == null ? null : <String, String>{'status': status},
+  );
+}
+
+CtlRequestSpec _buildAnkiSend(CtlCommandContext c) {
+  final String? id = c.optionalPositional(0);
+  return CtlRequestSpec.post(
+    '$_anki/pending/send',
+    body: <String, Object?>{if (id != null) 'id': id},
+  );
+}
+
+CtlRequestSpec _buildAnkiRetry(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_anki/pending/${Uri.encodeComponent(c.positional(0, 'id'))}/retry',
+);
+
+CtlRequestSpec _buildAnkiDiscard(CtlCommandContext c) {
+  if (!c.flag('yes')) throw const CtlUsageError('丢弃待发卡片需要 --yes 确认');
+  final String? id = c.optionalPositional(0);
+  if (c.flag('failed')) {
+    if (id != null) throw const CtlUsageError('--failed 与 <id> 不能同时给');
+    return const CtlRequestSpec.post(
+      '$_anki/pending/discard-failed',
+      body: <String, Object?>{'confirm': true},
+    );
+  }
+  if (id == null) throw const CtlUsageError('需要 <id> 或 --failed');
+  return CtlRequestSpec.delete(
+    '$_anki/pending/${Uri.encodeComponent(id)}',
+    query: const <String, String>{'confirm': 'true'},
   );
 }
 
@@ -574,3 +951,54 @@ String _renderAnkiSync(Object? data) => data is Map
     ? '同步结果：${data['phase']}，未同步 ${data['unsynced']} 张'
           '${data['message'] != null ? '（${data['message']}）' : ''}'
     : renderCtlJson(data);
+
+String _renderAnkiPending(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return renderCtlTable(
+    data,
+    const <(String, String)>[
+      ('ID', 'id'),
+      ('状态', 'status'),
+      ('次数', 'attempts'),
+      ('词', 'expression'),
+      ('读音', 'reading'),
+      ('最近错误', 'lastError'),
+    ],
+    listKey: 'pending',
+    empty: '（待发队列是空的）',
+  );
+}
+
+String _flushSummary(Map<Object?, Object?> data) {
+  if (data['skipped'] == true)
+    return '没有发送（卡已不在队列、已交给落地设备，或需要在 AnkiMobile 上手动确认）';
+  if (data['awaitingConfirmation'] == true) {
+    return '已拉起 AnkiMobile，等它加完卡回跳确认';
+  }
+  final String head = data['unreachable'] == true ? 'Anki 暂不可达，已停下' : '补发完成';
+  return '$head：送达 ${data['delivered']}，失败 ${data['failed']}，'
+      '队列剩余 ${data['remaining']}';
+}
+
+String _renderAnkiSend(Object? data) =>
+    data is Map ? _flushSummary(data) : renderCtlJson(data);
+
+String _renderAnkiRetry(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final List<String> lines = <String>[_flushSummary(data)];
+  final Object? row = data['row'];
+  if (row is Map) {
+    lines.add(
+      '  ${row['expression']} 仍在队列：${row['status']}'
+      '${row['lastError'] != null ? ' —— ${row['lastError']}' : ''}',
+    );
+  }
+  return lines.join('\n');
+}
+
+String _renderAnkiDiscard(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return data['discarded'] is int
+      ? '已丢弃 ${data['discarded']} 张失败的待发卡片'
+      : '已丢弃待发卡片：${data['expression']}（${data['discarded']}）';
+}

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
+import 'package:fushi/src/lookup/browser_extension_setup.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart'
@@ -74,11 +75,6 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   // 连接状态卡片的轻量刷新（扩展 last-seen 由 server 端异步更新，这里定时重绘显示）。
   Timer? _statusTimer;
 
-  /// 判定「插件近期连上过」的时间窗：扩展 SW 启动/查词/心跳时打本机 server 刷新 last-seen，
-  /// 加载/重新加载扩展后这段窗口内即可检测到。BUG-1045：扩展改用 chrome.alarms 每 60s
-  /// 心跳保活，此窗口取 150s（> 一个心跳周期 + 抖动余量），单次心跳丢包不会误判「未连接」。
-  static const Duration _seenWindow = Duration(seconds: 150);
-
   @override
   void initState() {
     super.initState();
@@ -103,11 +99,9 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
         .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
-  bool _isRecentlySeen(AppModel appModel) {
-    final DateTime? seen = appModel.browserExtensionLastSeenAt;
-    if (seen == null) return false;
-    return DateTime.now().difference(seen) < _seenWindow;
-  }
+  /// 时间窗见 [kBrowserExtensionSeenWindow]（与控制通道同一判据）。
+  bool _isRecentlySeen(AppModel appModel) =>
+      isBrowserExtensionRecentlySeen(appModel.browserExtensionLastSeenAt);
 
   /// 准备扩展：幂等开启 yomitan-api server（token 为空才播种、绝不覆盖）→ 用当前 server
   /// 真值解压扩展到本机 → 路径复制剪贴板。与原设置里的安装动作同一流程，仅换到页面里。
@@ -115,26 +109,18 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     if (_preparing) return;
     final AppModel appModel = ref.read(appProvider);
     setState(() => _preparing = true);
-    // TODO-1266：装扩展即默认开启 yomitan-api server（省得装完 401 连不上）。
-    final bool serverReady =
-        await appModel.ensureFushiApiServerForBrowserExtension();
-    // TODO-1087：解压时注入当前 server 真值，扩展默认即连本机 app，无需手填。
-    final String dir = await prepareBundledBrowserExtension(
-      serverConfig: BrowserExtensionServerConfig(
-        host: '127.0.0.1',
-        port: appModel.fushiApiPort,
-        token: appModel.fushiApiKey,
-      ),
-    );
-    await Clipboard.setData(ClipboardData(text: dir));
+    // 开 server + 解压扩展与控制通道共用（browser_extension_setup.dart）。
+    final BrowserExtensionPrepareResult result =
+        await prepareBrowserExtensionForInstall(appModel);
+    await Clipboard.setData(ClipboardData(text: result.directory));
     if (!mounted) return;
     setState(() {
       _preparing = false;
-      _extensionDir = dir;
-      _serverEnabled = serverReady && appModel.fushiApiServerEnabled;
-      _hasToken = appModel.fushiApiKey.isNotEmpty;
-      _serverPort = appModel.fushiApiPort;
-      _portConflict = !serverReady;
+      _extensionDir = result.directory;
+      _serverEnabled = result.serverEnabled;
+      _hasToken = result.hasToken;
+      _serverPort = result.port;
+      _portConflict = result.portConflict;
       _verifyConnected = null;
     });
     _snack(t.copied);
@@ -148,14 +134,10 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
       _verifyConnected = null;
     });
     final AppModel appModel = ref.read(appProvider);
-    final DateTime start = DateTime.now();
-    bool connected = _isRecentlySeen(appModel);
-    while (!connected &&
-        DateTime.now().difference(start) < const Duration(seconds: 8)) {
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (!mounted) return;
-      connected = _isRecentlySeen(appModel);
-    }
+    final bool connected = await waitForBrowserExtensionConnection(
+      lastSeen: () => appModel.browserExtensionLastSeenAt,
+      cancelled: () => !mounted,
+    );
     if (!mounted) return;
     setState(() {
       _verifying = false;

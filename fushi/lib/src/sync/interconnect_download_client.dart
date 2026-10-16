@@ -18,7 +18,13 @@ class HostDownloadTarget {
     this.kinds = const <String>['video'],
     this.fingerprintSha256,
     this.peerUrls = const <String>{},
+    this.deleteFilesParam = false,
   });
+
+  /// host 的 `DELETE /api/downloads/<id>` 认不认 `deleteFiles` 参数（能力位
+  /// `downloads.deleteFilesParam`，BUG-3417）。false = 老 host：删不删文件由它的
+  /// 历史缺省决定（app 当 host 保留、无头服务端连数据一起删），客户端无从选择。
+  final bool deleteFilesParam;
 
   final String baseUrl;
 
@@ -187,6 +193,7 @@ class InterconnectDownloadClient {
             ? kinds.map((Object? k) => k.toString()).toList(growable: false)
             : const <String>['video'],
         fingerprintSha256: candidate.fingerprintSha256,
+        deleteFilesParam: downloads['deleteFilesParam'] == true,
         peerUrls: <String>{
           for (final FushiClientUrl u in interconnectPeerAddressesOf(
             await _repo.getFushiClientUrls(),
@@ -251,20 +258,39 @@ class InterconnectDownloadClient {
         '/api/downloads/${Uri.encodeComponent(jobId)}/retry',
       );
 
-  Future<void> delete(HostDownloadTarget target, String jobId) =>
-      _call(target, 'DELETE', '/api/downloads/${Uri.encodeComponent(jobId)}');
+  /// [deleteFiles] 只在 host 宣告 [HostDownloadTarget.deleteFilesParam] 时才发出；
+  /// 对老 host 传它会被静默忽略，所以调用方给了却 host 不认时直接报错，而不是
+  /// 让用户以为自己的选择生效了。null = 不表态（host 按历史缺省）。
+  Future<void> delete(
+    HostDownloadTarget target,
+    String jobId, {
+    bool? deleteFiles,
+  }) {
+    if (deleteFiles != null && !target.deleteFilesParam) {
+      throw const HostDownloadException('delete_files_unsupported');
+    }
+    return _call(
+      target,
+      'DELETE',
+      '/api/downloads/${Uri.encodeComponent(jobId)}',
+      query: deleteFiles == null
+          ? const <String, String>{}
+          : <String, String>{'deleteFiles': '$deleteFiles'},
+    );
+  }
 
   Future<Map<String, dynamic>> _call(
     HostDownloadTarget target,
     String method,
     String path, {
     Map<String, Object?>? jsonBody,
+    Map<String, String> query = const <String, String>{},
   }) async {
     final String? token = await _tokenForBaseUrl(target.baseUrl);
     if (token == null || token.isEmpty) {
       throw const HostDownloadException('no_host');
     }
-    final Uri? uri = _uri(target.baseUrl, path);
+    final Uri? uri = _uri(target.baseUrl, path, query: query);
     if (uri == null) throw const HostDownloadException('http', 'bad host url');
     final (http.Client client, bool closeAfter) = _clientFor(
       target.baseUrl,
@@ -337,9 +363,13 @@ class InterconnectDownloadClient {
     }
   }
 
-  Uri? _uri(String baseUrl, String path) {
+  Uri? _uri(
+    String baseUrl,
+    String path, {
+    Map<String, String> query = const <String, String>{},
+  }) {
     final Uri? base = _parse(baseUrl);
     if (base == null) return null;
-    return base.replace(path: path, queryParameters: const <String, String>{});
+    return base.replace(path: path, queryParameters: query);
   }
 }
