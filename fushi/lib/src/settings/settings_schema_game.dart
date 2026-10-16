@@ -138,6 +138,16 @@ SettingsDestination buildGameDestination() {
             // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。所在分组订阅准入
             // notifier（liveListenable），所以开着页面启动游戏也会把这一行刷出来。
             visible: (_) => Platform.isWindows && _isIngameLookupBlocked(),
+            // CLI 直接回报哈希（不经剪贴板）。
+            cli: SettingsCliAction(
+              run: (SettingsContext c, Map<String, String> args) async {
+                final String? sha = _ingameLookupExeSha256();
+                if (sha == null) {
+                  throw StateError(t.gal_hook_ingame_lookup_exe_hash_unavailable);
+                }
+                return <String, Object?>{'sha256': sha};
+              },
+            ),
             onTap: (SettingsContext settingsContext) async {
               final String? sha = _ingameLookupExeSha256();
               if (sha == null) return;

@@ -45,7 +45,15 @@ class MangaOcrModelDownloads extends ChangeNotifier {
   final Map<MangaOcrLocalModel, _DownloadSlot> _slots =
       <MangaOcrLocalModel, _DownloadSlot>{};
 
+  /// 每个模型最近一次下载失败的原因（重新开始下载时清掉）。设置页的失败提示是
+  /// 一次性 toast，`fushi_cli models status ocr` 事后要能查到为什么没下完。
+  final Map<MangaOcrLocalModel, String> _lastErrors =
+      <MangaOcrLocalModel, String>{};
+
   bool _disposed = false;
+
+  /// 最近一次下载失败的原因；没失败过 / 之后重新下载过为 null。
+  String? lastErrorOf(MangaOcrLocalModel model) => _lastErrors[model];
 
   /// 该模型是否正在下载（含取消收尾中）。
   bool isActive(MangaOcrLocalModel model) => _slots.containsKey(model);
@@ -62,6 +70,7 @@ class MangaOcrModelDownloads extends ChangeNotifier {
     final Stream<MangaOcrDownloadEvent> events = service.downloadModels();
     final _DownloadSlot slot = _DownloadSlot();
     _slots[model] = slot;
+    _lastErrors.remove(model);
     slot.subscription = events.listen(
       (MangaOcrDownloadEvent event) {
         slot.currentFile = event.fileName;
@@ -77,6 +86,9 @@ class MangaOcrModelDownloads extends ChangeNotifier {
           stack,
         );
         unawaited(slot.cancel());
+        if (identical(_slots[model], slot) && !slot.cancelling) {
+          _lastErrors[model] = '$error';
+        }
         _finish(model, slot, failed: true);
       },
       onDone: () => _finish(model, slot, failed: false),

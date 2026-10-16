@@ -2,7 +2,15 @@ import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_core/fushi_core.dart' show PendingMineRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart'
+    show PendingFlushReport;
+import 'package:fushi/src/creator/fields/frequency_field.dart'
+    show FrequencyField;
+import 'package:fushi/src/creator/fields/pitch_accent_field.dart'
+    show PitchAccentField;
 
 /// dictionary 域控制通道的纯函数部分：词典 / 查词结果 / Anki 配置的 JSON 投影、
 /// 按名定位词典、重排序与制卡字段拼装。不碰 [AppModel]，便于单测。
@@ -19,6 +27,9 @@ Map<String, Object?> ctlDictionaryJson(Dictionary dictionary) =>
       'format': dictionary.formatKey,
       'revision': dictionary.revision,
       'updatable': dictionary.isUpdatable,
+      // 显示名 / 内容语言的用户覆盖（null = 没改过，走包内声明）。
+      'customDisplayName': dictionary.displayName,
+      'languageOverride': dictionary.languageOverride,
       if (dictionary.effectiveSourceLanguage != null)
         'sourceLanguage': dictionary.effectiveSourceLanguage,
       if (dictionary.effectiveTargetLanguage != null)
@@ -149,15 +160,62 @@ Map<String, String> buildCtlMineFields({
       )
       .toList(growable: false);
   final String resolvedGlossary = glossary ?? _glossaryHtml(glossEntries);
+  // 词头级的振假名 / 频率 / 音调：同一个词头的各词典条目共享这份数据（引擎把它写进
+  // 每条的 extra），取第一条即可。值由创作器字段的同名生成函数算出，与弹窗制卡
+  // 填进同名字段（furiganaPlain / freqHarmonicRank / frequenciesHtml /
+  // pitchPositions / pitchCategories）的语义一致。
+  final DictionaryEntry? headword = glossEntries.isNotEmpty
+      ? glossEntries.first
+      : (sameWord.isEmpty ? null : sameWord.first);
   final Map<String, String> fields = <String, String>{
     'expression': word,
     'reading': resolvedReading,
     'matched': word,
     'glossary': resolvedGlossary,
     'sentence': sentence ?? '',
+    if (headword != null) ...ctlHeadwordMineFields(headword, resolvedReading),
     ...extra,
   };
   return allowDuplicate ? AnkiMiningPayload.withAllowDuplicate(fields) : fields;
+}
+
+/// 一个词头的无头制卡字段：`furiganaPlain`（与弹窗 `constructFuriganaPlain` 同格式：
+/// 有注音的段 `漢字[かな]`、无注音的段后跟空格）、频率与音调（创作器字段的生成函数）。
+/// 空值不写，免得盖掉调用方 / 模板的缺省。
+Map<String, String> ctlHeadwordMineFields(
+  DictionaryEntry entry,
+  String reading,
+) {
+  final Map<String, String> out = <String, String>{};
+  if (reading.isNotEmpty && reading != entry.word) {
+    final StringBuffer furigana = StringBuffer();
+    for (final RubyTextData segment in LanguageUtils.distributeFurigana(
+      entry: entry.reading == reading
+          ? entry
+          : DictionaryEntry(
+              dictionaryName: entry.dictionaryName,
+              word: entry.word,
+              reading: reading,
+              meaning: entry.meaning,
+              extra: entry.extra,
+            ),
+    )) {
+      final String? ruby = segment.ruby;
+      furigana.write(
+        ruby != null && ruby.isNotEmpty
+            ? '${segment.text}[$ruby]'
+            : '${segment.text} ',
+      );
+    }
+    out['furiganaPlain'] = furigana.toString();
+  }
+  for (final MapEntry<String, String> e in <String, String>{
+    ...FrequencyField.extraValuesFromEntry(entry),
+    ...PitchAccentField.extraValuesFromEntry(entry: entry),
+  }.entries) {
+    if (e.value.isNotEmpty) out[e.key] = e.value;
+  }
+  return out;
 }
 
 String _glossaryHtml(List<DictionaryEntry> entries) {
@@ -214,3 +272,97 @@ List<Map<String, Object?>> ctlAnkiModelsJson(
               type.name == settings.selectedNoteTypeName),
     },
 ];
+
+/// 推荐词典目录条目的投影：`index` 是该目录里的位置，`installed` 与词典管理页
+/// 「推荐词典」弹窗同一判据（调用方传入）。
+Map<String, Object?> ctlRecommendedDictionaryJson(
+  RecommendedDictionary rec, {
+  required int index,
+  required bool installed,
+  required bool isDefault,
+}) => <String, Object?>{
+  'index': index,
+  'name': rec.name,
+  'key': rec.matchPrefix,
+  'category': rec.category.name,
+  'size': rec.sizeEstimate,
+  'description': rec.description,
+  'installed': installed,
+  'default': isDefault,
+};
+
+/// 在推荐词典目录里按 `key`（matchPrefix）或展示名定位一条；精确优先，其次忽略大小写。
+RecommendedDictionary resolveCtlRecommendedDictionary(
+  List<RecommendedDictionary> catalog,
+  String query,
+) {
+  final String q = query.trim();
+  final List<bool Function(RecommendedDictionary)> tiers =
+      <bool Function(RecommendedDictionary)>[
+        (RecommendedDictionary r) => r.matchPrefix == q || r.name == q,
+        (RecommendedDictionary r) =>
+            r.matchPrefix.toLowerCase() == q.toLowerCase() ||
+            r.name.toLowerCase() == q.toLowerCase(),
+      ];
+  for (final bool Function(RecommendedDictionary) matches in tiers) {
+    final List<RecommendedDictionary> hits = catalog.where(matches).toList();
+    if (hits.length == 1) return hits.single;
+    if (hits.length > 1) {
+      throw CtlFailure.badRequest(
+        '「$q」匹配到多条推荐词典：${hits.map((RecommendedDictionary r) => r.matchPrefix).join('、')}',
+      );
+    }
+  }
+  throw CtlFailure.notFound('推荐词典目录里没有「$q」（fushi_cli dict recommended 查看）');
+}
+
+/// 待发队列一行给 CLI 的投影。
+Map<String, Object?> ctlPendingMineJson(PendingMineRow row) =>
+    <String, Object?>{
+      'id': row.id,
+      'expression': row.expression,
+      'reading': row.reading,
+      'status': row.status,
+      'attempts': row.attempts,
+      'createdAt': row.createdAt,
+      if (row.lastError != null) 'lastError': row.lastError,
+      if (row.lastAttemptAt != null) 'lastAttemptAt': row.lastAttemptAt,
+      // 来自其他设备中转的卡（本机作为落地设备替它交给 Anki）。
+      if (row.originDeviceId != null) 'originDeviceId': row.originDeviceId,
+    };
+
+/// 按 id（或唯一前缀）在队列里定位一行；多行同前缀报歧义，找不到 404。
+PendingMineRow resolveCtlPendingMine(List<PendingMineRow> rows, String query) {
+  final String q = query.trim();
+  final List<PendingMineRow> exact = rows
+      .where((PendingMineRow r) => r.id == q)
+      .toList();
+  if (exact.length == 1) return exact.single;
+  final List<PendingMineRow> hits = rows
+      .where((PendingMineRow r) => q.isNotEmpty && r.id.startsWith(q))
+      .toList();
+  if (hits.length == 1) return hits.single;
+  if (hits.length > 1) {
+    throw CtlFailure.badRequest('id 前缀「$q」匹配到多张待发卡，请给更长的 id');
+  }
+  throw CtlFailure.notFound('待发队列里没有「$q」（fushi_cli anki pending 查看）');
+}
+
+/// 一次补发结果的投影。
+Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
+    <String, Object?>{
+      'delivered': report.delivered,
+      'failed': report.failed,
+      'remaining': report.remaining,
+      'unreachable': report.unreachable,
+      'skipped': report.skipped,
+      'awaitingConfirmation': report.awaitingConfirmation,
+    };
+
+/// 词典内容语言覆盖的取值：`auto`（或 `-`）= 恢复自动（null），其余当 BCP-47 码原样用。
+String? ctlParseLanguageOverride(String raw) {
+  final String v = raw.trim();
+  if (v.isEmpty) throw const CtlFailure.badRequest('language 不能为空');
+  final String lower = v.toLowerCase();
+  return (lower == 'auto' || lower == '-') ? null : v;
+}

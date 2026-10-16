@@ -1,14 +1,16 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'settings_ops_commands.dart' show videoSettingsOpsCommands;
+import 'video_player_commands.dart';
 
 /// video 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_video_routes.dart`）：
-/// 视频库刮削（作品列表 / 重刮 / 手动候选 / 手动指定身份）与视频发现（搜作品 →
-/// 搜资源 → 入队下载）。
+/// 视频库刮削（作品列表 / 重刮 / 回答待确认 / 手动候选 / 手动指定身份）、视频发现
+/// （搜作品 → 搜资源 → 入队下载），以及播放页控制（[videoPlayerCommands]）。
 const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'video',
-    summary: '视频库刮削（重刮 / 手动识别）与视频发现下载',
+    summary: '视频库刮削与确认、视频发现下载、播放页控制（音轨 / 字幕 / 制卡 / 片段）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'works',
@@ -37,6 +39,14 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
         summary: '取消正在进行的刮削批次',
         build: _buildCancel,
         render: _renderCancel,
+      ),
+      CtlCommandSpec(
+        name: 'confirm',
+        summary: '查看 / 回答刮削待确认（<序号> 选候选，--provider/--id 手动指定，--skip 跳过）',
+        usage: '[<候选序号>]',
+        configure: _configureConfirm,
+        build: _buildConfirm,
+        render: _renderConfirm,
       ),
       CtlCommandSpec(
         name: 'candidates',
@@ -78,6 +88,8 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
         build: _buildGet,
         render: _renderGet,
       ),
+      ...videoPlayerCommands,
+      ...videoSettingsOpsCommands,
     ],
   ),
 ];
@@ -158,6 +170,11 @@ void _configureScrape(ArgParser parser) {
   parser
     ..addFlag('wait', negatable: false, help: '等刮削结束并输出结果（缺省后台进行）')
     ..addFlag(
+      'interactive',
+      negatable: false,
+      help: '整来源刮削遇到歧义作品时暂停等确认（用 video confirm 回答），缺省直接进待确认清单',
+    )
+    ..addFlag(
       'allow-overwrite',
       negatable: false,
       help: '来源设置要求覆盖外部 NFO / 图片时允许覆盖（需 --yes）',
@@ -178,6 +195,10 @@ CtlRequestSpec _buildScrape(CtlCommandContext context) {
     }
   }
   final bool overwrite = context.flag('allow-overwrite');
+  final bool interactive = context.flag('interactive');
+  if (interactive && !isSource) {
+    throw const CtlUsageError('--interactive 只用于整来源刮削');
+  }
   if (overwrite) {
     if (!isSource) throw const CtlUsageError('--allow-overwrite 只用于整来源刮削');
     if (!context.flag('yes')) {
@@ -189,6 +210,7 @@ CtlRequestSpec _buildScrape(CtlCommandContext context) {
     body: <String, Object?>{
       'target': target,
       if (context.flag('wait')) 'wait': true,
+      if (interactive) 'interactive': true,
       if (overwrite) 'allowOverwrite': true,
       if (overwrite) 'confirm': true,
     },
@@ -258,7 +280,8 @@ String _renderStatus(Object? data) {
     if (data['queuedManual'] is int && (data['queuedManual'] as int) > 0)
       '手动指定排队：${data['queuedManual']}',
     if (data['pendingConfirmation'] is Map)
-      '等待在 app 内确认：${(data['pendingConfirmation'] as Map)['work']}',
+      '等待确认：${(data['pendingConfirmation'] as Map)['work']}'
+          '（fushi_cli video confirm 查看候选并回答，或在 app 内确认）',
     '',
     renderCtlTable(
       data,
@@ -283,6 +306,120 @@ CtlRequestSpec _buildCancel(CtlCommandContext context) =>
     const CtlRequestSpec.post('/api/admin/video/scrape/cancel');
 
 String _renderCancel(Object? data) => '已请求取消当前刮削批次';
+
+// ── confirm ──────────────────────────────────────────────────────────────
+
+void _configureConfirm(ArgParser parser) {
+  parser
+    ..addOption('provider', help: '手动指定身份的资料源：anidb | mal | tmdb')
+    ..addOption('id', help: '手动指定身份：该资料源上的作品 id（正整数）')
+    ..addOption('type', help: 'tv | movie（TMDB 的剧集 / 电影是两个 id 空间）')
+    ..addFlag('skip', negatable: false, help: '跳过这部作品（留在待确认清单里）')
+    ..addOption('expect', help: '只在当前待确认项仍是这个 id（video confirm 显示的 sc<N>）时作答')
+    ..addFlag('wait', negatable: false, help: '没有待确认项时等到出现或批次结束')
+    ..addOption('timeout', help: '--wait 最多等多少秒（缺省 60，上限 600）');
+}
+
+CtlRequestSpec _buildConfirm(CtlCommandContext context) {
+  final String? index = context.optionalPositional(0);
+  final String? provider = context.option('provider');
+  final String? externalId = context.option('id');
+  final bool skip = context.flag('skip');
+  final int answers =
+      (index != null ? 1 : 0) +
+      (provider != null || externalId != null ? 1 : 0) +
+      (skip ? 1 : 0);
+  if (answers > 1) {
+    throw const CtlUsageError('<候选序号>、--provider/--id、--skip 只能给一种');
+  }
+  final String? expect = context.option('expect');
+  if (answers == 0) {
+    if (expect != null) throw const CtlUsageError('--expect 只在作答时有用');
+    final int? timeout = context.intOption('timeout');
+    if (timeout != null && (timeout < 1 || timeout > 600)) {
+      throw const CtlUsageError('--timeout 在 1–600 秒之间');
+    }
+    return CtlRequestSpec.get(
+      '/api/admin/video/scrape/confirmation',
+      query: <String, String>{
+        if (context.flag('wait')) 'wait': 'true',
+        if (timeout != null) 'timeout': '$timeout',
+      },
+    );
+  }
+  if (context.flag('wait')) throw const CtlUsageError('--wait 只用于查看');
+  final Map<String, Object?> body = <String, Object?>{
+    if (expect != null) 'id': expect,
+  };
+  if (index != null) {
+    if (!RegExp(r'^[1-9]\d*$').hasMatch(index)) {
+      throw CtlUsageError('候选序号必须是 1 起的整数：$index');
+    }
+    body['action'] = 'pick';
+    body['index'] = int.parse(index);
+  } else if (skip) {
+    body['action'] = 'skip';
+  } else {
+    if (externalId == null) throw const CtlUsageError('缺少 --id');
+    if (!RegExp(r'^[1-9]\d*$').hasMatch(externalId)) {
+      throw CtlUsageError('--id 必须是正整数：$externalId');
+    }
+    final String? type = context.option('type')?.toLowerCase();
+    if (type != null && type != 'tv' && type != 'movie') {
+      throw CtlUsageError('--type 只能是 tv 或 movie：$type');
+    }
+    body['action'] = 'identity';
+    body['provider'] = _provider(provider);
+    body['externalId'] = externalId;
+    if (type != null) body['type'] = type;
+  }
+  return CtlRequestSpec.post(
+    '/api/admin/video/scrape/confirmation',
+    body: body,
+  );
+}
+
+String _renderConfirm(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  if (data.containsKey('answer')) {
+    final Object? picked = data['picked'];
+    return switch (data['answer']) {
+      'skip' => '已跳过：${data['work']}（${data['id']}），批次继续',
+      _ =>
+        '已确认：${data['work']} → '
+            '${picked is Map ? '${picked['identity']} ${picked['title'] ?? ''}' : ''}'
+            '（${data['id']}），批次继续',
+    };
+  }
+  final Object? pending = data['pending'];
+  if (pending is! Map) {
+    return data['busy'] == true ? '刮削进行中，当前没有等待确认的作品' : '没有等待确认的作品';
+  }
+  final Object? ai = pending['ai'];
+  return <String>[
+    '待确认 ${pending['id']}：${pending['work']}（来源 ${pending['source']}）',
+    renderCtlTable(
+      pending,
+      const <(String, String)>[
+        ('序号', 'index'),
+        ('身份', 'identity'),
+        ('类型', 'mediaKind'),
+        ('标题', 'title'),
+        ('原名', 'originalTitle'),
+        ('年份', 'year'),
+        ('集数', 'episodes'),
+        ('AI', 'aiSuggested'),
+      ],
+      listKey: 'candidates',
+      empty: '（没有候选）',
+    ),
+    if (ai is Map)
+      'AI 建议第 ${ai['index']} 个（置信 ${ai['confidence']}%）'
+          '${ai['reason'] == null ? '' : '：${ai['reason']}'}',
+    '（fushi_cli video confirm <序号> --expect ${pending['id']} 选定；'
+        '--provider <p> --id <id> 手动指定；--skip 跳过）',
+  ].join('\n');
+}
 
 // ── candidates / identify ────────────────────────────────────────────────
 

@@ -255,6 +255,96 @@ int? parseCtlChapterIndex(String raw) {
   return chapter - 1;
 }
 
+/// `library open` 的位置参数不合法（路由层转成 400）。
+class LibraryCtlPositionError implements Exception {
+  const LibraryCtlPositionError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// `library open` 解析出的打开位置（全部 0 起计；null = 不指定）。
+class LibraryCtlOpenPosition {
+  const LibraryCtlOpenPosition({
+    this.sectionIndex,
+    this.normCharOffset = 0,
+    this.chapterIndex,
+    this.pageIndex,
+  });
+
+  /// EPUB 章 / PDF 页（交给阅读器的书签 `sectionIndex`）。
+  final int? sectionIndex;
+
+  /// EPUB 章内进度分数（0–10000，书签 `normCharOffset` 口径）。
+  final int normCharOffset;
+
+  /// 在线漫画的话下标。
+  final int? chapterIndex;
+
+  /// 漫画起始页。
+  final int? pageIndex;
+}
+
+/// 按书的格式校验并换算 `--at` / `--chapter` / `--page` / `--progress`（用户输入
+/// 一律 1 起计、进度是 0–100 百分比）。不合法抛 [LibraryCtlPositionError]。
+LibraryCtlOpenPosition parseLibraryCtlOpenPosition({
+  required BookFormat format,
+  String? at,
+  int? chapter,
+  int? page,
+  double? progress,
+}) {
+  if (at != null && chapter != null) {
+    throw const LibraryCtlPositionError('--at 与 --chapter 是同一件事，只给一个');
+  }
+  if (progress != null && (progress < 0 || progress > 100)) {
+    throw const LibraryCtlPositionError('--progress 是章内百分比 0–100');
+  }
+  int? toIndex(int? oneBased, String name) {
+    if (oneBased == null) return null;
+    if (oneBased < 1) throw LibraryCtlPositionError('--$name 从 1 开始数');
+    return oneBased - 1;
+  }
+
+  switch (format) {
+    case BookFormat.epub:
+      if (page != null) {
+        throw const LibraryCtlPositionError('EPUB 书按章打开（--chapter），没有 --page');
+      }
+      int? section = toIndex(chapter, 'chapter');
+      if (at != null) {
+        section = parseCtlChapterIndex(at);
+        if (section == null) {
+          throw LibraryCtlPositionError('--at 对书是 1 起计的章号，收到「$at」');
+        }
+      }
+      if (section == null && progress != null) {
+        throw const LibraryCtlPositionError('--progress 要配合 --chapter');
+      }
+      return LibraryCtlOpenPosition(
+        sectionIndex: section,
+        normCharOffset: ((progress ?? 0) / 100 * 10000).round(),
+      );
+    case BookFormat.pdf:
+      if (chapter != null || at != null || progress != null) {
+        throw const LibraryCtlPositionError('PDF 按页打开，只用 --page');
+      }
+      return LibraryCtlOpenPosition(sectionIndex: toIndex(page, 'page'));
+    case BookFormat.manga:
+      if (at != null || progress != null) {
+        throw const LibraryCtlPositionError(
+          '漫画用 --chapter（在线作品第几话）与 --page，没有 --at / --progress',
+        );
+      }
+      return LibraryCtlOpenPosition(
+        chapterIndex: toIndex(chapter, 'chapter'),
+        pageIndex: toIndex(page, 'page'),
+      );
+  }
+}
+
 /// 按种类与搜索词筛选（搜索走 [filterByMediaSearch]，与库页同一归一化口径）。
 List<LibraryCtlEntry> filterLibraryCtlEntries(
   List<LibraryCtlEntry> entries, {
@@ -309,6 +399,9 @@ enum LibraryCtlImportStatus {
   /// 同一目录已是来源库，未做任何写入。
   sourceExists,
 
+  /// 已排进后台任务（有声书设备端转录），完成后自动入库。
+  queued,
+
   /// 本命令导不了这种东西（附带原因与替代办法）。
   unsupported,
 
@@ -320,6 +413,7 @@ enum LibraryCtlImportStatus {
     LibraryCtlImportStatus.skipped => 'skipped',
     LibraryCtlImportStatus.sourceAdded => 'source_added',
     LibraryCtlImportStatus.sourceExists => 'source_exists',
+    LibraryCtlImportStatus.queued => 'queued',
     LibraryCtlImportStatus.unsupported => 'unsupported',
     LibraryCtlImportStatus.failed => 'failed',
   };

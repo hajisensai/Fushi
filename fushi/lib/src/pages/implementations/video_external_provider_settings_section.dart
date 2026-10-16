@@ -1311,8 +1311,71 @@ class _VideoExternalProviderSettingsSectionState
   }
 }
 
-String _newDraftId(String prefix) =>
+String _newDraftId(String prefix) => newVideoExternalRecordId(prefix);
+
+/// 新 Torznab 索引器 / 路径映射草稿的 id。设置页与控制通道共用。
+String newVideoExternalRecordId(String prefix) =>
     '$prefix-${DateTime.now().microsecondsSinceEpoch}';
+
+/// 表单字段 → Torznab 索引器配置；任一字段不合法返回 null（端点须过 provider
+/// 自身的 HTTPS/loopback 校验、不带 query / userinfo / fragment；优先级整数；
+/// 分类逗号分隔的非负整数）。设置页与控制通道共用同一份校验。
+TorznabIndexerConfig? torznabConfigFromFields({
+  required String id,
+  required String name,
+  required String endpoint,
+  required String apiKey,
+  required bool enabled,
+  required String priority,
+  required String categories,
+  required bool allowInsecureHttp,
+}) => _TorznabDraft(
+  id: id,
+  name: name,
+  endpoint: endpoint,
+  apiKey: apiKey,
+  enabled: enabled,
+  priority: priority,
+  categories: categories,
+  allowInsecureHttp: allowInsecureHttp,
+).toConfig();
+
+/// 表单字段 → OpenSubtitles 配置；端点不合法或 User-Agent 为空返回 null。
+/// 用户名 / 密码空串 = 不登录。设置页与控制通道共用同一份校验。
+OpenSubtitlesConfig? openSubtitlesConfigFromFields({
+  required String endpoint,
+  required String apiKey,
+  required String username,
+  required String password,
+  required String userAgent,
+  required bool enabled,
+  required bool allowInsecureHttp,
+}) => _OpenSubtitlesDraft(
+  endpoint: endpoint,
+  apiKey: apiKey,
+  username: username,
+  password: password,
+  userAgent: userAgent,
+  enabled: enabled,
+  allowInsecureHttp: allowInsecureHttp,
+).toConfig();
+
+/// 表单字段 → 下载后端路径映射；三项任一为空或本机根不是绝对路径返回 null。
+/// 设置页与控制通道共用同一份校验。
+VideoDownloadBackendPathMappingConfig? videoDownloadPathMappingFromFields({
+  required String backendProfileId,
+  required String remoteRoot,
+  required String localRoot,
+}) => _PathMappingDraft(
+  id: '',
+  backendProfileId: backendProfileId,
+  remoteRoot: remoteRoot,
+  localRoot: localRoot,
+).toConfig();
+
+/// 路径映射记录的稳定 id（设置页草稿与控制通道同一写法）。
+String videoDownloadPathMappingId(VideoDownloadBackendPathMappingConfig m) =>
+    '${m.backendProfileId}:${m.remoteRoot}';
 
 @immutable
 class _TorznabDraft {
@@ -1543,7 +1606,7 @@ class _PathMappingDraft {
   factory _PathMappingDraft.fromConfig(
     VideoDownloadBackendPathMappingConfig config,
   ) => _PathMappingDraft(
-    id: '${config.backendProfileId}:${config.remoteRoot}',
+    id: videoDownloadPathMappingId(config),
     backendProfileId: config.backendProfileId,
     remoteRoot: config.remoteRoot,
     localRoot: config.localRoot,

@@ -5,7 +5,7 @@
 /// 唯一索引上用了 `COLLATE unicase`。这个排序规则是 rslib 打开库时用
 /// `create_collation("unicase", …)` 现注册的，**标准 SQLite 没有**：不注册的话，
 /// 对这些表的任何查询在 prepare 阶段就报
-/// `no such collation sequence: unicase`（BUG-3418）。
+/// `no such collation sequence: unicase`（BUG-3428）。
 library;
 
 import 'package:sqlite3/sqlite3.dart';

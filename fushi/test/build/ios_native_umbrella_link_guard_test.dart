@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-3417 守卫：iOS Runner 必须链伞形 Rust 静态库 `native/fushi_ios_umbrella`
+/// BUG-3427 守卫：iOS Runner 必须链伞形 Rust 静态库 `native/fushi_ios_umbrella`
 /// （互联 P2P 的 `fp2p_*` + SRS 排程内核的 `ffsrs_*` 合一），CI 出包后必须两组符号都核对。
 ///
 /// 洞的形状：SRS 内核上线时 iOS 侧只做到「伞形库编得过」，Runner 仍只接 fushi_p2p

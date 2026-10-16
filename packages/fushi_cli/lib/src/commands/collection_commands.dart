@@ -2,50 +2,34 @@ import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
 
-/// collection 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_collection_routes.dart`）：
-/// 列合集、看成员顺序、手动定序、按规则 / AI 一键排序。
+/// `collection` 组的定序子命令：手动定序 `order`、一键排序 `sort`（含 AI）。
 ///
-/// 成员键形如 `<mediaType>:<entryKey>`（`video:<bookUid>` / `epub:<uid>` /
-/// `srt:<uid>` / `game:<id>`），由 `collection items` 给出；在本合集内唯一时也可只写
-/// entryKey。
-const List<CtlCommandGroup> collectionCommandGroups = <CtlCommandGroup>[
-  CtlCommandGroup(
-    name: 'collection',
-    summary: '合集：列出、成员顺序、手动定序、按名称 / 导入时间 / AI 排序',
-    commands: <CtlCommandSpec>[
-      CtlCommandSpec(
-        name: 'ls',
-        summary: '列出合集（id / 名称 / 类型 / 成员数）',
-        build: _buildLs,
-        render: _renderLs,
-      ),
-      CtlCommandSpec(
-        name: 'items',
-        summary: '按当前顺序列出合集成员',
-        usage: '<id>',
-        build: _buildItems,
-        render: _renderItems,
-      ),
-      CtlCommandSpec(
-        name: 'order',
-        summary: '手动定序：按给出的成员键顺序重排（没列出的成员留在原位）',
-        usage: '<id> <key...>',
-        build: _buildOrder,
-        render: _renderItems,
-      ),
-      CtlCommandSpec(
-        name: 'sort',
-        summary: '一键排序：--by title | imported | ai（--dry-run 只打印建议序）',
-        usage: '<id>',
-        configure: _configureSort,
-        build: _buildSort,
-        render: _renderSort,
-      ),
-    ],
+/// 只是 `shelf_commands.dart` 里**唯一**那个 `collection` 组的一部分（由它展开进
+/// 组的 `commands`），不单独注册命令组——同名组注册两次会让 CLI 解析器在启动时
+/// 撞名。app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_collection_routes.dart`，
+/// 与合集的 ls / get / add / remove 同在 `/api/admin/library/collections` 下。
+///
+/// 成员键与 `collection get` 列出的一致（`book:` / `srt:` / `video:` / `game:` 前缀
+/// 加 id）；在本合集内唯一时也可只写 id。
+const List<CtlCommandSpec> collectionOrderCommandSpecs = <CtlCommandSpec>[
+  CtlCommandSpec(
+    name: 'order',
+    summary: '手动定序：按给出的成员键顺序重排（没列出的成员留在原位）',
+    usage: '<id> <key...>',
+    build: _buildOrder,
+    render: _renderOrdered,
+  ),
+  CtlCommandSpec(
+    name: 'sort',
+    summary: '一键排序：--by title | imported | ai（--dry-run 只打印建议序）',
+    usage: '<id>',
+    configure: _configureSort,
+    build: _buildSort,
+    render: _renderSort,
   ),
 ];
 
-const String _root = '/api/admin/collections';
+const String _root = '/api/admin/library/collections';
 
 /// `--by` 的值域。
 const List<String> kCollectionSortModes = <String>['title', 'imported', 'ai'];
@@ -56,36 +40,6 @@ String _id(CtlCommandContext context) {
     throw CtlUsageError('合集 id 必须是正整数：$raw');
   }
   return raw;
-}
-
-CtlRequestSpec _buildLs(CtlCommandContext context) =>
-    const CtlRequestSpec.get(_root);
-
-String _renderLs(Object? data) => renderCtlTable(
-  data,
-  const <(String, String)>[
-    ('id', 'id'),
-    ('名称', 'name'),
-    ('类型', 'type'),
-    ('成员', 'members'),
-    ('手动排过', 'manualOrder'),
-  ],
-  listKey: 'collections',
-  empty: '没有合集',
-);
-
-CtlRequestSpec _buildItems(CtlCommandContext context) =>
-    CtlRequestSpec.get('$_root/${_id(context)}/items');
-
-String _renderItems(Object? data) {
-  final String table = renderCtlTable(
-    data,
-    const <(String, String)>[('序', 'sortIndex'), ('键', 'key'), ('标题', 'title')],
-    listKey: 'items',
-    empty: '合集没有成员',
-  );
-  if (data is! Map) return table;
-  return '${data['id']} · ${data['name']}\n$table';
 }
 
 CtlRequestSpec _buildOrder(CtlCommandContext context) {
@@ -99,6 +53,18 @@ CtlRequestSpec _buildOrder(CtlCommandContext context) {
     '$_root/$id/order',
     body: <String, Object?>{'keys': keys},
   );
+}
+
+/// `order` 回的是合集详情（与 `collection get` 同形）：打印新顺序。
+String _renderOrdered(Object? data) {
+  final String table = renderCtlTable(
+    data,
+    const <(String, String)>[('键', 'key'), ('标题', 'title')],
+    listKey: 'items',
+    empty: '合集没有成员',
+  );
+  if (data is! Map) return table;
+  return '#${data['id']} ${data['name']} · 已按给出的顺序重排\n$table';
 }
 
 void _configureSort(ArgParser parser) {

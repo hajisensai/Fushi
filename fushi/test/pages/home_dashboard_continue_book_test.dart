@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 
 /// BUG-2918：首页「继续」区曾只按 `0 < position < duration` 判「在读」，而阅读器
@@ -61,5 +62,62 @@ void main() {
   test('完成集合按 bookKey 命中，不受同前缀 key 干扰', () {
     final MediaItem item = _book('book', position: 5, duration: 10);
     expect(isDashboardContinueBook(item, <String>{'book2', 'boo'}), isTrue);
+  });
+
+  group('dashboardBookCollectionContinueIndex（书合集续读目标）', () {
+    CollectionMemberProgress vol({
+      int position = 0,
+      bool completed = false,
+      int readAt = 0,
+    }) => CollectionMemberProgress(
+      positionMs: position,
+      completed: completed,
+      lastPlayedAt: readAt,
+    );
+
+    test('用户实报：读完第 1 卷 → 推进到第 2 卷', () {
+      expect(
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+          vol(position: 100, completed: true, readAt: 10),
+          vol(),
+          vol(),
+        ]),
+        1,
+      );
+    });
+
+    test('锚点按最近阅读时刻，不按卷序最靠后', () {
+      expect(
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+          vol(position: 30, readAt: 50),
+          vol(),
+          vol(position: 60, readAt: 10),
+        ]),
+        0,
+      );
+    });
+
+    test('整套读完 / 一卷都没开读 / 空合集 → null', () {
+      expect(
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+          vol(position: 100, completed: true, readAt: 1),
+          vol(position: 100, completed: true, readAt: 2),
+        ]),
+        isNull,
+      );
+      expect(
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+          vol(),
+          vol(),
+        ]),
+        isNull,
+      );
+      expect(
+        dashboardBookCollectionContinueIndex(
+          const <CollectionMemberProgress>[],
+        ),
+        isNull,
+      );
+    });
   });
 }

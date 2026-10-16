@@ -72,6 +72,19 @@ List<FushiClientUrl> interconnectPeerAddressesOf(
   return const <FushiClientUrl>[];
 }
 
+/// 「忘记这台 host」：去掉 [url] 那一行；它带 [hostId] 时删的是**那台 host** 的全部
+/// 地址——同组其余地址都带着它的 token，只删一行等于没解绑（剩下的照常同步，被删的
+/// learned 地址 10 分钟内还会被学回来）。老条目（无 hostId）只删那一行。
+/// 设置页地址行的删除与控制通道 `peer forget` 共用。
+List<FushiClientUrl> withoutInterconnectHost(
+  Iterable<FushiClientUrl> urls, {
+  required String url,
+  String? hostId,
+}) => <FushiClientUrl>[
+  for (final FushiClientUrl u in urls)
+    if (u.url != url && (hostId == null || u.hostId != hostId)) u,
+];
+
 /// 每台 host 的**连接代表**：组内并发选路后排在最前的地址（可达者优先）。用于
 /// 「对每台已配对设备各发一次请求」的场景。
 Future<List<FushiClientUrl>> resolveInterconnectPeerConnections(

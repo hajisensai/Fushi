@@ -154,16 +154,28 @@ void main() {
 
   test('在线下载落来源（catalog 回填 downloadUrl，可更新源再补 isUpdatable+indexUrl）', () {
     // TODO-1075：初装即把可更新性锚定在 catalog 来源真值。
-    // - 恒回填 downloadUrl（供更新时重下载）。
-    expect(src.contains("'downloadUrl': rec.url"), isTrue,
+    // 下载 + 导入已抽成 recommended_dictionary_installer.dart，词典管理页与控制通道
+    // `dict install` 共用；守卫跟着两段：页面必须走共享实现，回填断言落在它身上。
+    expect(src.contains('await downloadAndImportRecommendedDictionary('), isTrue,
+        reason: '词典管理页下载推荐词典必须走共享安装实现，不得另抄一份来源回填');
+    final String installer =
+        File('lib/src/models/recommended_dictionary_installer.dart')
+            .readAsStringSync();
+    expect(
+        installer.contains(
+            'sourceOverride: recommendedDictionarySourceOverride(rec),'),
+        isTrue,
+        reason: '共享安装实现导入时必须带 catalog 来源回填');
+    // - 恒回填 downloadUrl（供更新时重下载）：可更新源与普通源两个分支都要。
+    expect(RegExp(r"'downloadUrl': rec\.url").allMatches(installer).length, 2,
         reason: '下载在线词典必须把 catalog url 当 downloadUrl 回填来源');
     // - 对存在分离 index 端点的来源，据 rec.indexUrl 回填 isUpdatable:'true' + indexUrl，
     //   让 catalog 导入的词典初装即 isUpdatable==true（修初装 gate 空档）。
-    expect(src.contains('final String? recIndexUrl = rec.indexUrl;'), isTrue,
+    expect(installer.contains('final String? indexUrl = rec.indexUrl;'), isTrue,
         reason: 'catalog 导入应读 rec.indexUrl 判定该来源是否可在线更新');
-    expect(src.contains("'isUpdatable': 'true',"), isTrue,
+    expect(installer.contains("'isUpdatable': 'true',"), isTrue,
         reason: '可更新源导入必须回填 isUpdatable:true');
-    expect(src.contains("'indexUrl': recIndexUrl,"), isTrue,
+    expect(installer.contains("'indexUrl': indexUrl,"), isTrue,
         reason: '可更新源导入必须回填分离 index 端点 URL');
   });
 }

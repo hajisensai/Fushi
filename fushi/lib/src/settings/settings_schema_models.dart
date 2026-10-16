@@ -173,6 +173,10 @@ SettingsActionItem _localGptSovitsItem({
   subtitleBuilder: _localTtsStatus,
   icon: FushiIcons.download,
   visible: _isLocalTtsSupported,
+  cli: const SettingsCliAction.unsupported(
+    '本机 GPT-SoVITS 用 fushi_cli models download / link / rm gpt-sovits 部署，'
+    'models start / stop gpt-sovits 起停服务，voice add gpt_sovits 建声音',
+  ),
   onTap: (SettingsContext settingsContext) async {
     final TtsServices tts = TtsServices.of(settingsContext.appModel.prefsRepo);
     final BuildContext context = settingsContext.context;
@@ -202,6 +206,9 @@ SettingsDestination _buildTtsDestination() {
             title: t.audiobook_tts_voice_settings,
             subtitle: t.audiobook_tts_voice_settings_hint,
             icon: FushiIcons.voice,
+            cli: const SettingsCliAction.unsupported(
+              '朗读声音的增删改与设默认用 fushi_cli voice ls/add/set/use/rm',
+            ),
             onTap: (SettingsContext settingsContext) async {
               await openTtsVoiceSettingsPage(
                 settingsContext.context,

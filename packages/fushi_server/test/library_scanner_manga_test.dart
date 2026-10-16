@@ -147,6 +147,30 @@ void main() {
     await expectMangaArtifacts(book);
   });
 
+  test('BUG-3441 扫描入库后分卷按系列持久归组（无头服务端没有书架页，不在这里归 '
+      '互联 client 永远拿不到系列归属）', () async {
+    _writePage(p.join(libraryRoot.path, '志乃と恋 1'), '001.png');
+    _writePage(p.join(libraryRoot.path, '志乃と恋 2'), '001.png');
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    final MediaCollectionRow series = (await db.getAllMediaCollections())
+        .singleWhere((MediaCollectionRow c) => c.name == '志乃と恋');
+    expect(series.collectionType, 'playlist');
+    final Map<String, String> titleByUid = <String, String>{
+      for (final EpubBookRow b in await db.getAllEpubBooks()) b.uid: b.title,
+    };
+    expect(
+      <String?>[
+        for (final MediaCollectionItemRow i
+            in await db.getCollectionItems(series.id))
+          titleByUid[i.entryKey],
+      ],
+      <String>['志乃と恋 1', '志乃と恋 2'],
+    );
+  });
+
   test('系列目录：每个含页图的直接子目录一卷', () async {
     _writePage(p.join(libraryRoot.path, 'volume-01'), '001.png');
     _writePage(p.join(libraryRoot.path, 'volume-01', 'ch2'), '002.png');

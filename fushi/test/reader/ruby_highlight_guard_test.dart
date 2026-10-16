@@ -103,11 +103,24 @@ void main() {
         contains("wrapper.className = 'fushi-sentence-audio-cue'"),
         reason: 'CSS Highlight 支持时普通正文也要包 cue span，才能用 CSS 画 1em 窄条',
       );
+      // BUG-3432：逐句包裹整段放进 withLiveRangeBatch 的回调里（整批只读一次原生选区），
+      // 回调内经 `var self = this` 访问阅读器，所以写入点可以是 this. 或 self.；两种写法
+      // 都必须是同一个 reader 的 cueWrappers 按 cue id 存 wrappers。
+      final RegExpMatch? setCall = RegExp(
+        r'(this|self)\.cueWrappers\.set\(id, wrappers\)',
+      ).firstMatch(applyBody);
       expect(
-        applyBody,
-        contains('this.cueWrappers.set(id, wrappers)'),
+        setCall,
+        isNotNull,
         reason: 'cue span 必须按 cue id 保存，播放切句时才能只激活当前句',
       );
+      if (setCall!.group(1) == 'self') {
+        expect(
+          applyBody,
+          contains('var self = this;'),
+          reason: 'self.cueWrappers 必须就是阅读器自己的 cueWrappers（self 绑定到 this）',
+        );
+      }
     });
   });
 

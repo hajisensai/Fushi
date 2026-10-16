@@ -18,6 +18,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
 /// 站点在界面上的名字：内置站按 id 取 i18n（语种用母语写，不随界面语言变），
@@ -161,17 +163,154 @@ class _AiWebKnowledgeCustomSitesSectionState
   }
 }
 
-Future<void> _removeWebKnowledgeSite(
+/// 删一个自定义站点：站点列表删掉，启用集里的 id 一并删（CLI 与页面共用）。
+Future<void> removeWebKnowledgeCustomSite(
   PreferencesRepository prefs,
-  WebKnowledgeSite site,
+  String siteId,
 ) async {
   // 先拿删之前的启用集：删掉站点后再写启用集时，已不存在的 id 会被顺手清掉。
   final Set<String> enabled = prefs.aiWebKnowledgeEnabledSiteIds;
   await prefs.setAiWebKnowledgeCustomSites(<WebKnowledgeSite>[
     for (final WebKnowledgeSite other in prefs.aiWebKnowledgeCustomSites)
-      if (other.id != site.id) other,
+      if (other.id != siteId) other,
   ]);
-  await prefs.setAiWebKnowledgeEnabledSiteIds(enabled..remove(site.id));
+  await prefs.setAiWebKnowledgeEnabledSiteIds(enabled..remove(siteId));
+}
+
+Future<void> _removeWebKnowledgeSite(
+  PreferencesRepository prefs,
+  WebKnowledgeSite site,
+) => removeWebKnowledgeCustomSite(prefs, site.id);
+
+/// 新增一个自定义站点并加入启用集（页面弹窗与 CLI 共用）。
+///
+/// 新站默认启用：启用集写过（用户动过开关）时要显式加进去，否则它进了列表却是关的。
+Future<void> saveNewWebKnowledgeCustomSite(
+  PreferencesRepository prefs,
+  WebKnowledgeSite site,
+) async {
+  final Set<String> enabled = prefs.aiWebKnowledgeEnabledSiteIds;
+  await prefs.setAiWebKnowledgeCustomSites(<WebKnowledgeSite>[
+    ...prefs.aiWebKnowledgeCustomSites,
+    site,
+  ]);
+  await prefs.setAiWebKnowledgeEnabledSiteIds(enabled..add(site.id));
+}
+
+/// 生成新自定义站点 id（与页面添加弹窗同一方式）。
+String newWebKnowledgeCustomSiteId() =>
+    '$kWebKnowledgeCustomIdPrefix${DateTime.now().microsecondsSinceEpoch}';
+
+/// 经 [WebKnowledgeSite.custom] 同一校验建站；不合规抛 [FormatException]。
+WebKnowledgeSite buildWebKnowledgeCustomSiteOrThrow({
+  required String id,
+  required String label,
+  required String endpoint,
+}) {
+  final WebKnowledgeSite? site = WebKnowledgeSite.custom(
+    id: id,
+    label: label,
+    endpoint: endpoint,
+  );
+  if (site == null) {
+    throw FormatException('endpoint 不是合规的 MediaWiki api.php 地址: $endpoint');
+  }
+  return site;
+}
+
+/// CLI 的 `config items ai.web_knowledge.custom ls|add|set|rm`：自定义站点列表。
+SettingsCliList buildWebKnowledgeCustomCliList() {
+  return SettingsCliList(
+    fields: const <SettingsCliParam>[
+      SettingsCliParam(
+        'label',
+        help: '站点名称（add 可省略，省略时用 host）',
+        required: false,
+      ),
+      SettingsCliParam(
+        'endpoint',
+        help: 'MediaWiki api.php 地址（add 必填）',
+        required: false,
+      ),
+      SettingsCliParam(
+        'enabled',
+        help: 'true / false，仅 set 使用',
+        required: false,
+      ),
+    ],
+    list: (SettingsContext c) async => webKnowledgeCustomSiteRecords(
+      c.appModel.prefsRepo,
+    ),
+    add: (SettingsContext c, Map<String, String> fields) async {
+      final String endpoint = (fields['endpoint'] ?? '').trim();
+      if (endpoint.isEmpty) throw ArgumentError('add 需要 endpoint');
+      final PreferencesRepository prefs = c.appModel.prefsRepo;
+      final WebKnowledgeSite site = buildWebKnowledgeCustomSiteOrThrow(
+        id: newWebKnowledgeCustomSiteId(),
+        label: fields['label'] ?? '',
+        endpoint: endpoint,
+      );
+      await saveNewWebKnowledgeCustomSite(prefs, site);
+      return webKnowledgeCustomSiteRecords(
+        prefs,
+      ).singleWhere((Map<String, Object?> r) => r['id'] == site.id);
+    },
+    update: (SettingsContext c, String id, Map<String, String> fields) async {
+      final PreferencesRepository prefs = c.appModel.prefsRepo;
+      final List<WebKnowledgeSite> sites = prefs.aiWebKnowledgeCustomSites;
+      final int index = sites.indexWhere((WebKnowledgeSite s) => s.id == id);
+      if (index < 0) throw ArgumentError('没有这个自定义站点: $id');
+      final String? enabledRaw = fields['enabled']?.trim().toLowerCase();
+      final bool? enabled = switch (enabledRaw) {
+        null || '' => null,
+        'true' => true,
+        'false' => false,
+        _ => throw ArgumentError('enabled 只能是 true 或 false'),
+      };
+      if (fields.containsKey('label') || fields.containsKey('endpoint')) {
+        final WebKnowledgeSite old = sites[index];
+        final WebKnowledgeSite next = buildWebKnowledgeCustomSiteOrThrow(
+          id: id,
+          label: fields['label'] ?? old.label,
+          endpoint: fields['endpoint'] ?? old.endpoint.toString(),
+        );
+        await prefs.setAiWebKnowledgeCustomSites(<WebKnowledgeSite>[
+          for (final WebKnowledgeSite s in sites) s.id == id ? next : s,
+        ]);
+      }
+      if (enabled != null) {
+        await setWebKnowledgeSiteEnabled(prefs, id, enabled: enabled);
+      }
+      return webKnowledgeCustomSiteRecords(
+        prefs,
+      ).singleWhere((Map<String, Object?> r) => r['id'] == id);
+    },
+    remove: (SettingsContext c, String id) async {
+      final PreferencesRepository prefs = c.appModel.prefsRepo;
+      if (!prefs.aiWebKnowledgeCustomSites.any(
+        (WebKnowledgeSite s) => s.id == id,
+      )) {
+        throw ArgumentError('没有这个自定义站点: $id');
+      }
+      await removeWebKnowledgeCustomSite(prefs, id);
+    },
+  );
+}
+
+/// 自定义站点的列表输出（id / label / endpoint / enabled）。
+List<Map<String, Object?>> webKnowledgeCustomSiteRecords(
+  PreferencesRepository prefs,
+) {
+  final Set<String> enabled = prefs.aiWebKnowledgeEnabledSiteIds;
+  return <Map<String, Object?>>[
+    for (final WebKnowledgeSite s in prefs.aiWebKnowledgeCustomSites)
+      <String, Object?>{
+        'id': s.id,
+        'label': s.label,
+        'endpoint': s.endpoint?.toString(),
+        'enabled': enabled.contains(s.id),
+      },
+  ];
 }
 
 Future<void> _addWebKnowledgeSite(
@@ -184,13 +323,7 @@ Future<void> _addWebKnowledgeSite(
     builder: (BuildContext dialogContext) => const _AddSiteDialog(),
   );
   if (site == null) return;
-  // 新站默认启用：启用集写过（用户动过开关）时要显式加进去，否则它进了列表却是关的。
-  final Set<String> enabled = prefs.aiWebKnowledgeEnabledSiteIds;
-  await prefs.setAiWebKnowledgeCustomSites(<WebKnowledgeSite>[
-    ...prefs.aiWebKnowledgeCustomSites,
-    site,
-  ]);
-  await prefs.setAiWebKnowledgeEnabledSiteIds(enabled..add(site.id));
+  await saveNewWebKnowledgeCustomSite(prefs, site);
   refresh();
 }
 
@@ -208,7 +341,7 @@ class _AddSiteDialogState extends State<_AddSiteDialog> {
 
   void _submit() {
     final WebKnowledgeSite? site = WebKnowledgeSite.custom(
-      id: '$kWebKnowledgeCustomIdPrefix${DateTime.now().microsecondsSinceEpoch}',
+      id: newWebKnowledgeCustomSiteId(),
       label: _label,
       endpoint: _endpoint,
     );

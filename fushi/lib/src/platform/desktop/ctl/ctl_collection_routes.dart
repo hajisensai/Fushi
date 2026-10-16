@@ -9,79 +9,83 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
         kCollectionDetailManualSortValue,
         loadCollectionMemberMeta,
         sortedCollectionRows;
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_shelf.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 
-/// collection 域控制通道路由（CLI 侧命令见 `packages/fushi_cli/lib/src/commands/collection_commands.dart`）。
+/// 合集「定序」路由：手动定序与一键排序（含 AI）。与合集的列出 / 详情 / 建删改 /
+/// 成员增删同在 `/api/admin/library/collections` 下，由
+/// `buildLibraryManageCtlRoutes` 一并注册；CLI 侧是同一个 `collection` 命令组的
+/// `order` / `sort`（`packages/fushi_cli/lib/src/commands/collection_commands.dart`）。
 ///
 /// 每条路由调合集详情页按钮背后的同一个方法：手动定序 = 拖拽落盘的
 /// `reorderCollectionItems`；按名称 / 导入时间 = 一键整理的 [sortedCollectionRows]；
 /// AI = 详情页「AI 排序」的 [runCollectionAiOrder]（用户意图）。三者落盘后都把详情
 /// 页排序偏好切成 manual，与页面行为一致。
+///
+/// 成员键与 `collection get` / `add` / `remove` 同一形状（[LibraryCtlKey]：
+/// `book:` / `srt:` / `video:` / `game:`），由 [LibraryCtlShelf.keyForCollectionMember]
+/// 从成员行换算，不另立一套键。
 List<CtlRoute> buildCollectionCtlRoutes(DesktopCtlContext context) {
-  FushiDatabase db() => context.appModel.database;
   return buildCollectionCtlRoutesFor(
-    database: db,
+    database: () => context.appModel.database,
+    shelf: () => LibraryCtlShelf(
+      db: context.appModel.database,
+      galgameRepo: context.appModel.galgameRepo,
+    ),
     aiSettings: () => context.appModel.prefsRepo,
+    isReadonly: () => context.appModel.isMigrationReadonly,
   );
 }
 
-/// 路由表本体：数据库与 AI 指派来源按回调注入，测试不必起 [DesktopCtlContext]。
+/// 路由表本体：数据库、书架执行层与 AI 指派来源按回调注入，测试不必起
+/// [DesktopCtlContext]。
 List<CtlRoute> buildCollectionCtlRoutesFor({
   required FushiDatabase Function() database,
+  required LibraryCtlShelf Function() shelf,
   required AiSettingsSource Function() aiSettings,
   CollectionAiClientFactory? aiClientFactory,
+  bool Function()? isReadonly,
 }) {
+  // 与书架管理其它写路由同一闸门：数据已迁到新版时旧版只读。dry-run 不写库，放行。
+  void requireWritable({bool dryRun = false}) {
+    if (!dryRun && (isReadonly?.call() ?? false)) {
+      throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+    }
+  }
+
   return <CtlRoute>[
-    CtlRoute.get(kCollectionCtlRoot, (CtlCall call) async {
-      final FushiDatabase db = database();
-      final Map<int, int> counts = <int, int>{};
-      for (final MediaCollectionItemRow r in await db.getAllCollectionItems()) {
-        counts[r.collectionId] = (counts[r.collectionId] ?? 0) + 1;
-      }
-      return <String, Object?>{
-        'collections': <Map<String, Object?>>[
-          for (final MediaCollectionRow c in await db.getAllMediaCollections())
-            <String, Object?>{
-              'id': c.id,
-              'name': c.name,
-              'type': c.collectionType,
-              'members': counts[c.id] ?? 0,
-              'manualOrder': c.orderUpdatedAt > 0,
-            },
-        ],
-      };
-    }),
-    CtlRoute.get('$kCollectionCtlRoot/:id/items', (CtlCall call) async {
-      final FushiDatabase db = database();
-      final MediaCollectionRow collection = await _collection(db, call);
-      return _itemsJson(db, collection);
-    }),
     CtlRoute.put('$kCollectionCtlRoot/:id/order', (CtlCall call) async {
       final FushiDatabase db = database();
+      final LibraryCtlShelf s = shelf();
       final MediaCollectionRow collection = await _collection(db, call);
       final List<String> tokens = call.stringList('keys');
       if (tokens.isEmpty) throw const CtlFailure.badRequest('keys 缺失');
+      requireWritable();
       final List<MediaCollectionItemRow> rows = await db.getCollectionItems(
         collection.id,
       );
       final List<CollectionMemberKey> ordered = resolveCollectionCtlKeys(
-        rows,
+        await _keyedRows(s, rows),
         tokens,
       );
       // 子集是 DAO 的合法用法：没点名的成员留在原槽位（BUG-1194 的不变量）。
       await db.reorderCollectionItems(collection.id, ordered);
       await _markManual(db, collection.id);
-      return _itemsJson(db, collection);
+      return s.collectionDetail(collection.id);
     }),
     CtlRoute.post('$kCollectionCtlRoot/:id/sort', (CtlCall call) async {
       final FushiDatabase db = database();
+      final LibraryCtlShelf s = shelf();
       final MediaCollectionRow collection = await _collection(db, call);
       final String by = call.requireString('by');
       final bool dryRun = call.optBool('dryRun') ?? false;
+      requireWritable(dryRun: dryRun);
       switch (by) {
         case 'title' || 'imported':
           return _sortByRule(
             db,
+            s,
             collection,
             byTitle: by == 'title',
             dryRun: dryRun,
@@ -104,6 +108,14 @@ List<CtlRoute> buildCollectionCtlRoutesFor({
             collection.id,
             outcome,
             dryRun: dryRun,
+            keys: <String, String>{
+              for (final CollectionAiOrderEntry e in outcome.order)
+                _rawKey(e.mediaType, e.entryKey): await _wireKey(
+                  s,
+                  e.mediaType,
+                  e.entryKey,
+                ),
+            },
           );
       }
       throw CtlFailure.badRequest('by 只能是 title / imported / ai：$by');
@@ -111,8 +123,9 @@ List<CtlRoute> buildCollectionCtlRoutesFor({
   ];
 }
 
-/// 路由根。
-const String kCollectionCtlRoot = '/api/admin/collections';
+/// 路由根：与 `kLibraryCtlManageRoot` 下合集的列出 / 详情 / 建删改同一前缀
+/// （测试钉住两者一致）。
+const String kCollectionCtlRoot = '/api/admin/library/collections';
 
 Future<MediaCollectionRow> _collection(FushiDatabase db, CtlCall call) async {
   final int? id = int.tryParse(call.params['id'] ?? '');
@@ -120,78 +133,71 @@ Future<MediaCollectionRow> _collection(FushiDatabase db, CtlCall call) async {
     throw CtlFailure.badRequest('合集 id 必须是正整数：${call.params['id']}');
   }
   final MediaCollectionRow? row = await db.getMediaCollectionById(id);
-  if (row == null) throw CtlFailure.notFound('合集 $id 不存在');
+  if (row == null) throw CtlFailure.notFound('没有 id=$id 的合集');
   return row;
 }
 
-/// CLI 展示 / 接收的成员键：`<mediaType>:<entryKey>`。
-String collectionCtlKey(MediaCollectionItemRow row) =>
-    '${row.mediaType}:${row.entryKey}';
+String _rawKey(String mediaType, String entryKey) => '$mediaType|$entryKey';
 
-/// 把 CLI 给的键解析成本合集里的成员：认 `<mediaType>:<entryKey>`、
-/// `<mediaType>|<entryKey>`，以及在本合集内唯一的裸 entryKey。认不出、有歧义或
-/// 重复给出一律 400——不能静默丢掉用户点名的成员。
-List<CollectionMemberKey> resolveCollectionCtlKeys(
+/// 成员行在 CLI 上的键（[LibraryCtlKey.wire]）；未知种类的透传行没有条目键，
+/// 退回 `<mediaType>|<entryKey>` 原值。
+Future<String> _wireKey(
+  LibraryCtlShelf shelf,
+  String mediaType,
+  String entryKey,
+) async =>
+    (await shelf.keyForCollectionMemberRef(mediaType, entryKey))?.wire ??
+    _rawKey(mediaType, entryKey);
+
+Future<List<({MediaCollectionItemRow row, String key})>> _keyedRows(
+  LibraryCtlShelf shelf,
   List<MediaCollectionItemRow> rows,
+) async => <({MediaCollectionItemRow row, String key})>[
+  for (final MediaCollectionItemRow r in rows)
+    (row: r, key: await _wireKey(shelf, r.mediaType, r.entryKey)),
+];
+
+/// 把 CLI 给的键解析成本合集里的成员：认条目键（`collection get` 列出的
+/// `book:` / `srt:` / `video:` / `game:` 形状），以及在本合集内唯一的裸 id。认不出、
+/// 有歧义或重复给出一律 400——不能静默丢掉用户点名的成员。
+List<CollectionMemberKey> resolveCollectionCtlKeys(
+  List<({MediaCollectionItemRow row, String key})> rows,
   List<String> tokens,
 ) {
   final List<CollectionMemberKey> out = <CollectionMemberKey>[];
   final Set<String> seen = <String>{};
   for (final String token in tokens) {
-    final List<MediaCollectionItemRow> hits = <MediaCollectionItemRow>[
-      for (final MediaCollectionItemRow r in rows)
-        if (collectionCtlKey(r) == token ||
-            '${r.mediaType}|${r.entryKey}' == token)
-          r,
-    ];
+    final List<({MediaCollectionItemRow row, String key})> hits =
+        <({MediaCollectionItemRow row, String key})>[
+          for (final ({MediaCollectionItemRow row, String key}) r in rows)
+            if (r.key == token) r,
+        ];
     if (hits.isEmpty) {
-      hits.addAll(<MediaCollectionItemRow>[
-        for (final MediaCollectionItemRow r in rows)
-          if (r.entryKey == token) r,
+      hits.addAll(<({MediaCollectionItemRow row, String key})>[
+        for (final ({MediaCollectionItemRow row, String key}) r in rows)
+          if (r.row.entryKey == token ||
+              LibraryCtlKey.tryParse(r.key)?.id == token)
+            r,
       ]);
     }
     if (hits.isEmpty) {
-      throw CtlFailure.badRequest('合集里没有成员 $token');
+      throw CtlFailure.badRequest('合集里没有成员 $token（键见 collection get）');
     }
     if (hits.length > 1) {
-      throw CtlFailure.badRequest('成员键 $token 有歧义，请写成 <mediaType>:<entryKey>');
+      throw CtlFailure.badRequest('成员键 $token 有歧义，请写完整的条目键（见 collection get）');
     }
-    final MediaCollectionItemRow hit = hits.single;
-    if (!seen.add(collectionCtlKey(hit))) {
-      throw CtlFailure.badRequest('成员 ${collectionCtlKey(hit)} 重复给出');
+    final ({MediaCollectionItemRow row, String key}) hit = hits.single;
+    if (!seen.add(hit.key)) {
+      throw CtlFailure.badRequest('成员 ${hit.key} 重复给出');
     }
-    out.add((mediaType: hit.mediaType, entryKey: hit.entryKey));
+    out.add((mediaType: hit.row.mediaType, entryKey: hit.row.entryKey));
   }
   return out;
 }
 
-Future<Map<String, Object?>> _itemsJson(
-  FushiDatabase db,
-  MediaCollectionRow collection,
-) async {
-  final List<MediaCollectionItemRow> rows = await db.getCollectionItems(
-    collection.id,
-  );
-  final Map<String, ({String title, int importedAt})> meta =
-      await loadCollectionMemberMeta(db);
-  return <String, Object?>{
-    'id': collection.id,
-    'name': collection.name,
-    'items': <Map<String, Object?>>[
-      for (final MediaCollectionItemRow r in rows)
-        <String, Object?>{
-          'key': collectionCtlKey(r),
-          'mediaType': r.mediaType,
-          'entryKey': r.entryKey,
-          'title': meta['${r.mediaType}|${r.entryKey}']?.title ?? r.entryKey,
-          'sortIndex': r.sortIndex,
-        },
-    ],
-  };
-}
-
 Future<Map<String, Object?>> _sortByRule(
   FushiDatabase db,
+  LibraryCtlShelf shelf,
   MediaCollectionRow collection, {
   required bool byTitle,
   required bool dryRun,
@@ -206,7 +212,10 @@ Future<Map<String, Object?>> _sortByRule(
   );
   bool changed = false;
   for (int i = 0; i < rows.length; i++) {
-    if (collectionCtlKey(rows[i]) != collectionCtlKey(next[i])) changed = true;
+    if (_rawKey(rows[i].mediaType, rows[i].entryKey) !=
+        _rawKey(next[i].mediaType, next[i].entryKey)) {
+      changed = true;
+    }
   }
   if (!dryRun && rows.length > 1) {
     await db.reorderCollectionItems(collection.id, <CollectionMemberKey>[
@@ -226,8 +235,8 @@ Future<Map<String, Object?>> _sortByRule(
     'order': <Map<String, Object?>>[
       for (final MediaCollectionItemRow r in next)
         <String, Object?>{
-          'key': collectionCtlKey(r),
-          'title': meta['${r.mediaType}|${r.entryKey}']?.title ?? r.entryKey,
+          'key': await _wireKey(shelf, r.mediaType, r.entryKey),
+          'title': meta[_rawKey(r.mediaType, r.entryKey)]?.title ?? r.entryKey,
           'ambiguous': false,
         },
     ],
@@ -235,10 +244,12 @@ Future<Map<String, Object?>> _sortByRule(
 }
 
 /// AI 排序结论 → 线上 JSON（状态名即 [CollectionAiOrderStatus] 的枚举名）。
+/// [keys] 把成员原值（`<mediaType>|<entryKey>`）换成 CLI 条目键；缺项退回原值。
 Map<String, Object?> collectionAiOutcomeJson(
   int collectionId,
   CollectionAiOrderOutcome outcome, {
   required bool dryRun,
+  Map<String, String> keys = const <String, String>{},
 }) => <String, Object?>{
   'id': collectionId,
   'status': outcome.status.name,
@@ -249,7 +260,9 @@ Map<String, Object?> collectionAiOutcomeJson(
   'order': <Map<String, Object?>>[
     for (final CollectionAiOrderEntry e in outcome.order)
       <String, Object?>{
-        'key': '${e.mediaType}:${e.entryKey}',
+        'key':
+            keys[_rawKey(e.mediaType, e.entryKey)] ??
+            _rawKey(e.mediaType, e.entryKey),
         'title': e.title,
         'ambiguous': e.ambiguous,
       },

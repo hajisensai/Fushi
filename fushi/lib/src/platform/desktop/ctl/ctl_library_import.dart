@@ -40,6 +40,19 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 
+/// 「只有音频」的有声书排进转录队列（`AudiobookTranscribeImportQueue.enqueue` 的
+/// 形状）；返回任务 id。null 端口 = 本机不支持设备端转录。
+typedef LibraryCtlEnqueueTranscription =
+    Future<String> Function({
+      required List<String> audioPaths,
+      String? contentPath,
+      required String title,
+    });
+
+/// 本机不能转录时，只有音频（缺字幕）的有声书的提示。
+const String kLibraryCtlTranscribeUnavailable =
+    '缺字幕（.srt/.lrc/.vtt/.ass/.ssa），且本机不支持设备端语音转录';
+
 /// 宿主没提供外部视频入库入口时（测试夹具）的提示；播放列表（m3u8）同样走这里。
 const String kLibraryCtlVideoFileHint =
     '视频文件请用 `fushi_cli open <文件>`（外部打开：入库并播放），'
@@ -53,7 +66,9 @@ class LibraryCtlImporter {
     required bool keepDuplicates,
     Future<String?> Function(String path)? ingestVideoFile,
     AskOnDuplicate? askOnDuplicate,
+    LibraryCtlEnqueueTranscription? enqueueTranscription,
   }) : _ingestVideoFile = ingestVideoFile,
+       _enqueueTranscription = enqueueTranscription,
        _db = db,
        _galgameRepo = galgameRepo,
        _isKindEnabled = isKindEnabled,
@@ -70,6 +85,7 @@ class LibraryCtlImporter {
   final bool Function(LibraryCtlKind kind) _isKindEnabled;
   final DuplicatePolicy _policy;
   final Future<String?> Function(String path)? _ingestVideoFile;
+  final LibraryCtlEnqueueTranscription? _enqueueTranscription;
 
   /// 视频单文件：走外部打开同一个入库入口（按路径去重，同一文件重复导入复用旧条目）。
   Future<LibraryCtlImportResult> _importVideoFile(String path) async {
@@ -552,6 +568,9 @@ class LibraryCtlImporter {
       DiscoveryMediaKind.audiobook,
       files,
     );
+    if (plan is TranscribeAudiobookPlan) {
+      return _queueTranscription(label, plan);
+    }
     final Future<String?> Function()? run = _audiobookRunner(plan);
     if (run == null) {
       return _unsupported(
@@ -606,11 +625,42 @@ class LibraryCtlImporter {
     }
   }
 
+  /// 只有音频（可带正文、缺字幕）：与发现页「转录后入库」同一个队列——转录是小时级
+  /// 的后台任务，这里只排队并回任务 id，进度 / 取消走 `audiobook jobs` 一组命令。
+  Future<LibraryCtlImportResult> _queueTranscription(
+    String label,
+    TranscribeAudiobookPlan plan,
+  ) async {
+    final LibraryCtlEnqueueTranscription? enqueue = _enqueueTranscription;
+    if (enqueue == null) {
+      return _unsupported(
+        label,
+        kLibraryCtlTranscribeUnavailable,
+        kind: LibraryCtlKind.audiobook,
+      );
+    }
+    final String id = await enqueue(
+      audioPaths: plan.audioPaths,
+      contentPath: plan.contentPath,
+      title: plan.contentPath == null
+          ? audiobookTitleForAudioPaths(plan.audioPaths)
+          : p.basenameWithoutExtension(plan.contentPath!),
+    );
+    return LibraryCtlImportResult(
+      path: label,
+      status: LibraryCtlImportStatus.queued,
+      kind: LibraryCtlKind.audiobook,
+      message:
+          '缺字幕，已排进设备端转录队列（任务 $id），完成后自动入库；'
+          '进度用 `audiobook job $id` 查看',
+    );
+  }
+
   /// 有声书分类结果 → 入库动作；null = 本入口不执行（原因见 [_audiobookBlocker]）。
   ///
   /// 与发现页自动入库同一分类、同一组引擎导入器：有正文走对齐，只有字幕 + 音频
-  /// 成独立字幕书。只有音频（[TranscribeAudiobookPlan]）不在这里转录——那要几个
-  /// 小时，CLI 同步等不了；与无头服务端一样以「缺字幕」挡下。
+  /// 成独立字幕书。只有音频（[TranscribeAudiobookPlan]）不在这里同步转录——那要几个
+  /// 小时，由 [_queueTranscription] 排进后台转录队列。
   Future<String?> Function()? _audiobookRunner(DiscoveryImportPlan plan) =>
       switch (plan) {
         AlignAudiobookPlan() => () => importDiscoveryAudiobook(

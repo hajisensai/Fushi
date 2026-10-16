@@ -1169,6 +1169,14 @@ class AnotherPopupPart {
           'pill exactly — same reviewed exception class as '
           'reader_fushi/chrome.part.dart. The 3px progress track / 2px edge '
           'line round their own height (chart content, not page chrome).',
+      'lib/src/reader/highlight_stroke_preview.dart':
+          'Highlight-style live preview paints sample BOOK TEXT (with ruby) '
+          'glyph by glyph under the stroke shapes — reader content, not page '
+          'chrome; same reviewed exception class as reader_settings_preview.',
+      'lib/src/pages/implementations/highlight_style_page.dart':
+          'Only passes the sample book-text glyph size to '
+          'HighlightStrokePreviewPainter (fontSize: is the painter\'s content '
+          'size, not a TextStyle); page chrome uses FushiM3eShape tokens.',
       'lib/src/reader/reader_settings_preview.dart':
           'Reading-settings live preview renders sample BOOK TEXT at the '
           "reader's own (scaled) font size — reader content, not page chrome; "
@@ -1449,6 +1457,10 @@ class AnotherPopupPart {
       },
       'lib/src/reader/reader_navigation_widgets.dart': <String>{
         'BorderRadius.circular(',
+      },
+      'lib/src/reader/highlight_stroke_preview.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/highlight_style_page.dart': <String>{
+        'fontSize:',
       },
       'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
