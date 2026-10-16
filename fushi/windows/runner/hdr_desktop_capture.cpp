@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <utility>
 
+#include "hdr_capture_policy.h"
 #include "hdr_tone_map.h"
 #include "hdr_video_host_window.h"
 
@@ -24,6 +25,27 @@ std::string HrStep(const char* step, HRESULT hr) {
   std::snprintf(buffer, sizeof(buffer), "%s hr=0x%08lX", step,
                 static_cast<unsigned long>(hr));
   return buffer;
+}
+
+// 真实 OS build 号。RtlGetVersion 不受 manifest 兼容性声明影响（GetVersionEx 会
+// 被「兼容到 Win8.1」之类的 manifest 骗）；取不到返回 0。
+uint32_t QueryWindowsBuild() {
+  using RtlGetVersionFn = LONG(WINAPI*)(PRTL_OSVERSIONINFOW);
+  const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+  if (ntdll == nullptr) {
+    return 0;
+  }
+  const auto rtl_get_version = reinterpret_cast<RtlGetVersionFn>(
+      GetProcAddress(ntdll, "RtlGetVersion"));
+  if (rtl_get_version == nullptr) {
+    return 0;
+  }
+  RTL_OSVERSIONINFOW info = {};
+  info.dwOSVersionInfoSize = sizeof(info);
+  if (rtl_get_version(&info) != 0) {
+    return 0;
+  }
+  return static_cast<uint32_t>(info.dwBuildNumber);
 }
 
 HdrMonitorCapture Failed(std::string detail) {
@@ -52,8 +74,9 @@ class FrameGuard {
 HdrMonitorDuplication::OpenResult HdrMonitorDuplication::Open(
     HMONITOR monitor, std::string* detail) {
   using Status = OpenResult;
-  auto fail = [detail](std::string reason) {
-    if (detail != nullptr) *detail = std::move(reason);
+  // 失败原因接在路径判据后面（判据之前不会走到 fail）。
+  auto fail = [detail](const std::string& reason) {
+    if (detail != nullptr) *detail = *detail + "; " + reason;
     return Status::kFailed;
   };
   if (monitor == nullptr) {
@@ -99,7 +122,22 @@ HdrMonitorDuplication::OpenResult HdrMonitorDuplication::Open(
     return Status::kNotHdr;
   }
 
-  // 从这里起显示器确定开着 HDR：任何一步失败都回 kFailed（调用方回落 BitBlt）。
+  // 显示器开着 HDR：按 OS 版本决定走不走 DXGI（只 Windows 10）。
+  const uint32_t build = QueryWindowsBuild();
+  const hdr_capture_policy::Decision decision =
+      hdr_capture_policy::Decide(true, build);
+  {
+    char buffer[160];
+    std::snprintf(buffer, sizeof(buffer), "%s (build %u)", decision.reason,
+                  static_cast<unsigned>(build));
+    if (detail != nullptr) *detail = buffer;
+    path_reason_ = buffer;
+  }
+  if (!decision.use_dxgi) {
+    return Status::kGdiByPolicy;
+  }
+
+  // 从这里起走 DXGI：任何一步失败都回 kFailed（调用方回落 BitBlt）。
   if (desc.Rotation != DXGI_MODE_ROTATION_IDENTITY &&
       desc.Rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
     // 旋转屏的 duplication 帧是未旋转的面，这里不做转置。
@@ -244,12 +282,12 @@ HdrMonitorCapture HdrMonitorDuplication::Capture(const RECT& expected) {
   out.status = HdrMonitorCapture::Status::kCaptured;
   out.width = width;
   out.height = height;
-  char buffer[256];
+  char buffer[384];
   std::snprintf(
       buffer, sizeof(buffer),
-      "hdr dxgi fp16 %dx%d sdr_white=%.0fnit%s peak=%.2f max_lum=%.0f "
-      "skipped=%d acquire=%llums copy=%llums tonemap=%llums",
-      width, height, sdr_white_nits_,
+      "dxgi path: %s; fp16 %dx%d sdr_white=%.0fnit%s peak=%.2f "
+      "max_lum=%.0f skipped=%d acquire=%llums copy=%llums tonemap=%llums",
+      path_reason_.c_str(), width, height, sdr_white_nits_,
       sdr_white_nits_ > 0.0f ? "" : "(fallback 80)", stats.peak,
       max_luminance_, skipped, acquired - started, mapped_at - acquired,
       done - mapped_at);

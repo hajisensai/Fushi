@@ -2437,9 +2437,13 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
     std::string note;
     switch (hdr.Open(monitor, &note)) {
       case fushi::HdrMonitorDuplication::OpenResult::kOpened:
+        // 成功取帧后由 Capture 的参数摘要覆盖；失败时 CaptureMonitor 写回落原因。
+        break;
+      case fushi::HdrMonitorDuplication::OpenResult::kGdiByPolicy:
+        capture.diagnostic = "gdi path: " + note;
         break;
       case fushi::HdrMonitorDuplication::OpenResult::kFailed:
-        capture.diagnostic = "hdr capture failed, fell back to gdi: " + note;
+        capture.diagnostic = "dxgi path failed, fell back to gdi: " + note;
         break;
       case fushi::HdrMonitorDuplication::OpenResult::kNotHdr:
         if (!note.empty()) capture.diagnostic = "hdr probe skipped: " + note;

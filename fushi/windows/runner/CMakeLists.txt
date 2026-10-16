@@ -543,7 +543,8 @@ add_custom_target(fushi_windows_screen_ocr_logic_gate
 add_dependencies(${BINARY_NAME} fushi_windows_screen_ocr_logic_gate)
 
 # 截屏识字在 HDR 显示器上的 scRGB(FP16) → 8bit sRGB 色调映射（hdr_tone_map.h）：
-# SDR 内容必须逐级还原（否则整屏发白 / 发灰），HDR 高光平滑压缩不能断层。
+# SDR 内容必须逐级还原（否则整屏发白 / 发灰），HDR 高光平滑压缩不能断层；
+# 以及取帧路径判据（hdr_capture_policy.h：只有 Windows 10 的 HDR 显示器走 DXGI）。
 add_executable(fushi_windows_hdr_tone_map_test
   "tests/hdr_tone_map_test.cpp"
 )

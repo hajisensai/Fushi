@@ -1,6 +1,7 @@
 // release 也要真断言：NDEBUG 会把 assert 编成空语句，测试就会空跑照样"通过"。
 #undef NDEBUG
 
+#include "../hdr_capture_policy.h"
 #include "../hdr_tone_map.h"
 
 #include <algorithm>
@@ -240,6 +241,31 @@ int main() {
     assert(std::isfinite(stats.peak));
     assert(out[0] == 0 && out[1] == 0 && out[2] == 0);
     assert(out[4 + 2] == 255);
+  }
+
+  // ── 取帧路径判据：只有 Windows 10 上的 HDR 显示器走 DXGI ──────────────
+  {
+    namespace pol = fushi::hdr_capture_policy;
+    // SDR 显示器：任何版本都走 GDI。
+    assert(!pol::Decide(false, 19045).use_dxgi);
+    assert(!pol::Decide(false, 22631).use_dxgi);
+    // Win10（用户的 19045、DuplicateOutput1 起始的 1803、Win10 末尾）。
+    assert(pol::Decide(true, 19045).use_dxgi);
+    assert(pol::Decide(true, 17134).use_dxgi);
+    assert(pol::Decide(true, 21999).use_dxgi);
+    // Win11 首个 build 起走 GDI（含本机 29683）。
+    assert(!pol::Decide(true, 22000).use_dxgi);
+    assert(!pol::Decide(true, 26100).use_dxgi);
+    assert(!pol::Decide(true, 29683).use_dxgi);
+    // 版本取不到：保持改动前的 GDI。
+    assert(!pol::Decide(true, 0).use_dxgi);
+    // 每条判据都带非空原因，进诊断日志。
+    for (uint32_t build : {0u, 19045u, 22000u}) {
+      for (bool hdr : {false, true}) {
+        const char* reason = pol::Decide(hdr, build).reason;
+        assert(reason != nullptr && reason[0] != '\0');
+      }
+    }
   }
 
   std::printf("hdr_tone_map_test OK\n");

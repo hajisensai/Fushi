@@ -82,7 +82,7 @@ bool ScreenOcrOverlay::CaptureMonitor(HMONITOR monitor,
       out->diagnostic = std::move(frame.detail);
       return true;
     }
-    out->diagnostic = "hdr capture failed, fell back to gdi: " + frame.detail;
+    out->diagnostic = "dxgi path failed, fell back to gdi: " + frame.detail;
   }
   HDC screen_dc = GetDC(nullptr);
   if (screen_dc == nullptr) {

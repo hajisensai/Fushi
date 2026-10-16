@@ -50,13 +50,15 @@ class HdrMonitorDuplication {
   HdrMonitorDuplication& operator=(const HdrMonitorDuplication&) = delete;
 
   enum class OpenResult {
-    kNotHdr,  // 该显示器没开 HDR：调用方照旧走 BitBlt
-    kOpened,  // 已建好 duplication，藏好窗口后调 Capture
-    kFailed,  // 开了 HDR 但建不起来：回落 BitBlt，原因在 |detail|
+    kNotHdr,   // 该显示器没开 HDR：调用方照旧走 BitBlt
+    kGdiByPolicy,  // 开着 HDR 但按判据走 BitBlt（Windows 11），原因在 |detail|
+    kOpened,   // 已建好 duplication，藏好窗口后调 Capture
+    kFailed,   // 开了 HDR 但建不起来：回落 BitBlt，原因在 |detail|
   };
   // |monitor| 开着 HDR（DXGI 输出色彩空间 G2084/P2020，与 QueryHdrDisplayInfo 同款
-  // 判据）时建 FP16 duplication。kFailed 与（判不了 HDR 时的）kNotHdr 把原因写进
-  // |detail|。
+  // 判据）且 hdr_capture_policy 判定走 DXGI（只 Windows 10）时建 FP16 duplication；
+  // D3D 设备每次新建、不缓存。kOpened / kGdiByPolicy / kFailed 与（判不了 HDR 时的）
+  // kNotHdr 都把路径与原因写进 |detail|。
   OpenResult Open(HMONITOR monitor, std::string* detail);
   bool is_open() const { return duplication_ != nullptr; }
 
@@ -70,6 +72,7 @@ class HdrMonitorDuplication {
   Microsoft::WRL::ComPtr<IDXGIOutputDuplication> duplication_;
   float sdr_white_nits_ = 0.0f;
   float max_luminance_ = 0.0f;
+  std::string path_reason_;  // 判据原因，进成功时的诊断摘要
 };
 
 }  // namespace fushi
