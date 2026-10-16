@@ -16,10 +16,13 @@ import 'package:fushi/src/reader/highlight_stroke_preview.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart'
+    show FushiTypeScale;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -188,7 +191,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
     return AdaptiveSettingsScaffold(
       title: Text(t.reader_highlight_title),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>('highlight_style_reset'),
           onPressed: () => _commit(_kind.defaults),
           child: Text(t.reader_highlight_reset),
@@ -325,7 +328,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
               ),
             ),
             if (_kind == HighlightKind.favorite)
-              Tooltip(
+              FushiTooltip(
                 message: t.reader_highlight_preview_color_hint,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -342,7 +345,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                   ],
                 ),
               ),
-            FilledButton.tonalIcon(
+            FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('highlight_style_replay'),
               onPressed: _config.style.isStroke
                   ? () {
@@ -595,7 +598,10 @@ class _StyleTile extends StatelessWidget {
                       paper: paper,
                       ink: ink,
                       vertical: false,
-                      fontSize: 17,
+                      // 缩略图样文与卡片正文同字阶（随主题字号缩放），不写死字号。
+                      fontSize:
+                          context.fushiType.bodyLarge.fontSize ??
+                          FushiTypeScale.bodyLarge.size,
                       lineHeight: 1.6,
                       padding: 12,
                       classicUnderline: classicUnderline,
@@ -617,11 +623,7 @@ class _StyleTile extends StatelessWidget {
                       ),
                     ),
                     if (selected)
-                      Icon(
-                        FushiIcons.success,
-                        size: 18,
-                        color: cs.primary,
-                      ),
+                      Icon(FushiIcons.success, size: 18, color: cs.primary),
                   ],
                 ),
                 const SizedBox(height: 2),

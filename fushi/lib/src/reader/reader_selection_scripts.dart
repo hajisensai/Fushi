@@ -952,7 +952,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         out.push(it);
       });
       out.forEach(function(l) {
-        var mid = (l.lo + l.hi) / 2;
+        // mid：这一行墨迹带（blockExtent 的并集）在收到振假名之外**之前**的中线。笔触样式（markBand /
+        // lineGeom / readingOrder / isFresh）以它为跨行中心——笔划自带粗细与「盖住振假名」开关，按收窄后
+        // 的 lo/hi 取中会让有注音的行整条偏离字心；经典窄条照旧只用收窄后的 lo/hi。
+        var mid = l.mid = (l.lo + l.hi) / 2;
         l.rubies.forEach(function(rb) {
           annotationInk(rb, annCache).forEach(function(ink) {
             if (ink.b <= l.a || ink.a >= l.b) return;
