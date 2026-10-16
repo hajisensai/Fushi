@@ -224,11 +224,19 @@ void main() {
           ],
           inSecondary: <Finder>[_key('srs-settings-advanced')],
         );
-        // 宽窗右栏的高级项不用再点开。
-        expect(
-          _key('srs-settings-algorithm').hitTestable(),
-          wide ? findsOneWidget : findsNothing,
-        );
+        // 宽窗右栏的高级项不用再点开：折叠时子项不建，展开后「算法」就在右栏首屏。
+        // 不用 hitTestable——MD3 版控件的顶层渲染对象不在其中心点的命中路径上
+        // （中心命中的是控件自己的墨水层），会把已展开、可点的控件判成不可点。
+        final Finder algorithm = _key('srs-settings-algorithm');
+        expect(algorithm, wide ? findsOneWidget : findsNothing);
+        if (wide) {
+          final Rect r = tester.getRect(algorithm);
+          final Rect secondary = tester.getRect(
+            find.byKey(SrsAdaptiveSections.secondaryPaneKey),
+          );
+          expect(secondary.contains(r.center), isTrue);
+          expect(r.bottom, lessThanOrEqualTo(size.height));
+        }
         await _unmount(tester);
       });
 
