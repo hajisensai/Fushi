@@ -178,6 +178,25 @@ void main() {
       ),
       findsOneWidget,
     );
+    // Hero 标题 / 开发商与资料网格文本值同样可选择复制（反馈 2DmrXg-wtD 补漏）。
+    final SelectableText heroTitle = tester.widget<SelectableText>(
+      find.byKey(const ValueKey<String>('galgame-hero-title')),
+    );
+    expect(heroTitle.data, isNotEmpty);
+    expect(
+      tester
+          .widget<SelectableText>(
+            find.byKey(const ValueKey<String>('galgame-hero-developer')),
+          )
+          .data,
+      'Studio A',
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is SelectableText && w.data == '2026-01-01',
+      ),
+      findsOneWidget,
+    );
     // 发行日标签现在同时出现在常驻头部的元信息网格与简介 tab（富头部改造后），
     // 故断言放宽为 findsWidgets（原为 findsOneWidget）。
     expect(find.text(t.game_summary_release_date), findsWidgets);
