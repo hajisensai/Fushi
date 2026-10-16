@@ -37,6 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3417](bugs/BUG-3417-anime-download-seed-year-suffix.md) | ✅ | ✅ | anime-download-seed-year-suffix |
 | [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
