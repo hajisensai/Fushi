@@ -369,7 +369,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         kana: kana,
         position: positions.firstOrNull,
         categories: f['PitchCategories'] ?? '',
-        style: s.body(size: 19 * s.appearance.textScale),
+        style: s.body(size: 19 * s.appearance.textScale, height: 1.3),
         dark: s.dark,
         fallbackColor: s.scheme.onSurface,
       ),
@@ -1024,12 +1024,14 @@ class _MediaImage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final SrsMediaStore? store = ref.watch(srsMediaStoreProvider).valueOrNull;
-    final File? file = store?.resolve(name);
-    final Widget image = file == null
+    final ImageProvider<Object>? provider = srsCardImageProvider(
+      name,
+      ref.watch(srsMediaStoreProvider).valueOrNull,
+    );
+    final Widget image = provider == null
         ? const SizedBox.shrink()
-        : Image.file(
-            file,
+        : Image(
+            image: provider,
             fit: BoxFit.cover,
             width: size,
             height: size,
@@ -1044,7 +1046,7 @@ class _MediaImage extends ConsumerWidget {
               child: image,
             ),
     );
-    if (file == null) return box;
+    if (provider == null) return box;
     return FushiPressScale(
       child: GestureDetector(
         onTap: () => unawaited(
@@ -1052,7 +1054,7 @@ class _MediaImage extends ConsumerWidget {
             context: context,
             builder: (BuildContext context) => GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: InteractiveViewer(child: Image.file(file)),
+              child: InteractiveViewer(child: Image(image: provider)),
             ),
           ),
         ),
@@ -1060,4 +1062,23 @@ class _MediaImage extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 卡面图片来源：媒体库文件名 → 文件；`data:image/<光栅格式>;base64` → 内存（样例卡用）。
+/// SVG、远程 URL 与解析失败一律 null（原生侧不渲染，不报错）。
+@visibleForTesting
+ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
+  if (src.startsWith('data:')) {
+    if (!src.startsWith('data:image/') || src.startsWith('data:image/svg')) {
+      return null;
+    }
+    try {
+      return MemoryImage(UriData.parse(src).contentAsBytes());
+    } on FormatException {
+      return null;
+    }
+  }
+  if (src.contains('://')) return null;
+  final File? file = store?.resolve(src);
+  return file == null ? null : FileImage(file);
 }

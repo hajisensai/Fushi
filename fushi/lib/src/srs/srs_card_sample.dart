@@ -11,16 +11,12 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 const String _sampleDictA = 'Fushi 示例国語辞典';
 const String _sampleDictB = 'Fushi 示例日中辞典';
 
-// 注意：图里不能用 `url(#id)` 引用（渐变等）——卡面的媒体改写会把 HTML 里任何 `url(x)`
-// 当成媒体库引用改写，打断 data URI。只用纯色块。
+// 320×200 的 PNG（风景色块，约 1 KB）：WebView 卡面与原生卡面（Image.memory）都能直接显示。
+// 不用 SVG——原生侧不带 SVG 渲染器。
 const String _samplePicture =
-    '<img alt="" src="data:image/svg+xml;utf8,'
-    '%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22320%22 height=%22200%22 viewBox=%220 0 320 200%22%3E'
-    '%3Crect width=%22320%22 height=%22200%22 fill=%22%237fa892%22/%3E'
-    '%3Crect y=%22110%22 width=%22320%22 height=%2290%22 fill=%22%23386a58%22/%3E'
-    '%3Ccircle cx=%22238%22 cy=%2262%22 r=%2228%22 fill=%22%23f4f1e8%22 opacity=%220.85%22/%3E'
-    '%3Cpath d=%22M0 170 L90 110 L150 150 L230 90 L320 160 L320 200 L0 200Z%22 '
-    'fill=%22%23203d32%22 opacity=%220.7%22/%3E%3C/svg%3E">';
+    '<img alt="" src="data:image/png;base64,'
+    'iVBORw0KGgoAAAANSUhEUgAAAUAAAADICAIAAAAWZq/8AAAD0ElEQVR42u3dsW0UUBRE0enGLZC4ARJSJ26AJuiBKtyTMwLqcGCJCEskSJ55R7oVvPlHuxttfrz8lFRanEACWBLAkgCWAJYEsCSAJQEsASwJYEkASwBLAlgSwJIAlgCWBLAkgCUBLAEsCWBJAEsASwJYEsCSAJYAlgSwJIAlASwBLAlgSQBLAEt1/fr9CrDUYfXfA1jqc3tEMsDapzvMGGBdoTvJGGCd07tkGGCdo7vEGGDd1TtgGGCd1ttuGGBd11ttGGDRW2wYYNFbbBhgAQyw1K+30TDAorfYMMACGGBpRW+XYYAFMMDSkN4iwwALYIAlgAEWvQwDLIABlgAGWAIYYAEMMMACGGAJYIBFL8MAi2GfwBLAAEsAAyyAAQZYAAMsAQywBDDAYphegAUwwBLAAIthegEWwABLDPtnBglggMUwvQCLYf8PLAEMsPR5DTceDWAx3KoXYDFcrBdgMfxafSuAddpw+6EA1lHGGycCWBcNz9wHYN1iPHYZgHWF8eRNANa45O1TAKyyHp+/faT64DUAVpne95wCYLXqZRhgFdNlGGDV68UYYNXrPW4YYHXTPW4YYC3oPcsYYO3oPWgYYO3QPWgYYK3pPWUYYA3qvcMYYG3SPWIYYC3rnTcMsMb1bjMGWPt0hw0DrCt6Jw0DrEN69wwDrEN09xgDrIt6Zwzny/cn/enh66Mj/I+rftrabwvwX96ZU1ygu8EY4A/fmbMc0Vs9N8BPw9+v6J03HI9s/mcSusOG450xTG/v3PHIMKa3d+t4ZAyj27t1PDKM6e3dOh4Zw/T2bh0vDGN0e4eOR8Ywvb1DxwvDmN7eoeOFMYxu79DxwjCmt3fleGEM09s7dDwvjNHtXTleGMP09q4czwtjensnjufFMLq9KwddjOntnTj0Mkxv78RBF2N0eycOvQzT2ztx0MUYtt59Q+9lw4y17xt0zzKma2Df0HvTMFQb+wbda4xZWho39J4y7Lxj+wbdO4xddW/c0HthZsdcHTfozi/thsOGQ+/20q63zTjori7tYhcMh97Jpd3qiOGguze2E91hHHqXlnaZa4aD7szYDnLQcOjdGNspbhoOulIv49Ar9RoOulKv4dAr9TIOulKv4dAr9RoOulKv4dAr9TIOulKv4dAr9RoOulJvoVcaB+xMUitgN5IqAbuO1ArYaaRKwI4itQJ2EakSsFtIrYAdQqoE7AQSwJIAlgSwBLAkgCUBLAlgCWBJAEsCWAJYEsCSAJYEsASwJIAlASwJYAlgSQBLAlgCWBLAkgCWBLAEsCSAJQEsCWCpvDer8E/DJiRYIQAAAABJRU5ErkJggg=='
+    '">';
 
 String _li(String dict, String tags, String body) =>
     '<li data-dictionary="$dict"><i>($tags$dict)</i> <span>'
