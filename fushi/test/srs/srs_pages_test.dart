@@ -448,6 +448,11 @@ void main() {
       await _settle(tester);
       expect(childHeight(), 0, reason: '点行首图标收起后代');
       expect(find.byType(SrsReviewPage), findsNothing, reason: '没有进入复习');
+      // 行首左侧留白（缩进左边、贴着行边）同样算折叠区。
+      await tester.tapAt(Offset(leadingRect.left + 1, leadingRect.center.dy));
+      await _settle(tester);
+      expect(childHeight(), greaterThan(0), reason: '点行首左缘重新展开');
+      expect(find.byType(SrsReviewPage), findsNothing, reason: '没有进入复习');
       await _unmount(tester);
     });
 

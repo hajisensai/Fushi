@@ -683,7 +683,11 @@ class _DeckRow extends StatelessWidget {
   ///
   /// 窄屏（[compactBelow]）：缩进封顶、不画装饰性的牌组图标——层级已由缩进 + 箭头
   /// 表达，把宽度留给牌组名（箭头仍是 48 见方命中区）。没有层级时窄屏行首为空。
-  Widget? _leading(FushiDesignTokens tokens, {required bool compact}) {
+  Widget? _leading(
+    FushiDesignTokens tokens, {
+    required bool compact,
+    required _LeadingProbe probe,
+  }) {
     if (compact && !hasTree) return null;
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
@@ -709,11 +713,12 @@ class _DeckRow extends StatelessWidget {
       ],
     );
     if (!hasChildren) return row;
-    return GestureDetector(
+    return Builder(
       key: ValueKey<String>('srs-deck-leading-toggle-${deck.deck.id}'),
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onSetCollapsed(!collapsed),
-      child: row,
+      builder: (BuildContext leadingContext) {
+        probe.leading = leadingContext;
+        return row;
+      },
     );
   }
 
@@ -769,6 +774,18 @@ class _DeckRow extends StatelessWidget {
   Widget _buildRow(BuildContext context, {required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? note = srsNewBudgetNote(deck.newBudget);
+    final _LeadingProbe probe = _LeadingProbe();
+    // 有子牌组时，从行的最左缘到行首块（缩进 + 箭头 + 图标）的右缘、整行高度都是
+    // 展开 / 收起（用户 2026-10-17：箭头左边的行内留白一点就开始复习，仍太容易误触）。
+    // 按下点落在这片区域就折叠，否则打开牌组；键盘 Enter 没有按下点，照常打开。
+    void onRowTap() {
+      if (hasChildren && probe.downInLeading()) {
+        onSetCollapsed(!collapsed);
+      } else {
+        onOpen(deck);
+      }
+    }
+
     return Actions(
       // 桌面手柄轮询路径先向焦点处派发 GamepadButtonIntent：D-pad ←/→ 同键盘。
       actions: <Type, Action<Intent>>{
@@ -779,71 +796,93 @@ class _DeckRow extends StatelessWidget {
         skipTraversal: true,
         onKeyEvent: _onKey,
         child: Builder(
-          builder: (BuildContext rowContext) => FushiPressScale(
-            child: FushiGroupedListItem(
-              index: index,
-              count: count,
-              onTap: () => onOpen(deck),
-              onLongPress: compact
-                  ? () => unawaited(_showMenuFor(rowContext))
-                  : null,
-              onSecondaryTap: () => unawaited(_showMenuFor(rowContext)),
-              child: FushiListItem(
-                // 窄屏紧凑；手机横屏（又宽又矮）也紧凑，一屏多放一两行。
-                density: compact
-                    ? FushiListDensity.compact
-                    : srsListDensityOf(context),
-                // 窄屏：上下不再额外留白，行高由 48 见方的折叠箭头 / 单行名撑起。
-                padding: compact
-                    ? EdgeInsets.symmetric(
-                        horizontal: tokens.spacing.rowHorizontal - 4,
-                        vertical: tokens.spacing.gap / 4,
-                      )
+          builder: (BuildContext rowContext) => Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (PointerDownEvent e) => probe.down = e.position,
+            child: FushiPressScale(
+              child: FushiGroupedListItem(
+                index: index,
+                count: count,
+                onTap: onRowTap,
+                onLongPress: compact
+                    ? () => unawaited(_showMenuFor(rowContext))
                     : null,
-                minHeight: compact ? kMinInteractiveDimension : null,
-                leading: _leading(tokens, compact: compact),
-                // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
-                titleMaxLines: compact ? 2 : 1,
-                // 窄屏不包完整路径的提示气泡：触屏上长按会先被气泡吃掉，弹不出
-                // 牌组菜单；名字本身可折两行完整显示，层级由缩进表达。
-                title: compact
-                    ? Text(deck.deck.name)
-                    : FushiTooltip(
-                        message: deck.fullName,
-                        child: Text(deck.deck.name),
-                      ),
-                subtitle: note == null ? null : Text(note),
-                trailing: compact
-                    ? SrsCountTriple(
-                        dense: true,
-                        tight: true,
-                        newCount: deck.newCount,
-                        learnCount: deck.learnCount,
-                        reviewCount: deck.reviewCount,
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: tokens.spacing.gap / 2,
-                        children: <Widget>[
-                          SrsCountTriple(
-                            newCount: deck.newCount,
-                            learnCount: deck.learnCount,
-                            reviewCount: deck.reviewCount,
-                          ),
-                          FushiPopupMenuButton<_DeckAction>(
-                            tooltip: t.srs_deck_menu,
-                            icon: const FushiIcon(FushiIcons.more),
-                            onSelected: (_DeckAction a) => onAction(deck, a),
-                            itemBuilder: (BuildContext context) => _menuItems(),
-                          ),
-                        ],
-                      ),
+                onSecondaryTap: () => unawaited(_showMenuFor(rowContext)),
+                child: FushiListItem(
+                  // 窄屏紧凑；手机横屏（又宽又矮）也紧凑，一屏多放一两行。
+                  density: compact
+                      ? FushiListDensity.compact
+                      : srsListDensityOf(context),
+                  // 窄屏：上下不再额外留白，行高由 48 见方的折叠箭头 / 单行名撑起。
+                  padding: compact
+                      ? EdgeInsets.symmetric(
+                          horizontal: tokens.spacing.rowHorizontal - 4,
+                          vertical: tokens.spacing.gap / 4,
+                        )
+                      : null,
+                  minHeight: compact ? kMinInteractiveDimension : null,
+                  leading: _leading(tokens, compact: compact, probe: probe),
+                  // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
+                  titleMaxLines: compact ? 2 : 1,
+                  // 窄屏不包完整路径的提示气泡：触屏上长按会先被气泡吃掉，弹不出
+                  // 牌组菜单；名字本身可折两行完整显示，层级由缩进表达。
+                  title: compact
+                      ? Text(deck.deck.name)
+                      : FushiTooltip(
+                          message: deck.fullName,
+                          child: Text(deck.deck.name),
+                        ),
+                  subtitle: note == null ? null : Text(note),
+                  trailing: compact
+                      ? SrsCountTriple(
+                          dense: true,
+                          tight: true,
+                          newCount: deck.newCount,
+                          learnCount: deck.learnCount,
+                          reviewCount: deck.reviewCount,
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: tokens.spacing.gap / 2,
+                          children: <Widget>[
+                            SrsCountTriple(
+                              newCount: deck.newCount,
+                              learnCount: deck.learnCount,
+                              reviewCount: deck.reviewCount,
+                            ),
+                            FushiPopupMenuButton<_DeckAction>(
+                              tooltip: t.srs_deck_menu,
+                              icon: const FushiIcon(FushiIcons.more),
+                              onSelected: (_DeckAction a) => onAction(deck, a),
+                              itemBuilder: (BuildContext context) =>
+                                  _menuItems(),
+                            ),
+                          ],
+                        ),
+                ),
               ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+/// 牌组行一次构建内共享的命中探针：记下按下点（全局坐标）与行首块的 context，点按
+/// 时判断按下点是否在「行左缘 → 行首块右缘」这片折叠区里。
+class _LeadingProbe {
+  Offset? down;
+  BuildContext? leading;
+
+  bool downInLeading() {
+    final Offset? p = down;
+    final RenderObject? box = leading?.findRenderObject();
+    if (p == null || box is! RenderBox || !box.attached || !box.hasSize) {
+      return false;
+    }
+    final double right = box.localToGlobal(Offset(box.size.width, 0)).dx;
+    return p.dx <= right;
   }
 }
 

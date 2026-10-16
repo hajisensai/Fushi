@@ -45,6 +45,17 @@ import 'package:fushi/utils.dart';
 /// 切出去之类的长停顿不该把复习用时统计撑爆。
 const int kSrsMaxAnswerDurationMs = 60000;
 
+/// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
+/// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
+String srsIntervalLabel(({String amount, SrsIntervalUnit unit}) p) =>
+    switch (p.unit) {
+      SrsIntervalUnit.minutes => t.srs_interval_minutes(n: p.amount),
+      SrsIntervalUnit.hours => t.srs_interval_hours(n: p.amount),
+      SrsIntervalUnit.days => t.srs_interval_days(n: p.amount),
+      SrsIntervalUnit.months => t.srs_interval_months(n: p.amount),
+      SrsIntervalUnit.years => t.srs_interval_years(n: p.amount),
+    };
+
 /// 撤销栈的一步。[logId] 非 null = 撤一条评分 / 重置日志；否则执行 [revert] 改回原值。
 class _UndoStep {
   const _UndoStep({required this.cardId, this.logId, this.revert});
@@ -1086,10 +1097,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final SrsDayContext? day = _day;
     String interval(int rating) {
       if (preview == null || day == null) return '';
-      return srsFormatInterval(
-        preview.plan[rating],
-        nowMs: preview.nowMs,
-        today: day.dayIndexOf(preview.nowMs),
+      return srsIntervalLabel(
+        srsIntervalParts(
+          preview.plan[rating],
+          nowMs: preview.nowMs,
+          today: day.dayIndexOf(preview.nowMs),
+        ),
       );
     }
 

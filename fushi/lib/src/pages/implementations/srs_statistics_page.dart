@@ -5,7 +5,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs_stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
@@ -58,15 +57,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   SrsStatsRange _range = SrsStatsRange.month;
   String _deckId = '';
-  String _query = '';
-  String? _queryError;
   bool _futureCumulative = false;
   bool _futureBacklog = true;
   bool _reviewsTime = false;
   _MemoryView _memory = _MemoryView.interval;
-
-  final TextEditingController _queryController = TextEditingController();
-  final FocusNode _queryFocus = FocusNode(debugLabel: 'srs-stats-search');
 
   @override
   void initState() {
@@ -77,13 +71,6 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       }),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
-  }
-
-  @override
-  void dispose() {
-    _queryController.dispose();
-    _queryFocus.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -122,23 +109,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     }
   }
 
-  /// 牌组子树 ∩ 搜索命中 → 统计数据的子集。
+  /// 牌组子树 → 统计数据的子集。
   void _applyFilter() {
     final SrsStatsBundle? b = _bundle;
     if (b == null) return;
-    Set<String>? keep;
-    if (_deckId.isNotEmpty) keep = b.index.cardIdsInDeck(_deckId);
-    _queryError = null;
-    final String q = _query.trim();
-    if (q.isNotEmpty) {
-      try {
-        final Set<String> hit = b.index.cardIdsMatching(q);
-        keep = keep == null ? hit : keep.intersection(hit);
-      } on SrsSearchUnsupported catch (e) {
-        _queryError = t.srs_stats_search_invalid(reason: e.reason);
-      }
-    }
-    _data = keep == null ? b.data : b.data.subset(keep);
+    _data = _deckId.isEmpty
+        ? b.data
+        : b.data.subset(b.index.cardIdsInDeck(_deckId));
   }
 
   // ------------------------------------------------------------- 格式
@@ -304,14 +281,11 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             _Section(_cardCountSection(data, colors), 3),
             _Section(_retentionSection(data, colors), 4),
             _Section(_memorySection(data, colors), 3.2),
-            _Section(_hourlySection(data, colors), 3.6),
-            _Section(_buttonsSection(data, colors), 2.8),
             _Section(_addedSection(data, colors), 2.6),
-            _Section(_leechSection(data), 2.6),
             _Section(_sourceSection(data, colors), 2.6),
           ];
     return FushiEntranceScope(
-      replayKey: Object.hash(_range, _deckId, _query),
+      replayKey: Object.hash(_range, _deckId),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final int columns = box.maxWidth >= kSrsStatsThreeColumnMinWidth
@@ -434,36 +408,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                         }),
                       ),
                     ),
-                  SizedBox(
-                    width: fieldWidth,
-                    child: FushiSearchField(
-                      key: const ValueKey<String>('srs-stats-search'),
-                      controller: _queryController,
-                      focusNode: _queryFocus,
-                      hintText: t.srs_stats_search_hint,
-                      onChanged: (_) {},
-                      onSubmitted: (String q) => setState(() {
-                        _query = q;
-                        _applyFilter();
-                      }),
-                      onClear: () => setState(() {
-                        _queryController.clear();
-                        _query = '';
-                        _applyFilter();
-                      }),
-                    ),
-                  ),
                 ],
               ),
-              if (_queryError case final String err) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap / 2),
-                Text(
-                  err,
-                  style: tokens.type.metadata.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ),
-              ],
             ],
           );
         },
@@ -1175,128 +1121,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     );
   }
 
-  // ------------------------------------------------------------- 按小时 / 评分按钮
-
-  Widget _hourlySection(SrsStatsData data, SrsStatColors colors) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsHourly h = data.hourly(_range);
-    final StatAxisScale percentScale = StatAxisScale(
-      ticks: const <int>[0, 25, 50, 75, 100],
-      labels: const <String>['0', '25%', '50%', '75%', '100%'],
-    );
-    String hourTitle(int i) =>
-        '${i.toString().padLeft(2, '0')}:00 – '
-        '${(i + 1).toString().padLeft(2, '0')}:00';
-    return StatSectionCard(
-      key: const ValueKey<String>('srs-stats-hourly'),
-      title: t.srs_stats_hourly_title,
-      icon: FushiIcons.schedule,
-      subtitle: _rangeLabel(_range),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SrsBarChart(
-            height: 150,
-            bars: <SrsBarDatum>[
-              for (int i = 0; i < 24; i++)
-                SrsBarDatum(
-                  label: '$i',
-                  title: hourTitle(i),
-                  values: <int>[h.counts[i]],
-                ),
-            ],
-            series: <SrsChartSeries>[
-              SrsChartSeries(t.srs_stats_reviews_title, colors.accent),
-            ],
-            scaleOf: statCountAxisScale,
-            valueText: (int v) => t.srs_stats_reviews_count(n: v),
-            extraTooltip: (int i) => h.rateAt(i) == null
-                ? null
-                : '${t.srs_stats_hourly_correct} ${_percent(h.rateAt(i))}',
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          Text(
-            t.srs_stats_hourly_correct,
-            style: tokens.type.metadata.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          // 正确率单独一张小图（与上图对齐的同一横轴），不叠双纵轴。
-          SrsBarChart(
-            key: const ValueKey<String>('srs-stats-hourly-correct'),
-            height: 96,
-            bars: <SrsBarDatum>[
-              for (int i = 0; i < 24; i++)
-                SrsBarDatum(
-                  label: '$i',
-                  title: hourTitle(i),
-                  values: <int>[((h.rateAt(i) ?? 0) * 100).round()],
-                ),
-            ],
-            series: <SrsChartSeries>[
-              SrsChartSeries(t.srs_stats_hourly_correct, colors.good),
-            ],
-            scaleOf: (_) => percentScale,
-            valueText: (int v) => '$v%',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buttonsSection(SrsStatsData data, SrsStatColors colors) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final SrsButtons b = data.buttons(_range);
-    Widget group(String label, SrsButtonGroup g) => Padding(
-      padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  label,
-                  style: tokens.type.metadata.copyWith(
-                    color: scheme.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              Text(
-                '${t.srs_stats_today_correct} ${_percent(g.correctRate)} · ${g.total}',
-                style: tokens.type.metadata.tabular.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          SrsStackedMeter(values: g.ratings, colors: colors.ratings),
-          SizedBox(height: tokens.spacing.gap / 2),
-          _ratingBreakdownLine(g.ratings, colors),
-        ],
-      ),
-    );
-    return StatSectionCard(
-      key: const ValueKey<String>('srs-stats-buttons'),
-      title: t.srs_stats_buttons_title,
-      icon: FushiIcons.checklist,
-      subtitle: _rangeLabel(_range),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          group(t.srs_status_learning, b.learning),
-          group(t.srs_stats_kind_young, b.young),
-          group(t.srs_stats_kind_mature, b.mature),
-        ],
-      ),
-    );
-  }
-
-  // ------------------------------------------------------------- 添加 / 易忘 / 来源
+  // ------------------------------------------------------------- 添加 / 来源
 
   Widget _addedSection(SrsStatsData data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1336,91 +1161,6 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             scaleOf: statCountAxisScale,
             valueText: (int v) => t.srs_stats_cards_total(n: v),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _leechSection(SrsStatsData data) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<SrsStatCard> leeches = data.leeches();
-    final List<SrsStatCard> top = data.mostLapsed();
-    return StatSectionCard(
-      key: const ValueKey<String>('srs-stats-leeches'),
-      title: t.srs_stats_leech_title,
-      icon: FushiIcons.warning,
-      subtitle: t.srs_stats_leech_count(
-        threshold: kSrsLeechLapses,
-        n: leeches.length,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _statLine(<(String, String)>[
-            (
-              t.srs_stats_lapses_in_range,
-              '${data.lapsesBetween(data.firstDayOf(_range), data.today)}',
-            ),
-          ]),
-          SizedBox(height: tokens.spacing.gap),
-          if (top.isEmpty)
-            Text(
-              t.srs_stats_leech_none,
-              style: tokens.type.metadata.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            )
-          else
-            for (final SrsStatCard c in top)
-              InkWell(
-                key: ValueKey<String>('srs-stats-leech-${c.id}'),
-                borderRadius: BorderRadius.all(tokens.radii.chipCorner),
-                onTap: () => unawaited(
-                  Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext _) =>
-                          SrsNoteEditorPage(noteId: c.noteId),
-                    ),
-                  ),
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minHeight: kStatRowMinHeight,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          c.label.isEmpty ? kStatEmptyValue : c.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tokens.type.metadata.copyWith(
-                            color: scheme.onSurface,
-                            fontWeight: c.lapses >= kSrsLeechLapses
-                                ? FontWeight.w600
-                                : null,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: tokens.spacing.gap),
-                      Text(
-                        t.srs_stats_lapses(n: c.lapses),
-                        style: tokens.type.metadata.tabular.copyWith(
-                          color: c.lapses >= kSrsLeechLapses
-                              ? scheme.error
-                              : scheme.onSurfaceVariant,
-                        ),
-                      ),
-                      FushiIcon(
-                        FushiIcons.chevronRight,
-                        size: 18,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
         ],
       ),
     );

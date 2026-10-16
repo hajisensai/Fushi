@@ -16,11 +16,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardBlock;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
@@ -29,6 +32,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -107,6 +111,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   final ScrollController _scroll = ScrollController();
   double? _defsHeight;
 
+  /// 选区自带的焦点不进 Tab 遍历：焦点驱动（Tab → Enter）照旧落到卡面的可操作控件上。
+  final FocusNode _selectionFocus = FocusNode(
+    debugLabel: 'srs-fushi-selection',
+    skipTraversal: true,
+  );
+
   /// 释义 WebView 的子树：正面时在 Offstage 里预建 / 保活（GlobalKey 换父不重建平台
   /// 视图），翻面只是换父，不用现起 WebView。
   final GlobalKey _defsKey = GlobalKey(debugLabel: 'srs-fushi-defs');
@@ -132,6 +142,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   @override
   void dispose() {
     _scroll.dispose();
+    _selectionFocus.dispose();
     super.dispose();
   }
 
@@ -181,6 +192,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       data: base.copyWith(colorScheme: scheme),
       // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
       child: SelectionArea(
+        focusNode: _selectionFocus,
         child: ColoredBox(
           color: scheme.surface,
           child: LayoutBuilder(
@@ -561,12 +573,44 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           key: const ValueKey<String>('srs-fushi-source'),
           label: labels.source,
           style: s,
-          child: Text(
-            srsPlainText(f['MiscInfo']!),
-            style: s.body(size: 13, color: s.muted, ui: true),
-          ),
+          child: _sourceText(s, f['MiscInfo']!),
         ),
     ];
+  }
+
+  /// 来源：制卡时写进 MiscInfo 的 `fushi://source?...` 链接可点，跳回书 / 漫画 / 视频的
+  /// 出处位置（与 Anki 里点 Lapis 的来源同一条 [openCardSource]）；没有链接时纯文本。
+  Widget _sourceText(_SrsCardStyle s, String html) {
+    final CardSourceLink? link = CardSourceLink.fromHtml(html).firstOrNull;
+    final String text = srsPlainText(html);
+    if (link == null) {
+      return Text(text, style: s.body(size: 13, color: s.muted, ui: true));
+    }
+    return FushiPressScale(
+      child: InkWell(
+        key: const ValueKey<String>('srs-fushi-source-link'),
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => srsRunLogged(
+          'SrsFushiCardView.openSource',
+          () => openCardSource(ref: ref, link: link),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                text,
+                style: s
+                    .body(size: 13, color: s.scheme.primary, ui: true)
+                    .copyWith(decoration: TextDecoration.underline),
+              ),
+            ),
+            const SizedBox(width: 4),
+            FushiIcon(FushiIcons.openInNew, size: 14, color: s.scheme.primary),
+          ],
+        ),
+      ),
+    );
   }
 
   SrsCardFace _defsFace({required bool wide}) => SrsCardFace(
@@ -585,8 +629,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 收缩，宽屏下右栏空一大片）。模板 CSS 不动——原生渲染按「笔记类型 CSS 与内置
     // 模板逐字一致」判定，改模板会让库里已有的 Fushi 卡片退回整面 WebView。
     // 窄版式释义 WebView 跟内容等高，页内 vh 不再是屏高：收起高度按外层视口给像素值。
+    // 三个类名：宿主 CSS 排在卡片 CSS 之前，同为两类名的模板规则
+    // （`.fc-back.fc-layout-wide{max-width:1160px}`）会后来居上，宽屏右侧又空出来。
     hostCss:
-        '.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
+        '.fc.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
   );
@@ -880,17 +926,31 @@ class SrsRubyText extends StatelessWidget {
             if (s.ruby == null)
               TextSpan(text: s.text, style: _styleOf(s))
             else
+              // 按基线对齐，基线取基字（不是上面的注音）：注音段与旁边的普通字落在
+              // 同一条基线上。WidgetSpan 的子组件已由 Text.rich 按 textScaler 整体缩放，
+              // 里面的 Text 不能再缩一次（否则带注音的字比旁边的大一圈）。
               WidgetSpan(
-                alignment: PlaceholderAlignment.bottom,
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      s.ruby!,
-                      style: rubyStyle.copyWith(height: 1.1),
-                      maxLines: 1,
+                    _NoBaseline(
+                      child: Text(
+                        s.ruby!,
+                        style: rubyStyle.copyWith(height: 1.1),
+                        maxLines: 1,
+                        softWrap: false,
+                        textScaler: TextScaler.noScaling,
+                      ),
                     ),
-                    Text(s.text, style: _styleOf(s), maxLines: 1),
+                    Text(
+                      s.text,
+                      style: _styleOf(s),
+                      maxLines: 1,
+                      softWrap: false,
+                      textScaler: TextScaler.noScaling,
+                    ),
                   ],
                 ),
               ),
@@ -900,6 +960,26 @@ class SrsRubyText extends StatelessWidget {
       style: style,
     );
   }
+}
+
+/// 不对外报告基线的包装：Column 取「第一个有基线的孩子」作自己的基线，注音行包上它
+/// 后，注音段的基线就是下面基字的基线。
+class _NoBaseline extends SingleChildRenderObjectWidget {
+  const _NoBaseline({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderNoBaseline();
+}
+
+class _RenderNoBaseline extends RenderProxyBox {
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) => null;
+
+  @override
+  double? computeDryBaseline(
+    BoxConstraints constraints,
+    TextBaseline baseline,
+  ) => null;
 }
 
 /// 音调图：读音逐拍，高拍画上线、低拍画下线，降调处画竖线（与模板脚本同一套规则）。
