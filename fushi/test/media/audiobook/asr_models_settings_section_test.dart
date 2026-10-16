@@ -12,27 +12,44 @@ import 'package:path/path.dart' as p;
 /// 假服务：每种语言的就绪状态可编程；模型目录落在临时目录里，`deleteAll` 走真
 /// 删除以拿到真实的释放字节数。
 class _FakeService extends AsrTranscriptionService {
-  _FakeService({required this.root, required this.readyByLanguage})
-    : super(
-        audioProfile: AsrAudioProfile.cleanSpeech,
-        backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
+  _FakeService({
+    required this.root,
+    required this.readyByLanguage,
+    AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+  }) : super(
+         audioProfile: profile,
+         backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
 
-        openStore: (AsrLanguage l) async => AsrModelStore(
-          Directory(p.join(root.path, asrModelPackFor(l).id)),
-          asrModelPackFor(l),
-        ),
-        jobsRoot: () async => root,
-      );
+         openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+             AsrModelStore(
+               Directory(
+                 p.join(root.path, asrModelPackFor(l, profile: profile).id),
+               ),
+               asrModelPackFor(l, profile: profile),
+             ),
+         jobsRoot: () async => root,
+       );
 
   final Directory root;
   final Map<AsrLanguage, bool> readyByLanguage;
   final List<AsrLanguage> downloadLanguages = <AsrLanguage>[];
+  final List<AsrLanguage> plannedLanguages = <AsrLanguage>[];
+
+  /// 只服务某种素材的包（日语视频的 Parakeet）那一行用的假服务：变体 / EP 推荐
+  /// 问它（模型状态仍按包走 `openPackStore`）。
+  _FakeService? _other;
+  _FakeService forProfile(AsrAudioProfile profile) => _other ??= _FakeService(
+    root: root,
+    readyByLanguage: <AsrLanguage, bool>{},
+    profile: profile,
+  );
 
   @override
   Future<AsrTranscribePlan> plan({
     required AsrLanguage language,
     required AsrAccelerationPreference preference,
   }) async {
+    plannedLanguages.add(language);
     final bool ready = readyByLanguage[language] ?? false;
     return AsrTranscribePlan(
       language: language,
@@ -123,12 +140,13 @@ void main() {
     downloads,
   );
 
-  // 独立登记表：按包开假目录、不带 GPU 环境（不碰插件 / 数据根）。
-  Widget section(AsrTranscriptionService service) => AsrModelsSettingsSection(
+  // 独立登记表：按包开假目录、按素材问假服务、不带 GPU 环境（不碰插件 / 数据根）。
+  Widget section(_FakeService service) => AsrModelsSettingsSection(
     service: service,
     showGpuRuntime: false,
     downloads: AsrModelDownloads(
       openPackStore: openPackStore,
+      serviceForProfile: service.forProfile,
       gpuRuntimeToDownload: () async => null,
     ),
   );
@@ -215,6 +233,48 @@ void main() {
       find.byKey(ValueKey<String>('asr-models-delete-${kAsrEnglishPack.id}')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('只服务视频的包（Parakeet）那一行问的是 mixedAudio 服务、状态按自己的包，不借用同语言通用包', (
+    WidgetTester tester,
+  ) async {
+    final _FakeService service = _FakeService(
+      root: tmp,
+      readyByLanguage: <AsrLanguage, bool>{AsrLanguage.japanese: true},
+    );
+    await tester.pumpWidget(wrap(section(service)));
+    await tester.pumpAndSettle();
+    final _FakeService video = service.forProfile(AsrAudioProfile.mixedAudio);
+    expect(video.audioProfile, AsrAudioProfile.mixedAudio);
+    // Parakeet 行的变体推荐问的是视频那份服务（fp32 显存门槛按 Parakeet 算）；
+    // 有声书那份不会替它被问。
+    expect(video.plannedLanguages, <AsrLanguage>[AsrLanguage.japanese]);
+    // ReazonSpeech 已下载 → 只有删除；Parakeet 未下载 → 只有下载（借用日语通用
+    // 包的状态时两行一起显示「已下载」，删 Parakeet 删的是 ReazonSpeech）。
+    expect(
+      find.byKey(ValueKey<String>('asr-models-delete-${kAsrJapanesePack.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>('asr-models-download-${kAsrParakeetJapanesePack.id}'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        ValueKey<String>('asr-models-delete-${kAsrParakeetJapanesePack.id}'),
+      ),
+      findsNothing,
+    );
+    // 点 Parakeet 的下载：落到 Parakeet 自己的目录，不是 ReazonSpeech。
+    await tester.tap(
+      find.byKey(
+        ValueKey<String>('asr-models-download-${kAsrParakeetJapanesePack.id}'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(downloads, <String>[kAsrParakeetJapanesePack.id]);
   });
 
   testWidgets('删除先弹二次确认；确认后真删目录并回报释放字节', (WidgetTester tester) async {

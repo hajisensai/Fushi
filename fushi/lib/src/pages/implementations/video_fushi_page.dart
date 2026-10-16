@@ -95,7 +95,7 @@ import 'package:fushi_engine/media/video/bluray/aacs_configuration.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:collection/collection.dart' show IterableExtension;
-import 'package:fushi_asr_core/asr_core.dart' show AsrLanguage;
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile, AsrLanguage;
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart'
     show
         AudiobookTranscribeCancelToken,

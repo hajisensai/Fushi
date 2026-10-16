@@ -405,8 +405,11 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
     final AsrLocalModelProblem? problem = _problem;
     if (problem != null) return asrLocalModelProblemMessage(problem);
     if (pack == null) return t.audiobook_transcribe_model_custom_intro;
-    final String kind =
-        pack.architecture == AsrModelArchitecture.ctc ? 'CTC' : 'transducer';
+    final String kind = switch (pack.architecture) {
+      AsrModelArchitecture.transducer => 'transducer',
+      AsrModelArchitecture.ctc => 'CTC',
+      AsrModelArchitecture.nemoCtc => 'NeMo CTC',
+    };
     return '$kind · ${pack.files.length} · '
         '${FushiByteFormat.bytes(pack.totalBytes(AsrEncoderVariant.int8))}';
   }

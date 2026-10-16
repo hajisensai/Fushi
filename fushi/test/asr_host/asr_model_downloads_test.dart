@@ -11,16 +11,33 @@ import 'package:fushi/src/asr_host/gpu_runtime_pack.dart';
 /// 按语言开目录的服务：只给 `plan` 用（变体 / EP 推荐按语言取）。下载与状态
 /// 不该经它——登记表按包开目录。
 class _FakeService extends AsrTranscriptionService {
-  _FakeService(Directory root)
-    : super(
-        audioProfile: AsrAudioProfile.cleanSpeech,
-        backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
-        openStore: (AsrLanguage l) async => AsrModelStore(
-          Directory(p.join(root.path, asrModelPackFor(l).id)),
-          asrModelPackFor(l),
-        ),
-        jobsRoot: () async => root,
-      );
+  _FakeService(
+    Directory root, {
+    AsrAudioProfile profile = AsrAudioProfile.cleanSpeech,
+  }) : super(
+         audioProfile: profile,
+         backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
+         openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+             AsrModelStore(
+               Directory(
+                 p.join(root.path, asrModelPackFor(l, profile: profile).id),
+               ),
+               asrModelPackFor(l, profile: profile),
+             ),
+         jobsRoot: () async => root,
+       );
+
+  /// 被问过推荐的语言（看清楚是哪份服务被问）。
+  final List<AsrLanguage> planned = <AsrLanguage>[];
+
+  @override
+  Future<AsrTranscribePlan> plan({
+    required AsrLanguage language,
+    required AsrAccelerationPreference preference,
+  }) async {
+    planned.add(language);
+    return super.plan(language: language, preference: preference);
+  }
 
   @override
   Stream<ModelDownloadEvent> downloadModel({
@@ -144,11 +161,16 @@ void main() {
     void Function(AsrModelPack pack, {Object? error})? onFinished,
     void Function(AsrModelPack pack, Object error)? onGpuRuntimeError,
     GpuRuntimeStore? gpu,
+    AsrTranscriptionService Function(AsrAudioProfile profile)?
+    serviceForProfile,
   }) => AsrModelDownloads(
     onFinished: onFinished,
     onGpuRuntimeError: onGpuRuntimeError,
     openPackStore: stores.open,
     gpuRuntimeToDownload: () async => gpu,
+    serviceForProfile:
+        serviceForProfile ??
+        (AsrAudioProfile _) => throw StateError('本用例不该按素材另建服务'),
   );
 
   test('逐文件事件累计成整包进度；同一个包不重复发起；结束后释放槽位', () async {
@@ -315,5 +337,39 @@ void main() {
     await _settle();
     await downloads.cancel(pack.id);
     expect(downloads.isActive(pack.id), isFalse);
+  });
+
+  test('只服务视频的包（Parakeet）：推荐问 mixedAudio 服务，状态 / 下载按自己的包', () async {
+    final List<AsrAudioProfile> built = <AsrAudioProfile>[];
+    _FakeService? video;
+    final AsrModelDownloads downloads = registry(
+      serviceForProfile: (AsrAudioProfile profile) {
+        built.add(profile);
+        return video ??= _FakeService(tmp, profile: profile);
+      },
+    );
+    stores.ready[pack.id] = true;
+    expect(
+      kAsrParakeetJapanesePack.servesProfile(service.audioProfile),
+      isFalse,
+    );
+
+    final AsrTranscribePlan plan = await downloads.planFor(
+      service,
+      kAsrParakeetJapanesePack,
+    );
+    // 第二次问同一种素材复用同一份服务。
+    await downloads.planFor(service, kAsrParakeetJapanesePack);
+    expect(built, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
+    expect(video!.planned, <AsrLanguage>[
+      AsrLanguage.japanese,
+      AsrLanguage.japanese,
+    ]);
+    expect(service.planned, isEmpty);
+    expect(plan.modelStatus.ready, isFalse);
+
+    downloads.start(kAsrParakeetJapanesePack, plan: plan);
+    await _settle();
+    expect(stores.downloaded, <String>[kAsrParakeetJapanesePack.id]);
   });
 }

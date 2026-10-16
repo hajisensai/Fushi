@@ -120,7 +120,7 @@ _runOnce({
     // 素材是干净朗读（TTS / 有声书），能量门限的双模态前提成立。
     audioProfile: AsrAudioProfile.cleanSpeech,
     backend: fushiAsrBackend(),
-    openStore: (AsrLanguage _) async => store,
+    openStore: (AsrLanguage _, AsrAudioProfile __) async => store,
     jobsRoot: () async => jobsRoot,
     // 缺省 60 s 让检查点/续跑路径多走几次；ASR_CHUNK_SECONDS=300 对齐生产值拿速度数。
     chunkSeconds: int.tryParse(_param('ASR_CHUNK_SECONDS')) ?? 60,

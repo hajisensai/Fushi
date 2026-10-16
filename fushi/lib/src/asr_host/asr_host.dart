@@ -151,13 +151,18 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
   applyAsrModelCatalog(catalog);
 }
 
-/// 建一个装配好的转录服务。两个生产实例化点都调这里。
-asr.AsrTranscriptionService createAsrTranscriptionService() =>
+/// 建一个装配好的转录服务。生产实例化点都调这里。
+///
+/// [audioProfile] 是调用方对素材的断言（见 [asr.AsrAudioProfile]）：
+/// - 有声书（默认）是干净朗读：语音与静默能量差 30 dB 以上、双模态可分，能量
+///   门限够用且免掉每 32 ms 一次 ONNX 前向；
+/// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
+///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
+asr.AsrTranscriptionService createAsrTranscriptionService({
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
+}) =>
     asr.AsrTranscriptionService(
-      // 有声书是干净朗读：语音与静默能量差 30 dB 以上、双模态可分，能量门限
-      // 够用且免掉每 32 ms 一次 ONNX 前向。混音素材（动画/影视/带 BGM 的音源）
-      // 必须换 mixedAudio，见 AsrAudioProfile。
-      audioProfile: asr.AsrAudioProfile.cleanSpeech,
+      audioProfile: audioProfile,
       backend: fushiAsrBackend(),
       // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
       // 激活（CUDA 注册）；后台 isolate 共享同一个插件实例，注册是进程级的，不必
@@ -179,14 +184,19 @@ asr.AsrTranscriptionService createAsrTranscriptionService() =>
 /// 不注入的话本地模型恒判未就绪：包里的 `AsrModelStore` 只按 `pack.id` 拼目录、
 /// 只在那个目录里 stat 文件名，`AsrModelFile.url` 要到下载时才读——于是弹层会
 /// 提示「需要下载」，点下去再拿 `file:` URL 去发 HTTP 请求。
-Future<asr.AsrModelStore> openAsrModelStore(asr.AsrLanguage language) =>
-    openAsrModelStoreForPack(asr.asrModelPackFor(language));
+///
+/// [profile]：同一语言在视频与有声书上可以是两个包（日语：Parakeet / ReazonSpeech），
+/// 按素材取包，否则视频的就绪判定与下载会落到有声书那个包的目录上。
+Future<asr.AsrModelStore> openAsrModelStore(
+  asr.AsrLanguage language,
+  asr.AsrAudioProfile profile,
+) => openAsrModelStoreForPack(asr.asrModelPackFor(language, profile: profile));
 
 /// 打开**某个具体包**的模型目录（手动接入的本地包认用户自己的文件夹）。
 ///
-/// 设置页一行一个包，同一语言可能有好几行（默认包、可选的 Kitsune、自带包），
-/// 只有当前选中的那个才是 [openAsrModelStore] 给的；其余行按语言查会照抄选中
-/// 包的状态，点下载 / 删除也落到选中包上。
+/// 设置页一行一个包，同一语言可能有好几行（默认包、视频专用的 Parakeet、可选的
+/// Kitsune、自带包），只有当前选中的那个才是 [openAsrModelStore] 给的；其余行
+/// 按语言查会照抄选中包的状态，点下载 / 删除也落到选中包上。
 Future<asr.AsrModelStore> openAsrModelStoreForPack(
   asr.AsrModelPack pack,
 ) async {
@@ -195,11 +205,19 @@ Future<asr.AsrModelStore> openAsrModelStoreForPack(
   return asr.AsrModelStore.openPack(pack);
 }
 
-/// 本机是否已下好（或手动接入了）任一语言的语音模型。老用户补 GPU 环境的判据
+/// 本机是否已下好（或手动接入了）任一语音模型包。老用户补 GPU 环境的判据
 /// （`backfillGpuRuntimeForExistingModels`）。
+///
+/// 按注册表里的**每个包**查，而不是按「语言 → 当前选中的包」：只下过视频用的
+/// Parakeet、或下了 Kitsune 却没选它的用户，按语言（有声书口径）查到的是另一个
+/// 没下过的包，会被判成「没有模型」而漏补 GPU 环境。注册表在 `main()` 里
+/// `loadAsrModelCatalog()` 之后才调这里，自带包也已在内。
 Future<bool> hasDownloadedAsrModel() async {
-  for (final asr.AsrLanguage language in asr.AsrLanguage.values) {
-    final asr.AsrModelStore store = await openAsrModelStore(language);
+  final Set<String> seen = <String>{};
+  for (final asr.AsrModelPack pack in asr.asrModelRegistry.packs) {
+    // 窄包置顶时同一个包会出现两次（同 id 同目录）。
+    if (!seen.add(pack.id)) continue;
+    final asr.AsrModelStore store = await openAsrModelStoreForPack(pack);
     if (asr.AsrEncoderVariant.values.any(store.isReady)) return true;
   }
   return false;

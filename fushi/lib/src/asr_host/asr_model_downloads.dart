@@ -3,7 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 
-import 'package:fushi/src/asr_host/asr_host.dart' show openAsrModelStoreForPack;
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show createAsrTranscriptionService, openAsrModelStoreForPack;
 import 'package:fushi/src/asr_host/gpu_acceleration.dart'
     show gpuRuntimeToDownloadForUi, withGpuRuntimeDownload;
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart' show GpuRuntimeStore;
@@ -42,8 +43,12 @@ class AsrModelDownloadProgress {
 ///
 /// 这里也是「设置 › 模型」唯一的下载路径，设置页与 CLI 的语义因此一致：
 /// - **按包**：状态 / 下载 / 删除只认这一个包的目录（[openPackStore]）。同一语言
-///   可能有好几行（默认包、可选的 Kitsune、自带包），按语言走服务拿到的永远是
-///   当前选中的那个包——别的行会照抄它的状态，下载 / 删除也落到它身上。
+///   可能有好几行（默认包、视频专用的 Parakeet、可选的 Kitsune、自带包），按语言
+///   走服务拿到的永远是那种素材当前选中的那个包——别的行会照抄它的状态，下载 /
+///   删除也落到它身上。
+/// - **按素材问推荐**：只服务某一种素材的包（日语视频的 Parakeet）的变体 / EP
+///   推荐问服务它那种素材的服务（[serviceForProfile]），拿有声书那份去问会得到
+///   同语言通用包（ReazonSpeech）的推荐——Parakeet 的 fp32 显存门槛不同。
 /// - **顺带下 GPU 环境**：Windows 上模型下完接着装这台机器显卡对应的 GPU 运行时
 ///   （[gpuRuntimeToDownload]），进度合进同一条；GPU 环境失败不算模型下载失败
 ///   （模型照样能按 CPU 转录），原因走 [onGpuRuntimeError] 与 [lastGpuRuntimeErrorOf]。
@@ -53,7 +58,12 @@ class AsrModelDownloads extends ChangeNotifier {
     this.onGpuRuntimeError,
     this.openPackStore = openAsrModelStoreForPack,
     this.gpuRuntimeToDownload = gpuRuntimeToDownloadForUi,
-  });
+    AsrTranscriptionService Function(AsrAudioProfile profile)?
+    serviceForProfile,
+  }) : serviceForProfile =
+           serviceForProfile ??
+           ((AsrAudioProfile profile) =>
+               createAsrTranscriptionService(audioProfile: profile));
 
   /// 下载结束回调（`error` 非空 = 模型下载失败；取消不回调）。
   final void Function(AsrModelPack pack, {Object? error})? onFinished;
@@ -66,6 +76,14 @@ class AsrModelDownloads extends ChangeNotifier {
 
   /// 下模型阶段该一起下的 GPU 环境；null = 不需要 / 本平台没有。
   final Future<GpuRuntimeStore?> Function() gpuRuntimeToDownload;
+
+  /// 调用方给的服务不服务某个包的素材时，按那种素材现建的服务（按素材缓存）。
+  /// 模型目录本身不经服务，走 [openPackStore]。
+  final AsrTranscriptionService Function(AsrAudioProfile profile)
+  serviceForProfile;
+
+  final Map<AsrAudioProfile, AsrTranscriptionService> _profileServices =
+      <AsrAudioProfile, AsrTranscriptionService>{};
 
   final Map<String, _AsrDownloadSlot> _slots = <String, _AsrDownloadSlot>{};
 
@@ -90,16 +108,31 @@ class AsrModelDownloads extends ChangeNotifier {
   /// 最近一次顺带装 GPU 环境失败的原因；没失败过 / 重新下载后为 null。
   String? lastGpuRuntimeErrorOf(String packId) => _lastGpuErrors[packId];
 
-  /// [pack] 的下载计划：变体与 EP 推荐按语言取（与转录弹层同一个 `plan(auto)`），
-  /// 模型状态换成**这个包自己目录**的。设置页每一行与 CLI 都走这里。
+  /// [pack] 的变体 / EP 推荐该问哪份服务：[service] 服务这个包的素材就用它，否则
+  /// 用 [serviceForProfile] 按包的素材建的那份。
+  AsrTranscriptionService serviceFor(
+    AsrTranscriptionService service,
+    AsrModelPack pack,
+  ) {
+    if (pack.servesProfile(service.audioProfile)) return service;
+    final AsrAudioProfile profile = pack.audioProfiles.first;
+    return _profileServices.putIfAbsent(
+      profile,
+      () => serviceForProfile(profile),
+    );
+  }
+
+  /// [pack] 的下载计划：变体与 EP 推荐按「语言 + 这个包服务的素材」取（与转录
+  /// 弹层同一个 `plan(auto)`），模型状态换成**这个包自己目录**的。设置页每一行
+  /// 与 CLI 都走这里。
   Future<AsrTranscribePlan> planFor(
     AsrTranscriptionService service,
     AsrModelPack pack,
   ) async {
-    final AsrTranscribePlan byLanguage = await service.plan(
-      language: pack.language,
-      preference: AsrAccelerationPreference.auto,
-    );
+    final AsrTranscribePlan byLanguage = await serviceFor(
+      service,
+      pack,
+    ).plan(language: pack.language, preference: AsrAccelerationPreference.auto);
     final AsrModelStore store = await openPackStore(pack);
     return AsrTranscribePlan(
       language: byLanguage.language,
