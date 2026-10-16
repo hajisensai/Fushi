@@ -196,6 +196,17 @@ DownloadTaskEntry animeDownloadTaskEntry({
   );
 }
 
+/// 合集名 / 关系边标题常带刮削附加的年份后缀（`FX戦士くるみちゃん (2026)`），
+/// AniList 搜索对整串字面匹配，带了后缀就 0 条（反馈 4Np5-EyJgE）。预填搜番词
+/// 前剥掉尾部的 `(YYYY)` / `（YYYY）` / `[YYYY]`；剥完为空则保持原样。
+String animeSearchSeedQuery(String raw) {
+  final String trimmed = raw.trim();
+  final String stripped = trimmed
+      .replaceFirst(RegExp(r'\s*[(（\[]\s*(?:19|20)\d{2}\s*[)）\]]\s*$'), '')
+      .trim();
+  return stripped.isEmpty ? trimmed : stripped;
+}
+
 /// 打开番剧下载（M3E 入口）：窄屏（< 600）出上两角 28 的底部弹层，宽屏出居中
 /// 浮动面板（圆角 28 + 图标徽标），Apple 设计系统出 iOS / macOS sheet——形态
 /// 全部由共享的 [adaptiveModalSheet] 决定，本函数只装配内容。
@@ -435,7 +446,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     } else if (_selectedMedia == null &&
         seedQuery != null &&
         seedQuery.isNotEmpty) {
-      _animeQueryCtrl.text = seedQuery;
+      _animeQueryCtrl.text = animeSearchSeedQuery(seedQuery);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_searchAnime());
       });

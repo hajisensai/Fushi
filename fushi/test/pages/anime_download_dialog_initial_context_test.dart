@@ -113,6 +113,27 @@ void main() {
     expect(fieldTexts(tester), contains('Some Title'));
   });
 
+  testWidgets('initialSearchQuery 带 (年份) 后缀 → 预填剥掉年份（反馈 4Np5-EyJgE）', (
+    WidgetTester tester,
+  ) async {
+    await pumpDialog(tester, initialSearchQuery: 'FX戦士くるみちゃん (2026)');
+
+    expect(fieldTexts(tester), contains('FX戦士くるみちゃん'));
+    expect(fieldTexts(tester), isNot(contains('FX戦士くるみちゃん (2026)')));
+  });
+
+  test('animeSearchSeedQuery 只剥尾部年份括号', () {
+    expect(animeSearchSeedQuery('Title (2026)'), 'Title');
+    expect(animeSearchSeedQuery('Title（2026）'), 'Title');
+    expect(animeSearchSeedQuery('Title [1999]'), 'Title');
+    expect(
+      animeSearchSeedQuery('Re:Zero (2016) Season 2'),
+      'Re:Zero (2016) Season 2',
+    );
+    expect(animeSearchSeedQuery('Title 2026'), 'Title 2026');
+    expect(animeSearchSeedQuery('(2026)'), '(2026)');
+  });
+
   testWidgets('全 null → 既有入口行为零变化（搜番段空搜索框）', (WidgetTester tester) async {
     await pumpDialog(tester);
 

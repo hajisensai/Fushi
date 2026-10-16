@@ -24,7 +24,8 @@ void main() {
     expect(
       iss,
       contains('procedure MakeWayForRunningLauncher('),
-      reason: 'launcher 是拉起本安装器的进程，复制阶段必然撞 DeleteFile code 5；'
+      reason:
+          'launcher 是拉起本安装器的进程，复制阶段必然撞 DeleteFile code 5；'
           '没有这一步，/SUPPRESSMSGBOXES 会默认 Abort 并整包回滚',
     );
     // 必须真的被 PrepareToInstall 调用，光定义不算。
@@ -89,43 +90,49 @@ void main() {
     expect(
       missingCheckAt,
       lessThan(firstDeleteAt),
-      reason: '删残留必须发生在「原件在位」这个分支里；'
+      reason:
+          '删残留必须发生在「原件在位」这个分支里；'
           '无条件先删会毁掉唯一的恢复材料',
     );
   });
 
-  test('app 目录扫进程走 sysnative，且放过 launcher', () {
-    final String iss = readInstallerScript();
-    final int killAt = iss.indexOf('procedure KillProcessesUnderDir(');
+  test('app 目录扫进程读得到 64 位进程的路径，且放过 launcher', () {
+    final String control = File(
+      'windows/installer/process_control.iss',
+    ).readAsStringSync();
+    final int killAt = control.indexOf('procedure KillProcessesUnderDir(');
     expect(killAt, greaterThan(0));
-    final String body = iss.substring(killAt, killAt + 2200);
+    final String body = control.substring(killAt);
 
-    // 断言字面量（勿改）: '{sysnative}'
+    // 断言字面量（勿改）: 'QueryFullProcessImageNameW'
     //
-    // 本安装器是 32 位进程（[Setup] 里没有 ArchitecturesInstallIn64BitMode，
-    // 安装日志写「64-bit install mode: No」）。{sys} 会被 WOW64 重定向到 SysWOW64 的
-    // 32 位 PowerShell，而 32 位 PowerShell 读不到 64 位进程的 .Path（取到空串），
-    // 于是过滤条件 `$_.Path -and ...` 对每一个 64 位进程恒假 —— 整个过程是发哑弹。
-    // 实测同一命令同一 x64 目标：64 位 PS 杀得掉、32 位 PS 杀不掉且 Path 为空。
+    // 本安装器是 32 位进程（安装日志写「64-bit install mode: No」）。BUG-1786 的旧实现
+    // 经 32 位 PowerShell 取 `.Path`（走 MainModule），读不到 64 位进程的路径，整个清扫
+    // 是哑弹。路径必须用 QueryFullProcessImageNameW 取：它不走 MainModule，32 位进程
+    // 读 64 位进程同样可靠（2026-10-16 实测：32 位探针安装器清掉了 64 位的目标进程）。
     expect(
       body,
-      contains(r"ExpandConstant('{sysnative}\WindowsPowerShell"),
-      reason: '32 位 Inno 经 {sys} 只能拿到 32 位 PowerShell，读不到 64 位进程的 Path，'
-          '这个清扫就成了哑弹；必须用 {sysnative} 绕开 WOW64 重定向',
+      contains('FushiProcessImagePath('),
+      reason: '按路径清扫必须经 FushiProcessImagePath（QueryFullProcessImageNameW）取镜像路径',
     );
     expect(
-      body,
-      isNot(contains(r"ExpandConstant('{sys}\WindowsPowerShell")),
-      reason: '不得回退到 {sys}（WOW64 重定向 → 32 位 PowerShell → 哑弹）',
+      control,
+      contains("'QueryFullProcessImageNameW@kernel32.dll stdcall'"),
+      reason: '32 位安装器读 64 位进程路径只能靠 QueryFullProcessImageNameW',
     );
 
     // 断言字面量（勿改）: 'fushi_update_launcher'
     // 清扫一旦真正生效，就必须显式放过 launcher：杀了它 = 安装失败时没人把 app
     // 拉回来（BUG-1708 复发）。它占住的文件由 MakeWayForRunningLauncher 处理。
+    // 按前缀放过：改名让路留下的 fushi_update_launcher.old*.exe 是同一份映像（BUG-1831）。
     expect(
       body,
-      contains(r"$_.ProcessName -ne ''fushi_update_launcher''"),
+      contains('if FushiIsUpdateLauncherImage(Names[I]) then'),
       reason: 'launcher 必须被排除，否则清扫生效之日就是 BUG-1708 复发之时',
+    );
+    expect(
+      control,
+      contains("FushiUpdateLauncherImagePrefix = 'fushi_update_launcher';"),
     );
   });
 }

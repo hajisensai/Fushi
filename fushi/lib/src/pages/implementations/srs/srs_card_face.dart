@@ -309,6 +309,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
           // 卡面媒体经拦截器 / 自定义 scheme 从 SrsMediaStore 供字节（见 srs_card_media.dart）。
           useShouldInterceptRequest: true,
           resourceCustomSchemes: const <String>[kSrsMediaScheme],
+          // BUG-3356 同款：WKWebView 默认把屏幕边缘横滑当 WebView 历史前进 / 后退。
+          // 本卡面换卡 / 翻面都在同一平台视图上 `loadData`（见 [_syncContent]），历史里
+          // 堆着上一张卡 / 正面，侧滑会把画面退回旧卡面而复习状态没动。卡面切换完全由
+          // 宿主拥有，关掉。只作用于 iOS / macOS。
+          allowsBackForwardNavigationGestures: false,
         ),
         shouldInterceptRequest:
             (InAppWebViewController controller, WebResourceRequest request) =>
