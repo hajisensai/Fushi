@@ -6665,6 +6665,8 @@
   "updates_system_notifications": "Notificaciones del sistema",
   "updates_system_notifications_hint": "Envía también una notificación del sistema. Si lo desactivas, se mantiene la insignia dentro de la app.",
   "url": "URL",
+  "usage_stats_enabled": "Share usage statistics",
+  "usage_stats_enabled_hint": "Once a day, sends a random install ID, the app version, platform and update channel to fushi.moe so we can count active users. No account, library or reading data is included, and your IP address is not stored. When you attach device info to feedback, the install ID is sent with it.",
   "video_air_season_autumn": "Otoño",
   "video_air_season_spring": "Primavera",
   "video_air_season_summer": "Verano",

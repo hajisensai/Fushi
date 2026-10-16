@@ -462,6 +462,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'updates_notify_manga_extension',
   'updates_notify_video_episode',
   'updates_system_notifications',
+  // 安装统计（updates/usage_heartbeat.dart），三个都是设备本地：开关（bool，默认 true）、
+  // 本机安装 id（UUID v4）、上次心跳成功时刻（int 毫秒）。
+  'usage_stats_enabled',
+  'usage_stats_install_id',
+  'usage_stats_last_ping_at',
   // String（`VideoSeriesFilter.name`，默认 `standalone`）：「全部视频」系列归属
   // 筛选的上次选择（BUG-2835，用户拍板默认只看散片、并记住选择）。
   'video_all_series_filter',
