@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Che phụ đề phụ",
   "video_setting_secondary_subtitle_obscure_hint": "Làm mờ hoặc ẩn phụ đề phụ (bản dịch)",
   "video_setting_seek_seconds": "Bước tua (giây)",
+  "video_setting_shortcuts_hint": "Xem và tùy chỉnh phím tắt bàn phím và tay cầm của trình phát",
   "video_setting_slim_progress_bar": "Thanh tiến độ mảnh ở dưới cùng",
   "video_setting_slim_progress_bar_hint": "Khi các nút điều khiển mờ đi, giữ một đường tiến độ mảnh màu nhấn dọc sát đáy video. Ở cửa sổ thu nhỏ nó luôn hiện, vì thanh tua đầy đủ bị ẩn ở đó.",
   "video_setting_speed": "Tốc độ phát",

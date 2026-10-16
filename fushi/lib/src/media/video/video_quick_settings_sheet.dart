@@ -483,6 +483,7 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     }
 
     final List<SettingsSection> sections;
+    SettingsItemBuilder? shaderBody;
     switch (group) {
       case VideoGroup.mpv:
         sections = base.sections
@@ -527,6 +528,38 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
               s,
         ];
       case VideoGroup.shaders:
+        // 着色器管理视图自带三个分组（画质档位 / 进阶 / 已安装着色器），各是一个
+        // 标题在卡片外的 [AdaptiveSettingsSection]。若当成 schema 行渲染，整个视图
+        // 会被再套进一张行卡片、分组标题落进卡内（反馈 FxUMLvIqM1）；改走整页正文
+        // 逃生口，与其它分类页的分组同一形态。
+        for (final SettingsSection s in base.sections) {
+          for (final SettingsItem item in s.items) {
+            // 从 schema 行里取出来后不再经 section 的 visibleCopy 过滤，
+            // 可见谓词在这里照样生效。
+            if (item is SettingsCustomItem &&
+                item.id == _shaderManagerItemId &&
+                item.isVisible(settingsContext)) {
+              shaderBody = item.builder;
+            }
+          }
+        }
+        sections = <SettingsSection>[
+          for (final SettingsSection s in base.sections)
+            if (s.items.any((SettingsItem i) => i.id != _shaderManagerItemId))
+              SettingsSection(
+                id: s.id,
+                title: s.title,
+                footer: s.footer,
+                visible: s.visible,
+                presentation: s.presentation,
+                summaryBuilder: s.summaryBuilder,
+                liveListenable: s.liveListenable,
+                items: <SettingsItem>[
+                  for (final SettingsItem i in s.items)
+                    if (i.id != _shaderManagerItemId) i,
+                ],
+              ),
+        ];
       case VideoGroup.danmaku:
       case VideoGroup.controls:
         sections = base.sections;
@@ -538,8 +571,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       sections: sections.isEmpty
           ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
           : sections,
+      body: shaderBody,
+      bodyBeforeSections: true,
     );
   }
+
+  /// 「画质增强」页的着色器管理视图条目 id（settings_schema_video.dart）。
+  static const String _shaderManagerItemId = 'video.player.shaders';
 
   /// 「字幕外观」小节顶部的实时样式预览行：16:9 模拟画面上按当前样式渲染一行
   /// 日文示例字幕（共享组件，与全局设置 › 视频同一份，样式函数与播放页同源）。

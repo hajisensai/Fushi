@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "副字幕を隠す",
   "video_setting_secondary_subtitle_obscure_hint": "副字幕（翻訳）をぼかすまたは非表示にします",
   "video_setting_seek_seconds": "シークの秒数",
+  "video_setting_shortcuts_hint": "プレーヤーのキーボード／ゲームパッドのショートカットを確認・カスタマイズ",
   "video_setting_slim_progress_bar": "下部に細いプログレスバーを表示",
   "video_setting_slim_progress_bar_hint": "コントロールが消えたとき、動画の最下端にアクセントカラーの細い進行ラインを残します。ミニウィンドウでは通常のシークバーが非表示のため、常に表示されます。",
   "video_setting_speed": "再生速度",

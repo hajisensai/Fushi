@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Sekundären Untertitel verbergen",
   "video_setting_secondary_subtitle_obscure_hint": "Den sekundären (Übersetzungs-)Untertitel weichzeichnen oder ausblenden",
   "video_setting_seek_seconds": "Spulschritt (Sekunden)",
+  "video_setting_shortcuts_hint": "Tastatur- und Gamepad-Kurzbefehle des Players anzeigen und anpassen",
   "video_setting_slim_progress_bar": "Schmale Fortschrittsleiste unten",
   "video_setting_slim_progress_bar_hint": "Wenn die Steuerelemente ausgeblendet werden, bleibt am untersten Rand des Videos eine dünne Fortschrittslinie in der Akzentfarbe. Im Mini-Fenster wird sie immer angezeigt, da die vollständige Suchleiste dort ausgeblendet ist.",
   "video_setting_speed": "Wiedergabegeschwindigkeit",

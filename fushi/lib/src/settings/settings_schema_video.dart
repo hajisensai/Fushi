@@ -30,6 +30,8 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings_page.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutScope;
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
@@ -1583,6 +1585,26 @@ SettingsDestination buildVideoDestination() {
             cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext settingsContext) async {
               await resetVideoControlLayoutDual(settingsContext);
+            },
+          ),
+          // 播放器里直达快捷键设置并定位到「视频」分域：播放快捷键（F 全屏 / M 静音……）
+          // 原本只能从「设置 · 系统」进，看片时找不到。只在播放器面板里出现——全局
+          // 设置的「系统」分区已有同一个入口，这里再放一条会在设置搜索里重复。
+          SettingsNavigationItem(
+            id: 'video.controls.keyboard_shortcuts',
+            title: t.shortcut_settings_title,
+            subtitle: t.video_setting_shortcuts_hint,
+            icon: FushiIcons.keyboard,
+            showIcon: true,
+            visible: videoHostVisible,
+            video: VideoPlacement(group: VideoGroup.controls, order: 30),
+            onTap: (SettingsContext settingsContext) async {
+              await pushSettingsPage(
+                settingsContext,
+                (_) => const ShortcutSettingsPage(
+                  initialScope: ShortcutScope.video,
+                ),
+              );
             },
           ),
         ],

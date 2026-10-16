@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Secundaire ondertitel verbergen",
   "video_setting_secondary_subtitle_obscure_hint": "Vervaag of verberg de secundaire (vertaling) ondertitel",
   "video_setting_seek_seconds": "Spoelstap (seconden)",
+  "video_setting_shortcuts_hint": "Toetsenbord- en gamepadsnelkoppelingen van de speler bekijken en aanpassen",
   "video_setting_slim_progress_bar": "Dunne voortgangsbalk onderaan",
   "video_setting_slim_progress_bar_hint": "Wanneer de bediening vervaagt, blijft een dunne voortgangslijn in accentkleur helemaal onderaan de video staan. In het minivenster wordt die altijd getoond, omdat de volledige zoekbalk daar verborgen is.",
   "video_setting_speed": "Afspeelsnelheid",

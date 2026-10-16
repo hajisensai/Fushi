@@ -325,7 +325,8 @@ void main() {
     );
   });
 
-  test('embedded shader detail flattens groups inside the video surface', () {
+  test('shader detail groups sit outside cards like every other settings page '
+      '(feedback FxUMLvIqM1)', () {
     // 阶段B：_buildShadersDetail 移出 sheet，改为 video_settings_actions.dart 的
     // buildVideoShaderManager（SettingsCustomItem builder）；守卫改锁新位置。
     final String actionsSource = File(
@@ -342,11 +343,21 @@ void main() {
       contains('VideoShaderManagerView('),
       reason: 'video settings should embed the shader manager detail',
     );
+    // 面板把着色器视图作为「画质增强」页的整页正文承载，不再当 schema 行套进
+    // 一张卡片（那样三个分组标题会落进卡内，反馈 FxUMLvIqM1）。
+    final String sheetSource = File(
+      'lib/src/media/video/video_quick_settings_sheet.dart',
+    ).readAsStringSync();
+    final String shadersCase = _between(
+      sheetSource,
+      'SettingsDestination _panelDestination(',
+      'static const String _shaderManagerItemId',
+    );
+    expect(shadersCase, contains('shaderBody = item.builder'));
+    expect(sheetSource, contains('body: shaderBody,'));
     expect(
-      shaderDetail,
-      contains('embedded: true'),
-      reason:
-          'embedded shader detail must reuse the schema surface instead of nesting cards',
+      sheetSource,
+      contains("_shaderManagerItemId = 'video.player.shaders'"),
     );
 
     final String shaderSource = File(
@@ -377,26 +388,30 @@ void main() {
       managerWidget,
       contains('final SettingsSectionTitlePlacement titlePlacement;'),
     );
-    expect(managerWidget, contains('this.embedded = false'));
-    expect(managerWidget, contains('final bool embedded;'));
+    expect(
+      managerWidget,
+      isNot(contains('embedded')),
+      reason: 'no flattened in-card mode: groups always render as sections',
+    );
     expect(
       titledShaderSections,
       3,
       reason:
           'shader detail is expected to expose quality, advanced, and installed sections',
     );
-    expect(buildMethod, contains('if (!widget.embedded)'));
-    expect(buildMethod, contains('_EmbeddedShaderSection('));
+    expect(shaderSource, isNot(contains('_EmbeddedShaderSection')));
     expect(
       buildMethod,
       contains('AdaptiveSettingsSection('),
-      reason: 'standalone shader manager still uses grouped settings cards',
+      reason: 'shader groups use the shared settings section (title outside)',
     );
     expect(
       buildMethod,
       contains('titlePlacement: widget.titlePlacement'),
-      reason: 'standalone group cards still honor the selected title placement',
+      reason: 'group cards honor the selected title placement',
     );
+    // 同系列着色器一组一张卡（与音轨列表同为一个整体的列表）。
+    expect(buildMethod, contains('_ShaderFamilyBlock('));
   });
 
   test('video settings side panel owns UI scale and hover lifetime', () {

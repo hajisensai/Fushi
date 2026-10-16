@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Obscure secondary subtitle",
   "video_setting_secondary_subtitle_obscure_hint": "Blur or hide the secondary (translation) subtitle",
   "video_setting_seek_seconds": "Seek seconds",
+  "video_setting_shortcuts_hint": "View and customize the player's keyboard and gamepad shortcuts",
   "video_setting_slim_progress_bar": "Slim progress bar at the bottom",
   "video_setting_slim_progress_bar_hint": "When the controls fade out, keep a thin accent-coloured progress line along the very bottom of the video. In the mini window it is always shown, since the full seek bar is hidden there.",
   "video_setting_speed": "Playback speed",

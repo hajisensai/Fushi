@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "보조 자막 가리기",
   "video_setting_secondary_subtitle_obscure_hint": "보조(번역) 자막을 흐리게 하거나 숨깁니다",
   "video_setting_seek_seconds": "이동 간격(초)",
+  "video_setting_shortcuts_hint": "플레이어의 키보드 및 게임패드 단축키 보기 및 사용자 지정",
   "video_setting_slim_progress_bar": "하단 얇은 진행 막대",
   "video_setting_slim_progress_bar_hint": "컨트롤이 사라지면 비디오 맨 아래에 강조 색의 얇은 진행선을 유지합니다. 미니 창에서는 전체 탐색 막대가 숨겨지므로 항상 표시됩니다.",
   "video_setting_speed": "재생 속도",

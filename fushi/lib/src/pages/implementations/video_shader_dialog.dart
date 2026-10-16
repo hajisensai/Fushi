@@ -35,7 +35,6 @@ class VideoShaderManagerView extends StatefulWidget {
     required this.onSelectTier,
     this.initialMpvDir = '',
     this.onMpvDirChanged,
-    this.embedded = false,
     this.titlePlacement = SettingsSectionTitlePlacement.outside,
     super.key,
   });
@@ -67,10 +66,9 @@ class VideoShaderManagerView extends StatefulWidget {
   /// 用户手动指定 mpv 目录后回调（持久化，下次优先扫它）。
   final Future<void> Function(String dir)? onMpvDirChanged;
 
-  /// 嵌入已有设置 surface 时只渲染分组标题、行与分隔线，避免在外层卡片里再次
-  /// 套三张 [AdaptiveSettingsSection] 卡片。独立页面保持原来的分组卡片布局。
-  final bool embedded;
-
+  /// 三个分组（画质档位 / 进阶 / 已安装着色器）各是一个 [AdaptiveSettingsSection]：
+  /// 标题在卡片外、组内行各自分段，与设置页其它分组同一形态（反馈 FxUMLvIqM1）。
+  /// 宿主不得再把本视图套进一张行卡片（视频设置面板经 destination body 承载）。
   final SettingsSectionTitlePlacement titlePlacement;
 
   @override
@@ -392,27 +390,34 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // ── 画质档位（无/低/中/高/极高）：一键选档即下载+启用，普通用户唯一需要的入口 ──
+        // 档位选择器 + 五档对照 + 脚注是一个整体（同一组选择的两种呈现），
+        // 合成一个子项 = 一张卡，不按行拆段。
         _shaderSection(
           title: t.video_shader_quality_tier,
-          first: true,
           children: <Widget>[
-            VideoShaderTierSelector(
-              current: _currentTier,
-              onSelect: _selectTier,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                VideoShaderTierSelector(
+                  current: _currentTier,
+                  onSelect: _selectTier,
+                ),
+                // 选档前就把五档「档名 — 一句话 + 显卡要求」常驻列出，便于横向
+                // 比较，不用点开某档才看到要求（用户诉求 2）。当前命中档加粗高亮。
+                VideoShaderTierComparison(
+                  current: _currentTier,
+                  onSelect: _selectTier,
+                ),
+                if (_currentTier == null)
+                  _ShaderFootnote(text: t.video_shader_tier_custom_hint),
+                if (isMobilePlatform)
+                  _ShaderFootnote(
+                    text: t.video_shader_mobile_perf_hint,
+                    warning: true,
+                  ),
+              ],
             ),
-            // 选档前就把五档「档名 — 一句话 + 显卡要求」常驻列出，便于横向比较，
-            // 不用点开某档才看到要求（用户诉求 2）。当前命中档加粗高亮。
-            VideoShaderTierComparison(
-              current: _currentTier,
-              onSelect: _selectTier,
-            ),
-            if (_currentTier == null)
-              _ShaderFootnote(text: t.video_shader_tier_custom_hint),
-            if (isMobilePlatform)
-              _ShaderFootnote(
-                text: t.video_shader_mobile_perf_hint,
-                warning: true,
-              ),
           ],
         ),
         // ── 进阶：手动导入文件 / 粘贴链接下载 / 从本机 mpv 导入（给懂的人用的逃生口）──
@@ -450,8 +455,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
 
   /// 已安装着色器 → 设置开关行（与上方导入行同一行组件、同一文字起点）。
   ///
-  /// 文件名按前缀分组（`Anime4K_…` / `ArtCNN_…`）：同前缀至少两个文件时在组前
-  /// 挂一个小组名，组内行标题去掉前缀与扩展名、下划线换空格（「Restore CNN M」），
+  /// 文件名按前缀分组（`Anime4K_…` / `ArtCNN_…`）：同前缀至少两个文件时这一组
+  /// 合成一张卡（[_ShaderFamilyBlock]：卡内顶部小组名 + 组内各行，与音轨列表同为
+  /// 「一个整体的列表」），组内行标题去掉前缀与扩展名、下划线换空格（「Restore CNN M」），
   /// 副标题保留完整文件名——人读标题、文件身份照样一眼可查。显示顺序按组首次出现
   /// 的位置聚拢，**启用集顺序仍按 [_files] 目录顺序**（见 [_toggle]），不受影响。
   List<Widget> _installedShaderRows() {
@@ -468,10 +474,16 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     ];
     for (final MapEntry<String, List<String>> entry in groups.entries) {
       if (entry.key.isEmpty || entry.value.length < 2) continue;
-      rows.add(_ShaderGroupLabel(text: entry.key));
-      for (final String name in entry.value) {
-        rows.add(_shaderRow(name, family: entry.key));
-      }
+      rows.add(
+        _ShaderFamilyBlock(
+          key: ValueKey<String>('video-shader-family-${entry.key}'),
+          label: entry.key,
+          rows: <Widget>[
+            for (final String name in entry.value)
+              _shaderRow(name, family: entry.key),
+          ],
+        ),
+      );
     }
     return rows;
   }
@@ -503,18 +515,10 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   Widget _shaderSection({
     required String title,
     required List<Widget> children,
-    bool first = false,
   }) {
-    if (!widget.embedded) {
-      return AdaptiveSettingsSection(
-        title: title,
-        titlePlacement: widget.titlePlacement,
-        children: children,
-      );
-    }
-    return _EmbeddedShaderSection(
+    return AdaptiveSettingsSection(
       title: title,
-      showTopDivider: !first,
+      titlePlacement: widget.titlePlacement,
       children: children,
     );
   }
@@ -536,97 +540,56 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   }
 }
 
-/// 已有 settings surface 内的扁平分组：只渲染分组标题与行，不再创建卡片（外层
-/// 设置卡就是这一页的唯一底板，守卫见 video_player_settings_master_detail_guard）。
-///
-/// - MD3（Android 16 设置）：分组标题与其它分类页的分段分组标题同一口径
-///   （titleSmall · primary · w600，左缘对齐行内边距）；行与行之间不画分隔线——
-///   卡片里的设置行靠 64 行高与留白分节，分隔线只会让它变回一张表格。
-/// - Apple（iOS 26 inset grouped）：分组标题走 [SettingsSectionHeader] 的 Apple
-///   分支（13 号 semibold secondaryLabel）；行间 1 物理像素 separator，从文字
-///   起点（有行首图标时从图标之后）开始，与 schema 分组同一条缩进规则；分组之间
-///   一条通栏 separator。
-class _EmbeddedShaderSection extends StatelessWidget {
-  const _EmbeddedShaderSection({
-    required this.title,
-    required this.children,
-    required this.showTopDivider,
+/// 同系列着色器（≥2 个同前缀文件）的一张卡：顶部小组名（比分组标题低一级的
+/// 灰色小字，左缘与行文字起点对齐），下面是组内开关行。整组是一个整体的列表，
+/// 与音轨列表同理不按行拆段；Apple 行间画与 schema 分组同规则的 inset separator。
+class _ShaderFamilyBlock extends StatelessWidget {
+  const _ShaderFamilyBlock({
+    required this.label,
+    required this.rows,
+    super.key,
   });
 
-  final String title;
-  final List<Widget> children;
-  final bool showTopDivider;
+  final String label;
+  final List<Widget> rows;
 
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
-    final double inset = tokens.spacing.rowHorizontal;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (showTopDivider && glass) const _AppleSeparator(flush: true),
-        if (glass)
-          SettingsSectionHeader(
-            title,
-            padding: EdgeInsets.fromLTRB(inset, 14, inset, 4),
-          )
-        else
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              inset,
-              showTopDivider ? tokens.spacing.card : tokens.spacing.gap * 2,
-              inset,
-              tokens.spacing.gap / 2,
-            ),
-            child: Text(
-              title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: isEinkTheme(context)
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        for (int index = 0; index < children.length; index++) ...<Widget>[
-          if (glass &&
-              index > 0 &&
-              children[index] is! _ShaderGroupLabel &&
-              children[index] is! _ShaderFootnote &&
-              children[index - 1] is! _ShaderGroupLabel)
+        _ShaderGroupLabel(text: label),
+        for (int index = 0; index < rows.length; index++) ...<Widget>[
+          if (glass && index > 0)
             _AppleSeparator(
-              afterIcon: settingsRowHasLeadingIcon(children[index - 1]),
+              afterIcon: settingsRowHasLeadingIcon(rows[index - 1]),
             ),
-          children[index],
+          rows[index],
         ],
       ],
     );
   }
 }
 
-/// Apple inset grouped 行分隔线：1 物理像素 separator，右端顶到分组边缘。
-/// [flush] = 分组之间的通栏线；否则左端从行文字起点开始（[afterIcon] 时再让过
-/// 行首图标位），与 schema 分组的分隔线缩进同一规则。
+/// Apple inset grouped 行分隔线：1 物理像素 separator，右端顶到分组边缘，左端
+/// 从行文字起点开始（[afterIcon] 时再让过行首图标位），与 schema 分组的分隔线
+/// 缩进同一规则。
 class _AppleSeparator extends StatelessWidget {
-  const _AppleSeparator({this.afterIcon = false, this.flush = false});
+  const _AppleSeparator({this.afterIcon = false});
 
   final bool afterIcon;
-  final bool flush;
 
   @override
   Widget build(BuildContext context) {
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final double start = flush
-        ? 0
-        : metrics.rowHorizontal +
-            (afterIcon
-                ? metrics.iconTileSize +
-                    FushiDesignTokens.of(context).spacing.gap +
-                    4
-                : 0);
+    final double start = metrics.rowHorizontal +
+        (afterIcon
+            ? metrics.iconTileSize +
+                FushiDesignTokens.of(context).spacing.gap +
+                4
+            : 0);
     return Container(
       height: fushiHairline(context),
       margin: EdgeInsetsDirectional.only(start: start),
