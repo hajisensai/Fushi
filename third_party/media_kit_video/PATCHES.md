@@ -820,3 +820,21 @@ from the tree on release instead of fading it, so it never showed the reset valu
 
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-3354: swipe seek indicator keeps the committed delta while fading`).
+
+## BUG-3417: fullscreen PopScope exits native fullscreen only on a real pop
+
+`lib/media_kit_video_controls/src/controls/widgets/fullscreen_inherited_widget.dart`,
+`_FullscreenInheritedWidgetPopScopeState.build`.
+
+Upstream's `PopScope.onPopInvokedWithResult` ignored `didPop` and always called
+`onExitFullscreen`. Fushi's fullscreen route now carries a sibling
+`VideoFullscreenBackScope` (`canPop: false`) so a back request that arrives as
+`Navigator.maybePop` closes the top in-route panel (episode rail, subtitle list,
+side panel, dictionary popup...) before leaving fullscreen. The framework still
+notifies every `PopScope` of a vetoed pop with `didPop == false`; without the
+guard the window would leave native fullscreen while the fullscreen route stays
+on the stack. The patch adds `if (!didPop) return;`.
+
+Tests: `fushi/test/media/video/video_fullscreen_back_scope_test.dart` (source
+guard on this file plus the route-level behaviour), and
+`fushi/integration_test/video_fullscreen_episode_list_open_test.dart` (real app).

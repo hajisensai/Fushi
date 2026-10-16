@@ -142,10 +142,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
         );
       }
       // Apple 竖排：错设「x = 0 是竖排基线」的字体整列偏出行盒半个字（见
-      // clearVerticalBaselineFlag），下发前清掉。
-      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
-        fileBytes,
-      );
+      // clearVerticalBaselineFlag），下发前清掉。按字体身份缓存、重活在后台 isolate
+      // （见 VerticalBaselineFontCache）。
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(
+              safeFontPath,
+              await fontFile.stat(),
+            ),
+            data: fileBytes,
+          );
       final Uint8List data = fixed.data;
       debugPrint(
         '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
@@ -224,9 +230,11 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
     // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
     if (_isFontMime(mime) || _isFontMime(declaredMime)) {
-      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
-        data,
-      );
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(filePath, await file.stat()),
+            data: data,
+          );
       data = fixed.data;
       mime = fixed.mime ?? mime;
     }
