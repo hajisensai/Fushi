@@ -64,6 +64,8 @@ void main() {
         'manga.default_zoom',
         'manga.zoom_sensitivity',
         'manga.page_animation',
+        'manga.page_animation_speed',
+        'manga.page_turn_follow_drag',
         'manga.spread_offset',
         'manga.wide_page_solo',
         'manga.panel_model',

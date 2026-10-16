@@ -413,7 +413,7 @@ class ServerDownloadHost implements HostDownloadHost {
 
   @override
   Future<void> deleteJob(String jobId, {bool? deleteFiles}) =>
-      // [deleteFiles] 是对端的显式选择（BUG-3417），按字面执行；缺省（旧客户端 /
+      // [deleteFiles] 是对端的显式选择（BUG-3437），按字面执行；缺省（旧客户端 /
       // admin WebUI 不带参数）保持历史行为：整台机器为对端服务，连下载数据一起删。
       _requirePipeline.deleteJob(jobId, deleteFiles: deleteFiles ?? true);
 }

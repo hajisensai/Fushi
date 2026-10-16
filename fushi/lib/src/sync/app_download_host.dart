@@ -145,7 +145,7 @@ class AppDownloadHost implements HostDownloadHost {
 
   @override
   Future<void> deleteJob(String jobId, {bool? deleteFiles}) =>
-      // [deleteFiles] 是对端用户在删除确认框里的显式勾选（BUG-3417），按字面执行。
+      // [deleteFiles] 是对端用户在删除确认框里的显式勾选（BUG-3437），按字面执行。
       // 缺省（旧客户端不带参数）**不删磁盘文件**：host 是用户自己的机器，
       // `listJobs` 返回的是本机全表（含 host 主人自己加的任务），没问过就把主人
       // 已经下载好的文件删了是不可接受的。无头 `fushi_server` 那边整台机器本就是

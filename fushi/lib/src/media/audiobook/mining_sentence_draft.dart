@@ -386,7 +386,7 @@ AudioPlaybackRange? mergeMiningAudioRanges(List<AudioPlaybackRange?> ranges) {
 /// [cueContextNeighbors]，每句的音频区间取**该 cue 自己**的起止与所属音频文件
 /// （[miningCueAudioRange]，与当前句同一套修零长 / 首尾留白 / A/V 偏移）。
 ///
-/// BUG-3417：旧接线把相邻 cue 交给「按查词句章节号 + 句内字符位置求区间」的路径，
+/// BUG-3434：旧接线把相邻 cue 交给「按查词句章节号 + 句内字符位置求区间」的路径，
 /// 相邻句落在下一章 / 上一章时被换算到查词句所在章，合并后成了「本章开头 → 查词句
 /// 结尾」的整章区间；无位置信息的普通字幕又回落全文文本匹配，重复短句取到更早一句
 /// 的音频。相邻句本身就是 cue，它的音频坐标就是它自己——这里不经任何章号 / 文本

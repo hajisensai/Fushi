@@ -72,7 +72,7 @@ Future<Map<String, StudySegmentRow>> _segments(FushiDatabase db) async =>
 
 void main() {
   group('resetBookReadingState', () {
-    test('带有声书时音频位置一并归零（开书以音频位置为主，BUG-2390）', () async {
+    test('带有声书时音频位置一并归零（首次播放正文会跟到音频位置，BUG-3430）', () async {
       final FushiDatabase db = await _openDb();
       await _insertBook(db, 'ab');
       final AudiobookRepository audio = AudiobookRepository(db);

@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 
@@ -326,6 +328,39 @@ void main() {
               '<image xlink:href="s.jpg"/></svg></div>'
               '<p><img src="r.png"/><ruby><rt>よみ</rt></ruby>　</p>'),
           <String, bool>{'s.jpg': false, 'r.png': false});
+    });
+  });
+
+  group('EpubBook.adoptImages (off-UI-isolate build)', () {
+    const List<String> htmls = <String>[
+      '<html><body><img src="a.png"/><p>x</p></body></html>',
+      '<html><body><p>t</p><img src="b.png"/></body></html>',
+    ];
+
+    test('a list built on a copy in another isolate is adopted verbatim',
+        () async {
+      final EpubBook book = _bookWithChapterHtml(htmls);
+      expect(book.hasImages, isFalse);
+      final List<EpubImageRef> built = await Isolate.run(() => book.images);
+      expect(book.hasImages, isFalse,
+          reason: 'the isolate scanned a copy; this instance is untouched');
+      book.adoptImages(built);
+      expect(book.hasImages, isTrue);
+      expect(book.images.map((EpubImageRef r) => r.src).toList(),
+          <String>['a.png', 'b.png']);
+      expect(
+          book.images.map((EpubImageRef r) => r.normCharOffset).toList(),
+          _bookWithChapterHtml(htmls)
+              .images
+              .map((EpubImageRef r) => r.normCharOffset)
+              .toList());
+    });
+
+    test('no-op once images were already built', () {
+      final EpubBook book = _bookWithChapterHtml(htmls);
+      final List<EpubImageRef> own = book.images;
+      book.adoptImages(const <EpubImageRef>[]);
+      expect(identical(book.images, own), isTrue);
     });
   });
 }

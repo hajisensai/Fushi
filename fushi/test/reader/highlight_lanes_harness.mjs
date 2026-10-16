@@ -117,7 +117,7 @@ const CHECK = String.raw`(async () => {
       getComputedStyle(el).backgroundImage === 'none'),
     'ruby-class / cue wrappers paint no full-box background of their own');
 
-  // BUG-3417 / F-JNEJVkuC: lanes hug the real glyph ink — Latin ascenders (f/l/t) and
+  // BUG-3435 / F-JNEJVkuC: lanes hug the real glyph ink — Latin ascenders (f/l/t) and
   // descenders (p/g/y) inside the lane — and never overlap furigana ink.
   const fontOf = (cs) => cs.fontStyle + ' ' + cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
   // Pixel-scanned ink of a horizontal run relative to its alphabetic baseline (independent

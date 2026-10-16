@@ -133,7 +133,7 @@ const String _inlineVideoPlayVisibleJs =
 /// 已插入 DOM、CSS 已生效，可见性判得准。`play()` 被拒（卡组关了自动播放 → Anki 恢复
 /// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
 ///
-/// BUG-3428：卡上有内嵌单词音频（[inlineVideoWordAudioHtml]）时先播单词、`ended`
+/// BUG-3442：卡上有内嵌单词音频（[inlineVideoWordAudioHtml]）时先播单词、`ended`
 /// 之后再播片段——两者都在页内，顺序由这里串起来，不再和 Anki 原生队列抢着出声。
 String inlineVideoCoverHtml(String mediaName) =>
     '<video class="fushi-inline-video" '
@@ -174,7 +174,7 @@ const String _inlineWordAudioStopJs =
 
 /// 同步片段卡的单词音频字段：重播按钮 + 一个隐藏 `<audio>`，取代原来的 `[sound:]`。
 ///
-/// BUG-3428：`[sound:]` 由 Anki 原生队列在翻面时自动播放，而内嵌片段由页内
+/// BUG-3442：`[sound:]` 由 Anki 原生队列在翻面时自动播放，而内嵌片段由页内
 /// `oncanplay` 自己播放；原生播放结束不会通知卡片 JS，两路没法排先后，于是单词和
 /// 句子同时出声。把单词音频也放进页内，由 [inlineVideoCoverHtml] 的脚本先播单词、
 /// 再播片段。代价：Anki 的「重播音频」快捷键（R）不再重播单词，改用卡上的按钮。
@@ -222,7 +222,7 @@ const String _inlineAudioPlayJs =
 ///   渲染 `{{SentenceAudio}}`、自定义模板把 Picture 放在另一面）→ 播隐藏 `<audio>`。
 /// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时自动播放一次（音频卡正面照旧
 ///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）；有内嵌单词
-///   音频时也让出（[inlineVideoWordAudioHtml] 播完单词再接它，BUG-3428）。
+///   音频时也让出（[inlineVideoWordAudioHtml] 播完单词再接它，BUG-3442）。
 /// - 按钮先停掉单词音频并撤销它的「播完接句子」，免得句子被拉两遍。
 ///
 /// 为什么用内联事件属性而不是 `<script>`：Lapis 背面把 `{{SentenceAudio}}` 插进一个
@@ -804,7 +804,7 @@ mixin AnkiNoteComposer {
             )
             ? inlineVideoSentenceAudioHtml(inlineVideoName)
             : null;
-        // BUG-3428：单词音频若留成 `[sound:]`，Anki 原生队列翻面就放，和片段的
+        // BUG-3442：单词音频若留成 `[sound:]`，Anki 原生队列翻面就放，和片段的
         // oncanplay 同时出声。改成页内 <audio>，由片段脚本先播单词再播片段。
         final RegExpMatch? wordAudio = RegExp(
           r'^\[sound:([^\]]+)\]$',

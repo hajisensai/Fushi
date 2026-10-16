@@ -57,7 +57,7 @@ void main() {
       });
     }
 
-    // BUG-3428：单词音频留成 [sound:] 时 Anki 原生队列翻面就放，和片段的 oncanplay
+    // BUG-3442：单词音频留成 [sound:] 时 Anki 原生队列翻面就放，和片段的 oncanplay
     // 同时出声。同步 WebM 片段卡的单词音频必须变成页内 <audio>，其余卡照旧 [sound:]。
     group('renderMediaPayload 单词音频', () {
       const Map<String, String> lapisLike = <String, String>{
@@ -239,7 +239,7 @@ page([], deniedAudio);
 canplay.call(deniedAudio[0]);
 
 (async () => {
-  // ④ BUG-3428 Lapis 背面带单词音频：先只播单词（两份副本只响一份），播完才播可见片段。
+  // ④ BUG-3442 Lapis 背面带单词音频：先只播单词（两份副本只响一份），播完才播可见片段。
   const v4 = [media(false), media(true), media(false)];
   const s4 = [media(false), media(false)];
   const w4 = [media(false), media(false)];

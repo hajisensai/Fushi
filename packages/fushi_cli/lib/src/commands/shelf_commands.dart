@@ -1,6 +1,7 @@
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import 'collection_commands.dart' show collectionOrderCommandSpecs;
 import 'library_commands.dart' show libraryItemPath;
 
 /// 书架管理命令组：合集 / 标签 / 书签 / 收藏句（app 侧路由见
@@ -11,7 +12,7 @@ import 'library_commands.dart' show libraryItemPath;
 const List<CtlCommandGroup> shelfCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'collection',
-    summary: '合集：列出、详情、新建、改名、删除、增删成员、封面、标签',
+    summary: '合集：列出、详情、新建、改名、删除、增删成员、封面、定序 / 一键排序（含 AI）',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
         name: 'ls',
@@ -71,6 +72,8 @@ const List<CtlCommandGroup> shelfCommandGroups = <CtlCommandGroup>[
         configure: _configureCover,
         build: _buildCollectionCover,
       ),
+      // 定序：手动 order、一键 sort（名称 / 导入时间 / AI），见 collection_commands.dart。
+      ...collectionOrderCommandSpecs,
     ],
   ),
   CtlCommandGroup(
@@ -295,6 +298,7 @@ String _renderCollections(Object? data) => renderCtlTable(
     ('id', 'id'),
     ('类型', 'type'),
     ('成员', 'members'),
+    ('手动排过', 'manualOrder'),
     ('名称', 'name'),
   ],
   listKey: 'collections',
@@ -314,6 +318,7 @@ String _renderCollectionDetail(Object? data) {
   final String table = renderCtlTable(data, const <(String, String)>[
     ('键', 'key'),
     ('标题', 'title'),
+    ('库页可见', 'visible'),
   ], listKey: 'items');
   out.write('\n$table');
   return out.toString();

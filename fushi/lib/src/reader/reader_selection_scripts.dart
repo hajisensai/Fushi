@@ -423,6 +423,21 @@ if (!window.__fushiLiveRanges) {
       }
       return tail;
     },
+    // BUG-3432：批量手术（开章逐句包裹 / 拆包裹、套收藏）期间为真 = 进批时确认过没有原生选区。
+    // DOM 刚改过时读 getSelection().rangeCount / anchorNode 会让 Blink 对整章同步排版一次
+    // （长章约 5ms），moveNodes 每次都读：一章 2700 句的有声书逐句包裹就是 2700 次整章排版，
+    // WebView 主线程卡几十秒、开书超时白屏。批内是同步执行、不会有用户输入新建选区，读一次就够。
+    noNativeSelection: false,
+    batch: function(fn) {
+      if (this.noNativeSelection) return fn();
+      var sel = window.getSelection ? window.getSelection() : null;
+      this.noNativeSelection = !sel || !sel.rangeCount;
+      try {
+        return fn();
+      } finally {
+        this.noNativeSelection = false;
+      }
+    },
     // mutate() 把 moved 里的节点（连同子孙）移走再插回文档，节点身份不变；返回前必须已插回文档
     // （落在游离子树上的边界会被 setEnd 跨树塌缩）。remap(container, offset) 换算不在 moved 里、
     // 却被这次搬移改了含义的端点（如原父节点里切点之后的子节点序号），返回 [node, offset] 或 null。
@@ -455,7 +470,7 @@ if (!window.__fushiLiveRanges) {
       var read = function(h) {
         return h.pinned || [h.probe.startContainer, h.probe.startOffset];
       };
-      var sel = window.getSelection ? window.getSelection() : null;
+      var sel = !this.noNativeSelection && window.getSelection ? window.getSelection() : null;
       var native = null;
       if (sel && sel.rangeCount && sel.anchorNode && sel.focusNode) {
         var a = pin(sel.anchorNode, sel.anchorOffset);
@@ -625,7 +640,7 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
 // - 来源：CSS.highlights 里登记的 Range，加上带高亮 class 的元素（见 GROUPS），逐文本节点（跳过 rt / rp
 //   注音与 VN 未显现的字）取行片段。各路径自己的底色一律透明（reader_content_styles.dart），字色、收藏
 //   下划线、墨水屏线式标记仍由原来的 ::highlight / class 规则负责。
-// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3417）；有注音时收到振假名
+// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3435）；有注音时收到振假名
 //   墨迹之外（见 blockExtent / lanes）；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
 //   wrapper 时也不留缝、不叠色，取代逐缝补 box-shadow 的旧做法）。
 // - 位置：body 里一个 z-index:-1 的绝对定位层，在正文之下、body 背景之上（body 是层叠上下文与包含块），
@@ -752,7 +767,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // - CJK（与 CJK 标点）：沿块方向 1em、按墨迹中线居中。横排时盒中线不是汉字的中线——盒 = 字体
     //   ascent + descent，多数日文字体 ascent 偏大，盒中线比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体
     //   实测，Noto Serif TC 墨迹下沿出条 0.05em），所以按「国」的墨迹中线居中；竖排（中心基线）按盒中线。
-    // - 西文等其它文字（BUG-3417）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
+    // - 西文等其它文字（BUG-3435）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
     //   下延（g j p q y）落到基线下 ~0.25em，1em 居中条会削掉 p/g/y 的尾巴和 f/l/t 的头。改为从盒推出
     //   基线（盒顶 + 字体 ascent），条盖住「上伸 + 下延参考字形」与这一段自己（带重音符等）的墨迹，各留
     //   LATIN_PAD。同一字体的西文行厚度一致，不随这一行有没有 p/g/y 忽粗忽细。竖排横躺的西文同理
@@ -949,7 +964,383 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       });
       return out.filter(function(l) { return l.hi - l.lo > 0.5; });
     };
-    var paintGroup = function(group, reg) {
+    // ── 高亮条的笔触样式（用户 2026-10-15「高亮条自定义做成配置，用户自己可自选样式」「全部高亮都要
+    // 能选可以自定义高亮」）──
+    // 四类高亮（收藏 / 查词 / 有声书当前句 / 搜索）各有一套配置。经典样式照旧画 1em 窄条；选了笔触样式
+    // （马克笔 / 荧光笔 / 手绘 / 半截 / 彩铅 / 胶带）时，这一组改画一张 SVG：同样的行片段、同样的坐标系
+    // （所在窄条层的局部坐标——body 层或书底色元素里的层，随正文滚动 / 翻页），只是形状换成斜切、毛边、双笔这些。配置全走正文 CSS 的 :root
+    // 变量（--fushi-mark-<种类>-*，ReaderContentStyles 按设置写），改设置 = 换正文样式表 = head 的
+    // MutationObserver 触发重画，不需要额外的桥调用。颜色仍是各组原来的颜色：用一个探针 lane 读这一组
+    // 的 CSS 底色（与经典窄条同一条规则），只取 RGB，浓度听配置；底色是透明的（如关掉了有声书底色）就
+    // 不画。
+    // 形状在「沿行 u / 跨行 v」局部坐标里算：横排 u=x、v=y；竖排 u=y、v=-x。v 的负方向是振假名所在
+    // 的 over 侧（横排上方、竖排右侧），「盖住振假名」就是往 over 侧加厚。笔划画在正文之下，振假名字
+    // 本身仍压在笔划上面。随机抖动的种子取组名 + 行的局部坐标 + 样式：翻页、重画不变形，重排才换一笔。
+    // Dart 侧设置页预览（highlight_stroke_preview.dart）按同一套参数画示意，两边改形状要一起改。
+    var MARK_KINDS = ['audio', 'lookup', 'favorite', 'search'];
+    var KIND_OF = { 'fushi-sentence-audio': 'audio', 'fushi-selection': 'lookup', 'fushi-search': 'search' };
+    var kindOf = function(name) {
+      return KIND_OF[name] || (/^fushi-hl-[a-z]+$/.test(name) ? 'favorite' : null);
+    };
+    var MARK_STYLES = ['marker', 'fluo', 'rough', 'under', 'crayon', 'tape'];
+    var clampNum = function(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    var cssNum = function(cs, name, fallback) {
+      var v = parseFloat(cs.getPropertyValue(name));
+      return isFinite(v) ? v : fallback;
+    };
+    // 每类高亮的笔触配置；经典（或没写变量）的种类不在结果里。
+    var markConfigs = function() {
+      var out = {};
+      if (typeof getComputedStyle !== 'function' || !document.documentElement) return out;
+      var cs = getComputedStyle(document.documentElement);
+      var dark = cssNum(cs, '--fushi-mark-dark', 0) > 0;
+      var paper = (cs.getPropertyValue('--fushi-mark-paper') || '').trim() || (dark ? '#000' : '#fff');
+      // 落笔节奏由 Dart 按 FushiMotion 下发（highlightStrokeCssVariables）：单行时长 = base + 行长(em) ×
+      // perEm，行间隔 gap，单位 ms。缺任一项就不放动画——时长与「减弱动态效果 / 墨水屏归零」都只认
+      // Dart 侧的 fushiMotionEnabled，JS 不自定时长、也不自己读系统的减弱动态媒体查询。
+      var sweepBase = cssNum(cs, '--fushi-mark-sweep-base-ms', -1);
+      var sweepPerEm = cssNum(cs, '--fushi-mark-sweep-per-em-ms', -1);
+      var sweepGap = cssNum(cs, '--fushi-mark-sweep-gap-ms', -1);
+      var sweep = sweepBase >= 0 && sweepPerEm >= 0 && sweepGap >= 0 && (sweepBase > 0 || sweepPerEm > 0)
+        ? { base: sweepBase / 1000, perEm: sweepPerEm / 1000, gap: sweepGap / 1000 }
+        : null;
+      MARK_KINDS.forEach(function(kind) {
+        var p = '--fushi-mark-' + kind + '-';
+        var style = (cs.getPropertyValue(p + 'style') || '').trim();
+        if (MARK_STYLES.indexOf(style) < 0) return;
+        out[kind] = {
+          kind: kind,
+          style: style,
+          thickness: clampNum(cssNum(cs, p + 'thickness', 1), 0.4, 2),
+          opacity: clampNum(cssNum(cs, p + 'opacity', 0.35), 0.05, 1),
+          cover: cssNum(cs, p + 'cover-ruby', 0) > 0,
+          rough: clampNum(cssNum(cs, p + 'roughness', 0.5), 0, 1),
+          animate: !!sweep && cssNum(cs, p + 'animate', 0) > 0,
+          sweep: sweep,
+          paper: paper
+        };
+      });
+      return out;
+    };
+    // 这一组的颜色：探针 lane 的计算底色（与经典窄条同一条 CSS 规则，收藏五色、有声书自定义色、
+    // 查词色都在那里）。返回 'rgb(r,g,b)'；底色完全透明返回 null（这一组不画）。
+    var groupColor = function(name) {
+      var probe = document.createElement(LANE);
+      probe.setAttribute('data-hl', name);
+      host.appendChild(probe);
+      var raw = getComputedStyle(probe).backgroundColor || '';
+      probe.remove();
+      var m = /rgba?\(([^)]*)\)/.exec(raw);
+      if (!m) return null;
+      var parts = m[1].split(/[\s,/]+/).filter(function(s) { return s !== ''; }).map(parseFloat);
+      if (parts.length < 3) return null;
+      if (parts.length > 3 && !(parts[3] > 0)) return null;
+      return 'rgb(' + Math.round(parts[0]) + ',' + Math.round(parts[1]) + ',' + Math.round(parts[2]) + ')';
+    };
+    var markRng = function(seed) {
+      var a = seed >>> 0;
+      return function() {
+        a = (a + 0x6D2B79F5) >>> 0;
+        var t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    var markHash = function(s) {
+      var h = 2166136261;
+      for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    };
+    var fx = function(n) { return (Math.round(n * 100) / 100).toString(); };
+    var markPoint = function(vertical) {
+      return vertical
+        ? function(u, v) { return fx(-v) + ',' + fx(u); }
+        : function(u, v) { return fx(u) + ',' + fx(v); };
+    };
+    var polyD = function(P, pts) {
+      var d = '';
+      for (var i = 0; i < pts.length; i++) d += (i ? 'L' : 'M') + P(pts[i][0], pts[i][1]);
+      return d + 'Z';
+    };
+    var wobble = function(from, to, v, amp, step, rnd) {
+      var out = [];
+      var n = Math.max(1, Math.round(Math.abs(to - from) / step));
+      for (var i = 1; i < n; i++) out.push([from + (to - from) * i / n, v + (rnd() - 0.5) * 2 * amp]);
+      return out;
+    };
+    // 各笔触的自然粗细（em）。经典窄条守「一个字高」；选了笔触样式就以好看为先，允许超过字高、
+    // 擦到甚至盖到振假名（用户 2026-10-16「使用了这种自定义样式应该可付出一点代价可以超过字高，
+    // 主要是要更美观」），默认取参考图那种几乎填满行距的粗细。与 Dart 的 kHighlightStrokeNaturalEm
+    // 逐项相同（测试钉住）。半截荧光只涂下半截，不在表里。
+    var MARK_NATURAL_EM = { marker: 1.35, fluo: 1.3, rough: 1.25, crayon: 1.38, tape: 1.45 };
+    // 笔划的跨行上下沿：自然粗细 × 用户粗细倍数，居中于墨迹中线；
+    // 盖住振假名时 over 侧多加一个注音高（约 0.6em）。
+    var markBand = function(line, k, cfg, rnd) {
+      var half = line.em * k * cfg.thickness / 2;
+      var j = (rnd() - 0.5) * line.em * 0.05 * cfg.rough;
+      return { top: line.vc - half - (cfg.cover ? line.em * 0.6 : 0) + j, bot: line.vc + half + j };
+    };
+    var pathTag = function(d, attrs) { return '<path d="' + d + '" ' + attrs + '/>'; };
+    var MARKERS = {
+      // 斜切马克笔：逐行一条，两端平行斜切，收笔端微毛并略积墨。
+      marker: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.marker, cfg, r), h = b.bot - b.top;
+        var s = h * (0.18 + 0.22 * cfg.rough);
+        var a = l.u0 - em * (0.06 + r() * 0.1 * cfg.rough), z = l.u1 + em * (0.04 + r() * 0.16 * cfg.rough);
+        var amp = h * 0.025 * cfg.rough;
+        var pts = [[a + s / 2, b.top]].concat(wobble(a + s / 2, z + s / 2, b.top, amp, em * 1.6, r),
+          [[z + s / 2, b.top], [z + s * 0.1 + (r() - 0.5) * em * 0.12 * cfg.rough, b.top + h * 0.45], [z - s / 2, b.bot]],
+          wobble(z - s / 2, a - s / 2, b.bot, amp, em * 1.6, r), [[a - s / 2, b.bot]]);
+        var p0 = Math.max(a, z - em * 0.7);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(cfg.opacity) + '"') +
+          pathTag(polyD(c.P, [[p0 + s / 2, b.top], [z + s / 2, b.top], [z - s / 2, b.bot], [p0 - s / 2, b.bot]]),
+            'fill="' + c.fill + '" fill-opacity="' + fx(cfg.opacity * 0.28) + '"');
+      },
+      // 水性荧光笔：边缘被纸纤维晕开（位移滤镜），起笔收笔更深（渐变），中段几道浅色拖痕。
+      fluo: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.fluo, cfg, r), h = b.bot - b.top, s = h * 0.18;
+        var a = l.u0 - em * 0.1, z = l.u1 + em * (0.04 + r() * 0.14 * cfg.rough);
+        var gid = c.uid + 'g';
+        c.defs.push('<linearGradient id="' + gid + '" x1="0" y1="0" x2="' + (l.v ? 0 : 1) + '" y2="' + (l.v ? 1 : 0) + '">' +
+          [[0, 1.55], [0.06, 1], [0.5, 0.82], [0.94, 1], [1, 1.7]].map(function(st) {
+            return '<stop offset="' + st[0] + '" stop-color="' + c.fill + '" stop-opacity="' + fx(Math.min(1, cfg.opacity * st[1])) + '"/>';
+          }).join('') + '</linearGradient>');
+        var amp = h * (0.02 + 0.05 * cfg.rough);
+        var pts = [[a + s, b.top]].concat(wobble(a + s, z, b.top, amp, em * 0.7, r),
+          [[z, b.top], [z - s, b.bot]], wobble(z - s, a, b.bot, amp, em * 0.7, r), [[a, b.bot]]);
+        var out = pathTag(polyD(c.P, pts), 'fill="url(#' + gid + ')" filter="url(#' + c.base + 'fray)"');
+        for (var k = 0; k < 2; k++) {
+          var v = b.top + h * (0.3 + r() * 0.45);
+          var u0 = a + (z - a) * r() * 0.3, u1 = Math.min(u0 + (z - a) * (0.35 + r() * 0.4), z - s);
+          out += pathTag('M' + c.P(u0, v) + 'L' + c.P(u1, v + (r() - 0.5) * 1.5),
+            'fill="none" stroke="' + c.paper + '" stroke-opacity="0.22" stroke-width="1.1" stroke-linecap="round"');
+        }
+        return out;
+      },
+      // 手绘双笔：两道略带弧度的粗笔叠画，重叠处更深（rough-notation 的 highlight 画法）。
+      rough: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.rough, cfg, r), w = b.bot - b.top, vc = (b.top + b.bot) / 2;
+        var out = '';
+        for (var k = 0; k < 2; k++) {
+          var a = l.u0 - em * (0.04 + r() * 0.14 * cfg.rough), z = l.u1 + em * r() * 0.18 * cfg.rough;
+          var j = w * (0.08 + 0.2 * cfg.rough);
+          var v0 = vc + (r() - 0.5) * j, v1 = vc + (r() - 0.5) * j, bow = (r() - 0.5) * j * 1.3;
+          out += pathTag('M' + c.P(a, v0) + 'Q' + c.P((a + z) / 2, (v0 + v1) / 2 + bow) + ' ' + c.P(z, v1),
+            'fill="none" stroke="' + c.fill + '" stroke-opacity="' + fx(cfg.opacity * 0.72) + '" stroke-width="' +
+            fx(w * (0.84 + r() * 0.1)) + '"');
+        }
+        return out;
+      },
+      // 半截荧光：只涂墨迹中线到字下沿（竖排是左侧），振假名永远露在外面，「盖住振假名」对它无效。
+      under: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em;
+        var top = l.vc + em * 0.02, bot = l.vc + em * 0.5 * cfg.thickness, s = (bot - top) * 0.4;
+        var a = l.u0 - em * 0.05, z = l.u1 + em * (0.03 + r() * 0.1 * cfg.rough);
+        var amp = 0.3 + 0.6 * cfg.rough;
+        var pts = [[a + s / 2, top]].concat(wobble(a, z, top, amp, em, r), [[z + s / 2, top], [z - s / 2, bot]],
+          wobble(z, a, bot, amp, em, r), [[a - s / 2, bot]]);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(0.9, cfg.opacity * 1.35)) + '"');
+      },
+      // 彩铅涂抹：纸面颗粒把颜色打散（颗粒滤镜），边缘不规则。
+      crayon: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.crayon, cfg, r), h = b.bot - b.top;
+        var a = l.u0 - em * 0.1, z = l.u1 + em * (0.05 + r() * 0.12 * cfg.rough);
+        var amp = h * (0.02 + 0.06 * cfg.rough);
+        var pts = [[a, b.top + h * 0.08]].concat(wobble(a, z, b.top, amp, em * 0.5, r),
+          [[z, b.top + h * 0.1], [z + em * 0.05, b.bot - h * 0.2], [z - em * 0.1, b.bot]],
+          wobble(z, a, b.bot, amp, em * 0.5, r), [[a - em * 0.04, b.bot - h * 0.1]]);
+        return pathTag(polyD(c.P, pts), 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(1, cfg.opacity * 2)) +
+          '" filter="url(#' + c.base + 'grain)"');
+      },
+      // 和纸胶带：半透明胶带，两端锯齿撕口、略微歪斜，叠一层细斜纹。
+      tape: function(l, c) {
+        var r = c.rnd, cfg = c.cfg, em = l.em, b = markBand(l, MARK_NATURAL_EM.tape, cfg, r), h = b.bot - b.top;
+        var a = l.u0 - em * 0.16, z = l.u1 + em * 0.16, tilt = (r() - 0.5) * h * 0.2 * cfg.rough;
+        var torn = function(u, top, bot, dir) {
+          var out = [];
+          for (var i = 0; i <= 5; i++) {
+            out.push([u + dir * (i % 2 ? em * 0.08 : 0) + (r() - 0.5) * 1.2 * cfg.rough, top + (bot - top) * i / 5]);
+          }
+          return out;
+        };
+        var pts = torn(z, b.top + tilt, b.bot + tilt, 1).concat(torn(a, b.bot - tilt, b.top - tilt, -1));
+        var d = polyD(c.P, pts);
+        return pathTag(d, 'fill="' + c.fill + '" fill-opacity="' + fx(Math.min(0.85, cfg.opacity * 1.05)) + '"') +
+          pathTag(d, 'fill="url(#' + c.base + 'stripe)"');
+      }
+    };
+    var markDefs = function(base, cfg) {
+      return '<filter id="' + base + 'fray" x="-4%" y="-40%" width="108%" height="180%">' +
+          '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n"/>' +
+          '<feDisplacementMap in="SourceGraphic" in2="n" scale="' + fx(1.6 + 2.4 * cfg.rough) +
+          '" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+        '<filter id="' + base + 'grain" x="-4%" y="-30%" width="108%" height="160%">' +
+          '<feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="1" seed="7" result="n"/>' +
+          '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.4 1.75" result="m"/>' +
+          '<feComposite in="SourceGraphic" in2="m" operator="in" result="c"/>' +
+          '<feDisplacementMap in="c" in2="n" scale="' + fx(1 + 2 * cfg.rough) + '" xChannelSelector="R" yChannelSelector="G"/></filter>' +
+        '<pattern id="' + base + 'stripe" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(35)">' +
+          '<rect width="2" height="6" fill="' + cfg.paper + '" fill-opacity="0.25"/></pattern>';
+    };
+    // 落笔动画（SMIL，声明式、不需要帧循环；节奏由 Dart 从 FushiMotion 下发、与设置页预览
+    // HighlightStrokePreviewPainter 同一公式，减弱动态效果 / 墨水屏时 Dart 写 animate=0，见 markConfigs）：
+    // - 收藏：刚收藏的句子由 HighlightBridge 在写入 CSS.highlights 之前把行片段登记进来（markFresh），
+    //   下一次画收藏层时这几行沿书写方向展开。只用一次、2 秒过期；章节打开 / 重排后的重新应用不登记，
+    //   所以翻页、重排永远不会重放。
+    // - 有声书当前句：读到新的一句（这一组出现了上次没有的行）时画出新行。这一组第一次画（开章、刚切到
+    //   笔触样式）不算新，避免一打开就扫一遍。
+    // - 查词 / 搜索：出现一处全新的高亮（与上次画的行没有任何重叠：点了另一个词、跳到下一个命中）时
+    //   整处画出来；拖选时每帧的新选区都与上一帧重叠，不重播。
+    var fresh = [];
+    var markFresh = function(ranges, elements) {
+      if (!hostEl()) return;
+      var origin = host.getBoundingClientRect();
+      var pieces = [];
+      (ranges || []).forEach(function(range) { rangeRects(range, pieces); });
+      var seen = [];
+      (elements || []).forEach(function(el) { elementRects(el, seen, pieces); });
+      var until = Date.now() + 2000;
+      pieces.forEach(function(p) {
+        fresh.push({ x0: p.r.left - origin.left, y0: p.r.top - origin.top,
+          x1: p.r.right - origin.left, y1: p.r.bottom - origin.top, until: until });
+      });
+    };
+    var isFresh = function(line) {
+      var now = Date.now();
+      for (var i = 0; i < fresh.length; i++) {
+        var f = fresh[i];
+        if (f.until < now) continue;
+        var midHit = line.v ? (line.x >= f.x0 - 1 && line.x <= f.x1 + 1) : (line.y >= f.y0 - 1 && line.y <= f.y1 + 1);
+        var spanHit = line.v ? (line.b0 < f.y1 && line.b1 > f.y0) : (line.b0 < f.x1 && line.b1 > f.x0);
+        if (midHit && spanHit) return true;
+      }
+      return false;
+    };
+    // 竖排的行是否从左往右排（vertical-lr）；vertical-rl 与未知一律当从右往左。
+    var readsLeftToRight = function() {
+      try { return getComputedStyle(document.body).writingMode.indexOf('vertical-lr') === 0; } catch (e) { return false; }
+    };
+    // 有声书：上一次画过的行（组名 → { 行键: true }）。
+    var paintedLines = {};
+    // 查词 / 搜索：上一次画过的行几何（组名 → [{v, u0, u1, vc, em}]）。
+    var paintedGeom = {};
+    // 有声书：这一组画出过句子没有（空列表的重画不算）。第一次画出句子不放动画。
+    var paintedAny = {};
+    var overlapsAny = function(lines, prev) {
+      for (var i = 0; i < lines.length; i++) {
+        for (var j = 0; j < prev.length; j++) {
+          var a = lines[i], b = prev[j];
+          if (a.v !== b.v || Math.abs(a.vc - b.vc) > Math.max(a.em, b.em) * 0.5) continue;
+          if (a.u0 < b.u1 && a.u1 > b.u0) return true;
+        }
+      }
+      return false;
+    };
+    // 落笔按阅读顺序：lanes() 按中线坐标升序给行，横排即从上到下；竖排 vertical-rl 的行序是
+    // 从右往左（用户 2026-10-16「竖排是从右往左的，横排是上到下的」），中线降序。
+    var readingOrder = function(list) {
+      if (list.length > 1 && list[0].v && !readsLeftToRight()) {
+        return list.slice().sort(function(x, y) { return Math.abs(x.mid - y.mid) >= 1 ? y.mid - x.mid : x.a - y.a; });
+      }
+      return list;
+    };
+    // 一行在某个层里的「沿行 u / 跨行 v」局部几何（见文件头笔触说明）。
+    var lineGeom = function(l, o) {
+      return l.v
+        ? { v: true, u0: l.a - o.top, u1: l.b - o.top, vc: -(l.mid - o.left), em: l.em }
+        : { v: false, u0: l.a - o.left, u1: l.b - o.left, vc: l.mid - o.top, em: l.em };
+    };
+    var lineKey = function(g) { return Math.round(g.u0) + ':' + Math.round(g.u1) + ':' + Math.round(g.vc); };
+    // 每个窄条层一个短标签，拼进 SVG 的 id：同一组可能同时画在 body 层与几个书底色层里，id 必须全文档唯一。
+    var layerSeq = 0;
+    var layerTag = function(layer) {
+      if (layer === host) return 'b';
+      if (!layer.__fushiMarkTag) layer.__fushiMarkTag = 'l' + (++layerSeq);
+      return layer.__fushiMarkTag;
+    };
+    // 这一组本次重画的落笔判定（整组一次，跨所有层）：状态一律按 body 层局部坐标记，书底色层里的行
+    // 与 body 层里的行放在同一套「上次画过什么」里比较。
+    var markRun = function(name, cfg, allGeom) {
+      var prevLines = paintedLines[name];
+      var prevGeom = paintedGeom[name] || [];
+      var seenBefore = !!paintedAny[name];
+      var nowLines = {};
+      paintedLines[name] = nowLines;
+      paintedGeom[name] = allGeom;
+      if (allGeom.length) paintedAny[name] = true;
+      var whole = (cfg.kind === 'lookup' || cfg.kind === 'search') && !overlapsAny(allGeom, prevGeom);
+      return {
+        prevLines: prevLines || {},
+        nowLines: nowLines,
+        animate: cfg.animate &&
+          (cfg.kind === 'favorite' ? fresh.length > 0 : cfg.kind === 'audio' ? seenBefore && !!prevLines : whole),
+        delay: 0
+      };
+    };
+    // 返回 { ink, still }：ink 是要写进 DOM 的串（新行带落笔动画），still 是同一张图去掉动画的串。
+    // paintGroup 只按 still 判断「形状变没变」：落笔动画播放中阅读器常会再重画一次（切句后滚到该句、
+    // 重锚落定），那次的 ink 不带动画，若按 ink 比较就会替换 DOM、把正在播的动画截断。
+    // [origin] 是这一层的原点（路径坐标），[hostOrigin] 是 body 层原点（落笔判定的状态坐标），
+    // [run] 是 markRun 给的整组判定（延迟在同组各层之间接力，行与行依次画出）。
+    var markSvg = function(name, tag, list, origin, hostOrigin, cfg, run) {
+      var empty = { ink: '', still: '' };
+      if (!list.length) return empty;
+      var geom = list.map(function(l) { return lineGeom(l, origin); });
+      var fill = groupColor(name);
+      if (!fill) return empty;
+      var base = 'fushi-mark-' + name.replace(/^fushi-/, '') + '-' + tag + '-';
+      var defs = markDefs(base, cfg);
+      var clips = '';
+      var still = '';
+      var animate = run.animate;
+      var out = '';
+      list.forEach(function(l, i) {
+        var line = geom[i];
+        var hline = lineGeom(l, hostOrigin);
+        var key = lineKey(hline);
+        run.nowLines[key] = true;
+        var c = {
+          cfg: cfg, P: markPoint(line.v), fill: fill, paper: cfg.paper, base: base, uid: base + i, defs: [],
+          rnd: markRng(markHash(name + ':' + cfg.style + ':' + Math.round(line.u0) + ':' + Math.round(line.vc)))
+        };
+        var shape = MARKERS[cfg.style](line, c);
+        defs += c.defs.join('');
+        still += shape;
+        var isNew = false;
+        if (animate && cfg.kind === 'favorite') {
+          isNew = isFresh(l.v
+            ? { v: true, x: l.mid - hostOrigin.left, b0: hline.u0, b1: hline.u1 }
+            : { v: false, y: l.mid - hostOrigin.top, b0: hline.u0, b1: hline.u1 });
+        } else if (animate && cfg.kind === 'audio') {
+          isNew = !run.prevLines[key];
+        } else {
+          isNew = animate;
+        }
+        if (!isNew) { out += shape; return; }
+        var em = line.em, len = line.u1 - line.u0 + em * 2, dur = cfg.sweep.base + (len / em) * cfg.sweep.perEm;
+        var delay = run.delay;
+        var cid = base + i + 'c';
+        var rect = line.v
+          ? '<rect x="' + fx(-line.vc - em * 3) + '" y="' + fx(line.u0 - em) + '" width="' + fx(em * 6) + '" height="0">' +
+            '<animate attributeName="height" from="0" to="' + fx(len) + '"'
+          : '<rect x="' + fx(line.u0 - em) + '" y="' + fx(line.vc - em * 3) + '" width="0" height="' + fx(em * 6) + '">' +
+            '<animate attributeName="width" from="0" to="' + fx(len) + '"';
+        clips += '<clipPath id="' + cid + '" clipPathUnits="userSpaceOnUse">' + rect + ' begin="' + fx(delay) + 's" dur="' +
+          fx(dur) + 's" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.3 0.6 0.4 1"/></rect></clipPath>';
+        out += '<g clip-path="url(#' + cid + ')">' + shape + '</g>';
+        run.delay = delay + dur + cfg.sweep.gap;
+      });
+      // 1×1 的 svg 靠 overflow:visible 把笔划画出来（UA 默认给非根 svg overflow:hidden，会整张裁掉）；
+      // 定位在所在层的原点，路径坐标就是该层局部坐标。
+      var open = '<svg xmlns="http://www.w3.org/2000/svg" class="fushi-mark-ink" width="1" height="1" aria-hidden="true"' +
+        ' style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none">';
+      return {
+        ink: open + '<defs>' + defs + clips + '</defs>' + out + '</svg>',
+        still: open + '<defs>' + defs + '</defs>' + still + '</svg>'
+      };
+    };
+    var paintGroup = function(group, reg, mark) {
       var pieces = [];
       var highlight = reg ? reg.get(group.name) : null;
       if (highlight) highlight.forEach(function(range) { rangeRects(range, pieces); });
@@ -967,9 +1358,39 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         if (!byLayer.has(layer)) byLayer.set(layer, []);
         byLayer.get(layer).push(p);
       });
+      if (mark) {
+        // 笔触样式：先收齐这一组所有层的行（「是不是新的一处 / 新的一句」按整组判，坐标统一换成 body
+        // 层局部坐标），再逐层画各自的 SVG（路径坐标是该层局部坐标）。
+        var hostOrigin = hostEl().getBoundingClientRect();
+        var jobs = [];
+        var allGeom = [];
+        byLayer.forEach(function(own, layer) {
+          var el = layer.querySelector(':scope > [data-hl-group="' + group.name + '"]');
+          if (!el) return;
+          var list = readingOrder(lanes(own, group.join));
+          list.forEach(function(l) { allGeom.push(lineGeom(l, hostOrigin)); });
+          jobs.push({ layer: layer, el: el, list: list });
+        });
+        var run = markRun(group.name, mark, allGeom);
+        jobs.forEach(function(job) {
+          var origin = job.list.length ? job.layer.getBoundingClientRect() : null;
+          var res = markSvg(group.name, layerTag(job.layer), job.list, origin, hostOrigin, mark, run);
+          // 比上次写入的静态串，不比 innerHTML：SVG 回读的序列化与写入串不逐字相同，比 innerHTML 会每次
+          // 都判成「变了」、重建 DOM 并重放落笔动画；比 ink 则会截断正在播的动画（见 markSvg）。
+          if (job.el.__fushiInk !== res.still) {
+            job.el.innerHTML = res.ink;
+            job.el.__fushiInk = res.still;
+          }
+        });
+        return;
+      }
+      delete paintedLines[group.name];
+      delete paintedGeom[group.name];
+      delete paintedAny[group.name];
       byLayer.forEach(function(own, layer) {
         var el = layer.querySelector(':scope > [data-hl-group="' + group.name + '"]');
         if (!el) return;
+        el.__fushiInk = null;
         var origin = own.length ? layer.getBoundingClientRect() : null;
         var html = '';
         lanes(own, group.join).forEach(function(l) {
@@ -990,14 +1411,20 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       dirty = {};
       if (!hostEl()) return;
       var reg = registry();
+      var marks = markConfigs();
+      var favPainted = false;
       paintsMemo = new Map();
       try {
         GROUPS.forEach(function(g) {
-          if (names[g.name]) paintGroup(g, reg);
+          if (!names[g.name]) return;
+          var kind = kindOf(g.name);
+          paintGroup(g, reg, kind ? marks[kind] || null : null);
+          if (kind === 'favorite') favPainted = true;
         });
       } finally {
         paintsMemo = null;
       }
+      if (favPainted) fresh = [];
       pruneBackdrops();
     };
     var schedule = function(name) {
@@ -1064,7 +1491,14 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       if (document.body) observe();
       else if (typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', observe);
     }
-    return { repaint: function(name) { schedule(name); }, flush: flush, laneEm: LANE_EM };
+    return {
+      repaint: function(name) { schedule(name); },
+      flush: flush,
+      laneEm: LANE_EM,
+      markFresh: markFresh,
+      markStyles: MARK_STYLES,
+      markKinds: MARK_KINDS
+    };
   })();
 }
 window.fushiSelection = {

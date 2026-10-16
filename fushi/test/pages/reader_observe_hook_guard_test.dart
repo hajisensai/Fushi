@@ -34,4 +34,28 @@ void main() {
       reason: 'dispose 应把 debugCaptureWebView 置空，避免跨测污染 / 悬挂引用',
     );
   });
+
+  test('阅读器注册并在 dispose 清理 debugCallDevToolsProtocol 钩子', () {
+    final String page = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync();
+    final String webviewPart = File(
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+    ).readAsStringSync();
+    expect(
+      webviewPart.contains('debugCallDevToolsProtocol ='),
+      isTrue,
+      reason: 'onWebViewCreated 里应注册 CDP 钩子（itest 投触摸用）',
+    );
+    expect(
+      webviewPart.contains('controller.callDevToolsProtocolMethod('),
+      isTrue,
+      reason: 'CDP 钩子应直接调 controller.callDevToolsProtocolMethod',
+    );
+    expect(
+      page.contains('debugCallDevToolsProtocol = null'),
+      isTrue,
+      reason: 'dispose 应把 debugCallDevToolsProtocol 置空',
+    );
+  });
 }

@@ -131,7 +131,7 @@ class _RemoteDownloadTasksSectionState
       // develop 把裸回调收敛成了 [DownloadTaskActions] 槽位；远端三个动作按语义
       // 各就各位，不再把「中止」和「删除」挤进同一个 onClear。
       //
-      // 删除与「同时删除已下载文件」（BUG-3417）：host 宣告 `deleteFilesParam` 时把
+      // 删除与「同时删除已下载文件」（BUG-3437）：host 宣告 `deleteFilesParam` 时把
       // 勾选结果原样带给 `DELETE /api/downloads/<id>?deleteFiles=`，勾选框按字面
       // 生效。老 host 不认这个参数、删不删由它的历史缺省决定（app 当 host 保留，
       // 无头服务端连数据一起删，客户端分不出是哪种），所以不摆勾选框

@@ -83,6 +83,7 @@ import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
@@ -8798,6 +8799,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           workRef: VideoWorkRef.collection(collection.id),
           onChanged: _refresh,
           remote: remote,
+          collectionAiSettings:
+              isAiModuleEnabled(ref.read(appProvider).moduleVisibility)
+              ? ref.read(appProvider).prefsRepo
+              : null,
           onDeleteMembersMedia:
               (
                 List<VideoBookRow> members,

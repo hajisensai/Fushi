@@ -78,9 +78,12 @@ void main() {
       start,
       js.indexOf('getFirstVisibleCharOffset: function', start),
     );
-    expect('this.setPagePosition('.allMatches(body).length, 2);
+    // 翻页动画：两个方向的落点都经 turnPageAnimated（不支持动画时内部退回
+    // setPagePosition，清选区等收口照旧在 setPagePosition 一处）。
+    expect('this.turnPageAnimated('.allMatches(body).length, 2);
+    expect(body, isNot(contains('this.setPagePosition(')));
     for (final String target in <String>['targetForward', 'targetBack']) {
-      final int call = body.indexOf('this.setPagePosition(context, $target);');
+      final int call = body.indexOf('this.turnPageAnimated(context, $target,');
       final int limit = body.lastIndexOf('return "limit";', call);
       expect(call, greaterThan(0));
       expect(limit, greaterThan(0));

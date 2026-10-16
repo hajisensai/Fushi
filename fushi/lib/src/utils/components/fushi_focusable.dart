@@ -28,7 +28,7 @@ class FushiFocusable extends StatefulWidget {
 
   /// 焦点环画在 [child] 下面（默认）还是上面。[child] 自带不透明底色（胶囊、色块）
   /// 时必须用 [DecorationPosition.foreground] 并让 [borderRadius] 与底色形状一致，
-  /// 否则底色盖住环、只在圆角差处漏出几段残角（BUG-3420）。
+  /// 否则底色盖住环、只在圆角差处漏出几段残角（BUG-3440）。
   final DecorationPosition ringPosition;
 
   @override

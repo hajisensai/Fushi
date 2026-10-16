@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/utils.dart';
@@ -336,5 +337,96 @@ void main() {
       <String, Object?>{'invertColors': true},
     ]);
     expect(overrides, isEmpty);
+  });
+
+  test('old animateTransitions toggle is merged into the page-turn choice', () {
+    // 「过渡动画」布尔开关并进了「翻页动画」四选一，不再作为一行露出。
+    expect(
+      mangaReaderPreferenceDescriptors(const <String>{}).any(
+        (MangaReaderPreferenceDescriptor d) => d.key == 'animateTransitions',
+      ),
+      isFalse,
+    );
+  });
+
+  testWidgets('reading-mode tab offers the four-way page-turn animation, '
+      'speed and follow-drag', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final List<MangaPageTurnSettings> writes = <MangaPageTurnSettings>[];
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: const <String, Object?>{},
+          onChanged: (Map<String, Object?> next) async {},
+          pageTurn: const MangaPageTurnSettings(),
+          onPageTurnChanged: (MangaPageTurnSettings v) async => writes.add(v),
+        ),
+        width: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    final Finder tab0 = find.byKey(
+      const PageStorageKey<String>('manga_settings_tab_0'),
+    );
+    Finder inTab(Finder f) => find.descendant(of: tab0, matching: f);
+    // 旧开关不再出现，四选一出现在「阅读模式」页。
+    expect(inTab(find.text('Animate page transitions')), findsNothing);
+    for (final String k in <String>['none', 'slide', 'cover', 'fade']) {
+      expect(
+        inTab(find.byKey(ValueKey<String>('manga_page_turn_animation_$k'))),
+        findsOneWidget,
+        reason: k,
+      );
+    }
+    expect(
+      inTab(find.byKey(const ValueKey<String>('manga_page_turn_speed'))),
+      findsOneWidget,
+    );
+    expect(
+      inTab(find.byKey(const ValueKey<String>('manga_page_turn_follow_drag'))),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_page_turn_animation_cover')),
+    );
+    await tester.pumpAndSettle();
+    expect(writes.last.animation, MangaPageAnimation.cover);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_page_turn_speed_slow')),
+    );
+    await tester.pumpAndSettle();
+    expect(writes.last.speed, PageTurnAnimationSpeed.slow);
+    expect(writes.last.animation, MangaPageAnimation.cover);
+
+    // 淡入淡出没有位移：跟手开关收起，速度保留。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_page_turn_animation_fade')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('manga_page_turn_follow_drag')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_page_turn_speed')),
+      findsOneWidget,
+    );
+    // 无动画：速度也收起。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_page_turn_animation_none')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('manga_page_turn_speed')),
+      findsNothing,
+    );
+    expect(writes.last.animation, MangaPageAnimation.none);
+    expect(tester.takeException(), isNull);
   });
 }

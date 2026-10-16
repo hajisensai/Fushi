@@ -40,6 +40,12 @@ final List<_EntrySite> _sites = <_EntrySite>[
     definitionFile: 'video_source_scrape_dialog.dart',
   ),
   _EntrySite(
+    '合集详情页排序菜单的「AI 排序」',
+    // 透传（`widget.collectionAiSettings`）不是新入口，只认真正求值的接线点。
+    RegExp(r'collectionAiSettings:(?!\s*widget\.)'),
+    RegExp(r'collectionAiSettings:\s*isAiModuleEnabled\('),
+  ),
+  _EntrySite(
     '漫画 OCR 的 AI 档位面板',
     RegExp(r'aiModeGetter:'),
     RegExp(r'aiModeGetter:\s*isAiModuleEnabled\('),

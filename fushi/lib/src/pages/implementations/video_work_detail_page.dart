@@ -15,6 +15,7 @@ import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -49,10 +50,14 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.collectionAiSettings,
     super.key,
   });
 
   final FushiDatabase database;
+
+  /// 透传给 [MediaCollectionDetailPage.collectionAiSettings]（「AI 排序」）。
+  final AiSettingsSource? collectionAiSettings;
 
   /// 视频规格服务（v95）；构造注入，理由同 [MediaCollectionDetailPage.videoSpecs]。
   /// null = 不显示规格。
@@ -156,6 +161,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
               }
               return MediaCollectionDetailPage(
                 database: widget.database,
+                collectionAiSettings: widget.collectionAiSettings,
                 videoSpecs: widget.videoSpecs,
                 collection: collection,
                 // 成员解析走共享的 [loadCollectionEpisodeSlots]：合集清单是跨端 union，

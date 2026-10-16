@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:meta/meta.dart';
-
 
 /// Manages on-disk storage of extracted EPUB content.
 ///
@@ -60,8 +60,13 @@ class EpubStorage {
   /// Delete an extracted directory by its absolute path (the stored
   /// `extract_dir` column). Use this to remove an existing book whose on-disk
   /// folder name may still be a legacy int id.
+  ///
+  /// Also drops the book's derived illustration-index cache, which lives under
+  /// the support root keyed by this path (BUG-3433) — first, so a locked
+  /// extract dir (Windows errno 32) cannot leave it orphaned.
   static Future<void> deleteBookDir(String extractDir) async {
     if (extractDir.isEmpty) return;
+    await deleteEpubImageIndexCache(extractDir);
     final Directory dir = Directory(extractDir);
     if (dir.existsSync()) {
       await dir.delete(recursive: true);

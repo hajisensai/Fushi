@@ -958,7 +958,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     await _clearReaderAppSelection();
     if (!mounted) return;
-    final List<EpubImageRef> images = book.images;
+    final List<EpubImageRef> images =
+        await _loadBookImagesOffUiIsolate(book, _extractDir);
+    if (!mounted || !identical(_book, book)) return;
     final int currentChapter = _currentChapter;
     final List<TtuTocEntry> toc = _buildTtuToc();
     // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
@@ -3851,7 +3853,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   // ── Popup Audio Controls ───────────────────────────────────────────
 
-  Future<void> _refreshSectionHighlights(int section) async {
+  /// [freshId]：刚收藏的那条，笔触样式下给它放一次落笔动画（只有收藏动作传）。
+  Future<void> _refreshSectionHighlights(int section, {String? freshId}) async {
     if (_controller == null) return;
     if (_lyricsMode) await _applyLyricsFavorites();
     final List<FavoriteSentence> chapterFavs =
@@ -3863,6 +3866,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       _controller!,
       chapterFavs,
       backgroundHex: _readerBackgroundHex,
+      freshIds: freshId == null ? const <String>[] : <String>[freshId],
     );
     await _controller!.evaluateJavascript(
       source:
@@ -3955,7 +3959,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _invalidateFavoriteSentenceCache();
     _rebuild(() => _currentSentenceIsFavorited = true);
     if (mounted) {
-      await _refreshSectionHighlights(section);
+      await _refreshSectionHighlights(section, freshId: fav.id);
     }
     FushiToast.show(msg: t.favorite_added, severity: ToastSeverity.success);
   }

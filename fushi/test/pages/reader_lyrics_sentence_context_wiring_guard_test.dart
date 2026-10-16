@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'reader_fushi_page_source_corpus.dart';
 import 'video_fushi_page_source_corpus.dart';
 
-/// BUG-3417 / 反馈 miuMwosYbx：有声书「歌词模式」里打开高级制卡，「前加一句 /
+/// BUG-3434 / 反馈 miuMwosYbx：有声书「歌词模式」里打开高级制卡，「前加一句 /
 /// 后加一句」一点就灰掉、句子数不变。
 ///
 /// 根因：阅读器的 `onSetSentenceContextToDraft` 只会去**正文** WebView 跑
@@ -69,7 +69,7 @@ void main() {
       expect(full, contains('cueContextDraftSentences('));
       expect(full, contains('cues: _lyricsCueList,'));
       // 不得再走按查词句章节号换算位置的 _sentenceAudioRangeFor：相邻句跨章时会被
-      // 换算进本章、合并成整章区间（BUG-3417 复核）。
+      // 换算进本章、合并成整章区间（BUG-3434 复核）。
       expect(full, isNot(contains('_sentenceAudioRangeFor(')));
       expect(full, contains('_miningDraft.setContext('));
     },

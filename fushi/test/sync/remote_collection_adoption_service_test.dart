@@ -65,7 +65,7 @@ void main() {
     },
   );
   test(
-    'BUG-3428 同类：无合集归属的下载书也记下落地键与对端键的对应，'
+    'BUG-3443 同类：无合集归属的下载书也记下落地键与对端键的对应，'
     '删除墓碑据此写对端键 / 把对端墓碑换算回本机',
     () async {
       const RemoteBookInfo book = RemoteBookInfo(

@@ -167,7 +167,7 @@ void main() {
       await database.getCollectionItems(collections.single.id), hasLength(1));
   });
 
-  test('BUG-3428：重新收下经互联来的漫画撤销此前写的对端键删除墓碑，'
+  test('BUG-3443：重新收下经互联来的漫画撤销此前写的对端键删除墓碑，'
       '不碰无关墓碑', () async {
     final OnlineMangaLibraryEntry entry = InterconnectMangaCatalog.entryFor(
       const RemoteBookInfo(

@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 
-/// BUG-3419：Android 原生 `TtsChannelHandler` 随 Activity 新建 / 销毁，引擎却被
+/// BUG-3439：Android 原生 `TtsChannelHandler` 随 Activity 新建 / 销毁，引擎却被
 /// audio_service 缓存复用。Activity 重建后新 handler 的本地音频库列表是空的，而
 /// Dart 只在 `initialise()` 推过一次配置 → 查词静默没有本地音频，重启才好。修法：
 /// 原生 handler 挂上后发 `nativeHandlerAttached`，Dart 收到就重推配置。

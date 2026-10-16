@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show readerFushiEngineSourceUncompacted;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 
@@ -52,7 +54,7 @@ void main() {
       );
       expect(
         result.stdout.toString(),
-        contains('all assertions passed (33 cases)'),
+        contains('all assertions passed (36 cases)'),
       );
     },
   );
@@ -71,6 +73,18 @@ String _productionFixtureSource(File jsTest) {
     openingTag.length,
     shell.length - closingTag.length,
   );
+  // 生产注入的进度组装（落库的 char_offset 就从这里来），原样执行。
+  final String engine = readerFushiEngineSourceUncompacted();
+  final int progressStart = engine.indexOf(
+    'window.fushiProgressDetails = function()',
+  );
+  final int progressEnd = engine.indexOf('\n  };', progressStart);
+  expect(progressStart, greaterThanOrEqualTo(0));
+  expect(progressEnd, greaterThan(progressStart));
+  final String progressSource = engine.substring(
+    progressStart,
+    progressEnd + 5,
+  );
   return '''
 const runCases = require(${jsonEncode(jsTest.absolute.path)});
 function installStudyUnits(window) {
@@ -80,6 +94,10 @@ function installProductionShell(window, document, getComputedStyle, Node,
     NodeFilter, requestAnimationFrame, setTimeout, CSS, Highlight) {
   installStudyUnits(window);
 $paginatedSource
+  installProgressAssembly(window);
+}
+function installProgressAssembly(window) {
+$progressSource
 }
 runCases(installProductionShell).catch(error => {
   console.error(error);

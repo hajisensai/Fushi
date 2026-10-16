@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -1663,16 +1663,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.anki_lapis_visual_color_picker_title),
-        content: SingleChildScrollView(
-          child: ColorPicker(
-            pickerColor: initial,
-            onColorChanged: (Color color) => picked = color,
-            portraitOnly: true,
-            enableAlpha: false,
-            displayThumbColor: true,
-            hexInputBar: true,
-            labelTypes: const <ColorLabelType>[],
-          ),
+        content: FushiDialogColorPicker(
+          pickerColor: initial,
+          onColorChanged: (Color color) => picked = color,
+          enableAlpha: false,
         ),
         actions: <Widget>[
           FushiTextButton(

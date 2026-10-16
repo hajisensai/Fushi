@@ -41,7 +41,7 @@ class RemoteCollectionAdoptionService {
       database.transaction(() async {
         // 别名不再只限合集成员：下载落地键与对端键不同（对端同名书带 `(2)` 后缀、
         // EPUB 无 dc:title 时回落到临时文件名…）时，删除墓碑 / 标签也要靠它把两端
-        // 认成同一本（BUG-3428 同类）。只有下载入库那一刻（[localBook] 是 importer
+        // 认成同一本（BUG-3443 同类）。只有下载入库那一刻（[localBook] 是 importer
         // 的实际返回）能可靠建立这条对应，事后按对端键反查恰恰查不到。
         if (book.collection == null && localBook == null) return;
         final String key = book.downloadId;
