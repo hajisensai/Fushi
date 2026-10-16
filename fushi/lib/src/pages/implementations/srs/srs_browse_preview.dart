@@ -11,14 +11,17 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -51,6 +54,8 @@ class SrsBrowsePreview extends ConsumerStatefulWidget {
     this.position,
     this.hasPrevious = false,
     this.hasNext = false,
+    this.lookup,
+    this.onLookupClosed,
   });
 
   final String cardId;
@@ -66,6 +71,12 @@ class SrsBrowsePreview extends ConsumerStatefulWidget {
   final bool hasPrevious;
   final bool hasNext;
 
+  /// 卡面查词控制器（页面拿它挡住弹窗打开期间的翻面 / 换卡键）；null = 预览自己建一个。
+  final SrsCardLookupController? lookup;
+
+  /// 查词弹窗整栈关掉之后（页面据此回收焦点）。
+  final VoidCallback? onLookupClosed;
+
   @override
   ConsumerState<SrsBrowsePreview> createState() => _SrsBrowsePreviewState();
 }
@@ -75,6 +86,24 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
   SrsRenderedCard? _rendered;
   bool _loading = true;
   int _loadSeq = 0;
+  SrsCardLookupController? _ownLookup;
+
+  SrsCardLookupController get _lookup =>
+      widget.lookup ?? (_ownLookup ??= SrsCardLookupController());
+
+  @override
+  void dispose() {
+    _ownLookup?.dispose();
+    super.dispose();
+  }
+
+  void _openSource(CardSourceLink link) {
+    _lookup.closeAll();
+    srsRunLogged(
+      'SrsBrowsePreview.openSource',
+      () => openCardSource(ref: ref, link: link),
+    );
+  }
 
   @override
   void initState() {
@@ -85,6 +114,10 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
   @override
   void didUpdateWidget(SrsBrowsePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.cardId != widget.cardId ||
+        oldWidget.showAnswer != widget.showAnswer) {
+      _lookup.closeAll();
+    }
     if (oldWidget.cardId != widget.cardId ||
         oldWidget.revision != widget.revision) {
       unawaited(_load());
@@ -133,9 +166,11 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
           fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
           bridgeKeys: kSrsBrowseBridgeKeys,
           onBridgeKey: (String token) {
+            if (_lookup.guardBridgeToken(token)) return;
             final SrsPreviewCommand? c = srsPreviewCommandOfToken(token);
             if (c != null) widget.onCommand(c);
           },
+          onSourceLink: _openSource,
         ),
       );
     }
@@ -152,7 +187,12 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
         duration: fushiMotionDuration(context, FushiMotion.short),
         switchInCurve: FushiMotion.enter,
         switchOutCurve: FushiMotion.exit,
-        child: KeyedSubtree(key: ValueKey<bool>(_loading), child: face),
+        // 卡面查词：与复习页同一套（点词 / 悬停 → 弹窗，弹窗里继续嵌套查）。
+        child: SrsCardLookupHost(
+          controller: _lookup,
+          onClosed: widget.onLookupClosed,
+          child: KeyedSubtree(key: ValueKey<bool>(_loading), child: face),
+        ),
       ),
     );
     final Widget? captionText = caption.isEmpty
@@ -290,11 +330,13 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
         mounted && (ModalRoute.of(context)?.isCurrent ?? false),
   );
   late int _index = widget.initialIndex.clamp(0, widget.items.length - 1);
+  final SrsCardLookupController _lookupCtl = SrsCardLookupController();
   bool _showAnswer = false;
   int _revision = 0;
 
   @override
   void dispose() {
+    _lookupCtl.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -339,6 +381,8 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final KeyEventResult? lookup = _lookupCtl.guardKey(event);
+    if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     if (HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed ||
@@ -416,6 +460,9 @@ class _SrsBrowsePreviewPageState extends ConsumerState<SrsBrowsePreviewPage> {
               hasNext: _index < widget.items.length - 1,
               onCommand: _command,
               onEdit: () => srsRunLogged('SrsBrowsePreview.edit', _edit),
+              lookup: _lookupCtl,
+              onLookupClosed: () =>
+                  _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
             ),
           ),
         ),

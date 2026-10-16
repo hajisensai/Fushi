@@ -29,6 +29,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_preview.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -84,6 +85,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   );
   final FocusNode _queryFocus = FocusNode(debugLabel: 'srs-browse-search');
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-browse');
+
+  /// 预览卡面的查词弹窗（开着时 Enter / 方向键不翻面、不换卡）。
+  final SrsCardLookupController _previewLookup = SrsCardLookupController();
   late final PageFocusOwnership _focusOwnership = PageFocusOwnership(
     node: _focusNode,
     canOwn: (FocusReclaimCause cause) =>
@@ -129,6 +133,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _queryFocus.dispose();
     _focusNode.dispose();
     _scroll.dispose();
+    _previewLookup.dispose();
     super.dispose();
   }
 
@@ -579,6 +584,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   // ------------------------------------------------------------------ 键盘
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    final KeyEventResult? lookup = _previewLookup.guardKey(event);
+    if (lookup != null) return lookup;
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -913,6 +920,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                     onEdit: () => srsRunLogged(
                       'SrsBrowse.edit',
                       () => _editNote(item.noteId),
+                    ),
+                    lookup: _previewLookup,
+                    onLookupClosed: () => _focusOwnership.reclaim(
+                      FocusReclaimCause.overlayClosed,
                     ),
                   ),
           ),

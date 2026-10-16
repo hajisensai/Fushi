@@ -10,15 +10,22 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerHoverEvent;
+import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_anki/fushi_anki_core.dart' show wrapAnkiCardHtmlWithLang;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show CardSourceLink, wrapAnkiCardHtmlWithLang;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
     show isValidFontData;
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
+import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
+import 'package:fushi/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
@@ -47,6 +54,7 @@ class SrsCardFace {
     this.onWheel,
     this.onZoomWheel,
     this.hostCss = '',
+    this.onSourceLink,
   });
 
   final String cardId;
@@ -93,6 +101,11 @@ class SrsCardFace {
   /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
   final String hostCss;
 
+  /// 卡面里点了 Fushi 制卡写进 MiscInfo 的来源链接（`fushi://source?...`）：宿主据此
+  /// 跳回书 / 漫画 / 视频的对应位置（`openCardSource`）。null = 来源链接不响应。其它
+  /// 链接一律不导航（卡面外壳不能被链接带走）。
+  final void Function(CardSourceLink link)? onSourceLink;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -110,6 +123,7 @@ class SrsCardFace {
         onWheel: onWheel,
         onZoomWheel: onZoomWheel,
         hostCss: hostCss,
+        onSourceLink: onSourceLink,
       );
 }
 
@@ -219,6 +233,8 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Meta+Equal',
   'Meta+Minus',
   'Meta+Digit0',
+  // 卡面查词弹窗打开时关一层（弹窗没开时复习页忽略它）。
+  'Escape',
 ];
 
 /// 浏览页预览持焦时要交回 Dart 的键：翻面（Enter / 空格）、上一张 / 下一张（方向键）、
@@ -237,6 +253,54 @@ const List<String> kSrsBrowseBridgeKeys = <String>[
 ];
 
 const String _kSrsBridgeHandler = 'onSrsReviewKey';
+
+/// 页内链接点击 → 宿主（见 [kSrsCardLinkScript]）。
+const String kSrsSourceLinkHandler = 'onSrsSourceLink';
+
+/// 卡面链接：捕获阶段拦下所有 `<a href>` 的默认导航（卡面外壳不能被链接带走；页内
+/// `#锚点` 与 `javascript:` 不算导航，放行），其中 Fushi 来源链接（`fushi://source`）
+/// 交给宿主跳回原媒体。不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
+const String kSrsCardLinkScript = r'''
+(function(){
+  if (window.__fushiSrsLinks) return;
+  window.__fushiSrsLinks = true;
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    var a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href') || '';
+    if (href.charAt(0) === '#' || /^javascript:/i.test(href)) return;
+    e.preventDefault();
+    if (/^fushi:\/\/source/i.test(href)) {
+      try { window.flutter_inappwebview.callHandler('onSrsSourceLink', href); } catch (err) {}
+    }
+  }, true);
+})();
+''';
+
+/// 卡面导航策略：Fushi 来源链接交给 [onSourceLink] 后取消；外壳本身（`about:` /
+/// `data:` 载入）、子框架（卡片里嵌的视频等）放行；其余主框架导航一律取消。
+@visibleForTesting
+NavigationActionPolicy srsCardNavigationPolicy(
+  Uri? url, {
+  required bool isForMainFrame,
+  void Function(CardSourceLink link)? onSourceLink,
+}) {
+  final String scheme = url?.scheme.toLowerCase() ?? '';
+  if (scheme == 'fushi') {
+    final CardSourceLink? link = CardSourceLink.tryParse(url.toString());
+    if (link != null) onSourceLink?.call(link);
+    return NavigationActionPolicy.CANCEL;
+  }
+  if (!isForMainFrame ||
+      scheme.isEmpty ||
+      scheme == 'about' ||
+      scheme == 'data' ||
+      scheme == kSrsMediaScheme) {
+    return NavigationActionPolicy.ALLOW;
+  }
+  return NavigationActionPolicy.CANCEL;
+}
 
 /// [keys] 的卡面键盘桥脚本（每次换内容后注入；生成器自带幂等守卫）。
 String srsCardFaceBridgeScript(List<String> keys) => webViewKeyBridgeScript(
@@ -1058,8 +1122,24 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
   ConsumerState<SrsWebCardFace> createState() => _SrsWebCardFaceState();
 }
 
-class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
+class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
+    implements SrsCardLookupSurface {
   InAppWebViewController? _controller;
+
+  /// 卡面查词（[SrsCardLookupScope] 给出；null = 这面卡不取词，如外观页预览、正面预热的
+  /// 释义 WebView）。
+  SrsCardLookupController? _lookup;
+
+  /// 当前外壳里已装好取词脚本（外壳重载 / renderer 重建后重装）。
+  bool _lookupInstalled = false;
+
+  /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
+  final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
+
+  /// 取词脚本整段（选区脚本 + 卡面监听）只拼一次。
+  static final String _lookupInstallScript = srsCardLookupInstallScript(
+    ReaderSelectionScripts.source(),
+  );
 
   /// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
   static final String _mediaPrefix = srsMediaUrlPrefix(
@@ -1169,14 +1249,172 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _sync.update(_document(context));
+    final SrsCardLookupController? lookup = SrsCardLookupScope.of(context);
+    if (!identical(lookup, _lookup)) {
+      _lookup?.unregister(this);
+      _lookup = lookup;
+      lookup?.register(this);
+      final InAppWebViewController? controller = _controller;
+      if (controller != null && _sync.shellReady) {
+        unawaited(_installLookup(controller));
+      }
+    }
   }
 
   @override
   void dispose() {
+    _lookup?.unregister(this);
     if (identical(SrsWebCardFace.debugController, _controller)) {
       SrsWebCardFace.debugController = null;
     }
     super.dispose();
+  }
+
+  // ---------------------------------------------------------------- 查词
+
+  Future<void> _evaluateQuiet(String source) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.evaluateJavascript(source: source);
+    } catch (e, stack) {
+      // 平台视图半销毁时 evaluate 抛 MissingPluginException：取词失败 no-op。
+      ErrorLogService.instance.log('SrsWebCardFace.lookupEval', e, stack);
+    }
+  }
+
+  String _lookupGateScript() {
+    final SrsCardLookupController? lookup = _lookup;
+    if (lookup == null) {
+      return srsCardLookupGateScript(
+        tap: false,
+        hover: false,
+        hostHover: false,
+        open: false,
+      );
+    }
+    final SrsCardLookupSettings settings = lookup.settings;
+    return srsCardLookupGateScript(
+      tap: settings.tap,
+      hover: settings.hoverAuto,
+      hostHover: hostOwnsWebViewHoverLookup,
+      open: lookup.isOpen,
+    );
+  }
+
+  /// 装取词脚本（幂等）并下发门控。没有查词作用域时只下发「全关」的门控。
+  Future<void> _installLookup(InAppWebViewController controller) async {
+    if (_lookup == null) {
+      if (_lookupInstalled) await _evaluateQuiet(_lookupGateScript());
+      return;
+    }
+    try {
+      if (!_lookupInstalled) {
+        await controller.evaluateJavascript(source: _lookupInstallScript);
+        _lookupInstalled = true;
+      }
+      await controller.evaluateJavascript(source: _lookupGateScript());
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsWebCardFace.installLookup', e, stack);
+    }
+  }
+
+  RenderBox? get _box {
+    final RenderObject? r = context.findRenderObject();
+    return r is RenderBox && r.attached && r.hasSize ? r : null;
+  }
+
+  void _onTextSelected(Object? raw) {
+    final SrsCardLookupController? lookup = _lookup;
+    final RenderBox? box = _box;
+    if (lookup == null || box == null || raw is! String) return;
+    final Object? json;
+    try {
+      json = jsonDecode(raw);
+    } on FormatException {
+      return;
+    }
+    if (json is! Map<String, dynamic>) return;
+    final ReaderSelectionData data = ReaderSelectionData.fromJson(json);
+    if (data.text.trim().isEmpty) return;
+    final Map<String, double>? r = data.rect;
+    final Rect local = r == null
+        ? Rect.fromCenter(
+            center: box.size.center(Offset.zero),
+            width: 1,
+            height: 1,
+          )
+        : Rect.fromLTWH(
+            r['x'] ?? 0,
+            r['y'] ?? 0,
+            r['width'] ?? 0,
+            r['height'] ?? 0,
+          );
+    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    lookup.lookup(
+      SrsCardLookupRequest(
+        term: data.text,
+        anchor: anchor,
+        sentence: data.sentence.isEmpty ? data.text : data.sentence,
+        fromHover: data.fromHover,
+        origin: this,
+        onMatched: (int count) => unawaited(
+          _evaluateQuiet(ReaderSelectionScripts.highlightInvocation(count)),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool lookupAt(Offset globalPosition, {required bool fromHover}) {
+    final RenderBox? box = _box;
+    if (_lookup == null || _controller == null || box == null || !mounted) {
+      return false;
+    }
+    final Offset local = box.globalToLocal(globalPosition);
+    if (!readerHostHoverPointInside(local, box.size)) return false;
+    unawaited(
+      _evaluateQuiet(
+        ReaderSelectionScripts.selectInvocation(
+          local.dx,
+          local.dy,
+          400,
+          fromHover: fromHover,
+        ),
+      ),
+    );
+    return true;
+  }
+
+  @override
+  void onLookupStateChanged({
+    required bool open,
+    required SrsCardLookupSurface? origin,
+  }) {
+    if (!_lookupInstalled) return;
+    if (!open) _hostHover.reset();
+    unawaited(
+      _evaluateQuiet(
+        _lookupGateScript() +
+            (!open || !identical(origin, this)
+                ? ReaderSelectionScripts.clearInvocation()
+                : ''),
+      ),
+    );
+  }
+
+  /// macOS：宿主侧悬停腿（页内 mousemove 到不了，见 [ReaderHostHoverLookupGate]）。
+  void _onHostHover(PointerHoverEvent event) {
+    final SrsCardLookupController? lookup = _lookup;
+    if (lookup == null || lookup.isOpen) return;
+    if (!_hostHover.shouldLookup(
+      event.localPosition,
+      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
+      hoverAutoLookup: lookup.settings.hoverAuto,
+    )) {
+      return;
+    }
+    lookupAt(event.position, fromHover: true);
   }
 
   @override
@@ -1209,6 +1447,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
             ? srsReviewKeyBridgeScript
             : srsCardFaceBridgeScript(widget.face.bridgeKeys),
       );
+      await controller.evaluateJavascript(source: kSrsCardLinkScript);
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
       final bool zoom = widget.face.onZoomWheel != null;
@@ -1228,7 +1467,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyedSubtree(
+    final Widget webView = KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
@@ -1245,7 +1484,21 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
           // 卡面媒体经拦截器 / 自定义 scheme 从 SrsMediaStore 供字节（见 srs_card_media.dart）。
           useShouldInterceptRequest: true,
           resourceCustomSchemes: const <String>[kSrsMediaScheme],
+          // 链接不许把外壳导航走；来源链接交给宿主（[srsCardNavigationPolicy]）。
+          // Windows 的实现是给每个文档请求开 DevTools Fetch 拦截（整页加载都要绕
+          // 一圈宿主），卡面上不值：那边只靠页内链接脚本（[kSrsCardLinkScript]）拦，
+          // 脚本导航走仍由 [SrsCardFaceSync] 重载外壳兜底。
+          useShouldOverrideUrlLoading: !isWindowsPlatform,
         ),
+        shouldOverrideUrlLoading:
+            (
+              InAppWebViewController controller,
+              NavigationAction action,
+            ) async => srsCardNavigationPolicy(
+              action.request.url,
+              isForMainFrame: action.isForMainFrame,
+              onSourceLink: widget.face.onSourceLink,
+            ),
         shouldInterceptRequest:
             (InAppWebViewController controller, WebResourceRequest request) =>
                 _intercept(request.url),
@@ -1298,6 +1551,31 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
             },
           );
           controller.addJavaScriptHandler(
+            handlerName: kSrsSourceLinkHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? href = arguments.isEmpty ? null : arguments.first;
+              final CardSourceLink? link = href is String
+                  ? CardSourceLink.tryParse(href)
+                  : null;
+              if (link != null && mounted) widget.face.onSourceLink?.call(link);
+              return null;
+            },
+          );
+          // 卡面取词（阅读器同一份选区脚本回调 onTextSelected，见 [_installLookup]）。
+          controller.addJavaScriptHandler(
+            handlerName: 'onTextSelected',
+            callback: (List<dynamic> arguments) {
+              if (mounted && arguments.isNotEmpty) {
+                _onTextSelected(arguments.first);
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'onTapEmpty',
+            callback: (List<dynamic> _) => null,
+          );
+          controller.addJavaScriptHandler(
             handlerName: kSrsPlaySoundHandler,
             callback: (List<dynamic> arguments) {
               final Object? name = arguments.isEmpty ? null : arguments.first;
@@ -1315,7 +1593,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
           // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
           if (_controller == null) return;
           _sync.shellLoaded();
-          unawaited(_injectBridge(controller));
+          _lookupInstalled = false;
+          unawaited(
+            _injectBridge(controller).then((_) => _installLookup(controller)),
+          );
         },
         // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
@@ -1330,6 +1611,8 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
                 ),
       ),
     );
+    if (_lookup == null || !hostOwnsWebViewHoverLookup) return webView;
+    return Listener(onPointerHover: _onHostHover, child: webView);
   }
 }
 
@@ -1346,14 +1629,20 @@ class SrsPlainCardFace extends StatelessWidget {
         .replaceAll(RegExp(r'<[^>]+>'), '')
         .replaceAll('&nbsp;', ' ')
         .trim();
-    return SingleChildScrollView(
-      padding: EdgeInsets.all(FushiDesignTokens.of(context).spacing.card),
-      child: Text(
-        text,
-        key: ValueKey<String>(
-          face.showingAnswer ? 'srs-face-answer' : 'srs-face-question',
+    // 无 WebView 时文字是原生绘制的：同样可点按 / 悬停取词（有查词作用域时）。
+    return SrsNativeLookupRegion(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(FushiDesignTokens.of(context).spacing.card),
+        child: srsLookupText(
+          text: text,
+          child: Text(
+            text,
+            key: ValueKey<String>(
+              face.showingAnswer ? 'srs-face-answer' : 'srs-face-question',
+            ),
+            style: context.fushiType.titleLarge,
+          ),
         ),
-        style: context.fushiType.titleLarge,
       ),
     );
   }

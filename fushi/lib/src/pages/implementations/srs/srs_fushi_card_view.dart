@@ -23,6 +23,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -111,6 +112,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 视图），翻面只是换父，不用现起 WebView。
   final GlobalKey _defsKey = GlobalKey(debugLabel: 'srs-fushi-defs');
 
+  /// 原生区取词（词条 / 例句 / 翻译 / 提示）：点按 / 悬停查词，见 srs_card_lookup.dart。
+  final GlobalKey<SrsNativeLookupRegionState> _lookupRegion =
+      GlobalKey<SrsNativeLookupRegionState>(debugLabel: 'srs-fushi-lookup');
+
+  /// 这一下点按已经被原生取词用掉了（点在例句的字上 = 查词，不再切换注音）。
+  bool get _tapTookLookup => _lookupRegion.currentState?.tookTap ?? false;
+
   /// 卡面可用高度（LayoutBuilder 给出）：矮视口收小图片；窄版式把长释义收起高度换成像素。
   double _viewport = 800;
   bool _clickOpen = false;
@@ -181,26 +189,30 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       data: base.copyWith(colorScheme: scheme),
       // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
       child: SelectionArea(
-        child: ColoredBox(
-          color: scheme.surface,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints c) {
-              if (c.maxHeight.isFinite) _viewport = c.maxHeight;
-              final bool wide = switch (widget.face.layout) {
-                SrsCardLayout.wide => true,
-                SrsCardLayout.narrow => false,
-                SrsCardLayout.auto => c.maxWidth >= kSrsFushiCardWideBreakpoint,
-              };
-              return FushiEntranceScope(
-                replayKey:
-                    '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
-                child: widget.face.showingAnswer
-                    ? (wide
-                          ? _buildWideBack(context, style, c)
-                          : _buildNarrowBack(context, style, c))
-                    : _frontWithWarmDefs(context, style, c, wide: wide),
-              );
-            },
+        child: SrsNativeLookupRegion(
+          key: _lookupRegion,
+          child: ColoredBox(
+            color: scheme.surface,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) {
+                if (c.maxHeight.isFinite) _viewport = c.maxHeight;
+                final bool wide = switch (widget.face.layout) {
+                  SrsCardLayout.wide => true,
+                  SrsCardLayout.narrow => false,
+                  SrsCardLayout.auto =>
+                    c.maxWidth >= kSrsFushiCardWideBreakpoint,
+                };
+                return FushiEntranceScope(
+                  replayKey:
+                      '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
+                  child: widget.face.showingAnswer
+                      ? (wide
+                            ? _buildWideBack(context, style, c)
+                            : _buildNarrowBack(context, style, c))
+                      : _frontWithWarmDefs(context, style, c, wide: wide),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -241,10 +253,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         ],
       },
       if (srsFieldFilled(f['Hint']))
-        Text(
-          srsPlainText(f['Hint']!),
-          textAlign: TextAlign.center,
-          style: s.body(color: s.scheme.onSurfaceVariant, size: 15),
+        srsLookupText(
+          text: srsPlainText(f['Hint']!),
+          child: Text(
+            srsPlainText(f['Hint']!),
+            textAlign: TextAlign.center,
+            style: s.body(color: s.scheme.onSurfaceVariant, size: 15),
+          ),
         ),
     ];
     return Center(
@@ -287,6 +302,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           style: s.term(size: _heroSize(c)),
           rubyStyle: s.body(size: _heroSize(c) * 0.36, color: s.muted),
           textAlign: TextAlign.center,
+          lookup: true,
         ),
         if (s.appearance.frontReading) ..._pitchRow(s, center: true),
       ],
@@ -304,7 +320,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         s.appearance.textScale *
         (context ? 0.74 : 1);
     final String plain = srsKanaFree(widget.fields['Sentence'] ?? '');
-    return Text(
+    final Widget text = Text(
       masked ? srsMaskBold(widget.fields['Sentence'] ?? '') : plain,
       key: ValueKey<String>(
         masked ? 'srs-fushi-front-masked' : 'srs-fushi-front-sentence',
@@ -316,6 +332,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         color: context ? s.muted : null,
       ),
     );
+    // 挖空的听力卡不取词（挖掉的正是答案）。
+    return masked ? text : srsLookupText(text: plain, child: text);
   }
 
   Widget _frontClick(_SrsCardStyle s, BoxConstraints c) {
@@ -348,7 +366,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: FushiPressScale(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _clickOpen = !_clickOpen),
+          // 展开后的例句点在字上 = 查词；点在字外照旧收起。
+          onTap: () {
+            if (_tapTookLookup) return;
+            setState(() => _clickOpen = !_clickOpen);
+          },
           child: body,
         ),
       ),
@@ -429,6 +451,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       segments: segs,
       style: s.term(size: size),
       rubyStyle: s.body(size: size * 0.36, color: s.muted),
+      lookup: true,
     );
   }
 
@@ -465,6 +488,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
     final List<String> audio = srsSoundNames(f['SentenceAudio'] ?? '');
+    // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
+    // 查词，点在字外 = 收起注音。
+    final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
     final Widget text = SrsRubyText(
       key: const ValueKey<String>('srs-fushi-sentence'),
       segments: showRuby
@@ -476,6 +502,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       ),
       rubyStyle: s.body(size: 10 * s.appearance.textScale, color: s.muted),
       emphasis: s.scheme.primary,
+      lookup: !rubyToggle || _sentenceRuby,
     );
     return FushiCard(
       key: const ValueKey<String>('srs-fushi-sentence-block'),
@@ -489,7 +516,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                if (hasRuby && !s.appearance.sentenceFurigana)
+                if (rubyToggle)
                   // 注音默认收起：点按 / Enter 显示（与模板悬停 / 点按显示同义）。
                   FocusableActionDetector(
                     actions: <Type, Action<Intent>>{
@@ -501,8 +528,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                     mouseCursor: SystemMouseCursors.click,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: () =>
-                          setState(() => _sentenceRuby = !_sentenceRuby),
+                      onTap: () {
+                        if (_tapTookLookup) return;
+                        setState(() => _sentenceRuby = !_sentenceRuby);
+                      },
                       child: text,
                     ),
                   )
@@ -512,14 +541,17 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                     srsFieldFilled(f['SentenceTranslation']))
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      srsPlainText(f['SentenceTranslation']!),
-                      key: const ValueKey<String>('srs-fushi-translation'),
-                      style: s.body(
-                        size: 15 * s.appearance.textScale,
-                        height: 1.55,
-                        color: s.muted,
-                        ui: true,
+                    child: srsLookupText(
+                      text: srsPlainText(f['SentenceTranslation']!),
+                      child: Text(
+                        srsPlainText(f['SentenceTranslation']!),
+                        key: const ValueKey<String>('srs-fushi-translation'),
+                        style: s.body(
+                          size: 15 * s.appearance.textScale,
+                          height: 1.55,
+                          color: s.muted,
+                          ui: true,
+                        ),
                       ),
                     ),
                   ),
@@ -589,6 +621,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
+    onSourceLink: widget.face.onSourceLink,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -624,10 +657,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       children: <Widget>[
         Positioned.fill(child: front),
         Offstage(
-          child: SizedBox(
-            width: c.maxWidth,
-            height: c.maxHeight.isFinite ? c.maxHeight : 600,
-            child: defs,
+          // 预热中的释义不在屏上：不登记为取词表面（坐标与正面重叠，会被误查）。
+          child: SrsCardLookupScope(
+            controller: null,
+            child: SizedBox(
+              width: c.maxWidth,
+              height: c.maxHeight.isFinite ? c.maxHeight : 600,
+              child: defs,
+            ),
           ),
         ),
       ],
@@ -854,12 +891,17 @@ class SrsRubyText extends StatelessWidget {
     required this.rubyStyle,
     this.textAlign = TextAlign.start,
     this.emphasis,
+    this.lookup = false,
   });
 
   final List<SrsInline> segments;
   final TextStyle style;
   final TextStyle rubyStyle;
   final TextAlign textAlign;
+
+  /// 标成可取词（[SrsNativeLookupRegion]）：整段纯文本 = 各段基字拼起来，注音段里点基字 /
+  /// 注音都换算回整段偏移。
+  final bool lookup;
 
   /// 加粗段（例句里的目标词）的强调色；null = 只加粗。
   final Color? emphasis;
@@ -871,34 +913,77 @@ class SrsRubyText extends StatelessWidget {
     color: s.bold && emphasis != null ? emphasis : null,
   );
 
+  /// 取词标记：各段在外层段落纯文本（注音段只占一个占位符）与整段纯文本里的偏移。
+  SrsLookupTextData _lookupData() {
+    final StringBuffer full = StringBuffer();
+    final List<SrsLookupTextSegment> map = <SrsLookupTextSegment>[];
+    int outer = 0;
+    for (final SrsInline s in segments) {
+      final bool placeholder = s.ruby != null;
+      final int outerLength = placeholder ? 1 : s.text.length;
+      map.add(
+        SrsLookupTextSegment(
+          outerStart: outer,
+          outerLength: outerLength,
+          fullStart: full.length,
+          placeholder: placeholder,
+        ),
+      );
+      outer += outerLength;
+      full.write(s.text);
+    }
+    return SrsLookupTextData(full.toString(), segments: map);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
-      TextSpan(
-        children: <InlineSpan>[
-          for (final SrsInline s in segments)
-            if (s.ruby == null)
-              TextSpan(text: s.text, style: _styleOf(s))
-            else
-              WidgetSpan(
-                alignment: PlaceholderAlignment.bottom,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      s.ruby!,
-                      style: rubyStyle.copyWith(height: 1.1),
-                      maxLines: 1,
-                    ),
-                    Text(s.text, style: _styleOf(s), maxLines: 1),
-                  ],
+    int fullStart = 0;
+    final List<InlineSpan> spans = <InlineSpan>[];
+    for (final SrsInline s in segments) {
+      if (s.ruby == null) {
+        spans.add(TextSpan(text: s.text, style: _styleOf(s)));
+      } else {
+        Widget tag(Widget child, {required bool isRuby}) => lookup
+            ? MetaData(
+                metaData: SrsLookupRubySegment(
+                  fullStart: fullStart,
+                  isRuby: isRuby,
                 ),
-              ),
-        ],
-      ),
+                child: child,
+              )
+            : child;
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.bottom,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                tag(
+                  Text(
+                    s.ruby!,
+                    style: rubyStyle.copyWith(height: 1.1),
+                    maxLines: 1,
+                  ),
+                  isRuby: true,
+                ),
+                tag(
+                  Text(s.text, style: _styleOf(s), maxLines: 1),
+                  isRuby: false,
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      fullStart += s.text.length;
+    }
+    final Widget text = Text.rich(
+      TextSpan(children: spans),
       textAlign: textAlign,
       style: style,
     );
+    if (!lookup) return text;
+    return MetaData(metaData: _lookupData(), child: text);
   }
 }
 
