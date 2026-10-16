@@ -53,8 +53,27 @@ void main() {
   // 自己的进度索引（各扫一遍 = 同一张图在两处被判出不同的「读到没读到」，横版图
   // 也各裁各的），现在只剩装载与接线。「删一行就悄悄长回第二份」的形状钉在源码层。
   test('两个插图表面共用 EpubBook.images 这一份枚举与同一份 ReaderGalleryPage', () {
+    // BUG-3370（#2206）把插图表挪到后台 isolate 建（UI isolate 不再同步读
+    // book.images），但清单仍是 EpubBook.images 这一份：阅读器经
+    // _loadBookImagesOffUiIsolate 在后台算好后 adoptImages 回填、返回的就是
+    // book.images（盘上缓存存的也是它的结果），不是第二份枚举。
     expect(
-        src.contains('final List<EpubImageRef> images = book.images;'), isTrue);
+        RegExp(r'final List<EpubImageRef> images =\s*'
+                r'await _loadBookImagesOffUiIsolate\(book,')
+            .hasMatch(src),
+        isTrue,
+        reason: '插图册的清单必须来自 _loadBookImagesOffUiIsolate(book, …)');
+    final String page =
+        File('lib/src/pages/implementations/reader_fushi_page.dart')
+            .readAsStringSync();
+    final int loader =
+        page.indexOf('Future<List<EpubImageRef>> _buildBookImagesOffUiIsolate(');
+    expect(loader, greaterThan(-1));
+    final String loaderBody = page.substring(loader, page.indexOf('\n}\n', loader));
+    expect(loaderBody.contains('book.adoptImages(result.images);'), isTrue,
+        reason: '后台建好的插图表必须回填进 EpubBook，后续读取都走 book.images');
+    expect(loaderBody.contains('return book.images;'), isTrue,
+        reason: '阅读器拿到的清单就是 EpubBook.images 本身');
     final String shelf =
         File('lib/src/pages/implementations/illustrations_viewer_page.dart')
             .readAsStringSync();

@@ -42,8 +42,14 @@ void main() {
     );
     expect(
       webview,
-      contains('(atEnd ? total : Math.round(p * total))'),
+      contains('var read = atEnd ? total : Math.round(p * total);'),
       reason: '只有真实末端变 100%，中间页仍保留原字符级进度',
+    );
+    // BUG-3429 的「持几何锚时报锚」只在非末端生效：末端的 total 钳位不得被锚覆盖。
+    expect(
+      webview,
+      contains('if (held >= 0 && held !== off && !atEnd) {'),
+      reason: '持锚改写进度只许发生在非末端，真实末页仍报 100%',
     );
     expect(
       webview,
