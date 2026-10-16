@@ -1,12 +1,12 @@
 {
   "source_repository": "https://github.com/hajisensai/libmpv-darwin-build",
-  "source_commit": "51124a35ce795fd0b5e31198b37b9999378d4c2d",
-  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build/actions/runs/37763570207",
+  "source_commit": "5ca0ac79a45fed765fee3b513120821842a43a58",
+  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build/actions/runs/38931811984",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
   "native_navigation_patch_sha256": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
   "dovi_patch_sha256": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
   "archive": "libmpv-xcframeworks-bluray.tar.gz",
-  "archive_sha256": "8cab973a90ebd4c5e65e85f44b5241ef567ab44615195804ef0687f4825bcc94",
+  "archive_sha256": "fc8cd43610da5ec682cfda461f7f0ba8f1090a575077a91914ab248e0a25094a",
   "host_runtime_probe": {
     "version": "mpv v0.41.0-UNKNOWN",
     "disc_menu_option_result": 0,
@@ -56,7 +56,7 @@
   },
   "host_runtime_probe_architecture": "arm64",
   "verification": {
-    "sha256": "8cab973a90ebd4c5e65e85f44b5241ef567ab44615195804ef0687f4825bcc94",
+    "sha256": "fc8cd43610da5ec682cfda461f7f0ba8f1090a575077a91914ab248e0a25094a",
     "platform": "macos",
     "frameworks": {
       "Placebo": {
@@ -564,7 +564,8 @@
         ]
       }
     },
-    "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation markers",
+    "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation and lace-timestamp markers",
     "device_menu_rendering_tested": false
-  }
+  },
+  "lace_timestamp_patch_sha256": "fc9f987887d18892e0cc2cbf08a20a787e02fd15900c2853a7bb6bb97ab45bad"
 }

@@ -1,6 +1,8 @@
 # iOS libmpv Blu-ray framework bundle
 
-This is the verified full-video build from [Darwin PR #2](https://github.com/hajisensai/libmpv-darwin-build/pull/2).
+This is the verified full-video build from [Darwin PR #2](https://github.com/hajisensai/libmpv-darwin-build/pull/2),
+rebuilt on branch `fushi/mkv-lace` with `mkv-laced-audio-timestamps.patch` (BUG-3453: laced Matroska
+audio without DefaultDuration, e.g. mkvmerge Opus, lost every lace frame after the first in dump-cache).
 The exact source commit, Actions run, archive checksum and inspection results are recorded in `provenance.json`.
 It contains iOS arm64 and arm64/x86_64 simulator slices, libbluray HDMV navigation,
 FFmpeg 6.1.6 full decoders, and the retained Dolby Vision profile 5 GL patch.

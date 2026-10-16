@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 /// BUG-3453：libmpv 必须带 `patches/mkv-laced-audio-timestamps.patch`。
 ///
@@ -97,4 +100,58 @@ void main() {
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
     expect(cmake, contains('-mkvlace1.7z"'));
   });
+
+  // 补丁的 trace 字符串只在它编进去时出现在二进制里：直接打开构建实际使用的
+  // 那份产物逐个 slice 找（同 libmpv_mkv_muxer_guard_test 的做法）。
+  final Uint8List marker = Uint8List.fromList(
+    latin1.encode('without DefaultDuration'),
+  );
+
+  bool containsBytes(List<int> haystack, Uint8List needle) {
+    final int last = haystack.length - needle.length;
+    for (int i = 0; i <= last; i++) {
+      if (haystack[i] != needle[0]) continue;
+      int j = 1;
+      while (j < needle.length && haystack[i + j] == needle[j]) {
+        j++;
+      }
+      if (j == needle.length) return true;
+    }
+    return false;
+  }
+
+  for (final String plat in <String>['macos', 'ios']) {
+    test('$plat xcframework 的每个 Mpv slice 都带这份补丁', () {
+      final String dir = '../third_party/media_kit_libs_${plat}_video/$plat';
+      final RegExpMatch? m = RegExp(
+        r'^MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=\$\(abspath ([^)]+)\)$',
+        multiLine: true,
+      ).firstMatch(File('$dir/Makefile').readAsStringSync());
+      expect(m, isNotNull, reason: '$plat：Makefile 没有指向入库的 libmpv 产物');
+      final Archive tar = TarDecoder().decodeBytes(
+        gzip.decode(
+          File(p.normalize(p.join(dir, m!.group(1)!))).readAsBytesSync(),
+        ),
+      );
+      final List<ArchiveFile> slices = tar.files
+          .where(
+            (ArchiveFile f) =>
+                f.isFile &&
+                !f.isSymbolicLink &&
+                f.name.contains('Mpv.framework/') &&
+                p.posix.basename(f.name) == 'Mpv',
+          )
+          .toList();
+      expect(slices, isNotEmpty);
+      for (final ArchiveFile slice in slices) {
+        expect(
+          containsBytes(slice.content as List<int>, marker),
+          isTrue,
+          reason:
+              '${slice.name} 没有 mkv-laced-audio-timestamps.patch：dump-cache '
+              '会丢掉 mkvmerge Opus 每个 lacing 块里第一帧之后的音频',
+        );
+      }
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  }
 }

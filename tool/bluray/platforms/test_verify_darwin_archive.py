@@ -9,7 +9,7 @@ from pathlib import Path
 from verify_darwin_archive import macho_slices, verify_archive
 
 
-MARKERS = b"disc-navigation-state-json\0disc-menu-active\0discnav\0"
+MARKERS = b"disc-navigation-state-json\0disc-menu-active\0discnav\0without DefaultDuration\0"
 
 
 def thin(cpu, dependency="/usr/lib/libSystem.B.dylib", markers=MARKERS):
@@ -68,8 +68,14 @@ class DarwinArchiveTest(unittest.TestCase):
     def test_requires_navigation_in_each_cpu_slice(self):
         data = universal([(0x0100000C, thin(0x0100000C, markers=b"")),
                           (0x01000007, thin(0x01000007))])
-        with self.assertRaisesRegex(ValueError, "Missing navigation marker"):
+        with self.assertRaisesRegex(ValueError, "Missing required marker"):
             macho_slices(data, (b"discnav",))
+
+    def test_requires_lace_timestamp_patch_in_mpv(self):
+        # BUG-3453: an Mpv slice without the laced-audio timestamp patch is rejected.
+        data = thin(0x0100000C, markers=b"disc-navigation-state-json\0disc-menu-active\0discnav\0")
+        with self.assertRaisesRegex(ValueError, "without DefaultDuration"):
+            macho_slices(data, (b"discnav", b"without DefaultDuration"))
 
     def test_valid_archive_does_not_claim_device_rendering(self):
         with tempfile.TemporaryDirectory() as directory:
