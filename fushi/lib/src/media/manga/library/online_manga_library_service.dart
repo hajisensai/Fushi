@@ -176,8 +176,27 @@ class OnlineMangaLibraryService {
       ),
     );
     final EpubBookRow row = (await database.getEpubBook(bookKey))!;
+    await _clearPeerDeletionTombstone(entry);
     await _adoptRemoteCollection(entry, row);
     return row;
+  }
+
+  /// 重新收下经互联来的漫画 = 撤销本机此前对它的「从所有设备删除」。
+  ///
+  /// 那次删除的墓碑写的是**对端键**（`ReaderFushiSource.deleteBook` 经
+  /// `InterconnectMangaCatalog.peerBookKeyOf`，本机 `interconnect-…` 键对端认不出），
+  /// 而 [FushiDatabase.insertEpubBook] 只按本机键清墓碑。不在这里补清，删了又收下
+  /// 时那条还没推出去的墓碑会在下一轮推给 host，把用户刚重新要回来的书从 host 删掉。
+  Future<void> _clearPeerDeletionTombstone(
+    OnlineMangaLibraryEntry entry,
+  ) async {
+    if (entry.runtime != OnlineMangaRuntimeKind.interconnect) return;
+    final String peerKey = entry.series.key;
+    if (peerKey.isEmpty) return;
+    await database.clearSyncDeletionTombstone(
+      SyncTombstoneKind.book.dbValue,
+      peerKey,
+    );
   }
 
   Future<void> _adoptRemoteCollection(

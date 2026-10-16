@@ -49,6 +49,17 @@ class RemoteCollectionAdoptionService {
             localBook ?? await _findLocalBook(key, identities);
         if (local != null && local.bookKey != key) {
           await database.setCollectionBookAlias(local.uid, key);
+          // 下载入库 = 这本书重新回到本机：撤销此前对它的「从所有设备删除」。那次
+          // 墓碑写的是对端键（[FushiDatabase.syncDeletionBookKeyOf]），而
+          // insertEpubBook 只按本机落地键清——不补清，还没推出去的那条会在下一轮
+          // 推给 host，把刚重新下载的书从 host 删掉。目录刷新（localBook 为 null）
+          // 不算重新入库，不碰墓碑。
+          if (localBook != null) {
+            await database.clearSyncDeletionTombstone(
+              SyncTombstoneKind.book.dbValue,
+              key,
+            );
+          }
         }
         if (book.collection == null) return;
         await adoptMembership(
