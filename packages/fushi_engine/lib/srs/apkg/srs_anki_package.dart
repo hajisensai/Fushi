@@ -260,6 +260,7 @@ class SrsAnkiDeck {
     required this.name,
     required this.filtered,
     required this.configId,
+    this.collapsed = false,
   });
 
   final int id;
@@ -268,6 +269,10 @@ class SrsAnkiDeck {
   final String name;
   final bool filtered;
   final int configId;
+
+  /// 牌组列表里收起了子牌组：旧格式 decks JSON 的 `collapsed`；
+  /// 新格式 Deck.Common.study_collapsed（decks 表 common 列，字段 1）。
+  final bool collapsed;
 }
 
 class SrsAnkiPreset {
@@ -481,6 +486,7 @@ class SrsAnkiCollection {
         name: '${d['name'] ?? ''}',
         filtered: _int(d['dyn']) == 1 || d['dyn'] == true,
         configId: _int(d['conf']) ?? 1,
+        collapsed: d['collapsed'] == true || _int(d['collapsed']) == 1,
       );
     }
   }
@@ -572,9 +578,15 @@ class SrsAnkiCollection {
   }
 
   void _loadDecksProto() {
-    for (final Row row in db.select('SELECT id, name, kind FROM decks')) {
+    for (final Row row in db.select(
+      'SELECT id, name, common, kind FROM decks',
+    )) {
       // Deck.KindContainer: normal = 1（Normal.config_id = 1）、filtered = 2。
       final SrsProtoMessage kind = SrsProtoMessage.parse(_blob(row['kind']));
+      // Deck.Common: study_collapsed = 1、browser_collapsed = 2。
+      final SrsProtoMessage common = SrsProtoMessage.parse(
+        _blob(row['common']),
+      );
       final bool filtered = kind.has(2);
       final int id = row['id'] as int;
       decks[id] = SrsAnkiDeck(
@@ -582,6 +594,7 @@ class SrsAnkiCollection {
         name: (row['name'] as String).replaceAll('\x1f', '::'),
         filtered: filtered,
         configId: filtered ? 0 : kind.messageOf(1).intOf(1, 1),
+        collapsed: common.boolOf(1),
       );
     }
   }

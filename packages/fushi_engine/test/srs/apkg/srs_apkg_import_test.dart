@@ -96,6 +96,8 @@ Map<String, Object?> legacyDecks() => <String, Object?>{
     'name': 'Lang',
     'dyn': 0,
     'conf': 2,
+    // 在 Anki 里收起了子牌组：导入后同样收起。
+    'collapsed': true,
   },
   '$kDeckJp': <String, Object?>{
     'id': kDeckJp,
@@ -318,6 +320,9 @@ void main() {
     expect(note.deckId, deckNamed('Lang::JP'));
     expect((await s.cardRow(c11))!.deckId, deckNamed('Lang::JP'));
     expect((await s.cardRow(c12))!.deckId, deckNamed('Lang'));
+    // Anki 旧格式 decks JSON 的 collapsed → 牌组折叠；没写的缺省展开。
+    expect(tree[deckNamed('Lang')]!.collapsed, isTrue);
+    expect(tree[deckNamed('Lang::JP')]!.collapsed, isFalse);
 
     // revlog 日志 + 锚点（Filtered 也导入，但不是评分类）。
     final SrsCardHistory h11 = await s.history(c11);
@@ -615,6 +620,89 @@ void main() {
     final SrsCardHistory h = await s.history(cardId);
     expect(h.lastEffective!.kind, SrsLogKind.importAnchor);
     expect(h.lastEffective!.occurredAt, ankiReview);
+  });
+
+  test('牌组折叠：新格式读 Deck.Common.study_collapsed；导出写回 collapsed，往返不丢', () async {
+    final Uint8List collection = buildSqlite((Database db) {
+      db.execute(legacySchema);
+      db.execute(schema18Extra);
+      db.execute(
+        "INSERT INTO col VALUES (1,?,0,0,18,0,0,0,'','','','','')",
+        <Object?>[crtSecs],
+      );
+      final Uint8List normal =
+          (PbWriter()..message(1, PbWriter()..varint(1, 1))).toBytes();
+      db.execute('INSERT INTO decks VALUES (1,?,0,0,?,?)', <Object?>[
+        'Default',
+        Uint8List(0),
+        normal,
+      ]);
+      // study_collapsed = 1、browser_collapsed = 2（只认前者）。
+      db.execute('INSERT INTO decks VALUES (78,?,0,0,?,?)', <Object?>[
+        'Vocab',
+        (PbWriter()..varint(1, 1)).toBytes(),
+        normal,
+      ]);
+      db.execute('INSERT INTO decks VALUES (79,?,0,0,?,?)', <Object?>[
+        'Other',
+        (PbWriter()..varint(2, 1)).toBytes(),
+        normal,
+      ]);
+    });
+    final SrsAnkiCollection col = await SrsAnkiCollection.open(collection);
+    try {
+      expect(col.decks[78]!.collapsed, isTrue);
+      expect(col.decks[79]!.collapsed, isFalse);
+      expect(col.decks[1]!.collapsed, isFalse);
+    } finally {
+      await col.close();
+    }
+
+    // 往返：Fushi 里收起 → 导出 .apkg（decks JSON collapsed）→ 导入另一个 profile 仍收起。
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    final String child = await s.ensureDeckPath('Book::Ch1');
+    final String parent = (await s.deckTree()).parentOf(child)!;
+    await s.createNote(
+      noteTypeId: s.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kProfile, 'Expression'): '本',
+      },
+      deckId: child,
+    );
+    await s.setDeckCollapsed(parent, true);
+    final Uint8List pkg = await exportAnkiPackage(store: s);
+    final SrsAnkiPackage p = SrsAnkiPackage.open(
+      pkg,
+      zstd: (Uint8List b) => null,
+    );
+    final SrsAnkiCollection exported = await SrsAnkiCollection.open(
+      p.collectionBytes,
+    );
+    try {
+      final Map<String, bool> byName = <String, bool>{
+        for (final SrsAnkiDeck d in exported.decks.values) d.name: d.collapsed,
+      };
+      expect(byName['Book'], isTrue);
+      expect(byName['Book::Ch1'], isFalse);
+    } finally {
+      await exported.close();
+    }
+    final SrsDbStore other = await openTestStore(
+      profileUid: kProfile2,
+      deviceId: 'b',
+      now: () => t,
+    );
+    await importInto(other, pkg);
+    final SrsDeckTree tree = await other.deckTree();
+    bool collapsedOf(String full) => tree.decks
+        .firstWhere((SrsDeckView d) => tree.fullName(d.id) == full)
+        .collapsed;
+    expect(collapsedOf('Book'), isTrue);
+    expect(collapsedOf('Book::Ch1'), isFalse);
   });
 
   test('protobuf 读取器：varint / string / float / packed / 嵌套 / 损坏', () {

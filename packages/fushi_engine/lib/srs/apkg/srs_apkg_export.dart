@@ -525,7 +525,7 @@ class _Exporter {
         'revToday': <int>[0, 0],
         'newToday': <int>[0, 0],
         'timeToday': <int>[0, 0],
-        'collapsed': false,
+        'collapsed': d?.collapsed ?? false,
         'browserCollapsed': false,
         'desc': '',
         'dyn': 0,

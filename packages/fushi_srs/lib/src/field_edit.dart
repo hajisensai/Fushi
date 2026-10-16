@@ -43,6 +43,10 @@ enum SrsFieldClass {
 
   /// 牌组设置、算法、参数组、profile 设置：同 [flag]。
   setting,
+
+  /// 界面状态（牌组列表的折叠）：同样随同步、最后修改生效，但被覆盖的候选不进
+  /// 「同步冲突记录」——两台设备各自开合同一棵牌组树是常态，不是需要用户裁决的冲突。
+  viewState,
 }
 
 /// 字段键约定（冻结）。
@@ -86,6 +90,9 @@ abstract final class SrsFieldKeys {
   static const String deckOptimizeBaseline = 'optimizeBaseline';
   static const String deckMaxInterval = 'maxInterval';
 
+  /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
+  static const String deckCollapsed = 'collapsed';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';
@@ -106,6 +113,10 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
     case SrsEntityKind.card:
       return SrsFieldClass.flag;
     case SrsEntityKind.deck:
+      if (fieldKey == SrsFieldKeys.deckCollapsed) {
+        return SrsFieldClass.viewState;
+      }
+      return SrsFieldClass.setting;
     case SrsEntityKind.profile:
       return SrsFieldClass.setting;
   }
