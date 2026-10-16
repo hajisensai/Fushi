@@ -1043,12 +1043,6 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
             const SizedBox(height: 6),
             _caption(context, t.popup_advanced_mining_image_clip_needs_audio),
           ],
-          // 已打的码只对静态截图生效：切到动图 / 片段 / 不要时如实说一声，码留着，
-          // 切回截图方式就又生效。
-          if (c.mosaicRegions.isNotEmpty && !c.mosaicApplicable) ...<Widget>[
-            const SizedBox(height: 6),
-            _caption(context, t.popup_advanced_mining_mosaic_still_only),
-          ],
           FushiAnimatedSize(
             duration: context.fushiMotion.spatialDefault.duration,
             curve: context.fushiMotion.spatialDefault.curve,
@@ -1063,6 +1057,23 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
               ),
             ),
           ),
+          // 打码对着「会进卡的那一帧」框：静态方式 = 那一帧（挪了帧再打开，看到的就是
+          // 新的那一帧）；动图 / 片段 = 降级后的字幕开头那一帧，并提示改出静图。
+          if (c.mosaicApplicable) ...<Widget>[
+            const SizedBox(height: 8),
+            AdvancedMiningMosaicBar(
+              controller: c,
+              loadBytes: () async {
+                final Future<Uint8List?> Function(int atMs)? frameAt =
+                    c.videoSection?.frameAt;
+                final int? at = c.mosaicFrameMs;
+                return frameAt == null || at == null ? null : frameAt(at);
+              },
+              note: c.mosaicForcesStill
+                  ? t.popup_advanced_mining_mosaic_forces_still
+                  : null,
+            ),
+          ],
         ],
       ),
     );
@@ -1102,17 +1113,6 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
                 const Spacer(),
               ],
             ),
-            // 打码在编辑页里对着**这一帧**框（挪了帧再打开，看到的就是新的那一帧）。
-            if (frameAt != null) ...<Widget>[
-              const SizedBox(height: 8),
-              AdvancedMiningMosaicBar(
-                controller: c,
-                loadBytes: () async {
-                  final int? now = c.stillFrameMs;
-                  return now == null ? null : frameAt(now);
-                },
-              ),
-            ],
           ],
         ),
       );

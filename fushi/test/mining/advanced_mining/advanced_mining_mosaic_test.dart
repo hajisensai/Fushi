@@ -130,7 +130,7 @@ void main() {
       img.encodePng(img.Image(width: 400, height: 300)),
     );
 
-    Future<void> open(WidgetTester tester) async {
+    Future<void> open(WidgetTester tester, {bool historical = false}) async {
       tester.view.physicalSize = const Size(1000, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -150,6 +150,7 @@ void main() {
                         still: AdvancedMiningStillImageSection(
                           loadImage: () async => png,
                           mosaicForcesStill: true,
+                          historicalLine: historical,
                         ),
                       ),
                     ),
@@ -243,6 +244,16 @@ void main() {
       expect(r.top, closeTo(0.1, 0.03));
       expect(r.right, closeTo(0.4, 0.03));
       expect(r.bottom, closeTo(0.4, 0.03));
+    });
+
+    testWidgets('历史台词：截图分区提示这不是那句当时的画面', (WidgetTester tester) async {
+      await open(tester, historical: true);
+      expect(find.text(t.popup_advanced_mining_still_stale), findsOneWidget);
+    });
+
+    testWidgets('最新台词：不显示历史画面提示', (WidgetTester tester) async {
+      await open(tester);
+      expect(find.text(t.popup_advanced_mining_still_stale), findsNothing);
     });
 
     testWidgets('编辑页「×」放弃：不改对话框里的码；「清除」可撤销', (WidgetTester tester) async {

@@ -789,10 +789,26 @@ class AdvancedMiningStillImagePanel extends StatelessWidget {
         ],
       );
     }
+    final bool historical = c.stillSection?.historicalLine ?? false;
     return AdvancedMiningSectionShell(
       title: t.popup_advanced_mining_image_section,
       embedded: embedded,
-      child: body,
+      child: historical
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  t.popup_advanced_mining_still_stale,
+                  style: context.fushiType.labelMedium.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                body,
+              ],
+            )
+          : body,
     );
   }
 }

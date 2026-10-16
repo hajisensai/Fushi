@@ -755,10 +755,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           return png;
         });
     final VideoMiningImageMode mode = mixinAppModel.galMiningImageMode;
+    // 与协调器 staleScene 同一判据：不是最新一行，截到的就不是那句台词当时的画面。
+    final List<TexthookerLineEntry> live = TexthookerService.instance.entries;
+    final bool historical = live.isEmpty || live.last.id != lineId;
     return AdvancedMiningSections(
       stillImage: AdvancedMiningStillImageSection(
         loadImage: () => capture,
         mosaicForcesStill: !mode.isStill,
+        historicalLine: historical,
       ),
     );
   }

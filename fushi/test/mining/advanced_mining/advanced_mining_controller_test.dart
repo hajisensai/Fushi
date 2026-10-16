@@ -267,20 +267,31 @@ void main() {
       bottom: 0.8,
     );
 
-    test('视频：静态方式才带打码；切到动图码保留但不生效，切回又生效', () async {
+    test('视频：静态方式对着那一帧；动图 / 片段也能打码（降级为字幕开头静帧并提示）', () async {
       final AdvancedMiningController c = await loaded(
         AdvancedMiningController(host.videoPage()),
       );
       c.selectVideoImageMode(VideoMiningImageMode.subtitleStart);
       expect(c.mosaicApplicable, isTrue);
+      expect(c.mosaicForcesStill, isFalse);
+      expect(c.mosaicFrameMs, 724100);
+      c.nudgeStillFrame(forward: true);
+      expect(c.mosaicFrameMs, 724100 + 42, reason: '挪了帧就对着新那一帧');
       c.setMosaicRegions(<MiningMosaicRegion>[a, b]);
       expect(c.buildOverrides().mosaic, <MiningMosaicRegion>[a, b]);
+
       c.selectVideoImageMode(VideoMiningImageMode.gif);
-      expect(c.mosaicApplicable, isFalse);
-      expect(c.buildOverrides().mosaic, isEmpty);
-      expect(c.mosaicRegions, hasLength(2), reason: '码不丢，切回还在');
+      expect(c.mosaicApplicable, isTrue);
+      expect(c.mosaicForcesStill, isTrue);
+      expect(c.mosaicFrameMs, 724100, reason: '降级后出的是字幕开头那一帧');
+      final MiningRequestOverrides gif = c.buildOverrides();
+      expect(gif.mosaic, <MiningMosaicRegion>[a, b]);
+      expect(gif.videoImageMode, isNull, reason: '方式没改，降级由宿主按打码判');
+
       c.selectVideoImageMode(VideoMiningImageMode.currentFrame);
-      expect(c.buildOverrides().mosaic, <MiningMosaicRegion>[a, b]);
+      expect(c.mosaicForcesStill, isFalse);
+      expect(c.mosaicFrameMs, 725000);
+
       c.selectVideoImageMode(null);
       final MiningRequestOverrides none = c.buildOverrides();
       expect(none.omitImage, isTrue);

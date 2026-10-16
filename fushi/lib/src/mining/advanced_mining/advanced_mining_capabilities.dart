@@ -207,6 +207,7 @@ class AdvancedMiningStillImageSection {
   const AdvancedMiningStillImageSection({
     required this.loadImage,
     this.mosaicForcesStill = false,
+    this.historicalLine = false,
   });
 
   /// 冻结的那一帧截图（PNG / JPEG 字节）；null = 抓不到（对话框如实显示「截图不可用」，
@@ -215,6 +216,10 @@ class AdvancedMiningStillImageSection {
 
   /// 一键「+」出的是动图 / 视频片段：打了码就改出静图，对话框据此提示用户。
   final bool mosaicForcesStill;
+
+  /// 制卡的是历史台词（不是最新一行）：截图只能是打开对话框那一刻的窗口画面，不是
+  /// 那句台词当时的画面——对话框如实提示（与协调器的 staleScene 同一判据）。
+  final bool historicalLine;
 }
 
 /// 页面提供的句子 / 音频 / 图片分区（卡组由开窗函数统一组装）。

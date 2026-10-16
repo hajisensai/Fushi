@@ -44,6 +44,12 @@ void main() {
       isTrue,
     );
     expect(body.contains('mosaicForcesStill:!mode.isStill'), isTrue);
+    // 历史台词：与协调器 staleScene 同一判据，对话框据此提示「不是那句当时的画面」。
+    expect(
+      body.contains('historical=live.isEmpty||live.last.id!=lineId;'),
+      isTrue,
+    );
+    expect(body.contains('historicalLine:historical,'), isTrue);
   });
 
   test('外部窗口制卡 / 覆盖：覆盖项在首个 await 之前读出', () {

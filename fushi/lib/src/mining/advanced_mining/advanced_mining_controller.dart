@@ -733,16 +733,34 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 原位（框外的码自然被裁掉）。
   List<MiningMosaicRegion> mosaicRegions = const <MiningMosaicRegion>[];
 
-  /// 此刻的图片选择能不能打码：静态截图分区总能；漫画选了「不要」时不能；视频只有
-  /// 静态方式（查词时画面 / 字幕开头）能——动图 / 片段逐帧打码做不到所见即所得。
+  /// 此刻的图片选择能不能打码：静态截图分区抓到图就能；漫画选了「不要」时不能；
+  /// 视频选了任一图片方式且取得到帧就能——动图 / 片段打了码由宿主降级为「字幕开头」
+  /// 静帧（逐帧打码做不到所见即所得），对话框里如实提示（[mosaicForcesStill]）。
   bool get mosaicApplicable {
     if (stillSection != null) return stillImageBytes != null;
     if (mangaSection != null) return cropChoice != MangaCropChoice.none;
     if (videoSection != null) {
-      final VideoMiningImageMode? mode = videoImageMode;
-      return mode != null && mode.isStill && videoSection!.frameAt != null;
+      return videoImageMode != null &&
+          videoSection!.frameAt != null &&
+          mosaicFrameMs != null;
     }
     return false;
+  }
+
+  /// 视频打码对着哪一帧（播放器轴毫秒）：静态方式 = 那一帧（含逐帧挪动）；动图 / 片段
+  /// = 降级后会出的「字幕开头」那一帧（没有就退查词时画面）。null = 没有可打码的帧。
+  int? get mosaicFrameMs {
+    final VideoMiningImageMode? mode = videoImageMode;
+    final AdvancedMiningVideoImageSection? section = videoSection;
+    if (mode == null || section == null) return null;
+    if (mode.isStill) return stillFrameMs;
+    return section.subtitleStartMs ?? section.lookupFrameMs;
+  }
+
+  /// 视频选的是动图 / 片段：打了码会改出静图（对话框据此提示）。
+  bool get mosaicForcesStill {
+    final VideoMiningImageMode? mode = videoImageMode;
+    return videoSection != null && mode != null && !mode.isStill;
   }
 
   /// 整组替换（打码编辑页「完成」时交回）。
