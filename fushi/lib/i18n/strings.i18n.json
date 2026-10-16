@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Keep this on with position lock if you still want word lookup.",
   "floating_lyric_close": "Close",
   "floating_lyric_corner_radius": "Floating subtitle corner radius",
-  "floating_lyric_corner_radius_hint": "0 keeps each platform's default corners; raise it to round the bar and buttons more",
+  "floating_lyric_corner_radius_hint": "0 gives square corners; raise it to round the bar and buttons more (default 24)",
   "floating_lyric_font_size": "Floating subtitle font size",
   "floating_lyric_hint": "Float the currently playing subtitle line on top of other apps.",
   "floating_lyric_lock": "Lock",

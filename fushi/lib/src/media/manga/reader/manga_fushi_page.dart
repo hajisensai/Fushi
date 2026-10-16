@@ -6791,6 +6791,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           MangaFushiPage.kMangaResourceScheme,
         ],
         transparentBackground: true,
+        // BUG-3356 同款：WKWebView 的 `allowsBackForwardNavigationGestures` 在
+        // inappwebview 里默认 true，屏幕边缘横滑是 WebView 自己的历史前进 / 后退。
+        // spread 模式每越出窗口就重新 `loadData` 一份窗口文档，历史里堆着旧窗口，
+        // 侧滑会把画面退回旧 spread 窗口（宿主的 `_currentSpread` 却没动）。翻页 / 跨章
+        // 完全由宿主拥有，WebView 历史不对应任何阅读动作，关掉。只作用于 iOS / macOS。
+        allowsBackForwardNavigationGestures: false,
       ),
       onWebViewCreated: (InAppWebViewController controller) {
         _controller = controller;
