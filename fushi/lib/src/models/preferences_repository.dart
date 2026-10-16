@@ -2948,6 +2948,9 @@ class PreferencesRepository extends ChangeNotifier
   /// 静默**，不出新 tab、不弹任何提示，只有自己去设置里打开才看得到 Fushi 复习。
   /// 新用户：出厂默认记 'srs'，模块按 [ModuleId.defaultEnabled]（开）。
   ///
+  /// 例外：`srs_mining_target` 显式为 'srs' 时按「在用 Fushi 复习」处理，模块从没设过就
+  /// 写成开（老用户也一样）。
+  ///
   /// 已显式选过的 `srs_mining_target` 与模块开关一概不改。标记已在则直接返回（幂等）；
   /// 标记与模块开关同一次 [setPrefs] 落盘。
   Future<void> settleSrsMiningTargetInstallDefault({
@@ -2964,9 +2967,17 @@ class PreferencesRepository extends ChangeNotifier
     final bool existingUser = (!freshOnboardingPackImport && prefSignal) ||
         await _hasAnkiMiningData();
     final bool moduleUnset = !stored(ModuleId.srs.prefKey);
+    // 显式选过「发往 Fushi 复习」= 在用复习（常见于恢复一份老用户备份：挖词目标随设置
+    // 恢复，而模块开关是设备本地键、新设备上没设过）。此时不论判成老用户与否都不能关
+    // 模块——关着就不读挖词目标，卡实际仍发 Anki；模块没设过就显式写成开。
+    final bool explicitSrs =
+        getPref(srsMiningTargetKey, defaultValue: null) == 'srs';
     await setPrefs(<String, dynamic>{
       srsMiningTargetInstallDefaultKey: existingUser ? 'anki' : 'srs',
-      if (existingUser && moduleUnset) ModuleId.srs.prefKey: false,
+      if (moduleUnset && explicitSrs)
+        ModuleId.srs.prefKey: true
+      else if (moduleUnset && existingUser)
+        ModuleId.srs.prefKey: false,
     });
   }
 

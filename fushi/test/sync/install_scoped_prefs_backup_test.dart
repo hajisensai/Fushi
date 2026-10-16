@@ -255,6 +255,19 @@ void main() {
       final r = await restartAndRead(support);
       expect(r.marker, 'anki', reason: '出厂默认按恢复后的数据重判成老用户');
       expect(r.target, SrsMiningTarget.srs, reason: '显式选过的挖词目标随设置恢复，重判不覆盖');
+      expect(r.srsModule, isTrue, reason: '显式在用 Fushi 复习：模块没设过就按开处理');
+    });
+
+    test('反向：恢复显式设了 srs_mining_target=anki 的老用户备份 → anki，复习模块关', () async {
+      final String support = await settledDevice(existingUser: false);
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: support,
+        zipPath: await backupZip(oldAnkiUser: true, explicitTarget: 'anki'),
+      );
+      final r = await restartAndRead(support);
+      expect(r.marker, 'anki');
+      expect(r.target, SrsMiningTarget.anki);
+      expect(r.srsModule, isFalse);
     });
 
     test('不导入设置（importSettings=false）时本机判定不变', () async {
