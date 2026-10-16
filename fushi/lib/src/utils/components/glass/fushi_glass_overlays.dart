@@ -2337,16 +2337,21 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
       );
     }
     if (!highlighted) return entry;
+    // 当前项的底色必须由 [Material] 承载，不能用 ColoredBox / DecoratedBox：菜单项
+    // 里的 InkWell / ListTile 把水波和底色画在**最近的 Material** 上，即菜单容器
+    // 那层；中间夹一个不透明的装饰盒就把它们整个盖住（按下无水波，ListTile 的
+    // debug 断言「background color or ink splashes may be invisible」）。
     if (isEinkTheme(context)) {
-      return ColoredBox(color: Theme.of(context).highlightColor, child: entry);
+      return Material(color: Theme.of(context).highlightColor, child: entry);
     }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: cs.secondaryContainer,
-          borderRadius: const BorderRadius.all(Radius.circular(12)),
+      child: Material(
+        color: cs.secondaryContainer,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
         ),
+        clipBehavior: Clip.antiAlias,
         child: entry,
       ),
     );
