@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
+import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -261,5 +262,18 @@ void main() {
       find.descendant(of: click, matching: find.byType(AnimatedCrossFade)),
     );
     expect(after.crossFadeState, CrossFadeState.showSecond);
+  });
+
+  test('图片来源：光栅 data URI → 内存；SVG / 远程 / 无媒体库 → 不画', () {
+    final String sample = srsImageSources(
+      srsSampleCardFields()['Picture']!,
+    ).single;
+    expect(srsCardImageProvider(sample, null), isA<MemoryImage>());
+    expect(
+      srsCardImageProvider('data:image/svg+xml;utf8,%3Csvg%3E', null),
+      isNull,
+    );
+    expect(srsCardImageProvider('https://example.com/a.png', null), isNull);
+    expect(srsCardImageProvider('fushi_frame_1.webp', null), isNull);
   });
 }

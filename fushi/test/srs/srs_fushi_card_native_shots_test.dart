@@ -1,6 +1,6 @@
 // Fushi 卡片原生卡面的真实像素截图（只在设了 FUSHI_SRS_NATIVE_SHOTS_OUT 目录时出图，平时空跑）。
 // 释义区在 widget 测试里没有 WebView，画成标注出来的占位框；它的真实渲染见模板整页截图。
-// 字体用本机 Noto Sans JP（覆盖默认族），图标用 app 自带图标字体——只在 Windows 本机出图。
+// 字体用 Noto Sans JP（覆盖默认族；目录见 FUSHI_SRS_SHOT_FONT_DIR），图标用 app 自带图标字体。
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -43,11 +43,13 @@ Future<void> _loadFonts() async {
     await loader.load();
   }
 
-  const String fonts = r'C:\Windows\Fonts';
+  // FUSHI_SRS_SHOT_FONT_DIR：放 NotoSansJP-Regular/Bold.otf 的目录（默认 Windows 字体目录）。
+  final String fonts =
+      Platform.environment['FUSHI_SRS_SHOT_FONT_DIR'] ?? r'C:\Windows\Fonts';
   for (final String family in <String>['Roboto', '.SF Pro Text', 'Noto']) {
     await load(family, <String>[
-      '$fonts\\NotoSansJP-Regular.otf',
-      '$fonts\\NotoSansJP-Bold.otf',
+      '$fonts${Platform.pathSeparator}NotoSansJP-Regular.otf',
+      '$fonts${Platform.pathSeparator}NotoSansJP-Bold.otf',
     ]);
   }
   for (final String family in <String>['FushiSymbols', 'FushiSymbolsFilled']) {
@@ -63,12 +65,12 @@ void main() {
     test('native shots (only with FUSHI_SRS_NATIVE_SHOTS_OUT)', () {});
     return;
   }
-  setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
+  setUp(() => LocaleSettings.setLocale(AppLocale.ja));
 
   final Map<String, String> fields = <String, String>{
     for (final String f in FushiCardNoteType.fields) f: '',
     ...srsSampleCardFields(),
-    'SentenceTranslation': '这条路我每天上学都会走。',
+    'SentenceTranslation': 'I go to the library almost every day.',
   };
 
   for (final (String name, Size size, bool answer, bool dark, bool apple)
@@ -165,6 +167,11 @@ void main() {
       if (faces.isNotEmpty) faces.last.onContentHeight?.call(360);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 900));
+      // 图片解码要真异步（FakeAsync 里永远解不完）。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 500)),
+      );
+      await tester.pump();
       expect(tester.takeException(), isNull);
       await tester.runAsync(() async {
         final RenderRepaintBoundary rb =
