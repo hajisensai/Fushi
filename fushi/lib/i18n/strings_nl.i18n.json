@@ -1268,7 +1268,7 @@
   "floating_lyric_click_lookup_hint": "Houd dit aan met positievergrendeling als je nog steeds woorden wilt opzoeken.",
   "floating_lyric_close": "Sluiten",
   "floating_lyric_corner_radius": "Zwevende ondertitel hoekradius",
-  "floating_lyric_corner_radius_hint": "0 behoudt de standaardhoeken per platform; verhoog om de balk en knoppen ronder te maken",
+  "floating_lyric_corner_radius_hint": "0 geeft rechte hoeken; verhoog om de balk en knoppen ronder te maken (standaard 24)",
   "floating_lyric_font_size": "Lettergrootte zwevende ondertitel",
   "floating_lyric_hint": "Huidige zin over andere apps tonen.",
   "floating_lyric_lock": "Vergrendelen",

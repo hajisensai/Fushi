@@ -39,6 +39,20 @@ const int kSubtitleWaveformWindowMs = 20;
 /// 从 t=0 同 binMs 起、截到同一上界，相位一致不偏。0 或负值表示不截断（抽整轨）。
 const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 
+/// 流音源（媒体服务器 / 在线源，没有本地文件）的波形 / 自动对轴探测上界（毫秒）：3 分钟。
+///
+/// 本地文件读前 20 分钟是本机磁盘 IO；流则要真的把这段音频从服务器拉下来——最坏与
+/// 实时播放一样慢（20 分钟 = 等 20 分钟），反馈人实测「要等待很久」。全局固定整体
+/// 平移只需要足够多的对白与字幕互相关，前 3 分钟（1800 帧 @100ms）够用；对白太少时
+/// 互相关置信度不足会走既有的低置信降级、不乱平移。
+const int kStreamSubtitleAlignProbeLimitMs = 3 * 60 * 1000;
+
+/// **纯函数**：按音源种类给出探测时间上界。页面的抽音、`-t` 截断、cue 栅格化上界、
+/// 波形时间窗必须同取这一个值，否则两侧栅格长度不一致、波形窗口与实际音频错位。
+int subtitleAlignProbeLimitMs({required bool fromStream}) => fromStream
+    ? kStreamSubtitleAlignProbeLimitMs
+    : kSubtitleAutoAlignProbeLimitMs;
+
 /// [buildFfmpegPcmEnvelopeArgs] 记完逐帧 RMS 后，把音频拼回多大的输出帧（秒）。
 /// 小帧直接进 null 复用器的逐帧开销比 astats 本身还大，见该函数文档。
 const int _kEnvelopeOutputFrameSeconds = 6;
