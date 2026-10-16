@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show srsFushiExtEntry;
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 /// 导出范围内的媒体文件读取（没有返回 null，不进包）。
 typedef SrsMediaLoad = Future<Uint8List?> Function(String name);
@@ -361,22 +362,24 @@ class _Exporter {
     } on FileSystemException {
       // 句柄晚释放：留给系统清理临时目录。
     }
-    archive.addFile(ArchiveFile('collection.anki21', col.length, col));
+    archive.addFile(nativeDeflatedArchiveFile('collection.anki21', col));
     final Map<String, String> mediaJson = <String, String>{};
     if (loadMedia != null) {
       int i = 0;
       for (final String name in mediaRefs.toList()..sort()) {
         final Uint8List? b = await loadMedia(name);
         if (b == null) continue;
-        archive.addFile(ArchiveFile('$i', b.length, b));
+        archive.addFile(nativeDeflatedArchiveFile('$i', b));
         mediaJson['$i'] = name;
         i++;
       }
     }
     final List<int> media = utf8.encode(jsonEncode(mediaJson));
-    archive.addFile(ArchiveFile('media', media.length, media));
+    archive.addFile(nativeDeflatedArchiveFile('media', media));
     final List<int> extBytes = utf8.encode(jsonEncode(ext));
-    archive.addFile(ArchiveFile(srsFushiExtEntry, extBytes.length, extBytes));
+    archive.addFile(nativeDeflatedArchiveFile(srsFushiExtEntry, extBytes));
+    // 条目已用原生 zlib 压好（nativeDeflatedArchiveFile），ZipEncoder 原样透传，
+    // 不再跑纯 Dart Deflate。
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
 
