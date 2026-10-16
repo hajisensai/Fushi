@@ -17,6 +17,8 @@
 //   FUSHI_PACK_DICT_DIR     dictionaryResources 目录
 //   FUSHI_PACK_OUTPUT       输出 zip 路径
 //   FUSHI_PACK_APP_VERSION  写进 backup_meta.json 的 appVersion
+//   FUSHI_PACK_BASELINE     已发布兼容基线包；禁止静默提高最低 schema 要求。
+//                           新库高于基线时用 extend_recommended_pack.py 增补词典。
 //
 // 为什么 db 和 dbDirectory 分开指：活库正被 app 占用，直接开会触发 drift 迁移，
 // 是毁库红线。所以主库开在副本上，而 dbDirectory 仍指真实 support 目录——它只被
@@ -55,6 +57,11 @@ void main() {
       final String dictDirectory = _requireEnv(_kDictDirEnv);
       final String outputPath = _requireEnv(_kOutputEnv);
       final String appVersion = _requireEnv(_kAppVersionEnv);
+      final String baselinePath = _requireEnv('FUSHI_PACK_BASELINE');
+      final BackupMeta? baseline = await BackupRestoreService.validateBackup(
+        baselinePath,
+      );
+      if (baseline == null) throw StateError('推荐包兼容基线无效：$baselinePath');
 
       if (p.equals(
         await Directory(dbDirectory).resolveSymbolicLinks(),
@@ -64,6 +71,13 @@ void main() {
       }
       final FushiDatabase db = FushiDatabase(dbCopyDir);
       addTearDown(db.close);
+      if (db.schemaVersion > baseline.schemaVersion) {
+        throw StateError(
+          '当前 schema ${db.schemaVersion} 高于推荐包兼容基线 '
+          '${baseline.schemaVersion}。请用 extend_recommended_pack.py '
+          '在原始基线结构上增补词典，不可要求用户为推荐包升级应用。',
+        );
+      }
       await sanitizeRecommendedPackDatabase(db);
 
       final BackupService service = BackupService(
