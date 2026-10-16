@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 /// 行内菜单动作。
 enum _DeckAction { addChild, rename, settings, delete }
@@ -58,7 +59,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _addNote({String? deckId}) =>
       _push<void>((_) => SrsNoteEditorPage(initialDeckId: deckId));
 
-  Future<void> _openBrowse() => _push<void>((_) => const SrsBrowsePage());
+  Future<void> _openBrowse() => _push<void>(
+    (_) => const SrsBrowsePage(onChangeNoteType: showSrsChangeNoteTypeFlow),
+  );
 
   Future<void> _openNoteTypes() => _push<void>((_) => const SrsNoteTypesPage());
 

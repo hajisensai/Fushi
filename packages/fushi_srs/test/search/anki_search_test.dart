@@ -18,6 +18,17 @@ class _Card implements SrsSearchSubject {
     this.cardId = 1,
     this.addedDayIndex = 100,
     this.todayDayIndex = 100,
+    this.flag = 0,
+    this.isBuried = false,
+    this.cardOrdinal = 1,
+    this.templateName = 'Card 1',
+    this.intervalDays = 0,
+    this.dueInDays,
+    this.reps = 0,
+    this.lapses = 0,
+    this.stability,
+    this.difficulty,
+    this.editedDayIndex = 100,
   });
 
   @override
@@ -46,6 +57,28 @@ class _Card implements SrsSearchSubject {
   final int addedDayIndex;
   @override
   final int todayDayIndex;
+  @override
+  final int flag;
+  @override
+  final bool isBuried;
+  @override
+  final int cardOrdinal;
+  @override
+  final String templateName;
+  @override
+  final int intervalDays;
+  @override
+  final int? dueInDays;
+  @override
+  final int reps;
+  @override
+  final int lapses;
+  @override
+  final double? stability;
+  @override
+  final double? difficulty;
+  @override
+  final int editedDayIndex;
 }
 
 bool m(String query, _Card card) =>
@@ -431,35 +464,30 @@ void main() {
 
   group('合法但不支持的语法明确报 unsupported', () {
     for (final String q in <String>[
-      'prop:ivl>3',
-      'flag:1',
+      'prop:ease>2',
+      'prop:pos=1',
+      'prop:r<0.9',
+      'prop:rated=1',
+      'deck:A (expression:x or prop:ease=1)',
+      '-rated:1',
       'rated:1',
       'resched:1',
-      'edited:1',
       'introduced:1',
-      'card:1',
-      'card:front',
       'did:1',
       'mid:1',
-      're:abc',
       'nc:abc',
       'sc:abc',
       'w:abc',
       'dupe:1,abc',
       'has-cd:r',
       'preset:default',
-      'front:re:te.*st',
       'front:nc:abc',
       'tag:re:abc',
       'tag:nc:abc',
       'deck:filtered',
       'deck:current',
-      'is:buried',
-      'is:buried-manually',
       'is:buried-sibling',
       // 嵌在复合查询深处也必须冒出来。
-      'deck:A (expression:x or prop:due=1)',
-      '-flag:1',
     ]) {
       test(q, () {
         expect(
@@ -468,5 +496,124 @@ void main() {
         );
       });
     }
+  });
+
+  group('浏览页补的语法：flag / card / edited / is:buried / prop / re', () {
+    final _Card c = _Card(
+      fields: const <String, String>{
+        'Front': '<b>Tokyo</b> 東京',
+        'Back': 'capital42',
+      },
+      flag: 3,
+      isBuried: true,
+      cardOrdinal: 2,
+      templateName: 'Reverse',
+      intervalDays: 12,
+      dueInDays: 3,
+      reps: 7,
+      lapses: 2,
+      stability: 15.5,
+      difficulty: 8.2, // (8.2 - 1) / 9 = 0.8
+      editedDayIndex: 98,
+    );
+
+    test('flag:N', () {
+      expect(m('flag:3', c), isTrue);
+      expect(m('flag:0', c), isFalse);
+      expect(m('-flag:0', c), isTrue);
+      expect(
+        () => parseAnkiSearch('flag:8'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+      expect(
+        () => parseAnkiSearch('flag:x'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+    });
+
+    test('card:序号 / card:模板名', () {
+      expect(m('card:2', c), isTrue);
+      expect(m('card:1', c), isFalse);
+      expect(m('card:reverse', c), isTrue);
+      expect(m('card:Rev*', c), isTrue);
+      expect(m('card:Front', c), isFalse);
+      // rslib：card:0 与 card:1 同义。
+      expect(m('card:0', _Card()), isTrue);
+    });
+
+    test('edited:N', () {
+      expect(m('edited:3', c), isTrue); // 98 > 100 - 3
+      expect(m('edited:2', c), isFalse);
+      expect(
+        () => parseAnkiSearch('edited:x'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+    });
+
+    test('is:buried', () {
+      expect(m('is:buried', c), isTrue);
+      expect(m('is:buried-manually', c), isTrue);
+      expect(m('is:buried', _Card()), isFalse);
+    });
+
+    test('prop: 整数属性', () {
+      expect(m('prop:ivl>=12', c), isTrue);
+      expect(m('prop:ivl>12', c), isFalse);
+      expect(m('prop:ivl!=12', c), isFalse);
+      expect(m('prop:due=3', c), isTrue);
+      expect(m('prop:due<0', c), isFalse);
+      expect(m('prop:reps=7', c), isTrue);
+      expect(m('prop:lapses<=2', c), isTrue);
+      expect(m('prop:lapses<2', c), isFalse);
+      // 新卡没有到期日：任何 prop:due 都不命中。
+      expect(m('prop:due>-1000', _Card()), isFalse);
+      expect(m('prop:due!=5', _Card()), isFalse);
+      expect(
+        () => parseAnkiSearch('prop:ivl>3.5'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+    });
+
+    test('prop: FSRS 稳定性 / 难度（难度按 Anki 的 0–1 口径）', () {
+      expect(m('prop:s>15', c), isTrue);
+      expect(m('prop:s>15.5', c), isFalse);
+      expect(m('prop:d=0.8', c), isTrue);
+      expect(m('prop:d>0.7', c), isTrue);
+      expect(m('prop:d>0.9', c), isFalse);
+      expect(m('prop:d>0', _Card()), isFalse, reason: '没有记忆状态不命中');
+      expect(
+        () => parseAnkiSearch('prop:foo=1'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+      expect(
+        () => parseAnkiSearch('prop:d=x'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+    });
+
+    test('re: 全字段正则（不锚定、默认不区分大小写、看原文）', () {
+      expect(m(r're:capital\d+', c), isTrue);
+      expect(m('re:TOKYO', c), isTrue);
+      expect(m('"re:(?-i)TOKYO"', c), isFalse);
+      expect(m('re:<b>', c), isTrue, reason: 're: 搜原文，不去 HTML');
+      expect(m('re:^capital', c), isFalse, reason: '不是多行模式：^ 只锚整串开头');
+      expect(
+        () => parseAnkiSearch('re:(abc'),
+        throwsSearch(SrsSearchErrorKind.syntax),
+      );
+    });
+
+    test('字段名:re:正则', () {
+      expect(m(r'back:re:\d{2}$', c), isTrue);
+      expect(m(r'front:re:\d', c), isFalse);
+      expect(m('f*:re:東', c), isTrue);
+      expect(
+        m(
+          r'"front:re:a\"b"',
+          _Card(fields: const <String, String>{'Front': 'a"b'}),
+        ),
+        isTrue,
+      );
+    });
   });
 }

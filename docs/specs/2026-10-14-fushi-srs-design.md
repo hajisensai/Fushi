@@ -89,6 +89,7 @@
 | PR5 接线 | 默认关闭的模块（首页「复习」tab）、新手引导、同步冲突页、查词弹窗复习标记（app 内 / app 外 / 浏览器扩展） | 完成 |
 | PR6 自动优化 | `srs_optimizer.dart` + `fushi/lib/src/srs/srs_optimization_scheduler.dart`（空闲时后台 isolate） | 完成 |
 | PR7 AnkiConnect | `fushi_engine/lib/srs/ankiconnect/`，挂在 Fushi API 根路径 | 完成；仅 SRS 开启时可用 |
+| 浏览页增强 | `fushi_engine/lib/srs/srs_browse.dart`（快照 + 搜索 + 排序 + 卡片 / 笔记模式；搜索求值对象与 AnkiConnect 共用）、`srs_browse_ops.dart`（批量操作，每个一个事件批次 + 撤销）、`fushi/lib/src/pages/implementations/srs/srs_browse_*.dart` | 完成；搜索子集补 `flag:` `card:` `edited:` `is:buried` `prop:ivl/due/reps/lapses/s/d` `re:` `字段:re:`（`rated:` `prop:ease/pos/r` `nc:` `dupe:` 等仍明确报不支持）；「更改笔记类型」只留了入口（`SrsBrowsePage.onChangeNoteType`） |
 | 第三期同步 | 协议 + `srs_asset_store_directory.dart`；七个后端的服务器时间；媒体按内容哈希同步（`srs_media_sync.dart`）；备份合并（铁律 E） | 完成 |
 
 ### 已知缺口（需要真机 / 外部条件，或留到下一期）
