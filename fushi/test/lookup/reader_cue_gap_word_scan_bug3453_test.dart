@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
-/// BUG-3452：英文有声书（SRT 字幕把一句话拆成多条 cue）里，每条 cue 的最后一个词
+/// BUG-3453：英文有声书（SRT 字幕把一句话拆成多条 cue）里，每条 cue 的最后一个词
 /// 点了查不到（`greeted us` 的 us、`boy with` 的 with），以标点收尾的（`hair.`）正常。
 ///
 /// 根因：有声书句子高亮把每条 cue 的文字各自包进 wrapper，cue 之间的空格成了 wrapper
@@ -14,7 +14,7 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 /// `selectFromPosition` / `getSentenceContext` / `textBetween`。无 node 时 skip。
 void main() {
   test(
-    'BUG-3452: whitespace gap between audiobook cue wrappers ends the word scan '
+    'BUG-3453: whitespace gap between audiobook cue wrappers ends the word scan '
     'and survives in the sentence (executes reader selection script via node)',
     () async {
       final String? nodeExe = _resolveNode();
@@ -24,7 +24,7 @@ void main() {
         return;
       }
       final File jsTest =
-          File('test/lookup/reader_cue_gap_word_scan_bug3452_test.js');
+          File('test/lookup/reader_cue_gap_word_scan_bug3453_test.js');
       expect(jsTest.existsSync(), isTrue,
           reason: 'behavior harness ${jsTest.path} must exist');
 
@@ -44,7 +44,7 @@ void main() {
         expect(
           result.exitCode,
           0,
-          reason: 'BUG-3452 behavior test failed.\n'
+          reason: 'BUG-3453 behavior test failed.\n'
               'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
         );
         expect(result.stdout.toString(), contains('all assertions passed'),

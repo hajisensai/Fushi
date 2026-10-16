@@ -1636,7 +1636,7 @@ window.fushiSelection = {
       }
     });
   },
-  // BUG-3452：createWalker 跳过的纯空白文本节点在排版上是真实的词间空格。有声书句子
+  // BUG-3453：createWalker 跳过的纯空白文本节点在排版上是真实的词间空格。有声书句子
   // 高亮（sentenceAudioWrapItems / wrapSentenceAudioGroup）把每条 cue 的文字各自包进
   // wrapper，cue 之间的空格落在两个 wrapper 之间，成了独立的纯空白节点——walker 一跳过
   // 它，前向取词就把「…greeted us」和下一条 cue 的「belonged」粘成 usbelonged（英文整词
@@ -2192,7 +2192,7 @@ window.fushiSelection = {
       node = walker.previousNode();
       if (node) {
         limit = node.textContent.length;
-        // BUG-3452：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
+        // BUG-3453：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
         if (this.hasSkippedWhitespaceBetween(node, laterNode) &&
             this.isWordGapBetweenChars(node.textContent, laterNode.textContent)) {
           partsBefore.push(' ');
@@ -2226,7 +2226,7 @@ window.fushiSelection = {
       var earlierNode = node;
       node = walker.nextNode();
       start = 0;
-      // BUG-3452：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
+      // BUG-3453：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
       if (node && this.hasSkippedWhitespaceBetween(earlierNode, node) &&
           this.isWordGapBetweenChars(earlierNode.textContent, node.textContent)) {
         partsAfter.push(' ');
@@ -2333,7 +2333,7 @@ window.fushiSelection = {
       }
       var prevNode = node;
       node = walker.nextNode();
-      // BUG-3452：与 getSentenceContext 同一规则还原被跳过的词间空白缝。
+      // BUG-3453：与 getSentenceContext 同一规则还原被跳过的词间空白缝。
       if (node && this.hasSkippedWhitespaceBetween(prevNode, node) &&
           this.isWordGapBetweenChars(prevNode.textContent, node.textContent)) {
         parts.push(' ');
@@ -2760,7 +2760,7 @@ window.fushiSelection = {
       var scannedNode = scanNode;
       scanNode = walker.nextNode();
       scanOffset = 0;
-      // BUG-3452：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
+      // BUG-3453：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
       // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
       if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
           this.isWordGapBetweenChars(text)) break;

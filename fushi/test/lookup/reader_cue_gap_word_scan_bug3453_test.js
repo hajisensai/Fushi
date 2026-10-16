@@ -1,4 +1,4 @@
-// BUG-3452 行为守卫：有声书 cue wrapper 之间的空格不能被取词 / 句子拼接吞掉。
+// BUG-3453 行为守卫：有声书 cue wrapper 之间的空格不能被取词 / 句子拼接吞掉。
 //
 // 症状（英文有声书 + SRT 字幕）：每条字幕最后一个词（`greeted us` 的 us、`boy with`
 // 的 with）点了查不到；以标点收尾的（`hair.`）正常。
@@ -11,7 +11,7 @@
 // 本 harness 在最小 fake DOM 里真执行阅读器注入脚本 ReaderSelectionScripts.source()
 // （由 .dart wrapper 落到临时文件，路径经 FUSHI_READER_SELECTION_JS 传入）。
 //
-// 运行：FUSHI_READER_SELECTION_JS=<path> node fushi/test/lookup/reader_cue_gap_word_scan_bug3452_test.js
+// 运行：FUSHI_READER_SELECTION_JS=<path> node fushi/test/lookup/reader_cue_gap_word_scan_bug3453_test.js
 
 const assert = require('node:assert');
 const fs = require('node:fs');
