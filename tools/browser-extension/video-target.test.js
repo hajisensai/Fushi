@@ -108,3 +108,108 @@ test('manifest：video-target.js 排在两个消费者（subtitle-panel / player
   assert.ok(at < js.indexOf('subtitle-panel.js'));
   assert.ok(at < js.indexOf('player-controls.js'));
 });
+
+// ── BUG-3450：视频锚定（挂载点 / 定位方式 / 帧观察）。参照 asbplayer element-overlay：浮层只认
+// 正片 <video> 的视口矩形，其余全部由这一层统一定，字幕覆盖层与通用悬浮按钮共用。
+function anchorWorld(opts) {
+  opts = opts || {};
+  const html = { tagName: 'HTML', children: [], appendChild(n) { n.parentNode = html; html.children.push(n); return n; } };
+  html.insertBefore = (n) => { n.parentNode = html; html.children.unshift(n); };
+  Object.defineProperty(html, 'firstChild', { get: () => html.children[0] || null });
+  const scroll = { x: 0, y: opts.scrollY || 0 };
+  const frames = [];
+  const positions = new Map(opts.positions || []); // el → computed position
+  const ctx = {
+    Date,
+    window: {
+      innerWidth: 1280, innerHeight: 720,
+      getComputedStyle: (el) => ({ position: positions.get(el) || 'static' }),
+    },
+    requestAnimationFrame: (fn) => { frames.push(fn); return frames.length; },
+    document: {
+      documentElement: html,
+      fullscreenElement: opts.fullscreenElement || null,
+      querySelectorAll: (s) => (s === 'video' ? opts.videos || [] : []),
+      querySelector: (s) => (s === 'video' ? (opts.videos || [])[0] || null : null),
+      createElement: () => {
+        const style = { cssText: '' };
+        // <html> 里 absolute 探针的视口矩形 = (-scrollX, -scrollY)
+        return { style, setAttribute() {}, getBoundingClientRect: () => rect(-scroll.x, -scroll.y, 100, 100) };
+      },
+    },
+  };
+  ctx.self = ctx.window;
+  ctx.window.requestAnimationFrame = ctx.requestAnimationFrame;
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'video-target.js'), 'utf8'), ctx);
+  const runFrame = () => { const f = frames.splice(0); for (const fn of f) fn(); };
+  return { ctx, html, scroll, runFrame, VA: ctx.window.fushiVideoAnchor };
+}
+
+function styleSink() {
+  const props = new Map();
+  return {
+    props,
+    setProperty(k, v, prio) { props.set(k, { v, prio }); },
+    getPropertyValue: (k) => (props.has(k) ? props.get(k).v : ''),
+    getPropertyPriority: (k) => (props.has(k) ? props.get(k).prio : ''),
+  };
+}
+
+test('overlayHost：全屏容器 → 它；全屏的是 <video> 本身 → <html>（媒体子节点不渲染）；非全屏 → <html>', () => {
+  const stage = { tagName: 'DIV' };
+  assert.strictEqual(anchorWorld({ fullscreenElement: stage }).VA.host(), stage);
+  const w = anchorWorld({ fullscreenElement: { tagName: 'VIDEO' } });
+  assert.strictEqual(w.VA.host(), w.html);
+  const n = anchorWorld();
+  assert.strictEqual(n.VA.host(), n.html, '非全屏不挂 body：body 常被站点 transform / scroll-lock');
+});
+
+test('anchorMode：视频在文档流里 → absolute（滚动由合成器跟随）；有 fixed 祖先（全屏 / 迷你播放器）→ fixed', () => {
+  const player = { tagName: 'DIV', parentElement: null };
+  const video = { tagName: 'VIDEO', parentElement: player };
+  assert.strictEqual(anchorWorld().VA.mode(video), 'absolute');
+  const mini = { tagName: 'DIV', parentElement: null };
+  const v2 = { tagName: 'VIDEO', parentElement: mini };
+  assert.strictEqual(anchorWorld({ positions: [[mini, 'fixed']] }).VA.mode(v2), 'fixed');
+  assert.strictEqual(anchorWorld().VA.mode(null), 'fixed');
+});
+
+test('anchorMode：sticky 祖先（吸顶播放器）→ fixed——吸住时视频矩形不变，absolute 浮层会被文档滚走且帧观察收不到信号', () => {
+  const sticky = { tagName: 'DIV', parentElement: null };
+  const video = { tagName: 'VIDEO', parentElement: sticky };
+  assert.strictEqual(anchorWorld({ positions: [[sticky, 'sticky']] }).VA.mode(video), 'fixed');
+});
+
+test('placeAt：absolute 挂 <html>，文档滚动折进原点；位置与定位方式写内联 !important（压过站点通配规则）', () => {
+  const video = { tagName: 'VIDEO', parentElement: null, getBoundingClientRect: () => rect(100, -200, 800, 450) };
+  const w = anchorWorld({ scrollY: 300, videos: [video] });
+  const el = { style: styleSink(), parentNode: null };
+  const placed = w.VA.placeAt(el, 500, 200, video);
+  assert.strictEqual(el.parentNode, w.html);
+  assert.strictEqual(placed.mode, 'absolute');
+  assert.deepStrictEqual(el.style.props.get('position'), { v: 'absolute', prio: 'important' });
+  assert.deepStrictEqual(el.style.props.get('left'), { v: '500px', prio: 'important' });
+  // 视口 y=200 + 滚动 300 = 文档 y=500：页面再滚，浮层由合成器跟着视频走，不需要脚本追帧。
+  assert.deepStrictEqual(el.style.props.get('top'), { v: '500px', prio: 'important' });
+});
+
+test('watch：共享帧观察只在视频矩形变化时回调（SPA 换片 / 剧场模式 / 播放器缩放都在下一帧收敛），退订即停', () => {
+  let r = rect(0, 0, 800, 450);
+  const video = { tagName: 'VIDEO', isConnected: true, paused: false, ended: false, readyState: 4, getBoundingClientRect: () => r };
+  const w = anchorWorld({ videos: [video] });
+  const calls = [];
+  const stop = w.VA.watch((v, rr) => calls.push(rr && rr.width));
+  w.runFrame();
+  assert.deepStrictEqual(calls, [800], '订阅后第一帧必回调一次');
+  w.runFrame();
+  w.runFrame();
+  assert.deepStrictEqual(calls, [800], '矩形没变不回调');
+  r = rect(0, 0, 1280, 720); // 剧场模式：没有 scroll / resize 事件，只有布局变了
+  w.runFrame();
+  assert.deepStrictEqual(calls, [800, 1280]);
+  stop();
+  r = rect(0, 0, 400, 225);
+  w.runFrame();
+  assert.deepStrictEqual(calls, [800, 1280], '退订后不再回调，也不再排帧');
+});

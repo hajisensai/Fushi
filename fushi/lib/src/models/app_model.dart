@@ -4300,10 +4300,12 @@ class AppModel with ChangeNotifier {
   Future<void> setCurrentHomeTabIndex(int index) =>
       prefsRepo.setCurrentHomeTabIndex(index);
 
-  bool get startupDefaultDictionaryTab => prefsRepo.startupDefaultDictionaryTab;
+  /// 启动页模块（`null` = 默认，底栏第一个可见页），见
+  /// [PreferencesRepository.startupModule]。
+  ModuleId? get startupModule => prefsRepo.startupModule;
 
-  Future<void> setStartupDefaultDictionaryTab(bool value) =>
-      prefsRepo.setStartupDefaultDictionaryTab(value);
+  Future<void> setStartupModule(ModuleId? module) =>
+      prefsRepo.setStartupModule(module);
 
   /// 启用的 mpv 着色器（JSON 字符串数组；见 video_shader_manager.dart）。
   String get videoShadersEnabled => prefsRepo.videoShadersEnabled;

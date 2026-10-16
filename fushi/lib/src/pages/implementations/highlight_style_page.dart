@@ -350,7 +350,7 @@ class _HighlightStylePageState extends State<HighlightStylePage>
                       _replay();
                     }
                   : null,
-              icon: const Icon(Icons.replay_rounded),
+              icon: const Icon(FushiIcons.replay),
               label: Text(t.reader_highlight_replay),
             ),
           ],
@@ -618,7 +618,7 @@ class _StyleTile extends StatelessWidget {
                     ),
                     if (selected)
                       Icon(
-                        Icons.check_circle_rounded,
+                        FushiIcons.success,
                         size: 18,
                         color: cs.primary,
                       ),

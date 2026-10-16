@@ -335,8 +335,8 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
-    test('startupDefaultDictionaryTab defaults to false', () {
-      expect(repo.startupDefaultDictionaryTab, false);
+    test('startupModule defaults to null (first visible page)', () {
+      expect(repo.startupModule, isNull);
     });
 
     test('videoSubtitleListAutoScroll defaults to true (TODO-613)', () {
@@ -579,13 +579,47 @@ void main() {
       expect(repo.reverseNavigationBar, false);
     });
 
-    test('setStartupDefaultDictionaryTab persists bool', () async {
-      await repo.setStartupDefaultDictionaryTab(true);
+    test('setStartupModule persists module and default', () async {
+      await repo.setStartupModule(ModuleId.video);
 
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
-      expect(repo2.startupDefaultDictionaryTab, true);
+      expect(repo2.startupModule, ModuleId.video);
       repo2.dispose();
+
+      await repo.setStartupModule(null);
+      final repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      expect(repo3.startupModule, isNull);
+      repo3.dispose();
+    });
+
+    test('startupModule migrates legacy "open lookup on startup" switch',
+        () async {
+      // 升级前开了「启动时打开查词」、从没写过新键：启动页 = 查词。
+      await repo.setPref(
+        PreferencesRepository.legacyStartupDictionaryTabKey,
+        true,
+      );
+      final repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      expect(repo2.startupModule, ModuleId.lookup);
+      repo2.dispose();
+
+      // 新键一旦写过（哪怕写回默认），旧开关不再生效。
+      await repo.setStartupModule(null);
+      final repo3 = PreferencesRepository(db);
+      await repo3.loadFromDb();
+      expect(repo3.startupModule, isNull);
+      repo3.dispose();
+    });
+
+    test('startupModule ignores legacy switch when it is off', () async {
+      await repo.setPref(
+        PreferencesRepository.legacyStartupDictionaryTabKey,
+        false,
+      );
+      expect(repo.startupModule, isNull);
     });
 
     test('yomitan api server prefs round-trip', () async {

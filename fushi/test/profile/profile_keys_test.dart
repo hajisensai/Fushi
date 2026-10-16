@@ -23,6 +23,8 @@ void main() {
       expect(ProfileKeys.isExcludedPref('update_beta_channel'), isTrue);
       expect(
           ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
+      // 启动页与 module_nav_order 同族：设备本地，不随 Profile 走。
+      expect(ProfileKeys.isExcludedPref('startup_module'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale_mode'), isTrue);
       // TODO-1961: download folder + legacy-folder history are device-local.

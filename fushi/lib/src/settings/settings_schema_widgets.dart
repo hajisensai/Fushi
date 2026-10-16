@@ -357,6 +357,9 @@ class SettingsSchemaItem extends StatefulWidget
     // resolveSubtitle 的副标题）。
     final bool enabled = segmented.isEnabled(settingsContext);
     final String? subtitle = segmented.resolveSubtitle(settingsContext);
+    final List<SettingsSegmentOption<T>> options = segmented.optionsFor(
+      settingsContext,
+    );
     // dropdown 渲染分支（TODO-209）：同一数据模型换下拉单选控件——标签长/选项多的
     // 行在窄 pane 里分段条只能横向滚动裁断，下拉行内只显示当前选中标签、永不被裁。
     if (segmented.dropdown) {
@@ -368,7 +371,7 @@ class SettingsSchemaItem extends StatefulWidget
         controlBelow: segmented.controlBelow,
         selected: segmented.selected(settingsContext),
         options: <AdaptiveSettingsPickerOption<T>>[
-          for (final SettingsSegmentOption<T> option in segmented.options)
+          for (final SettingsSegmentOption<T> option in options)
             AdaptiveSettingsPickerOption<T>(
               value: option.value,
               label: option.label,
@@ -386,7 +389,7 @@ class SettingsSchemaItem extends StatefulWidget
       subtitle: subtitle,
       icon: segmented.icon,
       showIcon: showIcons,
-      segments: segmented.options
+      segments: options
           .map(
             (SettingsSegmentOption<T> option) =>
                 _segment<T>(option, enabled: enabled),

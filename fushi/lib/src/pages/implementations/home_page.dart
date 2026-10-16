@@ -174,19 +174,22 @@ List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
 HomeTab homeLandingTab(List<HomeTab> tabs) =>
     tabs.isEmpty ? HomeTab.settings : tabs.first;
 
-/// 启动落地 tab。「启动默认打开查词」只在查词 tab 真的可见时成立——查词模块被
-/// 关掉时返回它会让 `_currentTab` 从第一帧起就指向一个不在 [homeActiveTabs] 里的
-/// tab（渲染由 `_visibleTab` 兜到首页，但选中身份一直是脏的，底栏高亮与
-/// `_previousTab` 都跟着错），所以门控要在取值处，而不是靠下游兜底。
+/// 启动落地 tab：用户选的启动页（设置 → 系统 → 启动页，[startupModule]）在
+/// [tabs]（[homeActiveTabs] 的结果）里可见时就落它，否则落默认 [homeLandingTab]。
+///
+/// 所选模块被关掉 / 平台上不存在 / 是没有 tab 的横切模块时都回退默认——返回一个
+/// 不在 [tabs] 里的 tab 会让 `_currentTab` 从第一帧起就指向隐藏 tab（渲染由
+/// `_visibleTab` 兜到首页，但选中身份一直是脏的，底栏高亮与 `_previousTab` 都跟着
+/// 错），所以门控要在取值处，而不是靠下游兜底。
 HomeTab homeInitialTab({
-  required bool startupDefaultDictionaryTab,
-  required HomeTab fallback,
-  bool dictionariesEnabled = true,
+  required ModuleId? startupModule,
+  required List<HomeTab> tabs,
 }) {
-  if (startupDefaultDictionaryTab && dictionariesEnabled) {
-    return HomeTab.dictionaries;
-  }
-  return fallback;
+  final HomeTab? chosen = startupModule == null
+      ? null
+      : homeTabOfModule(startupModule);
+  if (chosen != null && tabs.contains(chosen)) return chosen;
+  return homeLandingTab(tabs);
 }
 
 int homeVisualIndexForTab({
@@ -474,11 +477,8 @@ class _HomePageState extends BasePageState<HomePage>
       appModelNoUpdate.moduleVisibility,
     );
     _currentTab = homeInitialTab(
-      startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
-      dictionariesEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
-        ModuleId.lookup,
-      ),
-      fallback: homeLandingTab(initialTabs),
+      startupModule: appModelNoUpdate.startupModule,
+      tabs: initialTabs,
     );
     _previousTab = homeLandingTab(initialTabs);
     // Seed the shared shell notifier (drives the macOS root sidebar) and listen
@@ -731,8 +731,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed =
-        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    final bool confirmed = await showAnkiMediaDedupPlanDialog(
+      context,
+      plan,
+      offerDelete: true,
+    );
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -2048,8 +2051,7 @@ class _HomePageState extends BasePageState<HomePage>
               final bool towardEnd = index > visualIndex;
               _selectTabFromNav(tab);
               _moduleSwipe.playEnter(
-                fromScreenRight:
-                    Directionality.of(context) == TextDirection.ltr
+                fromScreenRight: Directionality.of(context) == TextDirection.ltr
                     ? towardEnd
                     : !towardEnd,
               );

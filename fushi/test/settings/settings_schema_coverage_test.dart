@@ -1151,8 +1151,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Auto-install updates': 'DEVICE: Android-only UpdateChecker install',
   'appearance/Reverse navigation bar': 'WIDGET-TODO: HomePage nav order',
   // 阶段 G 归位：「启动时打开查词」从 appearance 移到 system·通用（item id 不变，
-  // destId 随所属 destination 改为 system）。
-  'system/Open lookup on startup': 'test/pages/home_page_tabs_test.dart',
+  // destId 随所属 destination 改为 system）。反馈 #PwEC1evz1E 起泛化为「启动页」
+  // 下拉（只列可见模块）；落点判据 homeInitialTab 由纯函数测试钉住，旧开关迁移由
+  // preferences_repository_test 钉住。
+  'system/Startup page':
+      'test/pages/home_page_tabs_test.dart + test/models/preferences_repository_test.dart',
   'reading/Reverse reader bottom bar':
       'DEVICE: reader bottom-bar layout order (like reverse nav bar)',
   // TODO-830: 反转有声书底栏 ⏮⏭ 前进/后退按钮的功能方向（per-reader）。change/

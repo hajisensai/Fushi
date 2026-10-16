@@ -204,12 +204,21 @@ enum ModuleId {
   /// 改名（如 downloads → browse）不会把用户排好的顺序打乱。
   static const String orderPrefKey = 'module_nav_order';
 
-  /// 「功能模块」全部设备本地键：开关 + 顺序。与开关同理，顺序描述的是**这台
-  /// 设备**的入口布局，不随 Profile 走、不进备份（见 `profile_keys.dart` 与
-  /// `backup_service.dart` 的排除名单）。
+  /// 启动页：打开 app 时落在哪个模块的 tab（设置 → 系统 → 启动页）。值是该模块的
+  /// [prefKey]（与 [orderPrefKey] 同理用冻结键而非 `.name`），空串 = 默认（底栏
+  /// 第一个可见页）。所选模块被关掉或平台上不存在时回退到默认，见 `homeInitialTab`。
+  ///
+  /// 取代旧开关 `startup_default_dictionary_tab`（「启动时打开查词」）：本键从未写过
+  /// 时沿用旧开关（开着 = 查词），见 `PreferencesRepository.startupModule`。
+  static const String startupPrefKey = 'startup_module';
+
+  /// 「功能模块」全部设备本地键：开关 + 顺序 + 启动页。与开关同理，顺序与启动页描述
+  /// 的是**这台设备**的入口布局，不随 Profile 走、不进备份（见 `profile_keys.dart`
+  /// 与 `backup_service.dart` 的排除名单）。
   static Set<String> get devicePrefKeys => <String>{
     ...allPrefKeys,
     orderPrefKey,
+    startupPrefKey,
   };
 
   /// 解析 [orderPrefKey] 的存储值。未知键（对端新模块 / 已删模块）与重复项直接
