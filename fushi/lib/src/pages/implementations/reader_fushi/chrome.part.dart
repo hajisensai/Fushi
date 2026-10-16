@@ -958,7 +958,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     await _clearReaderAppSelection();
     if (!mounted) return;
-    final List<EpubImageRef> images = book.images;
+    final List<EpubImageRef> images =
+        await _loadBookImagesOffUiIsolate(book, _extractDir);
+    if (!mounted || !identical(_book, book)) return;
     final int currentChapter = _currentChapter;
     final List<TtuTocEntry> toc = _buildTtuToc();
     // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」

@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3056 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3370](bugs/BUG-3370-lyrics-illustrations-scan-on-ui-isolate.md) | ✅ | ✅ | 歌词模式 / 插图册在 UI isolate 上同步扫整本书插图 |
 > 共 3086 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

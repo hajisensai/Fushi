@@ -39,6 +39,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi/src/epub/epub_spread_analyzer.dart';
 import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -1280,6 +1281,65 @@ ParsedBookData parseAndCountChapters(String extractDir) {
 /// 纯文本计数从「整本 isolate 计数」降到「只解析必要项」。
 EpubBook parseBookOnly(String extractDir) {
   return EpubParser.parseFromExtracted(extractDir);
+}
+
+/// isolate 入口：在书的副本上取插图表。[EpubBook.images] 逐章同步读文件 +
+/// html_parser 整章解析，放在 UI isolate 上长篇会卡上百毫秒到秒级；有解压目录时
+/// 先读盘上缓存（[loadEpubImagesWithCache]），命中就不再解析。
+EpubImageIndexLoad _epubBookImagesOf(
+  ({EpubBook book, String? cacheFile}) args,
+) {
+  final String? cacheFile = args.cacheFile;
+  if (cacheFile == null) return EpubImageIndexLoad(images: args.book.images);
+  return loadEpubImagesWithCache(args.book, File(cacheFile));
+}
+
+/// 同一本书（同一个 [EpubBook] 实例）正在后台建的插图表。插图册与歌词模式插图可能
+/// 几乎同时要它，各起一个 isolate 既重复整书解析，又会同时写同一份盘上缓存。
+final Expando<Future<List<EpubImageRef>>> _bookImagesInFlight =
+    Expando<Future<List<EpubImageRef>>>('reader book images in flight');
+
+/// 取 [book] 的插图表：已建好直接返回，否则在后台 isolate 取好（优先读缓存）再回填
+/// 到 [book]，之后同一本书的读取（插图册 / 歌词模式插图）都不再重扫；同一实例并发的
+/// 请求共用一个在途 Future。缓存路径要在根 isolate 解析（装配点带不进后台 isolate），
+/// 后台带回的缓存读写失败也在根 isolate 记日志。
+Future<List<EpubImageRef>> _loadBookImagesOffUiIsolate(
+  EpubBook book,
+  String? extractDir,
+) {
+  if (book.hasImages) return Future<List<EpubImageRef>>.value(book.images);
+  final Future<List<EpubImageRef>>? inFlight = _bookImagesInFlight[book];
+  if (inFlight != null) return inFlight;
+  final Future<List<EpubImageRef>> load = _buildBookImagesOffUiIsolate(
+    book,
+    extractDir,
+  );
+  _bookImagesInFlight[book] = load;
+  return load;
+}
+
+Future<List<EpubImageRef>> _buildBookImagesOffUiIsolate(
+  EpubBook book,
+  String? extractDir,
+) async {
+  try {
+    final File? cacheFile = extractDir == null
+        ? null
+        : await epubImageIndexCacheFileFor(extractDir);
+    final EpubImageIndexLoad result = await compute(
+      _epubBookImagesOf,
+      (book: book, cacheFile: cacheFile?.path),
+    );
+    reportEpubImageIndexCacheFailures(
+      'ReaderFushiPage.bookImages',
+      result.failures,
+    );
+    book.adoptImages(result.images);
+    return book.images;
+  } finally {
+    // 成功后 [EpubBook.hasImages] 已为真；失败时清掉，下次再试。
+    _bookImagesInFlight[book] = null;
+  }
 }
 
 /// TODO-131: 从 [EpubBooks.chaptersJson]（导入时由 EpubImporter 写入的
