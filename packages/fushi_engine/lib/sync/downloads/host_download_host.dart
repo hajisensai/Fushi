@@ -58,7 +58,7 @@ abstract interface class HostDownloadHost {
 
   /// 删除任务。[deleteFiles] 是对端的显式选择（`DELETE /api/downloads/<id>?deleteFiles=`）：
   /// 给了就按它删 / 留已下载数据；null = 旧客户端没带这个参数，各 host 保持各自的
-  /// 历史缺省（app 当 host 只移出列表，无头服务端连数据一起删，BUG-3417）。
+  /// 历史缺省（app 当 host 只移出列表，无头服务端连数据一起删，BUG-3437）。
   Future<void> deleteJob(String jobId, {bool? deleteFiles});
 }
 

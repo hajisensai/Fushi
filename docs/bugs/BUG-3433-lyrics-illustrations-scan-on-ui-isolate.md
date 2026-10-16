@@ -1,4 +1,4 @@
-## BUG-3370 · 歌词模式 / 插图册每次打开都在 UI isolate 上整书扫插图
+## BUG-3433 · 歌词模式 / 插图册每次打开都在 UI isolate 上整书扫插图
 - **报告**：2026-10-15（排查「更新后打开书变慢」时读代码发现；10-15 群里所有者确认歌词插图拖慢开书，问「为什么会有插画表、不应该只加载需要的吗」。不是录屏用户的成因，那条是 BUG-3369）
 - **真实性**：✅ 代码路径确认、未真机测时。`_prepareLyricsIllustrations`（`fushi/lib/src/pages/implementations/reader_fushi/lyrics.part.dart`，b32be24545 插图功能引入）在第一个 await 之前同步读 `book.images`（`packages/fushi_engine/lib/epub/epub_book.dart` 的 `images` getter：逐章同步读文件 + `parseChapterHtml` 整章解析 + 扫 DOM），整本书跑在 UI isolate 上。上次停在歌词模式的有声书开书时自动进歌词模式（9880325ff1 按书记忆歌词模式），正好落在首章就绪前后，长篇卡界面。插图册入口 `_openGallery`（`reader_fushi/chrome.part.dart`）同款；书架插图库 / 兄弟卷（`parseVolumeBookForPeek`）在 isolate 里，但每次打开也整书重扫。
   - 插图表本身是需要的：歌词模式要知道全书每张图的位置，播放走过时弹出、并按当前位置定「已听到」基线。显示侧已按尺寸降采样解码当前一张（`ResizeImage`），与正文 WebView 读的是同一份盘上文件；慢在扫描，不在图片内存。

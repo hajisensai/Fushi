@@ -1446,7 +1446,7 @@ class AppModel with ChangeNotifier {
   set _localAudioManager(LocalAudioManager value) =>
       _localAudioManagerOrNull = value;
 
-  /// Android 原生 `TtsChannelHandler` 新挂上本引擎时重推本地音频库配置（BUG-3419，
+  /// Android 原生 `TtsChannelHandler` 新挂上本引擎时重推本地音频库配置（BUG-3439，
   /// 见 [TtsChannel.onNativeHandlerAttached]）。管理器还没建好时什么也不做：
   /// `initialise()` 随后自己会绑定，那时原生 handler 已经在了。
   Future<void> rebindLocalAudioForNativeHandler() async {

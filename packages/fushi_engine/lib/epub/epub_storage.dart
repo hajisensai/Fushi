@@ -62,7 +62,7 @@ class EpubStorage {
   /// folder name may still be a legacy int id.
   ///
   /// Also drops the book's derived illustration-index cache, which lives under
-  /// the support root keyed by this path (BUG-3370) — first, so a locked
+  /// the support root keyed by this path (BUG-3433) — first, so a locked
   /// extract dir (Windows errno 32) cannot leave it orphaned.
   static Future<void> deleteBookDir(String extractDir) async {
     if (extractDir.isEmpty) return;

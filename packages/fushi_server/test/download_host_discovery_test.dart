@@ -150,7 +150,7 @@ void main() {
     expect(books.single.title, '吾輩は猫である');
   });
 
-  test('BUG-3417：deleteJob 显式 deleteFiles 按字面执行；缺省（旧客户端）保持连文件一起删', () async {
+  test('BUG-3437：deleteJob 显式 deleteFiles 按字面执行；缺省（旧客户端）保持连文件一起删', () async {
     host = await build(<(String, List<int>)>[('Novel/book.txt', 'x'.codeUnits)]);
     Future<File> seed(String jobId) async {
       final int now = DateTime.now().millisecondsSinceEpoch;

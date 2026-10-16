@@ -428,7 +428,7 @@ void main() {
     expect((await get('ghost')).statusCode, 404);
   });
 
-  test('BUG-3417：DELETE 的 deleteFiles 查询参数原样到达 host；缺省 null；非法 400',
+  test('BUG-3437：DELETE 的 deleteFiles 查询参数原样到达 host；缺省 null；非法 400',
       () async {
     final _RecordingHost host = _RecordingHost();
     Future<shelf.Response> delete(String query) => handleHostDownloadRequest(

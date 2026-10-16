@@ -591,7 +591,7 @@ const rangeText = (r) => (r.startContainer === r.endContainer
   liveRanges.length = 0;
 }
 
-// 18. BUG-3369：开章逐句包裹整批只读一次原生选区。DOM 刚改过时读 getSelection().rangeCount 会让
+// 18. BUG-3432：开章逐句包裹整批只读一次原生选区。DOM 刚改过时读 getSelection().rangeCount 会让
 // Blink 对整章同步排版一次；moveNodes 每次都读时，一章 2700 句的有声书开书卡几十秒、超时白屏。
 {
   const N = 40;
@@ -623,7 +623,7 @@ const rangeText = (r) => (r.startContainer === r.endContainer
   liveRanges.length = 0;
 }
 
-// 19. BUG-3369 合并 #2213 后复核：批内一章多句跨段落、跨 ruby 的逐句包裹与整章拆包裹，收藏 live Range
+// 19. BUG-3432 合并 #2213 后复核：批内一章多句跨段落、跨 ruby 的逐句包裹与整章拆包裹，收藏 live Range
 //     （跨两段）照样不塌；包裹与拆包裹各只读一次原生选区。批只省掉原生选区的读取，live Range 的
 //     钉住 / 写回仍逐次执行；倒序包裹让前一句的切开不影响后一句的「节点 + 偏移」。
 {

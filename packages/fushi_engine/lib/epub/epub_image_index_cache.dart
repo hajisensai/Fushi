@@ -8,7 +8,7 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:path/path.dart' as p;
 
-/// 插图表的盘上缓存（BUG-3370）。
+/// 插图表的盘上缓存（BUG-3433）。
 ///
 /// [EpubBook.images] 要把每一章 XHTML 整章解析一遍，长篇一次几百毫秒到秒级；歌词模式
 /// 插图、阅读器插图册与书架插图库每次打开都要它。一本书导入后插图集合不变，所以算一次

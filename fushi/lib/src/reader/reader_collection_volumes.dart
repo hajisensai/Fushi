@@ -128,7 +128,7 @@ VolumePeekParse parseVolumeBookForPeek(
   ({String extractDir, String? cacheFile}) args,
 ) {
   final EpubBook book = EpubParser.parseFromExtracted(args.extractDir);
-  // 触发并缓存；优先读盘上插图表缓存（BUG-3370），与阅读器共用同一份。
+  // 触发并缓存；优先读盘上插图表缓存（BUG-3433），与阅读器共用同一份。
   final String? cacheFile = args.cacheFile;
   if (cacheFile == null) {
     book.images;

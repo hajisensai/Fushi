@@ -1056,7 +1056,7 @@ ${einkMode ? _einkOverrideCss(einkDark: einkDark) : ''}
   /// 居中，正好是基字 em 盒——Apple 的注音规则（`--fushi-ruby-pull`，见
   /// reader_ruby_metrics_script.dart）把注音 em 盒拉到基字 em 盒边上，条再宽就会擦到振假名。
   /// 字体本身比 1em 薄时按盒厚画，等于原样。这是 CJK 的厚度；西文（及其它非 CJK 文字）按字体真实
-  /// 度量盖住上伸 / 下延字形（BUG-3417），有注音时条一律收到振假名墨迹之外。窄条由 JS 窄条层 `__fushiLanes`
+  /// 度量盖住上伸 / 下延字形（BUG-3435），有注音时条一律收到振假名墨迹之外。窄条由 JS 窄条层 `__fushiLanes`
   /// （reader_selection_scripts.dart）画，它的 `LANE_EM` 与本常量逐字相同（测试钉住）。
   static const double highlightLaneEm = 1.0;
 

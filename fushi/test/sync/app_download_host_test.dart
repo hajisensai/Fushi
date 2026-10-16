@@ -265,7 +265,7 @@ void main() {
     );
   });
 
-  group('BUG-3417：远端删除的「同时删除已下载文件」按字面生效', () {
+  group('BUG-3437：远端删除的「同时删除已下载文件」按字面生效', () {
     Future<File> seedCompletedJob(String jobId) async {
       final int now = DateTime.now().millisecondsSinceEpoch;
       final File downloaded = File(p.join(tmp.path, '$jobId.mkv'))

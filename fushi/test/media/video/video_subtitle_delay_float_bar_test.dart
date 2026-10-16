@@ -178,7 +178,7 @@ void main() {
     expect(delays.last, -1050);
   });
 
-  // BUG-3420（反馈 B-yPx_on2A）：读数胶囊自带不透明底色与 cardRadius，焦点环原先
+  // BUG-3440（反馈 B-yPx_on2A）：读数胶囊自带不透明底色与 cardRadius，焦点环原先
   // 用 FushiFocusable 默认的 8 半径画在胶囊下面，被底色盖住、只在四角漏出残段。
   testWidgets('读数胶囊聚焦：焦点环与胶囊同形并画在胶囊上面', (WidgetTester tester) async {
     await _pumpRow(

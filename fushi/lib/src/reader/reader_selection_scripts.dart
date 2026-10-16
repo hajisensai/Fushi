@@ -423,7 +423,7 @@ if (!window.__fushiLiveRanges) {
       }
       return tail;
     },
-    // BUG-3369：批量手术（开章逐句包裹 / 拆包裹、套收藏）期间为真 = 进批时确认过没有原生选区。
+    // BUG-3432：批量手术（开章逐句包裹 / 拆包裹、套收藏）期间为真 = 进批时确认过没有原生选区。
     // DOM 刚改过时读 getSelection().rangeCount / anchorNode 会让 Blink 对整章同步排版一次
     // （长章约 5ms），moveNodes 每次都读：一章 2700 句的有声书逐句包裹就是 2700 次整章排版，
     // WebView 主线程卡几十秒、开书超时白屏。批内是同步执行、不会有用户输入新建选区，读一次就够。
@@ -640,7 +640,7 @@ if (typeof window.__fushiEnsureHighlightPaintable !== 'function') {
 // - 来源：CSS.highlights 里登记的 Range，加上带高亮 class 的元素（见 GROUPS），逐文本节点（跳过 rt / rp
 //   注音与 VN 未显现的字）取行片段。各路径自己的底色一律透明（reader_content_styles.dart），字色、收藏
 //   下划线、墨水屏线式标记仍由原来的 ::highlight / class 规则负责。
-// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3417）；有注音时收到振假名
+// - 形状：CJK 沿块方向居中、厚 1em；西文按字体真实度量盖住上伸 / 下延（BUG-3435）；有注音时收到振假名
 //   墨迹之外（见 blockExtent / lanes）；同一行里同一层的片段并成一条（有声书整句被振假名拆成多个
 //   wrapper 时也不留缝、不叠色，取代逐缝补 box-shadow 的旧做法）。
 // - 位置：body 里一个 z-index:-1 的绝对定位层，在正文之下、body 背景之上（body 是层叠上下文与包含块），
@@ -767,7 +767,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // - CJK（与 CJK 标点）：沿块方向 1em、按墨迹中线居中。横排时盒中线不是汉字的中线——盒 = 字体
     //   ascent + descent，多数日文字体 ascent 偏大，盒中线比汉字墨迹中线高 0.01–0.08em（Mac WebKit 逐字体
     //   实测，Noto Serif TC 墨迹下沿出条 0.05em），所以按「国」的墨迹中线居中；竖排（中心基线）按盒中线。
-    // - 西文等其它文字（BUG-3417）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
+    // - 西文等其它文字（BUG-3435）：西文字形不在 1em 中心带里，上伸（b d f h k l t）顶到基线上 ~0.75em、
     //   下延（g j p q y）落到基线下 ~0.25em，1em 居中条会削掉 p/g/y 的尾巴和 f/l/t 的头。改为从盒推出
     //   基线（盒顶 + 字体 ascent），条盖住「上伸 + 下延参考字形」与这一段自己（带重音符等）的墨迹，各留
     //   LATIN_PAD。同一字体的西文行厚度一致，不随这一行有没有 p/g/y 忽粗忽细。竖排横躺的西文同理

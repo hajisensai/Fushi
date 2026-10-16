@@ -950,7 +950,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   /// 「从所有设备删除」这本书时墓碑该写的键：从对端下载、本机落地键与对端不同的
   /// 书（[CollectionBookAliases] 记着对端键，见 RemoteCollectionAdoptionService）写
-  /// **对端键**，否则推给 host 认不出、对端消费也对不上（BUG-3428 同类）；其余照旧
+  /// **对端键**，否则推给 host 认不出、对端消费也对不上（BUG-3443 同类）；其余照旧
   /// 本机 bookKey。必须在删书行**之前**调（[deleteEpubBook] 会级联删掉别名）。
   Future<String> syncDeletionBookKeyOf(String bookKey) async {
     final QueryRow? row = await customSelect(

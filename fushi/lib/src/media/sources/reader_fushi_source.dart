@@ -1083,7 +1083,7 @@ class ReaderFushiSource extends ReaderMediaSource {
         );
       }
 
-      // 跨端删除墓碑键：两端键不同的书写**对端键**（BUG-3428 同类）——经互联收下的
+      // 跨端删除墓碑键：两端键不同的书写**对端键**（BUG-3443 同类）——经互联收下的
       // 在线漫画取描述符里的对端键（本机键是单向哈希），从对端下载、落地键不同的书取
       // 别名表。必须删行前取：deleteEpubBook 会级联删掉别名。
       final String syncTombstoneKey = scope == DeleteScope.syncEverywhere

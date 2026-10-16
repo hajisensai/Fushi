@@ -260,7 +260,7 @@ class HighlightBridge {
     parents.forEach(function(parent) { guard.normalize(parent); });
   }
 
-  // BUG-3369: a whole chapter's favourites move text nodes once per highlight
+  // BUG-3432: a whole chapter's favourites move text nodes once per highlight
   // (fallback wrapping, WebKit anonymous-block moves); read the native
   // selection once for the batch instead of forcing a full layout per move.
   function _liveRangeBatch(fn) {

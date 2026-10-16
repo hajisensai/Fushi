@@ -7,7 +7,7 @@ import 'package:fushi_engine/epub/epub_image_index_cache.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 
-/// BUG-3370：插图表算一次落盘，之后按章节文件指纹（大小 + 修改时间）读回，不再整书
+/// BUG-3433：插图表算一次落盘，之后按章节文件指纹（大小 + 修改时间）读回，不再整书
 /// 解析 XHTML；章节文件换掉就重算，缓存坏了退回现算，无盘上文件的书不缓存。
 void main() {
   late Directory dir;

@@ -70,7 +70,7 @@ class TtsChannel {
   /// 而引擎由 audio_service 缓存、比 Activity 活得久（BUG-2280）：Activity 重建后
   /// 新 handler 的本地音频库列表是空的，Dart 却只在 `initialise()` 绑过一次；引擎
   /// 先于 Activity 被后台拉起时，那一次绑定还会撞上 MissingPluginException。两种
-  /// 情况下查词都静默拿不到本地音频，直到重启进程（BUG-3419）。原生 handler 注册后
+  /// 情况下查词都静默拿不到本地音频，直到重启进程（BUG-3439）。原生 handler 注册后
   /// 主动发 [nativeHandlerAttachedMethod]，这里收到就调 [rebind] 把配置重新推过去。
   /// 主入口 `main()` 在 `initialise()` 之前装一次。
   static void onNativeHandlerAttached(Future<void> Function() rebind) {

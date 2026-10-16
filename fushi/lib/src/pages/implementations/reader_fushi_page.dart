@@ -4605,7 +4605,7 @@ $liveConfigJs
   Future<int> onSetSentenceContextToDraft(int prevCount, int nextCount) async {
     // 歌词模式：查词发生在独立的歌词 WebView 里，正文 WebView 没有选区，
     // getSurroundingSentences 恒返回空 →「前加一句 / 后加一句」一点就被判到边界
-    // 禁用（BUG-3417）。歌词一行就是一条 cue，上下文取相邻 cue。
+    // 禁用（BUG-3434）。歌词一行就是一条 cue，上下文取相邻 cue。
     if (_lyricsMode) {
       return _setLyricsSentenceContextToDraft(prevCount, nextCount);
     }

@@ -714,7 +714,7 @@ class SourceLibraryScanner {
       switch (kind) {
         case SourceLibraryKind.book:
           mediaCount = await _importBooks(plan, source.id, files);
-          // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3427）。不留到书架页
+          // 与视频分支对称：入库后把分卷按系列持久归组（BUG-3441）。不留到书架页
           // 打开才归——本机作为互联 host / 合集云同步源时，对端拿到的归属来自这里。
           await BookSeriesGrouper(_db).groupAll();
         case SourceLibraryKind.video:

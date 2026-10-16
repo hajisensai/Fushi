@@ -654,7 +654,7 @@ void main() {
     });
 
     test(
-        'BUG-3428 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
+        'BUG-3443 推送方向：从所有设备删除经互联收下的在线漫画，墓碑写对端键 '
         '（本机 interconnect- 键是单向哈希，对端认不出）', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
