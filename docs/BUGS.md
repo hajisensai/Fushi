@@ -33,6 +33,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3075 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3420](bugs/BUG-3420-subtitle-delay-readout-focus-ring.md) | ✅ | ✅ | 字幕调轴读数胶囊的焦点环四角残缺 |
+| [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
+| [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
+> 共 3071 条。点号进各自文件。
+> 共 3072 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3418](bugs/BUG-3418-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
+| [BUG-3417](bugs/BUG-3417-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
+> 共 3081 条。点号进各自文件。
 > 共 3083 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
