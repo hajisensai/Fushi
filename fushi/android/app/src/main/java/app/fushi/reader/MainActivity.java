@@ -164,12 +164,58 @@ public class MainActivity extends AudioServiceActivity {
     // FlutterSurfaceView host is created programmatically inside super.onCreate, so a
     // direct setDefaultFocusHighlightEnabled(false) on the window's view hierarchy is
     // the deterministic place to kill it.
+    //
+    // BUG-3450: defaultFocusHighlightEnabled is a PER-VIEW flag -- setting it on the
+    // decorView never reached the full-screen FlutterView, which is the view that
+    // actually holds focus. Once a gamepad press left touch mode, the system drew
+    // its frame around the FlutterView (= a faint ring along the screen edges) even
+    // with Fushi's own focus ring turned off. So the suppression now targets the
+    // FlutterView and, through a global focus-change listener, whatever view
+    // (e.g. a WebView platform view) takes focus later.
+    private boolean focusHighlightListenerInstalled = false;
+
     private void disableSystemFocusHighlight() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             android.view.View decorView = getWindow().getDecorView();
             if (decorView != null) {
                 decorView.setDefaultFocusHighlightEnabled(false);
+                if (!focusHighlightListenerInstalled) {
+                    decorView.getViewTreeObserver().addOnGlobalFocusChangeListener(
+                            (oldFocus, newFocus) -> {
+                                if (newFocus != null) {
+                                    newFocus.setDefaultFocusHighlightEnabled(false);
+                                }
+                            });
+                    focusHighlightListenerInstalled = true;
+                }
             }
+            android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+            if (flutterView != null) {
+                flutterView.setDefaultFocusHighlightEnabled(false);
+            }
+            android.view.View focused = getCurrentFocus();
+            if (focused != null) {
+                focused.setDefaultFocusHighlightEnabled(false);
+            }
+        }
+    }
+
+    // BUG-3450: key events only reach Flutter through the FOCUSED view chain
+    // (ViewGroup.dispatchKeyEvent forwards to mFocused). Since API 28 a window in
+    // touch mode is not given initial focus, so after launch (or after a focused
+    // platform view went away) no view is focused: a gamepad BUTTON_B never reaches
+    // FlutterView, the app reports it unhandled, and Generic.kcm's `fallback BACK`
+    // pops the page -- bypassing the shortcut registry, so clearing every "back"
+    // binding did nothing. A and Y only "fixed" it because their fallbacks
+    // (DPAD_CENTER / SPACE) are navigation/typing keys that leave touch mode, which
+    // makes ViewRootImpl hand default focus to the FlutterView. Give the
+    // FlutterView (focusable in touch mode) focus before dispatching instead, so
+    // the very first key is decided by Flutter's own key pipeline.
+    private void ensureKeyFocusTarget() {
+        if (getCurrentFocus() != null) return;
+        android.view.View flutterView = findViewById(FLUTTER_VIEW_ID);
+        if (flutterView != null) {
+            flutterView.requestFocus();
         }
     }
 
@@ -303,6 +349,7 @@ public class MainActivity extends AudioServiceActivity {
             adjustSystemVolume(code == KeyEvent.KEYCODE_VOLUME_UP);
             return true;
         }
+        ensureKeyFocusTarget();
         return super.dispatchKeyEvent(event);
     }
 
