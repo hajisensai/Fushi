@@ -182,6 +182,7 @@ class _Exporter {
       );
       final List<Map<String, Object?>> extLogs = <Map<String, Object?>>[];
       final Map<String, int> revlogIds = <String, int>{};
+      final Map<String, int> extLogCards = <String, int>{};
       final Map<String, Object?> extNotes = <String, Object?>{};
       final List<(SrsReviewLog, int)> revlogQueue = <(SrsReviewLog, int)>[];
       int newPos = 0;
@@ -253,6 +254,8 @@ class _Exporter {
             ]);
             for (final SrsReviewLog l in ec.history.all) {
               extLogs.add(l.toJson());
+              // 「更改笔记类型」继承来的前身卡日志：记下它在包里归哪张卡，回导时跟到这张卡上。
+              if (l.cardId != c.id) extLogCards[l.id] = cid;
             }
             for (final SrsReviewLog l in ec.history.effective) {
               if (_revlogKinds.contains(l.kind)) revlogQueue.add((l, cid));
@@ -338,6 +341,7 @@ class _Exporter {
 
       ext['logs'] = extLogs;
       ext['revlogIds'] = revlogIds;
+      if (extLogCards.isNotEmpty) ext['logCards'] = extLogCards;
       ext['notes'] = extNotes;
       ext['decks'] = <Map<String, Object?>>[
         for (final String d in usedDecks)

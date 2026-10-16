@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -58,6 +59,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       _push<void>((_) => SrsNoteEditorPage(initialDeckId: deckId));
 
   Future<void> _openBrowse() => _push<void>((_) => const SrsBrowsePage());
+
+  Future<void> _openNoteTypes() => _push<void>((_) => const SrsNoteTypesPage());
 
   Future<void> _openConflicts() => _push<void>((_) => const SrsConflictsPage());
 
@@ -189,6 +192,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       label: t.srs_export_apkg,
       onPressed: () =>
           srsRunLogged('SrsDeckList.export', () => openSrsExport(context, ref)),
+    ),
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_note_types'),
+      icon: FushiIcons.ankiCard,
+      label: t.srs_note_types_title,
+      onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_day_boundary'),
