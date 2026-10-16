@@ -34,6 +34,10 @@
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
 > 共 3084 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3429](bugs/BUG-3429-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
 > 共 3086 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
