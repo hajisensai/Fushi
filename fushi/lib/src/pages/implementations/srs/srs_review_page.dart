@@ -26,6 +26,7 @@ import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -916,7 +917,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
               key: const ValueKey<String>('srs-card-surface'),
               padding: EdgeInsets.zero,
               pressScale: false,
-              child: faceBuilder(context, face),
+              // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+              child: rendered?.fushiCardDefinitions != null
+                  ? SrsFushiCardView(
+                      key: const ValueKey<String>('srs-fushi-card-view'),
+                      face: face,
+                      fields: rendered!.fields,
+                      definitionsHtml: rendered.fushiCardDefinitions!,
+                    )
+                  : faceBuilder(context, face),
             ),
           ),
         ),

@@ -9,7 +9,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
@@ -18,17 +17,11 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
 
-import 'package:file_picker/file_picker.dart' show FilePickerResult;
-import 'package:fushi/src/media/import/real_path_directory_picker.dart'
-    show pickFilesByExtensions;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
-    show readFontFamilyNameSync;
-import 'package:fushi/src/pages/implementations/font_preview/system_font_browser_page.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
-import 'package:fushi/src/reader/font_download_service.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
@@ -143,6 +136,15 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   AnkiRenderedCard? _sample;
   String _css = FushiCardNoteType.template.css;
+
+  /// 用户的 Fushi 卡片模板未改过：预览与复习页一样走原生 + 释义 WebView。
+  bool _sampleNative = true;
+  final String _sampleDefinitions =
+      _renderSample(
+        FushiCardNoteType.template.front,
+        kFushiCardDefinitionsTemplate,
+      )?.answer ??
+      '';
   SrsRenderedCard? _mine;
 
   @override
@@ -190,6 +192,12 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
           setState(() {
             _sample = sample;
             _css = type.css;
+            _sampleNative =
+                templateIdsToNames(tpl.front, idToName) ==
+                    FushiCardNoteType.template.front &&
+                templateIdsToNames(tpl.back, idToName) ==
+                    FushiCardNoteType.template.back &&
+                type.css == FushiCardNoteType.template.css;
           });
         }
       }
@@ -219,134 +227,25 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
 
   // ---------------------------------------------------------------- 字体
 
-  String _fontLabel(SrsCardFontChoice? f) =>
-      f == null ? t.srs_card_appearance_font_default : f.name;
-
-  /// 字体库目录里的字体文件（导入过的都在这里）。
-  List<SrsCardFontChoice> _libraryFonts() {
-    final String? root = ref.read(srsCardFontRootProvider);
-    if (root == null) return const <SrsCardFontChoice>[];
-    final Directory dir = Directory(root);
-    if (!dir.existsSync()) return const <SrsCardFontChoice>[];
-    final List<SrsCardFontChoice> out = <SrsCardFontChoice>[];
-    for (final FileSystemEntity e in dir.listSync()) {
-      if (e is! File || !FontDownloadService.isFontFileName(e.path)) continue;
-      final String name =
-          readFontFamilyNameSync(e.path) ?? p.basenameWithoutExtension(e.path);
-      out.add(SrsCardFontChoice(name: name, path: e.path));
-    }
-    out.sort(
-      (SrsCardFontChoice a, SrsCardFontChoice b) => a.name.compareTo(b.name),
-    );
-    return out;
+  /// 卡面字体链的摘要（字体库「复习卡片」用途里启用的字体，按顺序）。
+  String _fontSummary(List<Map<String, dynamic>> fonts) {
+    final List<String> names = <String>[
+      for (final Map<String, dynamic> f in fonts)
+        if ((f['enabled'] as bool? ?? true) && f['name'] is String)
+          f['name'] as String,
+    ];
+    return names.isEmpty
+        ? t.srs_card_appearance_font_default
+        : names.join(' · ');
   }
 
-  static const String _kDefault = '\u0000default';
-  static const String _kSystem = '\u0000system';
-  static const String _kImport = '\u0000import';
-
-  Future<void> _pickFont(SrsCardFontSlot slot, String title) async {
-    final SrsCardAppearance a = ref.read(srsCardAppearanceProvider);
-    final SrsCardFontChoice? current = a.font(slot);
-    final List<SrsCardFontChoice> library = _libraryFonts();
-    String keyOf(SrsCardFontChoice f) => '${f.name}\u0000${f.path ?? ''}';
-    final String? picked = await showFushiChoiceDialog<String>(
+  /// 卡面字体走统一字体库：已有字体、推荐下载、URL / 文件导入、系统字体、用途徽章都在那里。
+  Future<void> _openFontLibrary() => Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
       context: context,
-      title: title,
-      icon: FushiIcons.font,
-      selected: current == null ? _kDefault : keyOf(current),
-      options: <FushiChoiceOption<String>>[
-        FushiChoiceOption<String>(
-          value: _kDefault,
-          label: t.srs_card_appearance_font_default,
-        ),
-        if (current != null &&
-            !library.any((SrsCardFontChoice f) => keyOf(f) == keyOf(current)))
-          FushiChoiceOption<String>(value: keyOf(current), label: current.name),
-        for (final SrsCardFontChoice f in library)
-          FushiChoiceOption<String>(
-            value: keyOf(f),
-            label: f.name,
-            subtitle: t.srs_card_appearance_font_library,
-          ),
-        FushiChoiceOption<String>(
-          value: _kSystem,
-          label: t.srs_card_appearance_font_system,
-          icon: FushiIcons.font,
-        ),
-        FushiChoiceOption<String>(
-          value: _kImport,
-          label: t.srs_card_appearance_font_import,
-          icon: FushiIcons.importFile,
-        ),
-      ],
-    );
-    if (picked == null || !mounted) return;
-    SrsCardFontChoice? next;
-    switch (picked) {
-      case _kDefault:
-        next = null;
-      case _kSystem:
-        final List<String>? names = await Navigator.of(context)
-            .push<List<String>>(
-              adaptivePageRoute<List<String>>(
-                context: context,
-                builder: (_) => const SystemFontBrowserPage(
-                  alreadyAdded: <String>{},
-                  target: FontTarget.body,
-                ),
-              ),
-            );
-        if (names == null || names.isEmpty) return;
-        next = SrsCardFontChoice(name: names.first);
-      case _kImport:
-        next = await _importFont();
-        if (next == null) return;
-      default:
-        next =
-            library
-                .where((SrsCardFontChoice f) => keyOf(f) == picked)
-                .firstOrNull ??
-            current;
-    }
-    _set(ref.read(srsCardAppearanceProvider).withFont(slot, next));
-  }
-
-  /// 导入字体文件：与字体库同一个落地目录与校验（扩展名白名单 + 文件头魔数）。
-  Future<SrsCardFontChoice?> _importFont() async {
-    final String? root = ref.read(srsCardFontRootProvider);
-    if (root == null) return null;
-    final FilePickerResult? result = await pickFilesByExtensions(
-      context: context,
-      allowedExtensions: <String>[
-        for (final String e in kFontFileExtensions) e.substring(1),
-      ],
-    );
-    final String? path = result?.files.singleOrNull?.path;
-    if (path == null) return null;
-    try {
-      final File src = File(path);
-      if (!await FontDownloadService.isValidFontFile(src)) {
-        FushiToast.show(
-          msg: t.srs_card_appearance_font_import_failed,
-          severity: ToastSeverity.error,
-        );
-        return null;
-      }
-      final List<ImportedFontFile> files = await FontDownloadService(
-        fontsDir: Directory(root)..createSync(recursive: true),
-      ).importFile(src, fileName: p.basename(path));
-      if (files.isEmpty) return null;
-      return SrsCardFontChoice(name: files.first.name, path: files.first.path);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsCardAppearance.importFont', e, stack);
-      FushiToast.show(
-        msg: t.srs_card_appearance_font_import_failed,
-        severity: ToastSeverity.error,
-      );
-      return null;
-    }
-  }
+      builder: (_) => const CustomFontsPage(target: FontTarget.srsCard),
+    ),
+  );
 
   // ---------------------------------------------------------------- 页面
 
@@ -549,12 +448,14 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
                               _appearance,
                               previewTheme.colorScheme,
                             ).surface,
-                            child: faceBuilder(
+                            child: _faceView(
                               context,
                               face.withLayout(
                                 frame.layout,
                                 pageZoom: frame.pageZoom,
                               ),
+                              faceBuilder,
+                              mine: mine,
                             ),
                           ),
                         ),
@@ -567,6 +468,25 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 预览卡面：模板未改的 Fushi 卡片与复习页同样走原生混合渲染，否则整面 WebView。
+  Widget _faceView(
+    BuildContext context,
+    SrsCardFace face,
+    SrsCardFaceBuilder faceBuilder, {
+    required bool mine,
+  }) {
+    final String? defs = mine
+        ? _mine!.fushiCardDefinitions
+        : (_sampleNative ? _sampleDefinitions : null);
+    if (defs == null) return faceBuilder(context, face);
+    return SrsFushiCardView(
+      key: const ValueKey<String>('srs-card-preview-native'),
+      face: face,
+      fields: mine ? _mine!.fields : srsSampleCardFields(),
+      definitionsHtml: defs,
     );
   }
 
@@ -679,22 +599,16 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
       AdaptiveSettingsSection(
         title: t.srs_card_appearance_section_fonts,
         children: <Widget>[
-          for (final (SrsCardFontSlot slot, String label)
-              in <(SrsCardFontSlot, String)>[
-                (SrsCardFontSlot.ja, t.srs_card_appearance_font_ja),
-                (SrsCardFontSlot.zh, t.srs_card_appearance_font_zh),
-                (SrsCardFontSlot.latin, t.srs_card_appearance_font_latin),
-              ])
-            AdaptiveSettingsNavigationRow(
-              key: ValueKey<String>('srs-card-font-${slot.name}'),
-              title: label,
-              subtitle: _fontLabel(a.font(slot)),
-              icon: FushiIcons.font,
-              onTap: () => srsRunLogged(
-                'SrsCardAppearance.font',
-                () => _pickFont(slot, label),
-              ),
-            ),
+          AdaptiveSettingsNavigationRow(
+            key: const ValueKey<String>('srs-card-font-library'),
+            title: t.srs_card_appearance_font,
+            subtitle:
+                '${_fontSummary(ref.watch(srsCardFontsProvider))}\n'
+                '${t.srs_card_appearance_font_hint}',
+            icon: FushiIcons.font,
+            onTap: () =>
+                srsRunLogged('SrsCardAppearance.fonts', _openFontLibrary),
+          ),
         ],
       ),
       AdaptiveSettingsSection(
@@ -835,6 +749,12 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             t.srs_card_appearance_glossary_expanded,
             a.glossaryExpanded,
             (bool v) => a.copyWith(glossaryExpanded: v),
+          ),
+          _switch(
+            'compact-phone',
+            t.srs_card_appearance_compact_phone,
+            a.compactPhone,
+            (bool v) => a.copyWith(compactPhone: v),
           ),
           _switch(
             'front-reading',

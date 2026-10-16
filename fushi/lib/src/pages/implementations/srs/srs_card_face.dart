@@ -43,6 +43,9 @@ class SrsCardFace {
     this.layout = SrsCardLayout.auto,
     this.pageZoom,
     this.fushiCard = false,
+    this.onContentHeight,
+    this.onWheel,
+    this.hostCss = '',
   });
 
   final String cardId;
@@ -73,6 +76,18 @@ class SrsCardFace {
   /// 其它类型（Lapis、用户自建、Anki 导入）按自身 HTML/CSS 原样渲染，与 Anki 一致。
   final bool fushiCard;
 
+  /// 非 null 时页面上报内容高度（逻辑像素，body 外框）：Fushi 卡片混合渲染的窄版式据此
+  /// 把释义 WebView 撑到内容高度，整面卡由外层 Flutter 滚动。
+  final void Function(double height)? onContentHeight;
+
+  /// 非 null 时页面不可滚动（内容不高于视口）期间的滚轮增量交给宿主（桌面窄窗口里
+  /// 指针停在释义上滚滚轮，外层卡面照样滚）。
+  final void Function(double deltaY)? onWheel;
+
+  /// 宿主追加进主题样式的 CSS（随主题原地换，不重放卡片）。混合渲染的窄版式用它把
+  /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
+  final String hostCss;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -86,8 +101,49 @@ class SrsCardFace {
         layout: layout,
         pageZoom: pageZoom,
         fushiCard: fushiCard,
+        onContentHeight: onContentHeight,
+        onWheel: onWheel,
+        hostCss: hostCss,
       );
 }
+
+/// 页面 → 宿主的内容高度 / 滚轮转交（见 [SrsCardFace.onContentHeight] / [SrsCardFace.onWheel]）。
+const String kSrsContentHeightHandler = 'onSrsContentHeight';
+const String kSrsWheelHandler = 'onSrsWheel';
+
+/// 上报内容高度（ResizeObserver 盯 body；换卡 / 展开收起 / 图片加载都会触发）与
+/// 不可滚动时转交滚轮。幂等：外壳重放时不重复挂。
+@visibleForTesting
+String srsCardMetricsScript({required bool height, required bool wheel}) =>
+    '''
+(function(){
+  if (window.__fushiSrsMetrics) return;
+  window.__fushiSrsMetrics = true;
+  function call(name, v){
+    try { window.flutter_inappwebview.callHandler(name, v); } catch (e) {}
+  }
+  if ($height) {
+    var last = -1;
+    var report = function(){
+      var h = Math.ceil(document.body.getBoundingClientRect().height);
+      if (Math.abs(h - last) < 1) return;
+      last = h;
+      call('$kSrsContentHeightHandler', h);
+    };
+    if (window.ResizeObserver) new ResizeObserver(report).observe(document.body);
+    window.addEventListener('load', report);
+    document.addEventListener('fushi-srs-theme', report);
+    report();
+  }
+  if ($wheel) {
+    window.addEventListener('wheel', function(e){
+      var el = document.scrollingElement || document.documentElement;
+      if (el.scrollHeight > window.innerHeight + 1) return;
+      call('$kSrsWheelHandler', e.deltaY);
+    }, {passive: true});
+  }
+})();
+''';
 
 /// 卡面版式。
 enum SrsCardLayout {
@@ -632,9 +688,11 @@ class SrsCardFaceDocument {
       accent: accent,
       onAccent: onAccent,
       themedScrollbar: themedScrollbar,
-      appearanceCss: face.pageZoom == null
-          ? appearanceCss
-          : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}',
+      appearanceCss:
+          (face.pageZoom == null
+              ? appearanceCss
+              : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
+          face.hostCss,
     ),
     classes: srsCardHostClasses(
       dark: dark,
@@ -916,6 +974,7 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
   required String mediaUrlPrefix,
   required bool themedScrollbar,
   required String Function(String path) fontUrl,
+  Iterable<Map<String, dynamic>> fonts = const <Map<String, dynamic>>[],
   String? fontRoot,
 }) {
   final bool dark = theme.brightness == Brightness.dark;
@@ -939,6 +998,7 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
             dark: dark,
             labels: labels,
             fontUrl: fontUrl,
+            fonts: fonts,
             fontRoot: fontRoot,
           )
         : '',
@@ -951,6 +1011,7 @@ SrsCardLabels srsCardLabels() => SrsCardLabels(
   allDefinitions: t.srs_card_label_all_definitions,
   frequency: t.srs_card_label_frequency,
   source: t.srs_card_label_source,
+  showMore: t.srs_card_label_show_more,
 );
 
 /// WebView 卡面。保留同一个平台视图、外壳页只加载一次；换卡 / 翻面 / 换主题经
@@ -1009,6 +1070,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
     themedScrollbar: srsCardUsesThemedScrollbar,
     fontUrl: (String path) =>
         srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
+    fonts: ref.read(srsCardFontsProvider),
     fontRoot: ref.read(srsCardFontRootProvider),
   );
 
@@ -1028,7 +1090,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
         fontRoot: ref.read(srsCardFontRootProvider),
         // 只有 Fushi 卡片的卡面供给外观字体。
         whitelist: widget.face.fushiCard
-            ? ref.read(srsCardAppearanceProvider).fontFilePaths
+            ? srsCardFontWhitelist(
+                ref.read(srsCardFontsProvider),
+                fontRoot: ref.read(srsCardFontRootProvider),
+              )
             : const <String>{},
       );
     }
@@ -1064,6 +1129,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
     super.initState();
     // 外观改动（定制页里拖滑块 / 切开关）即时下发：只换主题部分，卡片脚本不重跑。
     ref.listenManual<SrsCardAppearance>(srsCardAppearanceProvider, (_, _) {
+      if (mounted) _sync.update(_document(context));
+    });
+    // 字体库里「复习卡片」用途的字体变了（换序 / 增删 / 下载完成）：同样只换主题部分。
+    ref.listenManual<List<Map<String, dynamic>>>(srsCardFontsProvider, (_, _) {
       if (mounted) _sync.update(_document(context));
     });
   }
@@ -1112,6 +1181,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
             ? srsReviewKeyBridgeScript
             : srsCardFaceBridgeScript(widget.face.bridgeKeys),
       );
+      final bool height = widget.face.onContentHeight != null;
+      final bool wheel = widget.face.onWheel != null;
+      if (height || wheel) {
+        await controller.evaluateJavascript(
+          source: srsCardMetricsScript(height: height, wheel: wheel),
+        );
+      }
     } catch (_) {
       // 平台视图正在重建：下一次 onLoadStop 会再注入（脚本自带幂等守卫）。
     }
@@ -1155,6 +1231,26 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace> {
             callback: (List<dynamic> arguments) {
               final Object? token = arguments.isEmpty ? null : arguments.first;
               if (token is String && mounted) widget.face.onBridgeKey(token);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsContentHeightHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? h = arguments.isEmpty ? null : arguments.first;
+              if (h is num && mounted) {
+                widget.face.onContentHeight?.call(h.toDouble());
+              }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsWheelHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? dy = arguments.isEmpty ? null : arguments.first;
+              if (dy is num && mounted) {
+                widget.face.onWheel?.call(dy.toDouble());
+              }
               return null;
             },
           );

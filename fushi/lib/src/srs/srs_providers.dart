@@ -11,6 +11,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
@@ -74,6 +75,30 @@ final Provider<SrsCardAppearance> srsCardAppearanceProvider =
         appProvider.select((AppModel app) => app.srsCardAppearance),
       ),
     );
+
+/// 卡面字体链：统一字体库里「复习卡片」用途（`FontTarget.srsCard`）的有序字体列表
+/// （`[{name, path, enabled}]`）。按内容比较，字体库没改动时不触发卡面更新。
+final Provider<List<Map<String, dynamic>>> srsCardFontsProvider =
+    Provider<List<Map<String, dynamic>>>((Ref ref) {
+      final String json = ref.watch(
+        appProvider.select((AppModel app) => jsonEncode(app.srsCardFonts)),
+      );
+      return <Map<String, dynamic>>[
+        for (final Object? e in jsonDecode(json) as List<Object?>)
+          if (e is Map) e.cast<String, dynamic>(),
+      ];
+    });
+
+/// 字体库「复习卡片」链里已注册进引擎的 family 名（原生渲染 Fushi 卡片用）。
+final Provider<List<String>> srsCardFontFamiliesProvider =
+    Provider<List<String>>((Ref ref) {
+      final String joined = ref.watch(
+        appProvider.select(
+          (AppModel app) => jsonEncode(app.srsCardFontFamilies),
+        ),
+      );
+      return (jsonDecode(joined) as List<Object?>).whereType<String>().toList();
+    });
 
 /// 卡面可供给的导入字体目录（app 字体库目录；测试覆写）。null = 不供给导入字体。
 final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {

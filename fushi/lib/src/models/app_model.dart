@@ -2525,6 +2525,22 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// [FontTarget.srsCard] 原始字体列表（`[{name,path,enabled,...}]`），由
+  /// [refreshAppFont] 刷新；卡面 WebView 用它生成 @font-face。
+  List<Map<String, dynamic>> _srsCardFonts = const <Map<String, dynamic>>[];
+
+  /// 复习卡片字体列表的不可变拷贝。
+  List<Map<String, dynamic>> get srsCardFonts =>
+      List<Map<String, dynamic>>.unmodifiable(<Map<String, dynamic>>[
+        for (final Map<String, dynamic> row in _srsCardFonts)
+          Map<String, dynamic>.unmodifiable(row),
+      ]);
+
+  /// [FontTarget.srsCard] 整链解析并注册进引擎后的 family 名（供原生渲染）。
+  List<String> _srsCardFontFamilies = const <String>[];
+  List<String> get srsCardFontFamilies =>
+      List<String>.unmodifiable(_srsCardFontFamilies);
+
   /// Loads **all** enabled entries of the `appUiFonts` target as the app-wide UI
   /// font chain (registering each file with the Flutter engine via
   /// [AppFontLoader]) and rebuilds the theme. Falls back to the display
@@ -2551,14 +2567,26 @@ class AppModel with ChangeNotifier {
     // [_gameLookupFontFamilies]。
     final List<String> gameFamilies =
         await AppFontLoader.resolveAndLoadAll(settings.gameLookupFonts);
+    // 复习「Fushi 卡片」字体链：卡面是 WebView，这里保存原始列表供注入；同时
+    // 整链注册进引擎，供将来原生渲染使用。
+    final List<Map<String, dynamic>> srsCardFonts = <Map<String, dynamic>>[
+      for (final Map<String, dynamic> row in settings.srsCardFonts)
+        Map<String, dynamic>.of(row),
+    ];
+    final List<String> srsCardFamilies =
+        await AppFontLoader.resolveAndLoadAll(srsCardFonts);
     if (listEquals(families, _appFontFamilies) &&
         subtitleFamily == _subtitleFontFamily &&
-        listEquals(gameFamilies, _gameLookupFontFamilies)) {
+        listEquals(gameFamilies, _gameLookupFontFamilies) &&
+        listEquals(srsCardFamilies, _srsCardFontFamilies) &&
+        jsonEncode(srsCardFonts) == jsonEncode(_srsCardFonts)) {
       return;
     }
     _appFontFamilies = families;
     _subtitleFontFamily = subtitleFamily;
     _gameLookupFontFamilies = gameFamilies;
+    _srsCardFonts = srsCardFonts;
+    _srsCardFontFamilies = srsCardFamilies;
     notifyListeners();
   }
 

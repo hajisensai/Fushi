@@ -174,4 +174,53 @@ void main() {
       );
     },
   );
+
+  test(
+    'renderCard gives the definitions-only back only for an unmodified Fushi card',
+    () async {
+      final SrsDbStore a = await device('a');
+      Future<SrsRenderedCard> render(
+        String typeId,
+        String Function(String) field,
+      ) async {
+        final String note = await a.createNote(
+          noteTypeId: typeId,
+          fieldsById: <String, String>{
+            field('Expression'): '通う',
+            field('MainDefinition'): '<ol><li>to commute</li></ol>',
+          },
+        );
+        final SrsCardCacheRow card = (await a.cardsOfNote(note)).first;
+        return (await a.renderCard(card.id))!;
+      }
+
+      final SrsRenderedCard fushi = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(fushi.fields['Expression'], '通う');
+      expect(fushi.fushiCardDefinitions, contains('fc-defs-only'));
+      expect(fushi.fushiCardDefinitions, contains('to commute'));
+      expect(fushi.fushiCardDefinitions, isNot(contains('通う')));
+
+      final SrsNoteTypeView lapisType = (await a.noteType(a.lapisNoteTypeId))!;
+      final SrsRenderedCard lapis = await render(
+        a.lapisNoteTypeId,
+        (String n) =>
+            lapisType.fields.firstWhere((SrsFieldDef f) => f.name == n).id,
+      );
+      expect(lapis.fushiCardDefinitions, isNull);
+
+      // 用户改过 Fushi 卡片的样式：回到整面 WebView（不再原生渲染）。
+      await a.setCss(
+        a.fushiCardNoteTypeId,
+        '${FushiCardNoteType.template.css} .x{}',
+      );
+      final SrsRenderedCard edited = await render(
+        a.fushiCardNoteTypeId,
+        (String n) => srsFushiCardFieldId(kProfile, n),
+      );
+      expect(edited.fushiCardDefinitions, isNull);
+    },
+  );
 }

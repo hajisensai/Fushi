@@ -6,8 +6,8 @@
 /// 卡片脚本、不重排卡片（见 srs_card_face.dart）。
 ///
 /// 存储：一个 JSON 偏好 `srs_card_appearance`（按 profile，随 Profile 快照 / 备份走，不是
-/// 设备本地键）。字体文件路径是本机路径：换到另一台设备时那台没有这个文件，拦截器按白名单 +
-/// 存在性检查拒掉，卡面回落到默认字体链，不报错。
+/// 设备本地键）。字体不在这里：卡面字体是统一字体库的「复习卡片」用途
+/// （`FontTarget.srsCard`），导入 / 下载 / 系统字体 / 同步都走字体库。
 library;
 
 import 'dart:convert';
@@ -52,50 +52,10 @@ enum SrsCardDensity {
   );
 }
 
-/// 一个字体选择：系统字体只有族名（[path] 为空）；导入的字体文件带本机路径。
-@immutable
-class SrsCardFontChoice {
-  const SrsCardFontChoice({required this.name, this.path});
-
-  /// 字体族名（系统字体 = CSS 族名；导入文件 = 字体自报的家族名，同时作 @font-face 族名）。
-  final String name;
-
-  /// 导入字体文件的绝对路径；系统字体为 null。
-  final String? path;
-
-  bool get isFile => path != null;
-
-  static SrsCardFontChoice? fromJson(Object? json) {
-    if (json is! Map) return null;
-    final Object? name = json['name'];
-    final Object? path = json['path'];
-    if (name is! String || name.trim().isEmpty) return null;
-    return SrsCardFontChoice(name: name, path: path is String ? path : null);
-  }
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'name': name,
-    if (path != null) 'path': path,
-  };
-
-  @override
-  bool operator ==(Object other) =>
-      other is SrsCardFontChoice && other.name == name && other.path == path;
-
-  @override
-  int get hashCode => Object.hash(name, path);
-}
-
-/// 字体槽：日文、中文、西文（拉丁字母与数字）。
-enum SrsCardFontSlot { ja, zh, latin }
-
 /// 卡面外观设置。默认值 = 模板默认外观（不注入任何覆盖时的样子）。
 @immutable
 class SrsCardAppearance {
   const SrsCardAppearance({
-    this.fontJa,
-    this.fontZh,
-    this.fontLatin,
     this.textScale = 1.0,
     this.termScale = 1.0,
     this.lineSpacing = 1.0,
@@ -111,6 +71,7 @@ class SrsCardAppearance {
     this.frontReading = false,
     this.frontFrequency = false,
     this.sentenceFurigana = false,
+    this.compactPhone = true,
   });
 
   /// 字号缩放的取值范围（正文 / 词条 / 行距共用夹取）。
@@ -120,10 +81,6 @@ class SrsCardAppearance {
   static const double maxTermScale = 1.35;
   static const double minLineSpacing = 0.85;
   static const double maxLineSpacing = 1.3;
-
-  final SrsCardFontChoice? fontJa;
-  final SrsCardFontChoice? fontZh;
-  final SrsCardFontChoice? fontLatin;
 
   /// 正文（例句、释义、读音）字号倍率。
   final double textScale;
@@ -161,34 +118,9 @@ class SrsCardAppearance {
   /// 例句注音常显（关 = 悬停 / 点按时显示）。
   final bool sentenceFurigana;
 
-  SrsCardFontChoice? font(SrsCardFontSlot slot) => switch (slot) {
-    SrsCardFontSlot.ja => fontJa,
-    SrsCardFontSlot.zh => fontZh,
-    SrsCardFontSlot.latin => fontLatin,
-  };
-
-  /// 换某个字体槽（[font] 为 null = 恢复默认）。
-  SrsCardAppearance withFont(SrsCardFontSlot slot, SrsCardFontChoice? font) =>
-      SrsCardAppearance(
-        fontJa: slot == SrsCardFontSlot.ja ? font : fontJa,
-        fontZh: slot == SrsCardFontSlot.zh ? font : fontZh,
-        fontLatin: slot == SrsCardFontSlot.latin ? font : fontLatin,
-        textScale: textScale,
-        termScale: termScale,
-        lineSpacing: lineSpacing,
-        colorSource: colorSource,
-        customAccent: customAccent,
-        density: density,
-        dictUnified: dictUnified,
-        showPicture: showPicture,
-        showTranslation: showTranslation,
-        showFrequency: showFrequency,
-        showSource: showSource,
-        glossaryExpanded: glossaryExpanded,
-        frontReading: frontReading,
-        frontFrequency: frontFrequency,
-        sentenceFurigana: sentenceFurigana,
-      );
+  /// 手机精简背面：窄屏时多部词典改成页签、只显示一部，长主释义收到约半屏
+  /// （点「展开全文」看全）。关掉 = 窄屏也逐部列出、主释义全文。宽屏不受影响。
+  final bool compactPhone;
 
   SrsCardAppearance copyWith({
     double? textScale,
@@ -206,10 +138,8 @@ class SrsCardAppearance {
     bool? frontReading,
     bool? frontFrequency,
     bool? sentenceFurigana,
+    bool? compactPhone,
   }) => SrsCardAppearance(
-    fontJa: fontJa,
-    fontZh: fontZh,
-    fontLatin: fontLatin,
     textScale: textScale ?? this.textScale,
     termScale: termScale ?? this.termScale,
     lineSpacing: lineSpacing ?? this.lineSpacing,
@@ -225,6 +155,7 @@ class SrsCardAppearance {
     frontReading: frontReading ?? this.frontReading,
     frontFrequency: frontFrequency ?? this.frontFrequency,
     sentenceFurigana: sentenceFurigana ?? this.sentenceFurigana,
+    compactPhone: compactPhone ?? this.compactPhone,
   );
 
   static double _num(Object? v, double fallback, double min, double max) =>
@@ -238,9 +169,6 @@ class SrsCardAppearance {
     const SrsCardAppearance d = SrsCardAppearance();
     final Object? accent = json['customAccent'];
     return SrsCardAppearance(
-      fontJa: SrsCardFontChoice.fromJson(json['fontJa']),
-      fontZh: SrsCardFontChoice.fromJson(json['fontZh']),
-      fontLatin: SrsCardFontChoice.fromJson(json['fontLatin']),
       textScale: _num(
         json['textScale'],
         d.textScale,
@@ -271,6 +199,7 @@ class SrsCardAppearance {
       frontReading: _bool(json['frontReading'], d.frontReading),
       frontFrequency: _bool(json['frontFrequency'], d.frontFrequency),
       sentenceFurigana: _bool(json['sentenceFurigana'], d.sentenceFurigana),
+      compactPhone: _bool(json['compactPhone'], d.compactPhone),
     );
   }
 
@@ -285,9 +214,6 @@ class SrsCardAppearance {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-    if (fontJa != null) 'fontJa': fontJa!.toJson(),
-    if (fontZh != null) 'fontZh': fontZh!.toJson(),
-    if (fontLatin != null) 'fontLatin': fontLatin!.toJson(),
     'textScale': textScale,
     'termScale': termScale,
     'lineSpacing': lineSpacing,
@@ -303,19 +229,10 @@ class SrsCardAppearance {
     'frontReading': frontReading,
     'frontFrequency': frontFrequency,
     'sentenceFurigana': sentenceFurigana,
+    'compactPhone': compactPhone,
   };
 
   String encode() => jsonEncode(toJson());
-
-  /// 导入字体文件的路径（拦截器的白名单）。
-  Set<String> get fontFilePaths => <String>{
-    for (final SrsCardFontChoice? f in <SrsCardFontChoice?>[
-      fontJa,
-      fontZh,
-      fontLatin,
-    ])
-      if (f?.path != null) p.canonicalize(f!.path!),
-  };
 
   @override
   bool operator ==(Object other) =>
@@ -332,11 +249,15 @@ class SrsCardLabels {
     required this.allDefinitions,
     required this.frequency,
     required this.source,
+    this.showMore = 'Show more',
   });
 
   final String allDefinitions;
   final String frequency;
   final String source;
+
+  /// 窄屏长释义收起后的「展开全文」按钮。
+  final String showMore;
 }
 
 // ---------------------------------------------------------------- 注入形式
@@ -422,70 +343,62 @@ String? srsFontPathFromUrl(Uri url) {
   }
 }
 
-/// 一个字体选择的 CSS 族名（与 @font-face 声明一致）。
-String _familyOf(SrsCardFontChoice f) =>
-    ReaderCustomFontCss.cssFontFamilyName(f.name);
+/// 卡面字体链里导入字体文件的路径（规范化；拦截器的白名单）。只认启用的、落在
+/// [fontRoot]（字体库目录）内的文件。
+Set<String> srsCardFontWhitelist(
+  Iterable<Map<String, dynamic>> fonts, {
+  required String? fontRoot,
+}) {
+  if (fontRoot == null) return const <String>{};
+  return <String>{
+    for (final Map<String, dynamic> f in fonts)
+      if ((f['enabled'] as bool? ?? true) && f['path'] is String)
+        ?ReaderCustomFontCss.safeFontPath(
+          f['path'] as String,
+          allowedRoots: <String>[fontRoot],
+        ),
+  }.map(p.canonicalize).toSet();
+}
 
-/// 外观 → 注入外壳主题样式里的 CSS（`:root` 变量 + 导入字体的 @font-face）。
+/// 外观 → 注入外壳主题样式里的 CSS（`:root` 变量 + 字体库字体的 @font-face）。
 ///
-/// [fontUrl] 把字体文件路径换成卡面虚拟域 URL；[fontRoot] 是允许供给的字体目录
-/// （不在其内的路径不出 @font-face，等于没选）。
+/// [fonts] 是字体库里「复习卡片」用途（`FontTarget.srsCard`）的有序字体链
+/// （`[{name, path, enabled}]`，与阅读器正文同一机制）：整链排在模板默认的日文 /
+/// 中文 / 界面字体链之前，浏览器按字形逐个回落（西文字体放在前面就只作用于拉丁字母）。
+/// [fontUrl] 把字体文件路径换成卡面虚拟域 URL；[fontRoot] 之外的文件不出 @font-face。
 String srsCardAppearanceCss({
   required SrsCardAppearance appearance,
   required ColorScheme appScheme,
   required bool dark,
   required SrsCardLabels labels,
   required String Function(String path) fontUrl,
+  Iterable<Map<String, dynamic>> fonts = const <Map<String, dynamic>>[],
   String? fontRoot,
 }) {
   final SrsCardAppearance a = appearance;
-  final StringBuffer faces = StringBuffer();
-  final Set<String> declared = <String>{};
-  String? familyFor(SrsCardFontChoice? f) {
-    if (f == null) return null;
-    final String family = _familyOf(f);
-    final String? path = f.path;
-    if (path == null) return family;
-    final String? safe = ReaderCustomFontCss.safeFontPath(
-      path,
-      allowedRoots: <String>[?fontRoot],
-    );
-    if (safe == null) return null;
-    if (declared.add('$family\u0000$safe')) {
-      faces.write(
-        '@font-face{font-family:$family;src:url("${fontUrl(safe)}");'
-        'font-display:swap;}',
+  // 没有字体目录时只认系统字体（不带路径的条目）：build 在根为空时不做目录校验。
+  final ({String fontFamily, String fontFaces}) chain =
+      ReaderCustomFontCss.build(
+        fontRoot == null
+            ? fonts.where((Map<String, dynamic> f) => f['path'] == null)
+            : fonts,
+        allowedDirectories: <String>[?fontRoot],
+        fontUrlBuilder: fontUrl,
       );
-    }
-    return family;
-  }
-
-  final String? latin = familyFor(a.fontLatin);
-  final String? ja = familyFor(a.fontJa);
-  final String? zh = familyFor(a.fontZh);
-  // 西文字体放在链首：它不含汉字 / 假名，CJK 字形自然回落到后面的日文 / 中文字体。
-  String chain(List<String?> picked, String defaults) =>
-      <String>[...picked.whereType<String>(), defaults].join(', ');
+  String withChain(String defaults) =>
+      chain.fontFamily.isEmpty ? defaults : '${chain.fontFamily}, $defaults';
 
   final StringBuffer vars = StringBuffer(':root{');
   srsCardPaletteVars(srsCardColorScheme(a, appScheme), dark: dark).forEach(
     (String name, Color c) => vars.write('$name:${_cssColorValue(c)};'),
   );
-  if (latin != null || ja != null) {
-    vars.write(
-      '--fushi-srs-font-ja:${chain(<String?>[latin, ja], kSrsCardDefaultFontJa)};',
-    );
-  }
-  if (latin != null || zh != null) {
-    final String zhChain = chain(<String?>[latin, zh], kSrsCardDefaultFontZh);
+  if (chain.fontFamily.isNotEmpty) {
+    final String zh = withChain(kSrsCardDefaultFontZh);
     vars
-      ..write('--fushi-srs-font-zh:$zhChain;')
-      ..write('--fushi-srs-font-zh-hant:$zhChain;');
-  }
-  if (latin != null) {
-    vars.write(
-      '--fushi-srs-font-ui:${chain(<String?>[latin], kSrsCardDefaultFontUi)};',
-    );
+      ..write('--fushi-srs-font-ja:${withChain(kSrsCardDefaultFontJa)};')
+      ..write('--fushi-srs-font-zh:$zh;')
+      ..write('--fushi-srs-font-zh-hant:$zh;')
+      ..write('--fushi-srs-font-ui:${withChain(kSrsCardDefaultFontUi)};');
   }
   vars
     ..write('--fushi-srs-text-scale:${_fmt(a.textScale)};')
@@ -494,8 +407,9 @@ String srsCardAppearanceCss({
     ..write('--fushi-srs-label-more:${srsCssString(labels.allDefinitions)};')
     ..write('--fushi-srs-label-frequency:${srsCssString(labels.frequency)};')
     ..write('--fushi-srs-label-source:${srsCssString(labels.source)};')
+    ..write('--fushi-srs-label-show-more:${srsCssString(labels.showMore)};')
     ..write('}');
-  return '$faces$vars';
+  return '${chain.fontFaces}$vars';
 }
 
 /// 外观 → `.card` 上的宿主类名（空格分隔，不含 `card` 本身与夜间类名）。
@@ -509,6 +423,7 @@ String srsCardAppearanceClasses(SrsCardAppearance a) => <String>[
   if (!a.showTranslation) 'fushi-srs-hide-translation',
   if (!a.showFrequency) 'fushi-srs-hide-frequency',
   if (!a.showSource) 'fushi-srs-hide-source',
+  if (!a.compactPhone) 'fushi-srs-full-gloss',
   if (a.density != SrsCardDensity.standard)
     'fushi-srs-density-${a.density.wire}',
 ].join(' ');

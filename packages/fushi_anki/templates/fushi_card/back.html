@@ -237,7 +237,9 @@
         /* 宽屏左栏能整个放进视口时吸顶：往下翻释义时词条与例句一直在眼前。 */
         aside.classList.toggle("fc-aside--sticky", wide && aside.offsetHeight < window.innerHeight - 48);
       }
-      var key = (expanded ? "e" : "c") + (wide ? "w" : "n");
+      updateClamp();
+      var full = hostHas("fushi-srs-full-gloss");
+      var key = (expanded ? "e" : "c") + (wide ? "w" : "n") + (full ? "f" : "");
       if (root.__fcLayoutKey === key) return;
       root.__fcLayoutKey = key;
       var main = root.querySelector(".fc-gloss--main");
@@ -245,11 +247,72 @@
       if (more) {
         more.open = expanded || !main;
         var groups = more.querySelectorAll(".fc-dict");
-        /* 没有主释义时第一部词典就是主释义：窄屏也展开它，首屏就有释义可读。 */
+        var tabs = !wide && !full && groups.length > 1;
+        /* 页签模式下每部都展开（一次只显示选中的那部）；否则沿用逐部折叠：
+           没有主释义时第一部词典就是主释义，窄屏也展开它。 */
         groups.forEach(function (g, i) {
-          g.open = expanded || wide || groups.length === 1 || (i === 0 && !main);
+          g.open = tabs || expanded || wide || groups.length === 1 || (i === 0 && !main);
+        });
+        setTabs(more, tabs);
+      }
+    }
+
+    /* ---------- 窄屏：词典页签 ----------
+       「全部释义」里每部词典一张卡、各自折叠时，二三十部词典光标题行就排出一千多像素。
+       窄屏改成页签：上方一排可换行的词典名 chip，下方只显示选中的那一部（默认第一部，
+       点 chip 切换，一次点按就看到任意一部的全文）。宽屏照旧逐部展开。 */
+    function setTabs(more, on) {
+      var dicts = more.querySelector(".fc-dicts");
+      if (!dicts) return;
+      var bar = more.querySelector(".fc-dict-tabs");
+      more.classList.toggle("fc-tabs-on", on);
+      if (!on) return;
+      var groups = Array.prototype.slice.call(dicts.querySelectorAll(":scope > .fc-dict"));
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.className = "fc-dict-tabs";
+        bar.setAttribute("role", "tablist");
+        groups.forEach(function (g, i) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "fc-dict-tab";
+          b.setAttribute("role", "tab");
+          b.textContent = g.getAttribute("data-fc-dict") || String(i + 1);
+          b.addEventListener("click", function () { select(i); });
+          bar.appendChild(b);
+        });
+        dicts.parentNode.insertBefore(bar, dicts);
+      }
+      function select(i) {
+        groups.forEach(function (g, j) {
+          g.classList.toggle("fc-dict--active", i === j);
+          bar.children[j].setAttribute("aria-selected", i === j ? "true" : "false");
         });
       }
+      var current = groups.findIndex(function (g) { return g.classList.contains("fc-dict--active"); });
+      select(current < 0 ? 0 : current);
+    }
+
+    /* ---------- 窄屏：主释义过长时收到约半屏，一次点按看全文 ---------- */
+    function updateClamp() {
+      var main = root.querySelector(".fc-gloss--main");
+      if (!main) return;
+      var btn = root.querySelector(".fc-clamp-toggle");
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "fc-clamp-toggle";
+        btn.addEventListener("click", function () {
+          main.classList.add("fc-gloss--unclamped");
+          btn.hidden = true;
+        });
+        main.parentNode.insertBefore(btn, main.nextSibling);
+      }
+      if (main.classList.contains("fc-gloss--unclamped")) { btn.hidden = true; return; }
+      main.classList.add("fc-gloss--clamp");
+      /* 只有真的被截断才显示按钮（宽屏 / 宿主关掉收起时 CSS 不截断，按钮也不出现）。 */
+      btn.hidden = !(main.scrollHeight > main.clientHeight + 8);
+      main.classList.toggle("fc-gloss--clamped", !btn.hidden);
     }
     window.__fcApplyLayout = applyLayout;
     if (!window.__fcLayoutListeners) {
@@ -265,6 +328,9 @@
       if (!imgs.length) return;
       imgs.forEach(function (img) {
         if (!img.complete) img.addEventListener("load", applyLayout, { once: true });
+      });
+      root.querySelectorAll(".fc-gloss img").forEach(function (img) {
+        if (!img.complete) img.addEventListener("load", updateClamp, { once: true });
       });
       var box = document.createElement("div");
       box.className = "fc-lightbox";

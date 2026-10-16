@@ -8034,14 +8034,7 @@
   "srs_card_label_source": "来源",
   "srs_card_appearance_hint": "作用于「Fushi 卡片」笔记类型",
   "srs_card_appearance_section_fonts": "字体",
-  "srs_card_appearance_font_ja": "日文字体",
-  "srs_card_appearance_font_zh": "中文字体",
-  "srs_card_appearance_font_latin": "西文字体",
   "srs_card_appearance_font_default": "默认",
-  "srs_card_appearance_font_library": "字体库",
-  "srs_card_appearance_font_system": "系统字体…",
-  "srs_card_appearance_font_import": "导入字体文件…",
-  "srs_card_appearance_font_import_failed": "不是有效的字体文件",
   "srs_card_appearance_section_text": "文字",
   "srs_card_appearance_text_size": "正文字号",
   "srs_card_appearance_term_size": "词条字号",
@@ -8081,5 +8074,11 @@
   "srs_migrate_fushi_none": "没有可迁移的 Lapis 笔记",
   "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记",
   "srs_card_appearance_title": "Fushi 卡片外观",
-  "srs_card_edit_template": "编辑 $name 模板"
+  "srs_card_edit_template": "编辑 $name 模板",
+  "font_target_srs_card": "复习卡片",
+  "font_target_srs_card_short": "卡片",
+  "srs_card_appearance_font": "卡面字体",
+  "srs_card_appearance_font_hint": "从字体库选择；按顺序逐字回落（西文字体放前面）",
+  "srs_card_label_show_more": "展开全文",
+  "srs_card_appearance_compact_phone": "手机精简背面（词典页签、长释义收起）"
 }

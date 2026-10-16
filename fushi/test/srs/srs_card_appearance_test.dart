@@ -9,8 +9,10 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -35,6 +37,7 @@ String _css(
   bool dark = false,
   String? fontRoot,
   ColorScheme? scheme,
+  List<Map<String, dynamic>> fonts = const <Map<String, dynamic>>[],
 }) => srsCardAppearanceCss(
   appearance: a,
   appScheme:
@@ -47,6 +50,7 @@ String _css(
   labels: _labels,
   fontUrl: (String path) => srsCardFontUrl(path, customScheme: false),
   fontRoot: fontRoot,
+  fonts: fonts,
 );
 
 /// 外观定制页测试用的 AppModel：外观偏好放内存里（不碰数据库）。
@@ -126,40 +130,52 @@ void main() {
       );
     });
 
-    test('字体：西文在链首，导入文件出 @font-face（只认字体目录内的文件），系统字体只进族名', () {
+    test('字体库链：排在默认链之前，导入文件出 @font-face（只认字体目录内），系统字体只进族名', () {
       final String root = p.join(Directory.systemTemp.path, 'fonts-root');
-      final SrsCardAppearance a = SrsCardAppearance(
-        fontJa: SrsCardFontChoice(
-          name: 'Klee One',
-          path: p.join(root, 'klee.ttf'),
-        ),
-        fontZh: const SrsCardFontChoice(name: 'LXGW WenKai'),
-        fontLatin: SrsCardFontChoice(
-          name: 'Evil',
-          path: p.join(Directory.systemTemp.path, 'elsewhere', 'evil.ttf'),
-        ),
+      final List<Map<String, dynamic>> fonts = <Map<String, dynamic>>[
+        <String, dynamic>{'name': 'Inter'},
+        <String, dynamic>{'name': 'Klee One', 'path': p.join(root, 'klee.ttf')},
+        <String, dynamic>{'name': 'Off', 'enabled': false},
+        <String, dynamic>{
+          'name': 'Evil',
+          'path': p.join(Directory.systemTemp.path, 'elsewhere', 'evil.ttf'),
+        },
+      ];
+      final String css = _css(
+        const SrsCardAppearance(),
+        fontRoot: root,
+        fonts: fonts,
       );
-      final String css = _css(a, fontRoot: root);
       expect(
         css,
         contains(
-          '@font-face{font-family:"Klee One";src:url("https://srs.local/fonts/',
+          '@font-face { font-family: "Klee One"; src: url("https://srs.local/fonts/',
         ),
       );
       expect(css, isNot(contains('Evil')), reason: '目录外的字体文件等于没选');
-      expect(css, contains('--fushi-srs-font-ja:"Klee One", "Hiragino Sans"'));
-      expect(css, contains('--fushi-srs-font-zh:"LXGW WenKai", "PingFang SC"'));
-      expect(css, isNot(contains('--fushi-srs-font-ui')));
-
-      final String latin = _css(
-        const SrsCardAppearance(
-          fontJa: SrsCardFontChoice(name: 'JA'),
-          fontLatin: SrsCardFontChoice(name: 'Inter'),
-        ),
+      expect(css, isNot(contains('"Off"')));
+      expect(
+        css,
+        contains('--fushi-srs-font-ja:"Inter", "Klee One", "Hiragino Sans"'),
       );
-      expect(latin, contains('--fushi-srs-font-ja:"Inter", "JA", '));
-      expect(latin, contains('--fushi-srs-font-zh:"Inter", "PingFang SC"'));
-      expect(latin, contains('--fushi-srs-font-ui:"Inter", system-ui'));
+      expect(
+        css,
+        contains('--fushi-srs-font-zh:"Inter", "Klee One", "PingFang SC"'),
+      );
+      expect(
+        css,
+        contains('--fushi-srs-font-ui:"Inter", "Klee One", system-ui'),
+      );
+
+      // 没有字体目录：只留系统字体，文件一律不出。
+      final String noRoot = _css(const SrsCardAppearance(), fonts: fonts);
+      expect(noRoot, isNot(contains('@font-face')));
+      expect(noRoot, contains('--fushi-srs-font-ja:"Inter", "Hiragino Sans"'));
+
+      expect(srsCardFontWhitelist(fonts, fontRoot: root), <String>{
+        p.canonicalize(p.join(root, 'klee.ttf')),
+      });
+      expect(srsCardFontWhitelist(fonts, fontRoot: null), isEmpty);
     });
 
     test('区块显隐 / 正面读音 / 密度 / 统一词典样式 → 宿主类名', () {
@@ -192,7 +208,6 @@ void main() {
 
     test('偏好 JSON：往返一致；坏值 / 越界夹取；坏 JSON = 默认', () {
       const SrsCardAppearance a = SrsCardAppearance(
-        fontJa: SrsCardFontChoice(name: 'A', path: '/x/a.ttf'),
         textScale: 1.2,
         colorSource: SrsCardColorSource.custom,
         customAccent: 0xFF00696F,
@@ -208,13 +223,11 @@ void main() {
           'textScale': 9,
           'lineSpacing': 'x',
           'density': 'weird',
-          'fontZh': <String, Object?>{'name': ''},
         },
       );
       expect(clamped.textScale, SrsCardAppearance.maxTextScale);
       expect(clamped.lineSpacing, 1);
       expect(clamped.density, SrsCardDensity.standard);
-      expect(clamped.fontZh, isNull);
     });
 
     test('只换外观走换主题、不重放卡片', () async {
@@ -274,7 +287,6 @@ void main() {
             colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
           ),
           appearance: const SrsCardAppearance(
-            fontJa: SrsCardFontChoice(name: 'Klee One'),
             colorSource: SrsCardColorSource.custom,
             customAccent: 0xFFB3261E,
             showPicture: false,
@@ -283,6 +295,9 @@ void main() {
           mediaUrlPrefix: 'https://srs.local/media/',
           themedScrollbar: false,
           fontUrl: (String path) => path,
+          fonts: const <Map<String, dynamic>>[
+            <String, dynamic>{'name': 'Klee One'},
+          ],
         );
 
     test('Fushi 卡片：变量 / 类名 / 字体 / 自定义配色都注入', () {
@@ -547,11 +562,52 @@ void main() {
           expect(app.value.dictUnified, isFalse);
           expect(faceText(), 'face:$layout:back:');
 
-          // 正面 / 背面切换。
+          // 预览与复习页一样走 Fushi 卡片的混合渲染：上面的卡面是释义区 WebView。
+          expect(
+            find.byKey(const ValueKey<String>('srs-card-preview-native')),
+            findsOneWidget,
+          );
+          // 正面 / 背面切换：正面完全原生，释义 WebView 不在台面上（保活在 Offstage 里）。
           await tester.tap(find.text(t.srs_card_appearance_preview_front));
           await tester.pump(const Duration(milliseconds: 300));
-          expect(faceText(), startsWith('face:$layout:front:'));
+          expect(
+            find.byKey(const ValueKey<String>('srs-fushi-front')),
+            findsOneWidget,
+          );
+          expect(faceFinder, findsNothing);
           expect(tester.takeException(), isNull);
+
+          // 卡面字体一行 → 统一字体库，用途预选「复习卡片」。
+          if (!apple && size.width >= 840) {
+            final Finder fontRow = find.byKey(
+              const ValueKey<String>('srs-card-font-library'),
+            );
+            await tester.scrollUntilVisible(
+              fontRow,
+              -200,
+              scrollable: find
+                  .descendant(
+                    of: find.byKey(
+                      const ValueKey<String>('srs-card-appearance-controls'),
+                    ),
+                    matching: find.byType(Scrollable),
+                  )
+                  .first,
+            );
+            // 与点按同一条路径：行的 onTap → 推字体库页。
+            tester.widget<AdaptiveSettingsNavigationRow>(fontRow).onTap();
+            for (int i = 0; i < 6; i++) {
+              await tester.pump(const Duration(milliseconds: 100));
+            }
+            expect(
+              find.byWidgetPredicate(
+                (Widget w) =>
+                    w is CustomFontsPage && w.target == FontTarget.srsCard,
+              ),
+              findsOneWidget,
+            );
+            tester.takeException();
+          }
         });
       }
     }

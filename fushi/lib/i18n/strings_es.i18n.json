@@ -8034,14 +8034,7 @@
   "srs_card_label_source": "Source",
   "srs_card_appearance_hint": "Applies to the Fushi Card note type",
   "srs_card_appearance_section_fonts": "Fonts",
-  "srs_card_appearance_font_ja": "Japanese font",
-  "srs_card_appearance_font_zh": "Chinese font",
-  "srs_card_appearance_font_latin": "Latin font",
   "srs_card_appearance_font_default": "Default",
-  "srs_card_appearance_font_library": "Font library",
-  "srs_card_appearance_font_system": "System font…",
-  "srs_card_appearance_font_import": "Import font file…",
-  "srs_card_appearance_font_import_failed": "Not a valid font file",
   "srs_card_appearance_section_text": "Text",
   "srs_card_appearance_text_size": "Text size",
   "srs_card_appearance_term_size": "Headword size",
@@ -8081,5 +8074,11 @@
   "srs_migrate_fushi_none": "No Lapis notes to migrate",
   "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated",
   "srs_card_appearance_title": "Fushi Card appearance",
-  "srs_card_edit_template": "Edit $name template"
+  "srs_card_edit_template": "Edit $name template",
+  "font_target_srs_card": "Review card",
+  "font_target_srs_card_short": "Card",
+  "srs_card_appearance_font": "Card font",
+  "srs_card_appearance_font_hint": "From the font library; characters fall back in order (put Latin fonts first)",
+  "srs_card_label_show_more": "Show more",
+  "srs_card_appearance_compact_phone": "Compact back on phones (dictionary tabs, long definitions folded)"
 }

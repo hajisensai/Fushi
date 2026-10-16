@@ -91,12 +91,22 @@ class SrsRenderedCard {
     required this.answer,
     required this.css,
     required this.isEmpty,
+    this.fields = const <String, String>{},
+    this.fushiCardDefinitions,
   });
 
   final String question;
   final String answer;
   final String css;
   final bool isEmpty;
+
+  /// 笔记字段（按字段名）。
+  final Map<String, String> fields;
+
+  /// 内置「Fushi 卡片」且模板 / 样式未被改动时：只含释义区的背面（见
+  /// [kFushiCardDefinitionsTemplate]），复习页据此走原生 + 释义 WebView 的混合渲染。
+  /// 其它类型、或用户改过模板的 Fushi 卡片为 null（整面 WebView，与 Anki 一致）。
+  final String? fushiCardDefinitions;
 }
 
 /// [SrsDbStore.writeEdits] 的一项：给某实体的某个字段键写一个值。
@@ -1764,26 +1774,46 @@ class SrsDbStore implements SrsSyncReplica {
     final SrsTemplateDef? tpl = d?.template;
     if (d == null || tpl == null) return null;
     final Map<String, String> idToName = _idToName(d.noteType);
+    final String front = templateIdsToNames(tpl.front, idToName);
+    final String back = templateIdsToNames(tpl.back, idToName);
+    final Map<String, String> fields = _fieldsByName(d.note, d.noteType);
+    final AnkiCardSpecialFields specials = AnkiCardSpecialFields(
+      tags: d.note.tags,
+      deckName: d.deckName,
+      noteTypeName: d.noteType.name,
+      cardName: tpl.name,
+      cardFlag: d.card.flag,
+      cardId: d.card.id,
+    );
     final AnkiRenderedCard r = renderAnkiCard(
-      questionTemplate: templateIdsToNames(tpl.front, idToName),
-      answerTemplate: templateIdsToNames(tpl.back, idToName),
-      noteFields: _fieldsByName(d.note, d.noteType),
+      questionTemplate: front,
+      answerTemplate: back,
+      noteFields: fields,
       cardOrd: d.noteType.isCloze ? d.card.clozeOrd - 1 : tpl.ord,
       isCloze: d.noteType.isCloze,
-      specials: AnkiCardSpecialFields(
-        tags: d.note.tags,
-        deckName: d.deckName,
-        noteTypeName: d.noteType.name,
-        cardName: tpl.name,
-        cardFlag: d.card.flag,
-        cardId: d.card.id,
-      ),
+      specials: specials,
     );
+    final bool nativeFushiCard =
+        d.noteType.builtinKey == kSrsBuiltinFushiCardKey &&
+        front == FushiCardNoteType.template.front &&
+        back == FushiCardNoteType.template.back &&
+        d.noteType.css == FushiCardNoteType.template.css;
     return SrsRenderedCard(
       question: r.question,
       answer: r.answer,
       css: d.noteType.css,
       isEmpty: r.isEmpty,
+      fields: fields,
+      fushiCardDefinitions: nativeFushiCard
+          ? renderAnkiCard(
+              questionTemplate: front,
+              answerTemplate: kFushiCardDefinitionsTemplate,
+              noteFields: fields,
+              cardOrd: tpl.ord,
+              isCloze: false,
+              specials: specials,
+            ).answer
+          : null,
     );
   }
 

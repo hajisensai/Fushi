@@ -314,7 +314,9 @@ const String kFushiCardBackTemplate = r'''<!--
         /* 宽屏左栏能整个放进视口时吸顶：往下翻释义时词条与例句一直在眼前。 */
         aside.classList.toggle("fc-aside--sticky", wide && aside.offsetHeight < window.innerHeight - 48);
       }
-      var key = (expanded ? "e" : "c") + (wide ? "w" : "n");
+      updateClamp();
+      var full = hostHas("fushi-srs-full-gloss");
+      var key = (expanded ? "e" : "c") + (wide ? "w" : "n") + (full ? "f" : "");
       if (root.__fcLayoutKey === key) return;
       root.__fcLayoutKey = key;
       var main = root.querySelector(".fc-gloss--main");
@@ -322,11 +324,72 @@ const String kFushiCardBackTemplate = r'''<!--
       if (more) {
         more.open = expanded || !main;
         var groups = more.querySelectorAll(".fc-dict");
-        /* 没有主释义时第一部词典就是主释义：窄屏也展开它，首屏就有释义可读。 */
+        var tabs = !wide && !full && groups.length > 1;
+        /* 页签模式下每部都展开（一次只显示选中的那部）；否则沿用逐部折叠：
+           没有主释义时第一部词典就是主释义，窄屏也展开它。 */
         groups.forEach(function (g, i) {
-          g.open = expanded || wide || groups.length === 1 || (i === 0 && !main);
+          g.open = tabs || expanded || wide || groups.length === 1 || (i === 0 && !main);
+        });
+        setTabs(more, tabs);
+      }
+    }
+
+    /* ---------- 窄屏：词典页签 ----------
+       「全部释义」里每部词典一张卡、各自折叠时，二三十部词典光标题行就排出一千多像素。
+       窄屏改成页签：上方一排可换行的词典名 chip，下方只显示选中的那一部（默认第一部，
+       点 chip 切换，一次点按就看到任意一部的全文）。宽屏照旧逐部展开。 */
+    function setTabs(more, on) {
+      var dicts = more.querySelector(".fc-dicts");
+      if (!dicts) return;
+      var bar = more.querySelector(".fc-dict-tabs");
+      more.classList.toggle("fc-tabs-on", on);
+      if (!on) return;
+      var groups = Array.prototype.slice.call(dicts.querySelectorAll(":scope > .fc-dict"));
+      if (!bar) {
+        bar = document.createElement("div");
+        bar.className = "fc-dict-tabs";
+        bar.setAttribute("role", "tablist");
+        groups.forEach(function (g, i) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "fc-dict-tab";
+          b.setAttribute("role", "tab");
+          b.textContent = g.getAttribute("data-fc-dict") || String(i + 1);
+          b.addEventListener("click", function () { select(i); });
+          bar.appendChild(b);
+        });
+        dicts.parentNode.insertBefore(bar, dicts);
+      }
+      function select(i) {
+        groups.forEach(function (g, j) {
+          g.classList.toggle("fc-dict--active", i === j);
+          bar.children[j].setAttribute("aria-selected", i === j ? "true" : "false");
         });
       }
+      var current = groups.findIndex(function (g) { return g.classList.contains("fc-dict--active"); });
+      select(current < 0 ? 0 : current);
+    }
+
+    /* ---------- 窄屏：主释义过长时收到约半屏，一次点按看全文 ---------- */
+    function updateClamp() {
+      var main = root.querySelector(".fc-gloss--main");
+      if (!main) return;
+      var btn = root.querySelector(".fc-clamp-toggle");
+      if (!btn) {
+        btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "fc-clamp-toggle";
+        btn.addEventListener("click", function () {
+          main.classList.add("fc-gloss--unclamped");
+          btn.hidden = true;
+        });
+        main.parentNode.insertBefore(btn, main.nextSibling);
+      }
+      if (main.classList.contains("fc-gloss--unclamped")) { btn.hidden = true; return; }
+      main.classList.add("fc-gloss--clamp");
+      /* 只有真的被截断才显示按钮（宽屏 / 宿主关掉收起时 CSS 不截断，按钮也不出现）。 */
+      btn.hidden = !(main.scrollHeight > main.clientHeight + 8);
+      main.classList.toggle("fc-gloss--clamped", !btn.hidden);
     }
     window.__fcApplyLayout = applyLayout;
     if (!window.__fcLayoutListeners) {
@@ -342,6 +405,9 @@ const String kFushiCardBackTemplate = r'''<!--
       if (!imgs.length) return;
       imgs.forEach(function (img) {
         if (!img.complete) img.addEventListener("load", applyLayout, { once: true });
+      });
+      root.querySelectorAll(".fc-gloss img").forEach(function (img) {
+        if (!img.complete) img.addEventListener("load", updateClamp, { once: true });
       });
       var box = document.createElement("div");
       box.className = "fc-lightbox";
@@ -455,6 +521,11 @@ const String kFushiCardStylingCss = r'''/*
   --fc-label-frequency: var(--fushi-srs-label-frequency, "Frequency");
   --fc-label-source: var(--fushi-srs-label-source, "Source");
   --fc-label-masked: var(--fushi-srs-label-masked, "［…］");
+  --fc-label-show-more: var(--fushi-srs-label-show-more, "Show more");
+
+  /* 窄屏主释义收起后的高度（约半屏；宿主类名 fushi-srs-full-gloss 关掉收起） */
+  --fc-clamp: var(--fushi-srs-clamp, 52vh);
+  --fc-clamp-short: max(52vh, 300px);
 }
 
 .card.nightMode {
@@ -1178,6 +1249,114 @@ const String kFushiCardStylingCss = r'''/*
   border-top: 1px solid var(--fc-outline);
 }
 
+/* ---------- 背面窄屏：长释义收起 + 词典页签（背面脚本挂类名；宽屏不受影响） ---------- */
+.fc-back:not(.fc-layout-wide) .fc-gloss--clamp {
+  max-height: var(--fc-clamp);
+  overflow: hidden;
+}
+
+/* 手机横屏（视口矮）：双栏照旧，但长主释义同样收起，不然右栏一拉三四屏。桌面窗口够高，不受影响。 */
+@media (max-height: 520px) {
+  .fc-back.fc-layout-wide .fc-gloss--clamp {
+    max-height: var(--fc-clamp-short);
+    overflow: hidden;
+  }
+
+  /* 左栏图片在矮视口里收小（点按仍可放大），词条 + 例句尽量留在首屏。 */
+  .fc-back.fc-layout-wide .fc-picture img {
+    max-height: 120px;
+  }
+}
+
+.fc-gloss--clamped {
+  -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(#000 calc(100% - 48px), transparent);
+}
+
+.fushi-srs-full-gloss .fc-gloss--clamp,
+.fc-gloss--unclamped {
+  max-height: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+.fc-clamp-toggle {
+  align-self: flex-start;
+  min-height: var(--fc-tap);
+  margin-top: -6px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: var(--fc-secondary-container);
+  color: var(--fc-on-secondary-container);
+  font-family: var(--fc-font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.fc-clamp-toggle::before {
+  content: var(--fc-label-show-more);
+}
+
+.fc-clamp-toggle[hidden],
+.fushi-srs-full-gloss .fc-clamp-toggle {
+  display: none;
+}
+
+.fc-dict-tabs {
+  display: none;
+}
+
+.fc-tabs-on > .fc-gloss .fc-dict-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fc-dict-tab {
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 1px solid var(--fc-outline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fc-fg-muted);
+  font-family: var(--fc-font-ui);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.fc-dict-tab[aria-selected="true"] {
+  border-color: transparent;
+  background: var(--fc-secondary-container);
+  color: var(--fc-on-secondary-container);
+}
+
+@media (pointer: coarse) {
+  .fc-dict-tab {
+    min-height: 40px;
+  }
+}
+
+.fc-tabs-on .fc-dict:not(.fc-dict--active) {
+  display: none;
+}
+
+.fc-tabs-on .fc-dict--active {
+  border-radius: var(--fc-radius);
+  padding-top: calc(var(--fc-pad) - 4px);
+}
+
+.fc-tabs-on .fc-dict--active > .fc-dict-label {
+  display: none;
+}
+
 /* ---------- 背面：中等宽度（平板竖屏 / 窄窗口），单栏加大字与图 ---------- */
 @media (min-width: 560px) {
   .card {
@@ -1665,5 +1844,14 @@ const String kFushiCardStylingCss = r'''/*
   .fc *::after {
     transition: none !important;
   }
+}
+
+/* ---------- Fushi 复习页混合渲染：释义区单独进 WebView ----------
+   词条 / 读音 / 例句 / 词频 / 来源由 Fushi 原生绘制，这一页只有释义区：不分栏。
+   Anki 里不会出现 fc-defs-only，这几条不生效。 */
+.fc-back.fc-defs-only,
+.fc-back.fc-defs-only.fc-layout-wide {
+  display: flex;
+  padding-bottom: 0;
 }
 ''';

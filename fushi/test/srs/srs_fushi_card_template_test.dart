@@ -58,11 +58,10 @@ void main() {
     expect(bare.map((RegExpMatch m) => m.group(0)), isEmpty);
     // 宿主注入的每个变量模板都真的在读（防注入表与模板令牌表漂移）。
     final String injected = srsCardAppearanceCss(
-      appearance: const SrsCardAppearance(
-        fontJa: SrsCardFontChoice(name: 'A'),
-        fontZh: SrsCardFontChoice(name: 'B'),
-        fontLatin: SrsCardFontChoice(name: 'C'),
-      ),
+      appearance: const SrsCardAppearance(),
+      fonts: const <Map<String, dynamic>>[
+        <String, dynamic>{'name': 'A'},
+      ],
       appScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
       dark: false,
       labels: const SrsCardLabels(
@@ -215,6 +214,11 @@ void main() {
       allDefinitions: '全部释义',
       frequency: '词频',
       source: '来源',
+      showMore: '展开全文',
+    );
+    // FUSHI_SRS_PREVIEW_APPEARANCE：外观 JSON（量「关掉手机精简」等对照用）。
+    final SrsCardAppearance base = SrsCardAppearance.decode(
+      Platform.environment['FUSHI_SRS_PREVIEW_APPEARANCE'] ?? '',
     );
     for (final (String name, Map<String, String> fields) in samples) {
       final AnkiRenderedCard card = _render(fields);
@@ -226,7 +230,7 @@ void main() {
         for (final bool unified in <bool>[true, false]) {
           for (final bool answer in <bool>[false, true]) {
             if (!answer && (!unified || name != 'sample')) continue;
-            final SrsCardAppearance appearance = SrsCardAppearance(
+            final SrsCardAppearance appearance = base.copyWith(
               dictUnified: unified,
             );
             final SrsCardFaceDocument doc = SrsCardFaceDocument.of(
