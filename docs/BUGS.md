@@ -33,10 +33,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3102 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3448](bugs/BUG-3448-popup-nowrap-group-overflows-card.md) | ✅ | ✅ | 查词卡里词典 nowrap 词组整组画到卡片外 |
+> 共 3072 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3417](bugs/BUG-3417-recommended-pack-schema.md) | ✅ | ✅ | 推荐包重新导出抬高schema导致旧版强制更新 |
 > 共 3101 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3447](bugs/BUG-3447-rail-toggle-right-edge-flicker.md) | ✅ | ✅ | rail-toggle-right-edge-flicker |
 | [BUG-3446](bugs/BUG-3446-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
 | [BUG-3445](bugs/BUG-3445-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
 | [BUG-3444](bugs/BUG-3444-book-collection-continue-next-volume.md) | ✅ | ✅ | book-collection-continue-next-volume |

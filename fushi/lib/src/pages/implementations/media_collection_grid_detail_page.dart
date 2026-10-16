@@ -3,7 +3,10 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility, pickTargetCollectionForMembers;
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show CollectionAiClientFactory;
 import 'package:fushi/src/media/collections/collection_detail_hero.dart';
+import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi/src/media/collections/collection_member_view.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
@@ -61,11 +64,20 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.memberInfoRefresh,
     this.onSetMembersCompleted,
     this.isMemberVisible,
+    this.collectionAiSettings,
+    this.aiClientFactory,
     super.key,
   });
 
   final FushiDatabase database;
   final MediaCollectionRow collection;
+
+  /// 「排序」菜单的「AI 排序」用的 AI 指派来源。null = 不显示该项（AI 模块关着，
+  /// 调用方按 `isAiModuleEnabled` 求值后传）。
+  final AiSettingsSource? collectionAiSettings;
+
+  /// 测试注入假 AI 客户端；生产为 null（默认构造）。
+  final CollectionAiClientFactory? aiClientFactory;
 
   /// 按成员 (mediaType, entryKey) 渲染卡片；返回 null = 该成员当前不可见（孤儿/被过滤），
   /// 详情页跳过它。
@@ -337,6 +349,18 @@ class _MediaCollectionGridDetailPageState
             (mediaType: r.mediaType, entryKey: r.entryKey),
         ]);
     widget.onChanged();
+  }
+
+  /// 「AI 排序」：卷号判不出的卷（汉字卷号 / 上下卷 / 外传）交 AI 定位后整表落盘；
+  /// 落了盘即切到手动序展示（偏好已由 [runDetailAiSort] 写成 manual）。
+  Future<void> _sortWithAi(AiSettingsSource settings) async {
+    final bool persisted = await runDetailAiSort(
+      settings: settings,
+      clientFactory: widget.aiClientFactory,
+    );
+    if (!persisted || !mounted) return;
+    setState(() => _sort = CollectionMemberSort.manual);
+    await _reload();
   }
 
   Future<void> _delete() async {
@@ -1088,6 +1112,13 @@ class _MediaCollectionGridDetailPageState
               : () => _saveViewOrder(arranged),
           child: Text(t.collection_detail_save_order),
         ),
+        if (widget.collectionAiSettings case final AiSettingsSource settings)
+          MenuItemButton(
+            key: const ValueKey<String>('collection_detail_sort_ai'),
+            leadingIcon: const FushiIcon(FushiIcons.ai, size: 20),
+            onPressed: () => _sortWithAi(settings),
+            child: Text(t.collection_sort_ai),
+          ),
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) =>
           FushiIconButton(

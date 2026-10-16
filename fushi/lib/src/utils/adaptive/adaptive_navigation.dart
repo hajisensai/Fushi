@@ -2693,14 +2693,18 @@ class _NavMoreCellState extends State<_NavMoreCell> {
   }
 }
 
-/// rail 与其右侧内容区的宽度同步：包住 `Row(rail, Expanded(内容))`，内容区用
-/// [NavRailSyncedContent] 包一层。
+/// rail 与其右侧内容区的宽度同步：包住 `Row(rail, Expanded(内容))`，内容里
+/// **看不见的**保活子树用 [NavRailSyncedContent] 包一层。
 ///
 /// rail 展开 / 收起时宽度逐帧变化，`Expanded` 内容的宽度约束随之逐帧变化，整棵
-/// 内容树（含 Offstage 保活的各 tab 页——Offstage 仍参与布局）每帧重排、重绘，
-/// 侧栏动画随之掉帧。过渡期间内容区改按**两态里较宽的内容宽**排版、随 rail
-/// 边缘平移并裁掉右侧溢出：约束不变即跳过子树布局，加上 [RepaintBoundary]
-/// 连重绘也省掉；一次切换至多重排一次（收起在开始时、展开在结束时）。
+/// 内容树（含 Offstage 保活的各 tab 页——Offstage 仍参与布局）每帧重排，侧栏
+/// 动画随之掉帧。被 Offstage 藏起的保活 tab 在过渡期间改按**两态里较宽的内容
+/// 宽**排版：约束不变即跳过子树布局，一次切换至多重排一次（收起在开始时、展开
+/// 在结束时）；它不绘制，宽度错一点也看不见。
+///
+/// 可见内容**不能**这样钉宽：钉在较宽一端时右侧贴边的内容（顶栏动作、卡片右侧
+/// 数值）整段过渡被裁掉、结束时再一次性重排弹回——展开 / 收起侧栏时右边闪烁
+/// （BUG-3447）。可见 tab 照常随 rail 逐帧重排，与拖动窗口边缘同一代价。
 class NavRailContentSync extends StatefulWidget {
   const NavRailContentSync({super.key, required this.child});
 
@@ -2737,18 +2741,26 @@ class _NavRailContentSyncScope extends InheritedWidget {
       lag != oldWidget.lag;
 }
 
-/// [NavRailContentSync] 的内容侧：静止时与直接放 [child] 几何一致；rail 过渡中
-/// 把 [child] 钉在恒定宽度上。树结构恒定（不随动画增删层级），子树状态不重挂。
+/// [NavRailContentSync] 的内容侧：静止或 [hidden] 为 false 时与直接放 [child]
+/// 几何一致；[hidden] 为 true 时 rail 过渡中把 [child] 钉在恒定宽度上。树结构
+/// 恒定（不随动画或 [hidden] 增删层级），子树状态不重挂。
 class NavRailSyncedContent extends StatelessWidget {
-  const NavRailSyncedContent({super.key, required this.child});
+  const NavRailSyncedContent({
+    super.key,
+    required this.hidden,
+    required this.child,
+  });
 
+  /// [child] 当前是否不可见（Offstage 藏起的保活 tab）。只有不可见的子树才钉宽，
+  /// 见 [NavRailContentSync]。
+  final bool hidden;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double excess = constraints.hasBoundedWidth
+        final double excess = hidden && constraints.hasBoundedWidth
             ? NavRailContentSync._of(context)?._railExcess ?? 0
             : 0;
         final double width = math.max(0.0, constraints.maxWidth + excess);
@@ -2758,7 +2770,7 @@ class NavRailSyncedContent extends StatelessWidget {
             alignment: AlignmentDirectional.centerStart,
             minWidth: excess == 0 ? constraints.minWidth : width,
             maxWidth: excess == 0 ? constraints.maxWidth : width,
-            child: RepaintBoundary(child: child),
+            child: child,
           ),
         );
       },
@@ -2792,7 +2804,7 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
   );
 
   /// 本次过渡两端里较窄的一端（静止时 = 当前宽）；[NavRailContentSync] 据此让
-  /// 内容区在整个过渡里保持同一宽度。
+  /// 藏起的保活子树在整个过渡里保持同一宽度（可见内容照常逐帧跟随，BUG-3447）。
   late double _narrowEnd = widget.width;
 
   @override

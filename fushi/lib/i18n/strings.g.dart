@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 133314 (7842 per locale)
+/// Strings: 133484 (7852 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -239,6 +239,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_feature_audiobook_cast => 'Audiobook casting';
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
+  String get ai_feature_collection_order => 'Collection order';
+  String get ai_feature_collection_order_summary =>
+      'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
   String get ai_feature_custom_theme => 'Custom theme';
   String get ai_feature_custom_theme_summary =>
       'Let AI pick theme colors from a description';
@@ -2443,6 +2446,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get collection_rescrape_pick_work => 'Pick a work to rescrape';
   String get collection_rescrape_started => 'Rescrape queued';
   String get collection_sentence => 'Sentence';
+  String get collection_sort_ai => 'Sort with AI';
+  String get collection_sort_ai_applied => 'Order updated with AI';
+  String get collection_sort_ai_invalid =>
+      'AI\'s answer didn\'t pass validation; order unchanged';
+  String get collection_sort_ai_rules_only =>
+      'Episode and volume numbers already decide the order; sorted by them';
+  String get collection_sort_ai_running => 'Asking AI for the order…';
+  String get collection_sort_ai_too_large =>
+      'This collection is too large for AI sorting';
+  String get collection_sort_ai_unchanged => 'AI kept the current order';
+  String get collection_sort_ai_unknown =>
+      'AI didn\'t recognise this work and found nothing online; order unchanged';
   String get collection_sort_by_imported => 'Sort by import date';
   String get collection_sort_by_season => 'Sort by season';
   String get collection_sort_by_title => 'Sort by name';
@@ -11435,6 +11450,11 @@ class _StringsAr extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'ترتيب المجموعة';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'عندما لا تستطيع قواعد الترقيم تحديد موضع الحلقات الخاصة أو OVA أو المجلدات، دع الذكاء الاصطناعي يقرر مكانها في المجموعة';
+  @override
   String get ai_feature_custom_theme => 'سمة مخصصة';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -15066,6 +15086,28 @@ class _StringsAr extends _StringsEn {
   String get collection_rescrape_started => 'تمت جدولة إعادة الاستخراج';
   @override
   String get collection_sentence => 'جملة';
+  @override
+  String get collection_sort_ai => 'ترتيب بالذكاء الاصطناعي';
+  @override
+  String get collection_sort_ai_applied => 'تم تحديث الترتيب بالذكاء الاصطناعي';
+  @override
+  String get collection_sort_ai_invalid =>
+      'لم يجتز رد الذكاء الاصطناعي التحقق؛ لم يتغير الترتيب';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'أرقام الحلقات والمجلدات تحدد الترتيب بالفعل؛ تم الترتيب وفقًا لها';
+  @override
+  String get collection_sort_ai_running =>
+      'جارٍ سؤال الذكاء الاصطناعي عن الترتيب…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'هذه المجموعة كبيرة جدًا على الترتيب بالذكاء الاصطناعي';
+  @override
+  String get collection_sort_ai_unchanged =>
+      'أبقى الذكاء الاصطناعي الترتيب الحالي';
+  @override
+  String get collection_sort_ai_unknown =>
+      'لم يتعرف الذكاء الاصطناعي على هذا العمل ولم يجد شيئًا على الإنترنت؛ لم يتغير الترتيب';
   @override
   String get collection_sort_by_imported => 'ترتيب حسب تاريخ الاستيراد';
   @override
@@ -30401,6 +30443,11 @@ class _StringsDe extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Sammlungsreihenfolge';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Wenn Nummerierungsregeln Specials, OVAs oder Bände nicht einordnen können, entscheidet die KI über ihre Position in der Sammlung';
+  @override
   String get ai_feature_custom_theme => 'Eigenes Design';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -34087,6 +34134,28 @@ class _StringsDe extends _StringsEn {
   String get collection_rescrape_started => 'Erneutes Scrapen eingereiht';
   @override
   String get collection_sentence => 'Satz';
+  @override
+  String get collection_sort_ai => 'Mit KI sortieren';
+  @override
+  String get collection_sort_ai_applied => 'Reihenfolge mit KI aktualisiert';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Die Antwort der KI hat die Prüfung nicht bestanden; Reihenfolge unverändert';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Folgen- und Bandnummern legen die Reihenfolge bereits fest; danach sortiert';
+  @override
+  String get collection_sort_ai_running =>
+      'KI wird nach der Reihenfolge gefragt…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Diese Sammlung ist zu groß für die KI-Sortierung';
+  @override
+  String get collection_sort_ai_unchanged =>
+      'Die KI hat die aktuelle Reihenfolge beibehalten';
+  @override
+  String get collection_sort_ai_unknown =>
+      'Die KI kennt dieses Werk nicht und hat online nichts gefunden; Reihenfolge unverändert';
   @override
   String get collection_sort_by_imported => 'Nach Importdatum sortieren';
   @override
@@ -49756,6 +49825,11 @@ class _StringsEs extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Orden de la colección';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Cuando las reglas de numeración no pueden ubicar especiales, OVA o volúmenes, deja que la IA decida su lugar en la colección';
+  @override
   String get ai_feature_custom_theme => 'Tema personalizado';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -53454,6 +53528,26 @@ class _StringsEs extends _StringsEn {
   String get collection_rescrape_started => 'Nueva extracción en cola';
   @override
   String get collection_sentence => 'Oración';
+  @override
+  String get collection_sort_ai => 'Ordenar con IA';
+  @override
+  String get collection_sort_ai_applied => 'Orden actualizado con IA';
+  @override
+  String get collection_sort_ai_invalid =>
+      'La respuesta de la IA no superó la validación; el orden no cambió';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Los números de episodio y volumen ya determinan el orden; se ordenó según ellos';
+  @override
+  String get collection_sort_ai_running => 'Consultando el orden a la IA…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Esta colección es demasiado grande para ordenarla con IA';
+  @override
+  String get collection_sort_ai_unchanged => 'La IA mantuvo el orden actual';
+  @override
+  String get collection_sort_ai_unknown =>
+      'La IA no reconoció esta obra ni encontró nada en línea; el orden no cambió';
   @override
   String get collection_sort_by_imported => 'Ordenar por fecha de importación';
   @override
@@ -69170,6 +69264,11 @@ class _StringsFr extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Ordre de la collection';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Quand les règles de numérotation ne peuvent pas placer les spéciaux, OVA ou volumes, l\'IA décide de leur place dans la collection';
+  @override
   String get ai_feature_custom_theme => 'Thème personnalisé';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -72888,6 +72987,26 @@ class _StringsFr extends _StringsEn {
       'Nouveau scraping en file d\'attente';
   @override
   String get collection_sentence => 'Phrase';
+  @override
+  String get collection_sort_ai => 'Trier avec l\'IA';
+  @override
+  String get collection_sort_ai_applied => 'Ordre mis à jour par l\'IA';
+  @override
+  String get collection_sort_ai_invalid =>
+      'La réponse de l\'IA n\'a pas passé la validation ; ordre inchangé';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Les numéros d\'épisode et de volume déterminent déjà l\'ordre ; trié selon ceux-ci';
+  @override
+  String get collection_sort_ai_running => 'Demande de l\'ordre à l\'IA…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Cette collection est trop grande pour le tri par IA';
+  @override
+  String get collection_sort_ai_unchanged => 'L\'IA a conservé l\'ordre actuel';
+  @override
+  String get collection_sort_ai_unknown =>
+      'L\'IA ne connaît pas cette œuvre et n\'a rien trouvé en ligne ; ordre inchangé';
   @override
   String get collection_sort_by_imported => 'Trier par date d\'importation';
   @override
@@ -88666,6 +88785,11 @@ class _StringsId extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Urutan koleksi';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Jika aturan penomoran tidak bisa menempatkan spesial, OVA, atau volume, biarkan AI menentukan posisinya di koleksi';
+  @override
   String get ai_feature_custom_theme => 'Tema kustom';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -92322,6 +92446,27 @@ class _StringsId extends _StringsEn {
   String get collection_rescrape_started => 'Scrape ulang diantrekan';
   @override
   String get collection_sentence => 'Kalimat';
+  @override
+  String get collection_sort_ai => 'Urutkan dengan AI';
+  @override
+  String get collection_sort_ai_applied => 'Urutan diperbarui dengan AI';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Jawaban AI tidak lolos validasi; urutan tidak berubah';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Nomor episode dan volume sudah menentukan urutan; diurutkan berdasarkan itu';
+  @override
+  String get collection_sort_ai_running => 'Menanyakan urutan ke AI…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Koleksi ini terlalu besar untuk diurutkan dengan AI';
+  @override
+  String get collection_sort_ai_unchanged =>
+      'AI mempertahankan urutan saat ini';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI tidak mengenali karya ini dan tidak menemukan apa pun daring; urutan tidak berubah';
   @override
   String get collection_sort_by_imported => 'Urutkan berdasarkan tanggal impor';
   @override
@@ -107816,6 +107961,11 @@ class _StringsIt extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Ordine della raccolta';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Quando le regole di numerazione non riescono a collocare speciali, OVA o volumi, lascia che sia l\'IA a decidere la loro posizione nella raccolta';
+  @override
   String get ai_feature_custom_theme => 'Tema personalizzato';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -111498,6 +111648,27 @@ class _StringsIt extends _StringsEn {
   String get collection_rescrape_started => 'Nuovo scraping in coda';
   @override
   String get collection_sentence => 'Frase';
+  @override
+  String get collection_sort_ai => 'Ordina con IA';
+  @override
+  String get collection_sort_ai_applied => 'Ordine aggiornato con l\'IA';
+  @override
+  String get collection_sort_ai_invalid =>
+      'La risposta dell\'IA non ha superato la verifica; ordine invariato';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'I numeri di episodio e volume determinano già l\'ordine; ordinato in base a essi';
+  @override
+  String get collection_sort_ai_running => 'Richiesta dell\'ordine all\'IA…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Questa raccolta è troppo grande per l\'ordinamento con IA';
+  @override
+  String get collection_sort_ai_unchanged =>
+      'L\'IA ha mantenuto l\'ordine attuale';
+  @override
+  String get collection_sort_ai_unknown =>
+      'L\'IA non riconosce quest\'opera e non ha trovato nulla online; ordine invariato';
   @override
   String get collection_sort_by_imported => 'Ordina per data di importazione';
   @override
@@ -127127,6 +127298,11 @@ class _StringsJa extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'コレクションの並び順';
+  @override
+  String get ai_feature_collection_order_summary =>
+      '番号のルールで SP・OVA・特別編や巻の位置を決められないとき、コレクション内の位置を AI に決めてもらいます';
+  @override
   String get ai_feature_custom_theme => 'カスタムテーマ';
   @override
   String get ai_feature_custom_theme_summary => '説明をもとに、テーマの配色を AI に選ばせます';
@@ -130652,6 +130828,23 @@ class _StringsJa extends _StringsEn {
   String get collection_rescrape_started => '再取得をキューに追加しました';
   @override
   String get collection_sentence => '文';
+  @override
+  String get collection_sort_ai => 'AI で並べ替え';
+  @override
+  String get collection_sort_ai_applied => 'AI の提案で並び順を更新しました';
+  @override
+  String get collection_sort_ai_invalid => 'AI の回答が検証を通らなかったため、並び順は変更していません';
+  @override
+  String get collection_sort_ai_rules_only => '話数・巻数で順番が決まるため、それに従って並べ替えました';
+  @override
+  String get collection_sort_ai_running => 'AI に並び順を問い合わせています…';
+  @override
+  String get collection_sort_ai_too_large => 'このコレクションは大きすぎるため、AI で並べ替えできません';
+  @override
+  String get collection_sort_ai_unchanged => 'AI は現在の並び順のままにしました';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI はこの作品を知らず、オンラインでも資料が見つからなかったため、並び順は変更していません';
   @override
   String get collection_sort_by_imported => 'インポート日順';
   @override
@@ -145431,6 +145624,11 @@ class _StringsKo extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => '컬렉션 순서';
+  @override
+  String get ai_feature_collection_order_summary =>
+      '번호 규칙으로 스페셜, OVA, 권의 위치를 정할 수 없을 때 AI가 컬렉션 안의 위치를 정하게 합니다';
+  @override
   String get ai_feature_custom_theme => '사용자 지정 테마';
   @override
   String get ai_feature_custom_theme_summary => 'AI가 설명을 바탕으로 테마 색상을 고르게 합니다';
@@ -148956,6 +149154,23 @@ class _StringsKo extends _StringsEn {
   String get collection_rescrape_started => '다시 스크레이핑을 대기열에 추가했습니다';
   @override
   String get collection_sentence => '문장';
+  @override
+  String get collection_sort_ai => 'AI로 정렬';
+  @override
+  String get collection_sort_ai_applied => 'AI 제안으로 순서를 업데이트했습니다';
+  @override
+  String get collection_sort_ai_invalid => 'AI 응답이 검증을 통과하지 못해 순서를 바꾸지 않았습니다';
+  @override
+  String get collection_sort_ai_rules_only => '화수와 권수로 이미 순서가 정해져 그에 따라 정렬했습니다';
+  @override
+  String get collection_sort_ai_running => 'AI에게 순서를 묻는 중…';
+  @override
+  String get collection_sort_ai_too_large => '이 컬렉션은 너무 커서 AI로 정렬할 수 없습니다';
+  @override
+  String get collection_sort_ai_unchanged => 'AI가 현재 순서를 유지했습니다';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI가 이 작품을 알지 못하고 온라인에서도 찾지 못해 순서를 바꾸지 않았습니다';
   @override
   String get collection_sort_by_imported => '가져온 날짜순 정렬';
   @override
@@ -163779,6 +163994,11 @@ class _StringsNl extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Volgorde van verzameling';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Als nummeringsregels specials, OVA\'s of delen niet kunnen plaatsen, laat de AI bepalen waar ze in de verzameling horen';
+  @override
   String get ai_feature_custom_theme => 'Eigen thema';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -167458,6 +167678,27 @@ class _StringsNl extends _StringsEn {
   String get collection_rescrape_started => 'Opnieuw scrapen in wachtrij gezet';
   @override
   String get collection_sentence => 'Zin';
+  @override
+  String get collection_sort_ai => 'Sorteren met AI';
+  @override
+  String get collection_sort_ai_applied => 'Volgorde bijgewerkt met AI';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Het antwoord van de AI kwam niet door de controle; volgorde ongewijzigd';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Aflevering- en deelnummers bepalen de volgorde al; daarop gesorteerd';
+  @override
+  String get collection_sort_ai_running => 'AI wordt om de volgorde gevraagd…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Deze verzameling is te groot om met AI te sorteren';
+  @override
+  String get collection_sort_ai_unchanged =>
+      'De AI heeft de huidige volgorde behouden';
+  @override
+  String get collection_sort_ai_unknown =>
+      'De AI kent dit werk niet en vond online niets; volgorde ongewijzigd';
   @override
   String get collection_sort_by_imported => 'Sorteren op importdatum';
   @override
@@ -183041,6 +183282,11 @@ class _StringsPtBr extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Ordem da coleção';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Quando as regras de numeração não conseguem posicionar especiais, OVAs ou volumes, deixe a IA decidir o lugar deles na coleção';
+  @override
   String get ai_feature_custom_theme => 'Tema personalizado';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -186730,6 +186976,26 @@ class _StringsPtBr extends _StringsEn {
   String get collection_rescrape_started => 'Nova raspagem na fila';
   @override
   String get collection_sentence => 'Frase';
+  @override
+  String get collection_sort_ai => 'Ordenar com IA';
+  @override
+  String get collection_sort_ai_applied => 'Ordem atualizada com IA';
+  @override
+  String get collection_sort_ai_invalid =>
+      'A resposta da IA não passou na validação; ordem inalterada';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Os números de episódio e volume já definem a ordem; ordenado por eles';
+  @override
+  String get collection_sort_ai_running => 'Consultando a IA sobre a ordem…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Esta coleção é grande demais para ordenar com IA';
+  @override
+  String get collection_sort_ai_unchanged => 'A IA manteve a ordem atual';
+  @override
+  String get collection_sort_ai_unknown =>
+      'A IA não reconheceu esta obra e não encontrou nada online; ordem inalterada';
   @override
   String get collection_sort_by_imported => 'Ordenar por data de importação';
   @override
@@ -202371,6 +202637,11 @@ class _StringsRu extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Порядок в коллекции';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Когда правила нумерации не могут определить место спешлов, OVA или томов, ИИ решает, где они должны стоять в коллекции';
+  @override
   String get ai_feature_custom_theme => 'Своя тема';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -206047,6 +206318,26 @@ class _StringsRu extends _StringsEn {
   String get collection_rescrape_started => 'Обновление поставлено в очередь';
   @override
   String get collection_sentence => 'Предложение';
+  @override
+  String get collection_sort_ai => 'Упорядочить с ИИ';
+  @override
+  String get collection_sort_ai_applied => 'Порядок обновлён с помощью ИИ';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Ответ ИИ не прошёл проверку; порядок не изменён';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Номера серий и томов уже задают порядок; упорядочено по ним';
+  @override
+  String get collection_sort_ai_running => 'Запрашиваем порядок у ИИ…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Коллекция слишком велика для упорядочивания с ИИ';
+  @override
+  String get collection_sort_ai_unchanged => 'ИИ оставил текущий порядок';
+  @override
+  String get collection_sort_ai_unknown =>
+      'ИИ не знает это произведение и ничего не нашёл в сети; порядок не изменён';
   @override
   String get collection_sort_by_imported => 'По дате импорта';
   @override
@@ -221647,6 +221938,11 @@ class _StringsTh extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'ลำดับในคอลเลกชัน';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'เมื่อกฎการนับเลขระบุตำแหน่งตอนพิเศษ OVA หรือเล่มไม่ได้ ให้ AI ตัดสินว่าควรอยู่ตรงไหนในคอลเลกชัน';
+  @override
   String get ai_feature_custom_theme => 'ธีมกำหนดเอง';
   @override
   String get ai_feature_custom_theme_summary => 'ให้ AI เลือกสีธีมจากคำอธิบาย';
@@ -225268,6 +225564,26 @@ class _StringsTh extends _StringsEn {
   String get collection_rescrape_started => 'จัดคิวดึงข้อมูลใหม่แล้ว';
   @override
   String get collection_sentence => 'ประโยค';
+  @override
+  String get collection_sort_ai => 'เรียงด้วย AI';
+  @override
+  String get collection_sort_ai_applied => 'อัปเดตลำดับตามที่ AI แนะนำแล้ว';
+  @override
+  String get collection_sort_ai_invalid =>
+      'คำตอบของ AI ไม่ผ่านการตรวจสอบ ลำดับไม่เปลี่ยน';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'เลขตอนและเลขเล่มกำหนดลำดับได้อยู่แล้ว จึงเรียงตามนั้น';
+  @override
+  String get collection_sort_ai_running => 'กำลังถาม AI เรื่องลำดับ…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'คอลเลกชันนี้ใหญ่เกินกว่าจะเรียงด้วย AI';
+  @override
+  String get collection_sort_ai_unchanged => 'AI คงลำดับปัจจุบันไว้';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI ไม่รู้จักผลงานนี้และค้นหาทางออนไลน์ไม่พบ ลำดับไม่เปลี่ยน';
   @override
   String get collection_sort_by_imported => 'เรียงตามวันที่นำเข้า';
   @override
@@ -240603,6 +240919,11 @@ class _StringsTr extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Koleksiyon sırası';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Numaralandırma kuralları özel bölümleri, OVA\'ları veya ciltleri yerleştiremediğinde, koleksiyondaki yerlerine yapay zeka karar versin';
+  @override
   String get ai_feature_custom_theme => 'Özel tema';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -244259,6 +244580,26 @@ class _StringsTr extends _StringsEn {
   String get collection_rescrape_started => 'Yeniden kazıma sıraya alındı';
   @override
   String get collection_sentence => 'Cümle';
+  @override
+  String get collection_sort_ai => 'Yapay zeka ile sırala';
+  @override
+  String get collection_sort_ai_applied => 'Sıra yapay zeka ile güncellendi';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Yapay zekanın yanıtı doğrulamadan geçemedi; sıra değişmedi';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Bölüm ve cilt numaraları sırayı zaten belirliyor; bunlara göre sıralandı';
+  @override
+  String get collection_sort_ai_running => 'Sıra için yapay zekaya soruluyor…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Bu koleksiyon yapay zeka ile sıralamak için çok büyük';
+  @override
+  String get collection_sort_ai_unchanged => 'Yapay zeka mevcut sırayı korudu';
+  @override
+  String get collection_sort_ai_unknown =>
+      'Yapay zeka bu eseri tanımadı ve çevrimiçi bir şey bulamadı; sıra değişmedi';
   @override
   String get collection_sort_by_imported => 'İçe aktarma tarihine göre sırala';
   @override
@@ -259761,6 +260102,11 @@ class _StringsVi extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => 'Thứ tự bộ sưu tập';
+  @override
+  String get ai_feature_collection_order_summary =>
+      'Khi quy tắc đánh số không xếp được tập đặc biệt, OVA hay tập sách, hãy để AI quyết định vị trí của chúng trong bộ sưu tập';
+  @override
   String get ai_feature_custom_theme => 'Giao diện tùy chỉnh';
   @override
   String get ai_feature_custom_theme_summary =>
@@ -263406,6 +263752,26 @@ class _StringsVi extends _StringsEn {
   String get collection_rescrape_started => 'Đã xếp hàng quét lại';
   @override
   String get collection_sentence => 'Câu';
+  @override
+  String get collection_sort_ai => 'Sắp xếp bằng AI';
+  @override
+  String get collection_sort_ai_applied => 'Đã cập nhật thứ tự theo AI';
+  @override
+  String get collection_sort_ai_invalid =>
+      'Câu trả lời của AI không qua được kiểm tra; thứ tự không đổi';
+  @override
+  String get collection_sort_ai_rules_only =>
+      'Số tập và số quyển đã xác định thứ tự; đã sắp xếp theo đó';
+  @override
+  String get collection_sort_ai_running => 'Đang hỏi AI về thứ tự…';
+  @override
+  String get collection_sort_ai_too_large =>
+      'Bộ sưu tập này quá lớn để sắp xếp bằng AI';
+  @override
+  String get collection_sort_ai_unchanged => 'AI giữ nguyên thứ tự hiện tại';
+  @override
+  String get collection_sort_ai_unknown =>
+      'AI không nhận ra tác phẩm này và không tìm thấy gì trên mạng; thứ tự không đổi';
   @override
   String get collection_sort_by_imported => 'Sắp xếp theo ngày nhập';
   @override
@@ -278838,6 +279204,11 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_feature_audiobook_cast_summary => '标注每句台词的说话人，供多声优配音';
   @override
+  String get ai_feature_collection_order => '合集排序';
+  @override
+  String get ai_feature_collection_order_summary =>
+      '规则排不出 SP / OVA / 特别篇或卷序时，让 AI 决定它们在合集里的位置';
+  @override
   String get ai_feature_custom_theme => '自定义主题';
   @override
   String get ai_feature_custom_theme_summary => '让 AI 按描述生成自定义主题配色';
@@ -282154,6 +282525,22 @@ class _StringsZhCn extends _StringsEn {
   String get collection_rescrape_started => '已开始重新刮削';
   @override
   String get collection_sentence => '句子';
+  @override
+  String get collection_sort_ai => 'AI 排序';
+  @override
+  String get collection_sort_ai_applied => '已按 AI 建议调整顺序';
+  @override
+  String get collection_sort_ai_invalid => 'AI 的回复没通过校验，顺序未改';
+  @override
+  String get collection_sort_ai_rules_only => '集号 / 卷号已能确定顺序，已按规则排好';
+  @override
+  String get collection_sort_ai_running => '正在让 AI 排序…';
+  @override
+  String get collection_sort_ai_too_large => '合集太大，无法用 AI 排序';
+  @override
+  String get collection_sort_ai_unchanged => 'AI 认为当前顺序无需调整';
+  @override
+  String get collection_sort_ai_unknown => 'AI 不认识这部作品，也没查到资料，顺序未改';
   @override
   String get collection_sort_by_imported => '按导入时间排序';
   @override
@@ -296259,6 +296646,11 @@ class _StringsZhHk extends _StringsEn {
   String get ai_feature_audiobook_cast_summary =>
       'Mark which character speaks each line so different voices can read them';
   @override
+  String get ai_feature_collection_order => '合集排序';
+  @override
+  String get ai_feature_collection_order_summary =>
+      '規則排不出 SP / OVA / 特別篇或卷序時，讓 AI 決定它們在合集裡的位置';
+  @override
   String get ai_feature_custom_theme => '自定義主題';
   @override
   String get ai_feature_custom_theme_summary => '讓 AI 按描述生成自定義主題配色';
@@ -299678,6 +300070,22 @@ class _StringsZhHk extends _StringsEn {
   String get collection_rescrape_started => '已開始重新刮削';
   @override
   String get collection_sentence => '句子';
+  @override
+  String get collection_sort_ai => 'AI 排序';
+  @override
+  String get collection_sort_ai_applied => '已按 AI 建議調整順序';
+  @override
+  String get collection_sort_ai_invalid => 'AI 的回覆沒通過校驗，順序未改';
+  @override
+  String get collection_sort_ai_rules_only => '集號 / 卷號已能確定順序，已按規則排好';
+  @override
+  String get collection_sort_ai_running => '正在讓 AI 排序…';
+  @override
+  String get collection_sort_ai_too_large => '合集太大，無法用 AI 排序';
+  @override
+  String get collection_sort_ai_unchanged => 'AI 認為目前順序無需調整';
+  @override
+  String get collection_sort_ai_unknown => 'AI 不認識這部作品，也沒查到資料，順序未改';
   @override
   String get collection_sort_by_imported => '按導入時間排序';
   @override
@@ -313965,6 +314373,10 @@ extension on _StringsEn {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Collection order';
+      case 'ai_feature_collection_order_summary':
+        return 'When numbering rules can\'t place specials, OVAs or volumes, let AI decide where they go in a collection';
       case 'ai_feature_custom_theme':
         return 'Custom theme';
       case 'ai_feature_custom_theme_summary':
@@ -317014,6 +317426,22 @@ extension on _StringsEn {
         return 'Rescrape queued';
       case 'collection_sentence':
         return 'Sentence';
+      case 'collection_sort_ai':
+        return 'Sort with AI';
+      case 'collection_sort_ai_applied':
+        return 'Order updated with AI';
+      case 'collection_sort_ai_invalid':
+        return 'AI\'s answer didn\'t pass validation; order unchanged';
+      case 'collection_sort_ai_rules_only':
+        return 'Episode and volume numbers already decide the order; sorted by them';
+      case 'collection_sort_ai_running':
+        return 'Asking AI for the order…';
+      case 'collection_sort_ai_too_large':
+        return 'This collection is too large for AI sorting';
+      case 'collection_sort_ai_unchanged':
+        return 'AI kept the current order';
+      case 'collection_sort_ai_unknown':
+        return 'AI didn\'t recognise this work and found nothing online; order unchanged';
       case 'collection_sort_by_imported':
         return 'Sort by import date';
       case 'collection_sort_by_season':
@@ -330235,6 +330663,10 @@ extension on _StringsAr {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'ترتيب المجموعة';
+      case 'ai_feature_collection_order_summary':
+        return 'عندما لا تستطيع قواعد الترقيم تحديد موضع الحلقات الخاصة أو OVA أو المجلدات، دع الذكاء الاصطناعي يقرر مكانها في المجموعة';
       case 'ai_feature_custom_theme':
         return 'سمة مخصصة';
       case 'ai_feature_custom_theme_summary':
@@ -333285,6 +333717,22 @@ extension on _StringsAr {
         return 'تمت جدولة إعادة الاستخراج';
       case 'collection_sentence':
         return 'جملة';
+      case 'collection_sort_ai':
+        return 'ترتيب بالذكاء الاصطناعي';
+      case 'collection_sort_ai_applied':
+        return 'تم تحديث الترتيب بالذكاء الاصطناعي';
+      case 'collection_sort_ai_invalid':
+        return 'لم يجتز رد الذكاء الاصطناعي التحقق؛ لم يتغير الترتيب';
+      case 'collection_sort_ai_rules_only':
+        return 'أرقام الحلقات والمجلدات تحدد الترتيب بالفعل؛ تم الترتيب وفقًا لها';
+      case 'collection_sort_ai_running':
+        return 'جارٍ سؤال الذكاء الاصطناعي عن الترتيب…';
+      case 'collection_sort_ai_too_large':
+        return 'هذه المجموعة كبيرة جدًا على الترتيب بالذكاء الاصطناعي';
+      case 'collection_sort_ai_unchanged':
+        return 'أبقى الذكاء الاصطناعي الترتيب الحالي';
+      case 'collection_sort_ai_unknown':
+        return 'لم يتعرف الذكاء الاصطناعي على هذا العمل ولم يجد شيئًا على الإنترنت؛ لم يتغير الترتيب';
       case 'collection_sort_by_imported':
         return 'ترتيب حسب تاريخ الاستيراد';
       case 'collection_sort_by_season':
@@ -346500,6 +346948,10 @@ extension on _StringsDe {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Sammlungsreihenfolge';
+      case 'ai_feature_collection_order_summary':
+        return 'Wenn Nummerierungsregeln Specials, OVAs oder Bände nicht einordnen können, entscheidet die KI über ihre Position in der Sammlung';
       case 'ai_feature_custom_theme':
         return 'Eigenes Design';
       case 'ai_feature_custom_theme_summary':
@@ -349570,6 +350022,22 @@ extension on _StringsDe {
         return 'Erneutes Scrapen eingereiht';
       case 'collection_sentence':
         return 'Satz';
+      case 'collection_sort_ai':
+        return 'Mit KI sortieren';
+      case 'collection_sort_ai_applied':
+        return 'Reihenfolge mit KI aktualisiert';
+      case 'collection_sort_ai_invalid':
+        return 'Die Antwort der KI hat die Prüfung nicht bestanden; Reihenfolge unverändert';
+      case 'collection_sort_ai_rules_only':
+        return 'Folgen- und Bandnummern legen die Reihenfolge bereits fest; danach sortiert';
+      case 'collection_sort_ai_running':
+        return 'KI wird nach der Reihenfolge gefragt…';
+      case 'collection_sort_ai_too_large':
+        return 'Diese Sammlung ist zu groß für die KI-Sortierung';
+      case 'collection_sort_ai_unchanged':
+        return 'Die KI hat die aktuelle Reihenfolge beibehalten';
+      case 'collection_sort_ai_unknown':
+        return 'Die KI kennt dieses Werk nicht und hat online nichts gefunden; Reihenfolge unverändert';
       case 'collection_sort_by_imported':
         return 'Nach Importdatum sortieren';
       case 'collection_sort_by_season':
@@ -362840,6 +363308,10 @@ extension on _StringsEs {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Orden de la colección';
+      case 'ai_feature_collection_order_summary':
+        return 'Cuando las reglas de numeración no pueden ubicar especiales, OVA o volúmenes, deja que la IA decida su lugar en la colección';
       case 'ai_feature_custom_theme':
         return 'Tema personalizado';
       case 'ai_feature_custom_theme_summary':
@@ -365905,6 +366377,22 @@ extension on _StringsEs {
         return 'Nueva extracción en cola';
       case 'collection_sentence':
         return 'Oración';
+      case 'collection_sort_ai':
+        return 'Ordenar con IA';
+      case 'collection_sort_ai_applied':
+        return 'Orden actualizado con IA';
+      case 'collection_sort_ai_invalid':
+        return 'La respuesta de la IA no superó la validación; el orden no cambió';
+      case 'collection_sort_ai_rules_only':
+        return 'Los números de episodio y volumen ya determinan el orden; se ordenó según ellos';
+      case 'collection_sort_ai_running':
+        return 'Consultando el orden a la IA…';
+      case 'collection_sort_ai_too_large':
+        return 'Esta colección es demasiado grande para ordenarla con IA';
+      case 'collection_sort_ai_unchanged':
+        return 'La IA mantuvo el orden actual';
+      case 'collection_sort_ai_unknown':
+        return 'La IA no reconoció esta obra ni encontró nada en línea; el orden no cambió';
       case 'collection_sort_by_imported':
         return 'Ordenar por fecha de importación';
       case 'collection_sort_by_season':
@@ -379162,6 +379650,10 @@ extension on _StringsFr {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Ordre de la collection';
+      case 'ai_feature_collection_order_summary':
+        return 'Quand les règles de numérotation ne peuvent pas placer les spéciaux, OVA ou volumes, l\'IA décide de leur place dans la collection';
       case 'ai_feature_custom_theme':
         return 'Thème personnalisé';
       case 'ai_feature_custom_theme_summary':
@@ -382232,6 +382724,22 @@ extension on _StringsFr {
         return 'Nouveau scraping en file d\'attente';
       case 'collection_sentence':
         return 'Phrase';
+      case 'collection_sort_ai':
+        return 'Trier avec l\'IA';
+      case 'collection_sort_ai_applied':
+        return 'Ordre mis à jour par l\'IA';
+      case 'collection_sort_ai_invalid':
+        return 'La réponse de l\'IA n\'a pas passé la validation ; ordre inchangé';
+      case 'collection_sort_ai_rules_only':
+        return 'Les numéros d\'épisode et de volume déterminent déjà l\'ordre ; trié selon ceux-ci';
+      case 'collection_sort_ai_running':
+        return 'Demande de l\'ordre à l\'IA…';
+      case 'collection_sort_ai_too_large':
+        return 'Cette collection est trop grande pour le tri par IA';
+      case 'collection_sort_ai_unchanged':
+        return 'L\'IA a conservé l\'ordre actuel';
+      case 'collection_sort_ai_unknown':
+        return 'L\'IA ne connaît pas cette œuvre et n\'a rien trouvé en ligne ; ordre inchangé';
       case 'collection_sort_by_imported':
         return 'Trier par date d\'importation';
       case 'collection_sort_by_season':
@@ -395501,6 +396009,10 @@ extension on _StringsId {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Urutan koleksi';
+      case 'ai_feature_collection_order_summary':
+        return 'Jika aturan penomoran tidak bisa menempatkan spesial, OVA, atau volume, biarkan AI menentukan posisinya di koleksi';
       case 'ai_feature_custom_theme':
         return 'Tema kustom';
       case 'ai_feature_custom_theme_summary':
@@ -398558,6 +399070,22 @@ extension on _StringsId {
         return 'Scrape ulang diantrekan';
       case 'collection_sentence':
         return 'Kalimat';
+      case 'collection_sort_ai':
+        return 'Urutkan dengan AI';
+      case 'collection_sort_ai_applied':
+        return 'Urutan diperbarui dengan AI';
+      case 'collection_sort_ai_invalid':
+        return 'Jawaban AI tidak lolos validasi; urutan tidak berubah';
+      case 'collection_sort_ai_rules_only':
+        return 'Nomor episode dan volume sudah menentukan urutan; diurutkan berdasarkan itu';
+      case 'collection_sort_ai_running':
+        return 'Menanyakan urutan ke AI…';
+      case 'collection_sort_ai_too_large':
+        return 'Koleksi ini terlalu besar untuk diurutkan dengan AI';
+      case 'collection_sort_ai_unchanged':
+        return 'AI mempertahankan urutan saat ini';
+      case 'collection_sort_ai_unknown':
+        return 'AI tidak mengenali karya ini dan tidak menemukan apa pun daring; urutan tidak berubah';
       case 'collection_sort_by_imported':
         return 'Urutkan berdasarkan tanggal impor';
       case 'collection_sort_by_season':
@@ -411786,6 +412314,10 @@ extension on _StringsIt {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Ordine della raccolta';
+      case 'ai_feature_collection_order_summary':
+        return 'Quando le regole di numerazione non riescono a collocare speciali, OVA o volumi, lascia che sia l\'IA a decidere la loro posizione nella raccolta';
       case 'ai_feature_custom_theme':
         return 'Tema personalizzato';
       case 'ai_feature_custom_theme_summary':
@@ -414848,6 +415380,22 @@ extension on _StringsIt {
         return 'Nuovo scraping in coda';
       case 'collection_sentence':
         return 'Frase';
+      case 'collection_sort_ai':
+        return 'Ordina con IA';
+      case 'collection_sort_ai_applied':
+        return 'Ordine aggiornato con l\'IA';
+      case 'collection_sort_ai_invalid':
+        return 'La risposta dell\'IA non ha superato la verifica; ordine invariato';
+      case 'collection_sort_ai_rules_only':
+        return 'I numeri di episodio e volume determinano già l\'ordine; ordinato in base a essi';
+      case 'collection_sort_ai_running':
+        return 'Richiesta dell\'ordine all\'IA…';
+      case 'collection_sort_ai_too_large':
+        return 'Questa raccolta è troppo grande per l\'ordinamento con IA';
+      case 'collection_sort_ai_unchanged':
+        return 'L\'IA ha mantenuto l\'ordine attuale';
+      case 'collection_sort_ai_unknown':
+        return 'L\'IA non riconosce quest\'opera e non ha trovato nulla online; ordine invariato';
       case 'collection_sort_by_imported':
         return 'Ordina per data di importazione';
       case 'collection_sort_by_season':
@@ -428104,6 +428652,10 @@ extension on _StringsJa {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'コレクションの並び順';
+      case 'ai_feature_collection_order_summary':
+        return '番号のルールで SP・OVA・特別編や巻の位置を決められないとき、コレクション内の位置を AI に決めてもらいます';
       case 'ai_feature_custom_theme':
         return 'カスタムテーマ';
       case 'ai_feature_custom_theme_summary':
@@ -431138,6 +431690,22 @@ extension on _StringsJa {
         return '再取得をキューに追加しました';
       case 'collection_sentence':
         return '文';
+      case 'collection_sort_ai':
+        return 'AI で並べ替え';
+      case 'collection_sort_ai_applied':
+        return 'AI の提案で並び順を更新しました';
+      case 'collection_sort_ai_invalid':
+        return 'AI の回答が検証を通らなかったため、並び順は変更していません';
+      case 'collection_sort_ai_rules_only':
+        return '話数・巻数で順番が決まるため、それに従って並べ替えました';
+      case 'collection_sort_ai_running':
+        return 'AI に並び順を問い合わせています…';
+      case 'collection_sort_ai_too_large':
+        return 'このコレクションは大きすぎるため、AI で並べ替えできません';
+      case 'collection_sort_ai_unchanged':
+        return 'AI は現在の並び順のままにしました';
+      case 'collection_sort_ai_unknown':
+        return 'AI はこの作品を知らず、オンラインでも資料が見つからなかったため、並び順は変更していません';
       case 'collection_sort_by_imported':
         return 'インポート日順';
       case 'collection_sort_by_season':
@@ -444297,6 +444865,10 @@ extension on _StringsKo {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return '컬렉션 순서';
+      case 'ai_feature_collection_order_summary':
+        return '번호 규칙으로 스페셜, OVA, 권의 위치를 정할 수 없을 때 AI가 컬렉션 안의 위치를 정하게 합니다';
       case 'ai_feature_custom_theme':
         return '사용자 지정 테마';
       case 'ai_feature_custom_theme_summary':
@@ -447331,6 +447903,22 @@ extension on _StringsKo {
         return '다시 스크레이핑을 대기열에 추가했습니다';
       case 'collection_sentence':
         return '문장';
+      case 'collection_sort_ai':
+        return 'AI로 정렬';
+      case 'collection_sort_ai_applied':
+        return 'AI 제안으로 순서를 업데이트했습니다';
+      case 'collection_sort_ai_invalid':
+        return 'AI 응답이 검증을 통과하지 못해 순서를 바꾸지 않았습니다';
+      case 'collection_sort_ai_rules_only':
+        return '화수와 권수로 이미 순서가 정해져 그에 따라 정렬했습니다';
+      case 'collection_sort_ai_running':
+        return 'AI에게 순서를 묻는 중…';
+      case 'collection_sort_ai_too_large':
+        return '이 컬렉션은 너무 커서 AI로 정렬할 수 없습니다';
+      case 'collection_sort_ai_unchanged':
+        return 'AI가 현재 순서를 유지했습니다';
+      case 'collection_sort_ai_unknown':
+        return 'AI가 이 작품을 알지 못하고 온라인에서도 찾지 못해 순서를 바꾸지 않았습니다';
       case 'collection_sort_by_imported':
         return '가져온 날짜순 정렬';
       case 'collection_sort_by_season':
@@ -460499,6 +461087,10 @@ extension on _StringsNl {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Volgorde van verzameling';
+      case 'ai_feature_collection_order_summary':
+        return 'Als nummeringsregels specials, OVA\'s of delen niet kunnen plaatsen, laat de AI bepalen waar ze in de verzameling horen';
       case 'ai_feature_custom_theme':
         return 'Eigen thema';
       case 'ai_feature_custom_theme_summary':
@@ -463560,6 +464152,22 @@ extension on _StringsNl {
         return 'Opnieuw scrapen in wachtrij gezet';
       case 'collection_sentence':
         return 'Zin';
+      case 'collection_sort_ai':
+        return 'Sorteren met AI';
+      case 'collection_sort_ai_applied':
+        return 'Volgorde bijgewerkt met AI';
+      case 'collection_sort_ai_invalid':
+        return 'Het antwoord van de AI kwam niet door de controle; volgorde ongewijzigd';
+      case 'collection_sort_ai_rules_only':
+        return 'Aflevering- en deelnummers bepalen de volgorde al; daarop gesorteerd';
+      case 'collection_sort_ai_running':
+        return 'AI wordt om de volgorde gevraagd…';
+      case 'collection_sort_ai_too_large':
+        return 'Deze verzameling is te groot om met AI te sorteren';
+      case 'collection_sort_ai_unchanged':
+        return 'De AI heeft de huidige volgorde behouden';
+      case 'collection_sort_ai_unknown':
+        return 'De AI kent dit werk niet en vond online niets; volgorde ongewijzigd';
       case 'collection_sort_by_imported':
         return 'Sorteren op importdatum';
       case 'collection_sort_by_season':
@@ -476815,6 +477423,10 @@ extension on _StringsPtBr {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Ordem da coleção';
+      case 'ai_feature_collection_order_summary':
+        return 'Quando as regras de numeração não conseguem posicionar especiais, OVAs ou volumes, deixe a IA decidir o lugar deles na coleção';
       case 'ai_feature_custom_theme':
         return 'Tema personalizado';
       case 'ai_feature_custom_theme_summary':
@@ -479877,6 +480489,22 @@ extension on _StringsPtBr {
         return 'Nova raspagem na fila';
       case 'collection_sentence':
         return 'Frase';
+      case 'collection_sort_ai':
+        return 'Ordenar com IA';
+      case 'collection_sort_ai_applied':
+        return 'Ordem atualizada com IA';
+      case 'collection_sort_ai_invalid':
+        return 'A resposta da IA não passou na validação; ordem inalterada';
+      case 'collection_sort_ai_rules_only':
+        return 'Os números de episódio e volume já definem a ordem; ordenado por eles';
+      case 'collection_sort_ai_running':
+        return 'Consultando a IA sobre a ordem…';
+      case 'collection_sort_ai_too_large':
+        return 'Esta coleção é grande demais para ordenar com IA';
+      case 'collection_sort_ai_unchanged':
+        return 'A IA manteve a ordem atual';
+      case 'collection_sort_ai_unknown':
+        return 'A IA não reconheceu esta obra e não encontrou nada online; ordem inalterada';
       case 'collection_sort_by_imported':
         return 'Ordenar por data de importação';
       case 'collection_sort_by_season':
@@ -493120,6 +493748,10 @@ extension on _StringsRu {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Порядок в коллекции';
+      case 'ai_feature_collection_order_summary':
+        return 'Когда правила нумерации не могут определить место спешлов, OVA или томов, ИИ решает, где они должны стоять в коллекции';
       case 'ai_feature_custom_theme':
         return 'Своя тема';
       case 'ai_feature_custom_theme_summary':
@@ -496188,6 +496820,22 @@ extension on _StringsRu {
         return 'Обновление поставлено в очередь';
       case 'collection_sentence':
         return 'Предложение';
+      case 'collection_sort_ai':
+        return 'Упорядочить с ИИ';
+      case 'collection_sort_ai_applied':
+        return 'Порядок обновлён с помощью ИИ';
+      case 'collection_sort_ai_invalid':
+        return 'Ответ ИИ не прошёл проверку; порядок не изменён';
+      case 'collection_sort_ai_rules_only':
+        return 'Номера серий и томов уже задают порядок; упорядочено по ним';
+      case 'collection_sort_ai_running':
+        return 'Запрашиваем порядок у ИИ…';
+      case 'collection_sort_ai_too_large':
+        return 'Коллекция слишком велика для упорядочивания с ИИ';
+      case 'collection_sort_ai_unchanged':
+        return 'ИИ оставил текущий порядок';
+      case 'collection_sort_ai_unknown':
+        return 'ИИ не знает это произведение и ничего не нашёл в сети; порядок не изменён';
       case 'collection_sort_by_imported':
         return 'По дате импорта';
       case 'collection_sort_by_season':
@@ -509433,6 +510081,10 @@ extension on _StringsTh {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'ลำดับในคอลเลกชัน';
+      case 'ai_feature_collection_order_summary':
+        return 'เมื่อกฎการนับเลขระบุตำแหน่งตอนพิเศษ OVA หรือเล่มไม่ได้ ให้ AI ตัดสินว่าควรอยู่ตรงไหนในคอลเลกชัน';
       case 'ai_feature_custom_theme':
         return 'ธีมกำหนดเอง';
       case 'ai_feature_custom_theme_summary':
@@ -512482,6 +513134,22 @@ extension on _StringsTh {
         return 'จัดคิวดึงข้อมูลใหม่แล้ว';
       case 'collection_sentence':
         return 'ประโยค';
+      case 'collection_sort_ai':
+        return 'เรียงด้วย AI';
+      case 'collection_sort_ai_applied':
+        return 'อัปเดตลำดับตามที่ AI แนะนำแล้ว';
+      case 'collection_sort_ai_invalid':
+        return 'คำตอบของ AI ไม่ผ่านการตรวจสอบ ลำดับไม่เปลี่ยน';
+      case 'collection_sort_ai_rules_only':
+        return 'เลขตอนและเลขเล่มกำหนดลำดับได้อยู่แล้ว จึงเรียงตามนั้น';
+      case 'collection_sort_ai_running':
+        return 'กำลังถาม AI เรื่องลำดับ…';
+      case 'collection_sort_ai_too_large':
+        return 'คอลเลกชันนี้ใหญ่เกินกว่าจะเรียงด้วย AI';
+      case 'collection_sort_ai_unchanged':
+        return 'AI คงลำดับปัจจุบันไว้';
+      case 'collection_sort_ai_unknown':
+        return 'AI ไม่รู้จักผลงานนี้และค้นหาทางออนไลน์ไม่พบ ลำดับไม่เปลี่ยน';
       case 'collection_sort_by_imported':
         return 'เรียงตามวันที่นำเข้า';
       case 'collection_sort_by_season':
@@ -525701,6 +526369,10 @@ extension on _StringsTr {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Koleksiyon sırası';
+      case 'ai_feature_collection_order_summary':
+        return 'Numaralandırma kuralları özel bölümleri, OVA\'ları veya ciltleri yerleştiremediğinde, koleksiyondaki yerlerine yapay zeka karar versin';
       case 'ai_feature_custom_theme':
         return 'Özel tema';
       case 'ai_feature_custom_theme_summary':
@@ -528766,6 +529438,22 @@ extension on _StringsTr {
         return 'Yeniden kazıma sıraya alındı';
       case 'collection_sentence':
         return 'Cümle';
+      case 'collection_sort_ai':
+        return 'Yapay zeka ile sırala';
+      case 'collection_sort_ai_applied':
+        return 'Sıra yapay zeka ile güncellendi';
+      case 'collection_sort_ai_invalid':
+        return 'Yapay zekanın yanıtı doğrulamadan geçemedi; sıra değişmedi';
+      case 'collection_sort_ai_rules_only':
+        return 'Bölüm ve cilt numaraları sırayı zaten belirliyor; bunlara göre sıralandı';
+      case 'collection_sort_ai_running':
+        return 'Sıra için yapay zekaya soruluyor…';
+      case 'collection_sort_ai_too_large':
+        return 'Bu koleksiyon yapay zeka ile sıralamak için çok büyük';
+      case 'collection_sort_ai_unchanged':
+        return 'Yapay zeka mevcut sırayı korudu';
+      case 'collection_sort_ai_unknown':
+        return 'Yapay zeka bu eseri tanımadı ve çevrimiçi bir şey bulamadı; sıra değişmedi';
       case 'collection_sort_by_imported':
         return 'İçe aktarma tarihine göre sırala';
       case 'collection_sort_by_season':
@@ -541999,6 +542687,10 @@ extension on _StringsVi {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return 'Thứ tự bộ sưu tập';
+      case 'ai_feature_collection_order_summary':
+        return 'Khi quy tắc đánh số không xếp được tập đặc biệt, OVA hay tập sách, hãy để AI quyết định vị trí của chúng trong bộ sưu tập';
       case 'ai_feature_custom_theme':
         return 'Giao diện tùy chỉnh';
       case 'ai_feature_custom_theme_summary':
@@ -545055,6 +545747,22 @@ extension on _StringsVi {
         return 'Đã xếp hàng quét lại';
       case 'collection_sentence':
         return 'Câu';
+      case 'collection_sort_ai':
+        return 'Sắp xếp bằng AI';
+      case 'collection_sort_ai_applied':
+        return 'Đã cập nhật thứ tự theo AI';
+      case 'collection_sort_ai_invalid':
+        return 'Câu trả lời của AI không qua được kiểm tra; thứ tự không đổi';
+      case 'collection_sort_ai_rules_only':
+        return 'Số tập và số quyển đã xác định thứ tự; đã sắp xếp theo đó';
+      case 'collection_sort_ai_running':
+        return 'Đang hỏi AI về thứ tự…';
+      case 'collection_sort_ai_too_large':
+        return 'Bộ sưu tập này quá lớn để sắp xếp bằng AI';
+      case 'collection_sort_ai_unchanged':
+        return 'AI giữ nguyên thứ tự hiện tại';
+      case 'collection_sort_ai_unknown':
+        return 'AI không nhận ra tác phẩm này và không tìm thấy gì trên mạng; thứ tự không đổi';
       case 'collection_sort_by_imported':
         return 'Sắp xếp theo ngày nhập';
       case 'collection_sort_by_season':
@@ -558281,6 +558989,10 @@ extension on _StringsZhCn {
         return '有声书角色标注';
       case 'ai_feature_audiobook_cast_summary':
         return '标注每句台词的说话人，供多声优配音';
+      case 'ai_feature_collection_order':
+        return '合集排序';
+      case 'ai_feature_collection_order_summary':
+        return '规则排不出 SP / OVA / 特别篇或卷序时，让 AI 决定它们在合集里的位置';
       case 'ai_feature_custom_theme':
         return '自定义主题';
       case 'ai_feature_custom_theme_summary':
@@ -561283,6 +561995,22 @@ extension on _StringsZhCn {
         return '已开始重新刮削';
       case 'collection_sentence':
         return '句子';
+      case 'collection_sort_ai':
+        return 'AI 排序';
+      case 'collection_sort_ai_applied':
+        return '已按 AI 建议调整顺序';
+      case 'collection_sort_ai_invalid':
+        return 'AI 的回复没通过校验，顺序未改';
+      case 'collection_sort_ai_rules_only':
+        return '集号 / 卷号已能确定顺序，已按规则排好';
+      case 'collection_sort_ai_running':
+        return '正在让 AI 排序…';
+      case 'collection_sort_ai_too_large':
+        return '合集太大，无法用 AI 排序';
+      case 'collection_sort_ai_unchanged':
+        return 'AI 认为当前顺序无需调整';
+      case 'collection_sort_ai_unknown':
+        return 'AI 不认识这部作品，也没查到资料，顺序未改';
       case 'collection_sort_by_imported':
         return '按导入时间排序';
       case 'collection_sort_by_season':
@@ -574376,6 +575104,10 @@ extension on _StringsZhHk {
         return 'Audiobook casting';
       case 'ai_feature_audiobook_cast_summary':
         return 'Mark which character speaks each line so different voices can read them';
+      case 'ai_feature_collection_order':
+        return '合集排序';
+      case 'ai_feature_collection_order_summary':
+        return '規則排不出 SP / OVA / 特別篇或卷序時，讓 AI 決定它們在合集裡的位置';
       case 'ai_feature_custom_theme':
         return '自定義主題';
       case 'ai_feature_custom_theme_summary':
@@ -577386,6 +578118,22 @@ extension on _StringsZhHk {
         return '已開始重新刮削';
       case 'collection_sentence':
         return '句子';
+      case 'collection_sort_ai':
+        return 'AI 排序';
+      case 'collection_sort_ai_applied':
+        return '已按 AI 建議調整順序';
+      case 'collection_sort_ai_invalid':
+        return 'AI 的回覆沒通過校驗，順序未改';
+      case 'collection_sort_ai_rules_only':
+        return '集號 / 卷號已能確定順序，已按規則排好';
+      case 'collection_sort_ai_running':
+        return '正在讓 AI 排序…';
+      case 'collection_sort_ai_too_large':
+        return '合集太大，無法用 AI 排序';
+      case 'collection_sort_ai_unchanged':
+        return 'AI 認為目前順序無需調整';
+      case 'collection_sort_ai_unknown':
+        return 'AI 不認識這部作品，也沒查到資料，順序未改';
       case 'collection_sort_by_imported':
         return '按導入時間排序';
       case 'collection_sort_by_season':
