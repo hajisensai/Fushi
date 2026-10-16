@@ -4462,6 +4462,12 @@ $liveConfigJs
   /// 末句止；跨章/跨音频文件退化为只合文本）。无 WebView 或无选区时清空上下文返回 0。
   @override
   Future<int> onSetSentenceContextToDraft(int prevCount, int nextCount) async {
+    // 歌词模式：查词发生在独立的歌词 WebView 里，正文 WebView 没有选区，
+    // getSurroundingSentences 恒返回空 →「前加一句 / 后加一句」一点就被判到边界
+    // 禁用（BUG-3417）。歌词一行就是一条 cue，上下文取相邻 cue。
+    if (_lyricsMode) {
+      return _setLyricsSentenceContextToDraft(prevCount, nextCount);
+    }
     final InAppWebViewController? controller = _controller;
     if (controller == null || (prevCount <= 0 && nextCount <= 0)) {
       _miningDraft.setContext();
