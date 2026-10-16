@@ -165,7 +165,7 @@ CREATE TABLE revlog (id integer PRIMARY KEY, cid integer NOT NULL, usn integer N
 /// （`storage/upgrades/schema15_upgrade.sql` 起）：name 列与唯一索引都是
 /// `COLLATE unicase`，fields / templates / config / tags 是 `WITHOUT ROWID`。
 /// 建表与读表都要先注册 `unicase`（[buildSqlite] / [patchSqlite] 已代办，
-/// 被测代码必须自己注册，见 BUG-3418）。
+/// 被测代码必须自己注册，见 BUG-3428）。
 const String schema18Extra = '''
 CREATE TABLE notetypes (id integer NOT NULL PRIMARY KEY, name text NOT NULL COLLATE unicase,
   mtime_secs integer NOT NULL, usn integer NOT NULL, config blob NOT NULL);

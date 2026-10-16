@@ -330,7 +330,7 @@ class SrsAnkiCollection {
     await f.writeAsBytes(sqliteBytes, flush: true);
     final Database db;
     try {
-      // 新 schema 的 fields / notetypes / decks… 用 COLLATE unicase（BUG-3418）。
+      // 新 schema 的 fields / notetypes / decks… 用 COLLATE unicase（BUG-3428）。
       db = openAnkiCollectionDb(f.path);
     } on Object catch (e) {
       await dir.delete(recursive: true);
