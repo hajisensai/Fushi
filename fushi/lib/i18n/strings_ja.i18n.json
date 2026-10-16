@@ -8080,5 +8080,6 @@
   "srs_card_appearance_font": "Card font",
   "srs_card_appearance_font_hint": "From the font library; characters fall back in order (put Latin fonts first)",
   "srs_card_label_show_more": "Show more",
-  "srs_card_appearance_compact_phone": "Compact back on phones (dictionary tabs, long definitions folded)"
+  "srs_card_appearance_compact_phone": "Compact back on phones (dictionary tabs, long definitions folded)",
+  "srs_review_hide_hard_easy": "「Hard」と「Easy」ボタンを隠す"
 }

@@ -2887,6 +2887,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
+  bool get srsReviewHideHardEasy =>
+      getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewHideHardEasy(bool value) async {
+    await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
   // 复习卡面外观（JSON，见 SrsCardAppearance）。空串 = 模板默认外观。
   String get srsCardAppearance =>
       getPref('srs_card_appearance', defaultValue: '') as String;

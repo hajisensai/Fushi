@@ -8080,5 +8080,6 @@
   "srs_card_appearance_font": "卡面字体",
   "srs_card_appearance_font_hint": "从字体库选择；按顺序逐字回落（西文字体放前面）",
   "srs_card_label_show_more": "展开全文",
-  "srs_card_appearance_compact_phone": "手机精简背面（词典页签、长释义收起）"
+  "srs_card_appearance_compact_phone": "手机精简背面（词典页签、长释义收起）",
+  "srs_review_hide_hard_easy": "隐藏「困难」和「简单」按钮"
 }

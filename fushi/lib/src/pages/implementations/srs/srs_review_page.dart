@@ -734,7 +734,24 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
           ?_appearanceItem,
+          _hideHardEasyItem,
         ];
+
+  /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
+  /// 照样有效）。勾选态 = 已隐藏；点了立即生效、写进按 profile 的偏好。
+  FushiToolbarItem get _hideHardEasyItem {
+    final bool hidden = ref.watch(srsReviewHideHardEasyProvider);
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_review_hide_hard_easy'),
+      icon: FushiIcons.visibilityOff,
+      label: t.srs_review_hide_hard_easy,
+      selected: hidden,
+      onPressed: () => srsRunLogged(
+        'SrsReview.hideHardEasy',
+        () => ref.read(appProvider).setSrsReviewHideHardEasy(!hidden),
+      ),
+    );
+  }
 
   Widget _buildTopBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1004,14 +1021,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
     );
 
+    // 只留「重来 / 良好」时两颗各占半行（对齐 AnkiDroid：不留空位）；key 随模式变，
+    // 外层 AnimatedSwitcher 借此在两种布局间淡入淡出。
+    final bool twoButtons = ref.watch(srsReviewHideHardEasyProvider);
     return Row(
-      key: const ValueKey<String>('srs-rating-row'),
+      key: ValueKey<String>(
+        twoButtons ? 'srs-rating-row-two' : 'srs-rating-row',
+      ),
       spacing: tokens.spacing.gap,
       children: <Widget>[
         button(1, t.srs_rating_again, FushiCardTone.error),
-        button(2, t.srs_rating_hard, FushiCardTone.neutral),
+        if (!twoButtons) button(2, t.srs_rating_hard, FushiCardTone.neutral),
         button(3, t.srs_rating_good, FushiCardTone.primary),
-        button(4, t.srs_rating_easy, FushiCardTone.tertiary),
+        if (!twoButtons) button(4, t.srs_rating_easy, FushiCardTone.tertiary),
       ],
     );
   }
