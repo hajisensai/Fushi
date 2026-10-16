@@ -27,6 +27,7 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
 part 'backup_service/restore.part.dart';
+part 'backup_service/table_rules.part.dart';
 
 /// 本地备份导出物文件名口径。存储页与导出前清扫共用，避免一边展示、一边认不出。
 ///
@@ -611,6 +612,8 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 ///     installation's backend fingerprint, local paths and source-library
 ///     ids. Sending them to another device could enqueue work against the
 ///     wrong backend. Their five-table FK graph is ordered explicitly below.
+///   - `clipboard_history`   — this device's copied text; a private usage
+///     trace like search history, but kept across an overwrite import.
 ///
 /// [_deviceLocalTables] is CHILD-first and is the only order allowed for a
 /// wipe. [_deviceLocalTablesParentFirst] is the inverse dependency order used
@@ -635,9 +638,11 @@ const List<String> _deviceLocalTables = <String>[
   'update_feed_entries',
   'manga_download_jobs',
   'pending_mine_queue',
+  'clipboard_history',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
+  'clipboard_history',
   'pending_mine_queue',
   'manga_download_jobs',
   'update_feed_entries',
@@ -1465,6 +1470,17 @@ class BackupService {
         includeBooks: includeBooks,
         includeVideos: includeVideos,
         includeStatistics: includeStatistics,
+      );
+
+      // 统一兜底：schema 里每张表都在 [backupTableRules] 登记了归属，归属类别全没
+      // 勾的表整表清空。以前没被任何剥离逻辑点名的表（剪贴板历史、最近打开流、
+      // 视频刮削缓存与本地路径……）无论勾什么都随包出境。
+      await _stripTablesOfExcludedCategories(
+        tmpDir.path,
+        <BackupCategory>{
+          for (final BackupCategory c in BackupCategory.values)
+            if (wants(c)) c,
+        },
       );
 
       // BUG-816: content-registry preference rows follow their OWNING content
