@@ -956,6 +956,9 @@ abstract class VideoFushiTestHooks {
   /// 测试直接打开弹幕设置分类（TODO-1376），避免坐标点击设置按钮再切分类。
   void debugOpenDanmakuSettings();
 
+  /// 测试直接打开播放器设置面板的「控制按钮」分类（快捷键设置入口所在）。
+  void debugOpenControlsSettings();
+
   /// 测试直接打开弹幕手动搜索/选集侧栏（TODO-1376）。
   void debugOpenDanmakuMatch();
 
@@ -1374,6 +1377,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final _RestartHideTimerSignal _restartHideTimerSignal =
       _RestartHideTimerSignal();
 
+  /// 控制条「⋯」溢出菜单开着时为 true：两端 fork 的 `holdVisible` 订阅它，开着期间
+  /// 指针离开（桌面：菜单路由的 barrier 盖住控制条，media_kit 的 MouseRegion 立刻
+  /// onExit）与自动隐藏 Timer 都不再收起控制条——否则菜单锚定的「⋯」按钮连同整条
+  /// 控制条在菜单弹出的同一帧消失。菜单关闭后放开，控制条按 hover 重新倒计时。
+  final ValueNotifier<bool> _controlsHeldByMenu = ValueNotifier<bool>(false);
+
   static const double _volumeStep = 5.0;
 
   /// media_kit 移动控制条竖滑（左=亮度 / 右=音量）的灵敏度（TODO-172/BUG-230）。
@@ -1641,6 +1650,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void debugOpenDanmakuSettings() {
     _showPlayerSettings(initialCategory: 'danmaku');
+  }
+
+  @override
+  void debugOpenControlsSettings() {
+    _showPlayerSettings(initialCategory: 'controls');
   }
 
   @override
@@ -5889,6 +5903,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _blackFlickerNoticeNotifier.dispose();
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
+    _controlsHeldByMenu.dispose();
     _videoControlsVisible.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
@@ -8154,6 +8169,33 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// 「⋯」里只剩一项时画在「⋯」位置上的那枚按钮（[VideoControlBar.singleActionButtonBuilder]）：
+  /// 与「⋯」同款同尺寸，图标 / tooltip 取那一项自己的，按下直接执行——只有一行的
+  /// 菜单多点一下却什么也没省（工具栏规则：放得下就平铺）。
+  Widget _videoBarSingleActionButton(
+    VideoBarMenuAction action, {
+    required bool desktop,
+  }) {
+    return FushiTooltip(
+      message: action.label,
+      child: _chromeIconButton(
+        icon: action.icon,
+        onPressed: () {
+          _pokeControlsVisible();
+          action.onSelected();
+        },
+        desktop: desktop,
+      ),
+    );
+  }
+
+  /// 「⋯」菜单开 / 关（[VideoControlBar.onMenuOpenChanged]）：开着期间按住控制条
+  /// （[_controlsHeldByMenu] → fork `holdVisible`），菜单锚定的按钮不随自动隐藏消失。
+  void _onVideoBarMenuOpenChanged(bool open) {
+    if (!mounted) return;
+    _controlsHeldByMenu.value = open;
+  }
+
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
   bool get _m3eChrome => !_appleChrome;
 
@@ -8967,6 +9009,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
         moreButtonBuilder: (VoidCallback open) =>
             _videoBarMoreButton(open, desktop: desktop),
+        singleActionButtonBuilder: (VideoBarMenuAction action) =>
+            _videoBarSingleActionButton(action, desktop: desktop),
+        onMenuOpenChanged: _onVideoBarMenuOpenChanged,
         entries: <VideoBarEntry>[
           ...disc,
           for (final VideoControlItem item in items)
@@ -9345,6 +9390,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       clusterStyle: _m3eFloatingBarStyle(),
       moreButtonBuilder: (VoidCallback open) =>
           _videoBarMoreButton(open, desktop: desktop),
+      singleActionButtonBuilder: (VideoBarMenuAction action) =>
+          _videoBarSingleActionButton(action, desktop: desktop),
+      onMenuOpenChanged: _onVideoBarMenuOpenChanged,
       entries: <VideoBarEntry>[
         // 左区：时间指示器 + bottomLeft 自定义按钮。
         ..._bottomSlotButtons(

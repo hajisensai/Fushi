@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Masquer le sous-titre secondaire",
   "video_setting_secondary_subtitle_obscure_hint": "Flouter ou cacher le sous-titre secondaire (traduction)",
   "video_setting_seek_seconds": "Pas d'avance/recul (secondes)",
+  "video_setting_shortcuts_hint": "Afficher et personnaliser les raccourcis clavier et manette du lecteur",
   "video_setting_slim_progress_bar": "Fine barre de progression en bas",
   "video_setting_slim_progress_bar_hint": "Quand les commandes s'estompent, garde une fine ligne de progression de la couleur d'accent tout en bas de la vidéo. Dans la mini-fenêtre, elle est toujours affichée, car la barre de recherche complète y est masquée.",
   "video_setting_speed": "Vitesse de lecture",

@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "إخفاء الترجمة الثانوية",
   "video_setting_secondary_subtitle_obscure_hint": "تمويه أو إخفاء الترجمة الثانوية (المترجمة)",
   "video_setting_seek_seconds": "ثوانٍ الانتقال",
+  "video_setting_shortcuts_hint": "عرض اختصارات لوحة المفاتيح وذراع التحكم الخاصة بالمشغّل وتخصيصها",
   "video_setting_slim_progress_bar": "شريط تقدّم رفيع في الأسفل",
   "video_setting_slim_progress_bar_hint": "عند اختفاء عناصر التحكم، يُبقي خط تقدّم رفيعًا بلون التمييز على أسفل الفيديو تمامًا. وفي النافذة المصغّرة يظهر دائمًا لأن شريط التقديم الكامل مخفي هناك.",
   "video_setting_speed": "سرعة التشغيل",

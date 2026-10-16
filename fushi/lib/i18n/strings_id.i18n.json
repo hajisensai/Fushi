@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Samarkan subtitle sekunder",
   "video_setting_secondary_subtitle_obscure_hint": "Buramkan atau sembunyikan subtitle sekunder (terjemahan)",
   "video_setting_seek_seconds": "Detik lompatan",
+  "video_setting_shortcuts_hint": "Lihat dan sesuaikan pintasan keyboard dan gamepad pemutar",
   "video_setting_slim_progress_bar": "Bilah progres tipis di bawah",
   "video_setting_slim_progress_bar_hint": "Saat kontrol memudar, pertahankan garis progres tipis berwarna aksen di sepanjang dasar video. Di jendela mini selalu ditampilkan, karena bilah geser penuh disembunyikan di sana.",
   "video_setting_speed": "Kecepatan putar",

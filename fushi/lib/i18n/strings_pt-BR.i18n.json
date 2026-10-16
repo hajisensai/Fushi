@@ -7367,6 +7367,7 @@
   "video_setting_secondary_subtitle_obscure": "Ocultar legenda secundária",
   "video_setting_secondary_subtitle_obscure_hint": "Desfocar ou ocultar a legenda secundária (tradução)",
   "video_setting_seek_seconds": "Segundos para avançar/retroceder",
+  "video_setting_shortcuts_hint": "Ver e personalizar os atalhos de teclado e controle do player",
   "video_setting_slim_progress_bar": "Barra de progresso fina na parte inferior",
   "video_setting_slim_progress_bar_hint": "Quando os controles desaparecem, mantém uma linha fina de progresso na cor de destaque na parte mais baixa do vídeo. Na minijanela ela é sempre exibida, pois a barra de busca completa fica oculta ali.",
   "video_setting_speed": "Velocidade de reprodução",
