@@ -40,8 +40,14 @@ class LeaderboardConsentRequired implements Exception {
   String toString() => 'LeaderboardConsentRequired';
 }
 
-/// 头像边长（正方形 JPEG）。
-const int kLeaderboardAvatarSize = 128;
+/// 头像边长（正方形 JPEG）。「超级大西瓜」页的最大球直径 192 逻辑像素，还会被
+/// 「适应屏幕」放大、可双指再放大，128px 的头像在 1.5x 屏上就明显发糊；384 让
+/// 大球在常见缩放下也是原生像素。
+const int kLeaderboardAvatarSize = 384;
+
+/// 头像上传字节上限，与服务端 `AVATAR_MAX_BYTES`（services/leaderboard/src/media.js）
+/// 一致：超了服务端直接 413。
+const int kLeaderboardAvatarMaxBytes = 64 * 1024;
 
 enum LeaderboardStatus {
   /// 本 Profile 没有排行榜账户（默认；此时零网络请求）。
@@ -715,8 +721,8 @@ Future<Uint8List?> leaderboardCoverThumb(LocalShelfEntry entry) async {
       : null;
 }
 
-/// 读图 → 居中裁成 [kLeaderboardAvatarSize] 正方形 → JPEG（质量 85），解码 / 编码在
-/// 后台 isolate。不是可解码图片抛 [FormatException]。
+/// 读图 → 居中裁成 [kLeaderboardAvatarSize] 正方形 → JPEG，解码 / 编码在后台
+/// isolate。不是可解码图片抛 [FormatException]。
 Future<Uint8List> encodeLeaderboardAvatar(String path) async {
   final Uint8List bytes = await File(path).readAsBytes();
   return Isolate.run<Uint8List>(() => encodeLeaderboardAvatarBytes(bytes));
@@ -733,11 +739,17 @@ Uint8List encodeLeaderboardAvatarBytes(Uint8List bytes) {
     decoded = null;
   }
   if (decoded == null) throw const FormatException('not a decodable image');
-  final img.Image square = img.copyResizeCropSquare(
-    decoded,
-    size: kLeaderboardAvatarSize,
-  );
-  return img.encodeJpg(square, quality: 85);
+  // 先保边长、逐级降质量；仍超 [kLeaderboardAvatarMaxBytes]（极高噪点图）再缩边长。
+  // 最后一档 128px / 质量 60 远低于上限，循环必有结果。
+  Uint8List? out;
+  for (final int size in <int>[kLeaderboardAvatarSize, 256, 128]) {
+    final img.Image square = img.copyResizeCropSquare(decoded, size: size);
+    for (final int quality in <int>[85, 75, 60]) {
+      out = img.encodeJpg(square, quality: quality);
+      if (out.length <= kLeaderboardAvatarMaxBytes) return out;
+    }
+  }
+  return out!;
 }
 
 /// 当前 Profile 的排行榜服务。Profile 切换时重建（旧实例随之 dispose），换到新

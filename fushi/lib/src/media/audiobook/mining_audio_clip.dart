@@ -107,6 +107,41 @@ AudioPlaybackRange? miningSentenceAudioRange({
   return _shiftRange(paddedRange, delayMs);
 }
 
+/// Sentence-audio range of a cue that IS the whole sentence (an audiobook
+/// lyrics-mode line): the cue's own start/end in its own
+/// [AudioCue.audioFileIndex], run through the same repair / padding / A/V-delay
+/// chokepoints as [miningSentenceAudioRange].
+///
+/// Unlike [miningSentenceAudioRange] this never consults a section index, a
+/// normalized char span or the cue text, so it cannot be steered onto another
+/// chapter or onto an earlier cue with the same text (BUG-3417: lyrics-mode
+/// context sentences resolved through the lookup sentence's chapter and merged
+/// into a "chapter start -> lookup sentence" clip). [cues] only bounds the
+/// padding against same-file neighbours.
+AudioPlaybackRange miningCueAudioRange({
+  required List<AudioCue> cues,
+  required AudioCue cue,
+  int delayMs = 0,
+  int headPadMs = kMiningHeadPadMs,
+  int tailPadMs = kMiningTailPadMs,
+}) {
+  final AudioPlaybackRange positiveRange = _ensurePositiveDuration(
+    AudioPlaybackRange(
+      audioFileIndex: cue.audioFileIndex,
+      startMs: cue.startMs,
+      endMs: cue.endMs,
+    ),
+    cues,
+  );
+  final AudioPlaybackRange paddedRange = padSentenceRange(
+    positiveRange,
+    cues: cues,
+    headPadMs: headPadMs,
+    tailPadMs: tailPadMs,
+  );
+  return _shiftRange(paddedRange, delayMs);
+}
+
 /// Widens [range] by up to [headPadMs] before its start and [tailPadMs] after its
 /// end, clamped against the nearest neighbouring cue in the SAME audio file so the
 /// padding never runs into an adjacent sentence.
