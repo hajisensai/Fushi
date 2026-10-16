@@ -1490,6 +1490,28 @@ body {
     // window.scrollBy / root.scroll* / window.scroll* 全部一致生效。
     final String overflowRule =
         'html {\n  $hiddenOverflowAxis: hidden !important;\n}';
+    // BUG-3453：交叉轴（竖排的上下 / 横排的左右）必须顶死。上面 html 的 hidden 只锁住
+    // 了「滚动条」，锁不住 iOS 的手指：WKWebView 的 UIScrollView 内容尺寸取文档的可滚
+    // 动溢出，只要正文里有东西沿交叉轴越出视口（有声书句高亮窄条、注音、书自带的块
+    // 等，body 的后代），WebKit 就照样让手指把整页沿交叉轴拖开几像素（关了回弹也只是
+    // 不弹回、停在被拖到的位置），程序化的 scrollBy / scrollIntoView 也能把它推开。两
+    // 层都要：
+    //  ① body 沿交叉轴 `clip`：后代的越界部分不再计入文档的可滚动溢出，交叉轴可滚
+    //     范围归零（程序化滚动也无处可去）。用 clip 不用 hidden——hidden 会让 body 另一
+    //     轴变 auto、body 自己成滚动容器，正是上面 TODO-718 要避开的；clip 不建滚动容器，
+    //     主轴照旧由 html 滚。body 交叉轴尺寸就是视口（竖排 height = 可视高、横排
+    //     width = 100vw），被裁掉的只有本来就在视口外的部分。
+    //  ② `touch-action` 只放行主轴平移：交叉轴的手势在浏览器层就不翻译成滚动，不依赖
+    //     「文档恰好没有溢出」。只影响原生平移 / 缩放，长按、点击、JS 触摸事件不变。
+    // 分页 / VN 是 html、body 两轴都 hidden（body 自己就裁掉后代越界，分页另有
+    // `touch-action: none`），不经这里。
+    final String crossAxisLockRule = '''
+html, body {
+  touch-action: ${isVertical ? 'pan-x' : 'pan-y'} !important;
+}
+body {
+  $hiddenOverflowAxis: clip !important;
+}''';
     final String viewportConstraintCss = isVertical
         ? 'height: var(--fushi-continuous-height, 100vh) !important;'
         : '''
@@ -1502,6 +1524,7 @@ width: 100vw !important;
 
     return '''
 $overflowRule
+$crossAxisLockRule
 html, body {
   margin: 0 !important;
   padding: 0 !important;
