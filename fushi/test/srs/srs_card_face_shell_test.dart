@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -505,6 +506,159 @@ process.stdout.write(JSON.stringify({html: root.innerHTML, css: cssOn(), cls: ro
       expect(
         theme,
         startsWith('window.__fushiSrsSetTheme("a{b:\\"c\\\\d\\"}"'),
+      );
+    });
+  });
+
+  group('卡面链接 / 取词脚本（node）', () {
+    /// 最小 DOM 桩：document 级监听、elementFromPoint 返回的元素链、计算样式、
+    /// 选区；fushiSelection.selectText 与宿主 callHandler 都只记账。
+    String harness(String body) =>
+        '''
+const assert = require('node:assert/strict');
+globalThis.window = globalThis;
+const calls = [];
+const selects = [];
+const listeners = {};
+let hitEl = null;
+let selection = '';
+function el(tag, attrs, parent, cursor){
+  return {
+    nodeType: 1, tagName: tag.toUpperCase(), attrs: attrs || {}, parentElement: parent || null,
+    isContentEditable: false, cursor: cursor || 'auto',
+    hasAttribute(n){ return Object.prototype.hasOwnProperty.call(this.attrs, n); },
+    getAttribute(n){ return this.hasAttribute(n) ? this.attrs[n] : null; },
+    closest(sel){
+      for (let n = this; n; n = n.parentElement) {
+        if (sel === 'a[href]' && n.tagName === 'A' && n.hasAttribute('href')) return n;
+      }
+      return null;
+    },
+  };
+}
+const body = el('body');
+globalThis.document = {
+  body, documentElement: el('html'),
+  addEventListener(t, f){ (listeners[t] = listeners[t] || []).push(f); },
+  elementFromPoint(){ return hitEl; },
+};
+window.getComputedStyle = function(n){ return { cursor: n.cursor }; };
+window.getSelection = function(){ return { isCollapsed: !selection, toString(){ return selection; } }; };
+window.flutter_inappwebview = { callHandler(name, v){ calls.push([name, v]); } };
+window.fushiSelection = { selectText(x, y, max, hover){ selects.push([x, y, max, hover]); } };
+function fire(type, ev){
+  let prevented = false;
+  ev.preventDefault = function(){ prevented = true; };
+  (listeners[type] || []).forEach(f => f(ev));
+  return prevented;
+}
+function tap(x, y, dx){
+  fire('pointerdown', {pointerType: 'mouse', button: 0, clientX: x, clientY: y});
+  if (dx) fire('pointermove', {pointerType: 'mouse', clientX: x + dx, clientY: y});
+  fire('pointerup', {pointerType: 'mouse', button: 0, clientX: x + (dx || 0), clientY: y});
+}
+$kSrsCardLinkScript
+$kSrsCardLookupScript
+$body
+''';
+
+    Future<void> runJs(String code) async {
+      final Directory dir = Directory.systemTemp.createTempSync('srs-lookup-');
+      try {
+        final File script = File('${dir.path}/verify.js')
+          ..writeAsStringSync(code);
+        final ProcessResult result = await Process.run(
+          'node',
+          <String>[script.path],
+          runInShell: Platform.isWindows,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    }
+
+    test('来源链接交给宿主；其它链接只拦导航；页内锚点放行', () async {
+      await runJs(
+        harness(r'''
+const p = el('p', {}, body);
+const src = el('a', {href: 'fushi://source?v=1&kind=book'}, p);
+const span = el('span', {}, src);
+assert.equal(fire('click', {target: span}), true);
+assert.deepEqual(calls, [['onSrsSourceLink', 'fushi://source?v=1&kind=book']]);
+assert.equal(fire('click', {target: el('a', {href: 'https://example.com/'}, p)}), true);
+assert.equal(calls.length, 1, '其它链接不交给宿主');
+assert.equal(fire('click', {target: el('a', {href: '#top'}, p)}), false);
+assert.equal(fire('click', {target: p}), false);
+'''),
+      );
+    });
+
+    test('点按取词：按门控走、拖动 / 可点元素 / 弹窗打开 / 有原生选区时不取词', () async {
+      await runJs(
+        harness(
+          r'''
+const text = el('span', {}, body);
+hitEl = text;
+tap(10, 20);
+assert.equal(selects.length, 0, '门控没下发前不取词');
+'''
+          '${srsCardLookupGateScript(tap: true, hover: false, hostHover: false, open: false)}'
+          r'''
+tap(10, 20);
+assert.deepEqual(selects, [[10, 20, 400, false]]);
+tap(10, 20, 30);
+assert.equal(selects.length, 1, '拖动不是点按');
+hitEl = el('span', {}, el('div', {}, body, 'pointer'));
+tap(10, 20);
+assert.equal(selects.length, 1, '卡片模板自己的可点元素（cursor:pointer）照旧');
+hitEl = el('span', {}, el('a', {href: 'fushi://source?x'}, body));
+tap(10, 20);
+assert.equal(selects.length, 1, '链接不取词');
+hitEl = text;
+selection = '拖选';
+tap(10, 20);
+assert.equal(selects.length, 1, '有原生选区（拖选复制）时不取词');
+selection = '';
+window.__fushiSrsLookup.open = true;
+tap(10, 20);
+assert.equal(selects.length, 1, '弹窗打开期间点按交给宿主 barrier');
+window.__fushiSrsLookup.open = false;
+window.__fushiSrsLookup.tap = false;
+tap(10, 20);
+assert.equal(selects.length, 1, '关了「点按查词」');
+''',
+        ),
+      );
+    });
+
+    test('悬停取词：Shift 或「悬停即查词」，8px 节流；宿主接管悬停时让路', () async {
+      await runJs(
+        harness(
+          r'''
+hitEl = el('span', {}, body);
+'''
+          '${srsCardLookupGateScript(tap: true, hover: false, hostHover: false, open: false)}'
+          r'''
+fire('mousemove', {clientX: 5, clientY: 5, shiftKey: false});
+assert.equal(selects.length, 0);
+fire('mousemove', {clientX: 5, clientY: 5, shiftKey: true});
+fire('mousemove', {clientX: 7, clientY: 6, shiftKey: true});
+assert.deepEqual(selects, [[5, 5, 400, true]]);
+window.__fushiSrsLookup.hover = true;
+fire('mousemove', {clientX: 40, clientY: 5, shiftKey: false});
+assert.equal(selects.length, 2);
+window.__fushiSrsLookup.hostHover = true;
+fire('mousemove', {clientX: 90, clientY: 5, shiftKey: true});
+assert.equal(selects.length, 2);
+''',
+        ),
       );
     });
   });

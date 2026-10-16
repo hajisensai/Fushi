@@ -14,6 +14,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
@@ -21,11 +22,15 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/fake_inappwebview_platform.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 确定性假引擎（同 packages/fushi_engine/test/srs/srs_db_store_test.dart）。
@@ -129,6 +134,37 @@ class _HideHardEasyApp extends AppModel {
   }
 }
 
+/// 卡面查词：弹窗几何 / 历史读偏好的那几项钉成常量（测试里偏好层没初始化）。
+class _LookupApp extends AppModel {
+  _LookupApp() : super(testPlatformServices());
+
+  @override
+  int get maximumTerms => 10;
+  @override
+  double get popupMaxWidth => 360;
+  @override
+  double get popupMaxHeight => 360;
+  @override
+  double get dictionaryFontSize => 16;
+  @override
+  bool get popupBottomDocked => false;
+  @override
+  double get appUiScale => 1.0;
+  @override
+  List<String> get enabledAudioSources => const <String>[];
+  @override
+  bool get lowMemoryMode => false;
+  @override
+  List<AudioSourceConfig> get audioSourceConfigs => const <AudioSourceConfig>[];
+  @override
+  void addToDictionaryHistory({required DictionarySearchResult result}) {}
+  @override
+  void addToSearchHistory({
+    required String historyKey,
+    required String searchTerm,
+  }) {}
+}
+
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
@@ -175,6 +211,7 @@ Future<void> _pumpPage(
   required Widget page,
   AppModel? app,
   Size size = const Size(1100, 900),
+  List<Override> extraOverrides = const <Override>[],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -189,6 +226,7 @@ Future<void> _pumpPage(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
         ),
+        ...extraOverrides,
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -793,5 +831,96 @@ void main() {
     for (final OnboardingTutorialItem item in items) {
       expect(find.text(item.title), findsOneWidget);
     }
+  });
+
+  group('卡面查词', () {
+    setUpAll(installFakeInAppWebViewPlatform);
+
+    testWidgets('复习页：点卡面的字 → 查词弹窗；开着时空格 / 数字键不翻面不评分；'
+        'Esc 关掉后焦点回到复习页', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: _LookupApp(),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
+        extraOverrides: <Override>[
+          ...popupMiningTargetTestOverrides(),
+          srsCardLookupSearchProvider.overrideWithValue(
+            (String term, int max) async => DictionarySearchResult(
+              searchTerm: term,
+              entries: <DictionaryEntry>[
+                DictionaryEntry(word: term, reading: 'たべる', meaning: 'eat'),
+              ],
+            ),
+          ),
+        ],
+      );
+      final Finder question = find.byKey(
+        const ValueKey<String>('srs-face-question'),
+      );
+      expect(question, findsOneWidget);
+      final SrsCardLookupController lookup = tester
+          .element(question)
+          .getInheritedWidgetOfExactType<SrsCardLookupScope>()!
+          .controller!;
+
+      // 点「食」→ 查「食べる」（按真实字形盒找到「食」）。
+      await tester.pump(const Duration(seconds: 2));
+      final RenderParagraph para = tester.renderObject<RenderParagraph>(
+        find.descendant(of: question, matching: find.byType(RichText)),
+      );
+      final int at = para.text
+          .toPlainText(includeSemanticsLabels: false)
+          .indexOf('食べる');
+      expect(at, greaterThanOrEqualTo(0));
+      await tester.tapAt(
+        para.localToGlobal(
+          para
+              .getBoxesForSelection(
+                TextSelection(baseOffset: at, extentOffset: at + 1),
+              )
+              .first
+              .toRect()
+              .center,
+        ),
+      );
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 2));
+      expect(lookup.debugQueries, <String>['食べる']);
+      expect(lookup.isOpen, isTrue);
+
+      // 弹窗开着：空格不显示答案，数字键不评分。
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await _settle(tester);
+      expect(question, findsOneWidget, reason: '弹窗开着时不翻面');
+      expect(lookup.isOpen, isTrue);
+
+      // 弹窗里继续查 → 第二层。
+      await lookup.pushNested('食', const Rect.fromLTWH(40, 200, 20, 20));
+      await _settle(tester);
+      await tester.pump(const Duration(seconds: 2));
+      expect(lookup.debugVisibleDepth, 2);
+
+      // Esc 逐层关；全关后焦点回复习页，空格照常显示答案。
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump();
+      expect(lookup.debugVisibleDepth, 1);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      expect(lookup.isOpen, isFalse);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 2));
+      await _unmount(tester);
+    });
   });
 }

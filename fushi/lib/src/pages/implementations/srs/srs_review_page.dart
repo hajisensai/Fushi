@@ -20,15 +20,18 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
+import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
@@ -122,6 +125,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         mounted && (ModalRoute.of(context)?.isCurrent ?? false),
   );
 
+  /// 卡面查词（点词 / 悬停 → 查词弹窗，弹窗里继续嵌套查）。弹窗开着时空格 / Enter /
+  /// 数字键不翻面、不评分（[SrsCardLookupController.guardKey]）。
+  final SrsCardLookupController _lookup = SrsCardLookupController();
+
   SrsDbStore? _store;
   bool _loading = true;
   bool _busy = false;
@@ -153,6 +160,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void dispose() {
     srsActiveReviewSessions.value--;
+    _lookup.dispose();
     _focusNode.dispose();
     super.dispose();
   }
@@ -287,6 +295,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     required SrsDayContext? day,
   }) {
     _shownGeneration++;
+    // 换卡：上一张卡上查的词弹窗收起。
+    _lookup.closeAll();
     setState(() {
       _loading = false;
       _finished = false;
@@ -592,6 +602,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   // ------------------------------------------------------------------ 键盘
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    // 查词弹窗开着：Esc 关一层，翻面 / 评分键吞掉。
+    final KeyEventResult? lookup = _lookup.guardKey(event);
+    if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final LogicalKeyboardKey key = event.logicalKey;
     final bool ctrl =
@@ -667,6 +680,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   /// WebView 持焦时经键盘桥回传的 token。
   void _onBridgeKey(String token) {
+    if (_lookup.guardBridgeToken(token)) return;
     switch (token) {
       case 'Space' || 'Enter' || 'NumpadEnter':
         _primary();
@@ -685,6 +699,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
           _rate(rating);
         }
     }
+  }
+
+  /// 卡面里点了 Fushi 来源链接：跳回书 / 漫画 / 视频的对应位置。
+  void _openSource(CardSourceLink link) {
+    _lookup.closeAll();
+    srsRunLogged(
+      'SrsReview.openSource',
+      () => openCardSource(ref: ref, link: link),
+    );
   }
 
   // ------------------------------------------------------------------ 界面
@@ -1014,80 +1037,86 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,
+      onSourceLink: _openSource,
     );
     final MediaQueryData media = MediaQuery.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
-            // 并认领这次滚轮，外层不再滚动。
-            child: Listener(
-              onPointerSignal: (PointerSignalEvent event) {
-                if (event is! PointerScrollEvent) return;
-                final HardwareKeyboard kb = HardwareKeyboard.instance;
-                if (!kb.isControlPressed && !kb.isMetaPressed) return;
-                GestureBinding.instance.pointerSignalResolver.register(
-                  event,
-                  (PointerSignalEvent e) =>
-                      _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
-                );
-              },
-              child: FushiCard(
-                key: const ValueKey<String>('srs-card-surface'),
-                padding: EdgeInsets.zero,
-                pressScale: false,
-                // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-                child: rendered?.fushiCardDefinitions != null
-                    ? MediaQuery(
-                        // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
-                        data: media.copyWith(
-                          textScaler: TextScaler.linear(
-                            media.textScaler.scale(1) * zoom,
+    return SrsCardLookupHost(
+      controller: _lookup,
+      // 弹窗整栈关掉：焦点回复习页（WebView / 弹窗拿走过 OS 焦点）。
+      onClosed: () => _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              // Ctrl / ⌘ + 滚轮落在原生区（WebView 上的由页面脚本截下转来）：缩放卡面，
+              // 并认领这次滚轮，外层不再滚动。
+              child: Listener(
+                onPointerSignal: (PointerSignalEvent event) {
+                  if (event is! PointerScrollEvent) return;
+                  final HardwareKeyboard kb = HardwareKeyboard.instance;
+                  if (!kb.isControlPressed && !kb.isMetaPressed) return;
+                  GestureBinding.instance.pointerSignalResolver.register(
+                    event,
+                    (PointerSignalEvent e) =>
+                        _zoomWheel((e as PointerScrollEvent).scrollDelta.dy),
+                  );
+                },
+                child: FushiCard(
+                  key: const ValueKey<String>('srs-card-surface'),
+                  padding: EdgeInsets.zero,
+                  pressScale: false,
+                  // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+                  child: rendered?.fushiCardDefinitions != null
+                      ? MediaQuery(
+                          // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
+                          data: media.copyWith(
+                            textScaler: TextScaler.linear(
+                              media.textScaler.scale(1) * zoom,
+                            ),
                           ),
-                        ),
-                        child: SrsFushiCardView(
-                          key: const ValueKey<String>('srs-fushi-card-view'),
-                          face: face,
-                          fields: rendered!.fields,
-                          definitionsHtml: rendered.fushiCardDefinitions!,
-                        ),
-                      )
-                    : faceBuilder(context, face),
+                          child: SrsFushiCardView(
+                            key: const ValueKey<String>('srs-fushi-card-view'),
+                            face: face,
+                            fields: rendered!.fields,
+                            definitionsHtml: rendered.fushiCardDefinitions!,
+                          ),
+                        )
+                      : faceBuilder(context, face),
+                ),
               ),
             ),
           ),
-        ),
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap * 1.5,
-              tokens.spacing.page,
-              tokens.spacing.gap * 1.5,
-            ),
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: _showingAnswer
-                  ? _buildRatingRow(context)
-                  : SizedBox(
-                      key: const ValueKey<String>('srs-show-answer-row'),
-                      width: double.infinity,
-                      child: FushiFilledButton(
-                        key: const ValueKey<String>('srs-show-answer'),
-                        onPressed: _busy ? null : _showAnswer,
-                        child: Text(t.srs_review_show_answer),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap * 1.5,
+                tokens.spacing.page,
+                tokens.spacing.gap * 1.5,
+              ),
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: _showingAnswer
+                    ? _buildRatingRow(context)
+                    : SizedBox(
+                        key: const ValueKey<String>('srs-show-answer-row'),
+                        width: double.infinity,
+                        child: FushiFilledButton(
+                          key: const ValueKey<String>('srs-show-answer'),
+                          onPressed: _busy ? null : _showAnswer,
+                          child: Text(t.srs_review_show_answer),
+                        ),
                       ),
-                    ),
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
