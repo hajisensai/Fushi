@@ -33,6 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3076 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3421](bugs/BUG-3421-reader-highlight-lanes-under-book-paragraph-background.md) | ✅ | ✅ | 书自带段落底色盖住高亮窄条 |
+| [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
+| [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
+| [BUG-3418](bugs/BUG-3418-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
+| [BUG-3417](bugs/BUG-3417-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |
 > 共 3075 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
