@@ -22,6 +22,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -34,6 +36,55 @@ final Provider<bool> srsModuleEnabledProvider = Provider<bool>(
     ),
   ),
 );
+
+/// 制卡此刻是否发往 Fushi 复习（复习模块开着 **且** 挖词目标 = Fushi 复习）。
+///
+/// 制卡装饰链（`ankiRepositoryProvider`）与制卡设置页的 Anki 专属项显隐共用这一个
+/// 判据：为 true 时制卡不经过 Anki，只作用于 Anki 发送链路的设置一律不显示。
+final Provider<bool> srsMiningToReviewProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(srsModuleEnabledProvider) &&
+      ref.watch(appProvider.select((AppModel app) => app.srsMiningTarget)) ==
+          SrsMiningTarget.srs,
+);
+
+/// 制卡设置里「Fushi 复习」分组的数据：可选牌组 / 笔记类型 + 当前偏好解析后的落地
+/// 位置（含被删回落）。
+class SrsMiningChoices {
+  const SrsMiningChoices({
+    required this.decks,
+    required this.noteTypes,
+    required this.resolved,
+    required this.lapisNoteTypeId,
+  });
+
+  /// (牌组 id, 「父::子」全名)，按全名排。
+  final List<(String, String)> decks;
+  final List<SrsNoteTypeView> noteTypes;
+  final SrsResolvedMiningDestination resolved;
+  final String lapisNoteTypeId;
+}
+
+/// 订阅 [srsRevisionProvider] 与制卡去向偏好；store 不可用时为 null。
+final FutureProvider<SrsMiningChoices?> srsMiningChoicesProvider =
+    FutureProvider<SrsMiningChoices?>((Ref ref) async {
+      ref.watch(srsRevisionProvider);
+      final SrsMiningDestination destination = ref.watch(
+        appProvider.select((AppModel app) => app.srsMiningDestination),
+      );
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final SrsDeckTree tree = await store.deckTree();
+      final List<(String, String)> decks = <(String, String)>[
+        for (final SrsDeckView d in tree.decks) (d.id, tree.fullName(d.id)),
+      ]..sort(((String, String) a, (String, String) b) => a.$2.compareTo(b.$2));
+      return SrsMiningChoices(
+        decks: decks,
+        noteTypes: await store.noteTypes(),
+        resolved: await resolveSrsMiningDestination(store, destination),
+        lapisNoteTypeId: store.lapisNoteTypeId,
+      );
+    });
 
 /// FSRS 排程内核。原生库不可用时为 null（不抛）。
 final Provider<FsrsEngine?> srsEngineProvider = Provider<FsrsEngine?>((

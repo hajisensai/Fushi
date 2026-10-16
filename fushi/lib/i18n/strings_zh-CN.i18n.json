@@ -7726,8 +7726,6 @@
   "srs_mining_target_hint": "制卡时卡片发往哪里",
   "srs_mining_target_anki": "Anki",
   "srs_mining_target_srs": "Fushi 复习",
-  "srs_mining_target_both": "两者都推",
-  "srs_mining_target_both_warning": "Anki 与 Fushi 复习会各自为同一个词安排复习（重复排程）。",
   "srs_ankiconnect_hint": "开启复习模块后，AnkiConnect 工具（Yomitan、asbplayer 等）可把 AnkiConnect 地址填成 http://127.0.0.1:$port，卡片直接进 Fushi 复习。",
   "srs_sync_now": "立即同步",
   "srs_sync_done": "复习数据已同步",
@@ -7776,5 +7774,8 @@
   "fushi_api_key_hint": "其他设备和工具（Yomitan、另一台设备上的 Fushi）连接时要填同一个密钥。留空时其他设备无法往 Fushi 复习里加卡；设置后，本机的工具也要填它。",
   "srs_ankiconnect_key_missing": "未设密钥：只有本机能连。要从其他设备加卡，先生成密钥，再在那边填同一个密钥。",
   "srs_ankiconnect_key_set": "从其他设备连接时，把 127.0.0.1 换成这台电脑的局域网地址，并填同一个 Fushi API 密钥。",
-  "srs_ankiconnect_generate_key": "生成密钥"
+  "srs_ankiconnect_generate_key": "生成密钥",
+  "srs_mining_deck_fallback": "所选牌组已被删除，制卡改用默认牌组。",
+  "srs_mining_note_type_fallback": "所选笔记类型已被删除，制卡改用 Lapis。",
+  "srs_mining_lapis_mapping_hint": "Lapis 使用内置字段映射。"
 }

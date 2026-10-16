@@ -7726,8 +7726,6 @@
   "srs_mining_target_hint": "Where a card goes when you mine a word",
   "srs_mining_target_anki": "Anki",
   "srs_mining_target_srs": "Fushi review",
-  "srs_mining_target_both": "Both",
-  "srs_mining_target_both_warning": "Anki and Fushi review will each schedule the same word, so you will review it twice.",
   "srs_ankiconnect_hint": "With the review module on, AnkiConnect tools (Yomitan, asbplayer and others) can use http://127.0.0.1:$port as their AnkiConnect address to add cards straight to Fushi review.",
   "srs_sync_now": "Sync now",
   "srs_sync_done": "Review data synced",
@@ -7776,5 +7774,8 @@
   "fushi_api_key_hint": "他のデバイスやツール（Yomitan、別のデバイスの Fushi）から接続するときは同じキーを入力します。空欄のままだと他のデバイスから Fushi の復習にカードを追加できません。設定後は、このデバイスのツールにも入力が必要です。",
   "srs_ankiconnect_key_missing": "キー未設定：このデバイスからのみ接続できます。他のデバイスからカードを追加するには、キーを生成して向こうにも同じキーを入力してください。",
   "srs_ankiconnect_key_set": "他のデバイスから接続するときは、127.0.0.1 をこのコンピューターの LAN アドレスに置き換え、同じ Fushi API キーを入力してください。",
-  "srs_ankiconnect_generate_key": "キーを生成"
+  "srs_ankiconnect_generate_key": "キーを生成",
+  "srs_mining_deck_fallback": "The selected deck was deleted; cards go to the default deck.",
+  "srs_mining_note_type_fallback": "The selected note type was deleted; cards use Lapis.",
+  "srs_mining_lapis_mapping_hint": "Lapis uses its built-in field mapping."
 }

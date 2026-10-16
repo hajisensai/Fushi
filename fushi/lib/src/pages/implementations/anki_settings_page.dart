@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef, SrsNoteTypeView;
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, JapaneseLanguage;
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -45,6 +46,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 
@@ -189,6 +191,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       };
     }
 
+    // 挖词目标 = Fushi 复习时制卡不经过 Anki：只作用于 Anki 发送链路的项一律不显示
+    // （连接、牌组 / 笔记类型、Lapis、批量与跨设备中转、查重范围、重排……），换成
+    // Fushi 复习自己的牌组 / 笔记类型 / 字段映射。卡片内容类设置（标签、允许重复、
+    // 紧凑释义、媒体）SRS 制卡同样复用，照旧显示。
+    final bool toReview = ref.watch(srsMiningToReviewProvider);
+
     // 首屏各分组错峰进场（M3E spring；墨水屏 / 减弱动态效果下瞬间到位）。
     int entrance = 0;
     // 带稳定 key：未配置 / 已配置切换时分组增减，进场外壳不串到别的分组上。
@@ -201,6 +209,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!toReview)
         enter('anki_section_account', AdaptiveSettingsSection(
           children: [
             // showIcon 与同卡片的刷新/Lapis 行一致，左栏图标对齐。
@@ -234,30 +243,34 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                 id: 'card_creation.anki.srs_mining_target',
                 child: _buildSrsMiningTargetPicker(),
               ),
-            SettingsSearchTarget(
-              id: 'card_creation.anki.batch_mining',
-              child: AdaptiveSettingsSwitchRow(
-                icon: FushiIcons.checklist,
-                showIcon: true,
-                title: t.anki_batch_mining_title,
-                subtitle: t.anki_batch_mining_hint,
-                value: settings.batchMiningEnabled,
-                onChanged: (bool v) => vm.setBatchMiningEnabled(v),
+            if (!toReview) ...[
+              SettingsSearchTarget(
+                id: 'card_creation.anki.batch_mining',
+                child: AdaptiveSettingsSwitchRow(
+                  icon: FushiIcons.checklist,
+                  showIcon: true,
+                  title: t.anki_batch_mining_title,
+                  subtitle: t.anki_batch_mining_hint,
+                  value: settings.batchMiningEnabled,
+                  onChanged: (bool v) => vm.setBatchMiningEnabled(v),
+                ),
               ),
-            ),
-            const SettingsSearchTarget(
-              id: 'card_creation.anki.pending_mine_landing',
-              child: PendingMineLandingSwitchRow(),
-            ),
-            const SettingsSearchTarget(
+              const SettingsSearchTarget(
+                id: 'card_creation.anki.pending_mine_landing',
+                child: PendingMineLandingSwitchRow(),
+              ),
+            ],
+            // 切到 Fushi 复习前攒下的待发卡片仍要发往 Anki（补发走内层 Anki 链路）：
+            // 队列非空时照旧露出入口，空了就不打扰。
+            SettingsSearchTarget(
               id: 'card_creation.anki.pending_mines',
-              child: PendingMinesEntryRow(),
+              child: PendingMinesEntryRow(hideWhenEmpty: toReview),
             ),
           ],
         )),
         // 连接状态提示走共享的内联提示块（MD3 中性底 + 语义图标 / Apple 实色
         // 分组底 + 语义色图标），不再是一行裸红字 / 居中灰字飘在两个分组之间。
-        if (uiState.errorMessage != null)
+        if (!toReview && uiState.errorMessage != null)
           Padding(
             padding: EdgeInsets.only(
               bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
@@ -267,14 +280,36 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               severity: FushiNoticeSeverity.error,
             ),
           ),
-        if (!uiState.isConfigured && uiState.errorMessage == null)
+        if (!toReview &&
+            !uiState.isConfigured &&
+            uiState.errorMessage == null)
           Padding(
             padding: EdgeInsets.only(
               bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
             ),
             child: FushiInlineNotice(message: t.anki_not_configured),
           ),
-        if (uiState.isConfigured) ...[
+        if (toReview) ...[
+          enter('anki_section_srs', _buildSrsMiningSection()),
+          enter('anki_section_srs_duplicates', AdaptiveSettingsSection(
+            children: [
+              SettingsSearchTarget(
+                id: 'card_creation.anki.allow_duplicates',
+                child: _buildAllowDuplicatesRow(settings, vm),
+              ),
+              // 复习覆写也读它：全部 = 按查重找到的复习笔记都能被 ✓ 覆写。
+              SettingsSearchTarget(
+                id: 'card_creation.anki.overwrite_scope',
+                child: _buildOverwriteScopePicker(settings, vm),
+              ),
+              SettingsSearchTarget(
+                id: 'card_creation.anki.compact_glossaries',
+                child: _buildCompactGlossariesRow(settings, vm),
+              ),
+            ],
+          )),
+        ],
+        if (!toReview && uiState.isConfigured) ...[
           enter('anki_section_deck', AdaptiveSettingsSection(
             children: [
               SettingsSearchTarget(
@@ -299,12 +334,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             children: [
               SettingsSearchTarget(
                 id: 'card_creation.anki.allow_duplicates',
-                child: AdaptiveSettingsSwitchRow(
-                  title: t.anki_allow_duplicates,
-                  subtitle: t.anki_allow_duplicates_hint,
-                  value: settings.allowDupes,
-                  onChanged: vm.updateAllowDupes,
-                ),
+                child: _buildAllowDuplicatesRow(settings, vm),
               ),
               // iOS + AnkiMobile：查重只能问本机账本，而账本天生不知道别处加的卡。
               // 导入一份 Anki 备份把整个 collection 的第一字段补进来（对齐 Hoshi
@@ -335,12 +365,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               ),
               SettingsSearchTarget(
                 id: 'card_creation.anki.compact_glossaries',
-                child: AdaptiveSettingsSwitchRow(
-                  title: t.anki_compact_glossaries,
-                  subtitle: t.anki_compact_glossaries_hint,
-                  value: settings.compactGlossaries,
-                  onChanged: vm.updateCompactGlossaries,
-                ),
+                child: _buildCompactGlossariesRow(settings, vm),
               ),
             ],
           )),
@@ -409,6 +434,128 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ],
       ),
     );
+  }
+
+  Widget _buildAllowDuplicatesRow(AnkiSettings settings, AnkiViewModel vm) =>
+      AdaptiveSettingsSwitchRow(
+        title: t.anki_allow_duplicates,
+        subtitle: t.anki_allow_duplicates_hint,
+        value: settings.allowDupes,
+        onChanged: vm.updateAllowDupes,
+      );
+
+  Widget _buildCompactGlossariesRow(
+    AnkiSettings settings,
+    AnkiViewModel vm,
+  ) => AdaptiveSettingsSwitchRow(
+    title: t.anki_compact_glossaries,
+    subtitle: t.anki_compact_glossaries_hint,
+    value: settings.compactGlossaries,
+    onChanged: vm.updateCompactGlossaries,
+  );
+
+  /// 挖词目标 = Fushi 复习时的落地位置：牌组、笔记类型，以及非 Lapis 类型的字段映射
+  /// （制卡内容槽 → 该类型字段，与 Anki 字段映射同一套占位符）。偏好里选的牌组 /
+  /// 类型被删时制卡回落默认牌组 / Lapis，这里如实提示。
+  Widget _buildSrsMiningSection() {
+    final AsyncValue<SrsMiningChoices?> async = ref.watch(
+      srsMiningChoicesProvider,
+    );
+    final SrsMiningChoices? choices = async.valueOrNull;
+    if (choices == null) return const SizedBox.shrink();
+    final SrsResolvedMiningDestination resolved = choices.resolved;
+    final SrsNoteTypeView? noteType = resolved.noteType;
+    final String selectedTypeId = noteType?.id ?? choices.lapisNoteTypeId;
+    // 选中值不在列表里时不交给 picker（Material 下拉会断言失败），同 Anki 侧。
+    final String? validDeckId =
+        choices.decks.any(((String, String) d) => d.$1 == resolved.deckId)
+        ? resolved.deckId
+        : null;
+    final String? validTypeId =
+        choices.noteTypes.any((SrsNoteTypeView v) => v.id == selectedTypeId)
+        ? selectedTypeId
+        : null;
+    final Map<String, String>? stored = noteType == null
+        ? null
+        : appModel.srsMiningDestination.fieldMappingsByType[noteType.id];
+    final Map<String, String> mappings = noteType == null
+        ? const <String, String>{}
+        : srsEffectiveFieldMappings(noteType, stored);
+    return AdaptiveSettingsSection(
+      title: t.srs_mining_target_srs,
+      children: <Widget>[
+        SettingsSearchTarget(
+          id: 'card_creation.srs.deck',
+          child: AdaptiveSettingsPickerRow<String?>(
+            key: const ValueKey<String>('srs-mining-deck'),
+            title: t.anki_deck,
+            subtitle: resolved.deckFellBack
+                ? t.srs_mining_deck_fallback
+                : null,
+            controlBelow: true,
+            selected: validDeckId,
+            options: <AdaptiveSettingsPickerOption<String?>>[
+              for (final (String id, String name) in choices.decks)
+                AdaptiveSettingsPickerOption<String?>(value: id, label: name),
+            ],
+            onChanged: (String? id) {
+              if (id != null) unawaited(appModel.setSrsMiningDeckId(id));
+            },
+          ),
+        ),
+        SettingsSearchTarget(
+          id: 'card_creation.srs.note_type',
+          child: AdaptiveSettingsPickerRow<String?>(
+            key: const ValueKey<String>('srs-mining-note-type'),
+            title: t.anki_note_type,
+            subtitle: resolved.noteTypeFellBack
+                ? t.srs_mining_note_type_fallback
+                : noteType == null
+                ? t.srs_mining_lapis_mapping_hint
+                : null,
+            controlBelow: true,
+            selected: validTypeId,
+            options: <AdaptiveSettingsPickerOption<String?>>[
+              for (final SrsNoteTypeView v in choices.noteTypes)
+                AdaptiveSettingsPickerOption<String?>(
+                  value: v.id,
+                  label: v.name,
+                ),
+            ],
+            onChanged: (String? id) {
+              if (id != null) unawaited(appModel.setSrsMiningNoteTypeId(id));
+            },
+          ),
+        ),
+        if (noteType != null)
+          for (final SrsFieldDef field in noteType.fields)
+            AdaptiveSettingsNavigationRow(
+              key: ValueKey<String>('srs-mining-field-${field.id}'),
+              title: field.name,
+              subtitle: (mappings[field.id] ?? '').isEmpty
+                  ? t.anki_field_not_mapped
+                  : mappings[field.id]!,
+              icon: FushiIcons.edit,
+              onTap: () => unawaited(
+                _pickSrsFieldMapping(
+                  noteType.id,
+                  field,
+                  mappings[field.id] ?? '',
+                ),
+              ),
+            ),
+      ],
+    );
+  }
+
+  Future<void> _pickSrsFieldMapping(
+    String noteTypeId,
+    SrsFieldDef field,
+    String currentValue,
+  ) async {
+    final String? result = await _pickHandlebar(field.name, currentValue);
+    if (result == null) return;
+    await appModel.setSrsMiningFieldMapping(noteTypeId, field.id, result);
   }
 
   Widget _buildConnectionPanel(AnkiUiState uiState, AnkiViewModel vm) {
@@ -2080,7 +2227,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// all=按与查重同一条件（第一字段=expression）覆写任意已存在卡，使更早制的卡也
   /// 能在弹窗里点绿 ✓↩ 覆写。AnkiDroid 拿不到 note id → 选 all 仍降级为不可覆写
   /// 更早卡（与现状一致），不破坏现有行为。
-  /// 挖词目标（Anki / Fushi 复习 / 两者）。选「两者」时副标题换成重复排程的提醒。
+  /// 挖词目标（Anki / Fushi 复习，二选一）。
   Widget _buildSrsMiningTargetPicker() {
     final SrsMiningTarget target = ref.watch(
       appProvider.select((AppModel m) => m.srsMiningTarget),
@@ -2088,9 +2235,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     return AdaptiveSettingsPickerRow<SrsMiningTarget>(
       key: const ValueKey<String>('anki-srs-mining-target'),
       title: t.srs_mining_target_title,
-      subtitle: target == SrsMiningTarget.both
-          ? t.srs_mining_target_both_warning
-          : t.srs_mining_target_hint,
+      subtitle: t.srs_mining_target_hint,
       controlBelow: true,
       selected: target,
       options: <AdaptiveSettingsPickerOption<SrsMiningTarget>>[
@@ -2101,10 +2246,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<SrsMiningTarget>(
           value: SrsMiningTarget.srs,
           label: t.srs_mining_target_srs,
-        ),
-        AdaptiveSettingsPickerOption<SrsMiningTarget>(
-          value: SrsMiningTarget.both,
-          label: t.srs_mining_target_both,
         ),
       ],
       onChanged: (SrsMiningTarget value) =>

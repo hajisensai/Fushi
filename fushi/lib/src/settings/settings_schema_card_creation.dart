@@ -10,6 +10,9 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_providers.dart'
+    show srsMiningToReviewProvider;
 import 'package:fushi/utils.dart';
 
 SettingsDestination buildCardCreationDestination() {
@@ -28,6 +31,7 @@ SettingsDestination buildCardCreationDestination() {
       SettingsSection(
         id: 'card_creation.connection',
         title: 'AnkiConnect',
+        visible: _ankiOnly(),
         presentation: Platform.isAndroid || Platform.isIOS
             ? SettingsSectionPresentation.collapsed
             : SettingsSectionPresentation.alwaysExpanded,
@@ -50,8 +54,10 @@ SettingsDestination buildCardCreationDestination() {
           SettingsNavigationItem(
             id: 'card_creation.fields.open',
             title: t.anki_field_mappings,
-            visible: (SettingsContext c) =>
-                c.ref.watch(ankiViewModelProvider).isConfigured,
+            visible: _ankiOnly(
+              (SettingsContext c) =>
+                  c.ref.watch(ankiViewModelProvider).isConfigured,
+            ),
             subtitleBuilder: (SettingsContext c) => c.ref
                 .watch(ankiViewModelProvider)
                 .settings
@@ -64,9 +70,11 @@ SettingsDestination buildCardCreationDestination() {
           SettingsNavigationItem(
             id: 'card_creation.lapis.open',
             title: t.anki_lapis_section,
-            visible: (SettingsContext c) => c.ref
-                .read(ankiViewModelProvider.notifier)
-                .supportsNoteTypeEditing,
+            visible: _ankiOnly(
+              (SettingsContext c) => c.ref
+                  .read(ankiViewModelProvider.notifier)
+                  .supportsNoteTypeEditing,
+            ),
             subtitle: t.anki_lapis_visual_editor_hint,
             child: () =>
                 _buildAnkiPanel(AnkiSettingsPanel.lapis, t.anki_lapis_section),
@@ -82,11 +90,15 @@ SettingsDestination buildCardCreationDestination() {
             id: 'card_creation.maintenance.open',
             title: t.anki_dedup_section,
             subtitle: t.anki_dedup_run_hint,
-            visible: (SettingsContext c) =>
-                c.ref.watch(ankiViewModelProvider).mediaMaintenanceAvailable ??
-                c.ref
-                    .read(ankiViewModelProvider.notifier)
-                    .supportsMediaMaintenance,
+            visible: _ankiOnly(
+              (SettingsContext c) =>
+                  c.ref
+                      .watch(ankiViewModelProvider)
+                      .mediaMaintenanceAvailable ??
+                  c.ref
+                      .read(ankiViewModelProvider.notifier)
+                      .supportsMediaMaintenance,
+            ),
             child: () => _buildAnkiPanel(
               AnkiSettingsPanel.maintenance,
               t.anki_dedup_section,
@@ -96,7 +108,8 @@ SettingsDestination buildCardCreationDestination() {
       ),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
-      // 挖词目标（Anki / Fushi 复习 / 两者）：只在复习模块开着时存在。
+      // 挖词目标（Anki / Fushi 复习，二选一）：只在复习模块开着时存在。目标为
+      // Fushi 复习时，下面只作用于 Anki 发送链路的条目（_ankiOnly）不进索引。
       SettingsBodySearchEntry(
         id: 'card_creation.anki.srs_mining_target',
         visible: (SettingsContext c) =>
@@ -105,18 +118,36 @@ SettingsDestination buildCardCreationDestination() {
         subtitle: t.srs_mining_target_hint,
         hasRevealTarget: true,
       ),
+      // 目标为 Fushi 复习时替代 Anki 牌组 / 笔记类型的两行。
+      SettingsBodySearchEntry(
+        id: 'card_creation.srs.deck',
+        visible: _toReview,
+        title: t.anki_deck,
+        subtitle: t.srs_mining_target_srs,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.srs.note_type',
+        visible: _toReview,
+        title: t.anki_note_type,
+        subtitle: t.srs_mining_target_srs,
+        hasRevealTarget: true,
+      ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.batch_mining',
+        visible: _ankiOnly(),
         title: t.anki_batch_mining_title,
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.pending_mine_landing',
+        visible: _ankiOnly(),
         title: t.anki_pending_mine_landing_title,
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.pending_mines',
+        visible: _ankiOnly(),
         title: t.anki_pending_mines_title,
         hasRevealTarget: true,
       ),
@@ -124,58 +155,72 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.duplicate_scope',
         title: t.anki_duplicate_scope,
         hasRevealTarget: true,
-        visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.reposition',
         title: t.anki_reposition_title,
         hasRevealTarget: true,
-        visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.reposition_auto',
         title: t.anki_reposition_auto_title,
         hasRevealTarget: true,
-        visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.profile',
+        visible: _ankiOnly(),
         hasRevealTarget: true,
         title: t.profile_label,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.fetch',
+        visible: _ankiOnly(),
         hasRevealTarget: true,
         title: t.anki_fetch,
         subtitle: t.anki_refresh_hint,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.create_lapis',
+        visible: _ankiOnly(),
         hasRevealTarget: true,
         title: t.anki_create_lapis,
         subtitle: t.anki_create_lapis_hint,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.deck',
-        visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
         hasRevealTarget: true,
         title: t.anki_deck,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.note_type',
-        visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+        visible: _ankiOnly(
+          (SettingsContext c) =>
+              c.ref.watch(ankiViewModelProvider).isConfigured,
+        ),
         hasRevealTarget: true,
         title: t.anki_note_type,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.allow_duplicates',
+        // SRS 制卡同样读它（查重放行 / 释义渲染），目标为 Fushi 复习时不看 Anki 连没连上。
         visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+            _toReview(c) || c.ref.watch(ankiViewModelProvider).isConfigured,
         hasRevealTarget: true,
         title: t.anki_allow_duplicates,
         subtitle: t.anki_allow_duplicates_hint,
@@ -184,6 +229,7 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.backup_import',
         visible: (SettingsContext c) =>
             Platform.isIOS &&
+            !_toReview(c) &&
             c.ref.watch(ankiViewModelProvider).isConfigured &&
             ankiMobileLedgerIsDuplicateSource(
               useAnkiConnectOnMobile: c.ref
@@ -197,16 +243,18 @@ SettingsDestination buildCardCreationDestination() {
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.overwrite_scope',
+        // 复习覆写同样按它决定 ✓ 能不能改更早的卡（全部 = 按查重找到的复习笔记）。
         visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+            _toReview(c) || c.ref.watch(ankiViewModelProvider).isConfigured,
         hasRevealTarget: true,
         title: t.anki_overwrite_scope,
         subtitle: t.anki_overwrite_scope_hint,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.compact_glossaries',
+        // SRS 制卡同样读它（查重放行 / 释义渲染），目标为 Fushi 复习时不看 Anki 连没连上。
         visible: (SettingsContext c) =>
-            c.ref.watch(ankiViewModelProvider).isConfigured,
+            _toReview(c) || c.ref.watch(ankiViewModelProvider).isConfigured,
         hasRevealTarget: true,
         title: t.anki_compact_glossaries,
         subtitle: t.anki_compact_glossaries_hint,
@@ -476,3 +524,15 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
     ],
   );
 }
+
+/// 制卡此刻发往 Fushi 复习：只作用于 Anki 发送链路的项不显示、不进搜索索引。
+/// 与正文 [AnkiSettingsBody] 的 [srsMiningToReviewProvider] 同一判据，但直接读
+/// [SettingsContext.appModel]（宿主 watch 着它，目标一改就重建；搜索索引在没有
+/// 平台服务装配的宿主里也能求值）。
+bool _toReview(SettingsContext c) =>
+    c.appModel.moduleVisibility.isEnabled(ModuleId.srs) &&
+    c.appModel.srsMiningTarget == SrsMiningTarget.srs;
+
+/// 只作用于 Anki 的项：目标为 Fushi 复习时隐藏，否则再看 [inner]（默认恒可见）。
+SettingsVisibility _ankiOnly([SettingsVisibility? inner]) =>
+    (SettingsContext c) => !_toReview(c) && (inner?.call(c) ?? true);
