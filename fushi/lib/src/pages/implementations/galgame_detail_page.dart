@@ -22,7 +22,10 @@ import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart'
     show galHookAudioBackendLabel, galHookSessionPhaseLabel;
 import 'package:fushi/src/pages/implementations/games_library_page.dart'
-    show formatGalgameDate, galgamePlayStatusLabel;
+    show
+        formatGalgameDate,
+        galgamePlayStatusLabel,
+        isGameCollectionMemberVisible;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -201,7 +204,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   }
 
   /// 「加入合集」：mediaType=[MediaKind.game]、entryKey=`galgames.id`（本机局域
-  /// 身份），与库页卡片菜单同一 DAO 路径。
+  /// 身份），与库页卡片菜单同一 DAO 路径；成员数与游戏库同一可见判据
+  /// （[isGameCollectionMemberVisible]，BUG-3361 跨域补漏）。
   Future<void> _addToCollection(GalgameEntry game) async {
     await showAddToCollectionDialog(
       context: context,
@@ -209,6 +213,12 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
+      isMemberVisible: (String mediaType, String entryKey) =>
+          isGameCollectionMemberVisible(
+            games: _repo.games,
+            mediaType: mediaType,
+            entryKey: entryKey,
+          ),
     );
   }
 
