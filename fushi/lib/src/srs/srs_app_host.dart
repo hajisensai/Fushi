@@ -84,6 +84,7 @@ Future<bool> srsPushBrowse(NavigatorState? navigator, {String? query}) async {
         builder: (BuildContext context) => SrsBrowsePage(
           initialQuery: query,
           onChangeNoteType: showSrsChangeNoteTypeFlow,
+          onMigrateToFushiCard: srsMigrateNotesToFushiCard,
         ),
       ),
     ),

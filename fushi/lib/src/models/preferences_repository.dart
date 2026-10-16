@@ -2887,8 +2887,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习卡面外观（JSON，见 SrsCardAppearance）。空串 = 模板默认外观。
+  String get srsCardAppearance =>
+      getPref('srs_card_appearance', defaultValue: '') as String;
+
+  Future<void> setSrsCardAppearance(String json) async {
+    await setPref('srs_card_appearance', json);
+    notifyListeners();
+  }
+
   // 挖词目标 = Fushi 复习时，卡落进哪个 SRS 牌组 / 用哪个笔记类型（SRS 实体 id；
-  // 空串 = 默认牌组 / 内置 Lapis）。id 自带 profileUid，随 Profile 快照走。
+  // 空串 = 默认牌组 / 内置 Fushi 卡片）。id 自带 profileUid，随 Profile 快照走。
   String get srsMiningDeckId =>
       getPref('srs_mining_deck_id', defaultValue: '') as String;
 

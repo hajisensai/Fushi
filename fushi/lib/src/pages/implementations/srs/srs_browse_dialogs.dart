@@ -20,6 +20,7 @@ enum SrsBrowseBatchAction {
   reset,
   setDue,
   changeNoteType,
+  migrateToFushiCard,
   delete,
 }
 
@@ -34,6 +35,7 @@ String srsBrowseBatchLabel(SrsBrowseBatchAction a) => switch (a) {
   SrsBrowseBatchAction.reset => t.srs_card_reset,
   SrsBrowseBatchAction.setDue => t.srs_browse_set_due,
   SrsBrowseBatchAction.changeNoteType => t.srs_browse_change_note_type,
+  SrsBrowseBatchAction.migrateToFushiCard => t.srs_migrate_fushi_action,
   SrsBrowseBatchAction.delete => t.srs_browse_delete_notes,
 };
 

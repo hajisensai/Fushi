@@ -60,7 +60,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       _push<void>((_) => SrsNoteEditorPage(initialDeckId: deckId));
 
   Future<void> _openBrowse() => _push<void>(
-    (_) => const SrsBrowsePage(onChangeNoteType: showSrsChangeNoteTypeFlow),
+    (_) => const SrsBrowsePage(
+      onChangeNoteType: showSrsChangeNoteTypeFlow,
+      onMigrateToFushiCard: srsMigrateNotesToFushiCard,
+    ),
   );
 
   Future<void> _openNoteTypes() => _push<void>((_) => const SrsNoteTypesPage());

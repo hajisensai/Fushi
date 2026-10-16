@@ -15,12 +15,14 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
@@ -64,6 +66,24 @@ class SrsMiningChoices {
   final SrsResolvedMiningDestination resolved;
   final String lapisNoteTypeId;
 }
+
+/// 复习卡面外观（按 profile 的偏好；改动即时生效，卡面经 `__fushiSrsSetTheme` 原地换）。
+final Provider<SrsCardAppearance> srsCardAppearanceProvider =
+    Provider<SrsCardAppearance>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsCardAppearance),
+      ),
+    );
+
+/// 卡面可供给的导入字体目录（app 字体库目录；测试覆写）。null = 不供给导入字体。
+final Provider<String?> srsCardFontRootProvider = Provider<String?>((Ref ref) {
+  try {
+    // 与字体库页 customFontsDirectory 同一个目录（`<appDirectory>/custom_fonts`）。
+    return p.join(ref.read(appProvider).appDirectory.path, 'custom_fonts');
+  } catch (_) {
+    return null;
+  }
+});
 
 /// 订阅 [srsRevisionProvider] 与制卡去向偏好；store 不可用时为 null。
 final FutureProvider<SrsMiningChoices?> srsMiningChoicesProvider =

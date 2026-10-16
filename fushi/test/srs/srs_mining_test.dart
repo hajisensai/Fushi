@@ -119,7 +119,9 @@ void main() {
   late File sentenceAudio;
   late File wordAudio;
 
-  String fid(String key) => srsLapisFieldId(kSrsTestProfile, key);
+  // 没选过笔记类型时制卡落进内置 Fushi 卡片（2026-10-16 起的默认）。
+  String fid(String key) => srsFushiCardFieldId(kSrsTestProfile, key);
+  String lapisFid(String key) => srsLapisFieldId(kSrsTestProfile, key);
 
   setUp(() async {
     tmp = Directory.systemTemp.createTempSync('fushi_srs_mining_');
@@ -166,7 +168,7 @@ void main() {
     return (await store.note(hit[expression]!.noteId))!;
   }
 
-  test('目标 = SRS：Lapis 字段按 fieldId 落库，媒体按内容哈希存盘并改写引用，出处为书', () async {
+  test('目标 = SRS：默认落进 Fushi 卡片（字段按 fieldId），媒体按内容哈希存盘并改写引用，出处为书', () async {
     final _FakeAnki inner = _FakeAnki();
     final MineOutcome out = await repoFor(inner).mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき', audio: wordAudio.path),
@@ -176,7 +178,7 @@ void main() {
     expect(inner.mined, 0, reason: '仅 SRS 时不碰 Anki');
 
     final SrsNoteView note = await noteOf('雪', 'ゆき');
-    expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.noteTypeId, store.fushiCardNoteTypeId);
     expect(note.field(fid('Expression')), '雪');
     expect(note.field(fid('ExpressionReading')), 'ゆき');
     expect(note.field(fid('Sentence')), contains('降る'));
@@ -346,7 +348,18 @@ void main() {
     expect(out.deckName, 'Mining');
     final SrsNoteView note = await noteOf('雪', 'ゆき');
     expect(note.deckId, deck);
+    expect(note.noteTypeId, store.fushiCardNoteTypeId);
+  });
+
+  test('落地：明确选了 Lapis 的仍落 Lapis（只改「没选过」的默认）', () async {
+    final MineOutcome out = await repoWith(
+      SrsMiningDestination(noteTypeId: store.lapisNoteTypeId),
+    ).mineEntry(rawPayloadJson: _payload('雪', 'ゆき'), context: bookContext());
+    expect(out.result, MineResult.success);
+    final SrsNoteView note = await noteOf('雪', 'ゆき');
     expect(note.noteTypeId, store.lapisNoteTypeId);
+    expect(note.field(lapisFid('Expression')), '雪');
+    expect(note.field(lapisFid('ExpressionReading')), 'ゆき');
   });
 
   test('落地：非 Lapis 笔记类型按映射落字段；没映射过的同名字段沿用 Lapis 默认', () async {
@@ -418,15 +431,16 @@ void main() {
     final SrsNoteView note = await noteOf('雪', 'ゆき');
     expect(note.deckId, store.defaultDeckId);
     expect(note.noteTypeId, store.lapisNoteTypeId);
-    expect(note.field(fid('Expression')), '雪');
+    expect(note.field(lapisFid('Expression')), '雪');
   });
 
-  test('落地：没选过 = 默认牌组 + Lapis，不算回落', () async {
+  test('落地：没选过 = 默认牌组 + Fushi 卡片，不算回落', () async {
     final SrsResolvedMiningDestination resolved =
         await resolveSrsMiningDestination(store, const SrsMiningDestination());
     expect(resolved.deckFellBack, isFalse);
     expect(resolved.noteTypeFellBack, isFalse);
-    expect(resolved.usesLapis, isTrue);
+    expect(resolved.usesLapis, isFalse);
+    expect(resolved.noteType?.id, store.fushiCardNoteTypeId);
     expect(resolved.deckId, store.defaultDeckId);
   });
 

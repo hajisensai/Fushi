@@ -315,7 +315,8 @@ void main() {
       final SrsDbStore store = await _openStore(tester);
       final String to = await _db(
         tester,
-        () => store.createStockNoteType(SrsStockNoteType.basic, 'Target'),
+        // 名字排在内置「Fushi Card」之前：映射页默认选列表里第一个目标类型。
+        () => store.createStockNoteType(SrsStockNoteType.basic, 'A Target'),
       );
       final SrsNoteTypeView vt = (await _db(tester, () => store.noteType(to)))!;
       // 目标类型加一个与 Lapis 同名的字段，默认映射按名字对上。
@@ -386,7 +387,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('srs-note-type-row')),
-          matching: find.text('Target'),
+          matching: find.text('A Target'),
         ),
         findsOneWidget,
       );

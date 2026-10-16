@@ -23,6 +23,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -659,8 +660,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
   ];
 
+  /// 卡面外观（不依赖当前卡：没有卡时也能调）。
+  FushiToolbarItem get _appearanceItem => FushiToolbarItem(
+    key: const ValueKey<String>('srs_review_appearance'),
+    icon: FushiIcons.appearance,
+    label: t.srs_card_appearance_title,
+    onPressed: () => srsRunLogged(
+      'SrsReview.appearance',
+      () => openSrsCardAppearancePage(context),
+    ),
+  );
+
   List<FushiToolbarItem> _menuItems() => _detail == null
-      ? const <FushiToolbarItem>[]
+      ? <FushiToolbarItem>[_appearanceItem]
       : <FushiToolbarItem>[
           FushiToolbarItem(
             icon: FushiIcons.pause,
@@ -692,6 +704,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             label: t.srs_note_delete,
             onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
           ),
+          _appearanceItem,
         ];
 
   Widget _buildTopBar(BuildContext context) {

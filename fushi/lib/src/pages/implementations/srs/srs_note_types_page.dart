@@ -8,11 +8,14 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
+import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -59,7 +62,7 @@ final class _CloneChoice extends _NewTypeChoice {
   int get hashCode => source.id.hashCode;
 }
 
-enum _TypeAction { rename, clone, delete }
+enum _TypeAction { rename, clone, delete, appearance, migrateToFushiCard }
 
 /// 基础类型的显示名。
 String srsStockNoteTypeLabel(SrsStockNoteType s) => switch (s) {
@@ -248,6 +251,17 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
         srsRunLogged('SrsNoteTypes.clone', () => _clone(type));
       case _TypeAction.delete:
         srsRunLogged('SrsNoteTypes.delete', () => _delete(type));
+      case _TypeAction.appearance:
+        srsRunLogged(
+          'SrsNoteTypes.appearance',
+          () => openSrsCardAppearancePage(context),
+        );
+      case _TypeAction.migrateToFushiCard:
+        srsRunLogged('SrsNoteTypes.migrate', () async {
+          if (await showSrsMigrateToFushiCardFlow(context) && mounted) {
+            await _afterWrite();
+          }
+        });
     }
   }
 
@@ -425,6 +439,20 @@ class _TypeRow extends StatelessWidget {
                         value: _TypeAction.clone,
                         child: Text(t.srs_note_types_clone),
                       ),
+                      if (type.builtinKey == kSrsBuiltinFushiCardKey)
+                        PopupMenuItem<_TypeAction>(
+                          key: const ValueKey<String>(
+                            'srs-note-types-appearance',
+                          ),
+                          value: _TypeAction.appearance,
+                          child: Text(t.srs_card_appearance_title),
+                        ),
+                      if (type.builtinKey == kSrsBuiltinLapisKey && notes > 0)
+                        PopupMenuItem<_TypeAction>(
+                          key: const ValueKey<String>('srs-note-types-migrate'),
+                          value: _TypeAction.migrateToFushiCard,
+                          child: Text(t.srs_migrate_fushi_action),
+                        ),
                       if (deletable)
                         PopupMenuItem<_TypeAction>(
                           value: _TypeAction.delete,

@@ -145,13 +145,18 @@ Future<SrsResolvedMiningDestination> resolveSrsMiningDestination(
 
   SrsNoteTypeView? noteType;
   bool noteTypeFellBack = false;
-  final String typeId = destination.noteTypeId;
-  if (typeId.isNotEmpty && typeId != store.lapisNoteTypeId) {
+  // 从没选过（空串）= 内置 Fushi 卡片（2026-10-16 起的默认）；用户明确选过的（含 Lapis）原样。
+  final bool chosen = destination.noteTypeId.isNotEmpty;
+  final String typeId = chosen
+      ? destination.noteTypeId
+      : store.fushiCardNoteTypeId;
+  if (typeId != store.lapisNoteTypeId) {
     final SrsNoteTypeView? view = await store.noteType(typeId);
     if (view != null && view.deletedAt == null && view.fields.isNotEmpty) {
       noteType = view;
     } else {
-      noteTypeFellBack = true;
+      // 内置 Fushi 卡片缺席（内置记录尚未播种）不算「选的被删了」，静默回落 Lapis。
+      noteTypeFellBack = chosen;
     }
   }
   return SrsResolvedMiningDestination(
@@ -295,18 +300,24 @@ class SrsMiner with AnkiNoteComposer {
   bool _isLapis(SrsNoteTypeView? type) =>
       type == null || type.id == store.lapisNoteTypeId;
 
-  /// 笔记类型 → 渲染用的字段映射（键 = fieldId）。Lapis 固定用 Lapis 默认映射（按
-  /// 字段键定位，不受改名影响）；其它类型用按类型存的映射。
-  Map<String, String> _mappingFor(SrsNoteTypeView? type) => _isLapis(type)
-      ? <String, String>{
-          for (final MapEntry<String, String> e
-              in LapisNoteType.defaultFieldMappings.entries)
-            srsLapisFieldId(store.profileUid, e.key): e.value,
-        }
-      : srsEffectiveFieldMappings(
-          type!,
-          destination.fieldMappingsByType[type.id],
-        );
+  /// 笔记类型 → 渲染用的字段映射（键 = fieldId）。内置类型（Lapis、Fushi 卡片）固定用
+  /// 各自的默认映射（按字段键定位，不受改名影响）；其它类型用按类型存的映射。
+  Map<String, String> _mappingFor(SrsNoteTypeView? type) {
+    final SrsBuiltinNoteTypeSpec? builtin = _isLapis(type)
+        ? srsBuiltinNoteTypeSpec(kSrsBuiltinLapisKey)
+        : srsBuiltinNoteTypeSpec(type!.builtinKey);
+    if (builtin != null) {
+      return <String, String>{
+        for (final MapEntry<String, String> e
+            in builtin.defaultFieldMappings.entries)
+          srsBuiltinFieldId(store.profileUid, builtin.key, e.key): e.value,
+      };
+    }
+    return srsEffectiveFieldMappings(
+      type!,
+      destination.fieldMappingsByType[type.id],
+    );
+  }
 
   /// 同一套渲染（媒体存进 [media]，字段键 = fieldId）。标签、紧凑释义等其余设置
   /// 沿用用户的制卡设置。

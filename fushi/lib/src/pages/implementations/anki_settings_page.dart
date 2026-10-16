@@ -46,6 +46,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsBuiltinNoteTypeSpec;
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -475,10 +476,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         choices.noteTypes.any((SrsNoteTypeView v) => v.id == selectedTypeId)
         ? selectedTypeId
         : null;
-    final Map<String, String>? stored = noteType == null
+    // 内置类型（Lapis、Fushi 卡片）恒用各自的默认映射，不给逐字段改。
+    final bool builtinMapping =
+        noteType == null || srsBuiltinNoteTypeSpec(noteType.builtinKey) != null;
+    final Map<String, String>? stored = builtinMapping
         ? null
         : appModel.srsMiningDestination.fieldMappingsByType[noteType.id];
-    final Map<String, String> mappings = noteType == null
+    final Map<String, String> mappings = builtinMapping
         ? const <String, String>{}
         : srsEffectiveFieldMappings(noteType, stored);
     return AdaptiveSettingsSection(
@@ -510,8 +514,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             title: t.anki_note_type,
             subtitle: resolved.noteTypeFellBack
                 ? t.srs_mining_note_type_fallback
-                : noteType == null
-                ? t.srs_mining_lapis_mapping_hint
+                : builtinMapping
+                ? t.srs_mining_builtin_mapping_hint
                 : null,
             controlBelow: true,
             selected: validTypeId,
@@ -527,7 +531,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
-        if (noteType != null)
+        if (!builtinMapping)
           for (final SrsFieldDef field in noteType.fields)
             AdaptiveSettingsNavigationRow(
               key: ValueKey<String>('srs-mining-field-${field.id}'),

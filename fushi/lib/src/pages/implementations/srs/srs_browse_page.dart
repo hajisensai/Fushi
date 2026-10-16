@@ -53,13 +53,21 @@ class _UndoEntry {
 }
 
 class SrsBrowsePage extends ConsumerStatefulWidget {
-  const SrsBrowsePage({super.key, this.initialQuery, this.onChangeNoteType});
+  const SrsBrowsePage({
+    super.key,
+    this.initialQuery,
+    this.onChangeNoteType,
+    this.onMigrateToFushiCard,
+  });
 
   /// 打开时带上的查询（AnkiConnect guiBrowse）。
   final String? initialQuery;
 
   /// 批量菜单的「更改笔记类型」；null = 不显示这一项。
   final SrsChangeNoteTypeFlow? onChangeNoteType;
+
+  /// 批量菜单的「迁移到 Fushi 卡片」（只对 Lapis 笔记）；null = 不显示这一项。
+  final SrsChangeNoteTypeFlow? onMigrateToFushiCard;
 
   @override
   ConsumerState<SrsBrowsePage> createState() => _SrsBrowsePageState();
@@ -355,6 +363,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     if (_canSchedule) SrsBrowseBatchAction.reset,
     if (_canSchedule) SrsBrowseBatchAction.setDue,
     if (widget.onChangeNoteType != null) SrsBrowseBatchAction.changeNoteType,
+    if (widget.onMigrateToFushiCard != null)
+      SrsBrowseBatchAction.migrateToFushiCard,
     SrsBrowseBatchAction.delete,
   ];
 
@@ -492,7 +502,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
         if (!ok) return;
         run = () => srsBatchDeleteNotes(store, noteIds);
       case SrsBrowseBatchAction.changeNoteType:
-        final SrsChangeNoteTypeFlow? flow = widget.onChangeNoteType;
+      case SrsBrowseBatchAction.migrateToFushiCard:
+        final SrsChangeNoteTypeFlow? flow =
+            action == SrsBrowseBatchAction.changeNoteType
+            ? widget.onChangeNoteType
+            : widget.onMigrateToFushiCard;
         if (flow == null) return;
         await _focusOwnership.guardOverlay(() => flow(context, noteIds));
         if (!mounted) return;

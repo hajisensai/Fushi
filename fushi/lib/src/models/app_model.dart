@@ -48,6 +48,7 @@ import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
+import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -8248,8 +8249,14 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
 
-  // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非 Lapis 类型的字段映射）。
-  // 同样可空读：prefs 未装配 = 默认牌组 + Lapis。
+  // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
+  SrsCardAppearance get srsCardAppearance =>
+      SrsCardAppearance.decode(_prefsRepo?.srsCardAppearance ?? '');
+  Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
+      prefsRepo.setSrsCardAppearance(appearance.encode());
+
+  // 挖词目标 = Fushi 复习时的落地位置（牌组 / 笔记类型 / 非内置类型的字段映射）。
+  // 同样可空读：prefs 未装配 = 默认牌组 + Fushi 卡片。
   SrsMiningDestination get srsMiningDestination {
     final PreferencesRepository? prefs = _prefsRepo;
     if (prefs == null) return const SrsMiningDestination();

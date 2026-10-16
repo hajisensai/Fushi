@@ -410,6 +410,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'show_remote_entries',
   // String（JSON，SrsAnkiImportOptions.toJson）：上次「导入 Anki 包」选的五个选项，
   // 下次作对话框初值；缺省 = Anki 默认值。非凭据、跨设备（随 Profile / 备份）。
+  // String（JSON，SrsCardAppearance.toJson）：复习卡面（Fushi 卡片模板）的外观：
+  // 字体 / 字号 / 行距 / 配色 / 区块显隐 / 统一词典样式 / 密度。缺省 = 模板默认外观。
+  // 非凭据、跨设备（随 Profile / 备份；字体文件路径在别的设备上不存在时回落默认字体）。
+  'srs_card_appearance',
   'srs_import_anki_options',
   // String（SRS 牌组 id，'' = 默认牌组）：挖词目标 = Fushi 复习时卡落进的牌组。
   // 被删时制卡回落默认牌组。非凭据、跨设备（id 自带 profileUid）。
@@ -417,8 +421,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（JSON `{noteTypeId: {fieldId: 模板}}`）：非 Lapis 笔记类型的制卡字段
   // 映射，模板与 Anki 字段映射同一套 handlebar。非凭据、跨设备。
   'srs_mining_field_mappings',
-  // String（SRS 笔记类型 id，'' = 内置 Lapis）：挖词目标 = Fushi 复习时用的笔记
-  // 类型。被删时回落 Lapis。非凭据、跨设备。
+  // String（SRS 笔记类型 id，'' = 从没选过 = 内置 Fushi 卡片）：挖词目标 = Fushi
+  // 复习时用的笔记类型。被删时回落 Lapis。非凭据、跨设备。
   'srs_mining_note_type_id',
   // String（SrsMiningTarget.wire，默认 'anki'）：复习模块开着时制卡发往 Anki 还是 Fushi
   // 复习（二选一；存量 'both' 读成 'anki'）。模块关着时不读。非凭据、跨设备。

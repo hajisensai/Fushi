@@ -33,9 +33,10 @@ enum SrsMiningTarget {
 
 /// 制卡落到 Fushi 复习的哪里（偏好给出，按 profile 存）。
 ///
-/// [deckId] / [noteTypeId] 为空 = 默认牌组 / 内置 Lapis。[fieldMappingsByType]
+/// [deckId] / [noteTypeId] 为空 = 默认牌组 / 内置 Fushi 卡片（从没选过时的默认；选择器
+/// 写的是具体 id，选了 Lapis 存的是 Lapis 的 id，与「没选过」可区分）。[fieldMappingsByType]
 /// 按笔记类型 id 存「fieldId → 制卡内容模板」（模板语法与 Anki 字段映射同一套
-/// handlebar）；Lapis 不读它，恒用 Lapis 默认映射。
+/// handlebar）；内置类型（Lapis、Fushi 卡片）不读它，恒用各自的默认映射。
 class SrsMiningDestination {
   const SrsMiningDestination({
     this.deckId = '',

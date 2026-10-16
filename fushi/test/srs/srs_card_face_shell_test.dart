@@ -124,6 +124,61 @@ void main() {
       expect(evaluated.last, contains('later'));
     });
 
+    test('同一笔记类型连续换卡：笔记类型 CSS 正文只下发一次', () async {
+      const String css = '.fushi-type-css{color:#123456}';
+      sync.shellLoaded();
+      for (int i = 0; i < 6; i++) {
+        sync.update(doc(cardId: 'c$i', body: 'Q$i', css: css));
+        sync.update(doc(cardId: 'c$i', answer: true, body: 'A$i', css: css));
+      }
+      await Future<void>.delayed(Duration.zero);
+      final String all = evaluated.join('\n');
+      expect(
+        RegExp(RegExp.escape('fushi-type-css')).allMatches(all),
+        hasLength(1),
+      );
+      expect(sync.definedStyles, hasLength(1));
+      for (final String s in evaluated.skip(1)) {
+        expect(s, isNot(contains('__fushiSrsDefineCss')));
+      }
+    });
+
+    test('正文里的词典 <style> 抽出、去重，跨卡只登记一次', () async {
+      const String dictStyle =
+          '.yomitan-glossary [data-dictionary="D"] .x{color:red}';
+      String glossary(String text) =>
+          '<div class="yomitan-glossary"><ol><li data-dictionary="D">$text'
+          '</li></ol><style>$dictStyle</style></div>';
+      sync.shellLoaded();
+      sync.update(doc(cardId: 'a', body: glossary('one') + glossary('two')));
+      sync.update(doc(cardId: 'b', body: glossary('three')));
+      await Future<void>.delayed(Duration.zero);
+      expect(evaluated, hasLength(2));
+      expect(
+        RegExp(
+          RegExp.escape(dictStyle.substring(0, 30)),
+        ).allMatches(evaluated.join()),
+        hasLength(1),
+        reason: '同一段词典样式（一张卡里两份、跨两张卡）只下发一次',
+      );
+      expect(evaluated.last, isNot(contains('<style>')));
+      expect(evaluated.last, contains('three'));
+      expect(sync.definedStyles, hasLength(2));
+    });
+
+    test('外壳重载后已登记样式作废、整份重新登记', () async {
+      sync.shellLoaded();
+      sync.update(doc(css: '.replay-me{}'));
+      await Future<void>.delayed(Duration.zero);
+      sync.detach();
+      expect(sync.definedStyles, isEmpty);
+      sync.shellLoaded();
+      await Future<void>.delayed(Duration.zero);
+      expect(evaluated, hasLength(2));
+      expect(evaluated.last, contains('__fushiSrsDefineCss'));
+      expect(evaluated.last, contains('.replay-me{}'));
+    });
+
     test('页面已不是外壳（调用返回 false）时重载外壳一次，不循环', () async {
       int calls = 0;
       final SrsCardFaceSync s = SrsCardFaceSync(
@@ -149,7 +204,12 @@ void main() {
       final SrsCardFaceDocument d = doc(dark: true);
       final String shell = d.shellHtml;
       expect(shell, contains('<style id="fushi-theme-css">'));
-      expect(shell, contains('<style id="fushi-card-css"></style>'));
+      expect(
+        shell,
+        contains(
+          '<style id="fushi-css-tpl"></style><style id="fushi-css-body"></style>',
+        ),
+      );
       expect(shell, contains('id="fushi-card-root"'));
       expect(shell, contains('class="card nightMode night_mode"'));
       expect(shell, contains(kSrsPlaySoundHandler));
@@ -157,6 +217,24 @@ void main() {
       // 卡片内容不进外壳：外壳与卡无关，换卡不需要重载。
       expect(shell, isNot(contains('<b>Q</b>')));
       expect(doc(cardId: 'x', body: 'zzz', dark: true).shellHtml, shell);
+    });
+
+    test('抽 <style>：脚本里的不碰、带 media 的留在正文、同段只留一份', () {
+      final ({String body, List<String> styles}) r = srsExtractCardStyles(
+        '<p>x</p><style>.a{}</style><script>var s="<style>.no{}</style>";'
+        '</script><style media="print">.p{}</style><STYLE type="text/css">'
+        '.a{}</STYLE><style>.b{}</style>',
+      );
+      expect(r.styles, <String>['.a{}', '.b{}']);
+      expect(
+        r.body,
+        contains('<script>var s="<style>.no{}</style>";</script>'),
+      );
+      expect(r.body, contains('<style media="print">.p{}</style>'));
+      expect(r.body, isNot(contains('.a{}')));
+      expect(r.body, isNot(contains('.b{}')));
+      const String plain = '<b>no styles</b>';
+      expect(identical(srsExtractCardStyles(plain).body, plain), isTrue);
     });
 
     test('卡面内容做媒体改写与 lang 包裹', () {
@@ -229,6 +307,11 @@ function el(tag){
     },
     querySelectorAll(){ return []; },
     getElementsByTagName(t){ return this.children.filter(c => c.tagName === t.toUpperCase()); },
+    insertBefore(nu, ref){
+      const i = this.children.indexOf(ref);
+      this.children.splice(i < 0 ? this.children.length : i, 0, nu);
+      nu.parentNode = this;
+    },
   };
 }
 const root = el('div');
@@ -250,14 +333,30 @@ Object.defineProperty(root, 'innerHTML', {
     }
   },
 });
-const cardCss = el('style'), themeCss = el('style');
+const themeCss = el('style');
+const head = el('head');
+const tplAnchor = el('style'), bodyAnchor = el('style');
+head.insertBefore(tplAnchor, null);
+head.insertBefore(bodyAnchor, null);
+// 当前启用的注册表样式（文档顺序，`|` 连接）。
+function cssOn(){
+  return head.children
+    .filter(c => c.hasAttribute('data-fushi-css') && !c.disabled)
+    .map(c => c.textContent).join('|');
+}
+function cssAll(){
+  return head.children.filter(c => c.hasAttribute('data-fushi-css')).map(c => c.textContent);
+}
 globalThis.document = {
   body: { className: '' },
+  head,
   getElementById(id){
-    return { 'fushi-card-root': root, 'fushi-card-css': cardCss, 'fushi-theme-css': themeCss }[id] || null;
+    return { 'fushi-card-root': root, 'fushi-theme-css': themeCss,
+      'fushi-css-tpl': tplAnchor, 'fushi-css-body': bodyAnchor }[id] || null;
   },
   createElement: el,
 };
+function defCss(hash, kind, text){ __fushiSrsDefineCss(hash, kind, text); }
 async function loadNext(){
   const s = pendingLoads.shift();
   assert.ok(s, 'no pending external script');
@@ -298,18 +397,19 @@ $body
     test('内联脚本按文档顺序同步执行，钩子在脚本之后（onUpdateHook 先于 onShownHook）', () async {
       await runJs(
         harness(r'''
-__fushiSrsSetCard('.a{}',
+defCss('ha', 't', '.a{}');
+__fushiSrsSetCard(['ha'],
   '<p>x</p><script>log.push("s1"); onShownHook.push(function(){log.push("shown")}); onUpdateHook.push(function(){log.push("update")});</script>'
   + '<script>log.push("s2")</script>', 'nightMode night_mode');
 assert.deepEqual(log, ['s1', 's2', 'update', 'shown'], '同步完成：' + log);
-assert.equal(cardCss.textContent, '.a{}');
+assert.equal(cssOn(), '.a{}');
 assert.equal(document.body.className, 'card nightMode night_mode');
 assert.equal(root.className, 'card nightMode night_mode');
 assert.equal(scrolled, 1);
 assert.equal(root.children[0].text.indexOf('log.push("s1")'), 0, '换成了新建的 script 元素');
 // 下一张：上一张压的钩子不再跑。
 log.length = 0;
-__fushiSrsSetCard('', '<script>log.push("n1")</script>', '');
+__fushiSrsSetCard([], '<script>log.push("n1")</script>', '');
 assert.deepEqual(log, ['n1']);
 assert.equal(document.body.className, 'card');
 '''),
@@ -320,7 +420,7 @@ assert.equal(document.body.className, 'card');
       await runJs(
         harness(r'''
 window.__remote['lib.js'] = 'log.push("lib")';
-__fushiSrsSetCard('', '<script>log.push("a"); onShownHook.push(function(){log.push("shown")})</script>'
+__fushiSrsSetCard([], '<script>log.push("a"); onShownHook.push(function(){log.push("shown")})</script>'
   + '<script src="lib.js"></script><script>log.push("b")</script>', '');
 assert.deepEqual(log, ['a'], '外部脚本没加载完，后面的不跑');
 await loadNext();
@@ -332,11 +432,32 @@ assert.deepEqual(log, ['a', 'lib', 'b', 'shown']);
     test('外部脚本还在加载时换了下一张：旧卡剩下的脚本与钩子不跑', () async {
       await runJs(
         harness(r'''
-__fushiSrsSetCard('', '<script src="slow.js"></script><script>log.push("old-tail")</script>'
+__fushiSrsSetCard([], '<script src="slow.js"></script><script>log.push("old-tail")</script>'
   + '<script>onShownHook.push(function(){log.push("old-shown")})</script>', '');
-__fushiSrsSetCard('', '<script>log.push("new"); onShownHook.push(function(){log.push("new-shown")})</script>', '');
+__fushiSrsSetCard([], '<script>log.push("new"); onShownHook.push(function(){log.push("new-shown")})</script>', '');
 await loadNext();
 assert.deepEqual(log, ['new', 'new-shown']);
+'''),
+      );
+    });
+
+    test('样式注册表：只启用当前卡引用的样式，上一张卡的词典样式不串到下一张', () async {
+      await runJs(
+        harness(r'''
+defCss('t1', 't', '.tpl{}');
+defCss('d1', 'd', '[data-dictionary="A"] b{color:red}');
+defCss('d1', 'd', 'ignored duplicate');
+__fushiSrsSetCard(['t1', 'd1'], '<p>A</p>', '');
+assert.equal(cssOn(), '.tpl{}|[data-dictionary="A"] b{color:red}');
+defCss('d2', 'd', '.loose{color:blue}');
+__fushiSrsSetCard(['t1', 'd2'], '<p>B</p>', '');
+assert.equal(cssOn(), '.tpl{}|.loose{color:blue}', '上一张的 d1 已停用');
+assert.deepEqual(cssAll(), ['.tpl{}', '[data-dictionary="A"] b{color:red}', '.loose{color:blue}'],
+  '同一哈希只建一次，模板样式排在正文样式之前');
+defCss('t2', 't', '.other-type{}');
+__fushiSrsSetCard(['t2'], '<p>C</p>', '');
+assert.equal(cssOn(), '.other-type{}');
+assert.equal(head.children.indexOf(tplAnchor) < head.children.findIndex(c => c.textContent === '.loose{color:blue}'), true);
 '''),
       );
     });
@@ -344,11 +465,12 @@ assert.deepEqual(log, ['new', 'new-shown']);
     test('换主题只换主题样式与类名', () async {
       await runJs(
         harness(r'''
-__fushiSrsSetCard('.c{}', '<script>log.push("run")</script>', '');
+defCss('hc', 't', '.c{}');
+__fushiSrsSetCard(['hc'], '<script>log.push("run")</script>', '');
 __fushiSrsSetTheme('html{color:red}', 'nightMode night_mode');
 assert.equal(themeCss.textContent, 'html{color:red}');
 assert.equal(document.body.className, 'card nightMode night_mode');
-assert.equal(cardCss.textContent, '.c{}');
+assert.equal(cssOn(), '.c{}');
 assert.deepEqual(log, ['run'], '没重跑卡片脚本');
 '''),
       );
@@ -358,15 +480,18 @@ assert.deepEqual(log, ['run'], '没重跑卡片脚本');
       const String nasty =
           '<p title="a\'b">"q" \\ \\n </script> \u2028 \u2029 `\${x}` 日本語</p>';
       const String css = '.x::after{content:"\\201C"}';
-      final String call = srsCardSetCardScript(
-        css: css,
-        bodyHtml: nasty,
-        classes: 'nightMode',
-      );
+      final SrsCardStyle style = SrsCardStyle.of('t', css);
+      final String call =
+          srsCardDefineCssScript(style) +
+          srsCardSetCardScript(
+            styleRefs: <String>[style.hash],
+            bodyHtml: nasty,
+            classes: 'nightMode',
+          );
       final String out = await runJs(
         harness('''
 $call
-process.stdout.write(JSON.stringify({html: root.innerHTML, css: cardCss.textContent, cls: root.className}));
+process.stdout.write(JSON.stringify({html: root.innerHTML, css: cssOn(), cls: root.className}));
 '''),
       );
       final Map<String, dynamic> got = jsonDecode(out) as Map<String, dynamic>;

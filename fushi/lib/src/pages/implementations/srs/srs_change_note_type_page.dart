@@ -27,6 +27,9 @@ class SrsChangeNoteTypePage extends ConsumerStatefulWidget {
     required this.noteIds,
     required this.from,
     required this.targets,
+    this.initialTargetId,
+    this.initialFieldMap,
+    this.initialTemplateMap,
   });
 
   /// 要换类型的笔记（同一个源类型）。
@@ -36,18 +39,32 @@ class SrsChangeNoteTypePage extends ConsumerStatefulWidget {
   /// 可选的目标类型（不含源类型），非空。
   final List<SrsNoteTypeView> targets;
 
+  /// 预选的目标类型（不在 [targets] 里时取第一个）。
+  final String? initialTargetId;
+
+  /// 预设映射（新 id → 旧 id），只对 [initialTargetId] 生效；换了目标类型回到默认映射。
+  /// 「迁移到 Fushi 卡片」用它预填按字段键直映的结果。
+  final Map<String, String?>? initialFieldMap;
+  final Map<String, String?>? initialTemplateMap;
+
   @override
   ConsumerState<SrsChangeNoteTypePage> createState() =>
       _SrsChangeNoteTypePageState();
 }
 
 class _SrsChangeNoteTypePageState extends ConsumerState<SrsChangeNoteTypePage> {
-  late SrsNoteTypeView _to = widget.targets.first;
-  late Map<String, String?> _fieldMap = srsDefaultFieldMap(widget.from, _to);
-  late Map<String, String?> _templateMap = srsDefaultTemplateMap(
-    widget.from,
-    _to,
-  );
+  late SrsNoteTypeView _to =
+      widget.targets
+          .where((SrsNoteTypeView v) => v.id == widget.initialTargetId)
+          .firstOrNull ??
+      widget.targets.first;
+  late final bool _presetApplies = _to.id == widget.initialTargetId;
+  late Map<String, String?> _fieldMap =
+      (_presetApplies ? widget.initialFieldMap : null) ??
+      srsDefaultFieldMap(widget.from, _to);
+  late Map<String, String?> _templateMap =
+      (_presetApplies ? widget.initialTemplateMap : null) ??
+      srsDefaultTemplateMap(widget.from, _to);
   SrsNoteTypeChangePreview? _preview;
   bool _applying = false;
   int _previewSeq = 0;
