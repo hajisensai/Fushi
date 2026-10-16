@@ -22,7 +22,10 @@ import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart'
     show galHookAudioBackendLabel, galHookSessionPhaseLabel;
 import 'package:fushi/src/pages/implementations/games_library_page.dart'
-    show formatGalgameDate, galgamePlayStatusLabel;
+    show
+        formatGalgameDate,
+        galgamePlayStatusLabel,
+        isGameCollectionMemberVisible;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -201,7 +204,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   }
 
   /// 「加入合集」：mediaType=[MediaKind.game]、entryKey=`galgames.id`（本机局域
-  /// 身份），与库页卡片菜单同一 DAO 路径。
+  /// 身份），与库页卡片菜单同一 DAO 路径；成员数与游戏库同一可见判据
+  /// （[isGameCollectionMemberVisible]，BUG-3361 跨域补漏）。
   Future<void> _addToCollection(GalgameEntry game) async {
     await showAddToCollectionDialog(
       context: context,
@@ -209,6 +213,12 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       mediaType: MediaKind.game,
       entryKey: game.id,
       defaultNewName: game.displayName,
+      isMemberVisible: (String mediaType, String entryKey) =>
+          isGameCollectionMemberVisible(
+            games: _repo.games,
+            mediaType: mediaType,
+            entryKey: entryKey,
+          ),
     );
   }
 
@@ -455,21 +465,22 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
+        // 标题 / 开发商是刮削来的资料，要能复制去编辑 tab（反馈 2DmrXg-wtD）。
+        SelectableText(
           game.displayName,
+          key: const ValueKey<String>('galgame-hero-title'),
           style: narrow
               ? context.fushiType.headlineSmallEmphasized
               : context.fushiType.headlineMediumEmphasized,
           maxLines: 2,
-          overflow: TextOverflow.ellipsis,
         ),
         if (developer != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
+            child: SelectableText(
               developer,
+              key: const ValueKey<String>('galgame-hero-developer'),
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: tokens.surfaces.onVariant,
               ),
@@ -701,13 +712,13 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
     );
   }
 
-  /// 文本值的网格单元。
+  /// 文本值的网格单元（值可选择复制，与简介 tab 的 `_summarySection` 一致）。
   Widget _metaTextCell(BuildContext context, String label, String value) {
     final ThemeData theme = Theme.of(context);
     return _metaCell(
       context,
       label,
-      Text(value, style: theme.textTheme.bodyMedium),
+      SelectableText(value, style: theme.textTheme.bodyMedium),
     );
   }
 

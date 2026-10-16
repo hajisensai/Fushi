@@ -142,10 +142,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
         );
       }
       // Apple 竖排：错设「x = 0 是竖排基线」的字体整列偏出行盒半个字（见
-      // clearVerticalBaselineFlag），下发前清掉。
-      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
-        fileBytes,
-      );
+      // clearVerticalBaselineFlag），下发前清掉。按字体身份缓存、重活在后台 isolate
+      // （见 VerticalBaselineFontCache）。
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(
+              safeFontPath,
+              await fontFile.stat(),
+            ),
+            data: fileBytes,
+          );
       final Uint8List data = fixed.data;
       debugPrint(
         '[ReaderFushi] font served: $safeFontPath (${data.length} bytes)',
@@ -224,9 +230,11 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
     // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
     if (_isFontMime(mime) || _isFontMime(declaredMime)) {
-      final ({Uint8List data, String? mime}) fixed = clearVerticalBaselineFlag(
-        data,
-      );
+      final VerticalBaselineFontResult fixed =
+          await readerVerticalBaselineFontCache.resolve(
+            key: VerticalBaselineFontCache.keyFor(filePath, await file.stat()),
+            data: data,
+          );
       data = fixed.data;
       mime = fixed.mime ?? mime;
     }
@@ -1583,7 +1591,8 @@ $kContinuousWheelScrollJs
     // delta>0=前进)，不再经 onSwipe 被 invertSwipeDirection(默认 true) 连坐反向。
     // 节流统一到 Dart 侧 _paginate 入口时间戳闸门（throttleMs: wheelPageTurnInterval），
     // JS 不再自持固定窗口 _wheelTimer；横向触控板 burst 由跨文档 Dart State 聚合，
-    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 只管触摸/鼠标拖动。
+    // 纵向鼠标滚轮仍走 _paginate 固定窗口。invertSwipeDirection 管触摸/鼠标拖动与
+    // 触控板两指滑（BUG-3358），不管鼠标滚轮。
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
@@ -2355,8 +2364,9 @@ updateLive: function(patch) {
 
         // TODO-737: 分页滚轮翻页专用 handler。JS 回传主轴 delta 的符号
         // (forward = delta>0) 与轴、设备类型；方向由纯谓词 readerWheelTickIsForward
-        // 一处决定：纵向与鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死），
-        // 只有横向触控板（= 滑动翻页手势）按书写方向 + 该开关折算（反馈 794gISjvgV）。
+        // 一处决定：鼠标滚轮**不读** invertSwipeDirection（TODO-737 定死）；触控板
+        // 两指滑（= 滑动翻页手势）横纵两轴都按该开关折算，横向另看书写方向
+        // （BUG-3358；纵向补漏后翻页与 VN 模式的两指上下滑也认开关）。
         // 横向触控板惯性先经跨 document 持久的
         // ReaderWheelGestureGate 聚合为一次手势；纵向鼠标滚轮只走既有固定窗口节流。
         controller.addJavaScriptHandler(

@@ -455,7 +455,7 @@
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
-					"$(FUSHI_P2P_LDFLAGS)",
+					"$(FUSHI_IOS_NATIVE_LDFLAGS)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -596,7 +596,7 @@
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
-					"$(FUSHI_P2P_LDFLAGS)",
+					"$(FUSHI_IOS_NATIVE_LDFLAGS)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -631,7 +631,7 @@
 					"$(FUSHIDICTS_MERGED_ARCHIVE)",
 					"-framework",
 					CoreFoundation,
-					"$(FUSHI_P2P_LDFLAGS)",
+					"$(FUSHI_IOS_NATIVE_LDFLAGS)",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = app.fushi.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
