@@ -821,7 +821,7 @@ from the tree on release instead of fading it, so it never showed the reset valu
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-3354: swipe seek indicator keeps the committed delta while fading`).
 
-## BUG-3417: fullscreen PopScope exits native fullscreen only on a real pop
+## BUG-3449: fullscreen PopScope exits native fullscreen only on a real pop
 
 `lib/media_kit_video_controls/src/controls/widgets/fullscreen_inherited_widget.dart`,
 `_FullscreenInheritedWidgetPopScopeState.build`.

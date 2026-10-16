@@ -204,7 +204,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // [exitWindowFullscreenIfActive]，把用户正在看的全屏退掉（BUG-2913）。
         // 这份 widget 登记负责「离场时归还」；「push 即可见」由路由级登记保证。
         //
-        // BUG-3417：「返回上一级」经 `Navigator.maybePop` 到达时（焦点不在本页子树里的
+        // BUG-3449：「返回上一级」经 `Navigator.maybePop` 到达时（焦点不在本页子树里的
         // Esc、手柄 B / 鼠标侧键兜底、media_kit 自带的退全屏），栈顶是本路由、视频页
         // 的 [PopScope] 轮不到——必须在这里接上同一份逐级退出层级表，否则全屏下先退
         // 全屏、剧集轨 / 字幕列表 / 侧栏原样留着。接管层是下面的
@@ -376,7 +376,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     final VideoState parent = FullscreenInheritedWidget.of(context).parent;
     _videoFullscreenTransitioning = true;
     try {
-      // BUG-3417：显式退全屏（F 键 / 全屏按钮 / 外部导航收尾 / 逐级退出的最后一级）
+      // BUG-3449：显式退全屏（F 键 / 全屏按钮 / 外部导航收尾 / 逐级退出的最后一级）
       // 直接 pop 全屏路由。全屏路由里的 [VideoFullscreenBackScope] 恒 `canPop: false`
       // 拦下 `maybePop` 去走层级表——那是「返回上一级」的语义；这里若仍 maybePop，
       // F 键在剧集轨开着时会被吃成「关剧集轨」。全屏路由不是栈顶（上面压着对话框）
@@ -399,7 +399,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
     }
   }
 
-  /// 全屏路由收到「返回上一级」且已没有前台层可关时退出全屏（BUG-3417）。
+  /// 全屏路由收到「返回上一级」且已没有前台层可关时退出全屏（BUG-3449）。
   ///
   /// 优先走 [_exitVideoFullscreen]（过渡互斥 + refreshView，与键盘通道最后一级同一
   /// 执行体）；全屏 controls 尚未挂上 / 已卸载拿不到 context 时，直接 pop 本路由——
