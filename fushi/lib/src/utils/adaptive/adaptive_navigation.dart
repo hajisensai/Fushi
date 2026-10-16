@@ -2804,7 +2804,7 @@ class _AnimatedRailWidthState extends State<_AnimatedRailWidth>
   );
 
   /// 本次过渡两端里较窄的一端（静止时 = 当前宽）；[NavRailContentSync] 据此让
-  /// 内容区在整个过渡里保持同一宽度。
+  /// 藏起的保活子树在整个过渡里保持同一宽度（可见内容照常逐帧跟随，BUG-3447）。
   late double _narrowEnd = widget.width;
 
   @override

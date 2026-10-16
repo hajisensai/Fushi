@@ -38,16 +38,6 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3447](bugs/BUG-3447-rail-toggle-right-edge-flicker.md) | ✅ | ✅ | rail-toggle-right-edge-flicker |
-| [BUG-3431](bugs/BUG-3431-continuous-reopen-column-drift-and-follow-zero-save.md) | ✅ | ✅ | 滚动模式每次重开回退一列 + 跟读时视口首字 0 与句位交替落库 |
-| [BUG-3430](bugs/BUG-3430-reader-open-audio-live-position-and-play-before-seek.md) | ✅ | ✅ | 带有声书开书只信播放器实时位置 + 播放不等恢复 seek：先跳到书首句再跳回 |
-| [BUG-3429](bugs/BUG-3429-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
-| [BUG-3429](bugs/BUG-3429-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
-| [BUG-3429](bugs/BUG-3429-downloaded-book-key-mismatch-delete-lost.md) | ✅ | ✅ | 从对端下载的书落地键不同导致跨设备删除丢失 |
-| [BUG-3429](bugs/BUG-3429-book-collection-continue-next-volume.md) | ✅ | ✅ | book-collection-continue-next-volume |
-> 共 3101 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3446](bugs/BUG-3446-reader-background-transient-position-persisted.md) | ✅ | ✅ | 安卓切后台时临时排版的页首字被落库，进程被回收后重开退一页 |
 | [BUG-3445](bugs/BUG-3445-subtitle-color-picker-compact.md) | ✅ | ✅ | 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项 |
 | [BUG-3444](bugs/BUG-3444-book-collection-continue-next-volume.md) | ✅ | ✅ | book-collection-continue-next-volume |
@@ -67,27 +57,17 @@
 | [BUG-3430](bugs/BUG-3430-reader-open-audio-live-position-and-play-before-seek.md) | ✅ | ✅ | 带有声书开书只信播放器实时位置 + 播放不等恢复 seek：先跳到书首句再跳回 |
 | [BUG-3429](bugs/BUG-3429-downloaded-book-key-mismatch-delete-lost.md) | ✅ | ✅ | 从对端下载的书落地键不同导致跨设备删除丢失 |
 | [BUG-3428](bugs/BUG-3428-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
-| [BUG-3428](bugs/BUG-3428-inline-video-word-audio-overlap.md) | ✅ | ✅ | 视频片段（WebM 内嵌）制卡翻面时单词音频与句子片段同时播放 |
-| [BUG-3428](bugs/BUG-3428-adopted-online-manga-delete-not-propagated.md) | ✅ | ✅ | 互联收下的在线漫画收不到对端从所有设备删除 |
 | [BUG-3427](bugs/BUG-3427-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
-| [BUG-3427](bugs/BUG-3427-remote-series-volumes-not-in-collection.md) | ✅ | ✅ | 远端占位分卷不进本地同系列合集 |
 | [BUG-3426](bugs/BUG-3426-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
 | [BUG-3425](bugs/BUG-3425-game-stream-card-missing-host-dict-styles.md) | ✅ | ✅ | game-stream-card-missing-host-dict-styles |
 | [BUG-3424](bugs/BUG-3424-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |
 | [BUG-3423](bugs/BUG-3423-stream-subtitle-align-probe-too-long.md) | ✅ | ✅ | 媒体服务器 / 在线源视频字幕波形调轴要等太久（流只需前 3 分钟） |
 | [BUG-3422](bugs/BUG-3422-anime-download-seed-year-suffix.md) | ✅ | ✅ | anime-download-seed-year-suffix |
 | [BUG-3421](bugs/BUG-3421-reader-highlight-lanes-under-book-paragraph-background.md) | ✅ | ✅ | 书自带段落底色盖住高亮窄条 |
-| [BUG-3420](bugs/BUG-3420-subtitle-delay-readout-focus-ring.md) | ✅ | ✅ | 字幕调轴读数胶囊的焦点环四角残缺 |
 | [BUG-3420](bugs/BUG-3420-reader-font-baseline-flag-uncached-ui-isolate.md) | ✅ | ✅ | 阅读器字体请求每次都在 UI isolate 上同步清竖排基线位、无缓存 |
 | [BUG-3419](bugs/BUG-3419-manga-failed-page-tap-swallows-paging.md) | ✅ | ✅ | 在线漫画失败页吞掉点击翻页，读者卡在失败页翻不走 |
-| [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
-| [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
 | [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
-| [BUG-3417](bugs/BUG-3417-galgame-skip-backlog-chars-counted.md) | ✅ | ✅ | galgame-skip-backlog-chars-counted |
 | [BUG-3417](bugs/BUG-3417-video-fullscreen-esc-skips-panel-ladder.md) | ✅ | ✅ | video-fullscreen-esc-skips-panel-ladder |
-| [BUG-3417](bugs/BUG-3417-remote-download-delete-files-ignored.md) | ✅ | ✅ | 远端代下载任务删除时「同时删除已下载文件」勾选被丢弃 |
-| [BUG-3417](bugs/BUG-3417-reader-highlight-lane-latin-ink.md) | ✅ | ✅ | 小说高亮条瘦身后西文上伸 / 下延字母没被包住 |
-| [BUG-3417](bugs/BUG-3417-lyrics-mining-context-sentences.md) | ✅ | ✅ | 歌词模式高级制卡无法前后加句 |
 | [BUG-3416](bugs/BUG-3416-ios-lyrics-vertical-first-blank.md) | ✅ | ✅ | iOS竖排进入歌词模式不显示且切横排无法恢复 |
 | [BUG-3415](bugs/BUG-3415-lyrics-popup-dict-header-tap-closes.md) | 🚧 | 🚧 | 歌词模式点查词弹窗词典折叠标题后弹窗整个关闭 |
 | [BUG-3414](bugs/BUG-3414-lyrics-speed-chip-press-wrap.md) | ✅ | ✅ | 歌词模式倍速键点击时文字折行跳动 |
@@ -103,9 +83,7 @@
 | [BUG-3385](bugs/BUG-3385-manga-online-failed-page-never-retried.md) | ✅ | ✅ | 在线直读取页失败后该页永久白屏 |
 | [BUG-3371](bugs/BUG-3371-sync-compare-manga-zero-progress.md) | ✅ | ✅ | sync-compare-manga-zero-progress |
 | [BUG-3370](bugs/BUG-3370-video-home-next-up-skips-open-only-episode.md) | ✅ | ✅ | video-home-next-up-skips-open-only-episode |
-| [BUG-3370](bugs/BUG-3370-lyrics-illustrations-scan-on-ui-isolate.md) | ✅ | ✅ | 歌词模式 / 插图册每次打开都在 UI isolate 上整书扫插图 |
 | [BUG-3369](bugs/BUG-3369-reader-highlight-one-em-lanes.md) | ✅ | ✅ | 阅读器高亮条太粗：所有字体都要一个字高 |
-| [BUG-3369](bugs/BUG-3369-audiobook-long-chapter-open-timeout.md) | ✅ | ✅ | 长章有声书开书白屏、「内容加载超时」 |
 | [BUG-3368](bugs/BUG-3368-lyrics-ruby-selection-highlight.md) | ✅ | ✅ | 歌词模式查词高亮漏掉带注音的字 |
 | [BUG-3367](bugs/BUG-3367-interconnect-playback-position-lww-no-conflict.md) | ✅ | ✅ | 互联视频/有声书播放位置纯 LWW 无冲突判定：两端各自看过后晚同步的一端被静默覆盖 |
 | [BUG-3366](bugs/BUG-3366-ios-lyrics-vertical-sweep-column-order.md) | ✅ | ✅ | iOS 竖排歌词扫过高亮不按阅读顺序跨列 |
