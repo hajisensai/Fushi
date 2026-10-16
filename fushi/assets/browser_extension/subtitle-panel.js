@@ -230,7 +230,16 @@
   // 进/退全屏常给 body 挂 transform 或 scroll-lock（position:fixed;top:-Npx）——fixed 的
   // 包含块会跟着变成那个带 transform 的祖先，视口坐标落进歪掉的坐标系，每 200ms 重测
   // 一百次也还是歪的（用户报「退出全屏字幕错位」修不尽的根因）。html 自己从不被 transform。
-  function parentForOverlay() { return document.fullscreenElement || document.documentElement; }
+  // BUG-3450：挂载点交给 video-target.js 的视频锚定（全屏元素是 <video> 时也退回 <html>——媒体
+  // 元素的子节点永远不渲染）。契约缺席（单测壳）时回落旧取法。
+  function parentForOverlay() {
+    var VA = window.fushiVideoAnchor;
+    if (VA && typeof VA.host === 'function') {
+      var h = VA.host();
+      if (h) return h;
+    }
+    return document.fullscreenElement || document.documentElement;
+  }
 
   function seekTo(ms) {
     ms = Math.max(0, Math.round(ms));
@@ -556,7 +565,32 @@
   function hideSubtitleOverlay() {
     st.overlayCue = null;
     st.overlayRenderedCue = null;
+    unwatchOverlay();
     if (st.overlayEl && st.overlayEl.parentNode) st.overlayEl.parentNode.removeChild(st.overlayEl);
+  }
+
+  // BUG-3450：覆盖层显示期间订阅视频锚定的帧观察——视频矩形一变（剧场模式、侧栏收起、SPA
+  // 换片、播放器自己缩放、内部滚动容器滚动）下一帧就重摆，不等 200ms tick。只重摆，不重渲染。
+  var overlayUnwatch = null;
+  function watchOverlay() {
+    if (overlayUnwatch) return;
+    var VA = window.fushiVideoAnchor;
+    if (!VA || typeof VA.watch !== 'function') return;
+    overlayUnwatch = VA.watch(function () { replaceOverlay(); });
+  }
+  function unwatchOverlay() {
+    if (!overlayUnwatch) return;
+    try { overlayUnwatch(); } catch (_) {}
+    overlayUnwatch = null;
+  }
+  function replaceOverlay() {
+    var el = st.overlayEl;
+    if (!el || !st.overlayCue || !el.parentNode) return;
+    var video = videoEl();
+    if (!video || typeof video.getBoundingClientRect !== 'function') return;
+    var rect = video.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    placeOverlay(el, rect, currentOverlayPos());
   }
 
   function updateSubtitleOverlay(cue) {
@@ -586,6 +620,7 @@
     renderOverlayCue(cue);
     placeOverlay(el, rect, currentOverlayPos());
     applyOverlayBlur(el);
+    watchOverlay();
   }
 
   // 本刻应生效的位置：拖动中用会话里的实时值（tick 每 200ms 重摆也不会把字幕拽回原位），
@@ -613,11 +648,10 @@
     var cx = rect.left + rect.width * pos.x;
     var halfToEdge = Math.max(0, Math.min(cx, vv - cx));
     var maxW = Math.max(200, Math.min(vv * 0.94, (halfToEdge - 6) * 2));
-    var origin = fixedOriginOf(el);
-    el.style.left = ((cx - origin.x) / origin.sx) + 'px';
     // 底边锚定：文本块从这条线**往上**长。旧版中心锚 84% 时，非全屏矮视频（~200px 高）会垂出
     // 视频底缘压住进度条——底锚后任何视频高度都出不了界。
-    el.style.top = ((rect.top + rect.height * pos.y - origin.y) / origin.sy) + 'px';
+    var anchorY = rect.top + rect.height * pos.y;
+    var origin = setOverlayPoint(el, cx, anchorY);
     el.style.maxWidth = Math.round(maxW / origin.sx) + 'px';
     // 底板宽 / 高（外观设置 boxWidth / boxHeight，视频盒的百分比；0 = 随内容）。是视频盒的比例
     // 而非视口的，所以不能交给 CSS 百分比，随每次重摆按当前 rect 折 px；宽仍被上面的 max-width
@@ -626,6 +660,40 @@
       var style = currentOverlayStyle();
       window.fushiSubtitleStyle.applyBox(el, style, rect);
       fitOverlayText(el, style, rect);
+    }
+    // BUG-3450：底边锚点不许高到让文本块探出视频顶缘——与拖动时 overlayPosFromPoint 同一条
+    // 不变式，但在**摆放**这一层按实测高再守一次。分数坐标是全站共用的一份存档，任何一次在
+    // 「盒子实测比设想高」时算出的位置（站点 CSS 把底板撑成满屏高、自适应缩放压到下限仍放不下
+    // 的长句）都会把 y 存成 ≈0；不在这里夹，那份坏存档就让之后每个站点的字幕都长在视频上方、
+    // 飞出屏幕。只夹显示、不改存档：用户拖动 / 缩放时才写新位置。
+    var h = renderedOverlayHeight(el);
+    if (h > 0) {
+      var minBy = rect.top + Math.min(h, rect.height);
+      if (anchorY < minBy) setOverlayPoint(el, cx, minBy);
+    }
+  }
+
+  // 视口坐标 (x, y) = 覆盖层「水平中心 + 底边」落点。走视频锚定（挂载点 / 定位方式 / 包含块
+  // 原点一处定，见 video-target.js）；契约缺席（单测壳）时按旧的 fixed 折算。返回包含块 origin。
+  function setOverlayPoint(el, x, y) {
+    var VA = window.fushiVideoAnchor;
+    if (VA && typeof VA.placeAt === 'function') {
+      try { return VA.placeAt(el, x, y, videoEl()).origin; } catch (_) { /* fallthrough */ }
+    }
+    var origin = fixedOriginOf(el);
+    el.style.left = ((x - origin.x) / origin.sx) + 'px';
+    el.style.top = ((y - origin.y) / origin.sy) + 'px';
+    return origin;
+  }
+
+  // 覆盖层在视口坐标里的实测高（含站点包含块缩放）。量不到（测试壳 / 未排版）给 0。
+  function renderedOverlayHeight(el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return 0;
+    try {
+      var b = el.getBoundingClientRect();
+      return b && isFinite(b.height) && b.height > 0 ? b.height : 0;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -829,7 +897,19 @@
       x: (d.left + wpx / 2 - rect.left) / rect.width,
       y: (d.top + hpx - rect.top) / rect.height,
     });
-    if (st.overlayEl && st.overlayCue) placeOverlay(st.overlayEl, rect, d.pos);
+    if (st.overlayEl && st.overlayCue) {
+      placeOverlay(st.overlayEl, rect, d.pos);
+      // BUG-3450：hpx 只是「设想的」高（min-height）。底板实测可能更高——自适应缩放压到下限
+      // 仍放不下的长句、站点 CSS 把它撑高（anichan 全屏的 `.wp-stage.fs>*{height:100%}`）。
+      // 底边锚 = 设想高时，多出来的那截全部往上长：每拖一次左上角就上移一截，在全屏里一次就把
+      // y 算成负数夹到 0（字幕长在视频顶缘上方、飞出屏幕，而这份位置是全站共用的）。
+      // 按实测高把底边重新落到「钉住的左上角 + 真实高」。
+      var realH = renderedOverlayHeight(st.overlayEl);
+      if (realH > 0 && Math.abs(realH - hpx) > 0.5) {
+        d.pos = clampOverlayPos({ x: d.pos.x, y: (d.top + realH - rect.top) / rect.height });
+        placeOverlay(st.overlayEl, rect, d.pos);
+      }
+    }
     try { e.preventDefault(); } catch (_) {}
   }
 
