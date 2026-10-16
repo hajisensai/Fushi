@@ -1,7 +1,7 @@
 /// 复习笔记编辑页（新建 / 编辑）。
 ///
 /// - 新建：选笔记类型（默认 Lapis）与牌组，逐字段填写；添加后清空字段继续添加。
-/// - 编辑：字段有同步冲突（两台设备同时改了同一字段）时，在该字段下列出各候选值，
+/// - 编辑：类型行进入「更改笔记类型」（[showSrsChangeNoteTypeFlow]）。字段有同步冲突（两台设备同时改了同一字段）时，在该字段下列出各候选值，
 ///   点选即写入一条新修改记录，冲突随之消失。笔记处于「删除与并发修改」待裁决时
 ///   顶部给出「恢复 / 确认删除」。
 /// - Lapis 字段多：常用的 Expression / ExpressionReading / MainDefinition / Sentence
@@ -18,6 +18,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -276,6 +277,35 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
+  /// 已有笔记换类型：先保存未保存的字段修改（换类型按已存的值搬字段），再走映射流程，完成后重读。
+  Future<void> _changeType() async {
+    final String? noteId = widget.noteId;
+    final SrsDbStore? store = _store;
+    if (noteId == null || store == null) return;
+    // 只存真改过的字段：没动过的字段若有并发冲突，照原样留给用户裁决，不被这次保存顺手覆盖。
+    final SrsNoteView? note = _note;
+    final Map<String, String> values = <String, String>{
+      for (final MapEntry<String, TextEditingController> e in _fields.entries)
+        if (e.value.text != (note?.field(e.key) ?? '')) e.key: e.value.text,
+    };
+    final List<String> tags = _parseTags();
+    final bool tagsChanged = tags.join(' ') != (note?.tags.join(' ') ?? '');
+    if (values.isNotEmpty || tagsChanged) {
+      await store.updateNote(
+        noteId,
+        fieldsById: values,
+        tags: tagsChanged ? tags : null,
+      );
+    }
+    if (!mounted) return;
+    final bool changed = await showSrsChangeNoteTypeFlow(context, <String>[
+      noteId,
+    ]);
+    if (!changed || !mounted) return;
+    setState(() => _loading = true);
+    await _load();
+  }
+
   Future<void> _pickDeck() async {
     final String? id = await pickSrsDeck(
       context,
@@ -491,11 +521,11 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
             leading: const FushiListLeadingIcon(FushiIcons.ankiCard),
             title: Text(t.srs_note_type),
             subtitle: Text(type.name),
-            // 已有笔记的类型不可改（卡片由类型模板派生，换类型等于换一批卡）。
-            onTap: _editing ? null : () => unawaited(_pickType()),
-            trailing: _editing
-                ? null
-                : const FushiIcon(FushiIcons.chevronRight),
+            // 已有笔记：走「更改笔记类型」（字段 / 卡片映射，卡片带着复习历史过去）。
+            onTap: _editing
+                ? () => srsRunLogged('SrsNoteEditor.changeType', _changeType)
+                : () => unawaited(_pickType()),
+            trailing: const FushiIcon(FushiIcons.chevronRight),
           ),
           FushiListItem(
             key: const ValueKey<String>('srs-note-deck-row'),

@@ -182,5 +182,8 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.cardDeck => t.srs_key_deck,
   SrsFieldKeys.dayRolloverHour => t.srs_key_rollover,
   SrsFieldKeys.deleted => t.srs_key_deleted,
+  SrsFieldKeys.noteType => t.srs_note_type,
+  SrsFieldKeys.css => t.srs_note_types_styling,
+  SrsFieldKeys.termField => t.srs_note_types_term_field,
   _ => key,
 };

@@ -336,6 +336,59 @@ void main() {
       }
     });
 
+    test('两台设备并发换成不同类型：最后修改生效、进同步冲突记录；并发改同一字段定义 = 待裁决', () async {
+      final SrsDbStore a = await device('a');
+      final SrsDbStore b = await device('b');
+      final String t1 = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        'T1',
+      );
+      final String t2 = await a.createStockNoteType(
+        SrsStockNoteType.basic,
+        'T2',
+      );
+      final SrsNoteTypeView lapis = await type(a, a.lapisNoteTypeId);
+      final String note = await a.createNote(
+        noteTypeId: lapis.id,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '魚',
+        },
+      );
+      await syncAll(<SrsDbStore>[a, b]);
+      final SrsNoteTypeView v1 = await type(a, t1);
+      final SrsNoteTypeView v2 = await type(a, t2);
+      await a.changeNoteType(
+        noteIds: <String>[note],
+        targetTypeId: t1,
+        fieldMap: srsDefaultFieldMap(lapis, v1),
+        templateMap: srsDefaultTemplateMap(lapis, v1),
+      );
+      await a.renameField(t1, v1.fields[0].id, 'A 的名字');
+      t += 1000;
+      await b.changeNoteType(
+        noteIds: <String>[note],
+        targetTypeId: t2,
+        fieldMap: srsDefaultFieldMap(lapis, v2),
+        templateMap: srsDefaultTemplateMap(lapis, v2),
+      );
+      await b.renameField(t1, v1.fields[0].id, 'B 的名字');
+      await syncAll(<SrsDbStore>[a, b]);
+      for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+        expect((await s.note(note))!.noteTypeId, t2, reason: '较晚的修改生效');
+        expect(
+          (await s.syncConflicts()).any(
+            ((SrsEntityKind, String, SrsRegister) c) =>
+                c.$2 == note && c.$3.key == SrsFieldKeys.noteType,
+          ),
+          isTrue,
+        );
+        final SrsNoteTypeView nt1 = await type(s, t1);
+        expect(nt1.edits.conflicted.map((SrsRegister r) => r.key), <String>[
+          SrsFieldKeys.fieldDef(v1.fields[0].id),
+        ]);
+      }
+    });
+
     test('多条笔记一次换；源类型不同时拒绝', () async {
       final SrsDbStore a = await device('a');
       final String to = await a.createStockNoteType(
