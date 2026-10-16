@@ -197,37 +197,61 @@ void main() {
         .toList();
     expect(cardCreation.body, isNotNull);
     expect(cardCreation.bodyBeforeSections, isTrue);
-    expect(cardItems.whereType<SettingsCustomItem>(), isEmpty);
+    // 「Anki」分组（展开 / 折叠两个变体，可见性互斥）用 custom rows 承载 Anki 行。
     expect(
-      cardItems.whereType<SettingsNavigationItem>().map((item) => item.id),
+      cardItems.whereType<SettingsCustomItem>().map((item) => item.id).toSet(),
+      <String>{'card_creation.anki.rows'},
+    );
+    // 媒体参数两边都生效，排在最前；其余子页入口只在「Anki」分组里。
+    expect(
+      cardCreation.sections.first.items.single.id,
+      'card_creation.media.open',
+    );
+    expect(
+      cardCreation.sections
+          .firstWhere((SettingsSection s) => s.id == 'card_creation.anki')
+          .items
+          .whereType<SettingsNavigationItem>()
+          .map((item) => item.id),
       <String>[
         'card_creation.connection.open',
         'card_creation.fields.open',
         'card_creation.lapis.open',
-        'card_creation.media.open',
         'card_creation.maintenance.open',
       ],
     );
-    expect(find.byType(AnkiSettingsBody), findsOneWidget);
+    final Finder mainBody = find.byWidgetPredicate(
+      (Widget w) => w is AnkiSettingsBody && w.panel == null && w.row == null,
+    );
+    expect(mainBody, findsOneWidget);
     expect(
       find.ancestor(
-        of: find.byType(AnkiSettingsBody),
+        of: mainBody,
         matching: find.byType(AdaptiveSettingsSection),
       ),
       findsNothing,
       reason: '常用正文自带设置分区，不应再套额外卡片',
     );
     expect(
-      tester.getBottomLeft(find.byType(AnkiSettingsBody)).dy,
+      tester.getBottomLeft(mainBody).dy,
       lessThanOrEqualTo(
-        tester.getTopLeft(find.byType(AdaptiveSettingsNavigationRow).first).dy,
+        tester
+            .getTopLeft(
+              find.widgetWithText(
+                AdaptiveSettingsNavigationRow,
+                t.settings_anki_media,
+              ),
+            )
+            .dy,
       ),
       reason: '常用正文应在复杂配置子页入口之前',
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(6),
-      reason: '常用开关（批量制卡 + 落地设备 + 标签）直接可见，维护开关属于独立子页',
+      findsNWidgets(8),
+      reason:
+          '常用开关（卡片内容 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备直接可见，'
+          '维护开关属于独立子页',
     );
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
@@ -509,5 +533,191 @@ void main() {
       find.byKey(const ValueKey<String>('srs-mining-required-unmapped')),
       findsOneWidget,
     );
+  });
+
+  group('制卡页：Fushi 复习是主路径，Anki 收在次级分组', () {
+    CardTargetRow targetRow(WidgetTester tester, String key) =>
+        tester.widget<CardTargetRow>(find.byKey(ValueKey<String>(key)));
+
+    testWidgets('当前发往 Anki（复习模块开）：Anki 分组展开、标明当前；Fushi 行只写状态', (
+      WidgetTester tester,
+    ) async {
+      await tester.runAsync(() async {
+        await appModel.setModuleEnabled(ModuleId.srs, true);
+        await appModel.setSrsMiningTarget(SrsMiningTarget.anki);
+      });
+      await pumpDestination(
+        tester,
+        SettingsDestinationId.cardCreation,
+        <SettingsDestination>[],
+      );
+      expect(tester.takeException(), isNull);
+      final CardTargetRow srs = targetRow(tester, 'card-target-srs');
+      expect(srs.selected, isFalse);
+      expect(srs.subtitle, t.card_target_anki_current_note);
+      final CardTargetRow anki = targetRow(tester, 'card-target-anki');
+      expect(anki.selected, isTrue, reason: '存量 Anki 用户一眼看到「当前发往 Anki」');
+      expect(find.text(t.anki_fetch), findsOneWidget, reason: 'Anki 分组默认展开');
+      expect(
+        find.byKey(const ValueKey<String>('srs-mining-deck')),
+        findsNothing,
+        reason: '未选中的 Fushi 复习一侧整组不显示',
+      );
+      // Fushi 复习分组在 Anki 分组之前（主路径），但不出现任何推广措辞。
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey<String>('card-target-srs')))
+            .dy,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.byKey(const ValueKey<String>('card-target-anki')),
+              )
+              .dy,
+        ),
+      );
+      expect(find.textContaining('ecommend'), findsNothing);
+      expect(find.textContaining('推荐'), findsNothing);
+    });
+
+    testWidgets('当前发往 Fushi 复习：Anki 专属项全隐藏；展开 Anki 分组点「发往 Anki」切回', (
+      WidgetTester tester,
+    ) async {
+      final (FushiDatabase srsDb, SrsDbStore store) = (await tester.runAsync(
+        () => openSrsTestStore(),
+      ))!;
+      addTearDown(srsDb.close);
+      await tester.runAsync(() async {
+        await appModel.setModuleEnabled(ModuleId.srs, true);
+        await appModel.setSrsMiningTarget(SrsMiningTarget.srs);
+      });
+      await pumpDestination(
+        tester,
+        SettingsDestinationId.cardCreation,
+        <SettingsDestination>[],
+        extraOverrides: <Override>[
+          srsStoreProvider.overrideWith((Ref ref) async => store),
+        ],
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(targetRow(tester, 'card-target-srs').selected, isTrue);
+      expect(
+        find.byKey(const ValueKey<String>('srs-mining-deck')),
+        findsOneWidget,
+      );
+      // 内置 Fushi 卡片：卡面入口是「卡面外观」。
+      expect(
+        find.byKey(const ValueKey<String>('srs-mining-card-look')),
+        findsOneWidget,
+      );
+      expect(find.text(t.anki_fetch), findsNothing);
+      expect(find.text('AnkiConnect'), findsNothing);
+
+      // 折叠的「Anki」分组：展开后只有「发往 Anki」（与空的待发队列）。
+      // 分组头（不是页头跳转条里的同名胶囊）。
+      final Finder header = find
+          .descendant(
+            of: find.byType(AdaptiveSettingsSection),
+            matching: find.text(t.srs_mining_target_anki),
+          )
+          .last;
+      await Scrollable.ensureVisible(tester.element(header), alignment: 0.5);
+      await tester.pump();
+      if (find
+          .byKey(const ValueKey<String>('card-target-anki'))
+          .hitTestable()
+          .evaluate()
+          .isEmpty) {
+        await tester.tap(header);
+        await tester.pump(const Duration(milliseconds: 600));
+      }
+      final Finder ankiRow = find.byKey(
+        const ValueKey<String>('card-target-anki'),
+      );
+      expect(targetRow(tester, 'card-target-anki').selected, isFalse);
+      expect(find.text(t.anki_fetch), findsNothing);
+      // 等展开动画走完再滚入（动画途中算的滚动终点会把行留在视口外）。
+      for (int i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await Scrollable.ensureVisible(tester.element(ankiRow), alignment: 0.5);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(ankiRow);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+      expect(appModel.srsMiningTarget, SrsMiningTarget.anki);
+    });
+
+    testWidgets('复习模块关着：Fushi 复习分组是开启入口，确认一次即开模块并改目标', (
+      WidgetTester tester,
+    ) async {
+      await tester.runAsync(
+        () => appModel.setModuleEnabled(ModuleId.srs, false),
+      );
+      await pumpDestination(
+        tester,
+        SettingsDestinationId.cardCreation,
+        <SettingsDestination>[],
+      );
+      expect(
+        find.byKey(const ValueKey<String>('card-target-srs')),
+        findsNothing,
+      );
+      final Finder enable = find.byKey(
+        const ValueKey<String>('card-target-srs-enable'),
+      );
+      expect(enable, findsOneWidget);
+      expect(
+        tester.getSize(enable).height,
+        greaterThanOrEqualTo(48),
+        reason: '触控目标 ≥ 48',
+      );
+      // Anki 是唯一目标：标为当前、不给切换。
+      expect(targetRow(tester, 'card-target-anki').selected, isTrue);
+      expect(targetRow(tester, 'card-target-anki').onSelect, isNull);
+
+      await tester.tap(enable);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(find.text(t.dialog_ok).last);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(appModel.moduleVisibility.isEnabled(ModuleId.srs), isTrue);
+      expect(appModel.srsMiningTarget, SrsMiningTarget.srs);
+    });
+
+    for (final Size size in <Size>[
+      const Size(360, 780),
+      const Size(1280, 800),
+    ]) {
+      testWidgets('不溢出：${size.width.toInt()}×${size.height.toInt()}', (
+        WidgetTester tester,
+      ) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.runAsync(() async {
+          await appModel.setModuleEnabled(ModuleId.srs, true);
+          await appModel.setSrsMiningTarget(SrsMiningTarget.anki);
+        });
+        await pumpDestination(
+          tester,
+          SettingsDestinationId.cardCreation,
+          <SettingsDestination>[],
+        );
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const ValueKey<String>('card-target-anki')),
+          findsOneWidget,
+        );
+      });
+    }
   });
 }
