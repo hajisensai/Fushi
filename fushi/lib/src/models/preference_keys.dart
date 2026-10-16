@@ -322,6 +322,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // PreferencesRepository.settleMiningImageModeInstallDefault。
   'mining_image_mode_install_default',
   'mining_image_quality',
+  // String（MiningTtsFallbackVoice.wire：'system' 默认 / 'none' / 'preset:<id>'）：
+  // 制卡单词音频的 TTS 兜底声音。值可能指向本机声音预设，与 tts_active_preset_id
+  // 同族：设备本地（deviceLocalPrefKeys），不进 Profile 快照 / 备份 / 同步。
+  'mining_tts_fallback_voice',
   'module_books_enabled',
   'module_browser_extension_enabled',
   'module_dictionaries_enabled',

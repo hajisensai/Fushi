@@ -1,10 +1,12 @@
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart' show BuildContext;
 
 import 'package:fushi/src/asr_host/asr_host.dart';
+import 'package:fushi/src/creator/mining_tts_fallback.dart';
+import 'package:fushi/src/creator/mining_tts_fallback_picker.dart';
 import 'package:fushi/src/media/audiobook/asr_models_settings_section.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_engine.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
@@ -132,18 +134,6 @@ SettingsDestination _buildMangaOcrModelsDestination() {
   );
 }
 
-/// 本平台制卡兜底用的系统语音引擎名（专有名词，不翻译）；null = 本平台没有。
-///
-/// 与 `TtsChannel.ttsToFile` / `ttsToFileDesktop` 的分派同一张表：Android 走原生
-/// TextToSpeech，桌面走各 OS 自带引擎，iOS 没有实现。
-String? systemTtsEngineName() {
-  if (Platform.isAndroid) return 'Android TextToSpeech';
-  if (Platform.isWindows) return 'Windows SAPI';
-  if (Platform.isMacOS) return 'macOS say';
-  if (Platform.isLinux) return 'Open JTalk / espeak-ng';
-  return null;
-}
-
 /// 本机能不能一键部署 GPT-SoVITS（官方免安装整合包只有 Windows）。
 bool _isLocalTtsSupported(SettingsContext _) =>
     GptSovitsLocalEngine.platformSupported;
@@ -189,7 +179,8 @@ SettingsActionItem _localGptSovitsItem({
 );
 
 /// 语音合成：朗读声音（GPT-SoVITS / 在线 / 系统，含本机一键部署）是这里的主入口；
-/// 制卡发音的系统语音兜底只是如实展示「用的是什么、用在哪」。
+/// 「制卡发音兜底」选单词音频找不到时用哪个声音合成（系统语音 / 任一朗读声音 /
+/// 不使用）。
 SettingsDestination _buildTtsDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.models,
@@ -227,13 +218,7 @@ SettingsDestination _buildTtsDestination() {
         id: 'models.section.tts',
         title: t.models_tts_card_fallback_section,
         items: <SettingsItem>[
-          SettingsStatusItem(
-            id: 'models.tts_engine',
-            title: t.models_tts_engine,
-            icon: FushiIcons.volumeUp,
-            subtitleBuilder: (_) =>
-                systemTtsEngineName() ?? t.models_tts_unavailable,
-          ),
+          _miningTtsFallbackVoiceItem(),
           SettingsStatusItem(
             id: 'models.tts_usage',
             title: t.models_tts_usage_title,
@@ -244,3 +229,76 @@ SettingsDestination _buildTtsDestination() {
     ],
   );
 }
+
+/// 「制卡发音兜底」的声音选择（单词音频；句子音频不做 TTS 兜底，BUG-172）。
+/// 偏好设备本地（可能指向本机声音预设），见 [kMiningTtsFallbackVoicePref]。
+SettingsActionItem _miningTtsFallbackVoiceItem() => SettingsActionItem(
+  id: 'models.tts_fallback_voice',
+  title: t.models_tts_fallback_voice,
+  subtitle: t.models_tts_fallback_voice_hint,
+  icon: FushiIcons.volumeUp,
+  // 与 [_localTtsStatus] 同一纪律：只读已建好的 [TtsServices]，不为一行副标题碰
+  // AppModel / 偏好仓（设置搜索扁平化也会求值副标题）。还没建过就回落静态说明；
+  // 点开选择器会建好它，返回后即显示当前选择。
+  subtitleBuilder: (SettingsContext _) {
+    final TtsServices? tts = TtsServices.existing;
+    if (tts == null) return null;
+    return miningTtsFallbackSummary(
+      choice: miningTtsFallbackVoiceOf(tts.prefs),
+      presets: tts.store.loadPresets(),
+      descriptorOf: (String id) => tts.registry[id],
+      systemEngineName: systemTtsEngineName(),
+    );
+  },
+  cli: SettingsCliAction(
+    params: const <SettingsCliParam>[
+      SettingsCliParam(
+        'value',
+        help:
+            'system（系统语音，默认）| none（不使用 TTS 兜底）| 朗读声音预设 id'
+            '（fushi_cli voice ls 查）；不给 = 只读当前值',
+        required: false,
+      ),
+    ],
+    run: (SettingsContext c, Map<String, String> args) async {
+      final String? raw = args['value']?.trim();
+      if (raw != null && raw.isNotEmpty) {
+        final MiningTtsFallbackVoice voice = switch (raw) {
+          MiningTtsFallbackVoice.systemWire =>
+            const MiningTtsFallbackVoice.system(),
+          MiningTtsFallbackVoice.noneWire =>
+            const MiningTtsFallbackVoice.none(),
+          _ => MiningTtsFallbackVoice.preset(
+            raw.startsWith(MiningTtsFallbackVoice.presetPrefix)
+                ? raw.substring(MiningTtsFallbackVoice.presetPrefix.length)
+                : raw,
+          ),
+        };
+        if (voice.kind == MiningTtsFallbackKind.preset) {
+          final TtsServices tts = TtsServices.of(c.appModel.prefsRepo);
+          final bool known = tts.store.loadPresets().any(
+            (TtsVoicePreset p) => p.id == voice.presetId,
+          );
+          if (!known) {
+            throw ArgumentError.value(raw, 'value', '没有这个朗读声音预设');
+          }
+        }
+        await setMiningTtsFallbackVoice(c.appModel.prefsRepo, voice);
+      }
+      return <String, Object?>{
+        'value': miningTtsFallbackVoiceOf(c.appModel.prefsRepo).wire,
+      };
+    },
+  ),
+  onTap: (SettingsContext settingsContext) async {
+    final PrefStore prefs = settingsContext.appModel.prefsRepo;
+    final MiningTtsFallbackVoice? picked =
+        await showMiningTtsFallbackVoicePicker(
+          settingsContext.context,
+          TtsServices.of(prefs),
+          current: miningTtsFallbackVoiceOf(prefs),
+        );
+    if (picked != null) await setMiningTtsFallbackVoice(prefs, picked);
+    settingsContext.refresh();
+  },
+);
