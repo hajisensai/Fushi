@@ -100,21 +100,36 @@ MangaOcrTarget mangaChapterOcrTarget({
 
 /// [row] 这本漫画里**还没识别**的目标：在线作品 = 已下载且未识别的章（旧到新），
 /// 本地卷 = 未识别的卷本身。已识别 / 未下载 / 读不出的都不在内。
-Future<List<MangaOcrTarget>> pendingMangaOcrTargets(EpubBookRow row) async {
+Future<List<MangaOcrTarget>> pendingMangaOcrTargets(EpubBookRow row) =>
+    mangaOcrTargetsForBook(row);
+
+/// [pendingMangaOcrTargets] 的一般形态：[force] 为真时连已识别的部分也算进来，
+/// 且目标带 `onlyMissing: false`（丢掉逐页缓存整卷重跑，阅读器「重新识别本卷」
+/// 同一语义）；读不出的 manga.json 两种模式都跳过。未下载的章永远不在内。
+Future<List<MangaOcrTarget>> mangaOcrTargetsForBook(
+  EpubBookRow row, {
+  bool force = false,
+}) async {
+  Future<bool> wanted(File json) async {
+    final MangaOcrResultState state = await readMangaOcrResultState(json);
+    return force
+        ? state != MangaOcrResultState.unreadable
+        : state == MangaOcrResultState.empty;
+  }
+
   final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
     row.sourceMetadata,
   );
   if (entry == null) {
     final File json = File(p.join(row.extractDir, row.epubPath));
-    if (await readMangaOcrResultState(json) != MangaOcrResultState.empty) {
-      return const <MangaOcrTarget>[];
-    }
+    if (!await wanted(json)) return const <MangaOcrTarget>[];
     return <MangaOcrTarget>[
       MangaOcrTarget(
         bookKey: row.bookKey,
         directory: row.extractDir,
         mangaJsonPath: json.path,
         title: row.title,
+        onlyMissing: !force,
       ),
     ];
   }
@@ -127,11 +142,9 @@ Future<List<MangaOcrTarget>> pendingMangaOcrTargets(EpubBookRow row) async {
       bookDir: bookDir,
       entry: entry,
       chapter: chapter,
+      onlyMissing: !force,
     );
-    if (await readMangaOcrResultState(File(target.mangaJsonPath)) ==
-        MangaOcrResultState.empty) {
-      targets.add(target);
-    }
+    if (await wanted(File(target.mangaJsonPath))) targets.add(target);
   }
   return targets;
 }
@@ -147,6 +160,7 @@ Future<int> enqueueMangaOcrTargets({
   required List<MangaOcrTarget> targets,
   MangaOcrWizardEngines? enginesOverride,
   GoogleLensDisclosureGate? lensGate,
+  MangaOcrEngineId? engineChoice,
 }) async {
   if (targets.isEmpty) return 0;
   final MangaOcrWizardEngines engines =
@@ -157,11 +171,15 @@ Future<int> enqueueMangaOcrTargets({
   );
   final MangaOcrEnginePreference preference =
       MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
-  final MangaOcrEngineId? engine = resolveMangaOcrEngine(
-    preference: preference,
-    hasExistingMetadata: false,
-    capabilities: availability.capabilities,
-  );
+  // [engineChoice]：调用方为**本次**点名的引擎（整卷 OCR 向导选引擎同一语义，
+  // 不写偏好）；null = 按用户偏好解析。可用性判据两条路一样（isUsable）。
+  final MangaOcrEngineId? engine =
+      engineChoice ??
+      resolveMangaOcrEngine(
+        preference: preference,
+        hasExistingMetadata: false,
+        capabilities: availability.capabilities,
+      );
   if (!context.mounted) return 0;
   if (engine == null || !availability.isUsable(engine)) {
     FushiToast.show(

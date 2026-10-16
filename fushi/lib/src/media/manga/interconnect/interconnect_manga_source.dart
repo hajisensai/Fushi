@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
     show mangaChapterDigest;
@@ -85,6 +86,35 @@ class InterconnectMangaCatalog {
           ? const <OnlineMangaChapter>[]
           : <OnlineMangaChapter>[chapterFor(seriesKey)],
     );
+  }
+
+  /// 对端 bookKey → 该条目经 [entryFor] 收进本机后的 bookKey（`interconnect-…`）。
+  ///
+  /// 收下的行只由对端 bookKey 推导身份（`sourceId` 恒为 [kInterconnectMangaSourceId]），
+  /// 所以对端写的 `book/<对端 bookKey>` 删除墓碑要经这里换算才认得出本机那一行。
+  static String localBookKeyFor(String peerBookKey) =>
+      OnlineMangaLibraryService.bookKeyFor(
+        runtime: OnlineMangaRuntimeKind.interconnect,
+        extensionPackage: kInterconnectMangaPackage,
+        sourceId: kInterconnectMangaSourceId,
+        seriesKey: peerBookKey,
+      );
+
+  /// [localBookKeyFor] 的反向：本机收下的互联漫画行（`sourceMetadata` 是
+  /// runtime=interconnect 的在线描述符）→ 对端 bookKey；其它行返回 null。
+  ///
+  /// 本机键是单向哈希推不回去，对端键只存在描述符的 `series.key` 里。「从所有设备
+  /// 删除」这类行时墓碑必须写对端键，否则推给 host 认不出、host 不删也不写自己的
+  /// 墓碑，整条传播链在这里断掉。
+  static String? peerBookKeyOf(String? sourceMetadata) {
+    final OnlineMangaLibraryEntry? entry =
+        OnlineMangaLibraryEntry.tryParse(sourceMetadata);
+    if (entry == null ||
+        entry.runtime != OnlineMangaRuntimeKind.interconnect) {
+      return null;
+    }
+    final String key = entry.series.key;
+    return key.isEmpty ? null : key;
   }
 
   /// 整卷那一章。

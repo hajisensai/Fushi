@@ -21,7 +21,7 @@ void main() {
     final List<String> names = <String>[
       for (final CtlCommandGroup g in onlineCommandGroups) g.name,
     ];
-    expect(names, <String>['ext', 'source', 'discover', 'play', 'nav']);
+    expect(names, <String>['ext', 'source', 'discover', 'aidl', 'play', 'nav']);
     for (final CtlCommandGroup g in kCtlCommandGroups) {
       expect(
         kCtlCommandGroups.where((CtlCommandGroup o) => o.name == g.name),
@@ -419,6 +419,39 @@ void main() {
       expect(video, contains('[视频] ▶ 播放中  第1話'));
       expect(video, contains('01:01 / 24:00'));
       expect(video, contains('「こんにちは」'));
+      // 没给的扩展字段不出现。
+      expect(video, isNot(contains('音量')));
+      expect(video, isNot(contains('音轨')));
+      expect(video, isNot(contains('字幕：')));
+
+      final String extended = status.render!(<String, Object?>{
+        'active': true,
+        'kind': 'video',
+        'ready': true,
+        'title': '第1話',
+        'playing': false,
+        'positionMs': 0,
+        'durationMs': 1000,
+        'speed': 1.5,
+        'volume': 72.6,
+        'audioTrack': '2',
+        'subtitle': 'embedded:3',
+        'secondarySubtitle': 'off:',
+      });
+      expect(extended, contains('×1.5  音量 73'));
+      expect(extended, contains('音轨：2'));
+      expect(extended, contains('字幕：内嵌轨 3'));
+      expect(extended, contains('副字幕：关闭'));
+      expect(
+        status.render!(<String, Object?>{
+          'active': true,
+          'kind': 'video',
+          'ready': true,
+          'speed': 1.0,
+          'subtitle': r'D:\subs\ep1.ja.srt',
+        }),
+        contains(r'字幕：D:\subs\ep1.ja.srt'),
+      );
       expect(
         status.render!(<String, Object?>{
           'active': true,
@@ -454,6 +487,547 @@ void main() {
       expect(go.path, '/api/admin/navigation');
       expect(go.body, <String, Object?>{'page': 'settings', 'pop': true});
       expect(() => _build('nav', 'go', <String>[]), _usageError());
+    });
+  });
+
+  group('ext 启停', () {
+    test('enable / disable 走 /extensions/<id>/enabled', () {
+      final CtlRequestSpec on = _build('ext', 'enable', <String>[
+        'eu.kanade.x',
+        '--kind',
+        'manga',
+      ]);
+      expect(on.method, 'POST');
+      expect(on.path, '/api/admin/extensions/eu.kanade.x/enabled');
+      expect(on.body, <String, Object?>{'kind': 'manga', 'enabled': true});
+      final CtlRequestSpec off = _build('ext', 'disable', <String>[
+        'plugin/x',
+        '--kind',
+        'novel',
+      ]);
+      expect(off.path, '/api/admin/extensions/plugin%2Fx/enabled');
+      expect(off.body, <String, Object?>{'kind': 'novel', 'enabled': false});
+      expect(() => _build('ext', 'enable', <String>['x']), _usageError());
+      expect(
+        () => _build('ext', 'enable', <String>['--kind', 'manga']),
+        _usageError(),
+      );
+    });
+  });
+
+  group('source 管理', () {
+    test('enable / disable / pin / unpin 走 settings', () {
+      Map<String, Object?>? body(String command) =>
+          _build('source', command, <String>['pkg:12', '--kind', 'anime']).body;
+      final CtlRequestSpec pin = _build('source', 'pin', <String>[
+        'pkg:12',
+        '--kind',
+        'anime',
+      ]);
+      expect(pin.method, 'POST');
+      expect(pin.path, '/api/admin/sources/pkg%3A12/settings');
+      expect(body('enable'), <String, Object?>{
+        'kind': 'anime',
+        'enabled': true,
+      });
+      expect(body('disable'), <String, Object?>{
+        'kind': 'anime',
+        'enabled': false,
+      });
+      expect(body('pin'), <String, Object?>{'kind': 'anime', 'pinned': true});
+      expect(body('unpin'), <String, Object?>{
+        'kind': 'anime',
+        'pinned': false,
+      });
+    });
+
+    test('prefs：列出 / 位置参数取值 / --value 空串', () {
+      final CtlRequestSpec ls = _build('source', 'prefs', <String>[
+        '7',
+        '--kind',
+        'manga',
+      ]);
+      expect(ls.method, 'GET');
+      expect(ls.path, '/api/admin/sources/7/preferences');
+      expect(ls.query, <String, String>{'kind': 'manga'});
+
+      final CtlRequestSpec set = _build('source', 'prefs', <String>[
+        '7',
+        'quality',
+        'High',
+        'res',
+        '--kind',
+        'manga',
+      ]);
+      expect(set.method, 'POST');
+      expect(set.body, <String, Object?>{
+        'kind': 'manga',
+        'key': 'quality',
+        'value': 'High res',
+      });
+
+      final CtlRequestSpec empty = _build('source', 'prefs', <String>[
+        '7',
+        'token',
+        '--value',
+        '',
+        '--kind',
+        'manga',
+      ]);
+      expect(empty.body?['value'], '');
+      expect(
+        () => _build('source', 'prefs', <String>[
+          '7',
+          'token',
+          '--kind',
+          'manga',
+        ]),
+        _usageError(),
+      );
+    });
+
+    test('clear-data 需要 --yes', () {
+      final CtlRequestSpec ok = _build('source', 'clear-data', <String>[
+        'p',
+        '--kind',
+        'novel',
+        '--yes',
+      ]);
+      expect(ok.method, 'DELETE');
+      expect(ok.path, '/api/admin/sources/p/data');
+      expect(ok.query, <String, String>{'kind': 'novel', 'confirm': 'true'});
+      expect(
+        () => _build('source', 'clear-data', <String>['p', '--kind', 'novel']),
+        _usageError(),
+      );
+    });
+
+    test('filters / browse：筛选、列表、分页', () {
+      final CtlRequestSpec filters = _build('source', 'filters', <String>[
+        '7',
+        '--kind',
+        'manga',
+      ]);
+      expect(filters.method, 'GET');
+      expect(filters.path, '/api/admin/sources/7/filters');
+
+      final CtlRequestSpec browse = _build('source', 'browse', <String>[
+        '7',
+        '--kind',
+        'manga',
+        '--filter',
+        'Genre/Action=include',
+        '--filter',
+        'Sort=Latest:desc',
+        '--filter',
+        'Title=a=b, c',
+        '--page',
+        '2',
+      ]);
+      expect(browse.method, 'POST');
+      expect(browse.path, '/api/admin/sources/7/browse');
+      expect(browse.body, <String, Object?>{
+        'kind': 'manga',
+        'filters': <String, String>{
+          'Genre/Action': 'include',
+          'Sort': 'Latest:desc',
+          'Title': 'a=b, c',
+        },
+        'page': 2,
+      });
+
+      final CtlRequestSpec latest = _build('source', 'browse', <String>[
+        'p',
+        '--kind',
+        'novel',
+        '--listing',
+        'latest',
+      ]);
+      expect(latest.body, <String, Object?>{
+        'kind': 'novel',
+        'listing': 'latest',
+      });
+
+      expect(
+        () => _build('source', 'browse', <String>[
+          '7',
+          '--kind',
+          'manga',
+          '--listing',
+          'popular',
+          '--query',
+          'x',
+        ]),
+        _usageError(),
+      );
+      expect(
+        () => _build('source', 'browse', <String>[
+          '7',
+          '--kind',
+          'manga',
+          '--filter',
+          'noequals',
+        ]),
+        _usageError(),
+      );
+      expect(
+        () => _build('source', 'browse', <String>[
+          '7',
+          '--kind',
+          'manga',
+          '--page',
+          '0',
+        ]),
+        _usageError(),
+      );
+    });
+
+    test('task --cancel', () {
+      final CtlRequestSpec cancel = _build('source', 'task', <String>[
+        't3',
+        '--cancel',
+      ]);
+      expect(cancel.method, 'POST');
+      expect(cancel.path, '/api/admin/online/tasks/t3/cancel');
+      expect(
+        () => _build('source', 'task', <String>['--cancel']),
+        _usageError(),
+      );
+    });
+
+    test('filters / prefs 渲染', () {
+      final String filters = _spec('source', 'filters').render!(
+        <String, Object?>{
+          'appliesTo': 'search',
+          'filters': <Object?>[
+            <String, Object?>{
+              'path': '1',
+              'name': 'Genre',
+              'kind': 'group',
+              'children': <Object?>[
+                <String, Object?>{
+                  'path': '1.1',
+                  'name': 'Action',
+                  'kind': 'triState',
+                  'state': 0,
+                },
+              ],
+            },
+            <String, Object?>{
+              'path': '2',
+              'name': 'Sort',
+              'kind': 'sort',
+              'state': <String, Object?>{'index': 0, 'ascending': true},
+              'options': <String>['Popular', 'Latest'],
+            },
+          ],
+        },
+      );
+      expect(filters, contains('作用于搜索'));
+      expect(filters, contains('1.1'));
+      expect(filters, contains('Popular,Latest'));
+      final String prefs = _spec('source', 'prefs').render!(<String, Object?>{
+        'preferences': <Object?>[
+          <String, Object?>{
+            'key': 'q',
+            'title': '画质',
+            'kind': 'list',
+            'value': 1,
+            'valueLabel': '高',
+            'entries': <String>['低', '高'],
+          },
+        ],
+      });
+      expect(prefs, contains('高'));
+      expect(prefs, contains('低,高'));
+    });
+  });
+
+  group('aidl', () {
+    CtlRequestSpec aidl(String command, List<String> args) =>
+        _build('aidl', command, args);
+
+    test('start 需要 --domain，带 wait 与整句', () {
+      final CtlRequestSpec start = aidl('start', <String>[
+        '--domain',
+        'video',
+        '--wait',
+        '20',
+        '下载',
+        '葬送的芙莉莲',
+      ]);
+      expect(start.method, 'POST');
+      expect(start.path, '/api/admin/ai-download/sessions');
+      expect(start.body, <String, Object?>{
+        'domain': 'video',
+        'text': '下载 葬送的芙莉莲',
+        'wait': 20,
+      });
+      expect(() => aidl('start', <String>['x']), _usageError());
+      expect(() => aidl('start', <String>['--domain', 'novel']), _usageError());
+      expect(
+        () => aidl('start', <String>['--domain', 'novel', '--wait', '99', 'x']),
+        _usageError(),
+      );
+    });
+
+    test('status / say / choose / confirm / cancel / toggle / close', () {
+      final CtlRequestSpec status = aidl('status', <String>[
+        'abc',
+        '--wait',
+        '5',
+      ]);
+      expect(status.method, 'GET');
+      expect(status.path, '/api/admin/ai-download/sessions/abc');
+      expect(status.query, <String, String>{'wait': '5'});
+
+      expect(aidl('say', <String>['abc', '换成', '第二季']).body, <String, Object?>{
+        'text': '换成 第二季',
+      });
+
+      final CtlRequestSpec choose = aidl('choose', <String>[
+        'abc',
+        '2',
+        '5',
+        '--no-remember',
+      ]);
+      expect(choose.path, '/api/admin/ai-download/sessions/abc/choose');
+      expect(choose.body, <String, Object?>{
+        'answers': <String>['2', '5'],
+        'remember': false,
+      });
+      expect(
+        aidl('choose', <String>['abc', 'quality:1080p']).body,
+        <String, Object?>{
+          'answers': <String>['quality:1080p'],
+        },
+      );
+      expect(() => aidl('choose', <String>['abc']), _usageError());
+
+      expect(
+        aidl('confirm', <String>['abc']).path,
+        '/api/admin/ai-download/sessions/abc/confirm',
+      );
+      expect(
+        aidl('cancel', <String>['abc']).path,
+        '/api/admin/ai-download/sessions/abc/cancel',
+      );
+      final CtlRequestSpec toggle = aidl('toggle', <String>['abc', '3']);
+      expect(toggle.path, '/api/admin/ai-download/sessions/abc/franchise');
+      expect(toggle.body, <String, Object?>{'index': 3});
+      expect(() => aidl('toggle', <String>['abc', '0']), _usageError());
+      final CtlRequestSpec close = aidl('close', <String>['abc']);
+      expect(close.method, 'DELETE');
+      expect(() => aidl('status', <String>[]), _usageError());
+    });
+
+    test('渲染：视频问题与选项、AI 下载候选', () {
+      final CtlCommandSpec spec = _spec('aidl', 'status');
+      final String video = spec.render!(<String, Object?>{
+        'id': 'abc',
+        'domain': 'video',
+        'view': <String, Object?>{
+          'stage': 'awaitingWorkChoice',
+          'busy': false,
+          'transcript': <Object?>[
+            <String, Object?>{'role': 'user', 'text': '芙莉莲'},
+            <String, Object?>{
+              'role': 'assistant',
+              'kind': 'question',
+              'args': <String, Object?>{'count': 2},
+            },
+          ],
+          'question': <String, Object?>{
+            'slot': 'work',
+            'options': <Object?>[
+              <String, Object?>{'id': 'work:0', 'label': '葬送的芙莉莲'},
+              <String, Object?>{'id': 'alt:0'},
+            ],
+            'preselectedIndex': 0,
+          },
+          'alternativeLabels': <String>['LoliHouse · 1080p'],
+        },
+      });
+      expect(video, contains('待回答（work）'));
+      expect(video, contains('1) work:0  葬送的芙莉莲 *'));
+      expect(video, contains('2) alt:0  LoliHouse · 1080p'));
+      expect(video, contains('我：芙莉莲'));
+
+      final String media = spec.render!(<String, Object?>{
+        'id': 'def',
+        'domain': 'manga',
+        'view': <String, Object?>{
+          'stage': 'ready',
+          'busy': true,
+          'queries': <String>['葬送のフリーレン'],
+          'candidates': <Object?>[
+            <String, Object?>{
+              'no': 1,
+              'title': 'A',
+              'source': 'Nyaa',
+              'method': 'torrent',
+              'recommended': true,
+              'selected': true,
+              'status': 'started',
+              'taskId': 't1',
+            },
+          ],
+        },
+      });
+      expect(media, contains('处理中'));
+      expect(media, contains('★✓'));
+      expect(media, contains('任务 t1'));
+    });
+  });
+
+  group('source 下载任务', () {
+    test('manga-dl：ls 过滤 / cancel / retry / rm / clear', () {
+      final CtlRequestSpec ls = _build('source', 'manga-dl', <String>[
+        'ls',
+        '--book',
+        'bk1',
+        '--status',
+        'queued,running',
+      ]);
+      expect(ls.method, 'GET');
+      expect(ls.path, '/api/admin/online/manga-downloads');
+      expect(ls.query, <String, String>{
+        'book': 'bk1',
+        'status': 'queued,running',
+      });
+      expect(
+        _build('source', 'manga-dl', <String>['cancel', 'j 1']).path,
+        '/api/admin/online/manga-downloads/j%201/cancel',
+      );
+      expect(
+        _build('source', 'manga-dl', <String>['retry', 'j1']).path,
+        '/api/admin/online/manga-downloads/j1/retry',
+      );
+      final CtlRequestSpec rm = _build('source', 'manga-dl', <String>[
+        'rm',
+        'j1',
+        '--yes',
+      ]);
+      expect(rm.method, 'DELETE');
+      expect(rm.query, <String, String>{'confirm': 'true'});
+      final CtlRequestSpec clear = _build('source', 'manga-dl', <String>[
+        'clear',
+        '--yes',
+      ]);
+      expect(clear.path, '/api/admin/online/manga-downloads');
+      expect(clear.query, <String, String>{
+        'finished': 'true',
+        'confirm': 'true',
+      });
+      expect(
+        () => _build('source', 'manga-dl', <String>['rm', 'j1']),
+        _usageError(),
+      );
+      expect(
+        () => _build('source', 'manga-dl', <String>['clear']),
+        _usageError(),
+      );
+      expect(
+        () => _build('source', 'manga-dl', <String>['cancel']),
+        _usageError(),
+      );
+      expect(
+        () => _build('source', 'manga-dl', <String>['zap']),
+        _usageError(),
+      );
+    });
+
+    test('anime-dl：ls / get / pause / resume / rm', () {
+      expect(
+        _build('source', 'anime-dl', <String>['ls', '--all']).query,
+        <String, String>{'all': 'true'},
+      );
+      expect(
+        _build('source', 'anime-dl', <String>['get', 'ep/1']).path,
+        '/api/admin/online/episode-downloads/ep%2F1',
+      );
+      expect(
+        _build('source', 'anime-dl', <String>['pause', 'e']).path,
+        '/api/admin/online/episode-downloads/e/pause',
+      );
+      expect(
+        _build('source', 'anime-dl', <String>['resume', 'e']).path,
+        '/api/admin/online/episode-downloads/e/resume',
+      );
+      final CtlRequestSpec rm = _build('source', 'anime-dl', <String>[
+        'rm',
+        'e',
+        '--yes',
+        '--delete-files',
+      ]);
+      expect(rm.method, 'DELETE');
+      expect(rm.query, <String, String>{
+        'confirm': 'true',
+        'deleteFiles': 'true',
+      });
+      expect(
+        () => _build('source', 'anime-dl', <String>['rm', 'e']),
+        _usageError(),
+      );
+    });
+
+    test('渲染：任务表、单任务、dl 结果给出进度入口、discover get 带原因', () {
+      final String manga = _spec('source', 'manga-dl').render!(
+        <String, Object?>{
+          'jobs': <Object?>[
+            <String, Object?>{
+              'id': 'j1',
+              'title': 'T',
+              'chapter': '第1话',
+              'status': 'running',
+              'pagesDone': 3,
+              'pagesTotal': 20,
+            },
+          ],
+        },
+      );
+      expect(manga, contains('3/20'));
+      final String anime = _spec('source', 'anime-dl').render!(
+        <String, Object?>{
+          'id': 'e',
+          'title': '第1集',
+          'status': 'running',
+          'progress': 0.5,
+        },
+      );
+      expect(anime, contains('50.0%'));
+      expect(
+        _spec('source', 'anime-dl').render!(<String, Object?>{
+          'id': 'e',
+          'deletedRows': 1,
+          'deletedFile': 'D:/v/ep1.mp4',
+        }),
+        '已删除成品 D:/v/ep1.mp4（连同 1 条媒体库行）',
+      );
+      expect(
+        _spec('source', 'dl').render!(<String, Object?>{
+          'title': 'A',
+          'queued': 2,
+          'taskIds': <String>['e1', 'e2'],
+        }),
+        contains('source anime-dl ls'),
+      );
+      expect(
+        _spec('source', 'dl').render!(<String, Object?>{
+          'title': 'M',
+          'queued': 2,
+          'bookKey': 'bk',
+        }),
+        contains('manga-dl ls --book bk'),
+      );
+      expect(
+        _spec('discover', 'get').render!(<String, Object?>{
+          'title': 'X',
+          'started': false,
+          'reason': '源站要求登录',
+        }),
+        contains('源站要求登录'),
+      );
     });
   });
 

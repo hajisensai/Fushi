@@ -22,8 +22,14 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_audiobook_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_manage_routes.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_manga_ocr_routes.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_reader_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -53,6 +59,12 @@ List<CtlRoute> buildLibraryCtlRoutes(DesktopCtlContext context) {
     CtlRoute.get(kLibraryCtlHistoryPath, handlers.history),
     CtlRoute.get(kLibraryCtlSourcesPath, handlers.listSources),
     CtlRoute.post(kLibraryCtlScanPath, handlers.scan),
+    // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
+    // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
+    ...buildLibraryManageCtlRoutes(context),
+    ...buildReaderCtlRoutes(context),
+    ...buildAudiobookCtlRoutes(context),
+    ...buildMangaOcrCtlRoutes(context),
   ];
 }
 
@@ -586,7 +598,7 @@ class _LibraryCtlHandlers {
     }
     switch (key.store) {
       case LibraryCtlStore.book:
-        return _openBook(key, key.id, at);
+        return _openBook(key, key.id, call);
       case LibraryCtlStore.srt:
         _requireKindVisible(LibraryCtlKind.audiobook);
         final SrtBook? srt = await SrtBookRepository(_db).findByUid(key.id);
@@ -595,7 +607,7 @@ class _LibraryCtlHandlers {
           // 与书架 `_openSrtBook` 同一判据：纯字幕书的 EPUB 还没生成，打不开。
           throw const CtlFailure.rejected('这本字幕书还没有生成可阅读的正文');
         }
-        return _openBook(key, srt.bookKey, at);
+        return _openBook(key, srt.bookKey, call);
       case LibraryCtlStore.video:
         return _openVideo(key, navigator, at);
       case LibraryCtlStore.game:
@@ -616,10 +628,13 @@ class _LibraryCtlHandlers {
     }
   }
 
+  /// 书类打开：EPUB 用 `chapter`（1 起计；`at` 是它的旧写法）+ 可选章内 `progress`
+  /// （0–100）；PDF 用 `page`（1 起计）；漫画用 `chapter`（在线作品的第几话，1 起计）
+  /// + `page`（1 起计）。漫画不带位置时与书架点卡一致先进作品页。
   Future<Object?> _openBook(
     LibraryCtlKey key,
     String bookKey,
-    String? at,
+    CtlCall call,
   ) async {
     final MediaItem? item = await ReaderFushiSource.instance
         .mediaItemForBookKey(bookKey);
@@ -637,37 +652,37 @@ class _LibraryCtlHandlers {
           ? LibraryCtlKind.book
           : LibraryCtlKind.pdf,
     );
-    Bookmark? jump;
-    if (at != null) {
-      if (!isEpub) {
-        throw const CtlFailure.badRequest('--at 只支持 EPUB 书（章号）与视频（时间点）');
-      }
-      final int? sectionIndex = parseCtlChapterIndex(at);
-      if (sectionIndex == null) {
-        throw CtlFailure.badRequest('--at 对书是 1 起计的章号，收到「$at」');
-      }
-      // 与在线小说详情页「从某章开读」同一做法：章首书签交给阅读器。
-      jump = Bookmark(
-        sectionIndex: sectionIndex,
-        normCharOffset: 0,
-        label: '',
-        createdAt: DateTime.now(),
+    final LibraryCtlOpenPosition position;
+    try {
+      position = parseLibraryCtlOpenPosition(
+        at: call.optString('at'),
+        chapter: call.optInt('chapter'),
+        page: call.optInt('page'),
+        progress: _optPercent(call, 'progress'),
+        format: isManga
+            ? BookFormat.manga
+            : isEpub
+            ? BookFormat.epub
+            : BookFormat.pdf,
       );
+    } on LibraryCtlPositionError catch (e) {
+      throw CtlFailure.badRequest(e.message);
     }
     await _context.focusMainWindow();
     final String title = displayTitleForBook(item: item, rawTitle: item.title);
-    if (isManga && jump == null) {
-      // 书架点漫画卡先进作品页（不走 openMedia），由作品页再开阅读器。
-      unawaited(
-        _context.navigator!.push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext _) => MangaSeriesPage(
-              target: ShelfMangaSeriesTarget(bookKey, item: item),
-            ),
-          ),
-        ),
+    if (isManga) {
+      return _openManga(key, bookKey, item, title, position);
+    }
+    Bookmark? jump;
+    if (position.sectionIndex != null) {
+      // 与在线小说详情页「从某章开读」/ 收藏夹跳回同一做法：书签交给阅读器。PDF 的
+      // 书签 sectionIndex 就是 0 起计页码。
+      jump = Bookmark(
+        sectionIndex: position.sectionIndex!,
+        normCharOffset: position.normCharOffset,
+        label: '',
+        createdAt: DateTime.now(),
       );
-      return _openedJson(key, title, 'manga_series');
     }
     final MediaSource source = item.getMediaSource(appModel: _app);
     unawaited(
@@ -680,6 +695,67 @@ class _LibraryCtlHandlers {
       ),
     );
     return _openedJson(key, title, 'reader');
+  }
+
+  double? _optPercent(CtlCall call, String name) {
+    final Object? raw = call.body[name] ?? call.query[name];
+    if (raw == null) return null;
+    final double? value = raw is num ? raw.toDouble() : double.tryParse('$raw');
+    if (value == null) throw CtlFailure.badRequest('$name 必须是数字');
+    return value;
+  }
+
+  /// 漫画：没给位置 → 作品页（书架点卡）；给了 → 作品页「开某一话」同一条
+  /// `openMedia(launchPageBuilder:)` 路径，把话下标 / 起始页交给阅读器。
+  Future<Object?> _openManga(
+    LibraryCtlKey key,
+    String bookKey,
+    MediaItem item,
+    String title,
+    LibraryCtlOpenPosition position,
+  ) async {
+    if (position.chapterIndex == null && position.pageIndex == null) {
+      unawaited(
+        _context.navigator!.push(
+          MaterialPageRoute<void>(
+            builder: (BuildContext _) => MangaSeriesPage(
+              target: ShelfMangaSeriesTarget(bookKey, item: item),
+            ),
+          ),
+        ),
+      );
+      return _openedJson(key, title, 'manga_series');
+    }
+    final int? chapterIndex = position.chapterIndex;
+    if (chapterIndex != null) {
+      final EpubBookRow? row = await _db.getEpubBook(bookKey);
+      final OnlineMangaLibraryEntry? entry = row == null
+          ? null
+          : OnlineMangaLibraryEntry.tryParse(row.sourceMetadata);
+      if (entry == null) {
+        throw const CtlFailure.badRequest('本地漫画卷没有「话」，只用 --page');
+      }
+      if (chapterIndex >= entry.chapters.length) {
+        throw CtlFailure.badRequest(
+          '这部漫画只有 ${entry.chapters.length} 话，收到第 ${chapterIndex + 1} 话',
+        );
+      }
+    }
+    unawaited(
+      _app.openMedia(
+        ref: _context.ref,
+        mediaSource: MangaFushiSource.instance,
+        item: item,
+        waitUntilClosed: false,
+        launchPageBuilder: () =>
+            MangaFushiSource.instance.buildChapterLaunchPage(
+              item: item,
+              chapterIndex: chapterIndex,
+              initialPage: position.pageIndex,
+            ),
+      ),
+    );
+    return _openedJson(key, title, 'manga_reader');
   }
 
   Future<Object?> _openVideo(
@@ -762,6 +838,18 @@ class _LibraryCtlHandlers {
       isKindEnabled: _kindVisible,
       keepDuplicates: duplicate == 'suffix',
       ingestVideoFile: _context.ingestExternalVideo,
+      // 只有音频的有声书：本机能转录就排进「转录后入库」队列（发现页同一个）。
+      enqueueTranscription: isAsrSupported
+          ? ({
+              required List<String> audioPaths,
+              String? contentPath,
+              required String title,
+            }) async => (await _app.audiobookTranscribeImportQueue.enqueue(
+              audioPaths: audioPaths,
+              contentPath: contentPath,
+              title: title,
+            )).id
+          : null,
     );
     final List<LibraryCtlImportResult> results = await importer.importAll(
       paths,

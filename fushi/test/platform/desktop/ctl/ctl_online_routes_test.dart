@@ -1,6 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart'
+    show DuplicatePolicy;
+
+import 'package:fushi_core/fushi_core.dart'
+    show LocalFileDeleteFailure, LocalFileDeleteReport, MangaDownloadJobRow;
+import 'package:fushi_engine/media/video/video_book_repository.dart'
+    show VideoBookDeleteFailure;
+
+import 'package:fushi/src/media/downloads/download_start_result.dart';
+import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_online_downloads.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -13,6 +28,32 @@ class _NoRef implements WidgetRef {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw StateError('构建路由表时不应访问 ref：${invocation.memberName}');
+}
+
+/// 下载替身：等 [gate] 放行后逐章报进度，章节之间看取消标记（同真实实现的检查点）。
+class _FakeDownload implements LnReaderBookDownload {
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<String> run({
+    required LnReaderInstalledPlugin plugin,
+    required LnReaderNovel novel,
+    required List<LnReaderChapter> chapters,
+    required DuplicatePolicy policy,
+    LnReaderDownloadProgress? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    await gate.future;
+    for (int i = 0; i < chapters.length; i++) {
+      if (isCancelled?.call() ?? false) throw const LnReaderDownloadCancelled();
+      onProgress?.call(i + 1, chapters.length);
+    }
+    return 'book-1';
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
 }
 
 Matcher _badRequest() => throwsA(
@@ -59,6 +100,49 @@ void main() {
       expect(
         first('GET', '/api/admin/sources/123/search')?.pattern,
         '/api/admin/sources/:sourceId/search',
+      );
+      expect(
+        first('POST', '/api/admin/extensions/repos/sync')?.pattern,
+        '/api/admin/extensions/repos/sync',
+      );
+      expect(
+        first('POST', '/api/admin/extensions/eu.x/enabled')?.pattern,
+        '/api/admin/extensions/:id/enabled',
+      );
+    });
+
+    test('源管理 / 筛选浏览 / 任务取消 / AI 下载会话都已注册', () {
+      final Set<String> registered = <String>{
+        for (final CtlRoute route in routes) '${route.method} ${route.pattern}',
+      };
+      expect(
+        registered,
+        containsAll(<String>[
+          'POST /api/admin/extensions/:id/enabled',
+          'POST /api/admin/sources/:sourceId/settings',
+          'GET /api/admin/sources/:sourceId/preferences',
+          'POST /api/admin/sources/:sourceId/preferences',
+          'DELETE /api/admin/sources/:sourceId/data',
+          'GET /api/admin/sources/:sourceId/filters',
+          'POST /api/admin/sources/:sourceId/browse',
+          'POST /api/admin/online/tasks/:id/cancel',
+          'POST /api/admin/ai-download/sessions',
+          'GET /api/admin/ai-download/sessions/:id',
+          'POST /api/admin/ai-download/sessions/:id/choose',
+          'POST /api/admin/ai-download/sessions/:id/confirm',
+          'POST /api/admin/ai-download/sessions/:id/cancel',
+          'DELETE /api/admin/ai-download/sessions/:id',
+          'GET /api/admin/online/manga-downloads',
+          'DELETE /api/admin/online/manga-downloads',
+          'POST /api/admin/online/manga-downloads/:id/cancel',
+          'POST /api/admin/online/manga-downloads/:id/retry',
+          'DELETE /api/admin/online/manga-downloads/:id',
+          'GET /api/admin/online/episode-downloads',
+          'GET /api/admin/online/episode-downloads/:id',
+          'POST /api/admin/online/episode-downloads/:id/pause',
+          'POST /api/admin/online/episode-downloads/:id/resume',
+          'DELETE /api/admin/online/episode-downloads/:id',
+        ]),
       );
     });
   });
@@ -142,6 +226,194 @@ void main() {
       expect(b.toJson()['error'], 'x');
       expect(running.toJson()['status'], 'running');
       expect(c.toJson()['finishedAt'], isNotNull);
+    });
+
+    test('取消：运行中的任务打上标记，已结束 409，不存在 404', () {
+      final CtlOnlineTaskRegistry registry = CtlOnlineTaskRegistry();
+      final CtlOnlineTask task = registry.start(
+        kind: 'novel',
+        title: 'a',
+        total: 3,
+      );
+      expect(registry.cancel(task.id), same(task));
+      expect(task.cancelRequested, isTrue);
+      expect(task.toJson()['cancelRequested'], isTrue);
+      registry.finish(task, status: 'cancelled');
+      expect(task.toJson().containsKey('cancelRequested'), isFalse);
+      expect(
+        () => registry.cancel(task.id),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 409),
+        ),
+      );
+      expect(
+        () => registry.cancel('t999'),
+        throwsA(
+          isA<CtlFailure>().having((CtlFailure f) => f.status, 'status', 404),
+        ),
+      );
+    });
+  });
+
+  group('startCtlNovelDownloadTask', () {
+    const LnReaderInstalledPlugin plugin = LnReaderInstalledPlugin(
+      id: 'p',
+      name: 'P',
+      site: 'https://p',
+      lang: 'ja',
+      version: '1',
+      url: 'https://p/p.js',
+      iconUrl: '',
+      storeUrl: 'https://store',
+      enabled: true,
+      pinned: false,
+      sortOrder: 0,
+      installedAt: 0,
+    );
+    const LnReaderNovel novel = LnReaderNovel(
+      name: '书',
+      path: '/n',
+      totalPages: 1,
+      chapters: <LnReaderChapter>[
+        LnReaderChapter(name: '一', path: '/1'),
+        LnReaderChapter(name: '二', path: '/2'),
+      ],
+    );
+
+    Future<void> settle(CtlOnlineTask task) async {
+      for (int i = 0; i < 50 && task.status == 'running'; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+
+    test('完成：进度、入库 key、书架刷新', () async {
+      final _FakeDownload download = _FakeDownload();
+      final CtlOnlineTaskRegistry registry = CtlOnlineTaskRegistry();
+      int refreshed = 0;
+      final CtlOnlineTask task = startCtlNovelDownloadTask(
+        download: download,
+        plugin: plugin,
+        novel: novel,
+        chapters: novel.chapters,
+        onShelfChanged: () => refreshed++,
+        registry: registry,
+      );
+      expect(task.status, 'running');
+      download.gate.complete();
+      await settle(task);
+      expect(task.status, 'done');
+      expect(task.done, 2);
+      expect(task.resultKey, 'book-1');
+      expect(refreshed, 1);
+    });
+
+    test('取消：标记经 isCancelled 传到下载，任务转为 cancelled', () async {
+      final _FakeDownload download = _FakeDownload();
+      final CtlOnlineTaskRegistry registry = CtlOnlineTaskRegistry();
+      final CtlOnlineTask task = startCtlNovelDownloadTask(
+        download: download,
+        plugin: plugin,
+        novel: novel,
+        chapters: novel.chapters,
+        onShelfChanged: () => fail('取消后不应刷新书架'),
+        registry: registry,
+      );
+      registry.cancel(task.id);
+      download.gate.complete();
+      await settle(task);
+      expect(task.status, 'cancelled');
+      expect(task.resultKey, isNull);
+    });
+  });
+
+  group('在线源下载任务应答', () {
+    test('漫画任务行', () {
+      final Map<String, Object?> json = ctlMangaDownloadJobJson(
+        const MangaDownloadJobRow(
+          jobId: 'j1',
+          kind: 'chapter',
+          bookKey: 'bk',
+          chapterKey: 'c1',
+          runtime: 'mihon',
+          title: 'T',
+          chapterTitle: '第1话',
+          status: 'failed',
+          pagesDone: 3,
+          pagesTotal: 20,
+          attemptCount: 2,
+          lastError: 'HTTP 403',
+          autoOcr: false,
+          createdAt: 1,
+          updatedAt: 2,
+        ),
+      );
+      expect(json['id'], 'j1');
+      expect(json['chapter'], '第1话');
+      expect(json['status'], 'failed');
+      expect(json['error'], 'HTTP 403');
+      expect(json.containsKey('completedAt'), isFalse);
+    });
+
+    test('剧集任务：带下载页按钮判据', () {
+      final Map<String, Object?> json = ctlEpisodeDownloadTaskJson(
+        const InterconnectDownloadTask(
+          id: 'ep1',
+          title: '第1集',
+          status: InterconnectDownloadStatus.paused,
+          progress: 0.25,
+          origin: InterconnectDownloadOrigin.extension,
+          receivedBytes: 10,
+        ),
+        canPause: false,
+        canRestart: true,
+      );
+      expect(json['status'], 'paused');
+      expect(json['origin'], 'extension');
+      expect(json['progress'], 0.25);
+      expect(json['canResume'], isTrue);
+      expect(json['canPause'], isFalse);
+      expect(json.containsKey('totalBytes'), isFalse);
+    });
+  });
+
+  test('删成品失败的原因：库行与文件失败逐条列出', () {
+    expect(describeCtlVideoDeleteFailure(null), '未知原因');
+    expect(
+      describeCtlVideoDeleteFailure((
+        deleted: 0,
+        failed: <VideoBookDeleteFailure>[
+          VideoBookDeleteFailure(
+            bookUid: 'u1',
+            error: 'locked',
+            stackTrace: StackTrace.empty,
+          ),
+        ],
+        localFiles: const LocalFileDeleteReport(
+          failures: <LocalFileDeleteFailure>[
+            LocalFileDeleteFailure('D:/a.mp4', 'in use'),
+          ],
+        ),
+      )),
+      '库行 u1: locked；D:/a.mp4: in use',
+    );
+  });
+
+  group('DownloadStartResult', () {
+    test('开始 / 失败 / 静默拒绝的原因来源', () {
+      const DownloadStartResult started = DownloadStartResult.started(
+        <DownloadStartNotice>[DownloadStartNotice.success('已加入下载')],
+      );
+      expect(started.failureReason, isNull);
+      expect(started.summary, '已加入下载');
+      const DownloadStartResult failed =
+          DownloadStartResult.failed(<DownloadStartNotice>[
+            DownloadStartNotice.info('跳过 2 个锁定章节'),
+            DownloadStartNotice.error('源站要求登录'),
+          ]);
+      expect(failed.failureReason, '跳过 2 个锁定章节；源站要求登录');
+      const DownloadStartResult declined = DownloadStartResult.declined('用户取消');
+      expect(declined.notices, isEmpty, reason: '静默拒绝在页面上不弹提示');
+      expect(declined.failureReason, '用户取消');
     });
   });
 

@@ -1,5 +1,6 @@
 import 'commands/data_commands.dart';
 import 'commands/dictionary_commands.dart';
+import 'commands/game_commands.dart';
 import 'commands/library_commands.dart';
 import 'commands/online_commands.dart';
 import 'commands/settings_commands.dart';
@@ -14,4 +15,5 @@ const List<CtlCommandGroup> kCtlCommandGroups = <CtlCommandGroup>[
   ...dataCommandGroups,
   ...onlineCommandGroups,
   ...videoCommandGroups,
+  ...gameCommandGroups,
 ];

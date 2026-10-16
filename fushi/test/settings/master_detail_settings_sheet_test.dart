@@ -44,13 +44,16 @@ void main() {
     expect(shell,
         contains('constraints.maxHeight >= kFushiSettingsWideMinHeight'));
     // 宽/窄分发：宽窗交给调用方 wideBuilder（两边发散），窄窗在外壳包
-    // SingleChildScrollView + AnimatedSize（200ms / topCenter）。
+    // SingleChildScrollView + FushiAnimatedSize（FushiMotion.short / topCenter）。
     expect(shell, contains('return wideBuilder(context, constraints);'));
     expect(shell, contains('SingleChildScrollView('));
     expect(shell, contains('key: narrowKey()'));
     expect(shell, contains('padding: narrowPadding(context, constraints)'));
-    expect(shell, contains('AnimatedSize('));
-    expect(shell, contains('duration: const Duration(milliseconds: 200)'));
+    expect(shell, contains('FushiAnimatedSize('));
+    expect(
+      shell,
+      contains('duration: fushiMotionDuration(context, FushiMotion.short)'),
+    );
     expect(shell, contains('alignment: Alignment.topCenter'));
     expect(shell, contains('child: narrowChild(context, constraints)'));
     // 几何判定结果回写给调用方，供 PopScope.canPop 下一帧读取。

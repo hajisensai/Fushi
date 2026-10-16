@@ -7,11 +7,11 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
-import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show settingsFootnoteStyle;
+import 'package:fushi/src/storage/storage_usage_actions.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -216,12 +216,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   }
 
   /// 条目显示名：快照聚合条目按文件数翻译，其余用服务层给的 label。
-  String _entryTitle(StorageEntryUsage entry) =>
-      entry.kind == StorageEntryKind.databaseSnapshots
-          ? t.storage_entry_database_snapshots_label(n: entry.paths.length)
-          : entry.kind == StorageEntryKind.backupArchives
-              ? t.storage_entry_backups_label(n: entry.paths.length)
-          : entry.label;
+  String _entryTitle(StorageEntryUsage entry) => storageEntryTitle(entry);
 
   Future<void> _deleteEntry(StorageEntryUsage entry) async {
     if (_busyEntryId != null) return;
@@ -246,30 +241,11 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     // 页面上的字节数会一直停在删除前的旧值（审查 M3）。
     bool changed = false;
     try {
-      switch (entry.kind) {
-        case StorageEntryKind.book:
-          failure = await widget.deleteBook(entry.id);
-          changed = failure == null;
-        case StorageEntryKind.srtBook:
-          failure = await widget.deleteSrtBook(entry.id);
-          changed = failure == null;
-        case StorageEntryKind.dictionary:
-          failure = await widget.deleteDictionary(entry.id);
-          changed = failure == null;
-        case StorageEntryKind.databaseSnapshots:
-          final DatabaseSnapshotDeletionResult result =
-              await widget.deleteDatabaseSnapshots();
-          changed = result.deleted.isNotEmpty;
-          failure = _snapshotDeleteFailureReason(result);
-        case StorageEntryKind.backupArchives:
-          failure = await widget.deleteFiles(entry.paths);
-          changed = failure == null;
-        case StorageEntryKind.derivedFile:
-          failure = await widget.deleteFiles(entry.paths);
-          changed = failure == null;
-        case StorageEntryKind.readOnly:
-          throw StateError('read-only entry');
-      }
+      // 分流与控制通道共用（storage_usage_actions.dart），页面只负责确认与提示。
+      final StorageEntryDeleteOutcome outcome =
+          await deleteStorageEntry(_actions, entry);
+      failure = outcome.failure;
+      changed = outcome.changed;
     } catch (e) {
       failure = '$e';
     } finally {
@@ -285,17 +261,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     if (changed) await _rescan();
   }
 
-  /// 快照批量删除的失败摘要：全成功 → null；否则「第一个失败的文件名: 原因
-  /// (+还有几个)」。不新增 i18n key，直接填进既有的
-  /// `storage_entry_delete_failed(reason:)` 模板。
-  static String? _snapshotDeleteFailureReason(
-      final DatabaseSnapshotDeletionResult result) {
-    if (!result.hasFailures) return null;
-    final MapEntry<String, String> first = result.failures.entries.first;
-    final int rest = result.failures.length - 1;
-    final String head = '${p.basename(first.key)}: ${first.value}';
-    return rest > 0 ? '$head (+$rest)' : head;
-  }
+  /// 本页注入的取数 / 删除原语打包成与控制通道同形的 [StorageUsageActions]。
+  StorageUsageActions get _actions => StorageUsageActions(
+        booksProvider: widget.booksProvider,
+        dictionaryNamesProvider: widget.dictionaryNamesProvider,
+        dictionaryDisplayNamesProvider: widget.dictionaryDisplayNamesProvider,
+        deleteBook: widget.deleteBook,
+        deleteSrtBook: widget.deleteSrtBook,
+        deleteDictionary: widget.deleteDictionary,
+        deleteDatabaseSnapshots: widget.deleteDatabaseSnapshots,
+        deleteFiles: widget.deleteFiles,
+        anime4kBytesProvider: widget.anime4kBytesProvider,
+        anime4kDelete: widget.anime4kDelete,
+      );
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────
 
@@ -351,38 +329,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     StorageCategoryId.other: FushiIcons.moreHoriz,
   };
 
-  String _categoryTitle(StorageCategoryId id) {
-    switch (id) {
-      case StorageCategoryId.books:
-        return t.storage_category_books;
-      case StorageCategoryId.dictionaries:
-        return t.storage_category_dictionaries;
-      case StorageCategoryId.videoDownloads:
-        return t.storage_category_video_downloads;
-      case StorageCategoryId.covers:
-        return t.storage_category_covers;
-      case StorageCategoryId.subtitles:
-        return t.storage_category_subtitles;
-      case StorageCategoryId.shaders:
-        return t.storage_category_shaders;
-      case StorageCategoryId.customFonts:
-        return t.storage_category_custom_fonts;
-      case StorageCategoryId.web:
-        return t.storage_category_web;
-      case StorageCategoryId.exports:
-        return t.storage_category_exports;
-      case StorageCategoryId.backups:
-        return t.storage_category_backups;
-      case StorageCategoryId.database:
-        return t.storage_category_database;
-      case StorageCategoryId.ocrModels:
-        return t.storage_category_ocr_models;
-      case StorageCategoryId.cache:
-        return t.storage_category_cache;
-      case StorageCategoryId.other:
-        return t.storage_category_other;
-    }
-  }
+  String _categoryTitle(StorageCategoryId id) => storageCategoryTitle(id);
 
   /// 非零类目按体积降序——环上的段序、卡内图例的行序都用这一份。
   List<StorageCategoryUsage> get _rankedUsage => _usage.values

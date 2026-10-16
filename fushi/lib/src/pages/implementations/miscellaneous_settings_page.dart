@@ -12,10 +12,9 @@ import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/pages/implementations/crop_image_dialog_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/app_icon_apply.dart';
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
-import 'package:fushi/src/utils/misc/shortcut_icon_sync.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
-import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/utils.dart';
 
 /// 应用图标（app icon）设置子页。薄壳：把 [MiscellaneousSettingsBody] 投影进与
@@ -112,42 +111,14 @@ class _MiscellaneousSettingsBodyState
     }
   }
 
-  Future<AppIconSelection> _persistAppliedIcon(
-    AppIconSelection selection,
-  ) async {
-    try {
-      return await saveAppIconSelection(selection);
-    } catch (e) {
-      // 原生窗口/launcher 图标已经成功切换时，偏好落盘失败不能让 rail 和设置
-      // 继续显示旧值；至少保证本次运行三处视觉状态一致，并留下诊断日志。
-      debugPrint('[Fushi] app icon preference persist failed: $e');
-      return await publishAppIconSelection(selection);
-    }
-  }
-
   Future<void> _switchPreset(String key) async {
     if (_switching || _currentIcon == key) return;
     setState(() => _switching = true);
 
     try {
-      bool ok = false;
-      if (Platform.isAndroid) {
-        ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
-              'switchPresetIcon',
-              {'alias': key},
-            )) ==
-            true;
-      } else if (Platform.isWindows) {
-        final String path = await exportPresetIconToFile(key);
-        ok = await WindowCaptionChannel.setWindowIcon(path);
-        if (ok) {
-          // TODO-901：换图标后把桌面 / 开始菜单的 .lnk 图标也同步成新图。
-          // 失败只降级 debugPrint，不影响上面已成功的运行时窗口图标。
-          await syncWindowsShortcutIcons(await File(path).readAsBytes());
-        }
-      }
+      // 原生切换 + 落盘 + 发布与控制通道共用（app_icon_apply.dart）。
+      final bool ok = await applyPresetAppIcon(key);
       if (ok) {
-        await _persistAppliedIcon(AppIconSelection(presetKey: key));
         if (!mounted) return;
         // 选中态由 _currentIcon getter 从已发布的真值读；这里只需触发重建。
         setState(() {});
@@ -232,29 +203,9 @@ class _MiscellaneousSettingsBodyState
     if (cropped == null) return;
     final String iconPath = cropped.path;
 
-    bool ok = false;
-    if (Platform.isAndroid) {
-      final bytes = await File(iconPath).readAsBytes();
-      ok = (await FushiChannels.iconSwitch.invokeMethod<bool>(
-            'createCustomShortcut',
-            {'imageBytes': bytes},
-          )) ==
-          true;
-    } else if (Platform.isWindows) {
-      final String persisted = await persistCustomIconFile(iconPath);
-      ok = await WindowCaptionChannel.setWindowIcon(persisted);
-      if (ok) {
-        await _persistAppliedIcon(
-          AppIconSelection(
-            presetKey: customIconKey,
-            customPath: persisted,
-          ),
-        );
-        // TODO-901：同步桌面 / 开始菜单 .lnk 图标到用户自定义图。
-        await syncWindowsShortcutIcons(await File(persisted).readAsBytes());
-        if (mounted) setState(() {});
-      }
-    }
+    // Android 建快捷方式 / Windows 换窗口图标 + 落盘，与控制通道共用。
+    final bool ok = await applyCustomAppIcon(iconPath);
+    if (ok && Platform.isWindows && mounted) setState(() {});
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

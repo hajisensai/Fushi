@@ -142,8 +142,6 @@ class _CoverWithIllustrationBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!controller.hasReached) return cover;
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool glass = isGlassDesign(context);
     void reveal() {
       final int? start = controller.browseStart;
       if (start != null) controller.showAt(start);
@@ -169,9 +167,7 @@ class _CoverWithIllustrationBadge extends StatelessWidget {
               message: t.lyrics_illustration_open,
               child: FushiPressScale(
                 child: Material(
-                  color: glass
-                      ? Colors.black.withValues(alpha: 0.42)
-                      : cs.secondaryContainer.withValues(alpha: 0.92),
+                  color: _illustrationControlBg(context),
                   shape: const StadiumBorder(),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -188,18 +184,14 @@ class _CoverWithIllustrationBadge extends StatelessWidget {
                           FushiIcon(
                             FushiIcons.image,
                             size: 16,
-                            color: glass
-                                ? Colors.white
-                                : cs.onSecondaryContainer,
+                            color: _illustrationControlFg(context),
                           ),
                           const SizedBox(width: 4),
                           Text(
                             '${controller.reached + 1}',
                             style: Theme.of(context).textTheme.labelMedium
                                 ?.copyWith(
-                                  color: glass
-                                      ? Colors.white
-                                      : cs.onSecondaryContainer,
+                                  color: _illustrationControlFg(context),
                                 ),
                           ),
                         ],
@@ -332,10 +324,8 @@ class _IllustrationCardState extends State<_IllustrationCard> {
     final bool fitWidth = _aspect >= boxW / math.max(1, boxH);
     final double w = fitWidth ? boxW : boxH * _aspect;
     final double h = fitWidth ? boxW / _aspect : boxH;
-    final Color controlBg = glass
-        ? Colors.black.withValues(alpha: 0.42)
-        : cs.secondaryContainer.withValues(alpha: 0.92);
-    final Color controlFg = glass ? Colors.white : cs.onSecondaryContainer;
+    final Color controlBg = _illustrationControlBg(context);
+    final Color controlFg = _illustrationControlFg(context);
     Widget control({
       required Key key,
       required IconData icon,
@@ -684,11 +674,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool glass = isGlassDesign(context);
-    final Color controlBg = glass
-        ? Colors.black.withValues(alpha: 0.42)
-        : cs.secondaryContainer.withValues(alpha: 0.92);
-    final Color controlFg = glass ? Colors.white : cs.onSecondaryContainer;
+    final Color controlBg = _illustrationControlBg(context);
+    final Color controlFg = _illustrationControlFg(context);
     final List<LyricsIllustration> items = widget.controller.items;
     // 路由是透明叠层，没有 Material 祖先：按钮的墨水反馈要一层透明 Material 托着。
     return Material(
@@ -834,4 +821,20 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       ),
     );
   }
+}
+
+/// 插图工具按钮的悬浮面底色：悬浮面实色，不再半透明（Apple 2026-10-13 拍板：
+/// 系统材质实色；MD3：不透明 secondaryContainer）。
+Color _illustrationControlBg(BuildContext context) {
+  if (isGlassDesign(context)) return fushiGlassPlatformViewFallback(context);
+  return Theme.of(context).colorScheme.secondaryContainer;
+}
+
+/// 与 [_illustrationControlBg] 配对的前景色。
+Color _illustrationControlFg(BuildContext context) {
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  if (isGlassDesign(context)) {
+    return cs.brightness == Brightness.dark ? Colors.white : Colors.black87;
+  }
+  return cs.onSecondaryContainer;
 }

@@ -956,6 +956,10 @@ fushiTopBarSplitActions(
 
 /// 平铺 [visible] 颗时动作胶囊的估计宽度（含「⋯」）。纯函数。
 ///
+/// [slotWidth] / [padding]：一颗按钮占的横向宽度（含项间距）与两端内边距。默认是
+/// 顶栏紧凑图标钮（48 + 4 间距 / 8）；用别的尺寸按钮的调用方（详情页 56 的 tonal
+/// 钮 + 8 间距）必须传实际值，否则测宽偏小、全展开时实际溢出。
+///
 /// [pinnedMenu]：「⋯」恒在（[FushiFloatingTopBar.menu] 非空），即使全部平铺也
 /// 占一格。
 double fushiTopBarActionsWidth(
@@ -963,6 +967,8 @@ double fushiTopBarActionsWidth(
   List<FushiToolbarItem> overflow,
   int visible, {
   bool pinnedMenu = false,
+  double slotWidth = _kTopBarActionSlot,
+  double padding = _kTopBarActionsPadding,
 }) {
   final ({List<List<FushiToolbarItem>> groups, List<FushiToolbarItem> overflow})
   split = fushiTopBarSplitActions(groups, overflow, visible);
@@ -973,9 +979,7 @@ double fushiTopBarActionsWidth(
   final int buttons = items + (split.overflow.isEmpty && !pinnedMenu ? 0 : 1);
   if (buttons == 0) return 0;
   final int dividers = split.groups.length > 1 ? split.groups.length - 1 : 0;
-  return _kTopBarActionsPadding +
-      buttons * _kTopBarActionSlot +
-      dividers * _kTopBarGroupDivider;
+  return padding + buttons * slotWidth + dividers * _kTopBarGroupDivider;
 }
 
 /// 在 [budget] 宽度里最多能平铺几颗（总数 [total]）。
@@ -985,9 +989,18 @@ int fushiTopBarFitCount(
   int total,
   double budget, {
   bool pinnedMenu = false,
+  double slotWidth = _kTopBarActionSlot,
+  double padding = _kTopBarActionsPadding,
 }) {
   for (int k = total; k > 0; k--) {
-    if (fushiTopBarActionsWidth(groups, overflow, k, pinnedMenu: pinnedMenu) <=
+    if (fushiTopBarActionsWidth(
+          groups,
+          overflow,
+          k,
+          pinnedMenu: pinnedMenu,
+          slotWidth: slotWidth,
+          padding: padding,
+        ) <=
         budget) {
       return k;
     }
@@ -1024,6 +1037,8 @@ class FushiTopBarOverflowFit {
     List<FushiToolbarItem> overflow = const <FushiToolbarItem>[],
     required double budget,
     bool pinnedMenu = false,
+    double slotWidth = _kTopBarActionSlot,
+    double padding = _kTopBarActionsPadding,
   }) {
     int total = overflow.length;
     for (final List<FushiToolbarItem> g in groups) {
@@ -1036,6 +1051,8 @@ class FushiTopBarOverflowFit {
       total,
       budget,
       pinnedMenu: pinnedMenu,
+      slotWidth: slotWidth,
+      padding: padding,
     );
     final int? last = _lastTotal == total ? _lastVisible : null;
     int visible = fit;
@@ -1047,6 +1064,8 @@ class FushiTopBarOverflowFit {
         total,
         budget - kFushiFloatingTopBarOverflowHysteresis,
         pinnedMenu: pinnedMenu,
+        slotWidth: slotWidth,
+        padding: padding,
       );
       visible = strict > last ? strict : last;
     }

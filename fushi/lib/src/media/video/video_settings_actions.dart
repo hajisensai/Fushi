@@ -66,38 +66,56 @@ Future<void> commitVideoMetadataRuntimePreference(
 /// 与扫描批次共用同一固定本地端口与限流簿记：若同一时刻正有刮削在线，
 /// 绑端口失败会按「UDP 连接失败」报出，等刮削结束再测即可。
 Future<void> testAniDbLogin(SettingsContext settingsContext) async {
+  try {
+    final ({bool ok, String message}) result = await verifyAniDbLogin(
+      settingsContext.appModel.prefsRepo,
+      onStart: () => _showVideoSettingsSnackBar(
+        settingsContext,
+        t.video_anidb_login_test_running,
+      ),
+    );
+    _showVideoSettingsSnackBar(settingsContext, result.message);
+  } on ArgumentError catch (error) {
+    _showVideoSettingsSnackBar(settingsContext, '${error.message}');
+  }
+}
+
+/// 组配置 → 校验凭据齐全 → [AnidbUdpFileClient.verifyLogin] → close。设置页按钮与
+/// CLI 共用。凭据不全抛 [ArgumentError]（message = 界面同款提示）；登录失败返回
+/// `ok=false` + 失败原因文案。[onStart] 在凭据校验通过、开始联网前调用。
+Future<({bool ok, String message})> verifyAniDbLogin(
+  PreferencesRepository prefs, {
+  void Function()? onStart,
+}) async {
   final VideoSourceScrapeGlobalConfig config =
       VideoSourceScrapeGlobalConfig.fromPreferences(
-    settingsContext.appModel.prefsRepo,
+    prefs,
     resolvedTmdbApiKey: '',
     // 只查凭据是否配齐，不拉资料；界面语言与登录无关。
     uiLocaleTag: kFallbackVideoMetadataLocale,
   );
   final AnidbUdpConfig udp = config.anidbUdpConfig;
   if (!udp.isAvailable) {
-    _showVideoSettingsSnackBar(
-      settingsContext,
-      t.video_anidb_login_test_incomplete,
-    );
-    return;
+    throw ArgumentError(t.video_anidb_login_test_incomplete);
   }
-  _showVideoSettingsSnackBar(settingsContext, t.video_anidb_login_test_running);
+  onStart?.call();
   final AnidbUdpFileClient client = AnidbUdpFileClient(config: udp);
-  String message;
   try {
     await client.verifyLogin();
-    message = client.clientUpdateAvailable
-        ? t.video_anidb_login_test_client_update(client: udp.clientName)
-        : t.video_anidb_login_test_success(
-            client: udp.clientName,
-            version: udp.clientVersion,
-          );
+    return (
+      ok: true,
+      message: client.clientUpdateAvailable
+          ? t.video_anidb_login_test_client_update(client: udp.clientName)
+          : t.video_anidb_login_test_success(
+              client: udp.clientName,
+              version: udp.clientVersion,
+            ),
+    );
   } on AnidbUdpException catch (error) {
-    message = aniDbLoginFailureMessage(error);
+    return (ok: false, message: aniDbLoginFailureMessage(error));
   } finally {
     await client.close();
   }
-  _showVideoSettingsSnackBar(settingsContext, message);
 }
 
 /// UDP 失败原因 → 设置页文案；与刮削报告里 `_hashFailureReason` 的分组一致。
@@ -584,14 +602,54 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
     current: style.textColor ?? const Color(0xFFFFFFFF),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
-      (VideoSubtitleStyle s) => s.copyWith(textColor: c),
+      (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
     ),
     onCommit: (Color c) => unawaited(commitVideoSubtitleStyle(
       context,
-      (VideoSubtitleStyle s) => s.copyWith(textColor: c),
+      (VideoSubtitleStyle s) => applyVideoSubtitleTextColor(s, c),
     )),
   );
 }
+
+/// 字幕文字色（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleTextColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(textColor: c);
+
+/// 字幕阴影色：保留当前阴影色的 alpha，只换 RGB（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleShadowColor(
+  VideoSubtitleStyle s,
+  Color c,
+) {
+  final Color base = s.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
+  return s.copyWith(
+    shadowColor: Color(
+      (base.toARGB32() & 0xFF000000) | (c.toARGB32() & 0x00FFFFFF),
+    ),
+  );
+}
+
+/// 字幕描边色：粗细为 0 时顶到可见基线 2px（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleOutlineColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(
+      outlineColor: c,
+      outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
+    );
+
+/// 字幕背景色：透明度为 0 时顶到可见基线 0.6（取色行与控制通道共用）。
+VideoSubtitleStyle applyVideoSubtitleBackgroundColor(
+  VideoSubtitleStyle s,
+  Color c,
+) =>
+    s.copyWith(
+      backgroundColor: c,
+      backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
+    );
 
 /// 字幕**阴影**颜色取色行（#xif6-gtSz7）。取色器只给不透明色，这里保留当前阴影色的
 /// alpha（默认 0.9），只换 RGB——默认柔和投影的「半透明黑」观感不因换色变成实心硬影。
@@ -599,15 +657,8 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
   final Color current =
       style.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) {
-    final Color base =
-        s.shadowColor ?? VideoSubtitleStyle.defaults.shadowColor!;
-    return s.copyWith(
-      shadowColor: Color(
-        (base.toARGB32() & 0xFF000000) | (c.toARGB32() & 0x00FFFFFF),
-      ),
-    );
-  }
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleShadowColor;
 
   return _buildSubtitleColorRow(
     context,
@@ -629,10 +680,8 @@ Widget buildVideoSubtitleShadowColorRow(SettingsContext context) {
 /// 顶到可见基线（2px），与背景色行「选了色立刻生效」同一口径。
 Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) => s.copyWith(
-        outlineColor: c,
-        outlineThickness: s.outlineThickness <= 0 ? 2 : s.outlineThickness,
-      );
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleOutlineColor;
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_outline_color,
@@ -655,10 +704,8 @@ Widget buildVideoSubtitleOutlineColorRow(SettingsContext context) {
 /// （0.6），让「选了色」立刻生效。
 Widget buildVideoSubtitleBgColorRow(SettingsContext context) {
   final VideoSubtitleStyle style = currentVideoSubtitleStyle(context);
-  VideoSubtitleStyle applyColor(VideoSubtitleStyle s, Color c) => s.copyWith(
-        backgroundColor: c,
-        backgroundOpacity: s.backgroundOpacity <= 0 ? 0.6 : s.backgroundOpacity,
-      );
+  const VideoSubtitleStyle Function(VideoSubtitleStyle, Color) applyColor =
+      applyVideoSubtitleBackgroundColor;
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_bg_color,
@@ -922,6 +969,20 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
   }
 }
 
+/// 写弹幕屏蔽规则：host 在场走页面回调（即时重过滤），否则落 pref。输入框与
+/// 控制通道共用。
+Future<void> commitVideoDanmakuBlockRules(
+  SettingsContext context,
+  String value,
+) async {
+  final VideoQuickSettingsHost? host = videoQuickSettingsHostOf(context);
+  if (host?.onDanmakuBlockRulesChanged != null) {
+    await host!.onDanmakuBlockRulesChanged!(value);
+  } else {
+    await context.appModel.setVideoDanmakuBlockRulesText(value);
+  }
+}
+
 /// TODO-1376：弹幕屏蔽词/正则过滤（多行文本，每行一条，`/pattern/` 为正则）。
 Widget buildVideoDanmakuBlockRulesField(SettingsContext context) {
   return _VideoDanmakuBlockRulesField(settingsContext: context);
@@ -949,16 +1010,8 @@ class _VideoDanmakuBlockRulesFieldState
     super.dispose();
   }
 
-  Future<void> _commit(String value) async {
-    final VideoQuickSettingsHost? host =
-        videoQuickSettingsHostOf(widget.settingsContext);
-    if (host?.onDanmakuBlockRulesChanged != null) {
-      await host!.onDanmakuBlockRulesChanged!(value);
-    } else {
-      await widget.settingsContext.appModel
-          .setVideoDanmakuBlockRulesText(value);
-    }
-  }
+  Future<void> _commit(String value) =>
+      commitVideoDanmakuBlockRules(widget.settingsContext, value);
 
   @override
   Widget build(BuildContext context) {

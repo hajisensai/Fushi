@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
+import 'package:fushi/src/settings/settings_cli_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -49,6 +50,24 @@ SettingsCustomItem overlayColorSettingItem({
             : '#${stored.toRadixString(16).padLeft(8, '0').toUpperCase()}';
       },
       defaultLabel: (SettingsContext context) => t.theme_role_follows_theme,
+    ),
+    // 控制通道：`theme` = 跟随主题（写回 followThemeValue），否则 #AARRGGBB；
+    // 写入走同一个 commit（写偏好 + 推样式到浮窗）。
+    cliValue: SettingsCliValue(
+      help: '$kSettingsCliFollowTheme（跟随主题）或 #RRGGBB / #AARRGGBB',
+      read: (SettingsContext context) {
+        final int stored = value(context);
+        return followsTheme(stored)
+            ? kSettingsCliFollowTheme
+            : formatSettingsCliColor(stored);
+      },
+      write: (SettingsContext context, String raw) {
+        if (raw.trim().toLowerCase() == kSettingsCliFollowTheme) {
+          return commit(context, followThemeValue);
+        }
+        final int argb = parseSettingsCliColor(raw);
+        return commit(context, enableAlpha ? argb : (0xFF000000 | argb));
+      },
     ),
     builder: (SettingsContext settingsContext) {
       final ThemeData theme = Theme.of(settingsContext.context);

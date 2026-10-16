@@ -8,7 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
-    show parseCuesForFormat;
+    show parseCuesForFormat, throwIfAlignmentCancelled;
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
@@ -105,6 +105,9 @@ class SrtBookReimportOutcome {
 /// [EpubImporter.rebuildExtractedInPlace] 的 `.bak` 回滚复位。
 ///
 /// [uid] 必须命中既有字幕书，否则抛 [StateError]。
+///
+/// [isCancelled]：在动磁盘之前的检查点（开始、解析完字幕、重建正文前）检查，为真
+/// 时抛 `AudiobookAlignmentCancelled`，库与磁盘都还没动；之后是提交阶段不再检查。
 Future<SrtBookReimportOutcome> reimportSrtBook({
   required FushiDatabase db,
   required SrtBookRepository repo,
@@ -113,7 +116,9 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
   String? subtitlePath,
   SrtBookReimportProgress? onProgress,
   SrtBookReimportMessages messages = const SrtBookReimportMessages(),
+  bool Function()? isCancelled,
 }) async {
+  throwIfAlignmentCancelled(isCancelled);
   final bool wantAudio = audioPaths != null && audioPaths.isNotEmpty;
   final bool wantSubtitle = subtitlePath != null && subtitlePath.isNotEmpty;
   if (!wantAudio && !wantSubtitle) {
@@ -145,6 +150,7 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
       throw SrtBookReimportEmptyCuesException(subtitlePath);
     }
     cueCount = cues.length;
+    throwIfAlignmentCancelled(isCancelled);
 
     // ① 正文重建（只动磁盘，可回滚）。
     final EpubBookRow? bodyRow = await _rebuildableBodyRow(db, book);

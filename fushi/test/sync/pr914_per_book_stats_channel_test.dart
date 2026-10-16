@@ -40,11 +40,23 @@ void main() {
           reason: '别在消费方重抄三元式——那正是当年 content 分了、stats 忘了的形状');
     });
 
-    test('手动「解决冲突并应用」（_applyChoices）按通道解析统计开关', () {
-      final String body = _functionSource(
-        _readSource('lib/src/sync/sync_compare_dialog.dart'),
+    test('手动「解决冲突并应用」（applySyncCompareChoices）按通道解析统计开关', () {
+      // 应用逻辑已从对话框 State 的 _applyChoices 抽成顶层
+      // applySyncCompareChoices，供设置页对话框与控制通道（`fushi_cli sync
+      // compare`）共用。守卫跟着走两段：对话框必须委托给它，门控断言落在它身上。
+      final String source =
+          _readSource('lib/src/sync/sync_compare_dialog.dart');
+      final String dialogApply = _functionSource(
+        source,
         '  Future<void> _applyChoices() async {',
-        '  /// 750a：互联下载远端独有书时补下其有声书包（若有）。',
+        '  Future<void> _downloadRemoteOnlyFromRow(',
+      );
+      expect(dialogApply, contains('await applySyncCompareChoices('),
+          reason: '对话框的应用必须走共享实现，不得在 State 里另抄一份门控');
+      final String body = _functionSource(
+        source,
+        'Future<SyncCompareApplyResult> applySyncCompareChoices({',
+        'Future<bool> _applyLiveProgressChoice({',
       );
 
       expect(body, contains('resolveChannelSyncFlags('),

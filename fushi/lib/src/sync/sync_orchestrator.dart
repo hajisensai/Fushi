@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/video/strm_file.dart'
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi/src/sync/peer_book_tombstone_alias.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_work_target.dart';
@@ -1146,6 +1147,8 @@ class SyncOrchestrator {
 
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
+      aliasPeerBookTombstones(remoteTombstones, present,
+          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
       bool heldBaseline = false;

@@ -17,13 +17,12 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
-import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
+import 'package:fushi/src/media/discovery/discovery_server_probes.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
-import 'package:fushi_engine/media/external_provider.dart';
 
 const Duration _kSaveDebounce = Duration(milliseconds: 600);
 
@@ -325,44 +324,23 @@ class _AudiobookshelfServerSettingsSectionState
     setState(() => _probes[draftId] = const _ProbeState.running());
 
     final AudiobookshelfTokens? currentTokens = config.tokens;
-    final bool useApiKey =
-        currentTokens == null && draft.apiKey.trim().isNotEmpty;
-    // 统一出站装配点（代理 / 超时），也是 outbound_http_discipline 守卫的要求。
-    final AudiobookshelfApi api = AudiobookshelfApi(
-      serverUrl: config.serverUrl,
-      providerId: audiobookshelfSourceIdFor(config.id),
-      tokens: useApiKey
-          ? AudiobookshelfTokens(accessToken: draft.apiKey.trim())
-          : currentTokens,
-      client: createAppHttpIoClient(),
-    );
+    // 请求与结论文案在 [connectAudiobookshelfServer]（控制通道共用同一份）。
     _ProbeState result;
     AudiobookshelfTokens? tokens;
     String username = draft.username;
     try {
-      if (useApiKey) {
-        username = (await api.me()).username;
-      } else if (currentTokens == null) {
-        username = (await api.login(
-          draft.username.trim(),
-          draft.password,
-        )).user.username;
+      final AudiobookshelfConnectOutcome outcome =
+          await connectAudiobookshelfServer(
+            config,
+            username: draft.username,
+            password: draft.password,
+            apiKey: draft.apiKey,
+          );
+      if (outcome.ok) {
+        tokens = outcome.tokens;
+        username = outcome.username;
       }
-      final int books = (await api.libraries())
-          .where((AudiobookshelfLibrary library) => library.isBookLibrary)
-          .length;
-      tokens = api.tokens;
-      result = _ProbeState.done(
-        ok: true,
-        message: t.discovery_audiobookshelf_session_sign_in_ok(count: books),
-      );
-    } on ExternalProviderFailure catch (failure) {
-      result = _ProbeState.done(
-        ok: false,
-        message: t.discovery_audiobookshelf_session_sign_in_failed(
-          reason: failure.message,
-        ),
-      );
+      result = _ProbeState.done(ok: outcome.ok, message: outcome.message);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'AudiobookshelfServerSettings.connect',
@@ -373,8 +351,6 @@ class _AudiobookshelfServerSettingsSectionState
         ok: false,
         message: t.discovery_audiobookshelf_session_sign_in_failed(reason: ''),
       );
-    } finally {
-      api.close();
     }
     if (!mounted) return;
     final int index = _drafts.indexWhere((_AbsDraft d) => d.id == draftId);

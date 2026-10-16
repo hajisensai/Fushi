@@ -265,6 +265,91 @@ void main() {
     );
   });
 
+  group('BUG-3417：远端删除的「同时删除已下载文件」按字面生效', () {
+    Future<File> seedCompletedJob(String jobId) async {
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      final File downloaded = File(p.join(tmp.path, '$jobId.mkv'))
+        ..writeAsStringSync('payload');
+      await db.upsertVideoDownloadJob(
+        VideoDownloadJobsCompanion.insert(
+          jobId: jobId,
+          resourceProvider: 'nyaa:test',
+          selectedResourceId: 'r1',
+          mediaKind: 'tv',
+          title: 'Frieren',
+          backendKind: 'embedded',
+          fingerprint: 'fp',
+          lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+          stage: const Value<String>(VideoDownloadJobStage.import),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      await db.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: const Value<int?>(0),
+          originalRelativePath: p.basename(downloaded.path),
+          currentRelativePath: p.basename(downloaded.path),
+          finalAbsolutePath: Value<String?>(downloaded.path),
+          kind: const Value<String>('video'),
+          status: const Value<String>(VideoDownloadJobFileStatus.imported),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      return downloaded;
+    }
+
+    test('能力位宣告 deleteFilesParam；勾选 → 经协议真删文件，不勾 → 保留', () async {
+      final FushiSyncServer server = await startHost(host());
+      final InterconnectDownloadClient c = client();
+      final HostDownloadTarget target =
+          (await c.probeUrl('http://127.0.0.1:${server.port}'))!;
+      expect(target.deleteFilesParam, isTrue);
+
+      final File kept = await seedCompletedJob('job-keep');
+      await c.delete(target, 'job-keep', deleteFiles: false);
+      expect(await db.getVideoDownloadJob('job-keep'), isNull);
+      expect(kept.existsSync(), isTrue, reason: '没勾就不能删用户的文件');
+
+      final File removed = await seedCompletedJob('job-drop');
+      await c.delete(target, 'job-drop', deleteFiles: true);
+      expect(await db.getVideoDownloadJob('job-drop'), isNull);
+      expect(removed.existsSync(), isFalse, reason: '勾了就要真的删掉');
+    });
+
+    test('老客户端不带参数：app host 保持历史缺省（只移出列表）', () async {
+      final FushiSyncServer server = await startHost(host());
+      final InterconnectDownloadClient c = client();
+      final HostDownloadTarget target =
+          (await c.probeUrl('http://127.0.0.1:${server.port}'))!;
+      final File file = await seedCompletedJob('job-legacy');
+      await c.delete(target, 'job-legacy');
+      expect(await db.getVideoDownloadJob('job-legacy'), isNull);
+      expect(file.existsSync(), isTrue);
+    });
+
+    test('老 host（不宣告 deleteFilesParam）：客户端拒绝带 deleteFiles，不让选择被静默丢弃',
+        () async {
+      final FushiSyncServer server = await startHost(host());
+      final HostDownloadTarget legacy = HostDownloadTarget(
+        baseUrl: 'http://127.0.0.1:${server.port}',
+        deviceName: 'PC',
+        backend: 'embedded',
+      );
+      expect(legacy.deleteFilesParam, isFalse);
+      expect(
+        () => client().delete(legacy, 'x', deleteFiles: true),
+        throwsA(isA<HostDownloadException>().having(
+          (HostDownloadException e) => e.code,
+          'code',
+          'delete_files_unsupported',
+        )),
+      );
+    });
+  });
+
   test('订阅面挂在同一组闭包上：registry 没起 → supported=false、列表照常', () async {
     final AppDownloadHost h = host();
     final Map<String, Object?> cap = await h.subscriptions.capability();
