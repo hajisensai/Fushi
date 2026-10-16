@@ -201,11 +201,21 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsAnkiImportOptions o = _options;
+    // 手机宽度：下拉换到标题下方整行（行内时被「恢复默认」再挤掉一截，DropdownMenu
+    // 只剩 ~120 宽，「较新时」都被截成「较新」）。
+    final bool narrow = MediaQuery.sizeOf(context).width < 600;
     int step = 0;
     Widget stagger(Widget child) =>
         FushiStaggeredEntrance(index: step++, child: child);
 
     return FushiAlertDialog(
+      // 窄屏收窄对话框外边距（与 [FushiDialogFrame] 同一条比例：屏宽 5%，16～40）：
+      // 共享默认的 40 在手机上白丢 80dp，开关标签「导入所有学习进度信息」因此折出
+      // 一个孤字。
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: (MediaQuery.sizeOf(context).width * 0.05).clamp(16.0, 40.0),
+        vertical: 24,
+      ),
       title: Row(
         children: <Widget>[
           Expanded(
@@ -288,6 +298,9 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                           o.copyWith(mergeNoteTypes: _defaults.mergeNoteTypes),
                         ),
                         row: AdaptiveSettingsSwitchRow(
+                          // 行宽被右侧「恢复默认」占去 52：声明开关实宽，开关与
+                          // 同组其它行一样留在标题右侧，不被挤到标题下方。
+                          trailingWidth: kSettingsRowIntrinsicTrailingWidth,
                           title: t.srs_import_merge_notetypes,
                           value: o.mergeNoteTypes,
                           onChanged: (bool v) =>
@@ -306,6 +319,7 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                               options: _conditionOptions,
                               selected: o.updateNotes,
                               materialWidth: 160,
+                              controlBelow: narrow,
                               onChanged: (SrsImportUpdateCondition c) =>
                                   _set(o.copyWith(updateNotes: c)),
                             ),
@@ -327,6 +341,7 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                               options: _conditionOptions,
                               selected: o.updateNoteTypes,
                               materialWidth: 160,
+                              controlBelow: narrow,
                               onChanged: (SrsImportUpdateCondition c) =>
                                   _set(o.copyWith(updateNoteTypes: c)),
                             ),

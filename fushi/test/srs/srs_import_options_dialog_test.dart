@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
@@ -270,5 +271,52 @@ void main() {
       await confirm(tester, result),
       const SrsAnkiImportOptions(withScheduling: true),
     );
+  });
+
+  testWidgets('手机（390 宽）：「合并笔记模板」开关与同组一样留在标签右侧；下拉不再重复行标题', (
+    WidgetTester tester,
+  ) async {
+    final BuildContext host = await pumpHost(tester, const Size(390, 844));
+    await open(tester, host);
+    expect(tester.takeException(), isNull);
+
+    // 对话框外边距按屏宽收窄（不再是固定 40）：正文更宽，标签少折行。
+    final Rect dialog = tester.getRect(_dialogSurface);
+    expect(dialog.width, greaterThan(390 - 2 * 24));
+
+    // 开关在标签同一行右侧：开关的竖直中心落在标题文字的行范围内。
+    for (final (String key, String title) in <(String, String)>[
+      ('srs-import-with-scheduling', t.srs_import_with_scheduling),
+      ('srs-import-merge-notetypes', t.srs_import_merge_notetypes),
+    ]) {
+      final Finder row = find.byKey(ValueKey<String>(key));
+      final Rect sw = tester.getRect(
+        find.descendant(of: row, matching: find.byType(Switch)),
+      );
+      final Rect label = tester.getRect(
+        find.descendant(of: row, matching: find.text(title)),
+      );
+      expect(sw.left, greaterThan(label.right - 1), reason: '$key 开关在标签右侧');
+      expect(
+        sw.center.dy,
+        inInclusiveRange(label.top - 24, label.bottom + 24),
+        reason: '$key 开关没有被挤到标签下方',
+      );
+    }
+
+    // 下拉行：行标题只出现一次（DropdownMenu 不再带同名浮动标签）。
+    for (final (String key, String title) in <(String, String)>[
+      ('srs-import-update-notes', t.srs_import_update_notes),
+      ('srs-import-update-notetypes', t.srs_import_update_notetypes),
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.text(title),
+        ),
+        findsOneWidget,
+        reason: '$key 的标题不重复',
+      );
+    }
   });
 }
