@@ -82,7 +82,7 @@ class RemoteDictionaryPopupResources implements DictionaryPopupResourceSource {
   /// 本身就是权威的，[prefetchStyles] 不再另走样式端点。
   bool _revisionGated = false;
 
-  /// BUG-3417：采用查词回包随附的 host 词典样式（`FushiRemoteLookupClient
+  /// BUG-3425：采用查词回包随附的 host 词典样式（`FushiRemoteLookupClient
   /// .hostDictionaryStyles`）。同一实例重复传入不算变化——WebView 按身份去重，指纹
   /// 不变期间就不会重注入。
   void adoptHostStyles(Map<String, String> styles) {

@@ -76,7 +76,7 @@ class FushiRemoteLookupClient {
   final Duration _audioTransferTimeout;
   final Future<Directory> Function() _pinnedAudioCacheDirectoryProvider;
 
-  /// BUG-3417：查词时是否按 `stylesRevision` 门控顺带取 host 的词典自带样式。
+  /// BUG-3425：查词时是否按 `stylesRevision` 门控顺带取 host 的词典自带样式。
   ///
   /// 只给**在本端渲染并导出远端结果**、且实例活过整个会话的调用方开（游戏串流）：
   /// 首查发空指纹，host 整表下发一次；之后带上缓存的指纹，host 只回指纹。每次
@@ -149,7 +149,7 @@ class FushiRemoteLookupClient {
         : result;
   }
 
-  /// 读回包里的 `dictionaryStylesRevision` / `dictionaryStyles`（BUG-3417）：
+  /// 读回包里的 `dictionaryStylesRevision` / `dictionaryStyles`（BUG-3425）：
   /// - 没有指纹（老 host）⇒ 什么都不动；
   /// - 指纹与缓存相同 ⇒ 沿用缓存实例（host 本就不会重发正文）；
   /// - 指纹变了且带正文 ⇒ 换成新的不可变实例并记下指纹；只有指纹没有正文（不该

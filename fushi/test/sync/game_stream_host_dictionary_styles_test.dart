@@ -14,7 +14,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-3417：iPad 串流 PC 游戏制卡——查词和写卡都在 PC，但弹窗在 iPad 本机渲染、
+/// BUG-3425：iPad 串流 PC 游戏制卡——查词和写卡都在 PC，但弹窗在 iPad 本机渲染、
 /// Glossary 也在本机导出。远端查词客户端必须按 `stylesRevision` 协议取回并缓存
 /// **host** 的词典样式，并交给弹窗；老 host 不认该字段时照旧（回落样式端点）。
 void main() {

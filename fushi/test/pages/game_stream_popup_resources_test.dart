@@ -13,7 +13,7 @@ import 'package:material_ui/material_ui.dart';
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-3417：串流页的查词弹窗必须拿到查词源（host）的词典资源，否则
+/// BUG-3425：串流页的查词弹窗必须拿到查词源（host）的词典资源，否则
 /// `window.dictionaryStyles` 读的是本机（iPad 上为空），渲染与导出的 Glossary
 /// 都没有词典自带样式。
 void main() {

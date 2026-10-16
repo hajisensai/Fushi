@@ -1592,7 +1592,7 @@ class _GameStreamPageState extends State<GameStreamPage>
               : DictionaryPopupLayer(
                   result: result,
                   webViewKey: _dictionaryKey,
-                  // BUG-3417：结果来自 host，样式 / 媒体 / 发音也取自 host。
+                  // BUG-3425：结果来自 host，样式 / 媒体 / 发音也取自 host。
                   resourceSource: controller.popupResources,
                   isSearching: controller.searching,
                   isDark: theme.brightness == Brightness.dark,

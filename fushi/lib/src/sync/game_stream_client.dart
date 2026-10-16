@@ -394,7 +394,7 @@ abstract class GameStreamDictionaryLookup {
     required int maximumTerms,
   });
 
-  /// 结果来自哪台设备，弹窗的词典样式 / 媒体 / 发音就取自哪台设备（BUG-3417）。
+  /// 结果来自哪台设备，弹窗的词典样式 / 媒体 / 发音就取自哪台设备（BUG-3425）。
   /// null = 结果来自本机，弹窗走本机 `FushiDicts`。
   DictionaryPopupResourceSource? get popupResources;
 }
@@ -420,7 +420,7 @@ class InterconnectGameStreamDictionaryLookup
 
   final FushiRemoteLookupClient _lookup;
 
-  /// BUG-3417：查词与写卡都由 host 完成，但弹窗在本机渲染、Glossary 也在本机
+  /// BUG-3425：查词与写卡都由 host 完成，但弹窗在本机渲染、Glossary 也在本机
   /// 导出——本机（iPad）往往一部词典都没有，`window.dictionaryStyles` 必须是
   /// host 的那份，否则卡片里一个词典自带 `<style>` 都没有。
   late final RemoteDictionaryPopupResources _resources =
