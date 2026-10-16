@@ -141,7 +141,9 @@ Widget adaptiveSwitch({
       activeTrackColor: activeColor ?? CupertinoTheme.of(context).primaryColor,
     );
   }
-  return Switch(
+  // Material（M3E）：走 FushiSwitch，否则绕过 Expressive 开关（关态叉号、
+  // 圆钮尺寸）和设计系统分派，与其它 FushiSwitch 调用点观感不一致。
+  return FushiSwitch(
     value: value,
     onChanged: onChanged,
     activeColor: activeColor,

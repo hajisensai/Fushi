@@ -1,8 +1,7 @@
-import 'dart:ui' as ui;
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 封面角标：压在封面图上的半透明黑胶囊（图标 / 文字，或两者）。
@@ -17,8 +16,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 /// 角标统一（2026-10-04）：小圆角矩形（圆角 6）、内边距 4 / 6、10–11 号 w600 字。
 /// - MD3：inverseSurface@0.85 底 + onInverseSurface 前景（浅色主题是深底、深色
 ///   主题是浅底，压在封面上都与周围拉得开）；
-/// - Apple：HIG Materials 的「clear 玻璃压在媒体上」配方——背景模糊 + 35%
-///   黑色调暗层 + 白字（不是一块近乎实心的黑底）。
+/// - Apple：悬浮面实色（[fushiAppleSolidFloatingDecoration]，2026-10-13 拍板，
+///   不磨砂）+ 随明暗取白 / 黑的前景。
 /// 状态色（完成 / 失败 / 新）只落在 [iconColor] 上，不铺整块彩色底。
 class CoverBadge extends StatelessWidget {
   const CoverBadge({
@@ -28,9 +27,9 @@ class CoverBadge extends StatelessWidget {
     this.iconColor,
     super.key,
   }) : assert(
-          icon != null || label != null,
-          'CoverBadge needs an icon, a label, or both',
-        );
+         icon != null || label != null,
+         'CoverBadge needs an icon, a label, or both',
+       );
 
   /// 角标图标（默认 14px）；null 时为纯文字角标
   /// （如合集详情「相关作品」卡上的关系类型徽标「前作 / 续作 / 剧场版」）。
@@ -51,16 +50,25 @@ class CoverBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
-    // Apple 角标自带磨砂，调暗层只要 HIG 的 35%；其余（墨水屏 / MD3）同 scrim。
-    final Color background = apple && !eink
-        ? Colors.black.withValues(alpha: 0.35)
-        : coverBadgeScrim(context);
-    final Color foreground = coverBadgeForeground(context);
+    // Apple（2026-10-13 拍板）：悬浮面实色，不再磨砂，也不受「降低透明度」影响；
+    // 前景随系统材质明暗取白 / 黑。其余（墨水屏 / MD3）同 scrim。
+    final bool solid = apple && !eink;
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final Color background = coverBadgeScrim(context);
+    final Color foreground = solid
+        ? (dark ? Colors.white : Colors.black87)
+        : coverBadgeForeground(context);
     final Widget badge = Container(
       padding: label == null
           ? const EdgeInsets.all(4)
           : const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(color: background, borderRadius: _radius),
+      decoration: solid
+          ? fushiAppleSolidFloatingDecoration(
+              context,
+              shape: const RoundedRectangleBorder(borderRadius: _radius),
+            )
+          : BoxDecoration(color: background, borderRadius: _radius),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -70,27 +78,19 @@ class CoverBadge extends StatelessWidget {
             if (icon != null) const SizedBox(width: 4),
             Text(
               label!,
-              style: (Theme.of(context).textTheme.labelSmall ??
-                      const TextStyle())
-                  .copyWith(
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-                color: foreground,
-              ),
+              style:
+                  (Theme.of(context).textTheme.labelSmall ?? const TextStyle())
+                      .copyWith(
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                        color: foreground,
+                      ),
             ),
           ],
         ],
       ),
     );
-    if (!apple || eink) return badge;
-    // Apple 磨砂：模糊只裁在角标自身的圆角里（BackdropFilter 不裁会糊满整屏）。
-    return ClipRRect(
-      borderRadius: _radius,
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: badge,
-      ),
-    );
+    return badge;
   }
 }
 

@@ -190,3 +190,27 @@ List<String> orderedEnabledForTier(
       if (presentFiles.contains(name)) name,
   ];
 }
+
+/// 一键选档的目标启用集（着色器视图的「选档」与控制通道共用）：该档要 GLSL 且着色器
+/// 目录里缺文件时先经 [ensurePreset] 补齐（返回 false = 取消 / 下载失败 → 返回 null，
+/// 调用方不切档、不留半启用），再从目录现有文件（[listFiles]）按该档叠加顺序挑出启用
+/// 集（个别文件缺失也只启用存在的）。
+Future<List<String>?> resolveShaderTierEnabledNames(
+  VideoShaderTier tier, {
+  required Future<List<String>> Function() listFiles,
+  required Future<bool> Function(Anime4kPreset preset) ensurePreset,
+  bool? isMobile,
+}) async {
+  final Anime4kPreset? preset = shaderTierSpec(tier, isMobile: isMobile).preset;
+  if (preset != null) {
+    final Set<String> present = (await listFiles()).toSet();
+    if (!preset.fileNames.every(present.contains)) {
+      if (!await ensurePreset(preset)) return null;
+    }
+  }
+  return orderedEnabledForTier(
+    tier,
+    (await listFiles()).toSet(),
+    isMobile: isMobile,
+  );
+}

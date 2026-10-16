@@ -40,6 +40,36 @@
 | [BUG-3429](bugs/BUG-3429-downloaded-book-key-mismatch-delete-lost.md) | ✅ | ✅ | 从对端下载的书落地键不同导致跨设备删除丢失 |
 | [BUG-3428](bugs/BUG-3428-adopted-online-manga-delete-not-propagated.md) | ✅ | ✅ | 互联收下的在线漫画收不到对端从所有设备删除 |
 | [BUG-3427](bugs/BUG-3427-remote-series-volumes-not-in-collection.md) | ✅ | ✅ | 远端占位分卷不进本地同系列合集 |
+> 共 3084 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3428](bugs/BUG-3428-inline-video-word-audio-overlap.md) | ✅ | ✅ | 视频片段（WebM 内嵌）制卡翻面时单词音频与句子片段同时播放 |
+> 共 3075 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3420](bugs/BUG-3420-subtitle-delay-readout-focus-ring.md) | ✅ | ✅ | 字幕调轴读数胶囊的焦点环四角残缺 |
+| [BUG-3419](bugs/BUG-3419-android-local-audio-lost-after-activity-recreate.md) | ✅ | ✅ | Android 查词本地音频库「某时起」失效，重启才恢复 |
+| [BUG-3418](bugs/BUG-3418-watermelon-avatar-blurry.md) | ✅ | ✅ | 「超级大西瓜」页头像清晰度太低 |
+> 共 3071 条。点号进各自文件。
+> 共 3072 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3417](bugs/BUG-3417-remote-download-delete-files-ignored.md) | ✅ | ✅ | 远端代下载任务删除时「同时删除已下载文件」勾选被丢弃 |
+| [BUG-3417](bugs/BUG-3417-galgame-skip-backlog-chars-counted.md) | ✅ | ✅ | galgame-skip-backlog-chars-counted |
+| [BUG-3417](bugs/BUG-3417-reader-highlight-lane-latin-ink.md) | ✅ | ✅ | 小说高亮条瘦身后西文上伸 / 下延字母没被包住 |
+| [BUG-3417](bugs/BUG-3417-lyrics-mining-context-sentences.md) | ✅ | ✅ | 歌词模式高级制卡无法前后加句 |
+| [BUG-3418](bugs/BUG-3418-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
+| [BUG-3417](bugs/BUG-3417-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
+> 共 3081 条。点号进各自文件。
+> 共 3083 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3428](bugs/BUG-3428-srs-apkg-unicase.md) | ✅ | ✅ | 安卓导入新格式 Anki 包报 no such collation sequence: unicase |
+| [BUG-3427](bugs/BUG-3427-srs-ios-kernel-unlinked.md) | ✅ | ✅ | iOS 复习页报排程内核不可用：Runner 未链入 fushi_fsrs |
 | [BUG-3426](bugs/BUG-3426-nav-order-move-buttons-hit-area-below-48dp.md) | ✅ | ✅ | nav-order-move-buttons-hit-area-below-48dp |
 | [BUG-3425](bugs/BUG-3425-game-stream-card-missing-host-dict-styles.md) | ✅ | ✅ | game-stream-card-missing-host-dict-styles |
 | [BUG-3424](bugs/BUG-3424-feedback-ticket-store-concurrent-write-tmp-race.md) | ✅ | ✅ | feedback-ticket-store-concurrent-write-tmp-race |

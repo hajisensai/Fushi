@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -70,7 +72,7 @@ String? settingsSectionModifiedSummary(
   return count == 0 ? null : t.settings_section_modified_count(n: count);
 }
 
-/// 详情页页头的溢出菜单：唯一一项「恢复本页默认」。本页没有任何声明了默认值
+/// 详情页页头的「恢复本页默认」动作（默认展开，页头放不下才收进溢出菜单）：唯一一项「恢复本页默认」。本页没有任何声明了默认值
 /// 的项时整个按钮不出现；有但都没改过时菜单项禁用并写「本页均为默认值」。
 class SettingsPageResetAction extends StatelessWidget {
   const SettingsPageResetAction({
@@ -92,25 +94,30 @@ class SettingsPageResetAction extends StatelessWidget {
     final bool anyModified = entries.any(
       (SettingsPageResetEntry entry) => entry.spec.modified,
     );
-    return FushiOverflowMenu<int>(
-      key: const ValueKey<String>('settings-page-reset-menu'),
-      tooltip: t.common_more_actions,
-      items: <PopupMenuEntry<int>>[
-        FushiPopupMenuItem<int>(
-          key: const ValueKey<String>('settings-page-reset-item'),
-          value: 0,
+    // 默认展开、空间不足才收进「⋯」（用户 2026-10-06 拍板）：唯一的动作按可用宽度
+    // 平铺成图标钮，页头放不下才收进溢出菜单。保底宽度扣掉返回钮 + 标题 + 搜索钮。
+    return FushiAdaptiveActionStrip(
+      moreKey: const ValueKey<String>('settings-page-reset-more'),
+      reservedWidth: FushiAdaptiveActionStrip.titleBarReservedWidth + 56,
+      actions: <FushiAdaptiveAction>[
+        FushiAdaptiveAction(
+          key: const ValueKey<String>('settings-page-reset-menu'),
+          foldedKey: const ValueKey<String>('settings-page-reset-item'),
           icon: FushiIcons.undo,
           label: anyModified
               ? t.settings_page_reset_menu
               : t.settings_page_reset_all_default,
-          enabled: anyModified,
+          onPressed: anyModified
+              ? () => unawaited(
+                  showSettingsPageResetDialog(
+                    context: context,
+                    settingsContext: settingsContext,
+                    destination: destination,
+                  ),
+                )
+              : null,
         ),
       ],
-      onSelected: (int _) => showSettingsPageResetDialog(
-        context: context,
-        settingsContext: settingsContext,
-        destination: destination,
-      ),
     );
   }
 }

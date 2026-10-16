@@ -67,6 +67,9 @@ List<SettingsSection> buildListeningSections() {
           title: t.audiobook_tts_voice_settings,
           subtitle: t.audiobook_tts_voice_settings_hint,
           icon: FushiIcons.voice,
+          cli: const SettingsCliAction.unsupported(
+            '朗读声音的增删改与设默认用 fushi_cli voice ls/add/set/use/rm',
+          ),
           onTap: (SettingsContext settingsContext) async {
             await openTtsVoiceSettingsPage(
               settingsContext.context,
@@ -82,6 +85,28 @@ List<SettingsSection> buildListeningSections() {
           title: t.audiobook_material_library,
           subtitle: t.audiobook_material_library_hint,
           icon: FushiIcons.dictionary,
+          // CLI：加 / 删素材目录（代替目录选择器），每次都重扫并回报认出几部作品。
+          cli: SettingsCliAction(
+            params: const <SettingsCliParam>[
+              SettingsCliParam(
+                'add',
+                help: '要加入的素材目录（绝对路径）',
+                required: false,
+                path: true,
+              ),
+              SettingsCliParam(
+                'remove',
+                help: '要移除的素材目录（与列表里的写法一致）',
+                required: false,
+              ),
+            ],
+            run: (SettingsContext c, Map<String, String> args) =>
+                editAudiobookMaterialDirs(
+                  c.appModel,
+                  add: args['add'],
+                  remove: args['remove'],
+                ),
+          ),
           onTap: (SettingsContext settingsContext) async {
             await showAppDialog<void>(
               context: settingsContext.context,

@@ -16,6 +16,9 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show mapEquals;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +30,7 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -88,11 +92,26 @@ class _AiProviderSettingsSectionState
   final Map<String, TextEditingController> _modelControllers =
       <String, TextEditingController>{};
 
-  /// 功能 → 提供商映射的当前值（草稿与落盘同步推进，不存在中间态）。
-  AiFeatureAssignments _assignments = const AiFeatureAssignments();
+  /// 功能 → 提供商映射：没有草稿态，每次都读落盘真值（`fushi_cli ai assign`
+  /// 等别处写入后页面立即看到，改动也总是基于最新值，不会拿旧快照整体覆盖）。
+  AiFeatureAssignments get _assignments =>
+      _appModel?.prefsRepo.storedAiFeatureAssignments ??
+      const AiFeatureAssignments();
+
+  /// 上次与磁盘对齐时每家的落盘版本（id → `toJson` 编码）。
+  ///
+  /// 页面持有可编辑的草稿，而提供商清单也会被页面之外改（`fushi_cli ai add/set/rm`）。
+  /// 以前保存是「按草稿整份覆盖」，于是页面开着时别处的改动会被陈旧草稿悄悄抹掉。
+  /// 现在用这份基线区分「用户在页面里改过的草稿」与「没碰过的草稿」：没碰过的跟着
+  /// 磁盘刷新（[_syncFromStore]），保存时只写改过的那几家（[_saveValidDrafts]）。
+  Map<String, String> _baseline = <String, String>{};
+
+  /// 正在监听的偏好仓（落盘变更 → 刷新未改动的草稿）。
+  PreferencesRepository? _listenedPrefs;
 
   @override
   void dispose() {
+    _listenedPrefs?.removeListener(_onPrefsChanged);
     final bool pending = _saveDebounce?.isActive ?? false;
     _saveDebounce?.cancel();
     // 用户在防抖窗口内切走页面时不能把这次编辑吞掉。
@@ -103,18 +122,89 @@ class _AiProviderSettingsSectionState
     super.dispose();
   }
 
+  static String _encodeConfig(AiProviderConfig config) =>
+      jsonEncode(config.toJson());
+
+  /// 草稿相对基线改过（含从没落过盘的新草稿、地址改到一半的无效草稿）。
+  bool _draftDirty(_AiProviderDraft draft) {
+    final String? base = _baseline[draft.id];
+    final AiProviderConfig? config = draft.toConfig();
+    return base == null || config == null || _encodeConfig(config) != base;
+  }
+
+  void _onPrefsChanged() {
+    final AppModel? appModel = _appModel;
+    if (!mounted || appModel == null || !_loaded) return;
+    setState(() => _syncFromStore(appModel.prefsRepo));
+  }
+
+  /// 把磁盘上别处写入的变化并进草稿：没改过的草稿换成磁盘版本、别处新增的补上、
+  /// 别处删掉且本地没改过的去掉；用户正在改的草稿原样保留（以用户为准）。
+  void _syncFromStore(PreferencesRepository prefs) {
+    final List<AiProviderConfig> persisted = prefs.aiProviders;
+    final Map<String, String> now = <String, String>{
+      for (final AiProviderConfig config in persisted)
+        config.id: _encodeConfig(config),
+    };
+    if (mapEquals(now, _baseline)) return;
+    final Map<String, _AiProviderDraft> byId = <String, _AiProviderDraft>{
+      for (final _AiProviderDraft draft in _drafts) draft.id: draft,
+    };
+    final List<_AiProviderDraft> next = <_AiProviderDraft>[];
+    for (final AiProviderConfig config in persisted) {
+      final _AiProviderDraft? draft = byId.remove(config.id);
+      if (draft == null) {
+        // 基线里有、草稿里没有 = 本地刚删、还没落盘；否则是别处新增。
+        if (!_baseline.containsKey(config.id)) {
+          next.add(_AiProviderDraft.fromConfig(config));
+        }
+        continue;
+      }
+      if (_draftDirty(draft)) {
+        next.add(draft);
+        continue;
+      }
+      next.add(_AiProviderDraft.fromConfig(config));
+      if (now[config.id] != _baseline[config.id]) {
+        _probes.remove(config.id);
+        _models.remove(config.id);
+        _modelControllers[config.id]?.text = config.model;
+      }
+    }
+    for (final _AiProviderDraft draft in byId.values) {
+      if (_baseline.containsKey(draft.id) && !_draftDirty(draft)) {
+        // 别处删掉、本地没改过：跟着删。
+        _probes.remove(draft.id);
+        _models.remove(draft.id);
+        _modelControllers.remove(draft.id)?.dispose();
+        continue;
+      }
+      next.add(draft);
+    }
+    _drafts = next;
+    _baseline = now;
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
     _appModel = appModel;
     if (!appModel.isPreferencesReady) return const SizedBox.shrink();
+    if (!identical(_listenedPrefs, appModel.prefsRepo)) {
+      _listenedPrefs?.removeListener(_onPrefsChanged);
+      _listenedPrefs = appModel.prefsRepo..addListener(_onPrefsChanged);
+    }
     if (!_loaded) {
       _loaded = true;
+      final List<AiProviderConfig> persisted = appModel.prefsRepo.aiProviders;
       _drafts = <_AiProviderDraft>[
-        for (final AiProviderConfig config in appModel.prefsRepo.aiProviders)
+        for (final AiProviderConfig config in persisted)
           _AiProviderDraft.fromConfig(config),
       ];
-      _assignments = appModel.prefsRepo.storedAiFeatureAssignments;
+      _baseline = <String, String>{
+        for (final AiProviderConfig config in persisted)
+          config.id: _encodeConfig(config),
+      };
     }
 
     // 与同页 schema 段同一套分组（MD3 分段卡 / Apple inset grouped）：渲染器已经
@@ -935,31 +1025,43 @@ class _AiProviderSettingsSectionState
       _models.remove(id);
       _modelControllers.remove(id)?.dispose();
       _drafts.removeAt(index);
-      // 删一家提供商必须同步清理指向它的功能映射，否则映射悬空。
-      _assignments = _assignments.withoutProvider(id);
     });
     unawaited(_saveValidDrafts());
-    unawaited(_persistAssignments());
+    // 删一家提供商必须同步清理指向它的功能映射，否则映射悬空。
+    unawaited(
+      _persistAssignments(
+        (AiFeatureAssignments current) => current.withoutProvider(id),
+      ),
+    );
   }
 
   void _setAssignment(AiFeature feature, String? providerId) {
-    setState(() {
-      _assignments = _assignments.withAssignment(feature, providerId);
-    });
-    unawaited(_persistAssignments());
+    unawaited(
+      _persistAssignments(
+        (AiFeatureAssignments current) =>
+            current.withAssignment(feature, providerId),
+      ),
+    );
   }
 
   void _setDefault(String? providerId) {
-    setState(() {
-      _assignments = _assignments.withDefault(providerId);
-    });
-    unawaited(_persistAssignments());
+    unawaited(
+      _persistAssignments(
+        (AiFeatureAssignments current) => current.withDefault(providerId),
+      ),
+    );
   }
 
-  Future<void> _persistAssignments() async {
+  /// 指派的改动总是作用在**落盘真值**上（读-改-写），不拿页面里的旧快照覆盖。
+  Future<void> _persistAssignments(
+    AiFeatureAssignments Function(AiFeatureAssignments current) change,
+  ) async {
     final AppModel? appModel = _appModel;
     if (appModel == null) return;
-    await appModel.prefsRepo.setAiFeatureAssignments(_assignments);
+    await appModel.prefsRepo.setAiFeatureAssignments(
+      change(appModel.prefsRepo.storedAiFeatureAssignments),
+    );
+    if (mounted) setState(() {});
   }
 
   /// 按草稿列表落盘；**只有显式删除（[_delete]）能让一家提供商从磁盘消失**。
@@ -976,16 +1078,37 @@ class _AiProviderSettingsSectionState
     // 用 build 期抓住的引用，不用 ref——本方法也从 dispose 里调（见 [_appModel]）。
     final AppModel? appModel = _appModel;
     if (appModel == null) return;
-    final Map<String, AiProviderConfig> persisted = <String, AiProviderConfig>{
-      for (final AiProviderConfig config in appModel.prefsRepo.aiProviders)
-        config.id: config,
+    // 以磁盘当前清单为底按条合并：只有本页改过的草稿才写；没改过的保留磁盘版本
+    // （可能刚被 `fushi_cli` 改过）；别处新增的保留；只有本页显式删掉的（基线里
+    // 有、草稿里没有）才从磁盘去掉。
+    final Map<String, _AiProviderDraft> drafts = <String, _AiProviderDraft>{
+      for (final _AiProviderDraft draft in _drafts) draft.id: draft,
     };
-    final List<AiProviderConfig> configs = <AiProviderConfig>[
-      for (final _AiProviderDraft draft in _drafts)
-        if ((draft.toConfig() ?? persisted[draft.id]?.copyWith(enabled: false))
-            case final AiProviderConfig config)
-          config,
-    ];
+    final Set<String> written = <String>{};
+    final List<AiProviderConfig> configs = <AiProviderConfig>[];
+    for (final AiProviderConfig persisted in appModel.prefsRepo.aiProviders) {
+      final _AiProviderDraft? draft = drafts[persisted.id];
+      if (draft == null) {
+        if (!_baseline.containsKey(persisted.id)) configs.add(persisted);
+        continue;
+      }
+      written.add(persisted.id);
+      configs.add(
+        _draftDirty(draft)
+            ? (draft.toConfig() ?? persisted.copyWith(enabled: false))
+            : persisted,
+      );
+    }
+    for (final _AiProviderDraft draft in _drafts) {
+      if (written.contains(draft.id)) continue;
+      final AiProviderConfig? config = draft.toConfig();
+      if (config != null) configs.add(config);
+    }
+    // 先推进基线再写：写入会同步通知 [_onPrefsChanged]，那时基线已是新值。
+    _baseline = <String, String>{
+      for (final AiProviderConfig config in configs)
+        config.id: _encodeConfig(config),
+    };
     await appModel.prefsRepo.setAiProviders(configs);
   }
 

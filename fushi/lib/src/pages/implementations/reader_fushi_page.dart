@@ -101,6 +101,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
+import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart'
@@ -228,6 +229,7 @@ part 'reader_fushi/caret.part.dart';
 part 'reader_fushi/chrome.part.dart';
 part 'reader_fushi/webview.part.dart';
 part 'reader_fushi/tts.part.dart';
+part 'reader_fushi/session_remote.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -1705,6 +1707,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       (_settings?.writingMode ?? 'vertical-rl') == 'vertical-rl';
 
   int _currentChapter = 0;
+
+  /// 桌面控制通道遥控面（见 `reader_fushi/session_remote.part.dart`）。
+  late final _ReaderPageSessionRemote _sessionRemote =
+      _ReaderPageSessionRemote(this);
   // 压平目录的按书缓存（见 [_buildTtuToc]）：顶栏章名逐帧要查，压平却要走整棵 TOC
   // 树。只随 _book 失效，故这两个字段总是成对写。
   List<TtuTocEntry>? _ttuTocCache;
@@ -2662,6 +2668,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
+    readerSessionRemotes.register(_sessionRemote);
     // app 明暗 / 主题在阅读器外变化（系统切深色、桌面设置窗、同步恢复）时，正文
     // CSS 必须即时重注入——旧实现只在阅读器内的主题选择器回调里重注入。
     _observedThemeNotifier = appModelNoUpdate.themeNotifier
@@ -3334,6 +3342,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // [ExitFlushRegistry] 的退出汇合点统一 await。时钟为空 = 本页从没开始计时，
     // 整段跳过。
     _studyClock?.detach();
+    readerSessionRemotes.unregister(_sessionRemote);
     // Search navigation can still be awaiting restore while the route closes.
     // Complete it as failed now (and clear its precise-locate request) instead
     // of leaving the callback alive until the 10-second timeout.
@@ -4453,6 +4462,12 @@ $liveConfigJs
   /// 末句止；跨章/跨音频文件退化为只合文本）。无 WebView 或无选区时清空上下文返回 0。
   @override
   Future<int> onSetSentenceContextToDraft(int prevCount, int nextCount) async {
+    // 歌词模式：查词发生在独立的歌词 WebView 里，正文 WebView 没有选区，
+    // getSurroundingSentences 恒返回空 →「前加一句 / 后加一句」一点就被判到边界
+    // 禁用（BUG-3417）。歌词一行就是一条 cue，上下文取相邻 cue。
+    if (_lyricsMode) {
+      return _setLyricsSentenceContextToDraft(prevCount, nextCount);
+    }
     final InAppWebViewController? controller = _controller;
     if (controller == null || (prevCount <= 0 && nextCount <= 0)) {
       _miningDraft.setContext();

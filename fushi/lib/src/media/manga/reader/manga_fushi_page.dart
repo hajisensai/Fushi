@@ -117,6 +117,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
+import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show copyImageFileToClipboard, shareImageFile;
@@ -203,6 +204,9 @@ enum _MangaReaderInputSource {
   gamepad,
   mouse,
   floatingBall,
+
+  /// 桌面控制通道（`fushi_cli reader next/prev`）。
+  remote,
 }
 
 /// 漫画页 **Flutter 侧**鼠标通道的解析阶梯：只有 manga 自己的 scope。
@@ -454,6 +458,7 @@ class MangaFushiPage extends BaseSourcePage {
     required super.item,
     required this.bookKey,
     this.initialChapterIndex,
+    this.initialPage,
     this.sourceReview,
     this.ocrEnginesOverride,
     this.lensDisclosureOverride,
@@ -462,6 +467,11 @@ class MangaFushiPage extends BaseSourcePage {
   /// 在线漫画：调用方点名要开的章（下标，见 [mangaReaderOpenChapterIndex]）。null =
   /// 没点名（直接开书），按「重新打开位置」偏好选章。本地卷忽略。
   final int? initialChapterIndex;
+
+  /// 调用方点名的起始页（0 起计，越界钳到末页）；只作用于首次装载——本地卷取代
+  /// 书级保存位置，在线章取代该章的章级进度。null = 按保存位置恢复。桌面控制通道
+  /// `library open --page` 用它。
+  final int? initialPage;
 
   /// 进入即整卷识别用的引擎集合（测试缝；生产经 [MangaOcrWizardEngines.resolve]）。
   final MangaOcrWizardEngines? ocrEnginesOverride;
@@ -920,6 +930,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 正在换章：挡住换章期间的翻页与重复触发。
   bool _switchingChapter = false;
 
+  /// 桌面控制通道遥控面（见 [_MangaPageSessionRemote]）。
+  late final _MangaPageSessionRemote _sessionRemote = _MangaPageSessionRemote(
+    this,
+  );
+
   /// 正在换去的章（[_switchingChapter] 期间有效），加载指示上显示它的章名。
   int? _switchingChapterTarget;
 
@@ -1334,6 +1349,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     _chrome.addListener(_onChromeChanged);
     WidgetsBinding.instance.addObserver(this);
+    // 桌面控制通道（`fushi_cli reader ...`）的遥控面；dispose 注销。
+    readerSessionRemotes.register(_sessionRemote);
     if (Platform.isWindows || Platform.isLinux) {
       windowManager.addListener(this);
     }
@@ -1441,6 +1458,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         }),
       );
     }
+    readerSessionRemotes.unregister(_sessionRemote);
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     if (Platform.isWindows || Platform.isLinux) {
@@ -1715,6 +1733,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _loadLocalPayload(
       row: row,
       mangaJsonPath: p.join(row.extractDir, row.epubPath),
+      initialPage: widget.initialPage,
     );
   }
 
@@ -2083,6 +2102,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         service: service,
         entry: entry,
         chapterIndex: chapterIndex,
+        explicitInitialPage: widget.initialPage,
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -2121,6 +2141,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required OnlineMangaLibraryEntry entry,
     required int chapterIndex,
     bool landOnLastPage = false,
+    int? explicitInitialPage,
   }) async {
     final OnlineMangaChapter chapter = entry.chapters[chapterIndex];
     _shelfLibraryService = service;
@@ -2144,7 +2165,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 20 页 → 自动换到未读的第 4 话 → 第 4 话从第 20 页开始，整章整章跳过内容。
     // 每章进度的真相源是 `manga_chapter_states`；书级那行只服务单章 / 本地条目。
     int initialPage = landOnLastPage ? kMangaLandOnLastPage : 0;
-    if (!landOnLastPage && row.uid.isNotEmpty) {
+    if (explicitInitialPage != null) {
+      // 调用方点名的页（首次装载）：不再按章级进度挑页。
+      initialPage = explicitInitialPage;
+    } else if (!landOnLastPage && row.uid.isNotEmpty) {
       final MangaChapterStateRow? state = await appModel.database
           .getMangaChapterState(bookUid: row.uid, chapterKey: chapter.key);
       // 读完过的章怎么开由「重新打开时」偏好决定：跳过读完的章节（furthest）=
@@ -7085,4 +7109,71 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 补一次，让首开/换窗后第一次按方向键就作用在漫画上。
     _focusOwnership.reclaim(FocusReclaimCause.contentReady);
   }
+}
+
+/// 漫画阅读页对桌面控制通道（`fushi_cli reader ...`）的遥控实现：翻页走
+/// [_MangaFushiPageState._executeReaderInputAction]（翻页键 / 悬浮球同一入口，含
+/// webtoon 锚点跳页与跨话翻页），跳页走页码跳转的 `_jumpToPage`，切话走章节列表
+/// 的 `_switchToChapter`。正文没装好时快照为 null、动作为 no-op。
+class _MangaPageSessionRemote implements ReaderSessionRemote {
+  _MangaPageSessionRemote(this._state);
+
+  final _MangaFushiPageState _state;
+
+  MokuroPayload? get _payload => _state.mounted ? _state._payload : null;
+
+  @override
+  ReaderSessionSnapshot? snapshot() {
+    final MokuroPayload? payload = _payload;
+    if (payload == null) return null;
+    final OnlineMangaLibraryEntry? entry = _state._shelfEntry;
+    final bool online = entry != null && _state._shelfChapterIndex >= 0;
+    return ReaderSessionSnapshot(
+      kind: ReaderSessionKind.manga,
+      bookKey: _state.widget.bookKey,
+      title: _state._bookRow?.title,
+      contentReady: !_state._switchingChapter,
+      pageIndex: _state._currentPage,
+      pageCount: payload.images.length,
+      chapterIndex: online ? _state._shelfChapterIndex : null,
+      chapterCount: online ? entry.chapters.length : null,
+    );
+  }
+
+  @override
+  Future<void> turnPage({required bool forward}) async {
+    if (_payload == null) return;
+    _state._executeReaderInputAction(
+      forward ? MangaReaderInputAction.next : MangaReaderInputAction.previous,
+      source: _MangaReaderInputSource.remote,
+    );
+  }
+
+  @override
+  Future<bool> goToPage(int pageIndex) async {
+    final MokuroPayload? payload = _payload;
+    if (payload == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return false;
+    }
+    await _state._jumpToPage(pageIndex + 1);
+    return true;
+  }
+
+  @override
+  Future<bool> goToChapter(int chapterIndex, {double progress = 0}) async {
+    final OnlineMangaLibraryEntry? entry = _state._shelfEntry;
+    if (_payload == null ||
+        entry == null ||
+        chapterIndex < 0 ||
+        chapterIndex >= entry.chapters.length) {
+      return false;
+    }
+    await _state._switchToChapter(chapterIndex);
+    return _state.mounted && _state._shelfChapterIndex == chapterIndex;
+  }
+
+  @override
+  Future<bool> goToBookPercent(double percent) async => false;
 }

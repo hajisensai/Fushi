@@ -14,6 +14,8 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -152,8 +154,9 @@ class _HostState extends ConsumerState<_Host> {
 
 Future<void> _pump(
   WidgetTester tester,
-  SettingsDestination Function() destination,
-) async {
+  SettingsDestination Function() destination, {
+  double width = 900,
+}) async {
   final FushiDatabase db = _testDb();
   addTearDown(db.close);
   final AppModel appModel = await _appModel(db);
@@ -166,8 +169,11 @@ Future<void> _pump(
     });
   appModel.themeNotifier = themeNotifier;
   addTearDown(themeNotifier.dispose);
-  await tester.binding.setSurfaceSize(const Size(900, 1400));
-  addTearDown(() => tester.binding.setSurfaceSize(null));
+  // 用 view.physicalSize 而不是 setSurfaceSize：页头按 MediaQuery 屏宽决定平铺 / 收起。
+  tester.view.physicalSize = Size(width, 1400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
@@ -194,9 +200,16 @@ Finder _menuItem() =>
 Finder _dialogRow(String id) =>
     find.byKey(ValueKey<String>('settings-page-reset.$id'));
 
-Future<void> _openMenu(WidgetTester tester) async {
+/// 宽屏：「恢复本页默认」默认平铺成页头图标钮，点它直接弹确认框。
+Future<void> _pressReset(WidgetTester tester) async {
+  await tester.tap(_menu());
+  await tester.pumpAndSettle();
+}
+
+/// 窄屏：放不下才收进「⋯」，先开溢出菜单再点项。
+Future<void> _openMoreMenu(WidgetTester tester) async {
   await tester.tap(
-    find.descendant(of: _menu(), matching: find.byType(IconButton)).first,
+    find.byKey(const ValueKey<String>('settings-page-reset-more')),
   );
   await tester.pumpAndSettle();
 }
@@ -240,14 +253,9 @@ void main() {
     await _pump(tester, () => _destination(v));
     expect(find.text('Hidden toggle'), findsNothing, reason: '折叠分组默认收起，行不在页面上');
 
-    await _openMenu(tester);
-    final PopupMenuItem<int> item = tester.widget<PopupMenuItem<int>>(
-      _menuItem(),
-    );
-    expect(item.enabled, isTrue);
-    expect(find.text(t.settings_page_reset_menu), findsOneWidget);
-    await tester.tap(_menuItem());
-    await tester.pumpAndSettle();
+    expect(tester.widget<FushiIconButtonControl>(_menu()).onPressed, isNotNull);
+    expect(_menuItem(), findsNothing, reason: '宽屏平铺，没有溢出菜单项');
+    await _pressReset(tester);
 
     expect(
       find.byKey(const ValueKey<String>('settings-page-reset-dialog')),
@@ -300,9 +308,7 @@ void main() {
   ) async {
     final _Values v = _Values()..autoplay = false;
     await _pump(tester, () => _destination(v));
-    await _openMenu(tester);
-    await tester.tap(_menuItem());
-    await tester.pumpAndSettle();
+    await _pressReset(tester);
     await tester.tap(find.text(t.dialog_cancel));
     await tester.pumpAndSettle();
     expect(v.autoplay, isFalse);
@@ -314,17 +320,37 @@ void main() {
     final _Values v = _Values();
     await _pump(tester, () => _destination(v));
     expect(_menu(), findsOneWidget);
-    await _openMenu(tester);
-    final PopupMenuItem<int> item = tester.widget<PopupMenuItem<int>>(
-      _menuItem(),
+    final FushiIconButtonControl button = tester.widget<FushiIconButtonControl>(
+      _menu(),
     );
-    expect(item.enabled, isFalse);
-    expect(find.text(t.settings_page_reset_all_default), findsOneWidget);
-    await tester.tap(_menuItem(), warnIfMissed: false);
+    expect(button.onPressed, isNull);
+    expect(button.tooltip, t.settings_page_reset_all_default);
+    await tester.tap(_menu(), warnIfMissed: false);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey<String>('settings-page-reset-dialog')),
       findsNothing,
+    );
+  });
+
+  testWidgets('narrow header folds the reset action into the overflow menu', (
+    WidgetTester tester,
+  ) async {
+    final _Values v = _Values()..autoplay = false;
+    await _pump(tester, () => _destination(v), width: 320);
+    // 窄到放不下：不平铺，收进「⋯」。
+    expect(_menu(), findsNothing);
+    await _openMoreMenu(tester);
+    expect(_menuItem(), findsOneWidget);
+    expect(
+      tester.widget<PopupMenuItem<VoidCallback>>(_menuItem()).enabled,
+      isTrue,
+    );
+    await tester.tap(_menuItem());
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('settings-page-reset-dialog')),
+      findsOneWidget,
     );
   });
 
@@ -367,9 +393,7 @@ void main() {
         ],
       ),
     );
-    await _openMenu(tester);
-    await tester.tap(_menuItem());
-    await tester.pumpAndSettle();
+    await _pressReset(tester);
     expect(find.text('Caption color'), findsOneWidget);
     expect(find.text('Red → Follows theme'), findsOneWidget);
     await tester.tap(

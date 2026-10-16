@@ -1,4 +1,4 @@
-// BUG-3418：新格式 Anki 集合的 fields / notetypes / decks… 用 COLLATE unicase，
+// BUG-3428：新格式 Anki 集合的 fields / notetypes / decks… 用 COLLATE unicase，
 // 读包前不注册该排序规则会在第一条查询报 no such collation sequence。
 // 只测「打开集合库 → 读配置表」这一层，不依赖 fushi_fsrs 原生库与 zstd。
 import 'dart:io';

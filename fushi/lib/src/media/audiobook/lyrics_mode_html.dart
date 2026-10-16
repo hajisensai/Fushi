@@ -498,9 +498,10 @@ body.ly-fade.ly-vertical {
   padding: 9px 16px;
   font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--ly-pill-fg, $textColor);
-  background: var(--ly-pill-bg, rgba(127,127,127,0.2));
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  backdrop-filter: blur(20px) saturate(1.6);
+  /* 悬浮面实色（Apple 2026-10-13 拍板；MD3 悬浮面同为实色）：着色层叠在页面底色上，
+     不再半透明 + 背景模糊（也就不受「降低透明度」影响）。 */
+  background: linear-gradient(var(--ly-pill-bg, rgba(127,127,127,0.2)),
+      var(--ly-pill-bg, rgba(127,127,127,0.2))), $backgroundColor;
   transition: opacity 0.24s ease-out, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   cursor: pointer;
   z-index: 10;
