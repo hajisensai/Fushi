@@ -352,6 +352,10 @@ class FushiSyncServer {
   /// 结果来自本机时，对端弹窗也必须用本机的词典样式渲染——对端未必装了同名词典，
   /// 装了也可能是另一个版本。null = 端点 404（老调用方 / 单测不接线）。
   final Map<String, String> Function()? _dictionaryStylesProvider;
+
+  /// `/api/lookup/dictionary` 的 `stylesRevision` 门控用的样式快照（BUG-3417），按
+  /// [_dictionaryStylesProvider] 返回的 map **身份**复用：词典集合不变就不重算指纹。
+  RemotePopupDictionaryCss? _peerPopupDictionaryCss;
   final FushiRemoteGameStreamService? _gameStreamService;
   final VideoRemoteService? _videoRemoteService;
 
