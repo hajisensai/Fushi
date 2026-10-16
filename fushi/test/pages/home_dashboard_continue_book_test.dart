@@ -64,7 +64,7 @@ void main() {
     expect(isDashboardContinueBook(item, <String>{'book2', 'boo'}), isTrue);
   });
 
-  group('dashboardBookCollectionResumeIndex（书合集续读目标）', () {
+  group('dashboardBookCollectionContinueIndex（书合集续读目标）', () {
     CollectionMemberProgress vol({
       int position = 0,
       bool completed = false,
@@ -77,7 +77,7 @@ void main() {
 
     test('用户实报：读完第 1 卷 → 推进到第 2 卷', () {
       expect(
-        dashboardBookCollectionResumeIndex(<CollectionMemberProgress>[
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 10),
           vol(),
           vol(),
@@ -88,7 +88,7 @@ void main() {
 
     test('锚点按最近阅读时刻，不按卷序最靠后', () {
       expect(
-        dashboardBookCollectionResumeIndex(<CollectionMemberProgress>[
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 30, readAt: 50),
           vol(),
           vol(position: 60, readAt: 10),
@@ -99,21 +99,23 @@ void main() {
 
     test('整套读完 / 一卷都没开读 / 空合集 → null', () {
       expect(
-        dashboardBookCollectionResumeIndex(<CollectionMemberProgress>[
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 1),
           vol(position: 100, completed: true, readAt: 2),
         ]),
         isNull,
       );
       expect(
-        dashboardBookCollectionResumeIndex(<CollectionMemberProgress>[
+        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(),
           vol(),
         ]),
         isNull,
       );
       expect(
-        dashboardBookCollectionResumeIndex(const <CollectionMemberProgress>[]),
+        dashboardBookCollectionContinueIndex(
+          const <CollectionMemberProgress>[],
+        ),
         isNull,
       );
     });

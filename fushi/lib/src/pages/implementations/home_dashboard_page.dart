@@ -105,7 +105,9 @@ bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
 /// 整组一卷都没开始读（不劝人从头开始）或目标仍是读完的卷（整套读完）→ null，
 /// 合集不出卡。
 @visibleForTesting
-int? dashboardBookCollectionResumeIndex(List<CollectionMemberProgress> sorted) {
+int? dashboardBookCollectionContinueIndex(
+  List<CollectionMemberProgress> sorted,
+) {
   if (!sorted.any((CollectionMemberProgress m) => m.hasStarted)) return null;
   final int idx = continueMemberIndex(sorted);
   if (sorted[idx].completed) return null;
@@ -1585,7 +1587,7 @@ class _HomeDashboardPageState
     }
 
     // 书合集感知续读（与下方视频 Next-Up 同口径）：成员按主折叠合集归组，每个
-    // 合集在继续区最多一张卡，续读目标由 [dashboardBookCollectionResumeIndex]
+    // 合集在继续区最多一张卡，续读目标由 [dashboardBookCollectionContinueIndex]
     // 定；散书保持「在读」逐本过滤的现行为。
     final Map<int, List<MediaItem>> booksByCollection =
         <int, List<MediaItem>>{};
@@ -1614,7 +1616,7 @@ class _HomeDashboardPageState
         for (final MediaItem m in sorted) bookRecentMs(m),
       ];
       final int? idx =
-          dashboardBookCollectionResumeIndex(<CollectionMemberProgress>[
+          dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
         for (int i = 0; i < sorted.length; i++)
           CollectionMemberProgress(
             positionMs: sorted[i].position,
