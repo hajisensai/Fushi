@@ -33,6 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 3073 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3418](bugs/BUG-3418-anki-jump-remote-video-not-found.md) | ✅ | ✅ | 从 Anki 卡片跳回视频提示「此设备没有对应来源」，但互联 host / 服务端上有 |
+| [BUG-3417](bugs/BUG-3417-stream-subtitle-align-probe-too-long.md) | ✅ | ✅ | 媒体服务器 / 在线源视频字幕波形调轴要等太久（流只需前 3 分钟） |
 > 共 3072 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

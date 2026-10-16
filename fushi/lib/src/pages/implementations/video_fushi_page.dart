@@ -5068,7 +5068,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // The locator describes exact bytes, not merely a same-named library row.
     // Manual cross-episode navigation retains the session, without reusing the
     // original episode's locator or fingerprint for the newly selected file.
-    final CardSourceLink? source = widget.sourceReview;
+    // 远端条目（互联 host）的字节在 host 上，本机没有文件可比指纹：身份由 host 的
+    // bookUid 担保（见 card_source_router 的远端分支），不在这里按本地指纹判死。
+    final CardSourceLink? source = _isRemote ? null : widget.sourceReview;
     if (source != null) {
       bool matches = false;
       try {
@@ -10553,6 +10555,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
+      subtitleProbeLimitMs: _subtitleAlignProbeLimitMs,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
               _canResolveSubtitleAlignAudio
