@@ -1,4 +1,4 @@
-## BUG-3417 · 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项
+## BUG-3429 · 手机字幕取色器被裁且描边关不掉、全局设置缺颜色项
 - **报告**：2026-10-15（用户：应用内反馈 PM-iIH9G0b，vivo V2339FA 384x853dp，带截图）
 - **真实性**：✅ 三条都属实。
   1. **取色器被裁（换不了色系、深色部分看不到）**：`fushi/lib/src/media/video/video_settings_actions.dart:546`（旧）
@@ -22,4 +22,5 @@
   下取色器 `maxScrollExtent == 0`、色板 / 色相条 / Hex 输入全在可见区、无溢出；「无描边」写穿 host 与无 host 的 pref；
   不选色点「完成」不 commit）；`fushi/test/pages/video_settings_schema_guard_test.dart`（颜色行全局可见、不 host 门控、进搜索）。
   变异实测：退回旧布局（固定 300x300）横屏用例 `maxScrollExtent` 为 251 → 红；只禁用横排布局为 23 → 红。
+  补充（PR 审查）：同一用例补跑 Apple 设计系统（sheet 内容区最宽 472，低于旧的「横排需 ≥480」门槛）横屏 → 原实现退回竖排、`maxScrollExtent` 为 5 → 红；改为「竖排压缩 / 横排二选一、取一屏放得下且色板面积更大者」后转绿。
 - **备注**：未在真机复测（反馈机型为 vivo 横屏全屏播放）；widget 测试按反馈机逻辑尺寸与 DPR 2.81 复现。

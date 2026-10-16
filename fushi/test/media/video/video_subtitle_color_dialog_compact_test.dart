@@ -15,16 +15,20 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/video_quick_settings_harness.dart';
 
-Widget _app(Widget home) {
+Widget _app(Widget home, {bool apple = false}) {
   return TranslationProvider(
     child: MaterialApp(
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF006C52)),
+        extensions: <ThemeExtension<dynamic>>[
+          FushiGlassTheme(FushiGlassMaterial.off, glassDesign: apple),
+        ],
       ).copyWith(platform: TargetPlatform.android),
       themeAnimationDuration: Duration.zero,
       locale: const Locale('en'),
@@ -41,10 +45,12 @@ Future<void> _pumpRow(
   Widget Function(SettingsContext context) row, {
   TestVideoHostState? hostState,
   List<VideoSubtitleStyle>? commits,
+  bool apple = false,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       child: _app(
+        apple: apple,
         Scaffold(
           body: Consumer(
             builder: (BuildContext context, WidgetRef ref, Widget? child) {
@@ -91,52 +97,54 @@ void _expectInsideViewport(WidgetTester tester, Finder finder, Rect viewport) {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  for (final Size screen in <Size>[
-    const Size(384, 853), // 反馈机竖屏
-    const Size(853, 384), // 反馈机横屏（视频全屏播放时）
-  ]) {
-    testWidgets('PM-iIH9G0b: color dialog fits on ${screen.width.toInt()}x'
-        '${screen.height.toInt()} without clipping', (
-      WidgetTester tester,
-    ) async {
-      _setScreen(tester, screen);
-      final VideoSheetHarness harness = await VideoSheetHarness.create();
-      addTearDown(harness.dispose);
-      await _pumpRow(
-        tester,
-        harness,
-        buildVideoSubtitleOutlineColorRow,
-        hostState: TestVideoHostState(),
-      );
-      await tester.tap(find.text(t.video_setting_subtitle_outline_color));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: '不得有 RenderFlex 溢出');
+  for (final bool apple in <bool>[false, true]) {
+    for (final Size screen in <Size>[
+      const Size(384, 853), // 反馈机竖屏
+      const Size(853, 384), // 反馈机横屏（视频全屏播放时）
+    ]) {
+      testWidgets('PM-iIH9G0b: color dialog fits on ${screen.width.toInt()}x'
+          '${screen.height.toInt()} without clipping '
+          '(${apple ? 'Apple' : 'MD3'})', (WidgetTester tester) async {
+        _setScreen(tester, screen);
+        final VideoSheetHarness harness = await VideoSheetHarness.create();
+        addTearDown(harness.dispose);
+        await _pumpRow(
+          tester,
+          harness,
+          buildVideoSubtitleOutlineColorRow,
+          hostState: TestVideoHostState(),
+          apple: apple,
+        );
+        await tester.tap(find.text(t.video_setting_subtitle_outline_color));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '不得有 RenderFlex 溢出');
 
-      final Finder pickerScroll = find.descendant(
-        of: find.byType(FushiDialogColorPicker),
-        matching: find.byType(Scrollable),
-      );
-      final ScrollableState scrollable = tester.state(pickerScroll.first);
-      expect(
-        scrollable.position.maxScrollExtent,
-        0,
-        reason: '整块取色器应一屏放下，不依赖被色板吃掉手势的滚动',
-      );
-      final Rect viewport = tester.getRect(pickerScroll.first);
-      final Finder area = find.byType(ColorPickerArea);
-      _expectInsideViewport(tester, area, viewport);
-      expect(
-        tester.getSize(area).height,
-        greaterThanOrEqualTo(FushiDialogColorPicker.minPaletteExtent),
-      );
-      // 色相条 = 换色系；Hex 输入；两者都必须完整可见。
-      _expectInsideViewport(tester, find.byType(ColorPickerSlider), viewport);
-      _expectInsideViewport(tester, find.byType(ColorPickerInput), viewport);
-      // 对话框动作（完成 / 无描边）也在屏内。
-      final Rect done = tester.getRect(find.text(t.dialog_done));
-      expect(done.bottom <= screen.height, isTrue);
-      expect(find.text(t.video_setting_subtitle_no_outline), findsOneWidget);
-    });
+        final Finder pickerScroll = find.descendant(
+          of: find.byType(FushiDialogColorPicker),
+          matching: find.byType(Scrollable),
+        );
+        final ScrollableState scrollable = tester.state(pickerScroll.first);
+        expect(
+          scrollable.position.maxScrollExtent,
+          0,
+          reason: '整块取色器应一屏放下，不依赖被色板吃掉手势的滚动',
+        );
+        final Rect viewport = tester.getRect(pickerScroll.first);
+        final Finder area = find.byType(ColorPickerArea);
+        _expectInsideViewport(tester, area, viewport);
+        expect(
+          tester.getSize(area).height,
+          greaterThanOrEqualTo(FushiDialogColorPicker.minPaletteExtent),
+        );
+        // 色相条 = 换色系；Hex 输入；两者都必须完整可见。
+        _expectInsideViewport(tester, find.byType(ColorPickerSlider), viewport);
+        _expectInsideViewport(tester, find.byType(ColorPickerInput), viewport);
+        // 对话框动作（完成 / 无描边）也在屏内。
+        final Rect done = tester.getRect(find.text(t.dialog_done));
+        expect(done.bottom <= screen.height, isTrue);
+        expect(find.text(t.video_setting_subtitle_no_outline), findsOneWidget);
+      });
+    }
   }
 
   testWidgets('PM-iIH9G0b: "No outline" turns the outline off', (

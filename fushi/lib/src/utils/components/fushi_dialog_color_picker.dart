@@ -15,8 +15,8 @@ import 'package:material_ui/material_ui.dart';
 /// 这里改为由内容区约束反推尺寸：
 /// - 竖排：色板宽取 `min(可用宽, 300)`，高取「可用高 − 色相条/Hex 固定高度」，
 ///   保证色相条和 Hex 输入始终在可见区内；
-/// - 横屏且高度不够竖排、宽度又够时：改用包内横排布局（色板在左、色相条与 Hex
-///   在右），色板高度贴满可用高度。
+/// - 横屏且高度不够全尺寸竖排时：在「竖排压缩」与包内横排布局（色板在左、色相条
+///   与 Hex 在右，色板高度贴满可用高度）之间挑一屏放得下且色板面积更大的那种。
 ///
 /// 外层仍包一层 `SingleChildScrollView` 兜底（超大字号等估算不到的情况可滚动），
 /// 但正常尺寸下整块取色器一屏放得下，不再依赖滚动。
@@ -43,9 +43,6 @@ class FushiDialogColorPicker extends StatelessWidget {
 
   /// 色板最小高度：再小就点不准了，宁可让外层滚动。
   static const double minPaletteExtent = 72;
-
-  /// 横排布局里色板的最小宽度。
-  static const double minSidePaletteWidth = 140;
 
   /// 包内横排布局右栏写死的宽度：`20 + ColorIndicator(50) + 滑条(260) + 10`。
   static const double sideControlsWidth = 340;
@@ -107,27 +104,40 @@ class FushiDialogColorPicker extends StatelessWidget {
     final double portraitExtent = math.min(width, preferredPaletteExtent);
     final bool fitsPortrait =
         !height.isFinite || height >= portraitExtent + chrome;
+    // 竖排压缩色板高度后的色板高（< minPaletteExtent 即竖排一屏放不下）。
+    final double portraitPaletteHeight = height.isFinite
+        ? math.min(height - chrome, portraitExtent)
+        : portraitExtent;
+    // 横排：右栏写死 sideControlsWidth，色板吃剩下的宽、贴满可用高。
+    final double sidePaletteWidth = math.min(
+      width - sideControlsWidth,
+      preferredPaletteExtent,
+    );
+    final double sidePaletteHeight = math.min(height, sidePaletteWidth);
+    // 横屏且竖排放不下全尺寸时，在「竖排压缩」与「横排」里挑**一屏放得下且色板
+    // 面积更大**的那种：只按固定最小宽度判横排，会在对话框内容区偏窄时（Apple
+    // sheet 最宽 520 − 两侧 24 内边距 = 472）退回一屏放不下的竖排，色板又吃掉
+    // 竖向拖动、滚不到色相条（PM-iIH9G0b Apple 设计系统横屏）。
+    final bool sideFits = sidePaletteWidth >= minPaletteExtent;
+    final bool portraitFits = portraitPaletteHeight >= minPaletteExtent;
     final bool side =
         landscape &&
         !fitsPortrait &&
-        width >= sideControlsWidth + minSidePaletteWidth;
+        sideFits &&
+        (!portraitFits ||
+            sidePaletteWidth * sidePaletteHeight >=
+                portraitExtent * portraitPaletteHeight);
     if (side) {
-      final double paletteWidth = math.min(
-        width - sideControlsWidth,
-        preferredPaletteExtent,
-      );
-      final double paletteHeight = height
-          .clamp(minPaletteExtent, paletteWidth)
-          .toDouble();
       return _picker(
         portraitOnly: false,
-        paletteWidth: paletteWidth,
-        paletteHeight: paletteHeight,
+        paletteWidth: sidePaletteWidth,
+        paletteHeight: math.max(sidePaletteHeight, minPaletteExtent),
       );
     }
-    final double paletteHeight = height.isFinite
-        ? (height - chrome).clamp(minPaletteExtent, portraitExtent).toDouble()
-        : portraitExtent;
+    final double paletteHeight = math.max(
+      portraitPaletteHeight,
+      math.min(minPaletteExtent, portraitExtent),
+    );
     return _picker(
       portraitOnly: true,
       paletteWidth: portraitExtent,
