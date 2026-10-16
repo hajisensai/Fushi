@@ -7,4 +7,5 @@
   - **根因 2**：`setDefaultFocusHighlightEnabled` 是**逐 view** 属性，BUG-195 / BUG-438 只设在 decorView 上，真正持焦的全屏 FlutterView 仍是默认 true，系统在它身上画默认焦点框 = 屏幕最外缘一圈。修复点 `MainActivity.java:177`（`disableSystemFocusHighlight` 改为同时设 FlutterView、当前焦点 view，并挂全局焦点监听给之后获焦的 view 关掉）。与「显示焦点框」设置无关（那是 Flutter 自绘焦点环）。
 - **[x] ① 已修复** — `MainActivity.java`：`ensureKeyFocusTarget()`（无聚焦 view 时把焦点交给 FlutterView 再分发）+ `disableSystemFocusHighlight()` 覆盖 FlutterView 与后续获焦 view。提交见 PR。
 - **[x] ② 已加自动化测试** — 源码守卫 `fushi/test/build/android_gamepad_key_focus_guard_test.dart`（Java 侧无单测宿主；钉死「super 之前补焦点」「只在无焦点时补」「FlutterView 关系统焦点框」）。
-- **备注**：真机（vivo）未验证，本机没有 adb 真机；验证在模拟器 + uinput 虚拟手柄上做。
+- **真机复现（修复前，小米平板 5 / MIUI，装机为现行发布版）**：冷启动后 `mInTouchMode=true`、FlutterView 无焦点；进统计页后 `input keyevent --source gamepad KEYCODE_BUTTON_B`，logcat `MIUIInput` 记录到投给 Fushi 窗口的 `KEYCODE_BACK`（`flags=0x400` = FLAG_FALLBACK），统计页被系统返回关掉；先注入 BUTTON_A 后 `mInTouchMode=false`、FlutterView 获焦，再按 B 不再出现兜底 BACK。MIUI 上 FlutterView 获焦后截图四边未见系统焦点框（该框随 ROM 而异，模拟器为绿色 4px，用户 vivo 为淡框）。
+- **备注**：修复版**未在真机上装机验证**——真机装的是发布签名包，本机 debug 签名不同，覆盖安装需卸载清数据，不做；带 `applicationIdSuffix` 的并行测试包需要一次完整 APK 构建，本次两次整包构建都卡在原生 cmake 阶段（与本改动无关）。修复侧只验证了 `:app:compileDebugJavaWithJavac` 编译通过 + 源码守卫测试。
