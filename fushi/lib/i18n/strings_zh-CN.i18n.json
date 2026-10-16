@@ -8093,5 +8093,12 @@
   "onboarding_finish_review_title": "在「复习」里复习",
   "onboarding_finish_review_desc": "制的卡会进入底栏的「复习」页，到期的卡在那里等你复习。",
   "onboarding_finish_import_title": "导入已有的 Anki 牌组",
-  "onboarding_finish_import_desc": "在「复习」页顶栏点「导入」，选择从 Anki 导出的 .apkg 或 .colpkg 文件。"
+  "onboarding_finish_import_desc": "在「复习」页顶栏点「导入」，选择从 Anki 导出的 .apkg 或 .colpkg 文件。",
+  "home_srs_panel_start": "开始复习",
+  "home_srs_panel_done": "今日已完成",
+  "settings_section_home_panels": "首页面板",
+  "home_panel_mode_auto": "自动",
+  "home_panel_mode_shown": "显示",
+  "home_panel_mode_hidden": "隐藏",
+  "home_panel_srs_hint": "自动：制卡发往 Fushi 复习或已有复习卡时显示"
 }

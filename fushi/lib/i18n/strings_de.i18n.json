@@ -7574,7 +7574,7 @@
   "db_legacy_schema_release_open": "Open the Fushi v$version download page",
   "migration_import_legacy_title": "Import Hibiki data with Fushi v$version",
   "migration_import_legacy_message": "Data exported by the old Hibiki app is too old for this version to import directly. Nothing has been changed, and the exported files are kept. To migrate: 1. Uninstall this Fushi. Android will not install an older version over a newer one, and a freshly installed Fushi holds no data yet (if you have already added data, back it up first). 2. Install Fushi v$version, the bridge release that still contains the full upgrade path. 3. Run \"Import from Hibiki\" in it. 4. Update to the current version.",
-  "nav_srs": "Review",
+  "nav_srs": "Wiederholen",
   "srs_module_switch_hint": "Fushi's built-in spaced repetition: decks, FSRS-7 scheduling, review on any device",
   "srs_import": "Import",
   "srs_count_new": "New",
@@ -8093,5 +8093,12 @@
   "onboarding_finish_review_title": "Review on the Review tab",
   "onboarding_finish_review_desc": "Cards you make land on the Review tab; cards that are due wait for you there.",
   "onboarding_finish_import_title": "Bring your Anki decks",
-  "onboarding_finish_import_desc": "On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki."
+  "onboarding_finish_import_desc": "On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.",
+  "home_srs_panel_start": "Lernen",
+  "home_srs_panel_done": "Für heute fertig",
+  "settings_section_home_panels": "Startseiten-Panels",
+  "home_panel_mode_auto": "Automatisch",
+  "home_panel_mode_shown": "Anzeigen",
+  "home_panel_mode_hidden": "Ausblenden",
+  "home_panel_srs_hint": "Automatisch sichtbar, sobald du in die Fushi-Wiederholung minst oder Karten hast"
 }

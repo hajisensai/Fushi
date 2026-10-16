@@ -229,6 +229,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 元素是 `HiddenRemoteBook` 的 JSON（来源身份 / 互联对端身份 / 远端身份键 / 书名）。设备本地（见
   // SyncRepository 的设备本地清单）：别的设备恢复备份不该把这台的隐藏带过去。
   'hidden_remote_books',
+  // String（JSON map，默认空）：首页 dashboard 各面板的显示档 `{面板 id: auto /
+  // shown / hidden}`，缺省 = auto（按面板自己的默认判据）。见
+  // models/home_dashboard_panel.dart 的 [HomeDashboardPanel]。随 Profile 走。
+  'home_dashboard_panels',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举
   // 条目。几十万条目的公共 Emby 服上自动枚举会被当成爬虫，关掉后改由下拉刷新手动触发。
   'jellyfin_auto_list_videos',

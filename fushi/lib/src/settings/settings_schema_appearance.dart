@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -404,6 +405,20 @@ SettingsDestination buildAppearanceDestination() {
             if (homeTabOfModule(module) == null) _moduleSwitch(module),
         ],
       ),
+      // 「首页面板」：首页 dashboard 上按用户情况出现的可选面板
+      // （[HomeDashboardPanel] 注册表），每个面板一行 自动 / 显示 / 隐藏。首页
+      // 模块关着时整段隐藏；面板所属模块关着时那一行隐藏。
+      SettingsSection(
+        id: 'appearance.section.home_panels',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_section_home_panels,
+        visible: (SettingsContext c) =>
+            c.appModel.moduleVisibility.isEnabled(ModuleId.home),
+        items: <SettingsItem>[
+          for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
+            _homePanelModeItem(panel),
+        ],
+      ),
       SettingsSection(
         id: 'appearance.section.navigation',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -512,5 +527,49 @@ SettingsDestination buildAppearanceDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「首页面板」分区里一个面板的显示档（自动 / 显示 / 隐藏）。
+SettingsItem _homePanelModeItem(HomeDashboardPanel panel) {
+  final (
+    String title,
+    String hint,
+    IconData icon,
+    ModuleId module,
+  ) = switch (panel) {
+    HomeDashboardPanel.srsReview => (
+      t.nav_srs,
+      t.home_panel_srs_hint,
+      FushiIcons.repeat,
+      ModuleId.srs,
+    ),
+  };
+  return SettingsSegmentedItem<HomeDashboardPanelMode>(
+    id: 'appearance.home_panel.${panel.id}',
+    title: title,
+    subtitle: hint,
+    icon: icon,
+    visible: (SettingsContext c) =>
+        c.appModel.moduleVisibility.isEnabled(module),
+    options: <SettingsSegmentOption<HomeDashboardPanelMode>>[
+      SettingsSegmentOption<HomeDashboardPanelMode>(
+        value: HomeDashboardPanelMode.auto,
+        label: t.home_panel_mode_auto,
+      ),
+      SettingsSegmentOption<HomeDashboardPanelMode>(
+        value: HomeDashboardPanelMode.shown,
+        label: t.home_panel_mode_shown,
+      ),
+      SettingsSegmentOption<HomeDashboardPanelMode>(
+        value: HomeDashboardPanelMode.hidden,
+        label: t.home_panel_mode_hidden,
+      ),
+    ],
+    selected: (SettingsContext c) => c.appModel.homeDashboardPanelMode(panel),
+    onChanged: (SettingsContext c, HomeDashboardPanelMode value) => c.appModel
+        .setHomeDashboardPanelMode(panel, value)
+        .then((_) => c.refresh()),
+    defaultValue: HomeDashboardPanelMode.auto,
   );
 }

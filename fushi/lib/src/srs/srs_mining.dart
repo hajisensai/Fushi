@@ -640,11 +640,17 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
     required super.inner,
     required SrsMinerResolver miner,
     SrsNoteOpener? openNote,
+    void Function()? onCardsAdded,
   }) : _miner = miner,
-       _openNote = openNote;
+       _openNote = openNote,
+       _onCardsAdded = onCardsAdded;
 
   final SrsMinerResolver _miner;
   final SrsNoteOpener? _openNote;
+
+  /// 制卡成功写进复习后调用（装配处递增 `srsRevisionProvider`，牌组列表与首页
+  /// 复习条的计数随之重读）。
+  final void Function()? _onCardsAdded;
 
   /// 本仓库读到过的「出处 → 复习笔记」（[readSourceNote] 命中复习时记下），
   /// [prepareSourceNoteFields] 据此决定按哪条笔记的类型渲染。
@@ -675,11 +681,13 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   }) async {
     final SrsMiner? miner = await _miner();
     if (miner == null) return MineOutcome.failure(_unavailable);
-    return miner.mine(
+    final MineOutcome outcome = await miner.mine(
       settings: await inner.loadSettings(),
       rawPayloadJson: rawPayloadJson,
       context: context,
     );
+    if (outcome.result == MineResult.success) _onCardsAdded?.call();
+    return outcome;
   }
 
   @override

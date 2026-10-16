@@ -51,6 +51,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/export_directory.dart';
@@ -8293,6 +8294,24 @@ class AppModel with ChangeNotifier {
       : SrsMiningTarget.fromWire(_prefsRepo!.srsMiningTarget);
   Future<void> setSrsMiningTarget(SrsMiningTarget target) =>
       prefsRepo.setSrsMiningTarget(target.wire);
+
+  // 首页 dashboard 面板显示档（透传 prefsRepo）。可空读：prefs 未装配 = 全部 auto。
+  HomeDashboardPanelMode homeDashboardPanelMode(HomeDashboardPanel panel) =>
+      decodeHomeDashboardPanelModes(_prefsRepo?.homeDashboardPanels ?? '')[
+          panel] ??
+      HomeDashboardPanelMode.auto;
+  Future<void> setHomeDashboardPanelMode(
+    HomeDashboardPanel panel,
+    HomeDashboardPanelMode mode,
+  ) =>
+      prefsRepo.setHomeDashboardPanels(
+        encodeHomeDashboardPanelModes(
+          <HomeDashboardPanel, HomeDashboardPanelMode>{
+            ...decodeHomeDashboardPanelModes(prefsRepo.homeDashboardPanels),
+            panel: mode,
+          },
+        ),
+      );
 
   // 复习卡面外观（透传 prefsRepo）。可空读：prefs 未装配 = 模板默认外观。
   SrsCardAppearance get srsCardAppearance =>

@@ -7574,7 +7574,7 @@
   "db_legacy_schema_release_open": "開啟 Fushi v$version 下載頁",
   "migration_import_legacy_title": "請用 Fushi v$version 匯入 Hibiki 資料",
   "migration_import_legacy_message": "舊版 Hibiki 匯出的資料太舊，目前版本無法直接匯入。沒有任何資料被改動，匯出檔案也已保留。遷移步驟：1. 解除安裝目前的 Fushi——Android 不允許在新版本上直接安裝舊版本，而新裝的 Fushi 本來就是空資料庫（如果已經加入過資料，請先備份）。2. 安裝 Fushi v$version（仍帶完整升級路徑的橋接版本）。3. 在其中執行「從 Hibiki 匯入」。4. 再更新到目前版本。",
-  "nav_srs": "Review",
+  "nav_srs": "複習",
   "srs_module_switch_hint": "Fushi's built-in spaced repetition: decks, FSRS-7 scheduling, review on any device",
   "srs_import": "Import",
   "srs_count_new": "New",
@@ -8093,5 +8093,12 @@
   "onboarding_finish_review_title": "Review on the Review tab",
   "onboarding_finish_review_desc": "Cards you make land on the Review tab; cards that are due wait for you there.",
   "onboarding_finish_import_title": "Bring your Anki decks",
-  "onboarding_finish_import_desc": "On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki."
+  "onboarding_finish_import_desc": "On the Review page, tap Import in the top bar and pick an .apkg or .colpkg file exported from Anki.",
+  "home_srs_panel_start": "開始複習",
+  "home_srs_panel_done": "今日已完成",
+  "settings_section_home_panels": "首頁面板",
+  "home_panel_mode_auto": "自動",
+  "home_panel_mode_shown": "顯示",
+  "home_panel_mode_hidden": "隱藏",
+  "home_panel_srs_hint": "自動：製卡發往 Fushi 複習或已有複習卡時顯示"
 }

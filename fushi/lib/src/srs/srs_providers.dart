@@ -237,9 +237,30 @@ class SrsDeckListData {
   /// 同步冲突（标志 / 设置类）+ 待裁决笔记，合计。
   final int conflictCount;
 
-  int get totalCards => decks.fold<int>(
+  int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
+
+  /// 今日新卡 / 学习中 / 到期：顶层牌组行上的计数之和（顶层行已含全部子牌组，
+  /// 与牌组列表显示的数字同一口径；首页复习条读这三个）。
+  int get todayNew => _sumRoots((SrsDeckSummary d) => d.newCount);
+  int get todayLearn => _sumRoots((SrsDeckSummary d) => d.learnCount);
+  int get todayReview => _sumRoots((SrsDeckSummary d) => d.reviewCount);
+
+  /// 今天还有没有可复习的卡（三种计数任一非零）。
+  bool get hasWorkToday => todayNew + todayLearn + todayReview > 0;
+
+  /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡的顶层牌组；没有时为 null。
+  SrsDeckSummary? get firstRootWithWork {
+    for (final SrsDeckSummary d in decks) {
+      if (d.depth == 0 && d.newCount + d.learnCount + d.reviewCount > 0) {
+        return d;
+      }
+    }
+    return null;
+  }
+
+  int _sumRoots(int Function(SrsDeckSummary d) pick) => decks.fold<int>(
     0,
-    (int sum, SrsDeckSummary d) => d.depth == 0 ? sum + d.totalCards : sum,
+    (int sum, SrsDeckSummary d) => d.depth == 0 ? sum + pick(d) : sum,
   );
 }
 

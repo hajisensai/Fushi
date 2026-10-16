@@ -667,9 +667,12 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
 /// 包在待发队列**外面**：SRS 是本机写入，不该因为 Anki 连不上被冻进队列。
 BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
   if (!ref.watch(srsMiningToReviewProvider)) return repo;
+  // 制卡写进复习后递增刷新信号：牌组列表与首页复习条的计数随之重读。
+  final StateController<int> revision = ref.read(srsRevisionProvider.notifier);
   return SrsMiningAnkiRepository(
     inner: repo,
     miner: () => _readSrsMiner(ref),
+    onCardsAdded: () => revision.state++,
     // 「打开笔记」= 复习的笔记编辑页（复习模块开着时 SrsAppHost 已装上）。
     openNote: (String noteId) async =>
         await SrsAppHost.current?.openNote(noteId) ?? false,
