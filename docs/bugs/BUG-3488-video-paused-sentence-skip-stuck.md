@@ -1,4 +1,4 @@
-## BUG-3453 · 视频暂停时上/下一句跳不动，字幕约 2 秒后弹回原句
+## BUG-3488 · 视频暂停时上/下一句跳不动，字幕约 2 秒后弹回原句
 - **报告**：2026-10-17（用户：应用内反馈 kGkpsMzkpZ / lij_Ydf-ME，Android vivo V2339FA，2.10.0-debug.19358，违国日记 13 集 8:20，Aniyomi 在线源）
 - **真实性**：✅ 真 bug（沿代码路径定位；录屏里按「下一句」后字幕先换成下一句、约 2 秒后弹回原句、画面不变，与下述机制吻合）。
   - 根因 `fushi/lib/src/media/video/video_player_controller.dart` `_applySeekTargetSnap`（修前 4119-4121 行）：[skipToCue] 置跳转目标快照 `_seekTargetCueIndex` 并充 16 拍（2 秒）在途宽限；tick 读到的位置仍是跳转前旧位置时，每拍无条件扣一格宽限。**暂停态**下 media_kit 的 position 不推进，在线流 seek 要先拉目标分片、长 GOP 要解到目标帧，回报常超过 2 秒——宽限耗尽即清快照，字幕按旧位置弹回原句。

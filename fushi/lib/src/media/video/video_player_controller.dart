@@ -886,7 +886,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 取 16 次 × 125ms = **2 秒**——足够覆盖绝大多数 seek 落地延迟，又远小于
   /// [_restoreGuardGraceTicks]（10 秒）：保护只覆盖「这一次跳转的 seek 在途」短瞬，
   /// 真落地后由「首次进入引导窗口」立即作废，不会拖到 2 秒。永不落地时 2 秒后放弃保护。
-  /// 只在**播放态**消耗：暂停态 position 不推进，等多久都不代表 seek 失败（BUG-3453）。
+  /// 只在**播放态**消耗：暂停态 position 不推进，等多久都不代表 seek 失败（BUG-3488）。
   static const int _seekSnapGraceTicks = 16;
 
   /// 普通 seek「落地判据」容差（ms）：播放态下真实 position 进入 `[目标 − 本容差,
@@ -4118,7 +4118,7 @@ class VideoPlayerController extends ChangeNotifier
     // 「用户手动 seek 拉走」与「skipToCue 在途」分开——手动 seek 清快照后 target==null 提前
     // 返回，走不到这里，故这里的宽限保护只作用于 skipToCue 自己的在途 seek。
     //
-    // **暂停态不消耗宽限（BUG-3453）**：暂停时 media_kit 的 position 不推进，seek 回报
+    // **暂停态不消耗宽限（BUG-3488）**：暂停时 media_kit 的 position 不推进，seek 回报
     // 可能要等很久（在线流要先拉到目标分片、长 GOP 要解到目标帧）——这期间 tick 读到的
     // 一直是跳转前的旧位置，与「seek 落地失败」毫无关系。旧实现照样每拍扣一格，2 秒后
     // 清快照、字幕弹回原句；用户再按「下一句」时锚点已丢、按旧位置又算出同一个目标，

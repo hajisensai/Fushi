@@ -1811,7 +1811,7 @@ void main() {
         _cue(1, 5000, 6000),
       ]);
       await c.skipToCue(c.cues[1]); // 目标=1，窗口 [4820,5000)
-      // 宽限只在播放态消耗（BUG-3453：暂停态 position 不推进，不算 seek 失败）。
+      // 宽限只在播放态消耗（BUG-3488：暂停态 position 不推进，不算 seek 失败）。
       c.debugSetIsPlayingForTesting(true);
       // 喂「宽限格数 + 余量」次 stale tick（都在首句区间、远早于窗口）：耗尽宽限。
       final int grace = VideoPlayerController.debugSeekSnapGraceTicks;
@@ -1823,7 +1823,7 @@ void main() {
       expect(c.currentCueIndex, 0, reason: '退回纯位置推导，高亮真实位置 cue0');
     });
 
-    // BUG-3453：暂停时按「下一句」，在线流 / 长 GOP 的 seek 回报可能要好几秒，暂停态
+    // BUG-3488：暂停时按「下一句」，在线流 / 长 GOP 的 seek 回报可能要好几秒，暂停态
     // position 一直停在跳转前的旧位置。旧实现照样每拍扣宽限，2 秒后清快照 → 字幕弹回
     // 原句；再按「下一句」锚点已丢、按旧位置又算出同一个目标 → 「这句跳不动、狂点才过去」。
     // 撤掉 _applySeekTargetSnap 里的 `if (isPlaying)` 此测试转红。
