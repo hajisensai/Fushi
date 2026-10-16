@@ -3,10 +3,9 @@
 // 内存库 + 确定性假排程内核（真实数值由 packages/fushi_srs 的 FFI 测试覆盖）；
 // widget 测试里没有 WebView，卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
-import 'dart:math' as math;
-
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -253,20 +252,15 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('[$ds] 牌组列表手机宽度：各层牌组名（含深层子牌组）都有可读宽度、不溢出', (
+    testWidgets('[$ds] 牌组列表手机竖屏（412 宽，三级嵌套）：每级名字完整可见、行紧凑、长按出菜单', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
-      final List<String> ids = <String>[];
       await tester.runAsync(() async {
-        ids.add(await store.ensureDeckPath('Japanese::Novel vocab'));
-        ids.add(await store.ensureDeckPath('Japanese::Novel vocab::Book one'));
-        ids.add(
-          await store.ensureDeckPath(
-            'Japanese::Novel vocab::Book one::Chapter 3::Part B',
-          ),
-        );
-        ids.add(await store.ensureDeckPath('Kanji writing'));
+        await store.ensureDeckPath('Lapis');
+        for (final String leaf in <String>['Vocabulary', 'N3', 'Kanji']) {
+          await store.ensureDeckPath('Spark::JP-Mining-Note::$leaf');
+        }
       });
       await _addLapis(tester, store, '食べる');
       await _pumpPage(
@@ -274,27 +268,70 @@ void main() {
         store: store,
         apple: apple,
         page: const SrsDeckListPage(),
-        size: const Size(390, 844),
+        size: const Size(412, 915),
       );
       expect(tester.takeException(), isNull, reason: '窄屏行不溢出');
       for (final String name in <String>[
         'Default',
-        'Japanese',
-        'Novel vocab',
-        'Book one',
-        'Chapter 3',
-        'Part B',
-        'Kanji writing',
+        'Lapis',
+        'Spark',
+        'JP-Mining-Note',
+        'Vocabulary',
+        'N3',
+        'Kanji',
       ]) {
         final Finder title = find.text(name);
         expect(title, findsOneWidget, reason: '$name 在列表里');
-        // 标题区至少能放下约 5 个字（此前手机上被挤到只剩「De…」甚至 0 宽）。
+        // 名字完整排下（不是只剩省略号）：此前真机上二级只剩「JP-…」、三级完全不显示。
+        final RenderParagraph p = tester.renderObject<RenderParagraph>(title);
+        expect(p.didExceedMaxLines, isFalse, reason: '$name 没被省略号截断');
+        expect(p.size.width, greaterThan(0), reason: '$name 有宽度');
+      }
+      // 紧凑：单行名的行高不超过 56（改前每行 ~76，一屏只放得下约 8 行）。
+      final Finder rows = find.byWidgetPredicate(
+        (Widget w) =>
+            w.key is ValueKey<String> &&
+            (w.key! as ValueKey<String>).value.startsWith('srs-deck-') &&
+            !(w.key! as ValueKey<String>).value.contains('toggle'),
+      );
+      expect(rows, findsNWidgets(7));
+      for (final Element e in rows.evaluate()) {
         expect(
-          tester.getSize(title).width,
-          greaterThanOrEqualTo(math.min(80, name.length * 8.0)),
-          reason: '$name 的标题宽度',
+          tester.getSize(find.byWidget(e.widget)).height,
+          lessThanOrEqualTo(56),
+          reason: '窄屏单行牌组行高',
         );
       }
+      // 窄屏不画行尾「⋯」，长按行弹出同一份牌组菜单。
+      expect(find.byTooltip(t.srs_deck_menu), findsNothing);
+      await tester.longPress(find.text('Vocabulary'));
+      await _settle(tester);
+      expect(find.text(t.srs_deck_rename), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表宽屏：保留图标、三列计数与行尾「⋯」', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(
+        () => store.ensureDeckPath('Spark::JP-Mining-Note::Vocabulary'),
+      );
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
+        ),
+        findsNWidgets(4),
+        reason: '宽屏每行保留行尾「⋯」',
+      );
       await _unmount(tester);
     });
 

@@ -636,6 +636,15 @@ class _DeckRow extends StatelessWidget {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
+    // 菜单键 / Shift+F10：窄屏没有「⋯」按钮时键盘也能打开牌组菜单。
+    if (event is KeyDownEvent &&
+        (event.logicalKey == LogicalKeyboardKey.contextMenu ||
+            (event.logicalKey == LogicalKeyboardKey.f10 &&
+                HardwareKeyboard.instance.isShiftPressed))) {
+      final BuildContext? rowContext = node.context;
+      if (rowContext != null) unawaited(_showMenuFor(rowContext));
+      return KeyEventResult.handled;
+    }
     final bool left = event.logicalKey == LogicalKeyboardKey.arrowLeft;
     final bool right = event.logicalKey == LogicalKeyboardKey.arrowRight;
     if (!left && !right) return KeyEventResult.ignored;
@@ -645,8 +654,14 @@ class _DeckRow extends StatelessWidget {
     return KeyEventResult.handled;
   }
 
-  /// 行宽低于此值按窄屏排：手机竖屏（~350 行宽）下宽屏排法的行首（缩进 + 48 箭头
-  /// + 40 图标）与行尾（三计数 + ⋮）合计 ~280，标题被挤到只剩一两个字甚至 0 宽。
+  /// 行宽低于此值按窄屏（手机竖屏）排：宽屏排法的行首（缩进 + 48 箭头 + 40 图标）
+  /// 与行尾（三计数 + ⋮）合计 ~280，标题被挤到只剩一两个字甚至 0 宽（真机实拍：
+  /// 三级子牌组名完全不显示，一屏只放得下 8 行）。窄屏排法对齐 AnkiDroid 牌组列表
+  /// 的密度：
+  /// - 行高收到 48（单行名），无装饰图标、缩进封顶；
+  /// - 三计数收成紧凑的一小块（窄数字列、小间距）；
+  /// - 不画行尾「⋯」：长按 / 右键 / 菜单键弹出同一份牌组菜单（AnkiDroid 同款）；
+  /// - 牌组名可折两行，永远优先拿宽度。
   static const double compactBelow = 480;
 
   /// 窄屏每层缩进与封顶层数：深层子牌组不再无限右移吃掉标题宽度。
@@ -708,6 +723,49 @@ class _DeckRow extends StatelessWidget {
         _buildRow(context, compact: constraints.maxWidth < compactBelow),
   );
 
+  List<PopupMenuEntry<_DeckAction>> _menuItems() =>
+      <PopupMenuEntry<_DeckAction>>[
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.addChild,
+          child: Text(t.srs_deck_new_child),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.rename,
+          child: Text(t.srs_deck_rename),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.settings,
+          child: Text(t.srs_deck_settings),
+        ),
+        if (!isDefault)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.delete,
+            child: Text(t.srs_deck_delete),
+          ),
+      ];
+
+  /// 窄屏没有行尾「⋯」：长按 / 右键 / 菜单键在行的位置弹出同一份菜单。
+  Future<void> _showMenuFor(BuildContext rowContext, {Offset? at}) async {
+    final RenderBox? box = rowContext.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        Navigator.of(rowContext).overlay?.context.findRenderObject()
+            as RenderBox?;
+    if (box == null || overlay == null || !box.hasSize) return;
+    final Rect rowRect =
+        box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
+    final Offset anchor = at ?? rowRect.centerRight;
+    final _DeckAction? picked = await showFushiMenu<_DeckAction>(
+      context: rowContext,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, rowRect.top, 0, rowRect.height),
+        Offset.zero & overlay.size,
+      ),
+      semanticLabel: t.srs_deck_menu,
+      items: _menuItems(),
+    );
+    if (picked != null) onAction(deck, picked);
+  }
+
   Widget _buildRow(BuildContext context, {required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? note = srsNewBudgetNote(deck.newBudget);
@@ -720,56 +778,65 @@ class _DeckRow extends StatelessWidget {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _onKey,
-        child: FushiPressScale(
-          child: FushiGroupedListItem(
-            index: index,
-            count: count,
-            onTap: () => onOpen(deck),
-            child: FushiListItem(
-              leading: _leading(tokens, compact: compact),
-              // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
-              titleMaxLines: compact ? 2 : 1,
-              title: FushiTooltip(
-                message: deck.fullName,
-                child: Text(deck.deck.name),
-              ),
-              subtitle: note == null ? null : Text(note),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: compact ? 0 : tokens.spacing.gap / 2,
-                children: <Widget>[
-                  SrsCountTriple(
-                    dense: compact,
-                    newCount: deck.newCount,
-                    learnCount: deck.learnCount,
-                    reviewCount: deck.reviewCount,
-                  ),
-                  FushiPopupMenuButton<_DeckAction>(
-                    tooltip: t.srs_deck_menu,
-                    icon: const FushiIcon(FushiIcons.more),
-                    onSelected: (_DeckAction a) => onAction(deck, a),
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<_DeckAction>>[
-                          PopupMenuItem<_DeckAction>(
-                            value: _DeckAction.addChild,
-                            child: Text(t.srs_deck_new_child),
+        child: Builder(
+          builder: (BuildContext rowContext) => FushiPressScale(
+            child: FushiGroupedListItem(
+              index: index,
+              count: count,
+              onTap: () => onOpen(deck),
+              onLongPress: compact
+                  ? () => unawaited(_showMenuFor(rowContext))
+                  : null,
+              onSecondaryTap: () => unawaited(_showMenuFor(rowContext)),
+              child: FushiListItem(
+                density: compact
+                    ? FushiListDensity.compact
+                    : FushiListDensity.standard,
+                // 窄屏：上下不再额外留白，行高由 48 见方的折叠箭头 / 单行名撑起。
+                padding: compact
+                    ? EdgeInsets.symmetric(
+                        horizontal: tokens.spacing.rowHorizontal - 4,
+                        vertical: tokens.spacing.gap / 4,
+                      )
+                    : null,
+                minHeight: compact ? kMinInteractiveDimension : null,
+                leading: _leading(tokens, compact: compact),
+                // 窄屏放宽到两行：列表高度自由，长牌组名换行而不是只剩省略号。
+                titleMaxLines: compact ? 2 : 1,
+                // 窄屏不包完整路径的提示气泡：触屏上长按会先被气泡吃掉，弹不出
+                // 牌组菜单；名字本身可折两行完整显示，层级由缩进表达。
+                title: compact
+                    ? Text(deck.deck.name)
+                    : FushiTooltip(
+                        message: deck.fullName,
+                        child: Text(deck.deck.name),
+                      ),
+                subtitle: note == null ? null : Text(note),
+                trailing: compact
+                    ? SrsCountTriple(
+                        dense: true,
+                        tight: true,
+                        newCount: deck.newCount,
+                        learnCount: deck.learnCount,
+                        reviewCount: deck.reviewCount,
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: tokens.spacing.gap / 2,
+                        children: <Widget>[
+                          SrsCountTriple(
+                            newCount: deck.newCount,
+                            learnCount: deck.learnCount,
+                            reviewCount: deck.reviewCount,
                           ),
-                          PopupMenuItem<_DeckAction>(
-                            value: _DeckAction.rename,
-                            child: Text(t.srs_deck_rename),
+                          FushiPopupMenuButton<_DeckAction>(
+                            tooltip: t.srs_deck_menu,
+                            icon: const FushiIcon(FushiIcons.more),
+                            onSelected: (_DeckAction a) => onAction(deck, a),
+                            itemBuilder: (BuildContext context) => _menuItems(),
                           ),
-                          PopupMenuItem<_DeckAction>(
-                            value: _DeckAction.settings,
-                            child: Text(t.srs_deck_settings),
-                          ),
-                          if (!isDefault)
-                            PopupMenuItem<_DeckAction>(
-                              value: _DeckAction.delete,
-                              child: Text(t.srs_deck_delete),
-                            ),
                         ],
-                  ),
-                ],
+                      ),
               ),
             ),
           ),
