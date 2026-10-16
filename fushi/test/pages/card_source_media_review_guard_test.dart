@@ -49,7 +49,7 @@ void main() {
       stop,
     );
     final int stopRequest = video.indexOf(
-      'stopClient.stopRemoteVideoPlayback(',
+      '_remoteReportGate.stop(stopClient,',
       stop,
     );
     expect(stopGuard, greaterThan(stop));
@@ -57,18 +57,57 @@ void main() {
   });
 
   test(
-    'review rejects external negotiation before opening a playback session',
+    'BUG-3490 remote review streams directly; every server report is gated',
     () {
+      // 回看远端视频不再要求先下载：起播协商前不得有回看拦截。
       final int load = video.indexOf('Future<void> _loadRemoteEpisode(');
-      final int policy = video.indexOf('if (_sourceReviewActive)', load);
       final int request = video.indexOf(
         'await client.remoteVideoStreamUrls(',
         load,
       );
-      expect(policy, greaterThan(load));
-      expect(policy, lessThan(request));
-      expect(video.substring(policy, request), contains('return;'));
+      expect(load, greaterThan(0));
+      expect(request, greaterThan(load));
+      expect(
+        video.substring(load, request),
+        isNot(contains('card_source_review_local_required')),
+      );
       expect(video, contains('autoPlay: !_sourceReviewActive'));
+      // 改服务器进度的四类上报只能经回看闸门发出，页面不得直调 client。
+      for (final String direct in <String>[
+        'client.putRemoteVideoPosition(',
+        '.startRemoteVideoPlayback(',
+        '.setRemoteVideoPlaybackPaused(',
+        '.stopRemoteVideoPlayback(',
+      ]) {
+        expect(video, isNot(contains(direct)), reason: direct);
+      }
+      for (final String gated in <String>[
+        '_remoteReportGate.position(',
+        '_remoteReportGate.start(',
+        '.paused(session, info.id, positionMs, paused: !playing)',
+        '_remoteReportGate.stop(',
+      ]) {
+        expect(video, contains(gated), reason: gated);
+      }
+      expect(
+        video,
+        contains(
+          'SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive)',
+        ),
+      );
+      // 「从这里继续观看」补发起播，且每次起播只发一次 Start。
+      final int resume = video.indexOf('void _playAfterSourceReviewIfReady()');
+      final int resumeEnd = video.indexOf('ExitFlushCallback?', resume);
+      expect(
+        video.substring(resume, resumeEnd),
+        contains('_startRemotePlaybackSession('),
+      );
+      final int start = video.indexOf('void _startRemotePlaybackSession(');
+      final int startSend = video.indexOf('_remoteReportGate.start(', start);
+      expect(
+        video.substring(start, startSend),
+        contains('if (_lastReportedRemotePlaying != null) return;'),
+      );
       final int streamBook = video.indexOf('if (isStreamVideoBook(row))');
       final int earlyGuard = video.indexOf(
         'if (_sourceReviewActive)',

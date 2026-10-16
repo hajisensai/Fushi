@@ -84,6 +84,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
+import 'package:fushi/src/media/video/source_review_remote_report_gate.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
@@ -2267,6 +2268,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           widget.sourceReviewSession?.isReview ??
           (widget.sourceReview != null && !_reviewContinued));
 
+  /// 回看期间压住一切远端进度 / 会话上报（BUG-3490）：回看直接串流，「不影响服务器
+  /// 进度」由这道闸门保证，不再要求先下载。
+  late final SourceReviewRemoteReportGate _remoteReportGate =
+      SourceReviewRemoteReportGate(isReview: () => _sourceReviewActive);
+
   @override
   void recordLookup() {
     if (_sourceReviewActive) return;
@@ -2310,6 +2316,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _sourceReviewPlayPending = false;
     _ensureWatchTracker(controller, _title ?? '');
+    // BUG-3490：远端回看的起播上报被闸门压住了；「从这里继续观看」才是这次正常观看的
+    // 起点，在此补发起播（之后的暂停 / 心跳 / 停止才有会话可挂）。
+    final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+    final RemoteVideoInfo? remoteInfo = _effectiveRemoteInfo;
+    if (remoteClient != null && remoteInfo != null) {
+      _startRemotePlaybackSession(
+        remoteClient,
+        remoteInfo,
+        controller.positionMs ?? 0,
+      );
+    }
     unawaited(controller.play());
     unawaited(controller.flushPosition());
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.chromeToggled);
@@ -3932,17 +3949,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     // 新一次起播：暂停上报的基线随会话重置（起播上报本身带 IsPaused=false）。
     _lastReportedRemotePlaying = null;
-    // Remote negotiation may report Started/Played, and no transport supplies
-    // a locally verified full-file identity. Download before source review.
-    if (_sourceReviewActive) {
-      if (mounted) {
-        setState(() {
-          _failed = true;
-          _failReason = t.card_source_review_local_required;
-        });
-      }
-      return;
-    }
+    // BUG-3490：卡片片段回看直接串流，不再要求先下载。协商流地址本身（互联
+    // `/streamurl`、Jellyfin / Emby `PlaybackInfo`、Plex part URL）不改服务器进度；
+    // 会改进度的起播 / 心跳 / 暂停 / 停止上报全部经 [_remoteReportGate]，回看中一律
+    // 不发。身份由 host 的 bookUid 担保（见 card_source_router 的远端分支）。
     final int seq = ++_episodeLoadSeq;
     _cancelGraphicSubtitleOcr(); // 换集：旧集的整轨转文字作废，见 [_applyLoad]。
     _remoteLastAttemptedEpisode = index;
@@ -4552,7 +4562,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           kind: PlaybackPositionKind.video,
         ).reportLive(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
       } else {
-        await client.putRemoteVideoPosition(
+        await _remoteReportGate.position(
+          client,
           keyUid,
           clamped,
           nowMs,
@@ -4577,18 +4588,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     int positionMs,
   ) {
     if (_sourceReviewActive) return;
-    final Object session = client;
-    if (session is! RemoteVideoPlaybackSession) return;
+    if (client is! RemoteVideoPlaybackSession) return;
+    // 每次起播（[_loadRemoteEpisode] 把基线清回 null）只发一次 Start：加载途中按下
+    // 「从这里继续观看」时，就绪回调与加载收尾会各调一次（BUG-3490）。
+    if (_lastReportedRemotePlaying != null) return;
     // 起播即「正在播放」（autoPlay）；之后 controller 的 playing 翻转才是暂停 / 继续。
     _lastReportedRemotePlaying = true;
     unawaited(
-      session
-          .startRemoteVideoPlayback(info.id, positionMs < 0 ? 0 : positionMs)
-          .catchError((Object e) {
-            debugPrint(
-              '[VideoFushiPage] remote playback start upload failed: $e',
-            );
-          }),
+      _remoteReportGate.start(client, info.id, positionMs).catchError((
+        Object e,
+      ) {
+        debugPrint('[VideoFushiPage] remote playback start upload failed: $e');
+        return false;
+      }),
     );
   }
 
@@ -4607,14 +4619,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lastReportedRemotePlaying = playing;
     final int positionMs = controller.positionMs ?? 0;
     unawaited(
-      session
-          .setRemoteVideoPlaybackPaused(
-            info.id,
-            positionMs < 0 ? 0 : positionMs,
-            paused: !playing,
-          )
+      _remoteReportGate
+          .paused(session, info.id, positionMs, paused: !playing)
           .catchError((Object e) {
             debugPrint('[VideoFushiPage] remote pause state upload failed: $e');
+            return false;
           }),
     );
   }
@@ -4635,7 +4644,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (info == null || stopClient is! RemoteVideoPlaybackStop) return;
     if (!_remotePlaybackStopGenerations.add(generation)) return;
     try {
-      await stopClient.stopRemoteVideoPlayback(info.id, positionMs);
+      await _remoteReportGate.stop(stopClient, info.id, positionMs);
     } catch (e) {
       debugPrint('[VideoFushiPage] remote playback stop upload failed: $e');
     }
