@@ -12,6 +12,7 @@ import 'causal_context.dart';
 import 'hlc.dart';
 import 'ids.dart';
 import 'ordering.dart';
+import 'style_dedup.dart';
 
 /// 被修改的实体种类。持久化名冻结。
 enum SrsEntityKind {
@@ -233,8 +234,13 @@ Object? _canonicalize(Object? value) {
   return value;
 }
 
-bool _sameValue(Object? a, Object? b) =>
-    srsCanonicalJson(a) == srsCanonicalJson(b);
+/// 「值相同」的唯一口径（冲突判定、no-op 判定都用它）。字段文本按去重规范形比较：
+/// 内联 `<style>` 与它的共享样式引用行是同一内容（见 style_dedup.dart），所以同一份内容
+/// 无论哪台设备、去没去重写下，都不会被判成并发冲突。
+bool _sameValue(Object? a, Object? b) {
+  if (a is String && b is String) return srsSameFieldText(a, b);
+  return srsCanonicalJson(a) == srsCanonicalJson(b);
+}
 
 /// 一个字段键的合并结果。
 class SrsRegister {

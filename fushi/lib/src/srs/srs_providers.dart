@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -162,7 +163,8 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       final String deviceId = await SyncRepository(
         app.database,
       ).getOrCreateDeviceId();
-      return SrsDbStore.open(
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsDbStore store = await SrsDbStore.open(
         db: app.database,
         profileUid: profileUid,
         deviceId: deviceId,
@@ -170,7 +172,16 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         // 复习的「今天」与统计页共用日界（stats_day_reset_hour）；profile 设置里
         // 有同步来的翻日时刻时以它为准（见 SrsDbStore.dayContext）。
         fallbackRolloverHour: () => app.statDayResetHour,
+        // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
+        styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
       );
+      // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
+      bool disposed = false;
+      ref.onDispose(() => disposed = true);
+      srsRunLogged('srsCompactStoredStyles', () async {
+        await store.compactStoredStyles(shouldStop: () => disposed);
+      });
+      return store;
     });
 
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。

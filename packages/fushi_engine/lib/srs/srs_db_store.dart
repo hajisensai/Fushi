@@ -3,7 +3,9 @@
 ///
 /// - 同步的只有三种事件：身份记录、修改记录、复习日志（另有不认识的事件原样保留）。
 /// - 卡片行与笔记缓存只在本机，可随时由事件重建（[rebuildCaches]）。
-/// - 事件创建即不可变；任何环节都不改事件内容。
+/// - 事件创建即不可变；任何环节都不改事件内容。唯一的表示层例外是释义样式去重（[styles]）：
+///   笔记字段值里够大的内联 `<style>` 在落库时换成共享样式文件的引用行，修改记录的身份、因果、
+///   排序字段一律不动，合并时两种表示按同一内容比较（fushi_srs style_dedup.dart）。
 library;
 
 import 'dart:convert';
@@ -15,6 +17,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_style_store.dart';
 
 /// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
 ///
@@ -127,6 +130,7 @@ class SrsDbStore implements SrsSyncReplica {
     required this.engine,
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
+    this.styles,
   }) : _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour;
 
@@ -138,6 +142,7 @@ class SrsDbStore implements SrsSyncReplica {
     FsrsEngine? engine,
     SrsTrustedClock? trustedClock,
     int Function()? fallbackRolloverHour,
+    SrsStyleStore? styles,
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
@@ -147,6 +152,7 @@ class SrsDbStore implements SrsSyncReplica {
       trustedClock: trustedClock ?? srsProcessTrustedClock(),
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
+      styles: styles,
     );
     final bool hadLocalState = await s._loadLocal();
     if (!hadLocalState && await s._hasAnyEvent()) {
@@ -164,6 +170,9 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
   final FsrsEngine? engine;
+
+  /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
+  final SrsStyleStore? styles;
   final SrsTrustedClock _trusted;
   final int Function() _fallbackRollover;
 
@@ -172,6 +181,9 @@ class SrsDbStore implements SrsSyncReplica {
   late HlcClock _clock;
   int _incarnation = 1;
   int _outboxSeq = 0;
+
+  /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
+  int _styleCursor = 0;
 
   String get writerId => _sync.writerId;
   SrsTrustedClock get trustedClock => _trusted;
@@ -230,6 +242,7 @@ class SrsDbStore implements SrsSyncReplica {
       last: hlc is String ? _rehome(Hlc.decode(hlc), writer) : null,
     );
     _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
+    _styleCursor = (j['styleCursor'] as int?) ?? 0;
     final Object? anchor = j['anchor'];
     if (anchor is Map) {
       _trusted.restoreAnchor(
@@ -251,6 +264,7 @@ class SrsDbStore implements SrsSyncReplica {
       'applied': _writer.applied.toJson(),
       'hlc': _clock.last.encode(),
       'outboxSeq': _outboxSeq,
+      'styleCursor': _styleCursor,
       'sync': <String, Object?>{
         'next': _sync.nextBatchNo,
         'cursors': _sync.cursors,
@@ -438,7 +452,8 @@ class SrsDbStore implements SrsSyncReplica {
                 fieldKey: edit.fieldKey,
                 writerId: edit.dot.writerId,
                 seq: edit.dot.seq,
-                json: edit.canonical(),
+                // 表示层：内联样式换成共享样式引用（见 [_compactEdit]）。
+                json: (await _compactEdit(edit)).canonical(),
               ),
             );
         _markEntity(edit.entityKind, edit.entityId);
@@ -482,6 +497,116 @@ class SrsDbStore implements SrsSyncReplica {
             );
         return true;
     }
+  }
+
+  /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
+  /// 其余字段键、没有可换的块、没装样式库时原样返回。本机写、导入、对端事件都经这里落库。
+  Future<SrsFieldEdit> _compactEdit(SrsFieldEdit e) async {
+    final SrsStyleStore? st = styles;
+    final Object? v = e.value;
+    if (st == null ||
+        e.entityKind != SrsEntityKind.note ||
+        v is! String ||
+        !e.fieldKey.startsWith(_noteFieldPrefix)) {
+      return e;
+    }
+    final String compacted = await st.compact(v);
+    if (identical(compacted, v)) return e;
+    return _withValue(e, compacted);
+  }
+
+  static final String _noteFieldPrefix = SrsFieldKeys.noteField('');
+
+  static SrsFieldEdit _withValue(SrsFieldEdit e, Object? value) => SrsFieldEdit(
+    profileUid: e.profileUid,
+    entityKind: e.entityKind,
+    entityId: e.entityId,
+    fieldKey: e.fieldKey,
+    dot: e.dot,
+    ctx: e.ctx,
+    value: value,
+    hlc: e.hlc,
+    timeSource: e.timeSource,
+    machine: e.machine,
+  );
+
+  /// 展开共享样式引用（对外的读：导出、AnkiConnect、制卡回读、卡面渲染）。没装样式库时原样返回。
+  /// [dropMissing] 见 [srsExpandStyles]。
+  Future<String> expandStyles(String html, {bool dropMissing = false}) async {
+    final SrsStyleStore? st = styles;
+    if (st == null) return html;
+    return st.expand(html, dropMissing: dropMissing);
+  }
+
+  /// [expandStyles] 逐值作用于一组字段（键不变）。
+  Future<Map<String, String>> expandFields(
+    Map<String, String> fields, {
+    bool dropMissing = false,
+  }) async => <String, String>{
+    for (final MapEntry<String, String> f in fields.entries)
+      f.key: await expandStyles(f.value, dropMissing: dropMissing),
+  };
+
+  /// 存量去重：把本 profile 已落库、还带内联样式的笔记字段修改记录就地换成引用表示。
+  ///
+  /// - 不产生任何新事件、不进发件箱：改的只是本机行的表示，记录的 id / dot / ctx / hlc 不动，
+  ///   合并时与对端手里的原表示视为同值（见库注释）。所以存量迁移零同步流量，对端各自迁移各自的。
+  /// - 分批（每批一个事务），按 rowid 游标推进并记进本机状态：随时中断（[shouldStop] 返回 true、
+  ///   进程被杀）下次从断点续；重复跑幂等（已换过的行不再含可换的块）。
+  /// - 恢复备份后本机状态清空、游标归零，恢复进来的行会被重新检查。
+  ///
+  /// 返回本次改写的行数。没装样式库时什么也不做。
+  Future<int> compactStoredStyles({
+    int batchSize = 32,
+    bool Function()? shouldStop,
+  }) async {
+    final SrsStyleStore? st = styles;
+    if (st == null) return 0;
+    int rewritten = 0;
+    while (shouldStop?.call() != true) {
+      final int done = await db.transaction(() async {
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT rowid AS rid, id, json FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND rowid > ? '
+              "AND field_key LIKE 'f/%' AND instr(json, '<style>') > 0 "
+              'ORDER BY rowid LIMIT ?',
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid),
+                Variable<String>(SrsEntityKind.note.wire),
+                Variable<int>(_styleCursor),
+                Variable<int>(batchSize),
+              ],
+            )
+            .get();
+        if (rows.isEmpty) return -1;
+        int n = 0;
+        for (final QueryRow r in rows) {
+          final SrsFieldEdit e = SrsFieldEdit.fromJson(
+            (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
+          );
+          final SrsFieldEdit c = await _compactEdit(e);
+          if (!identical(c, e)) {
+            await (db.update(
+              db.srsFieldEdits,
+            )..where((t) => t.id.equals(r.read<String>('id')))).write(
+              SrsFieldEditsCompanion(json: Value<String>(c.canonical())),
+            );
+            _markEntity(e.entityKind, e.entityId);
+            n++;
+          }
+          _styleCursor = r.read<int>('rid');
+        }
+        await _flushCaches();
+        await _saveLocal();
+        return n;
+      });
+      if (done < 0) break;
+      rewritten += done;
+      // 让出事件循环：迁移在后台跑，不长时间占住数据库连接。
+      await Future<void>.delayed(Duration.zero);
+    }
+    return rewritten;
   }
 
   void _markEntity(SrsEntityKind kind, String id) {
@@ -1776,7 +1901,12 @@ class SrsDbStore implements SrsSyncReplica {
     final Map<String, String> idToName = _idToName(d.noteType);
     final String front = templateIdsToNames(tpl.front, idToName);
     final String back = templateIdsToNames(tpl.back, idToName);
-    final Map<String, String> fields = _fieldsByName(d.note, d.noteType);
+    // 共享样式引用先展开回内联 `<style>`：渲染结果与去重前逐字节相同（卡面再按内容哈希
+    // 只登记一次样式）。样式文件还没同步到时去掉引用行，不让 WebView 去请求相对地址。
+    final Map<String, String> fields = await expandFields(
+      _fieldsByName(d.note, d.noteType),
+      dropMissing: true,
+    );
     final AnkiCardSpecialFields specials = AnkiCardSpecialFields(
       tags: d.note.tags,
       deckName: d.deckName,
@@ -2211,6 +2341,8 @@ class SrsDbStore implements SrsSyncReplica {
       _sync.writerId,
       last: _rehome(_clock.last, _sync.writerId),
     );
+    // 恢复进来的行可能还是内联样式：存量去重从头再查一遍。
+    _styleCursor = 0;
     await (db.delete(
       db.srsEventLocal,
     )..where((t) => t.profileUid.equals(profileUid))).go();

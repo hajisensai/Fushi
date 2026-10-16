@@ -720,7 +720,9 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 加卡与查重
 
-  static String _norm(String field) => ankiSearchStripHtml(field).trim();
+  /// 判重比较用的首字段：先按样式去重规范形（内联样式与引用行同值），再去 HTML。
+  static String _norm(String field) =>
+      ankiSearchStripHtml(srsDedupStyles(field).html).trim();
 
   /// 能加返回 null，不能加返回 AnkiConnect 的错误串。
   String? _tryPrepare(_Snapshot s, Object? raw) {
@@ -1130,14 +1132,19 @@ class SrsAnkiConnectHandler {
 
   // ---------------------------------------------------------------- 信息
 
-  Map<String, Object?> _fieldsInfo(SrsNoteTypeView t, SrsNoteView n) =>
-      <String, Object?>{
-        for (int i = 0; i < t.fields.length; i++)
-          t.fields[i].name: <String, Object?>{
-            'value': n.field(t.fields[i].id),
-            'order': i,
-          },
-      };
+  /// 字段值对外按 Anki 的样子给：释义样式去重的引用行展开回内联 `<style>`
+  /// （外部工具读到的与它当初写进来的逐字节相同）。
+  Future<Map<String, Object?>> _fieldsInfo(
+    SrsDbStore store,
+    SrsNoteTypeView t,
+    SrsNoteView n,
+  ) async => <String, Object?>{
+    for (int i = 0; i < t.fields.length; i++)
+      t.fields[i].name: <String, Object?>{
+        'value': await store.expandStyles(n.field(t.fields[i].id)),
+        'order': i,
+      },
+  };
 
   Future<List<Object?>> _notesInfo(Map<String, Object?> p) async {
     final _Snapshot s = await _snapshot();
@@ -1159,7 +1166,7 @@ class SrsAnkiConnectHandler {
         'noteId': n,
         'profile': _profile,
         'tags': note.tags,
-        'fields': _fieldsInfo(t, note),
+        'fields': await _fieldsInfo(s.store, t, note),
         'modelName': t.name,
         'cards': <int>[
           for (final SrsCardCacheRow c
@@ -1218,7 +1225,7 @@ class SrsAnkiConnectHandler {
       final SrsQueue q = SrsQueue.parse(c.queue);
       out.add(<String, Object?>{
         'cardId': n,
-        'fields': _fieldsInfo(t, note),
+        'fields': await _fieldsInfo(s.store, t, note),
         'fieldOrder': ord,
         'question': r?.question ?? '',
         'answer': r?.answer ?? '',

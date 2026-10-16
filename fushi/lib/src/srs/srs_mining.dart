@@ -245,12 +245,16 @@ class SrsMiner with AnkiNoteComposer {
   }
 
   /// 现存笔记的字段（字段名 → 值）；不存在 / 已删为 null。
+  ///
+  /// 释义样式去重的引用行展开回内联 `<style>`：调用方（制卡回填出处卡片的乐观并发检查）
+  /// 拿到的与它写进来的逐字节相同。
   Future<Map<String, String>?> fieldsByName(String noteId) async {
     final (SrsNoteView, SrsNoteTypeView)? live = await _live(noteId);
     if (live == null) return null;
     final (SrsNoteView note, SrsNoteTypeView type) = live;
     return <String, String>{
-      for (final SrsFieldDef f in type.fields) f.name: note.field(f.id),
+      for (final SrsFieldDef f in type.fields)
+        f.name: await store.expandStyles(note.field(f.id)),
     };
   }
 
