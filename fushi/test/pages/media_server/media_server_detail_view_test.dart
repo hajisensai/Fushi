@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -230,6 +232,71 @@ void main() {
     await tester.pumpAndSettle();
     expect(played.single.info.id, 'm1');
     expect(played.single.hasCollection, isFalse);
+  });
+
+  testWidgets('BUG-3491：播放页退回来原地重拉集清单，新进度立刻可见', (WidgetTester tester) async {
+    useTallView(tester);
+    browser.seasons['s1'] = <MediaServerItem>[seasonOne];
+    browser.episodes['s1|sea1'] = fakeEpisodes(
+      seriesId: 's1',
+      seasonId: 'sea1',
+      seasonNumber: 1,
+      count: 2,
+    );
+    final Completer<void> playerClosed = Completer<void>();
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: MediaServerDetailView(
+              session: MediaServerSession(
+                browser: browser,
+                play: (BuildContext _, MediaServerPlayRequest request) {
+                  played.add(request);
+                  return playerClosed.future;
+                },
+              ),
+              item: series,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(episodeRequests(), hasLength(1));
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('media-server-episode-sea1-ep1')),
+    );
+    await tester.pumpAndSettle();
+    expect(episodeRequests(), hasLength(1), reason: '播放中不重拉');
+
+    // 服务器上第 1 集有了断点（12:00 / 24:00）。
+    browser.episodes['s1|sea1'] = <MediaServerItem>[
+      const MediaServerItem(
+        id: 'sea1-ep1',
+        name: 'Episode 1',
+        type: MediaServerItemType.episode,
+        seriesId: 's1',
+        seasonId: 'sea1',
+        seasonNumber: 1,
+        episodeNumber: 1,
+        durationMs: 24 * 60 * 1000,
+        positionMs: 12 * 60 * 1000,
+      ),
+      ...fakeEpisodes(
+        seriesId: 's1',
+        seasonId: 'sea1',
+        seasonNumber: 1,
+        count: 2,
+      ).skip(1),
+    ];
+    playerClosed.complete();
+    await tester.pumpAndSettle();
+
+    expect(episodeRequests(), hasLength(2), reason: '退回来重拉一次');
+    expect(episodeRequests().last.startIndex, 0);
+    expect(find.textContaining('50%'), findsOneWidget, reason: '时间进度旁有百分比');
   });
 
   group('多版本（MediaSources > 1）', () {

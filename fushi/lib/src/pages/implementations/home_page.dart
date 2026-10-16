@@ -51,6 +51,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
@@ -3174,6 +3175,12 @@ class _HomePageState extends BasePageState<HomePage>
               positionMs: book.lastPositionMs,
               completed: book.completedAt != null,
               lastPlayedAt: book.lastPlayedAt,
+              // BUG-3491：片长用来分辨「已打勾的集正在重看」。
+              durationMs: videoDurationMsFromPref(
+                appModelNoUpdate.prefsRepo.getPref(
+                  videoDurationPrefKey(book.bookUid),
+                ),
+              ),
             ),
           )
           .toList(growable: false),

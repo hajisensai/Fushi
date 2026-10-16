@@ -17,6 +17,7 @@ import 'package:fushi/src/media/collections/collection_drag.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -255,6 +256,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _workExtras = const <VideoMetadataExtraRow>[];
 
+  /// 播放器记下的各集真实片长（bookUid → 毫秒，BUG-3491，见 video_duration_pref.dart）。
+  Map<String, int> _knownDurationsMs = const <String, int>{};
+
+  /// 本页**派出去的播放**还没回来：从播放页返回（本页路由重新成为栈顶）时据此
+  /// 重读成员进度（BUG-3491）。
+  ///
+  /// 本页的进度是 [_reload] 一次读出的快照，此前只在 initState 读一次——看完一集
+  /// 返回，集卡、续播高亮、hero「继续看」都还是进页那一刻的数据，要退出详情页
+  /// 重进才更新。等不了 `Navigator.push` 的 Future：播放页里换集是
+  /// `pushReplacement` / `removeRoute`，第一集被换走时那个 Future 就完成了，用户
+  /// 其实还在看第二集。只有「本页路由重新变成栈顶」才是真的回来了。
+  bool _awaitingPlaybackReturn = false;
+
+  /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
+  bool _routeWasCurrent = true;
+
   @override
   FushiDatabase get detailDatabase => widget.database;
   @override
@@ -271,6 +288,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     super.initState();
     _name = widget.collection.name;
     _reload();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ModalRoute.of 依赖路由的 isCurrent：上面压了播放页 / 播放页退回来都会
+    // 通知到这里。
+    final bool current = ModalRoute.of(context)?.isCurrent ?? true;
+    final bool returned = current && !_routeWasCurrent;
+    _routeWasCurrent = current;
+    if (returned && _awaitingPlaybackReturn) {
+      _awaitingPlaybackReturn = false;
+      unawaited(_reload());
+    }
   }
 
   @override
@@ -368,8 +399,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         };
     final MediaCollectionRow? fresh = await widget.database
         .getMediaCollectionById(widget.collection.id);
+    final Map<String, int> knownDurations = await loadKnownVideoDurationsMs(
+      widget.database,
+    );
     if (!mounted) return;
     setState(() {
+      _knownDurationsMs = knownDurations;
       _slots = episodeSlots;
       _groupKeyByEntry = <String, String>{
         for (final CollectionEpisodeSlot slot in episodeSlots)
@@ -592,13 +627,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 续播下标按**全部**成员算：互联客户端上「本机看到第 3 集、第 4 集还在 host」时
   /// 续播就该指向那一集——远端进度的真相源是 host 下发的断点，与首页「继续观看」同口径。
   int get _continueIndex => continueMemberIndex(<CollectionMemberProgress>[
-    for (final CollectionEpisodeSlot slot in _slots)
+    for (final CollectionEpisodeSlot slot in _slots) _slotProgress(slot),
+  ]);
+
+  /// 一集的续播输入。片长只认**精确值**（播放器记下的 / host 下发的）：拿它判
+  /// 「已打勾的集是不是重看到一半」（BUG-3491），刮削的整分钟片长误差太大不用。
+  CollectionMemberProgress _slotProgress(CollectionEpisodeSlot slot) =>
       CollectionMemberProgress(
         positionMs: slot.positionMs,
         completed: slot.completed,
         lastPlayedAt: slot.lastPlayedAtMs,
-      ),
-  ]);
+        durationMs: _exactDurationMs(slot),
+      );
+
+  int? _exactDurationMs(CollectionEpisodeSlot slot) =>
+      _knownDurationsMs[slot.entryKey] ?? slot.remote?.durationMs;
 
   /// 续播成员的键：分季视图里行下标是**节内**下标，与全局 [_continueIndex]
   /// 对不上，高亮统一按成员键判定（平铺视图两者等价）。
@@ -706,15 +749,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     ];
   }
 
-  /// 集卡观看进度 0..1：只在**知道总时长**时给（规范分集时长 / host 下发的远端
-  /// 时长），算不出就返回 null——集卡改显示「看到 mm:ss」，不造假条。
+  /// 集卡观看进度 0..1：只在**知道总时长**时给（播放器记下的精确片长 / host 下发
+  /// 的远端时长 / 规范分集的整分钟片长），算不出就返回 null——集卡只显示
+  /// 「看到 mm:ss」，不造假条、不写百分比。已打勾的集有断点也给（BUG-3491：
+  /// 状态行照样写百分比，进度条只画在没看完的集上）。
   double? _episodeProgress(CollectionEpisodeSlot slot) {
-    if (slot.completed || slot.positionMs <= 0) return null;
+    if (slot.positionMs <= 0) return null;
     final int? runtime =
         _canonicalEpisodesByUid[slot.entryKey]?.firstOrNull?.runtimeMinutes;
-    final int? totalMs = runtime != null && runtime > 0
-        ? runtime * 60000
-        : slot.remote?.durationMs;
+    final int? totalMs =
+        _exactDurationMs(slot) ??
+        (runtime != null && runtime > 0 ? runtime * 60000 : null);
     if (totalMs == null || totalMs <= 0) return null;
     return (slot.positionMs / totalMs).clamp(0.0, 1.0);
   }
@@ -1535,6 +1580,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 走 [MediaCollectionDetailPage.onOpenRemoteEpisode]，并带上本合集**全部**远端成员
   /// 与起播下标，播放器据此建剧集列表 + 跨成员连播。没注入远端回调则不动作。
   void _openSlot(CollectionEpisodeSlot slot) {
+    // 播放页回来时重读进度（见 [_awaitingPlaybackReturn]）。
+    _awaitingPlaybackReturn = true;
     final VideoBookRow? local = slot.local;
     if (local != null) {
       widget.onOpenEpisode(local);
@@ -1561,7 +1608,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 一份只会形成重复内容。旧 v68 资料没有规范详情宿主时才保留 hero 回退，
     // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
-    final bool started = episode.positionMs > 0 && !episode.completed;
+    // 重看到一半的已打勾集同样是「继续观看」（BUG-3491）。
+    final bool started =
+        episode.positionMs > 0 && !_slotProgress(episode).isFinished;
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,

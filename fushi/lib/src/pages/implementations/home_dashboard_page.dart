@@ -19,6 +19,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
@@ -2281,16 +2282,22 @@ class _HomeDashboardPageState
       (VideoBookRow m) => m.completedAt != null || m.lastPositionMs > 0,
     );
     if (!anyTrace) return null;
-    final int idx = continueMemberIndex(<CollectionMemberProgress>[
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    final List<CollectionMemberProgress> progress = <CollectionMemberProgress>[
       for (final VideoBookRow m in sorted)
         CollectionMemberProgress(
           positionMs: m.lastPositionMs,
           completed: m.completedAt != null,
           lastPlayedAt: m.lastPlayedAt,
+          // BUG-3491：片长用来分辨「已打勾的集正在重看」。
+          durationMs: videoDurationMsFromPref(
+            prefs.getPref(videoDurationPrefKey(m.bookUid)),
+          ),
         ),
-    ]);
+    ];
+    final int idx = continueMemberIndex(progress);
     final VideoBookRow resume = sorted[idx];
-    if (resume.completedAt != null) return null;
+    if (progress[idx].isFinished) return null;
     return (row: resume, index: idx, count: sorted.length);
   }
 

@@ -41,6 +41,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
 import 'package:fushi/src/media/video/video_home_layout.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/video/video_online_services_banner.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
@@ -4745,7 +4746,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
     });
     for (final VideoBookRow book in looseLocal) {
-      if (book.completedAt != null || book.lastPositionMs <= 0) continue;
+      // 已打勾但重看到一半的单片同样进「继续观看」（BUG-3491）。
+      if (book.lastPositionMs <= 0 ||
+          CollectionMemberProgress(
+            positionMs: book.lastPositionMs,
+            completed: book.completedAt != null,
+            durationMs: _knownDurationMs(book.bookUid),
+          ).isFinished) {
+        continue;
+      }
       final DateTime? at =
           _watchAtByUid[book.bookUid] ?? _legacyWatchAtByTitle[book.title];
       items.add(
@@ -4793,8 +4802,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
         positionMs: member.lastPositionMs,
         completed: member.completedAt != null,
+        durationMs: _knownDurationMs(member.bookUid),
       ),
   ];
+
+  /// 播放器记下的片长（BUG-3491，见 video_duration_pref.dart）；没播过 → null。
+  int? _knownDurationMs(String bookUid) => videoDurationMsFromPref(
+    appModelNoUpdate.prefsRepo.getPref(videoDurationPrefKey(bookUid)),
+  );
 
   // ── 首页横滚行的「本地 / 远端」统一槽位 ───────────────────────────────
   //
@@ -4846,6 +4861,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             completed: slot.local != null
                 ? slot.local!.completedAt != null
                 : slot.remote!.completedAt != null,
+            durationMs: slot.local != null
+                ? _knownDurationMs(slot.local!.bookUid)
+                : slot.remote!.durationMs,
           ),
       ];
 
@@ -6605,6 +6623,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               slot.local?.lastPositionMs ?? slot.remote?.positionMs ?? 0,
           completed: isCompleted,
           lastPlayedAt: _slotWatchedAtMs(slot),
+          durationMs: slot.local != null
+              ? _knownDurationMs(slot.local!.bookUid)
+              : slot.remote?.durationMs,
         ),
       );
     }

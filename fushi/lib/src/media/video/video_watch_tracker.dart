@@ -9,6 +9,13 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 完成判定纯函数：进度 ≥ 90% 且尚未完成、且时长已知。
+///
+/// **何时判**（BUG-3491，由 [VideoWatchTracker] 保证）：播放中每次位置采样（1 秒
+/// 一次 + 播放源每次通知）各判一次，离开本集（退出播放页 / 换集 / 页面销毁）时按
+/// 离开那一刻的位置再判一次。所以规则是：**播放到 90% 之后，或停在 90% 之后离开，
+/// 这一集就打勾**；暂停态拖进度条预览不算。此前只在 [StudyClock] 每 60 秒一次的
+/// tick 上判、离开时那一次又因为播放源先被摘掉而永远判不到——跳到 ED 立刻点下一集
+/// 不打勾，拖条时恰好赶上 tick 又会莫名打勾。
 bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
   if (already) return false;
   if (positionMs == null || durationMs == null || durationMs <= 0) return false;
@@ -118,8 +125,9 @@ class VideoWatchTracker {
         _onEpisodeCompleted = onEpisodeCompleted,
         _loadCoverage = loadCoverage,
         _saveCoverage = saveCoverage {
+    // 完成判定不挂在 60 秒 tick 上（BUG-3491）：tick 落在哪一刻是随机的，
+    // 判定改由位置采样（[_sample]）与离开时（[stop]）负责。
     _clock.onTick = (DateTime _) {
-      unawaited(_checkCompletion());
       unawaited(_persistCoverage());
     };
   }
@@ -161,8 +169,14 @@ class VideoWatchTracker {
     _sampler = null;
     _sample();
     _lastSample = null;
+    // 离开那一刻的位置必须**同步**取下：[dispose] 调完本方法会立刻摘掉播放源，
+    // 等到下面的 await 回来时 [_source] 已是 null——此前离开时这一次完成判定
+    // 永远落空（BUG-3491：跳到 ED 再点下一集 / 在片尾退出都不打勾）。
+    final VideoPlaybackSource? s = _source;
+    final int? positionMs = s?.positionMs;
+    final int? durationMs = s?.durationMs;
     await _clock.stop();
-    await _checkCompletion();
+    await _checkCompletionAt(positionMs, durationMs);
     await _persistCoverage();
   }
 
@@ -234,6 +248,9 @@ class VideoWatchTracker {
     final DateTime now = debugNowForTesting();
     final int? pos = s.positionMs;
     final bool playing = s.isPlaying;
+    // 播放中每个采样点都判一次完成（BUG-3491）；暂停态拖条预览不判，离开时
+    // 由 [stop] 按离开那一刻的位置补判。
+    if (playing) unawaited(_checkCompletionAt(pos, s.durationMs));
     final ({int? posMs, DateTime at, bool playing})? prev = _lastSample;
     _lastSample = (posMs: pos, at: now, playing: playing);
     if (prev == null || !_coverageReady) return;
@@ -423,18 +440,17 @@ class VideoWatchTracker {
     }
   }
 
-  /// 完成判定（每 tick + stop 各查一次）。
-  Future<void> _checkCompletion() async {
-    final VideoPlaybackSource? s = _source;
-    if (s == null) return;
+  /// 完成判定（播放中每个采样点 + 离开时各判一次，见 [shouldMarkCompleted]）。
+  /// 位置 / 时长由调用方当场取好传入：离开时播放源可能已经摘掉。
+  Future<void> _checkCompletionAt(int? positionMs, int? durationMs) async {
     try {
-      if (shouldMarkCompleted(s.positionMs, s.durationMs, _completed)) {
+      if (shouldMarkCompleted(positionMs, durationMs, _completed)) {
         _completed = true;
         await _markCompleted(bookUid);
       }
       if (shouldMarkCompleted(
-        s.positionMs,
-        s.durationMs,
+        positionMs,
+        durationMs,
         _episodeCompletionReported,
       )) {
         _episodeCompletionReported = true;

@@ -240,17 +240,23 @@ class VideoSeriesPlaybackState {
     required this.lastWatchedAtMs,
     required this.positionMs,
     required this.completed,
+    this.durationMs,
   });
 
   final int lastWatchedAtMs;
   final int positionMs;
   final bool completed;
 
+  /// 片长毫秒（播放器记下的 / host 下发的）；null = 不知道。只用来分辨「已打勾的
+  /// 集正在重看」（BUG-3491，见 [CollectionMemberProgress.isRewatching]）。
+  final int? durationMs;
+
   /// 换成合集续播的共享输入，锚点判据只走 [latestPlayedMemberIndex] 一处。
   CollectionMemberProgress get progress => CollectionMemberProgress(
     positionMs: positionMs,
     completed: completed,
     lastPlayedAt: lastWatchedAtMs,
+    durationMs: durationMs,
   );
 }
 
@@ -308,6 +314,7 @@ int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
 ///
 /// * 最近实际播放的那集**没看完**（有进度，或只打开过、进度 0）→ 停在它；
 /// * 它**已看完** → 紧接的下一集（整部看完、没有下一集 → null，不再占继续行）；
+///   已打勾但**重看到一半**退出不算看完，停在它（BUG-3491）；
 /// * 整部合集没有任何播放痕迹 → null。
 ///
 /// 「只打开过」也进本行（BUG-3370）：用户确实打开过这部合集，此前按「进度为 0」
@@ -315,7 +322,7 @@ int? nextEpisodeAfterLatestPlayed(List<VideoSeriesPlaybackState> members) {
 int? continueWatchingSeriesIndex(List<VideoSeriesPlaybackState> members) {
   final int? current = latestPlayedSeriesIndex(members);
   if (current == null) return null;
-  if (!members[current].completed) return current;
+  if (!members[current].progress.isFinished) return current;
   return current + 1 < members.length ? current + 1 : null;
 }
 
