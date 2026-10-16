@@ -79,8 +79,8 @@ if [[ ${#FILES[@]} -gt 0 ]]; then
 fi
 
 # --- pubspec：凡是 Dart 源码引用了 material_ui / cupertino_ui 的包，都要直接声明依赖 ---
-MATERIAL_UI_VERSION='^1.5.0'
-CUPERTINO_UI_VERSION='^1.1.1'
+MATERIAL_UI_VERSION='^1.7.0'
+CUPERTINO_UI_VERSION='^1.1.3'
 
 ensure_dep() { # <pubspec> <pkg> <version>
   local pubspec="$1" pkg="$2" ver="$3"

@@ -12,7 +12,7 @@ read the root light theme inside the video's locally dark dialog.
 
 - Change only the Material imports in `block_picker.dart`, `colorpicker.dart`,
   `material_picker.dart` and `palette.dart` to `material_ui/material_ui.dart`.
-- Add `material_ui: ^1.5.0` and require Flutter >=3.47.0.
+- Add `material_ui: ^1.7.0` and require Flutter >=3.47.0.
 - Keep the color conversion, picker state, input behavior and public API unchanged.
 
 The upstream examples and unit tests are preserved as published. Fushi's behavior
