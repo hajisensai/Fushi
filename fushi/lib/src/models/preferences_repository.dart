@@ -2887,6 +2887,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 首页 dashboard 面板显示档（JSON map，见 models/home_dashboard_panel.dart）。
+  // 空串 = 全部面板按各自的默认判据（auto）。
+  String get homeDashboardPanels =>
+      getPref('home_dashboard_panels', defaultValue: '') as String;
+
+  Future<void> setHomeDashboardPanels(String json) async {
+    await setPref('home_dashboard_panels', json);
+    notifyListeners();
+  }
+
   // 复习卡面外观（JSON，见 SrsCardAppearance）。空串 = 模板默认外观。
   String get srsCardAppearance =>
       getPref('srs_card_appearance', defaultValue: '') as String;

@@ -7576,7 +7576,7 @@
   "db_legacy_schema_release_open": "Fushi v$version のダウンロードページを開く",
   "migration_import_legacy_title": "Hibiki のデータは Fushi v$version でインポートしてください",
   "migration_import_legacy_message": "旧 Hibiki アプリが書き出したデータは古すぎるため、このバージョンでは直接インポートできません。何も変更されておらず、書き出したファイルも残っています。移行手順：1. この Fushi をアンインストールします（Android では新しいバージョンの上に古いバージョンをインストールできません。新しく入れた Fushi にはまだデータがありませんが、すでにデータを追加している場合は先にバックアップしてください）。2. 完全なアップグレード経路を含むブリッジ版 Fushi v$version をインストールします。3. その中で「Hibiki からインポート」を実行します。4. 最新バージョンに更新します。",
-  "nav_srs": "Review",
+  "nav_srs": "復習",
   "srs_module_switch_hint": "Fushi's built-in spaced repetition: decks, FSRS-7 scheduling, review on any device",
   "srs_import": "Import",
   "srs_count_new": "New",
@@ -8081,5 +8081,12 @@
   "srs_migrate_fushi_none": "No Lapis notes to migrate",
   "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated",
   "srs_card_appearance_title": "Fushi Card appearance",
-  "srs_card_edit_template": "Edit $name template"
+  "srs_card_edit_template": "Edit $name template",
+  "home_srs_panel_start": "復習する",
+  "home_srs_panel_done": "今日の分は完了",
+  "settings_section_home_panels": "ホームのパネル",
+  "home_panel_mode_auto": "自動",
+  "home_panel_mode_shown": "表示",
+  "home_panel_mode_hidden": "非表示",
+  "home_panel_srs_hint": "自動：Fushi 復習にカードを作成するか、復習カードがあると表示"
 }

@@ -8081,5 +8081,12 @@
   "srs_migrate_fushi_none": "没有可迁移的 Lapis 笔记",
   "srs_migrate_fushi_not_lapis": "只能迁移 Lapis 笔记",
   "srs_card_appearance_title": "Fushi 卡片外观",
-  "srs_card_edit_template": "编辑 $name 模板"
+  "srs_card_edit_template": "编辑 $name 模板",
+  "home_srs_panel_start": "开始复习",
+  "home_srs_panel_done": "今日已完成",
+  "settings_section_home_panels": "首页面板",
+  "home_panel_mode_auto": "自动",
+  "home_panel_mode_shown": "显示",
+  "home_panel_mode_hidden": "隐藏",
+  "home_panel_srs_hint": "自动：制卡发往 Fushi 复习或已有复习卡时显示"
 }
