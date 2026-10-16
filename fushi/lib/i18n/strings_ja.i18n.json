@@ -8082,5 +8082,14 @@
   "srs_migrate_fushi_none": "No Lapis notes to migrate",
   "srs_migrate_fushi_not_lapis": "Only Lapis notes can be migrated",
   "srs_mining_required_unmapped": "Required fields are not mapped: $fields. Cards mined now would be empty (a card whose first field is empty is refused).",
-  "srs_mining_field_required": "Required"
+  "srs_mining_field_required": "Required",
+  "card_target_srs_title": "Send to Fushi review",
+  "card_target_srs_hint": "Built-in spaced repetition, no Anki needed",
+  "card_target_anki_title": "Send to Anki",
+  "card_target_anki_hint": "AnkiDroid, AnkiConnect or AnkiWeb",
+  "card_target_current": "Current",
+  "card_target_anki_current_note": "Cards currently go to Anki. Its settings are in the Anki group below.",
+  "card_target_srs_enable": "Turn on Fushi review",
+  "card_target_srs_enable_confirm": "This turns on the Review module and sends cards you mine to Fushi review. You can switch back to Anki at any time.",
+  "card_creation_section_content": "Card content"
 }

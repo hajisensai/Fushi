@@ -75,12 +75,17 @@ class SrsCountTriple extends StatelessWidget {
     required this.learnCount,
     required this.reviewCount,
     this.dense = false,
+    this.tight = false,
   });
 
   final int newCount;
   final int learnCount;
   final int reviewCount;
   final bool dense;
+
+  /// 手机竖屏牌组列表：数字列收窄（最小 20）、列间距减半，三个数合成一小块，
+  /// 把宽度让给牌组名。
+  final bool tight;
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +102,13 @@ class SrsCountTriple extends StatelessWidget {
     Widget cell(int value, Color color, String label) => FushiTooltip(
       message: label,
       child: ConstrainedBox(
-        constraints: BoxConstraints(minWidth: dense ? 24 : 32),
+        constraints: BoxConstraints(
+          minWidth: tight
+              ? 20
+              : dense
+              ? 24
+              : 32,
+        ),
         child: Text(
           '$value',
           textAlign: TextAlign.end,
@@ -115,7 +126,7 @@ class SrsCountTriple extends StatelessWidget {
       child: ExcludeSemantics(
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          spacing: tokens.spacing.gap,
+          spacing: tight ? tokens.spacing.gap / 2 : tokens.spacing.gap,
           children: <Widget>[
             cell(newCount, colors.fresh, t.srs_count_new),
             cell(learnCount, colors.learn, t.srs_count_learn),
