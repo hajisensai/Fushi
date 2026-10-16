@@ -2707,7 +2707,7 @@ class CardTargetRow extends StatelessWidget {
       inMutuallyExclusiveGroup: true,
       child: AdaptiveSettingsRow(
         title: title,
-        subtitle: selected ? '$subtitle · ${t.card_target_current}' : subtitle,
+        subtitle: selected ? '${t.card_target_current} · $subtitle' : subtitle,
         icon: icon,
         showIcon: true,
         trailing: ExcludeSemantics(

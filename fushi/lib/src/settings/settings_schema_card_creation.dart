@@ -529,6 +529,10 @@ SettingsSection _ankiSection({required bool current}) => SettingsSection(
   id: current ? 'card_creation.anki' : 'card_creation.anki_secondary',
   title: t.srs_mining_target_anki,
   visible: current ? (SettingsContext c) => !_toReview(c) : _toReview,
+  // 折叠时分组头下给一行说明，看得出这里是什么。
+  summaryBuilder: current
+      ? null
+      : (SettingsContext c) => t.card_target_anki_hint,
   presentation: current
       ? SettingsSectionPresentation.expanded
       : SettingsSectionPresentation.collapsed,
