@@ -146,10 +146,14 @@ class BrowseNavigationRequest {
   BrowseNavigationRequest(
     this.tab, {
     this.downloadsSection = BrowseDownloadsSection.tasks,
+    this.downloadsWorkFocus,
   });
 
   final BrowseTab tab;
   final BrowseDownloadsSection downloadsSection;
+
+  /// 落到下载任务时只看某部作品（发现详情页「任务」）；null = 看全部。
+  final DownloadTaskWorkFocus? downloadsWorkFocus;
 }
 
 class _BrowsePageState extends ConsumerState<BrowsePage>
@@ -194,6 +198,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   late BrowseDownloadsSection _downloadsSection =
       widget.navigationRequest?.downloadsSection ??
       widget.initialDownloadsSection;
+
+  /// 下载任务列表当前只看的作品。由本页持有（跳转请求用后即清，任务页签可能
+  /// 晚于请求才建出来）；每次跳转请求覆盖它，用户点「显示全部任务」清空。
+  late DownloadTaskWorkFocus? _downloadsWorkFocus =
+      widget.navigationRequest?.downloadsWorkFocus;
 
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
 
@@ -264,6 +273,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     }
     // 已挂载时的跳转：原地切页签 / 下载段，不重建整页。
     _downloadsSection = request.downloadsSection;
+    _downloadsWorkFocus = request.downloadsWorkFocus;
     if (request.tab == BrowseTab.sources ||
         request.tab == BrowseTab.extensions) {
       _onlineSection = _onlineSectionOf(request.tab);
@@ -936,6 +946,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                     ],
                                     database: ref.read(appProvider).database,
                                     header: banner,
+                                    workFocus: _downloadsWorkFocus,
+                                    onClearWorkFocus: () => setState(
+                                      () => _downloadsWorkFocus = null,
+                                    ),
                                     onAddTask: _openManualTaskDialog,
                                     executionDeviceLabel: _executionDeviceLabel,
                                     onOpenExecutionSettings:

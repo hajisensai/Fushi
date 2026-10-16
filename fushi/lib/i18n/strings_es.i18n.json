@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "Sembrando",
   "download_task_status_stalled": "Atascado",
   "download_task_toggle_failed": "Pausa/reanudación falló",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "Tareas",
   "download_test_connection": "Probar conexión",
   "download_test_connection_failed": "La conexión falló. Verifique la dirección y las credenciales.",

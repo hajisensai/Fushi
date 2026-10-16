@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "Paylaşılıyor",
   "download_task_status_stalled": "Durağan",
   "download_task_toggle_failed": "Duraklatma/devam ettirme başarısız",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "Görevler",
   "download_test_connection": "Bağlantıyı test et",
   "download_test_connection_failed": "Bağlantı başarısız. Adresi ve kimlik bilgilerini kontrol edin.",

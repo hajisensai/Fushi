@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "Seeden",
   "download_task_status_stalled": "Vastgelopen",
   "download_task_toggle_failed": "Pauzeren/hervatten mislukt",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "Taken",
   "download_test_connection": "Verbinding testen",
   "download_test_connection_failed": "Verbinding mislukt. Controleer het adres en de inloggegevens.",

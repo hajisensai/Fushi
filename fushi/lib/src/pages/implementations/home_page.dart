@@ -57,6 +57,7 @@ import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/media/torrent/magnet_utils.dart'
     show magnetUriFromInfoHash;
@@ -2183,6 +2184,13 @@ class _HomePageState extends BasePageState<HomePage>
       onOpenDownloads: browseReachable
           ? () => _popToBrowseTab(BrowseTab.downloads)
           : null,
+      // 详情页的「任务」：落到下载任务并只看这部作品（同一可达性门）。
+      onOpenWorkDownloads: browseReachable
+          ? (VideoMediaReference reference) => _popToBrowseTab(
+              BrowseTab.downloads,
+              downloadsWorkFocus: videoDiscoveryDownloadTaskFocus(reference),
+            )
+          : null,
       onOpenSubscriptions: browseReachable
           ? _openVideoDiscoverySubscriptionsPanel
           : null,
@@ -2263,11 +2271,16 @@ class _HomePageState extends BasePageState<HomePage>
   bool _popToBrowseTab(
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
+    DownloadTaskWorkFocus? downloadsWorkFocus,
   }) {
     if (!_browseReachable) return false;
     Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
     if (!mounted) return false;
-    _openBrowseTab(tab, downloadsSection: downloadsSection);
+    _openBrowseTab(
+      tab,
+      downloadsSection: downloadsSection,
+      downloadsWorkFocus: downloadsWorkFocus,
+    );
     return true;
   }
 
@@ -2914,6 +2927,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _openBrowseTab(
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
+    DownloadTaskWorkFocus? downloadsWorkFocus,
   }) {
     // 浏览页是保活 tab：跳转是一条送给已挂载页面的请求（它原地切页签），不再换
     // key 整页重建——那会丢掉来源 / 发现 / 下载各页签的搜索词、结果与滚动。
@@ -2921,6 +2935,7 @@ class _HomePageState extends BasePageState<HomePage>
       _browseRequest = BrowseNavigationRequest(
         tab,
         downloadsSection: downloadsSection,
+        downloadsWorkFocus: downloadsWorkFocus,
       );
     });
     _selectTab(HomeTab.browse);

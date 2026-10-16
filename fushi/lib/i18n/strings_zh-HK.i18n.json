@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "做種中",
   "download_task_status_stalled": "等待資源",
   "download_task_toggle_failed": "暫停/恢復操作失敗",
+  "download_task_work_focus_clear": "顯示全部任務",
+  "download_task_work_focus_label": "僅顯示「$title」的任務",
   "download_tasks_tab": "任務",
   "download_test_connection": "測試連接",
   "download_test_connection_failed": "連接失敗，請檢查地址與賬號密碼。",

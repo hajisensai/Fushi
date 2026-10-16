@@ -191,6 +191,12 @@ DownloadTaskEntry animeDownloadTaskEntry({
     collectionKey: collectionKey,
     collectionTitle: collectionKey == null ? null : plan.seriesTitle,
     searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
+    // 旧番剧计划唯一记着的作品身份是 AniList id：有它就能被「定位到这部番」精确
+    // 命中，不必退回标题兜底。
+    workIdentity: DownloadTaskWorkIdentity.maybe(
+      'anilist',
+      plan.anilistId?.toString(),
+    ),
     actions: actions,
     builder: builder,
   );

@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "Fazendo seed",
   "download_task_status_stalled": "Parado",
   "download_task_toggle_failed": "Pausar/retomar falhou",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "Tarefas",
   "download_test_connection": "Testar conexão",
   "download_test_connection_failed": "Conexão falhou. Verifique o endereço e as credenciais.",

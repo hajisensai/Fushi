@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "กำลังแชร์",
   "download_task_status_stalled": "หยุดชะงัก",
   "download_task_toggle_failed": "หยุดชั่วคราว/เล่นต่อล้มเหลว",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "งาน",
   "download_test_connection": "ทดสอบการเชื่อมต่อ",
   "download_test_connection_failed": "การเชื่อมต่อล้มเหลว ตรวจสอบที่อยู่และข้อมูลรับรอง",

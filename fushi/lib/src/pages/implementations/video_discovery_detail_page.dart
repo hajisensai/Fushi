@@ -10,6 +10,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
+import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi_engine/media/video/acquisition/host_video_acquisition_assembly.dart'
+    show videoDiscoveryIdentityMatches;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/utils.dart';
@@ -34,6 +37,29 @@ List<String> videoDiscoveryLatinTitles(VideoDiscoveryItem item) {
         value.trim(),
   ];
 }
+
+/// 发现作品 → 「只看这部作品的下载任务」的筛选。
+///
+/// 带身份的任务（video job 的 metadataProvider / externalId、旧番剧计划的
+/// AniList id）按 [videoDiscoveryIdentityMatches] 精确判定——与详情页「下载中」
+/// 状态同一判据，跨站 id（TMDB / AniList / MAL…）都认；没身份的来源按作品的
+/// 标题 / 原名 / 别名兜底。
+DownloadTaskWorkFocus videoDiscoveryDownloadTaskFocus(
+  VideoMediaReference reference,
+) =>
+    DownloadTaskWorkFocus(
+      title: reference.title,
+      titles: <String>[
+        if (reference.originalTitle != null) reference.originalTitle!,
+        ...reference.aliases,
+      ],
+      matchesIdentity: (DownloadTaskWorkIdentity identity) =>
+          videoDiscoveryIdentityMatches(
+        reference,
+        identity.provider,
+        identity.externalId,
+      ),
+    );
 
 typedef VideoDiscoveryAction = Future<void> Function(
   BuildContext context,
@@ -61,6 +87,7 @@ class VideoDiscoveryActions {
     this.onSubscribe,
     this.onPlay,
     this.onOpenDownloads,
+    this.onOpenWorkDownloads,
     this.onOpenSubscriptions,
     this.onCancelDownloads,
     this.onAiAcquire,
@@ -79,6 +106,13 @@ class VideoDiscoveryActions {
   final VideoDiscoveryAction? onSubscribe;
   final VideoDiscoveryAction? onPlay;
   final VoidCallback? onOpenDownloads;
+
+  /// 作品详情页的「任务」：打开下载任务并**只看这部作品**的任务（含已完成 /
+  /// 失败）。null 时详情页退回 [onOpenDownloads]（只打开下载页）。
+  ///
+  /// 详情页此前接的是 [onOpenDownloads]：跳到下载页就结束了，用户还得自己在
+  /// 全部任务里翻这部番（反馈：「跳转到下载页面然后就没动静了」）。
+  final ValueChanged<VideoMediaReference>? onOpenWorkDownloads;
   final VoidCallback? onOpenSubscriptions;
 
   /// 取消本作品当前在飞的下载任务（[VideoDiscoveryAcquisitionState.activeJobIds]）。
@@ -408,6 +442,16 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     );
   }
 
+  /// 「任务」入口：能定位到本作品就定位（[VideoDiscoveryActions.onOpenWorkDownloads]），
+  /// 否则只打开下载页。两者都没接（下载模块关着）返回 null，入口不渲染。
+  VoidCallback? _openDownloadsFor(VideoDiscoveryItem item) {
+    if (widget.actions.onOpenWorkDownloads
+        case final ValueChanged<VideoMediaReference> onWork) {
+      return () => onWork(item.reference);
+    }
+    return widget.actions.onOpenDownloads;
+  }
+
   /// 已在库能播 → 「播放」是主动作；否则「找资源」（获取）是主动作。
   bool _playIsPrimary(VideoDiscoveryAcquisitionState state) =>
       state.isInLibrary && widget.actions.onPlay != null;
@@ -455,7 +499,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           label: t.ai_video_acquire_entry,
           onSelected: () => onAi(item.reference.title),
         ),
-      if (widget.actions.onOpenDownloads case final VoidCallback onDownloads)
+      if (_openDownloadsFor(item) case final VoidCallback onDownloads)
         MediaDetailMenuItem(
           key: const ValueKey<String>('video-discovery-detail-downloads-menu'),
           icon: FushiIcons.download,
@@ -554,7 +598,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             SizedBox(height: tokens.spacing.card),
           _buildAcquisitionStatus(state),
           if (state.isBusy && state.activeJobIds.isNotEmpty)
-            _buildBusyActions(state),
+            _buildBusyActions(item, state),
         ],
       ),
     );
@@ -601,7 +645,11 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   /// **单独一行**，不塞进上面那个状态 Row：窗口下限是 360dp（
   /// [DesktopWindowPlacement.minimumSize]），状态文案本身就已经在抢宽度，再并排
   /// 两颗带图标的按钮必然溢出。Wrap 让它在更窄时自己换行。
-  Widget _buildBusyActions(VideoDiscoveryAcquisitionState state) {
+  Widget _buildBusyActions(
+    VideoDiscoveryItem item,
+    VideoDiscoveryAcquisitionState state,
+  ) {
+    final VoidCallback? onDownloads = _openDownloadsFor(item);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
@@ -618,10 +666,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
               icon: const FushiIcon(FushiIcons.close, size: 16),
               label: Text(t.cancel),
             ),
-          if (widget.actions.onOpenDownloads != null)
+          if (onDownloads != null)
             FushiTextButton.icon(
               key: const ValueKey<String>('video-discovery-detail-downloads'),
-              onPressed: widget.actions.onOpenDownloads,
+              onPressed: onDownloads,
               icon: const FushiIcon(FushiIcons.download, size: 16),
               label: Text(t.download_tasks_tab),
             ),

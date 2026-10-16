@@ -2168,6 +2168,8 @@
   "download_task_status_seeding": "シード中",
   "download_task_status_stalled": "停滞中",
   "download_task_toggle_failed": "一時停止/再開に失敗",
+  "download_task_work_focus_clear": "すべてのタスクを表示",
+  "download_task_work_focus_label": "「$title」のタスクのみ表示",
   "download_tasks_tab": "タスク",
   "download_test_connection": "接続テスト",
   "download_test_connection_failed": "接続に失敗しました。アドレスと認証情報を確認してください。",
