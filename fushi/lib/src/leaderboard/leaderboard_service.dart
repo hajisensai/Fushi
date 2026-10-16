@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_isbn_backfill.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
@@ -288,22 +289,84 @@ class LeaderboardService extends ChangeNotifier {
   /// 导出本机恢复码（含私钥）。未开启抛 [StateError]。
   String exportRecoveryCode() => _requireAccount().recoveryCode;
 
+  // ---- 跟随已配对设备自动登录（设计见 interconnect_leaderboard_link.dart 文件头） ----
+
+  /// 本机可以跟随已配对设备自动登录：没有账户，且这个 Profile 在本机**从没**登录过
+  /// （主动退出过就不再自动登回去，见 [LeaderboardStore.signedInMarker]）。
+  Future<bool> canFollowPairedLogin() async {
+    await load();
+    if (_account != null) return false;
+    return !await _requireStore().hasSignedInBefore();
+  }
+
+  /// 新设备侧：生成本机钥匙 → 只把公钥 + 持有证明交给 [link]（经已认证的互联通道送到
+  /// 已登录的对端，由对端代绑）→ 用对端转回的服务端应答存盘。私钥 / 恢复码从不离开
+  /// 本机。不再向服务端二次确认：对端已经绑定成功，这时再因网络问题丢弃钥匙只会在账户
+  /// 上留下一台永远用不上的设备（占 10 台名额）；万一对端所述不实，本机第一次签名请求就会
+  /// 收到 401 `unknown_account` 自动退出，且之后不再自动登录。没有公开同意（这条路没有任何界面，不能替用户勾选），所以与
+  /// 「邮箱登录没勾同意」一样：本机上传默认关闭，之后在账户页打开时再确认。
+  ///
+  /// 本机已有账户（并发登录过）时返回 null、不调 [link]。
+  Future<LeaderboardSelf?> adoptFromPairedDevice(
+    Future<({Map<String, dynamic> account, String? serverUrl})> Function(
+      LeaderboardDeviceLinkRequest request,
+    )
+    link,
+  ) async {
+    await load();
+    if (_account != null) return null;
+    final LeaderboardIdentity identity = LeaderboardIdentity.generate();
+    final LeaderboardDeviceLinkRequest request =
+        LeaderboardDeviceLinkRequest.sign(
+          identity,
+          _serverClock.serverNow(_clockMs()),
+        );
+    final ({Map<String, dynamic> account, String? serverUrl}) linked =
+        await link(request);
+    final LeaderboardSelf self = LeaderboardSelf.fromJson(linked.account);
+    if (self.account.id.isEmpty) {
+      throw const FormatException('paired device returned no account id');
+    }
+    final String? serverUrl = linked.serverUrl;
+    if (serverUrl != null && Uri.tryParse(serverUrl)?.hasScheme != true) {
+      throw const FormatException('paired device returned a bad server url');
+    }
+    if (_account != null) return null;
+    await _adopt(identity, self, consent: false, serverUrl: serverUrl);
+    return self;
+  }
+
+  /// 已登录设备侧：代已配对的新设备把 [request] 里的钥匙挂到本账户。本机没有账户返回
+  /// null；服务端错误原样抛 [LeaderboardApiException]，网络异常原样透出。
+  Future<({LeaderboardSelf self, String? serverUrl})?> linkPairedDevice(
+    LeaderboardDeviceLinkRequest request,
+  ) async {
+    await load();
+    final LeaderboardClient? client = _client;
+    final LeaderboardLocalAccount? account = _account;
+    if (client == null || account == null) return null;
+    final LeaderboardSelf self = await client.linkDevice(request);
+    return (self: self, serverUrl: account.serverUrl);
+  }
+
   Future<void> _adopt(
     LeaderboardIdentity identity,
     LeaderboardSelf self, {
     required bool consent,
+    String? serverUrl,
   }) async {
     final LeaderboardLocalAccount account = LeaderboardLocalAccount(
       recoveryCode: identity.toRecoveryCode(),
       accountId: self.account.id,
       consentAt: consent ? _clockMs() : null,
       uploadEnabled: consent,
-      serverUrl: _account?.serverUrl,
+      serverUrl: serverUrl ?? _account?.serverUrl,
     );
     final LeaderboardStore store = _requireStore();
     await _serialWrite(() async {
       if (_disposed) return;
       await store.write(account);
+      await store.markSignedIn();
       _activate(account, identity);
       _self = self;
       _resetSessionState();
@@ -591,6 +654,8 @@ class LeaderboardService extends ChangeNotifier {
   Future<void> _clearLocal({bool accountGone = false}) {
     final LeaderboardStore store = _requireStore();
     return _serialWrite(() async {
+      // 退出（含账户在别处被删 / 本机被解绑）后不再跟随已配对设备自动登回去。
+      await store.markSignedIn();
       await store.delete();
       _account = null;
       _client = null;

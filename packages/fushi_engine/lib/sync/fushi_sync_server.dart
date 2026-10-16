@@ -30,6 +30,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
+import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
@@ -70,6 +72,7 @@ part 'fushi_sync_server/video_metadata.part.dart';
 part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 part 'fushi_sync_server/game_stream.part.dart';
+part 'fushi_sync_server/leaderboard_link.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
@@ -104,6 +107,7 @@ class FushiPairRequest {
     required this.remoteAddress,
     this.pinVerified,
     this.pinRequired = false,
+    this.clientDeviceId,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -123,6 +127,11 @@ class FushiPairRequest {
   /// 决定是否显示 PIN：LAN 免 PIN 会话（pinRequired=false）不显示 PIN，避免 host 屏上
   /// 出现一个 client 从未被要求输入的「幽灵 PIN」。旧 /api/pair（v1，无 PIN）默认 false。
   final bool pinRequired;
+
+  /// v2 配对里 client 上报的稳定设备 id（= 配对成功后 [FushiPairedPeerRegistration.peerId]）。
+  /// host UI 据此把审批时的选择（如「这是我的设备」）挂到随后落库的那台 peer 上。
+  /// 旧 /api/pair（v1，共享 token，不落 per-peer 行）与没上报 id 的旧 client 为 null。
+  final String? clientDeviceId;
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
@@ -436,6 +445,11 @@ class FushiSyncServer {
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
+
+  /// 「跟随已配对设备自动登录 Fushi 账户」的 host 能力（app 装配，见
+  /// `interconnect_leaderboard_link.dart`）。null（旧调用方 / 无头服务端 / 单测）→
+  /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
+  InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
@@ -841,10 +855,17 @@ class FushiSyncServer {
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
-      if (_videoRemoteService == null) return response;
+      if (_videoRemoteService == null && !_leaderboardLinkAvailable) {
+        return response;
+      }
       final Map<String, dynamic> capabilities =
           jsonDecode(await response.readAsString()) as Map<String, dynamic>;
-      capabilities['videoRemoteControlV1'] = true;
+      if (_videoRemoteService != null) {
+        capabilities['videoRemoteControlV1'] = true;
+      }
+      if (_leaderboardLinkAvailable) {
+        capabilities[kInterconnectLeaderboardLinkCapability] = true;
+      }
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {
@@ -940,6 +961,9 @@ class FushiSyncServer {
     }
     if (reqPath == kInterconnectProfilePath) {
       return _handleInterconnectProfile(request, method);
+    }
+    if (reqPath == kInterconnectLeaderboardLinkPath) {
+      return _handleInterconnectLeaderboardLink(request, method);
     }
     if (reqPath == '/api/tombstones') {
       return _handleTombstones(request, method);

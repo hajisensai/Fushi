@@ -9,6 +9,8 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
@@ -749,6 +751,22 @@ class AppModel with ChangeNotifier {
     // 已配对设备远程更新本机（反馈 Pp8XPyve0N）。同一个实例跨互联服务重启存活：
     // 在途下载的进度不因用户开关一次互联而丢。
     hostSelfUpdater: () => hostSelfUpdater,
+    // 标记为「我的设备」的已配对设备跟随本机 Fushi 账户自动登录：对端只交来它自己的
+    // 公钥，由本机账户代绑。
+    // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
+    leaderboardLinkHost: () => AppLeaderboardLinkHost(
+      enabled: () =>
+          SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),
+      // 只认配对审批时选了「这是我的设备」/ 之后手动标记的 peer。
+      isOwnerDevicePeer: (String token) =>
+          SyncRepository(database).isOwnerDevicePeerToken(token),
+      service: () {
+        final BuildContext? context = navigatorKey.currentContext;
+        if (context == null) return null;
+        return ProviderScope.containerOf(context, listen: false)
+            .read(leaderboardServiceProvider);
+      },
+    ),
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,

@@ -516,6 +516,8 @@ void main() {
           'interconnect.mine_to_server',
           'interconnect.backup_backend',
           'interconnect.service_config_sync',
+          // 跟随已配对设备自动登录 Fushi 账户（client 侧开关，默认开）。
+          'interconnect.leaderboard_follow_login',
           'interconnect.profile_upload',
           'interconnect.profile_download',
           // 主机版本 / 更新主机（反馈 Pp8XPyve0N）：也是「交给已配对设备」的一次性动作。
@@ -545,6 +547,8 @@ void main() {
             // 必须是主机主人的显式意愿，所以同样是主机服务子页的能力开关。
             'interconnect.game_stream_remote_launch',
             'interconnect.profile_transfer_host',
+            // 允许「我的设备」跟随本机 Fushi 账户自动登录（总闸，默认开）。
+            'interconnect.leaderboard_link_host',
             // 允许已配对设备远程更新本机（反馈 Pp8XPyve0N）：会在本机下载安装
             // 可执行文件，同样是主人的显式意愿。
             'interconnect.remote_update_host',

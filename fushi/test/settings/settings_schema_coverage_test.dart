@@ -105,6 +105,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 信任区 / nonce）由专项测试咬住，开关实时读由 host_self_update_service_test 咬住。
   'interconnect/Allow paired devices to update this device':
       'test/sync/fushi_sync_server_host_update_test.dart',
+  // 「跟随已配对设备自动登录」（client 侧）与「允许已配对设备自动登录我的账户」
+  // （host 侧总闸）：生效点分别在首页后台 tick 的 LeaderboardPairedLogin（开关关 =
+  // 一个请求都不发）与 HTTP 端点 /api/interconnect/leaderboard-link（关着回 403
+  // disabled）。harness 里没有起 TLS server 与已配对 peer，探不到；由专项测试咬住。
+  "interconnect/Sign in with a paired device's account":
+      'test/leaderboard/leaderboard_paired_login_test.dart',
+  'interconnect/Let paired devices sign in with my account':
+      'test/leaderboard/leaderboard_paired_login_test.dart',
   // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
   // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
   // 实时读它，关着就退回原文件直传、能力位报 false。harness 里没有起 server，探不到。

@@ -119,6 +119,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/login` `{pubkey, email, code}` | 自签 | 新设备登录：把本机钥匙绑到该邮箱的账户（每账户 ≤ 10 台） |
 | GET | `/v1/me` | 签名 | 自己的账户（含 `uploadDevice`、`shelfCount`） |
 | GET | `/v1/me/devices` | 签名 | 已登录设备 `{devices:[{keyId, createdAt, lastUsedAt, current}]}` |
+| POST | `/v1/me/devices` `{pubkey, time, proof}` | 签名·写 | 已登录设备代已互联配对的新设备绑定钥匙（新设备只交出公钥；`proof` = 新设备私钥对 `fushi-device-link\n<pubkey>\n<time>` 的签名，±5 分钟）。新绑 201、已在本账户 200（幂等）；满 10 台 409 `too_many_devices`、钥匙属于别的账户 409 `key_taken`；每账户每小时 ≤ 10 次 |
 | DELETE | `/v1/me/devices/:keyId` | 签名·写 | 解绑另一台设备（不能解绑当前设备：400 `cannot_remove_current`；解绑上传设备会清空上传设备） |
 | PATCH | `/v1/me` `{nickname?, visibility?}` | 签名·写 | 改资料 |
 | DELETE | `/v1/me` | 签名·写 | 删除账户与全部数据 |

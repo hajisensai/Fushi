@@ -235,6 +235,22 @@ class SyncRepository {
   // （BUG-988 立过的规矩），出站也一样：整份 Profile 比四个内容上传开关更敏感。
   static const _keyInterconnectProfileTransfer =
       'interconnect_profile_transfer';
+  // 「允许已配对设备自动登录我的 Fushi 账户」的 **host 侧**开关（所有者 2026-10-16 拍板：
+  // 默认开——已配对本身就是信任凭据）。关掉时 `/api/interconnect/leaderboard-link` 403。
+  // 对端只交来它自己的公钥，本机私钥 / 恢复码从不外传。
+  static const _keyInterconnectLeaderboardLinkHost =
+      'interconnect_leaderboard_link_host';
+  // **client 侧**开关「跟随已配对设备自动登录」（默认开）：本机没有 Fushi 账户、且连上已
+  // 登录账户的已配对 host 时，后台自动把本机新生成的设备钥匙挂到同一账户。
+  static const _keyLeaderboardFollowPairedLogin =
+      'leaderboard_follow_paired_login';
+  // host 侧「我的设备」标记（所有者 2026-10-16 拍板）：被标记的已配对 peer 才能跟随本机
+  // 账户自动登录。JSON 字符串数组，元素是 `fushi_paired_peers.peerId`。每次（重新）配对
+  // 落库都按审批时的选择**显式**重写这台 peer 的标记（选「仅互联」/ 扫码票据配对 = 去掉），
+  // 吊销时删掉——所以残留在这里的旧 peerId 永远碰不到一台没经过本次审批的 peer。升级前
+  // 配对过的 peer 不在集合里 = 「仅互联」，不追溯授权。
+  static const _keyInterconnectOwnerDevicePeers =
+      'interconnect_owner_device_peers';
   // 互联「远程更新本机」的 **host 侧**开关（反馈 Pp8XPyve0N）：允许已配对设备查看并
   // 触发本机 app 更新。默认 false —— 让别的设备在本机下载安装可执行文件，必须是主机
   // 主人的显式意愿（Never break userspace：升级后什么都不会自己发生）。
@@ -671,6 +687,58 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectProfileTransfer, false);
   Future<void> setInterconnectProfileTransferEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectProfileTransfer, v);
+
+  /// host 侧：是否允许已配对设备跟随本机账户自动登录（默认开）。
+  Future<bool> isInterconnectLeaderboardLinkHostEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectLeaderboardLinkHost, true);
+  Future<void> setInterconnectLeaderboardLinkHostEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectLeaderboardLinkHost, v);
+
+  /// host 侧：被标记为「我的设备」的已配对 peer（peerId 集合）。
+  Future<Set<String>> getOwnerDevicePeerIds() async {
+    final String? raw = await _getStringOrNull(
+      _keyInterconnectOwnerDevicePeers,
+    );
+    if (raw == null || raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return <String>{};
+      return <String>{for (final Object? e in decoded) if (e is String) e};
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  /// 标记 / 取消一台已配对 peer 为「我的设备」。
+  Future<void> setOwnerDevicePeer(String peerId, bool owner) async {
+    final Set<String> ids = await getOwnerDevicePeerIds();
+    final bool changed = owner ? ids.add(peerId) : ids.remove(peerId);
+    if (!changed) return;
+    if (ids.isEmpty) {
+      await _deleteKey(_keyInterconnectOwnerDevicePeers);
+    } else {
+      await _setString(
+        _keyInterconnectOwnerDevicePeers,
+        jsonEncode(ids.toList()..sort()),
+      );
+    }
+  }
+
+  /// 持 [token] 的已配对 peer 是否被标记为「我的设备」（token 不属于任何现存 peer = false）。
+  Future<bool> isOwnerDevicePeerToken(String token) async {
+    final Set<String> owners = await getOwnerDevicePeerIds();
+    if (owners.isEmpty) return false;
+    for (final FushiPairedPeerRow peer in await _db.getPairedPeers()) {
+      if (peer.token == token) return owners.contains(peer.peerId);
+    }
+    return false;
+  }
+
+  /// client 侧：本机无账户时是否跟随已配对设备自动登录（默认开）。
+  Future<bool> isLeaderboardFollowPairedLoginEnabled() =>
+      _db.getPrefTyped<bool>(_keyLeaderboardFollowPairedLogin, true);
+  Future<void> setLeaderboardFollowPairedLoginEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyLeaderboardFollowPairedLogin, v);
 
   /// host 侧：是否允许已配对设备远程更新本机 app（`/api/host/update`）。
   ///

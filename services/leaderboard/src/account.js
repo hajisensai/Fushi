@@ -1,7 +1,7 @@
 // 账户生命周期：注册（幂等）、改资料、删除（服务端全删，含 R2 头像与成为孤儿的作品）。
 
 import { HttpError } from './util.js';
-import { verifyRegistration } from './auth.js';
+import { verifyDeviceLinkProof, verifyRegistration } from './auth.js';
 import { allocateDiscriminator, checkNickname } from './nickname.js';
 import { consumeCode } from './email.js';
 import { casBatch, casStatements, coverKeysOf, orphanPurgeStatements, readersDeltaStatement } from './shelf.js';
@@ -80,6 +80,39 @@ export async function listDevices(env, viewer) {
       current: r.key_id === viewer.keyId,
     })),
   };
+}
+
+/**
+ * POST /v1/me/devices {pubkey, time, proof}：已登录设备（签名者）把另一台新设备的钥匙绑到本账户——
+ * 已互联配对的手机不用再走邮箱验证码（新设备在本机生成自己的钥匙，只把**公钥**交给已登录设备代绑；
+ * 私钥 / 恢复码从不离开各自的设备）。proof 是新设备私钥对 deviceLinkProofString 的签名（持有证明）。
+ * 与 /v1/login 同一套上限（MAX_DEVICES，超限 409 too_many_devices）；该钥匙已在本账户 → 幂等 200；
+ * 已属于别的账户 → 409 key_taken。返回新设备视角的账户（uploadDevice 按新钥匙算）。
+ */
+export async function addDevice(env, account, body, now) {
+  if (!body || typeof body.pubkey !== 'string') throw new HttpError(400, 'bad_pubkey');
+  const dev = await verifyDeviceLinkProof(body.pubkey, body.time, body.proof, now);
+  const view = async () => {
+    const row = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(account.id).first();
+    return selfView({ ...row, keyId: dev.id });
+  };
+  const bound = await env.DB.prepare('SELECT account_id FROM device_keys WHERE key_id = ?1').bind(dev.id).first();
+  if (bound) {
+    if (bound.account_id !== account.id) throw new HttpError(409, 'key_taken');
+    return { created: false, account: await view() };
+  }
+  // 计数与插入在同一条语句里：并发绑定也不会越过上限（同 login）。
+  const res = await env.DB.prepare(
+    `INSERT OR IGNORE INTO device_keys (key_id, account_id, pubkey, created_at)
+     SELECT ?1, ?2, ?3, ?4 WHERE (SELECT COUNT(*) FROM device_keys WHERE account_id = ?2) < ?5`,
+  ).bind(dev.id, account.id, dev.pubkeyB64, now, MAX_DEVICES).run();
+  if (res.meta.changes !== 1) {
+    const again = await env.DB.prepare('SELECT account_id FROM device_keys WHERE key_id = ?1').bind(dev.id).first();
+    if (again && again.account_id === account.id) return { created: false, account: await view() };
+    if (again) throw new HttpError(409, 'key_taken');
+    throw new HttpError(409, 'too_many_devices');
+  }
+  return { created: true, account: await view() };
 }
 
 /**
@@ -173,8 +206,8 @@ export async function deleteAccount(env, account) {
     env.DB.prepare('DELETE FROM dev_sessions WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM reports WHERE reporter = ?1 OR (target_kind = \'account\' AND target_id = ?1)').bind(id),
     // 精确列出本账户的限流桶（LIKE 的 '_' 是通配符，账户 id 里正好有 '_'）。
-    env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4)')
-      .bind(`shelf:${id}`, `media:${id}`, `social:${id}`, `rows:${id}`),
+    env.DB.prepare('DELETE FROM rate_limits WHERE bucket IN (?1, ?2, ?3, ?4, ?5)')
+      .bind(`shelf:${id}`, `media:${id}`, `social:${id}`, `rows:${id}`, `link:${id}`),
     env.DB.prepare(
       'DELETE FROM used_sigs WHERE account_id IN (SELECT key_id FROM device_keys WHERE account_id = ?1)',
     ).bind(id),

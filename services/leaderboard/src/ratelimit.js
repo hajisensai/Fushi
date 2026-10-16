@@ -18,6 +18,8 @@ export const LIMITS = {
   shelfRowsPerAccountDay: 20000,
   mediaUploadPerHour: 60,
   socialWritePerHour: 120,
+  /** 已登录设备代绑新设备（POST /v1/me/devices）：正常一年几次，客户端失败有退避。 */
+  deviceLinkPerHour: 10,
 };
 
 /** 在 bucket 的当前窗口里累加 amount（默认 1），超过 limit 抛 429。 */

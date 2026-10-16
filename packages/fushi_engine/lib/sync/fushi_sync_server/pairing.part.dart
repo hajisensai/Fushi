@@ -151,6 +151,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
         pinVerified: null,
         pinRequired: true,
+        clientDeviceId: clientDeviceId,
       ));
       if (!approved) return _pairDenied('declined');
     }
@@ -331,6 +332,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         remoteAddress: session.remoteAddress,
         pinVerified: true,
         pinRequired: false,
+        clientDeviceId: session.clientDeviceId,
       ));
       if (!approved) return _pairDenied('declined');
     }

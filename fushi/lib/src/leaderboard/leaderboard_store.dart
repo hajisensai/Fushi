@@ -137,6 +137,26 @@ class LeaderboardStore {
   File get file =>
       File(p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.json'));
 
+  /// 「本机这个 Profile 登录过账户」标记：`profile_<id>.signed_in`（空文件，不含任何
+  /// 账户信息）。任何一次登录 / 注册 / 导入都写它，退出（含账户在别处被删、本机被解绑）
+  /// 时也补写。存在时不再跟随已配对设备自动登录——用户主动退出后不会被自动登回去。
+  /// 与账户文件同目录：同样不进偏好表、不进备份（「本机」标记）。
+  File get signedInMarker => File(
+    p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.signed_in'),
+  );
+
+  /// 本机这个 Profile 登录过账户（标记或账户文件任一存在）。
+  Future<bool> hasSignedInBefore() async =>
+      await signedInMarker.exists() || await file.exists();
+
+  /// 写「登录过」标记（幂等）。
+  Future<void> markSignedIn() async {
+    final File marker = signedInMarker;
+    if (await marker.exists()) return;
+    await marker.parent.create(recursive: true);
+    await marker.writeAsString('', flush: true);
+  }
+
   static final RegExp _fileName = RegExp(r'^profile_(\d+)\.json$');
 
   /// 本机正在上传的 Profile：账户文件存在、同意上传、没被别的设备顶掉。用来选同机

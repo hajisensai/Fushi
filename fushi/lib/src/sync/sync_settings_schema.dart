@@ -837,6 +837,24 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectServiceConfigSyncEnabled(value);
             },
           ),
+          // 跟随已配对设备自动登录 Fushi 账户（所有者 2026-10-16 拍板：默认开、无按钮无
+          // 确认）。仅对把本机标记为「我的设备」的已配对 host 生效（host 侧另有一道门）；
+          // 只在本机这个 Profile 从没登录过账户时生效，主动退出过就不再自动登回去。本机
+          // 只交出自己新生成的公钥，私钥不经互联。
+          SettingsSwitchItem(
+            id: 'interconnect.leaderboard_follow_login',
+            title: t.interconnect_leaderboard_follow_login_toggle,
+            subtitle: t.interconnect_leaderboard_follow_login_toggle_desc,
+            icon: FushiIcons.profiles,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).leaderboardFollowPairedLogin,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).leaderboardFollowPairedLogin = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setLeaderboardFollowPairedLoginEnabled(value);
+            },
+          ),
           // 「配置文件」（Profile）双向搬运：用户诉求是把一台设备调好的配置搬到另一
           // 台，而不是每台重配一遍。做成**一次性动作**而不是自动跟随开关——整份配置
           // 会在对端落一份新 Profile，什么时候搬该由用户在点的那一刻决定（与云通道
@@ -1032,6 +1050,25 @@ SettingsDestination _buildInterconnectHostPage() {
               ).setInterconnectProfileTransferEnabled(value);
             },
           ),
+          // 允许已配对设备跟随本机 Fushi 账户自动登录（总闸，默认开，所有者 2026-10-16
+          // 拍板）。仅对标记为「我的设备」的已配对设备生效（配对审批选「允许 · 这是我的
+          // 设备」或在已配对设备列表里手动标记；升级前配对的设备默认「仅互联」，不追溯
+          // 授权）。对端只交来它自己的公钥，由本机账户代绑；本机私钥 / 恢复码从不外传。
+          // 端点另有 HTTPS + 已配对 peer token 两道门；本开关关掉 = 403 disabled。
+          SettingsSwitchItem(
+            id: 'interconnect.leaderboard_link_host',
+            title: t.interconnect_leaderboard_link_host_toggle,
+            subtitle: t.interconnect_leaderboard_link_host_toggle_desc,
+            icon: FushiIcons.profiles,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectLeaderboardLinkHost,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectLeaderboardLinkHost = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectLeaderboardLinkHostEnabled(value);
+            },
+          ),
           // 远程更新本机许可（反馈 Pp8XPyve0N）。默认关：让别的设备在本机下载安装
           // 可执行文件必须是主人的显式意愿。端点另有已配对 peer token + 局域网信任区
           // + 一次性 nonce 几道门。只在本机能应用内自更新的平台出现（平台门 =
@@ -1203,6 +1240,12 @@ class _SyncSettingsState {
 
   /// host 侧：是否允许已配对设备读写本机「配置文件」（Profile）。默认 false。
   bool interconnectProfileTransfer = false;
+
+  /// host 侧：是否允许已配对设备跟随本机账户自动登录。默认 true。
+  bool interconnectLeaderboardLinkHost = true;
+
+  /// client 侧：本机无账户时是否跟随已配对设备自动登录。默认 true。
+  bool leaderboardFollowPairedLogin = true;
   bool interconnectRemoteUpdate = false;
   bool _loaded = false;
   bool _loading = false;
@@ -1314,6 +1357,10 @@ class _SyncSettingsState {
           .isInterconnectServiceConfigSyncEnabled();
       interconnectProfileTransfer = await _repo
           .isInterconnectProfileTransferEnabled();
+      interconnectLeaderboardLinkHost = await _repo
+          .isInterconnectLeaderboardLinkHostEnabled();
+      leaderboardFollowPairedLogin = await _repo
+          .isLeaderboardFollowPairedLoginEnabled();
       interconnectRemoteUpdate = await _repo
           .isInterconnectRemoteUpdateEnabled();
       serverEnabled = await _repo.isServerEnabled();
