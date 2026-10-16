@@ -306,6 +306,16 @@ class SrsAnkiPreset {
   final bool rwkvEnabled;
 }
 
+/// Anki 的 `unicase` 排序规则（Rust `unicase::UniCase`：忽略大小写的 Unicode
+/// 比较）：只差大小写的两串视为相等，与 Anki 建索引时的判据一致。
+int ankiUnicaseCompare(String? a, String? b) {
+  if (a == null || b == null) {
+    if (a == b) return 0;
+    return a == null ? -1 : 1;
+  }
+  return a.toLowerCase().compareTo(b.toLowerCase());
+}
+
 /// 来源集合的元信息（笔记 / 卡片 / revlog 由导入流程按需流式读）。
 class SrsAnkiCollection {
   SrsAnkiCollection._(this.db, this.file);
@@ -336,6 +346,11 @@ class SrsAnkiCollection {
     }
     final SrsAnkiCollection c = SrsAnkiCollection._(db, f);
     try {
+      // schema 18（Anki 2.1.28+ / AnkiDroid 2.15+）的 notetypes / fields / decks /
+      // tags 表把 name 列声明成 `COLLATE unicase`（Anki 的 Rust 端注册的自定义排序
+      // 规则）。不注册的话 SQLite 在 prepare 任何引用这些表的语句时就报
+      // 「no such collation sequence: unicase」，整包导入失败。
+      db.createCollation(name: 'unicase', function: ankiUnicaseCompare);
       c._load();
     } on SrsImportException {
       await c.close();
