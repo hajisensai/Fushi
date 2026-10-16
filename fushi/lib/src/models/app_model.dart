@@ -1433,7 +1433,19 @@ class AppModel with ChangeNotifier {
   );
 
   late FileExportManager _fileExportManager;
-  late LocalAudioManager _localAudioManager;
+  LocalAudioManager? _localAudioManagerOrNull;
+  LocalAudioManager get _localAudioManager => _localAudioManagerOrNull!;
+  set _localAudioManager(LocalAudioManager value) =>
+      _localAudioManagerOrNull = value;
+
+  /// Android 原生 `TtsChannelHandler` 新挂上本引擎时重推本地音频库配置（BUG-3419，
+  /// 见 [TtsChannel.onNativeHandlerAttached]）。管理器还没建好时什么也不做：
+  /// `initialise()` 随后自己会绑定，那时原生 handler 已经在了。
+  Future<void> rebindLocalAudioForNativeHandler() async {
+    final LocalAudioManager? manager = _localAudioManagerOrNull;
+    if (manager == null) return;
+    await manager.bindForNativeHandler();
+  }
 
   /// Keyboard / gamepad shortcut bindings, persisted in preferences.
   final FushiShortcutRegistry shortcutRegistry = FushiShortcutRegistry();
