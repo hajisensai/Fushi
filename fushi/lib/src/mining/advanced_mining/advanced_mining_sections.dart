@@ -7,12 +7,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningMosaicRegion;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
 
@@ -1041,6 +1043,12 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
             const SizedBox(height: 6),
             _caption(context, t.popup_advanced_mining_image_clip_needs_audio),
           ],
+          // 已打的码只对静态截图生效：切到动图 / 片段 / 不要时如实说一声，码留着，
+          // 切回截图方式就又生效。
+          if (c.mosaicRegions.isNotEmpty && !c.mosaicApplicable) ...<Widget>[
+            const SizedBox(height: 6),
+            _caption(context, t.popup_advanced_mining_mosaic_still_only),
+          ],
           FushiAnimatedSize(
             duration: context.fushiMotion.spatialDefault.duration,
             curve: context.fushiMotion.spatialDefault.curve,
@@ -1067,25 +1075,44 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
     if (mode.isStill) {
       final int? at = c.stillFrameMs;
       if (at == null) return const SizedBox(width: double.infinity);
+      final Future<Uint8List?> Function(int atMs)? frameAt = section.frameAt;
       return Padding(
         padding: const EdgeInsets.only(top: 10),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Expanded(
-              child: AdvancedMiningFrameTile(
-                caption:
-                    '${videoImageModeLabel(mode)} ${formatAdvancedMiningTime(at)}',
-                atMs: at,
-                frameAt: section.frameAt,
-                onBack: c.locked
-                    ? null
-                    : () => c.nudgeStillFrame(forward: false),
-                onForward: c.locked
-                    ? null
-                    : () => c.nudgeStillFrame(forward: true),
-              ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: AdvancedMiningFrameTile(
+                    caption:
+                        '${videoImageModeLabel(mode)} ${formatAdvancedMiningTime(at)}',
+                    atMs: at,
+                    frameAt: frameAt,
+                    mosaic: c.mosaicRegions,
+                    onBack: c.locked
+                        ? null
+                        : () => c.nudgeStillFrame(forward: false),
+                    onForward: c.locked
+                        ? null
+                        : () => c.nudgeStillFrame(forward: true),
+                  ),
+                ),
+                const Spacer(),
+              ],
             ),
-            const Spacer(),
+            // 打码在编辑页里对着**这一帧**框（挪了帧再打开，看到的就是新的那一帧）。
+            if (frameAt != null) ...<Widget>[
+              const SizedBox(height: 8),
+              AdvancedMiningMosaicBar(
+                controller: c,
+                loadBytes: () async {
+                  final int? now = c.stillFrameMs;
+                  return now == null ? null : frameAt(now);
+                },
+              ),
+            ],
           ],
         ),
       );
@@ -1143,11 +1170,15 @@ class AdvancedMiningFrameTile extends StatelessWidget {
     required this.frameAt,
     required this.onBack,
     required this.onForward,
+    this.mosaic = const <MiningMosaicRegion>[],
   });
 
   final String caption;
   final int atMs;
   final Future<Uint8List?> Function(int atMs)? frameAt;
+
+  /// 打码区域（静态封面帧）：缩略图按卡上的样子画出马赛克。
+  final List<MiningMosaicRegion> mosaic;
   final VoidCallback? onBack;
   final VoidCallback? onForward;
 
@@ -1168,7 +1199,11 @@ class AdvancedMiningFrameTile extends StatelessWidget {
                   color: FushiDesignTokens.of(context).surfaces.overlay,
                 ),
                 if (frameAt != null)
-                  AdvancedMiningFrameThumb(atMs: atMs, frameAt: frameAt!),
+                  AdvancedMiningFrameThumb(
+                    atMs: atMs,
+                    frameAt: frameAt!,
+                    mosaic: mosaic,
+                  ),
                 Align(
                   alignment: AlignmentDirectional.bottomStart,
                   child: Padding(
@@ -1234,12 +1269,14 @@ class AdvancedMiningFrameThumb extends StatefulWidget {
     super.key,
     required this.atMs,
     required this.frameAt,
+    this.mosaic = const <MiningMosaicRegion>[],
   });
 
   static const Duration debounce = Duration(milliseconds: 100);
 
   final int atMs;
   final Future<Uint8List?> Function(int atMs) frameAt;
+  final List<MiningMosaicRegion> mosaic;
 
   @override
   State<AdvancedMiningFrameThumb> createState() =>
@@ -1302,6 +1339,13 @@ class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
       switchOutCurve: FushiMotion.exit,
       child: bytes == null
           ? const SizedBox.expand()
+          : widget.mosaic.isNotEmpty
+          ? MiningMosaicImage(
+              key: ValueKey<int?>(_bytesAt),
+              bytes: bytes,
+              regions: widget.mosaic,
+              fit: BoxFit.cover,
+            )
           : Image.memory(
               bytes,
               key: ValueKey<int?>(_bytesAt),

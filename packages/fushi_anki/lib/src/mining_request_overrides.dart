@@ -89,6 +89,93 @@ class MiningImageCrop {
   int get hashCode => Object.hash(pageIndex, left, top, right, bottom);
 }
 
+/// 卡图上的一块打码区域：**相对未裁切原图**的 0..1 归一化矩形。
+///
+/// 坐标系与 [MiningImageCrop] 相同（漫画 = `bakeOrientation` 之后的原页图；视频 /
+/// galgame = 那一帧截图本身）。打码先于裁切落到原图上，所以用户改了取景框也不必换算
+/// 打码位置，预览与出卡共用同一套坐标。
+class MiningMosaicRegion {
+  const MiningMosaicRegion({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  /// 解析 [toJson] 的产物；字段缺失 / 非数字 / 退化矩形返回 null。
+  static MiningMosaicRegion? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final double? l = _num(raw['l']);
+    final double? t = _num(raw['t']);
+    final double? r = _num(raw['r']);
+    final double? b = _num(raw['b']);
+    if (l == null || t == null || r == null || b == null) return null;
+    final MiningMosaicRegion region = MiningMosaicRegion(
+      left: l,
+      top: t,
+      right: r,
+      bottom: b,
+    ).clamped();
+    return region.isDegenerate ? null : region;
+  }
+
+  /// 解析一组区域，坏项逐个丢弃（不因一项坏掉而丢掉整组打码）。
+  static List<MiningMosaicRegion> listFromJson(Object? raw) {
+    if (raw is! List) return const <MiningMosaicRegion>[];
+    return List<MiningMosaicRegion>.unmodifiable(<MiningMosaicRegion>[
+      for (final Object? item in raw)
+        if (fromJson(item) case final MiningMosaicRegion region) region,
+    ]);
+  }
+
+  static double? _num(Object? v) =>
+      v is num && v.isFinite ? v.toDouble() : null;
+
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  double get width => right - left;
+  double get height => bottom - top;
+
+  /// 宽或高不足图像的 0.5%：当成误触，不打码。
+  bool get isDegenerate => width < 0.005 || height < 0.005;
+
+  /// 夹进 0..1，并保证 left<=right、top<=bottom。
+  MiningMosaicRegion clamped() {
+    double c(double v) => v < 0 ? 0 : (v > 1 ? 1 : v);
+    final double l = c(left), r = c(right), t = c(top), b = c(bottom);
+    return MiningMosaicRegion(
+      left: l < r ? l : r,
+      top: t < b ? t : b,
+      right: l < r ? r : l,
+      bottom: t < b ? b : t,
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'l': left,
+    't': top,
+    'r': right,
+    'b': bottom,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is MiningMosaicRegion &&
+      other.left == left &&
+      other.top == top &&
+      other.right == right &&
+      other.bottom == bottom;
+
+  @override
+  int get hashCode => Object.hash(left, top, right, bottom);
+
+  @override
+  String toString() => 'MiningMosaicRegion($left, $top, $right, $bottom)';
+}
+
 /// 「高级制卡」对话框里用户为**这一张卡**做的调整（只对本次请求生效，不改任何设置）。
 ///
 /// 为什么走制卡请求的 fields map 而不是挂在页面 / AppModel 上：阅读器制卡串行队列
@@ -109,6 +196,7 @@ class MiningRequestOverrides {
     this.videoImageMode,
     this.coverFrameAtMs,
     this.crop,
+    this.mosaic = const <MiningMosaicRegion>[],
   });
 
   /// fields map 里的键名。
@@ -142,6 +230,14 @@ class MiningRequestOverrides {
   /// 漫画卡图裁切；null = 不裁（整页，或按「一键制卡默认裁到分镜」设置）。
   final MiningImageCrop? crop;
 
+  /// 卡图打码区域（相对未裁切原图，见 [MiningMosaicRegion]）；空 = 不打码。
+  ///
+  /// 非空时宿主**只能**出静态图（动图 / 视频片段逐帧打码做不到所见即所得），且打码
+  /// 失败时宁可不要卡图也不能退回原图——用户打码就是不想让那块进卡。
+  final List<MiningMosaicRegion> mosaic;
+
+  bool get hasMosaic => mosaic.isNotEmpty;
+
   bool get hasAudioDelta => audioStartDeltaMs != 0 || audioEndDeltaMs != 0;
 
   /// 什么都没改：等价于普通一键制卡，调用方不必往 fields 里写任何东西。
@@ -152,7 +248,8 @@ class MiningRequestOverrides {
       !omitImage &&
       videoImageMode == null &&
       coverFrameAtMs == null &&
-      crop == null;
+      crop == null &&
+      mosaic.isEmpty;
 
   MiningRequestOverrides copyWith({
     String? deckName,
@@ -167,6 +264,7 @@ class MiningRequestOverrides {
     bool clearCoverFrameAtMs = false,
     MiningImageCrop? crop,
     bool clearCrop = false,
+    List<MiningMosaicRegion>? mosaic,
   }) => MiningRequestOverrides(
     deckName: clearDeckName ? null : (deckName ?? this.deckName),
     omitAudio: omitAudio ?? this.omitAudio,
@@ -180,6 +278,7 @@ class MiningRequestOverrides {
         ? null
         : (coverFrameAtMs ?? this.coverFrameAtMs),
     crop: clearCrop ? null : (crop ?? this.crop),
+    mosaic: mosaic ?? this.mosaic,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -191,6 +290,10 @@ class MiningRequestOverrides {
     if (videoImageMode != null) 'videoImageMode': videoImageMode,
     if (coverFrameAtMs != null) 'coverFrameAtMs': coverFrameAtMs,
     if (crop != null) 'crop': crop!.toJson(),
+    if (mosaic.isNotEmpty)
+      'mosaic': <Map<String, Object?>>[
+        for (final MiningMosaicRegion region in mosaic) region.toJson(),
+      ],
   };
 
   static MiningRequestOverrides fromJson(Map<Object?, Object?> json) {
@@ -208,6 +311,7 @@ class MiningRequestOverrides {
       videoImageMode: mode is String && mode.isNotEmpty ? mode : null,
       coverFrameAtMs: frame is num ? frame.toInt() : null,
       crop: MiningImageCrop.fromJson(json['crop']),
+      mosaic: MiningMosaicRegion.listFromJson(json['mosaic']),
     );
   }
 

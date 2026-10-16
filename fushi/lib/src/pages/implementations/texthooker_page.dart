@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -12,11 +13,14 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show VideoMiningImageMode;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/magpie_upscaling_text.dart';
@@ -717,6 +721,48 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   ModuleId? get popupDockModule => ModuleId.games;
 
+  /// 「高级制卡」对话框打开时为当前台词冻结的那一帧（对话框里预览 / 打码的就是它）。
+  /// 确认制卡且打了码时作为出卡源图交给协调器——预览与出卡同源。下一次开对话框时
+  /// 重置；没打码的制卡不读它（照旧现抓 / 录动图）。
+  GalHookLineScreenshot? _advancedMiningStill;
+
+  /// 外部窗口模式（Windows、已绑定游戏窗口）下给高级制卡一个静态截图分区：预览这句
+  /// 台词此刻的窗口画面，可在上面打码（反馈：HCG 不想原图进卡）。纯文本 fallback 制卡
+  /// 不出图，不给图片分区。
+  @override
+  Future<AdvancedMiningSections> buildAdvancedMiningSections({
+    required String matched,
+  }) async {
+    _advancedMiningStill = null;
+    final GalHookSessionState sessionState = _session.state;
+    final String? lineId = _activeLineId;
+    if (!Platform.isWindows ||
+        !sessionState.externalWindowMode ||
+        sessionState.boundWindow == null ||
+        lineId == null) {
+      return AdvancedMiningSections.none;
+    }
+    // 开窗当下就抓：对话框里看到的、打码的、最终进卡的是同一张图。
+    final Future<Uint8List?> capture = GalHookMiningCoordinator.instance
+        .captureBoundWindowStill()
+        .then((Uint8List? png) {
+          if (png != null && png.isNotEmpty && mounted) {
+            _advancedMiningStill = GalHookLineScreenshot(
+              lineId: lineId,
+              pngBytes: png,
+            );
+          }
+          return png;
+        });
+    final VideoMiningImageMode mode = mixinAppModel.galMiningImageMode;
+    return AdvancedMiningSections(
+      stillImage: AdvancedMiningStillImageSection(
+        loadImage: () => capture,
+        mosaicForcesStill: !mode.isStill,
+      ),
+    );
+  }
+
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final GalHookSessionState sessionState = _session.state;
@@ -735,7 +781,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       }
       return result;
     }
-    return _mineActiveLine(fields: fields);
+    return _mineActiveLine(
+      fields: fields,
+      overrides: MiningRequestOverrides.readFrom(fields),
+    );
   }
 
   @override
@@ -749,13 +798,24 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         !Platform.isWindows) {
       return super.onUpdateEntry(noteId, _fieldsForMine(fields));
     }
-    return _mineActiveLine(fields: fields, updateNoteId: noteId);
+    return _mineActiveLine(
+      fields: fields,
+      updateNoteId: noteId,
+      overrides: MiningRequestOverrides.readFrom(fields),
+    );
   }
 
   Future<MinePopupResult> _mineActiveLine({
     required Map<String, String> fields,
     int? updateNoteId,
+    MiningRequestOverrides? overrides,
   }) async {
+    // 打码只对高级制卡对话框冻结的那一帧做（同步读走，对话框关后不再依赖页面状态）。
+    final List<MiningMosaicRegion> mosaic =
+        overrides?.mosaic ?? const <MiningMosaicRegion>[];
+    final GalHookLineScreenshot? previewStill = mosaic.isEmpty
+        ? null
+        : _advancedMiningStill;
     final String? lineId = _activeLineId;
     final TexthookerLineEntry? entry = lineId == null
         ? null
@@ -796,6 +856,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           animatedFormat: mixinAppModel.galMiningAnimatedFormat,
           stillFormat: mixinAppModel.galMiningStillFormat,
           clipFormat: mixinAppModel.galMiningClipFormat,
+          mosaic: mosaic,
+          previewStill: previewStill,
         );
     if (result.aborted) {
       FushiToast.showMine(
@@ -1928,8 +1990,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     footer: <Widget>[
                       if (Platform.isWindows)
                         GalAttachedLookupWorkbench(
-                          controller:
-                              GalHookTextOverlayController.instance.attachedText,
+                          controller: GalHookTextOverlayController
+                              .instance
+                              .attachedText,
                           hasSelectedBodyThread:
                               selectedTextThreadKey != null &&
                               textThreads.any(
@@ -2515,11 +2578,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           Icons.content_paste_go_outlined,
           t.game_hook_code_paste_title,
         ),
-        item(
-          _HookCodeAction.save,
-          Icons.bookmark_add_outlined,
-          t.dialog_save,
-        ),
+        item(_HookCodeAction.save, Icons.bookmark_add_outlined, t.dialog_save),
         item(
           _HookCodeAction.import,
           Icons.file_download_outlined,
@@ -3022,10 +3081,11 @@ class _SessionOverviewCard extends StatelessWidget {
           child: Text(
             title,
             key: ValueKey<String>(title),
-            style: (compact
-                    ? type.titleMediumEmphasized
-                    : type.titleLargeEmphasized)
-                .copyWith(color: heroForeground),
+            style:
+                (compact
+                        ? type.titleMediumEmphasized
+                        : type.titleLargeEmphasized)
+                    .copyWith(color: heroForeground),
           ),
         ),
         const SizedBox(height: 2),
@@ -3037,7 +3097,8 @@ class _SessionOverviewCard extends StatelessWidget {
             color: heroForeground ?? theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        if (state.phase != GalHookSessionPhase.idle || chips.isNotEmpty) ...<Widget>[
+        if (state.phase != GalHookSessionPhase.idle ||
+            chips.isNotEmpty) ...<Widget>[
           const SizedBox(height: 10),
           Wrap(
             spacing: 6,
@@ -3048,10 +3109,7 @@ class _SessionOverviewCard extends StatelessWidget {
             ],
           ),
         ],
-        if (hints.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 6),
-          ...hints,
-        ],
+        if (hints.isNotEmpty) ...<Widget>[const SizedBox(height: 6), ...hints],
       ],
     );
     final Widget actionWrap = Wrap(
@@ -3115,10 +3173,7 @@ class _SessionOverviewCard extends StatelessWidget {
                   ),
                 ),
               )
-            else ...<Widget>[
-              const FushiDividerControl(height: 1),
-              ...footer,
-            ],
+            else ...<Widget>[const FushiDividerControl(height: 1), ...footer],
           ] else
             const SizedBox(height: 4),
         ],
@@ -3974,141 +4029,143 @@ class _TexthookerLine extends ConsumerWidget {
     final bool glass = isGlassDesign(context);
     final bool last = index >= count - 1;
     return FushiCard(
-        key: ValueKey<String>('game-line-${line.id}'),
-        selected: selected,
-        grouped: !glass,
-        borderRadius: glass ? null : fushiGroupedItemRadius(context, index, count),
-        margin: glass
-            ? const EdgeInsets.symmetric(vertical: 4)
-            : EdgeInsets.only(bottom: last ? 0 : fushiGroupedListGap(context)),
-        focusId: FushiFocusId('game-line-${line.id}'),
-        onTap: () => onSelectLine(line),
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    '${formatGameClockTime(line.receivedAt)} · $source'
-                    '${line.textThreadLabel == null ? '' : ' · ${line.textThreadLabel}'}'
-                    '${line.sourceSequence == null ? '' : ' · #${line.sourceSequence}'}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
+      key: ValueKey<String>('game-line-${line.id}'),
+      selected: selected,
+      grouped: !glass,
+      borderRadius: glass
+          ? null
+          : fushiGroupedItemRadius(context, index, count),
+      margin: glass
+          ? const EdgeInsets.symmetric(vertical: 4)
+          : EdgeInsets.only(bottom: last ? 0 : fushiGroupedListGap(context)),
+      focusId: FushiFocusId('game-line-${line.id}'),
+      onTap: () => onSelectLine(line),
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '${formatGameClockTime(line.receivedAt)} · $source'
+                  '${line.textThreadLabel == null ? '' : ' · ${line.textThreadLabel}'}'
+                  '${line.sourceSequence == null ? '' : ' · #${line.sourceSequence}'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(width: 8),
-                // 已制卡徽章优先于音频态并列显示（样式对齐 _LineAudioChip）。
-                if (line.mined) ...<Widget>[
-                  const _LineMinedChip(),
-                  const SizedBox(width: 6),
-                ],
-                _LineAudioChip(
-                  status: line.audioStatus,
-                  backend: line.audioBackend,
-                  fallbackReason: line.fallbackReason,
-                ),
-                const SizedBox(width: 4),
-                // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
-                // 试听中变停止钮。样式对齐收藏星。
-                if (line.hasAudio) ...<Widget>[
-                  FushiIconButton(
-                    icon: previewingAudio
-                        ? Icons.stop_circle_outlined
-                        : Icons.play_circle_outline,
-                    tooltip: previewingAudio
-                        ? t.game_track_preview_stop
-                        : t.game_line_preview_tooltip,
-                    size: 18,
-                    enabledColor: previewingAudio ? colors.primary : null,
-                    focusId: FushiFocusId('game-line-preview-${line.id}'),
-                    onTap: () => onPreviewAudio(line),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                // 逐行改音轨（BUG-1102）：自动选源在真机上会误选 BGM/旁白轨，
-                // 用户必须能对**这一句**直接指定用哪条轨重抓。
-                if (canPickTrack) ...<Widget>[
-                  FushiIconButton(
-                    icon: Icons.multitrack_audio_outlined,
-                    tooltip: t.game_line_track_tooltip,
-                    size: 18,
-                    focusId: FushiFocusId('game-line-track-${line.id}'),
-                    onTap: () => onPickTrack(line),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                // 行内补录：missing/兜底行的一键补救此前只在浮窗有入口，工作台里
-                // 用户对着红标没有任何补救手段。录音中变停止钮（收束并落定）。
-                if (canRecapture) ...<Widget>[
-                  FushiIconButton(
-                    icon: recapturing
-                        ? Icons.stop_circle_outlined
-                        : Icons.mic_none_outlined,
-                    tooltip: recapturing
-                        ? t.game_line_recapture_stop
-                        : t.game_line_recapture,
-                    size: 18,
-                    enabledColor: recapturing ? colors.error : null,
-                    focusId: FushiFocusId('game-line-recapture-${line.id}'),
-                    onTap: () => onRecapture(line),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                FushiIconButton(
-                  icon: Icons.copy_all_outlined,
-                  tooltip: t.game_line_copy_tooltip,
-                  size: 18,
-                  focusId: FushiFocusId('game-line-copy-${line.id}'),
-                  onTap: () => onCopy(line),
-                ),
-                const SizedBox(width: 4),
-                // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
-                FushiIconButton(
-                  icon: line.favorited ? Icons.star : Icons.star_border,
-                  tooltip: line.favorited
-                      ? t.game_line_unfavorite_tooltip
-                      : t.game_line_favorite_tooltip,
-                  size: 18,
-                  enabledColor: line.favorited ? colors.tertiary : null,
-                  onTap: () => onToggleFavorite(line),
-                ),
+              ),
+              const SizedBox(width: 8),
+              // 已制卡徽章优先于音频态并列显示（样式对齐 _LineAudioChip）。
+              if (line.mined) ...<Widget>[
+                const _LineMinedChip(),
+                const SizedBox(width: 6),
               ],
-            ),
-            const SizedBox(height: 6),
-            _TexthookerLineText(
-              line: line,
-              displayText: displayText,
-              sourceOffset: sourceOffset,
-              presentation: presentation,
-              words: words,
-              style: wordStyle,
-              colors: colors,
-              onCharTap: onCharTap,
-            ),
-            if (line.audioBackend != null ||
-                line.audioResourceId != null ||
-                line.fallbackReason != null) ...<Widget>[
-              const SizedBox(height: 6),
-              Text(
-                <String>[
-                  if (line.audioBackend != null) line.audioBackend!,
-                  if (line.audioResourceId != null) line.audioResourceId!,
-                  if (line.audioDurationMs != null)
-                    '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
-                  if (line.fallbackReason != null) line.fallbackReason!,
-                ].join(' · '),
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              _LineAudioChip(
+                status: line.audioStatus,
+                backend: line.audioBackend,
+                fallbackReason: line.fallbackReason,
+              ),
+              const SizedBox(width: 4),
+              // 行内试听已配音频（用户实拍：音频就绪却听不了）。仅 hasAudio 行显示；
+              // 试听中变停止钮。样式对齐收藏星。
+              if (line.hasAudio) ...<Widget>[
+                FushiIconButton(
+                  icon: previewingAudio
+                      ? Icons.stop_circle_outlined
+                      : Icons.play_circle_outline,
+                  tooltip: previewingAudio
+                      ? t.game_track_preview_stop
+                      : t.game_line_preview_tooltip,
+                  size: 18,
+                  enabledColor: previewingAudio ? colors.primary : null,
+                  focusId: FushiFocusId('game-line-preview-${line.id}'),
+                  onTap: () => onPreviewAudio(line),
+                ),
+                const SizedBox(width: 4),
+              ],
+              // 逐行改音轨（BUG-1102）：自动选源在真机上会误选 BGM/旁白轨，
+              // 用户必须能对**这一句**直接指定用哪条轨重抓。
+              if (canPickTrack) ...<Widget>[
+                FushiIconButton(
+                  icon: Icons.multitrack_audio_outlined,
+                  tooltip: t.game_line_track_tooltip,
+                  size: 18,
+                  focusId: FushiFocusId('game-line-track-${line.id}'),
+                  onTap: () => onPickTrack(line),
+                ),
+                const SizedBox(width: 4),
+              ],
+              // 行内补录：missing/兜底行的一键补救此前只在浮窗有入口，工作台里
+              // 用户对着红标没有任何补救手段。录音中变停止钮（收束并落定）。
+              if (canRecapture) ...<Widget>[
+                FushiIconButton(
+                  icon: recapturing
+                      ? Icons.stop_circle_outlined
+                      : Icons.mic_none_outlined,
+                  tooltip: recapturing
+                      ? t.game_line_recapture_stop
+                      : t.game_line_recapture,
+                  size: 18,
+                  enabledColor: recapturing ? colors.error : null,
+                  focusId: FushiFocusId('game-line-recapture-${line.id}'),
+                  onTap: () => onRecapture(line),
+                ),
+                const SizedBox(width: 4),
+              ],
+              FushiIconButton(
+                icon: Icons.copy_all_outlined,
+                tooltip: t.game_line_copy_tooltip,
+                size: 18,
+                focusId: FushiFocusId('game-line-copy-${line.id}'),
+                onTap: () => onCopy(line),
+              ),
+              const SizedBox(width: 4),
+              // 会话内存态收藏星（不落 DB）；已收藏填充金黄星，未收藏描边星。
+              FushiIconButton(
+                icon: line.favorited ? Icons.star : Icons.star_border,
+                tooltip: line.favorited
+                    ? t.game_line_unfavorite_tooltip
+                    : t.game_line_favorite_tooltip,
+                size: 18,
+                enabledColor: line.favorited ? colors.tertiary : null,
+                onTap: () => onToggleFavorite(line),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          _TexthookerLineText(
+            line: line,
+            displayText: displayText,
+            sourceOffset: sourceOffset,
+            presentation: presentation,
+            words: words,
+            style: wordStyle,
+            colors: colors,
+            onCharTap: onCharTap,
+          ),
+          if (line.audioBackend != null ||
+              line.audioResourceId != null ||
+              line.fallbackReason != null) ...<Widget>[
+            const SizedBox(height: 6),
+            Text(
+              <String>[
+                if (line.audioBackend != null) line.audioBackend!,
+                if (line.audioResourceId != null) line.audioResourceId!,
+                if (line.audioDurationMs != null)
+                  '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
+                if (line.fallbackReason != null) line.fallbackReason!,
+              ].join(' · '),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
           ],
-        ),
+        ],
+      ),
     );
   }
 }
@@ -4313,7 +4370,10 @@ class _LineAudioChip extends StatelessWidget {
     final Widget chip = _chip(appearance.$1, appearance.$2);
     // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
     if (backend == 'system_loopback') {
-      return FushiTooltip(message: t.game_line_audio_loopback_hint, child: chip);
+      return FushiTooltip(
+        message: t.game_line_audio_loopback_hint,
+        child: chip,
+      );
     }
     return chip;
   }

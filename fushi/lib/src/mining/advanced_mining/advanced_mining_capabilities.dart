@@ -199,6 +199,24 @@ class AdvancedMiningMangaImageSection {
   final int? panelModelSizeBytes;
 }
 
+/// 静态截图分区（galgame texthooker：这句台词对应的窗口截图）。
+///
+/// 只给预览与「打码」：宿主在对话框打开时冻结一帧，[loadImage] 交出的就是确认后进卡
+/// 的那一张（预览与出卡同源）。
+class AdvancedMiningStillImageSection {
+  const AdvancedMiningStillImageSection({
+    required this.loadImage,
+    this.mosaicForcesStill = false,
+  });
+
+  /// 冻结的那一帧截图（PNG / JPEG 字节）；null = 抓不到（对话框如实显示「截图不可用」，
+  /// 不给打码）。
+  final Future<Uint8List?> Function() loadImage;
+
+  /// 一键「+」出的是动图 / 视频片段：打了码就改出静图，对话框据此提示用户。
+  final bool mosaicForcesStill;
+}
+
 /// 页面提供的句子 / 音频 / 图片分区（卡组由开窗函数统一组装）。
 class AdvancedMiningSections {
   const AdvancedMiningSections({
@@ -206,6 +224,7 @@ class AdvancedMiningSections {
     this.audio,
     this.videoImage,
     this.mangaImage,
+    this.stillImage,
     this.onClosed,
   });
 
@@ -215,6 +234,7 @@ class AdvancedMiningSections {
   final AdvancedMiningAudioSection? audio;
   final AdvancedMiningVideoImageSection? videoImage;
   final AdvancedMiningMangaImageSection? mangaImage;
+  final AdvancedMiningStillImageSection? stillImage;
 
   /// 对话框关闭（确认或取消）后调用：停试听、把视频播放头放回查词位置、释放缓存副本等。
   final Future<void> Function()? onClosed;

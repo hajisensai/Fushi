@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -250,6 +251,112 @@ void main() {
       );
       await c.adjustContext(prevDir: true, plus: true);
       expect(c.prevAtMax, isTrue);
+    });
+  });
+  group('打码', () {
+    const MiningMosaicRegion a = MiningMosaicRegion(
+      left: 0.1,
+      top: 0.1,
+      right: 0.4,
+      bottom: 0.3,
+    );
+    const MiningMosaicRegion b = MiningMosaicRegion(
+      left: 0.5,
+      top: 0.5,
+      right: 0.9,
+      bottom: 0.8,
+    );
+
+    test('视频：静态方式才带打码；切到动图码保留但不生效，切回又生效', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.videoPage()),
+      );
+      c.selectVideoImageMode(VideoMiningImageMode.subtitleStart);
+      expect(c.mosaicApplicable, isTrue);
+      c.setMosaicRegions(<MiningMosaicRegion>[a, b]);
+      expect(c.buildOverrides().mosaic, <MiningMosaicRegion>[a, b]);
+      c.selectVideoImageMode(VideoMiningImageMode.gif);
+      expect(c.mosaicApplicable, isFalse);
+      expect(c.buildOverrides().mosaic, isEmpty);
+      expect(c.mosaicRegions, hasLength(2), reason: '码不丢，切回还在');
+      c.selectVideoImageMode(VideoMiningImageMode.currentFrame);
+      expect(c.buildOverrides().mosaic, <MiningMosaicRegion>[a, b]);
+      c.selectVideoImageMode(null);
+      final MiningRequestOverrides none = c.buildOverrides();
+      expect(none.omitImage, isTrue);
+      expect(none.mosaic, isEmpty, reason: '不要图片时不带码');
+    });
+
+    test('视频：取不到帧的来源不能打码', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(
+          host.capabilities(
+            video: host.video(
+              defaultMode: VideoMiningImageMode.currentFrame,
+              withFrames: false,
+            ),
+          ),
+        ),
+      );
+      c.setMosaicRegions(<MiningMosaicRegion>[a]);
+      expect(c.mosaicApplicable, isFalse);
+      expect(c.buildOverrides().mosaic, isEmpty);
+    });
+
+    test('漫画：与裁切共存（码相对整页，不随取景框变）；「不要」时不带', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(host.mangaPage()),
+      );
+      c.setMosaicRegions(<MiningMosaicRegion>[a]);
+      MiningRequestOverrides o = c.buildOverrides();
+      expect(o.crop!.pageIndex, 46);
+      expect(o.mosaic, <MiningMosaicRegion>[a]);
+      c.setCropRect(const Rect.fromLTRB(0.2, 0.2, 0.6, 0.6));
+      o = c.buildOverrides();
+      expect(o.mosaic, <MiningMosaicRegion>[a], reason: '换取景框不改打码坐标');
+      c.selectCropChoice(MangaCropChoice.none);
+      o = c.buildOverrides();
+      expect(o.omitImage, isTrue);
+      expect(o.mosaic, isEmpty);
+    });
+
+    test('静态截图分区：截图到手才能打码；清除 / 恢复默认清空', () async {
+      final Uint8List png = Uint8List.fromList(<int>[1, 2, 3]);
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(
+          host.capabilities(
+            deck: host.deck(),
+            still: AdvancedMiningStillImageSection(
+              loadImage: () async => png,
+              mosaicForcesStill: true,
+            ),
+          ),
+        ),
+      );
+      expect(c.stillImageBytes, same(png));
+      expect(c.mosaicApplicable, isTrue);
+      expect(c.buildOverrides().isEmpty, isTrue, reason: '没打码 = 一键「+」');
+      c.setMosaicRegions(<MiningMosaicRegion>[a, b]);
+      expect(c.buildOverrides().mosaic, hasLength(2));
+      c.clearMosaic();
+      expect(c.buildOverrides().isEmpty, isTrue);
+      c.setMosaicRegions(<MiningMosaicRegion>[b]);
+      await c.resetToDefaults();
+      expect(c.mosaicRegions, isEmpty);
+    });
+
+    test('静态截图分区：抓不到图时不能打码', () async {
+      final AdvancedMiningController c = await loaded(
+        AdvancedMiningController(
+          host.capabilities(
+            still: AdvancedMiningStillImageSection(loadImage: () async => null),
+          ),
+        ),
+      );
+      expect(c.stillImageBytes, isNull);
+      expect(c.stillImageLoading, isFalse);
+      c.setMosaicRegions(<MiningMosaicRegion>[a]);
+      expect(c.buildOverrides().mosaic, isEmpty);
     });
   });
 }

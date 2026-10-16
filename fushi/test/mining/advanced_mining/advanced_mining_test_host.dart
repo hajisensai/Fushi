@@ -203,6 +203,7 @@ class FakeAdvancedMiningHost {
     AdvancedMiningAudioSection? audio,
     AdvancedMiningVideoImageSection? video,
     AdvancedMiningMangaImageSection? manga,
+    AdvancedMiningStillImageSection? still,
   }) => AdvancedMiningCapabilities(
     matched: '諦め',
     expression: '諦める',
@@ -212,6 +213,7 @@ class FakeAdvancedMiningHost {
       audio: audio,
       videoImage: video,
       mangaImage: manga,
+      stillImage: still,
       onClosed: () async => closedCalls++,
     ),
     onConfirm: (MiningRequestOverrides overrides) async {

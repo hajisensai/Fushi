@@ -36,6 +36,7 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningAudioSection? get audioSection => sections.audio;
   AdvancedMiningVideoImageSection? get videoSection => sections.videoImage;
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
+  AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
 
   bool _disposed = false;
 
@@ -56,6 +57,7 @@ class AdvancedMiningController extends ChangeNotifier {
     await Future.wait(<Future<void>>[
       _loadSentenceThenAudio(),
       if (mangaSection != null) _loadManga(),
+      if (stillSection != null) _loadStill(),
     ]);
   }
 
@@ -701,6 +703,61 @@ class AdvancedMiningController extends ChangeNotifier {
     return true;
   }
 
+  // ───────────────────────────── 静态截图（galgame） ─────────────────────────────
+
+  /// 冻结的那一帧（[AdvancedMiningStillImageSection.loadImage]）；null 且不在加载 =
+  /// 抓不到。
+  Uint8List? stillImageBytes;
+  bool stillImageLoading = false;
+
+  Future<void> _loadStill() async {
+    final AdvancedMiningStillImageSection? section = stillSection;
+    if (section == null) return;
+    stillImageLoading = true;
+    _notify();
+    final Uint8List? bytes = await _guard<Uint8List?>(
+      section.loadImage,
+      'loadStill',
+    );
+    if (_disposed) return;
+    stillImageBytes = bytes == null || bytes.isEmpty ? null : bytes;
+    stillImageLoading = false;
+    _notify();
+  }
+
+  // ───────────────────────────── 打码 ─────────────────────────────
+
+  /// 卡图上的打码区域（相对**未裁切**的原图 / 那一帧，见 [MiningMosaicRegion]）。
+  ///
+  /// 漫画与裁切共存：打码坐标不随取景框变，先打码再裁，取景框改了已打的码照样落在
+  /// 原位（框外的码自然被裁掉）。
+  List<MiningMosaicRegion> mosaicRegions = const <MiningMosaicRegion>[];
+
+  /// 此刻的图片选择能不能打码：静态截图分区总能；漫画选了「不要」时不能；视频只有
+  /// 静态方式（查词时画面 / 字幕开头）能——动图 / 片段逐帧打码做不到所见即所得。
+  bool get mosaicApplicable {
+    if (stillSection != null) return stillImageBytes != null;
+    if (mangaSection != null) return cropChoice != MangaCropChoice.none;
+    if (videoSection != null) {
+      final VideoMiningImageMode? mode = videoImageMode;
+      return mode != null && mode.isStill && videoSection!.frameAt != null;
+    }
+    return false;
+  }
+
+  /// 整组替换（打码编辑页「完成」时交回）。
+  void setMosaicRegions(List<MiningMosaicRegion> regions) {
+    if (locked) return;
+    mosaicRegions = List<MiningMosaicRegion>.unmodifiable(regions);
+    _notify();
+  }
+
+  void clearMosaic() {
+    if (locked || mosaicRegions.isEmpty) return;
+    mosaicRegions = const <MiningMosaicRegion>[];
+    _notify();
+  }
+
   // ───────────────────────────── 默认值 / 产出 ─────────────────────────────
 
   /// 打开时选中的卡组：设置里的卡组；还没选过而 Anki 已给出卡组列表时取第一个
@@ -741,6 +798,7 @@ class AdvancedMiningController extends ChangeNotifier {
     audioEndDeltaMs = 0;
     _stillDeltaMs.clear();
     videoImageMode = _initialVideoImageMode;
+    mosaicRegions = const <MiningMosaicRegion>[];
     if (mangaSection != null && !mangaLoading) {
       cropChoice = isCropChoiceAvailable(_initialCropChoice)
           ? _initialCropChoice
@@ -811,6 +869,12 @@ class AdvancedMiningController extends ChangeNotifier {
       }
     }
 
+    // 只在此刻的图片选择能打码时带上（视频切到动图 / 片段、漫画选了「不要」时已打的
+    // 码不生效，对话框里有提示）。
+    final List<MiningMosaicRegion> mosaic = !omitImage && mosaicApplicable
+        ? mosaicRegions
+        : const <MiningMosaicRegion>[];
+
     final bool audio = audioSection != null;
     return MiningRequestOverrides(
       deckName: chosenDeck != null && chosenDeck != deck?.defaultDeckName
@@ -823,6 +887,7 @@ class AdvancedMiningController extends ChangeNotifier {
       videoImageMode: modeWire,
       coverFrameAtMs: coverFrame,
       crop: crop,
+      mosaic: mosaic,
     );
   }
 }

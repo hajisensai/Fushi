@@ -791,6 +791,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 省略时出纯文本卡。
         omitAudio: omitAudio,
         omitCover: omitCover,
+        coverMosaic: omitCover
+            ? const <MiningMosaicRegion>[]
+            : overrides?.mosaic ?? const <MiningMosaicRegion>[],
         // 用户在 Anki 设置里选的封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧）；
         // 默认 videoClip。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
