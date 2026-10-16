@@ -671,7 +671,7 @@ void main() {
         ),
       ).encode();
       await db.insertEpubBook(epubBook(localKey)
-          .copyWith(sourceMetadata: Value(metadata), format: Value('manga')));
+          .copyWith(sourceMetadata: Value(metadata), format: Value(BookFormat.manga.dbValue)));
       // 对照：普通书照旧写本机键。
       await db.insertEpubBook(epubBook('Kokoro'));
       // 从对端下载、落地键与对端不同的书（别名表记着对端键；deleteEpubBook 会级联

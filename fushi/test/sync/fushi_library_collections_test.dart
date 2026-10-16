@@ -81,7 +81,7 @@ void main() {
               chapterCount: 1,
               chaptersJson: '[]',
               importedAt: DateTime.now().millisecondsSinceEpoch,
-              format: const Value('manga'),
+              format: Value(BookFormat.manga.dbValue),
             ),
           );
       await volume('志乃と恋 [3574f94a]');
