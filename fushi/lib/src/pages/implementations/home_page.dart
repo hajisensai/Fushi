@@ -1834,8 +1834,9 @@ class _HomePageState extends BasePageState<HomePage>
         // in visual order (whole rail, then whole content) instead of zig-zagging
         // between the rail and the content pane row-by-row.
         //
-        // rail 展开 / 收起过渡中内容区宽度保持恒定、只平移（见
-        // NavRailContentSync，BUG-3351），免得整棵内容树与保活 tab 每帧重排。
+        // rail 展开 / 收起过渡中被藏起的保活 tab 宽度保持恒定（见
+        // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
+        // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
           child: Row(
             children: [
@@ -1868,11 +1869,9 @@ class _HomePageState extends BasePageState<HomePage>
                 ),
               ),
               Expanded(
-                child: NavRailSyncedContent(
-                  child: _GlassContentSurface(
-                    child: _withAppleScrollChrome(
-                      FocusTraversalGroup(child: _bodyWithMiniBar()),
-                    ),
+                child: _GlassContentSurface(
+                  child: _withAppleScrollChrome(
+                    FocusTraversalGroup(child: _bodyWithMiniBar()),
                   ),
                 ),
               ),
@@ -3404,7 +3403,12 @@ class _HomePageState extends BasePageState<HomePage>
                   // 消费聚焦请求，不经过这一层。
                   child: SectionVisibilityScope(
                     visible: visible == tab,
-                    child: _keepAliveTabContent(tab, visible: visible == tab),
+                    // 藏起的保活 tab 在 rail 展开 / 收起过渡中钉宽、不逐帧重排；
+                    // 可见那一页照常重排（BUG-3447）。
+                    child: NavRailSyncedContent(
+                      hidden: visible != tab,
+                      child: _keepAliveTabContent(tab, visible: visible == tab),
+                    ),
                   ),
                 ),
               ),
