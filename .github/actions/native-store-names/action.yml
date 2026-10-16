@@ -14,8 +14,11 @@ outputs:
     description: libtorrent bridge (windows DLLs / macOS arm64 static dylib / linux static .so)
     value: ${{ steps.names.outputs.torrent }}
   p2p:
-    description: fushi_p2p (windows DLL / macOS arm64 dylib / iOS device staticlib / linux .so)
+    description: fushi_p2p (windows DLL / macOS arm64 dylib / linux .so / android .so)
     value: ${{ steps.names.outputs.p2p }}
+  ios_native:
+    description: iOS umbrella staticlib (fushi_p2p + fushi_fsrs, device slice)
+    value: ${{ steps.names.outputs.ios_native }}
   mihon:
     description: Mihon desktop runtime (windows)
     value: ${{ steps.names.outputs.mihon }}
