@@ -11,7 +11,7 @@
     - 同族一起补上：`vp6*`、`svq1/3`、`msrle`、`msvideo1`、`rawvideo`、`gsm(_ms)`、`adpcm_g726le`、`ffvhuff`、`h263`（显式声明）。
   - **muxer**：
     - `s16le`：上游 `fushi_asr_core` 用 `-f s16le` 抽 ASR 音频，缺它报 `Requested output format 's16le' is not known`，每次转录先白跑一遍失败、再回退 mov。
-    - `matroska`：`video_clip_subtitle.dart` 字幕 copy 分支输出 `.mkv/.mka` 时要用，目前恒出 `.mp4`，属潜伏缺口。
+    - `matroska` 刻意不补：`video_clip_subtitle.dart` 里 `.mkv/.mka` 只是按扩展名选字幕编码的映射，导出器只写 `.mp4` / `.webm`。BUG-917 的守卫 `ffmpeg_min_clip_muxer_guard_test.dart` 钉着「没有 matroska」这一事实。
   - **证书钉扎**：
     - 桌面作为客户端从互联 host（自签 https）制卡时，`lookup_mining.part.dart:692` 把 `activeFingerprintSha256` 交给引擎，`desktop_audio_clipper.dart:303` 拼出 `-tls_pin_sha256 <指纹>`。
     - 入库 ffmpeg-min 从没打过 `third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch`，于是报 `Unrecognized option 'tls_pin_sha256'`，整条命令失败。
@@ -22,19 +22,19 @@
     - 长 GOP 的 TS 在 seek 点之后没有关键帧时截帧失败：完整版 ffmpeg 同样一帧不出，只是退出码为 0。
     - nut / mxf / caf / wv / tta 等容器：不在任何导入入口。
 - **[ ] ① 未修复** — 配方已改，待 CI 重编并替换入库二进制：
-  - `DECODERS` 补上述解码器；`MUXERS` 补 `matroska`、`s16le`。
+  - `DECODERS` 补上述解码器；`MUXERS` 补 `pcm_s16le`。注意格式名是 s16le，但 configure 的组件名是 pcm_s16le；第一次写成 s16le 被 configure 静默忽略，CI 的 smoke 才把它抓出来。
   - 证书钉扎补丁移植到 n7.1：`tool/ffmpeg-min/patches/ffmpeg-n7.1-tls-pin-sha256.patch`。它与移动端补丁逻辑一致，只有 `tls.c` 的 include 上下文不同；已对全新 n7.1.5 源码验证能干净打上。
   - 构建脚本在 configure 之前打这份补丁，已打过就跳过，打不上就直接失败。
   - Windows 加 `--extra-libs=-lcrypt32`：补丁的 schannel 段调用 `CertFreeCertificateContext`，而 FFmpeg configure 只给 schannel 链 `-lsecur32`。
 - **[ ] ② 未加自动化测试** — 已加，待二进制替换后转绿：
   - `tool/ffmpeg-min/smoke-test.sh`：
     - 新增 10 个编码样本，各跑「抽音频 + 截帧」。
-    - 新增 `matroska`、`s16le` 两个 muxer 用例。
+    - 新增 ASR 裸 PCM（`-f s16le`）用例，命令形态与上游 `asr_pcm_source.dart` 一致。
     - 钉扎检查：先断言 `-h protocol=tls` 列出 `tls_pin_sha256`；有 openssl 时再做端到端：自签证书加 `s_server -WWW`，指纹匹配必须读到内容，指纹不匹配必须失败。
     - 用完整版 ffmpeg 冒充被测对象整体跑过：钉扎之前的所有段都通过。脚手架在本机 Git Bash 下单独验证过：用 srt 载荷，因为 Windows 的 `s_server -WWW` 会把二进制文件截断；并关掉 MSYS 对 `-subj` 的路径改写。
   - `fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart`：
     - 新加的组件由已有的「8 组组件清单逐项一致」自动覆盖。
-    - Windows 必需开关加 `--extra-libs=-lcrypt32`。
+    - Windows 必需开关加 `--extra-libs=-lcrypt32`。`fushi/test/build/windows_vendored_ffmpeg_guard_test.dart` 的系统 DLL 白名单加 `crypt32.dll`，它和 secur32 一样随系统自带。
     - 新增「二进制里有 `tls_pin_sha256`」：对现有入库产物会红，判据有效。
     - 新增「配方在 FFmpeg configure 之前打补丁且补丁文件存在」：已绿。
 - **备注**：
