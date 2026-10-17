@@ -756,10 +756,15 @@ class MangaFushiPage extends BaseSourcePage {
   /// [version]：页会话代次，作查询串挂在 URL 上（拦截器只认 path，不受影响）。
   /// 已下载章的页名各章同形（`images/page-000001.*`），不带代次时换章后的新文档
   /// 与旧章同名页 URL 完全相同，响应又带 `max-age`，WebView 会直接复用旧章页图。
+  ///
+  /// [scope]：页图所属卷的身份（[mangaPageScope]），同样只进查询串。不同卷的页名
+  /// 也常同形（`page_000000.jpg`、`001.jpg`），没有它时先开卷 2 再开卷 1，卷 1 的
+  /// 首页 URL 与卷 2 一字不差，WebView 把卷 2 的缓存页图端给卷 1。
   static String mangaImageUrl(
     String relativeUrl, {
     bool useCustomScheme = false,
     int? version,
+    String? scope,
   }) {
     final String normalized = mangaImageRelativePath(relativeUrl);
     final String encoded = normalized
@@ -767,8 +772,24 @@ class MangaFushiPage extends BaseSourcePage {
         .map(Uri.encodeComponent)
         .join('/');
     final String scheme = useCustomScheme ? kMangaResourceScheme : 'https';
-    final String query = version == null ? '' : '?v=$version';
+    final List<String> params = <String>[
+      if (scope != null) 's=${Uri.encodeQueryComponent(scope)}',
+      if (version != null) 'v=$version',
+    ];
+    final String query = params.isEmpty ? '' : '?${params.join('&')}';
     return '$scheme://$kMangaHost/img/$encoded$query';
+  }
+
+  /// 纯函数：页图目录 → 稳定的短作用域串（FNV-1a 32 位，十六进制）。同一目录恒
+  /// 得同一个值（保住同卷内的缓存复用），不同目录的同名页 URL 因此不同。
+  static String mangaPageScope(String imagesDir) {
+    final String normalized = p.normalize(imagesDir).replaceAll(r'\', '/');
+    int hash = 0x811c9dc5;
+    for (final int byte in utf8.encode(normalized)) {
+      hash ^= byte;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 
   /// 纯函数：围绕 [current]、半径 [radius] 的连续 spread 窗口，clamp 到
@@ -1122,8 +1143,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Completer<void>? _windowLoadDone;
   int _windowLoadWaiters = 0;
 
-  /// 每装一次页会话（开书 / 换章）+1，编进页图 URL（[MangaFushiPage.mangaImageUrl]）。
+  /// 每装一次页会话（开书 / 换章）取一个新代次，编进页图 URL
+  /// （[MangaFushiPage.mangaImageUrl]）。代次取自进程级计数器而不是每个阅读器各数
+  /// 各的：后者每次新开阅读器都从 1 起，退出再开另一卷时代次与上一卷相同。
   int _pageSessionGeneration = 0;
+  static int _pageSessionGenerationCounter = 0;
+
+  /// 当前页会话的卷作用域（[MangaFushiPage.mangaPageScope]），随 [_imagesDir] 定。
+  String? _pageScope;
 
   /// 窗口文档加载的所有权闸门：generation 与 ready 锁只能经它读写，迟到的旧回调
   /// 不能解开新窗口的锁（BUG-1170），页面销毁时在飞加载被显式放弃（BUG-1171）。
@@ -2034,7 +2061,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _volumeOcrQueued = false;
     _volumeOcrNoEngine = false;
     _pageSession = localPageSession;
-    _pageSessionGeneration++;
+    _pageSessionGeneration = ++_pageSessionGenerationCounter;
+    _pageScope = MangaFushiPage.mangaPageScope(imagesDir);
     _localPageIndices = <String, int>{
       for (int index = 0; index < relativePagePaths.length; index++)
         _localPageKey(relativePagePaths[index]): index,
@@ -2756,6 +2784,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           image.url,
           useCustomScheme: webViewUsesCustomSchemeTransport,
           version: _pageSessionGeneration,
+          scope: _pageScope,
         ),
       );
       final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);

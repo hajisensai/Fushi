@@ -52,6 +52,49 @@ void main() {
       expect(merged.single.right, 1344);
     });
 
+    test('横排：左右两栏同一高度的两行（栏距约 5 倍行厚）不并成跨栏长行', () {
+      // 人物资料页两栏：行厚 30，栏间空白 150。旧口径只看跨轴重叠，两行并成一条
+      // 0~550 的长行，逐行识别读出串栏的句子。
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 200, 30),
+        _r(350, 2, 550, 31),
+      ], vertical: false);
+      expect(merged, hasLength(2));
+    });
+
+    test('横排：左栏一行被切成两段、右栏同高还有一行——左栏两段仍合并', () {
+      // 按跨轴中心排序后右栏那行会夹在左栏两段之间，只和最后一条比会把左栏拆开。
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 90, 30),
+        _r(350, 1, 550, 31),
+        _r(100, 2, 200, 30),
+      ], vertical: false);
+      expect(merged, hasLength(2));
+      final OcrRect left = merged.firstWhere((OcrRect r) => r.left == 0);
+      expect(left.right, 200);
+    });
+
+    test('竖排：同一 x 上下两段列之间空白约 5 倍列宽，不并成一列', () {
+      final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 30, 100),
+        _r(1, 250, 30, 350),
+      ], vertical: true);
+      expect(merged, hasLength(2));
+    });
+
+    test('空隙上限按较厚行厚的 kOcrFragmentMaxGapRatio 倍：刚好在线内仍合并', () {
+      final List<OcrRect> within = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 100, 30),
+        _r(100 + kOcrFragmentMaxGapRatio * 30, 0, 300, 30),
+      ], vertical: false);
+      expect(within, hasLength(1));
+      final List<OcrRect> beyond = mergeOcrLineFragments(<OcrRect>[
+        _r(0, 0, 100, 30),
+        _r(101 + kOcrFragmentMaxGapRatio * 30, 0, 300, 30),
+      ], vertical: false);
+      expect(beyond, hasLength(2));
+    });
+
     test('横排：同一行的几段合并，上下两行保持分开', () {
       final List<OcrRect> merged = mergeOcrLineFragments(<OcrRect>[
         _r(0, 0, 80, 30),

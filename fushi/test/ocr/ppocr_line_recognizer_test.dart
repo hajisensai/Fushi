@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:image/image.dart' as img;
 
@@ -393,6 +395,140 @@ void main() {
             contains('missing or not float32'),
           ),
         ),
+      );
+    });
+  });
+
+  group('ctcGreedyDecodePositioned（逐字命中格的来源）', () {
+    const List<String> vocab = <String>['', 'a', 'b'];
+
+    test('文字与置信度和 ctcGreedyDecodeScored 逐字相同，token 带帧换算的位置', () {
+      // 帧：a a _ b _ _ ；6 帧铺满 48 px 输入，内容宽 48，原行图宽 96。
+      final Float32List logits = _logits(<int>[1, 1, 0, 2, 0, 0], 3);
+      final scored = ctcGreedyDecodeScored(logits, 6, 3, vocab);
+      final positioned = ctcGreedyDecodePositioned(
+        logits,
+        6,
+        3,
+        vocab,
+        lineWidth: 96,
+        contentWidth: 48,
+        inputWidth: 48,
+      );
+      expect(positioned.text, scored.text);
+      expect(positioned.text, 'ab');
+      expect(positioned.confidence, scored.confidence);
+      expect(positioned.tokens, hasLength(2));
+      final OcrLineToken a = positioned.tokens[0];
+      final OcrLineToken b = positioned.tokens[1];
+      expect(<int>[a.start, a.end, b.start, b.end], <int>[0, 1, 1, 2]);
+      // a 占帧 [0,2) → 输入 [0,16) → 原图 [0,32)；b 占帧 [3,4) → [24,32) → [48,64)。
+      expect(<double?>[a.left, a.right], <double>[0, 32]);
+      expect(<double?>[b.left, b.right], <double>[48, 64]);
+    });
+
+    test('blank 隔开的重复字是两个 token；落在右侧填充里的 token 没有位置', () {
+      // a _ a _ b b：内容只有前 24 px（3 帧），b 在填充里。
+      final Float32List logits = _logits(<int>[1, 0, 1, 0, 2, 2], 3);
+      final positioned = ctcGreedyDecodePositioned(
+        logits,
+        6,
+        3,
+        vocab,
+        lineWidth: 24,
+        contentWidth: 24,
+        inputWidth: 48,
+      );
+      expect(positioned.text, 'aab');
+      expect(
+        positioned.tokens.map((OcrLineToken t) => t.center != null),
+        <bool>[true, true, false],
+      );
+    });
+  });
+
+  group('ocrLineGlyphBoxes', () {
+    test('横行：字中心之间取中点分界，每格最多伸出 0.6 倍行厚，空格不出格', () {
+      // 「第1 ロ」：空格两侧字距很大，均分会把「ロ」的格子挪到空格上。
+      const OcrRect line = OcrRect(left: 100, top: 10, right: 500, bottom: 50);
+      final List<OcrGlyphBox>? boxes = ocrLineGlyphBoxes(
+        text: '第1 ロ',
+        tokens: const <OcrLineToken>[
+          OcrLineToken(start: 0, end: 1, left: 10, right: 30),
+          OcrLineToken(start: 1, end: 2, left: 50, right: 70),
+          OcrLineToken(start: 2, end: 3, left: 150, right: 160),
+          OcrLineToken(start: 3, end: 4, left: 350, right: 370),
+        ],
+        line: line,
+        vertical: false,
+        alongOrigin: 100,
+        utf16Offset: 5,
+      );
+      expect(boxes, isNotNull);
+      expect(boxes!.map((OcrGlyphBox g) => g.start), <int>[5, 6, 8]);
+      // 中心（页面）：120、160、460 → 分界 140、310；行厚 40，每格离字中心最多
+      // 24（0.6 倍行厚）——「ロ」的格子不铺满空格那段空白。
+      expect(boxes.map((OcrGlyphBox g) => g.rect.left), <double>[
+        100,
+        140,
+        436,
+      ]);
+      expect(boxes.map((OcrGlyphBox g) => g.rect.right), <double>[
+        140,
+        184,
+        484,
+      ]);
+      expect(boxes.every((OcrGlyphBox g) => g.rect.top == 10), isTrue);
+      expect(boxes.every((OcrGlyphBox g) => g.rect.bottom == 50), isTrue);
+    });
+
+    test('竖列：位置沿 y 换回页面，字格横向占满列宽', () {
+      const OcrRect line = OcrRect(left: 40, top: 200, right: 80, bottom: 320);
+      final List<OcrGlyphBox>? boxes = ocrLineGlyphBoxes(
+        text: 'あい',
+        tokens: const <OcrLineToken>[
+          OcrLineToken(start: 0, end: 1, left: 10, right: 30),
+          OcrLineToken(start: 1, end: 2, left: 90, right: 110),
+        ],
+        line: line,
+        vertical: true,
+        alongOrigin: 200,
+        utf16Offset: 0,
+      );
+      // 中心 220 / 300、分界 260；列宽 40 → 每格离字中心最多 24。
+      expect(boxes!.map((OcrGlyphBox g) => g.rect.top), <double>[200, 276]);
+      expect(boxes.map((OcrGlyphBox g) => g.rect.bottom), <double>[244, 320]);
+      expect(boxes.every((OcrGlyphBox g) => g.rect.left == 40), isTrue);
+      expect(boxes.every((OcrGlyphBox g) => g.rect.right == 80), isTrue);
+    });
+
+    test('有可见字拿不到位置就整行放弃（调用方退回按行均分）', () {
+      expect(
+        ocrLineGlyphBoxes(
+          text: 'あい',
+          tokens: const <OcrLineToken>[
+            OcrLineToken(start: 0, end: 1, left: 10, right: 30),
+            OcrLineToken(start: 1, end: 2),
+          ],
+          line: const OcrRect(left: 0, top: 0, right: 100, bottom: 30),
+          vertical: false,
+          alongOrigin: 0,
+          utf16Offset: 0,
+        ),
+        isNull,
+      );
+      expect(
+        joinOcrLineGlyphBoxes(<List<OcrGlyphBox>?>[
+          const <OcrGlyphBox>[
+            OcrGlyphBox(
+              start: 0,
+              end: 1,
+              rect: OcrRect(left: 0, top: 0, right: 1, bottom: 1),
+            ),
+          ],
+          null,
+        ]),
+        isNull,
       );
     });
   });

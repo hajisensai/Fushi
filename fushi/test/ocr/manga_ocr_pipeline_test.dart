@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -986,6 +988,204 @@ void main() {
     });
   });
 
+  group('容器块让位给叶子块（几何包含 >= 2 个已识别子块）', () {
+    // 人物资料页：检测器在两段横排文字外又框了一个从上到下的竖长大框。
+    const OcrRect tallParent = OcrRect(
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 1000,
+    );
+    const OcrRect upper = OcrRect(left: 20, top: 100, right: 380, bottom: 160);
+    const OcrRect lower = OcrRect(left: 20, top: 600, right: 380, bottom: 660);
+
+    /// 父块带行几何（逐行识别器总会给），子块只给文本。
+    Future<List<String>> run(
+      Map<OcrRect, String> texts, {
+      List<String>? parentLines,
+      List<OcrRect>? parentLineBoxes,
+    }) async {
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _FixedDetector(<DetectedTextRegion>[
+          for (final OcrRect box in texts.keys)
+            _region(box, identical(box, tallParent) ? 0.9 : 0.8),
+        ]),
+        recognizer: _ReplyRecognizer(<OcrRect, OcrRecognition>{
+          for (final MapEntry<OcrRect, String> entry in texts.entries)
+            entry.key: identical(entry.key, tallParent) && parentLines != null
+                ? OcrRecognition(
+                    text: entry.value,
+                    vertical: false,
+                    lines: parentLines,
+                    lineBoxes: parentLineBoxes,
+                  )
+                : OcrRecognition(text: entry.value, vertical: false),
+        }),
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      return <String>[for (final OcrBlock b in result.blocks) b.text];
+    }
+
+    // 父块在大裁图里检出的两行，各自落在一个子块里。
+    const List<OcrRect> parentRows = <OcrRect>[
+      OcrRect(left: 25, top: 110, right: 370, bottom: 150),
+      OcrRect(left: 25, top: 610, right: 370, bottom: 650),
+    ];
+
+    test('竖长父框 + 两个宽子框、父块文本与子块略有出入：父块被去掉，叶子保留', () async {
+      final List<String> texts = await run(
+        <OcrRect, String>{
+          tallParent: '身長162センチ趣味は読害', // 大裁图里读错一个字
+          upper: '身長162センチ',
+          lower: '趣味は読書',
+        },
+        parentLines: <String>['身長162センチ', '趣味は読害'],
+        parentLineBoxes: parentRows,
+      );
+      expect(texts, unorderedEquals(<String>['身長162センチ', '趣味は読書']));
+    });
+
+    test('只包含一个子块：父块不让位（父块漏读小字的情形保持原样）', () async {
+      final List<String> texts = await run(
+        <OcrRect, String>{
+          tallParent: '身長162センチ趣味は読害',
+          upper: '身長162センチ',
+        },
+        parentLines: <String>['身長162センチ', '趣味は読害'],
+        parentLineBoxes: parentRows,
+      );
+      expect(
+        texts,
+        unorderedEquals(<String>['身長162センチ趣味は読害', '身長162センチ']),
+      );
+    });
+
+    test('父块没有行几何：不知道字落在哪，不让位', () async {
+      final List<String> texts = await run(<OcrRect, String>{
+        tallParent: '身長162センチ趣味は読害',
+        upper: '身長162センチ',
+        lower: '趣味は読書',
+      });
+      expect(texts, hasLength(3));
+    });
+
+    test('父块的行大半不在子块里：留着父块，不丢子块没认领的字', () async {
+      const OcrRect inner1 = OcrRect(left: 20, top: 20, right: 120, bottom: 50);
+      const OcrRect inner2 = OcrRect(left: 20, top: 60, right: 120, bottom: 90);
+      final _ReplyRecognizer recognizer = _ReplyRecognizer(<OcrRect,
+          OcrRecognition>{
+        tallParent: const OcrRecognition(
+          text: 'AB本文本文本文',
+          vertical: false,
+          lines: <String>['A', 'B', '本文本文本文'],
+          lineBoxes: <OcrRect>[
+            OcrRect(left: 20, top: 20, right: 120, bottom: 50),
+            OcrRect(left: 20, top: 60, right: 120, bottom: 90),
+            OcrRect(left: 20, top: 300, right: 380, bottom: 900),
+          ],
+        ),
+        inner1: const OcrRecognition(text: 'A', vertical: false),
+        inner2: const OcrRecognition(text: 'B', vertical: false),
+      });
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _FixedDetector(<DetectedTextRegion>[
+          _region(tallParent, 0.9),
+          _region(inner1, 0.8),
+          _region(inner2, 0.8),
+        ]),
+        recognizer: recognizer,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(
+        result.blocks.map((OcrBlock b) => b.text),
+        unorderedEquals(<String>['AB本文本文本文', 'A', 'B']),
+      );
+    });
+
+    test('父块的行都被子块盖住：按行几何判定，父块让位', () async {
+      final _ReplyRecognizer recognizer = _ReplyRecognizer(<OcrRect,
+          OcrRecognition>{
+        tallParent: const OcrRecognition(
+          text: 'XY',
+          vertical: false,
+          lines: <String>['X', 'Y'],
+          lineBoxes: <OcrRect>[
+            OcrRect(left: 25, top: 110, right: 370, bottom: 150),
+            OcrRect(left: 25, top: 610, right: 370, bottom: 650),
+          ],
+        ),
+        upper: const OcrRecognition(text: 'X1', vertical: false),
+        lower: const OcrRecognition(text: 'Y1', vertical: false),
+      });
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _FixedDetector(<DetectedTextRegion>[
+          _region(tallParent, 0.9),
+          _region(upper, 0.8),
+          _region(lower, 0.8),
+        ]),
+        recognizer: recognizer,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(
+        result.blocks.map((OcrBlock b) => b.text),
+        unorderedEquals(<String>['X1', 'Y1']),
+      );
+    });
+
+    test('几乎同大的两个框不算父子（同一块被检出两次，交给原有去重）', () async {
+      const OcrRect twin = OcrRect(left: 2, top: 2, right: 400, bottom: 1000);
+      // 若把 twin 当子块，父块就有两个子块、行也全被盖住，会被误删。
+      final List<String> texts = await run(
+        <OcrRect, String>{tallParent: 'P', twin: 'Q', upper: 'U'},
+        parentLines: <String>['P'],
+        parentLineBoxes: <OcrRect>[parentRows.first],
+      );
+      expect(texts, unorderedEquals(<String>['P', 'Q', 'U']));
+    });
+  });
+
+  group('OcrBlock 逐字命中格的缓存序列化', () {
+    const OcrBlock block = OcrBlock(
+      box: OcrRect(left: 0, top: 0, right: 100, bottom: 30),
+      vertical: false,
+      lines: <String>['あい'],
+      lineBoxes: <OcrRect>[OcrRect(left: 0, top: 0, right: 100, bottom: 30)],
+      glyphBoxes: <OcrGlyphBox>[
+        OcrGlyphBox(
+          start: 0,
+          end: 1,
+          rect: OcrRect(left: 0, top: 0, right: 40, bottom: 30),
+        ),
+        OcrGlyphBox(
+          start: 1,
+          end: 2,
+          rect: OcrRect(left: 40, top: 0, right: 100, bottom: 30),
+        ),
+      ],
+    );
+
+    test('toJson / fromJson 往返保留字格', () {
+      final OcrBlock back = OcrBlock.fromJson(
+        jsonDecode(jsonEncode(block.toJson())) as Map<String, dynamic>,
+      );
+      expect(back.glyphBoxes!.map((OcrGlyphBox g) => g.rect.right),
+          <double>[40, 100]);
+      expect(back.glyphBoxes!.map((OcrGlyphBox g) => g.end), <int>[1, 2]);
+    });
+
+    test('旧缓存没有字格字段照常读；区间越出文本的字格当没有', () {
+      final Map<String, dynamic> json =
+          jsonDecode(jsonEncode(block.toJson())) as Map<String, dynamic>;
+      json.remove('glyphBoxes');
+      expect(OcrBlock.fromJson(json).glyphBoxes, isNull);
+      json['glyphBoxes'] = <Map<String, dynamic>>[
+        const OcrGlyphBox(
+          start: 0,
+          end: 5,
+          rect: OcrRect(left: 0, top: 0, right: 1, bottom: 1),
+        ).toJson(),
+      ];
+      expect(OcrBlock.fromJson(json).glyphBoxes, isNull);
+    });
+  });
+
   group('isVerticalBlock', () {
     test('长宽比阈值', () {
       expect(
@@ -1166,6 +1366,23 @@ class _SweepDetector implements OcrDetector {
         bubbles: const <OcrRect>[],
         weakTextRegions: weak,
       );
+}
+
+/// 按框交回固定识别结果（可带行几何）的识别器。
+class _ReplyRecognizer implements OrientedOcrRecognizer {
+  _ReplyRecognizer(this.replies);
+
+  final Map<OcrRect, OcrRecognition> replies;
+
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) async =>
+      replies[box]!.text;
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async => <OcrRecognition>[for (final OcrRect box in boxes) replies[box]!];
 }
 
 class _RecordingSweeper implements OcrPageTextSweeper {

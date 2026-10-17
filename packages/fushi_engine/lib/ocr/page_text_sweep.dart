@@ -20,6 +20,7 @@ import 'dart:math' as math;
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
@@ -170,6 +171,8 @@ class PpOcrPageTextSweeper implements OcrPageTextSweeper {
     final List<OcrRect> lines = found.lines;
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    final List<List<OcrGlyphBox>?> glyphs = <List<OcrGlyphBox>?>[];
+    int utf16Offset = 0;
     double confidenceSum = 0;
     int tokenCount = 0;
     for (final OcrRect line in lines) {
@@ -186,6 +189,18 @@ class PpOcrPageTextSweeper implements OcrPageTextSweeper {
       }
       texts.add(recognition.text);
       boxes.add(line);
+      glyphs.add(
+        ocrLineGlyphBoxes(
+          text: recognition.text,
+          tokens: ocrLineTokensOf(recognition),
+          line: line,
+          vertical: vertical,
+          // 竖列逆时针转 90° 后行图的 x 就是原列图的 y。
+          alongOrigin: (vertical ? crop.y : crop.x).toDouble(),
+          utf16Offset: utf16Offset,
+        ),
+      );
+      utf16Offset += recognition.text.length;
     }
     if (tokenCount == 0) return null;
     final double confidence = confidenceSum / tokenCount;
@@ -196,6 +211,7 @@ class PpOcrPageTextSweeper implements OcrPageTextSweeper {
       lines: texts,
       lineBoxes: boxes,
       score: confidence,
+      glyphBoxes: joinOcrLineGlyphBoxes(glyphs),
     );
   }
 
