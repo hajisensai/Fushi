@@ -24,6 +24,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_signing.dart';
@@ -268,6 +269,25 @@ class LeaderboardClient {
         ),
       ),
     );
+  }
+
+  /// 代另一台（已互联配对的）新设备把它的钥匙绑到本账户（`POST /v1/me/devices`）。
+  /// [proof] 由新设备用**它自己的**私钥签 [leaderboardDeviceLinkProofString] 得到——新设备
+  /// 只交出公钥与持有证明，私钥 / 恢复码从不离开新设备。返回**新设备视角**的账户
+  /// （`uploadDevice` 按新钥匙算），原样转交给新设备落档。
+  ///
+  /// 409 `too_many_devices`（满 10 台）/ `key_taken`（该钥匙已属于别的账户）；旧版服务端
+  /// 没有这个接口时 404。
+  Future<LeaderboardSelf> linkDevice(
+    LeaderboardDeviceLinkRequest request,
+  ) async {
+    _requireIdentity();
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/me/devices',
+      body: request.toJson(),
+    );
+    return LeaderboardSelf.fromJson(j);
   }
 
   /// 解绑一台设备（204）。不能解绑本机（400 `cannot_remove_current`）；解绑的若是上传

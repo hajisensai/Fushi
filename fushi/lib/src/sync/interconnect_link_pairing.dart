@@ -107,6 +107,8 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
     pinProvider: secret != null ? () async => secret : pinProvider,
     clientDeviceId: await repo.getOrCreateDeviceId(),
     ticketId: link.hasTicket ? link.ticketId : null,
+    // 设备钥匙照样证明：票据配对本身不授予「我的设备」，但 host 记下指纹后可手动标记。
+    deviceKey: await repo.getOrCreateInterconnectDeviceKey(),
   );
   switch (outcome) {
     case FushiPairV2Failure(:final String reason):

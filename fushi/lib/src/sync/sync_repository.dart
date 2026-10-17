@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/interconnect_p2p.dart'
         kInterconnectP2pRelayUrlsPref,
         kInterconnectP2pSecretPref;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
+import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
 export 'package:fushi_engine/sync/sync_channel_scope.dart' show SyncChannelScope;
@@ -235,6 +236,32 @@ class SyncRepository {
   // （BUG-988 立过的规矩），出站也一样：整份 Profile 比四个内容上传开关更敏感。
   static const _keyInterconnectProfileTransfer =
       'interconnect_profile_transfer';
+  // 「允许已配对设备自动登录我的 Fushi 账户」的 **host 侧**开关（所有者 2026-10-16 拍板：
+  // 默认开——已配对本身就是信任凭据）。关掉时 `/api/interconnect/leaderboard-link` 403。
+  // 对端只交来它自己的公钥，本机私钥 / 恢复码从不外传。
+  static const _keyInterconnectLeaderboardLinkHost =
+      'interconnect_leaderboard_link_host';
+  // **client 侧**开关「跟随已配对设备自动登录」（默认开）：本机没有 Fushi 账户、且连上已
+  // 登录账户的已配对 host 时，后台自动把本机新生成的设备钥匙挂到同一账户。
+  static const _keyLeaderboardFollowPairedLogin =
+      'leaderboard_follow_paired_login';
+  // host 侧「我的设备」标记（所有者 2026-10-16 拍板）：被标记的已配对 peer 才能跟随本机
+  // 账户自动登录。JSON 字符串数组，元素是 `fushi_paired_peers.peerId`。每次（重新）配对
+  // 落库都按审批时的选择**显式**重写这台 peer 的标记（选「仅互联」/ 扫码票据配对 = 去掉），
+  // 吊销时删掉——所以残留在这里的旧 peerId 永远碰不到一台没经过本次审批的 peer。升级前
+  // 配对过的 peer 不在集合里 = 「仅互联」，不追溯授权。
+  static const _keyInterconnectOwnerDevicePeers =
+      'interconnect_owner_device_peers';
+  // host 侧：已配对 peer 在配对时**验签通过**的互联设备公钥指纹（JSON 对象
+  // `{peerId: fingerprint}`，见 `interconnect_device_key.dart`）。「我的设备」资格只给
+  // 出现在这里的 peer——配对里自报的 deviceId 谁都能冒报，设备私钥签名冒不了（PR #2258
+  // 审查）。每次（重新）配对按本次是否验签通过显式重写，吊销时删掉。设备本地。
+  static const _keyInterconnectPeerDeviceKeys = 'interconnect_peer_device_keys';
+  // client 侧：本机互联设备私钥（base64url P-256 标量）。配对时签 host 下发的会话
+  // nonce，证明「这个 deviceId 真是我」。设备本地 + 名字命中凭据红线（`private_key`），
+  // 不进备份 / Profile 快照 / 导出；私钥外带 = 两台设备共用一个身份。
+  static const _keyInterconnectDevicePrivateKey =
+      'sync_interconnect_device_private_key';
   // 互联「远程更新本机」的 **host 侧**开关（反馈 Pp8XPyve0N）：允许已配对设备查看并
   // 触发本机 app 更新。默认 false —— 让别的设备在本机下载安装可执行文件，必须是主机
   // 主人的显式意愿（Never break userspace：升级后什么都不会自己发生）。
@@ -672,6 +699,111 @@ class SyncRepository {
   Future<void> setInterconnectProfileTransferEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectProfileTransfer, v);
 
+  /// host 侧：是否允许已配对设备跟随本机账户自动登录（默认开）。
+  Future<bool> isInterconnectLeaderboardLinkHostEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectLeaderboardLinkHost, true);
+  Future<void> setInterconnectLeaderboardLinkHostEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectLeaderboardLinkHost, v);
+
+  /// host 侧：被标记为「我的设备」的已配对 peer（peerId 集合）。
+  Future<Set<String>> getOwnerDevicePeerIds() async {
+    final String? raw = await _getStringOrNull(
+      _keyInterconnectOwnerDevicePeers,
+    );
+    if (raw == null || raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return <String>{};
+      return <String>{for (final Object? e in decoded) if (e is String) e};
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  /// 标记 / 取消一台已配对 peer 为「我的设备」。返回最终是否为「我的设备」。
+  ///
+  /// 标记要求这台 peer 配对时证明过设备钥匙（[getPeerDeviceKeyFingerprints] 里有它）；
+  /// 没证明过的（旧版 client / 没上报设备钥匙）标不上，返回 false。
+  Future<bool> setOwnerDevicePeer(String peerId, bool owner) async {
+    if (owner && !(await getPeerDeviceKeyFingerprints()).containsKey(peerId)) {
+      owner = false;
+    }
+    final Set<String> ids = await getOwnerDevicePeerIds();
+    final bool changed = owner ? ids.add(peerId) : ids.remove(peerId);
+    if (!changed) return owner;
+    if (ids.isEmpty) {
+      await _deleteKey(_keyInterconnectOwnerDevicePeers);
+    } else {
+      await _setString(
+        _keyInterconnectOwnerDevicePeers,
+        jsonEncode(ids.toList()..sort()),
+      );
+    }
+    return owner;
+  }
+
+  /// host 侧：配对时验签通过的设备公钥指纹（peerId → fingerprint）。
+  Future<Map<String, String>> getPeerDeviceKeyFingerprints() async {
+    final String? raw = await _getStringOrNull(_keyInterconnectPeerDeviceKeys);
+    if (raw == null || raw.isEmpty) return <String, String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return <String, String>{};
+      return <String, String>{
+        for (final MapEntry<Object?, Object?> e in decoded.entries)
+          if (e.key is String && e.value is String)
+            e.key! as String: e.value! as String,
+      };
+    } on FormatException {
+      return <String, String>{};
+    }
+  }
+
+  /// 记下 / 清掉一台 peer 的已验签设备公钥指纹（null = 本次配对没证明设备钥匙）。
+  Future<void> setPeerDeviceKeyFingerprint(
+    String peerId,
+    String? fingerprint,
+  ) async {
+    final Map<String, String> keys = await getPeerDeviceKeyFingerprints();
+    if (keys[peerId] == fingerprint) return;
+    if (fingerprint == null) {
+      keys.remove(peerId);
+    } else {
+      keys[peerId] = fingerprint;
+    }
+    if (keys.isEmpty) {
+      await _deleteKey(_keyInterconnectPeerDeviceKeys);
+    } else {
+      final List<String> ids = keys.keys.toList()..sort();
+      await _setString(
+        _keyInterconnectPeerDeviceKeys,
+        jsonEncode(<String, String>{
+          for (final String id in ids) id: keys[id]!,
+        }),
+      );
+    }
+  }
+
+  /// 持 [token] 的已配对 peer 是否被标记为「我的设备」（token 不属于任何现存 peer = false）。
+  /// 同时要求这台 peer 有已验签的设备钥匙记录：标记集合里的 peerId 不能单独生效。
+  Future<bool> isOwnerDevicePeerToken(String token) async {
+    final Set<String> owners = await getOwnerDevicePeerIds();
+    if (owners.isEmpty) return false;
+    final Map<String, String> keys = await getPeerDeviceKeyFingerprints();
+    for (final FushiPairedPeerRow peer in await _db.getPairedPeers()) {
+      if (peer.token == token) {
+        return owners.contains(peer.peerId) && keys.containsKey(peer.peerId);
+      }
+    }
+    return false;
+  }
+
+  /// client 侧：本机无账户时是否跟随已配对设备自动登录（默认开）。
+  Future<bool> isLeaderboardFollowPairedLoginEnabled() =>
+      _db.getPrefTyped<bool>(_keyLeaderboardFollowPairedLogin, true);
+  Future<void> setLeaderboardFollowPairedLoginEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyLeaderboardFollowPairedLogin, v);
+
   /// host 侧：是否允许已配对设备远程更新本机 app（`/api/host/update`）。
   ///
   /// 端点另有已配对 peer token + 局域网信任区 + 一次性 nonce 几道门；本开关是
@@ -1076,6 +1208,30 @@ class SyncRepository {
     final String id = FushiSyncServer.generateToken();
     await _setString(_keyDeviceId, id);
     return id;
+  }
+
+  /// client 侧：本机互联设备钥匙（首次使用时生成并落设备本地偏好）。配对时用它签
+  /// host 下发的会话 nonce（`interconnect_device_key.dart`）。存的值坏了就换一把新的：
+  /// 只影响之后的配对能否被标成「我的设备」，已配对关系（per-peer token）不受影响。
+  ///
+  /// 存储取舍：仓内没有系统安全存储插件（flutter_secure_storage 之类），与 iroh P2P
+  /// 私钥同样落 app 私有目录下的偏好表，靠设备本地清单 + 凭据红线挡住备份 / 导出外带。
+  Future<InterconnectDeviceKey> getOrCreateInterconnectDeviceKey() async {
+    final String? encoded =
+        await _getStringOrNull(_keyInterconnectDevicePrivateKey);
+    if (encoded != null && encoded.isNotEmpty) {
+      try {
+        return InterconnectDeviceKey.decodePrivateKey(_decodeSecret(encoded));
+      } on FormatException {
+        // 坏值：落到下面重新生成。
+      }
+    }
+    final InterconnectDeviceKey key = InterconnectDeviceKey.generate();
+    await _setString(
+      _keyInterconnectDevicePrivateKey,
+      _encodeSecret(key.encodePrivateKey()),
+    );
+    return key;
   }
 
   // ── 媒体服务器（Jellyfin / Emby / Plex） ─────────────────────────────
@@ -1568,6 +1724,11 @@ class SyncRepository {
     _keyInterconnectP2pEnabled,
     _keyInterconnectP2pSecret,
     _keyInterconnectP2pRelayUrls,
+    // 互联设备钥匙与「我的设备」：私钥外带 = 两台设备共用一个身份；host 侧的标记 /
+    // 指纹描述的是**本机**配对表里的 peer，搬到别的设备上毫无意义（还会串号）。
+    _keyInterconnectDevicePrivateKey,
+    _keyInterconnectOwnerDevicePeers,
+    _keyInterconnectPeerDeviceKeys,
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,

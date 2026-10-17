@@ -9,6 +9,9 @@
 //   POST   /v1/register                 {pubkey, nickname, email, code} 注册（验证码；幂等）
 //   POST   /v1/login                    {pubkey, email, code}   新设备登录（绑定本机钥匙）
 //   GET    /v1/me                        [签名]                  自己的账户
+//   GET    /v1/me/devices                [签名]                  本账户已登录的设备
+//   POST   /v1/me/devices                [签名] {pubkey, time, proof} 代已互联配对的新设备绑定钥匙（account.js addDevice）
+//   DELETE /v1/me/devices/:keyId         [签名]                  解绑另一台设备
 //   PATCH  /v1/me                        [签名] {nickname?, visibility?}
 //   DELETE /v1/me                        [签名]                  删除账户与全部数据
 //   PUT    /v1/me/avatar                 [签名] 图片字节
@@ -54,7 +57,7 @@ import {
   setWorkCover,
   voteWorkCover,
 } from './media.js';
-import { deleteAccount, listDevices, login, register, removeDevice, selfView, updateProfile } from './account.js';
+import { addDevice, deleteAccount, listDevices, login, register, removeDevice, selfView, updateProfile } from './account.js';
 import { purgeEmailCodes, requestCode } from './email.js';
 import { leaderboard, popularWorks, userCard, userShelf, workPage } from './views.js';
 import { handleAdmin } from './admin.js';
@@ -252,6 +255,14 @@ async function route(request, env, now, ctx) {
     await hit(env, `social:${account.id}`, HOUR, LIMITS.socialWritePerHour, now);
     await removeDevice(env, account, m[1]);
     return new Response(null, { status: 204 });
+  }
+  if (method === 'POST' && path === '/v1/me/devices') {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `link:${account.id}`, HOUR, LIMITS.deviceLinkPerHour, now);
+    await spend(env, 'write_rows', SMALL_WRITE_ROWS, now);
+    const res = await addDevice(env, account, parseJsonBytes(bytes), now);
+    return json(res.account, res.created ? 201 : 200);
   }
   if (method === 'POST' && path === '/v1/shelf') {
     const bytes = await readBodyBytes(request, MAX_SHELF_BODY);

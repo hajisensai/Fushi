@@ -44,6 +44,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -687,6 +688,33 @@ class _HomePageState extends BasePageState<HomePage>
         ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
       }),
     );
+    _maybeFollowPairedLogin();
+  }
+
+  /// 本机没有 Fushi 账户时跟随已配对设备自动登录（条件、退避、失败静默都在
+  /// [LeaderboardPairedLogin] 里；未满足条件时只读本地配置，不发请求）。成功给一次轻提示。
+  void _maybeFollowPairedLogin() {
+    unawaited(() async {
+      final LeaderboardPairedLoginSuccess? done = await ref
+          .read(leaderboardPairedLoginProvider)
+          .maybeRun();
+      if (done == null || !mounted) return;
+      final String? peer = done.peerName;
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            peer == null || peer.isEmpty
+                ? t.leaderboard_paired_login_done_generic(
+                    name: done.self.account.tag,
+                  )
+                : t.leaderboard_paired_login_done(
+                    device: peer,
+                    name: done.self.account.tag,
+                  ),
+          ),
+        ),
+      );
+    }());
   }
 
   /// 启动期自动处理一轮 Anki 媒体去重的 UI 侧收尾：报结果，或提示 + 等确认。

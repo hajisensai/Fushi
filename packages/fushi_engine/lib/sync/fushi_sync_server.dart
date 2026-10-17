@@ -30,6 +30,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
+import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
@@ -48,6 +50,7 @@ import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
+import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -70,6 +73,7 @@ part 'fushi_sync_server/video_metadata.part.dart';
 part 'fushi_sync_server/sync_state.part.dart';
 part 'fushi_sync_server/webdav.part.dart';
 part 'fushi_sync_server/game_stream.part.dart';
+part 'fushi_sync_server/leaderboard_link.part.dart';
 part 'fushi_sync_server/host_update.part.dart';
 
 /// Embedded WebDAV-style server used for device-to-device LAN sync.
@@ -104,6 +108,8 @@ class FushiPairRequest {
     required this.remoteAddress,
     this.pinVerified,
     this.pinRequired = false,
+    this.clientDeviceId,
+    this.ownerDeviceGrant,
   });
 
   /// Self-reported name from the client (may be null/empty if not sent).
@@ -123,6 +129,17 @@ class FushiPairRequest {
   /// 决定是否显示 PIN：LAN 免 PIN 会话（pinRequired=false）不显示 PIN，避免 host 屏上
   /// 出现一个 client 从未被要求输入的「幽灵 PIN」。旧 /api/pair（v1，无 PIN）默认 false。
   final bool pinRequired;
+
+  /// v2 配对里 client 上报的设备 id（= 配对成功后 [FushiPairedPeerRegistration.peerId]）。
+  /// 自报值、可被冒报，**只作展示 / 诊断**：「这是我的设备」不按它记账，而是挂在
+  /// [ownerDeviceGrant]（本会话）上。旧 /api/pair（v1）与没上报 id 的旧 client 为 null。
+  final String? clientDeviceId;
+
+  /// 本会话的「这是我的设备」选项。非 null = client 上报了互联设备公钥、本会话可以授予
+  /// 该资格：host 审批 UI 选「允许 · 这是我的设备」时置 `granted = true`，confirm 时只有
+  /// 设备钥匙验签通过才真正落成「我的设备」。null = 不提供该选项（旧 client 没有设备钥匙 /
+  /// v1 配对），UI 只给普通「允许」。
+  final FushiPairOwnerDeviceGrant? ownerDeviceGrant;
 }
 
 /// TODO-961 M1b: confirm 成功后要落库的一条 per-peer 授权凭据。server 生成 token、
@@ -134,6 +151,8 @@ class FushiPairedPeerRegistration {
     required this.token,
     required this.deviceName,
     required this.remoteAddress,
+    this.ownerDevice = false,
+    this.deviceKeyFingerprint,
   });
 
   /// 对端稳定身份（client 配对时上报的 deviceId）。表 UNIQUE 键，upsert 幂等基准。
@@ -147,6 +166,14 @@ class FushiPairedPeerRegistration {
 
   /// 配对时对端来源 IP（诊断/展示，可空）。
   final String? remoteAddress;
+
+  /// 本次配对是否授予「我的设备」资格：本会话审批选了「这是我的设备」**且** client 在
+  /// confirm 里用设备私钥签过本会话、验签通过。扫码票据配对 / 旧 client 恒 false。
+  final bool ownerDevice;
+
+  /// 本次配对里验签通过的设备公钥指纹（`interconnectDeviceKeyFingerprint`）；client 没
+  /// 证明设备钥匙时为 null。host 据此判断这台 peer 之后能不能被手动标成「我的设备」。
+  final String? deviceKeyFingerprint;
 }
 
 /// Thrown by [FushiSyncServer.start] when the requested port is already bound
@@ -436,6 +463,11 @@ class FushiSyncServer {
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
+
+  /// 「跟随已配对设备自动登录 Fushi 账户」的 host 能力（app 装配，见
+  /// `interconnect_leaderboard_link.dart`）。null（旧调用方 / 无头服务端 / 单测）→
+  /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
+  InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
@@ -841,10 +873,17 @@ class FushiSyncServer {
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
-      if (_videoRemoteService == null) return response;
+      if (_videoRemoteService == null && !_leaderboardLinkAvailable) {
+        return response;
+      }
       final Map<String, dynamic> capabilities =
           jsonDecode(await response.readAsString()) as Map<String, dynamic>;
-      capabilities['videoRemoteControlV1'] = true;
+      if (_videoRemoteService != null) {
+        capabilities['videoRemoteControlV1'] = true;
+      }
+      if (_leaderboardLinkAvailable) {
+        capabilities[kInterconnectLeaderboardLinkCapability] = true;
+      }
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {
@@ -940,6 +979,9 @@ class FushiSyncServer {
     }
     if (reqPath == kInterconnectProfilePath) {
       return _handleInterconnectProfile(request, method);
+    }
+    if (reqPath == kInterconnectLeaderboardLinkPath) {
+      return _handleInterconnectLeaderboardLink(request, method);
     }
     if (reqPath == '/api/tombstones') {
       return _handleTombstones(request, method);
