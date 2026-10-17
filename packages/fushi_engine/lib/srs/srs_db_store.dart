@@ -2185,22 +2185,54 @@ class SrsDbStore implements SrsSyncReplica {
                 )
                 .getSingle())
             .read<int>('c');
-    final List<SrsReviewLogRow> logs = await (db.select(
-      db.srsReviewLogs,
-    )..where((t) => t.profileUid.equals(profileUid))).get();
+    // 有效复习 = 有评分的 review 日志里没被 undo 撤销的。只解码 undo 日志（通常很少）拿被撤销的 ID，
+    // 其余全用计数查询，不把整张日志表读进内存。
     final Set<String> revoked = <String>{};
-    for (final SrsReviewLogRow r in logs) {
-      if (r.kind != SrsLogKind.undo) continue;
-      final Object? target = (jsonDecode(r.json) as Map)['revokes'];
+    for (final QueryRow r
+        in await db
+            .customSelect(
+              'SELECT json FROM srs_review_logs '
+              'WHERE profile_uid = ? AND kind = ?',
+              variables: <Variable<Object>>[
+                uid,
+                Variable<String>(SrsLogKind.undo),
+              ],
+            )
+            .get()) {
+      final Object? target =
+          (jsonDecode(r.read<String>('json')) as Map)['revokes'];
       if (target is String) revoked.add(target);
     }
-    int reviews = 0;
-    for (final SrsReviewLogRow r in logs) {
-      if (r.kind == SrsLogKind.review &&
-          r.rating != null &&
-          !revoked.contains(r.id)) {
-        reviews++;
-      }
+    const String validReview =
+        'profile_uid = ? AND kind = ? AND rating IS NOT NULL';
+    int reviews =
+        (await db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM srs_review_logs WHERE $validReview',
+                  variables: <Variable<Object>>[
+                    uid,
+                    Variable<String>(SrsLogKind.review),
+                  ],
+                )
+                .getSingle())
+            .read<int>('c');
+    final List<String> ids = revoked.toList();
+    for (int i = 0; i < ids.length; i += 500) {
+      final List<String> chunk = ids.sublist(i, min(i + 500, ids.length));
+      reviews -=
+          (await db
+                  .customSelect(
+                    'SELECT COUNT(*) AS c FROM srs_review_logs '
+                    'WHERE $validReview AND id IN '
+                    '(${List<String>.filled(chunk.length, '?').join(',')})',
+                    variables: <Variable<Object>>[
+                      uid,
+                      Variable<String>(SrsLogKind.review),
+                      for (final String id in chunk) Variable<String>(id),
+                    ],
+                  )
+                  .getSingle())
+              .read<int>('c');
     }
     return (notes: notes, cards: cards, reviews: reviews);
   }
@@ -2396,31 +2428,113 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
-  /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同，顺序同 [exportAll]）。
-  /// 修改记录 / 复习日志 / 不认识的事件在库里本来就存规范编码，直接拼外层，不解析再编码（备份用，省一遍 JSON）。
+  /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同；按表、表内按 rowid 排）。
+  /// 一次全进内存，只给测试 / 小规模调用；备份走分页的 [forEachCanonicalLinePage]。
   Future<List<String>> exportCanonicalLines() async {
     final List<String> out = <String>[];
-    for (final SrsEntityRow r in await (db.select(
-      db.srsEntities,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(SrsEntityEvent(_entityFromRow(r)).canonical());
-    }
-    for (final SrsFieldEditRow r in await (db.select(
-      db.srsFieldEdits,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add('{"t":"edit","x":${r.json}}');
-    }
-    for (final SrsReviewLogRow r in await (db.select(
-      db.srsReviewLogs,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add('{"t":"log","x":${r.json}}');
-    }
-    for (final SrsUnknownEventRow r in await (db.select(
-      db.srsUnknownEvents,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(r.json);
-    }
+    await forEachCanonicalLinePage(
+      (List<String> page) async => out.addAll(page),
+    );
     return out;
+  }
+
+  /// 按页导出全部事件的规范 JSON 行（备份用）：每页最多 [pageSize] 行交给 [onPage]，内存只占一页。
+  /// 修改记录 / 复习日志 / 不认识的事件在库里本来就存规范编码，直接拼外层，不解析再编码。
+  /// 要一致快照就在同一个事务里调用（各页之间插不进别的写入）。
+  Future<void> forEachCanonicalLinePage(
+    Future<void> Function(List<String> lines) onPage, {
+    int pageSize = 2000,
+  }) async {
+    await _pageRows(
+      'srs_entities',
+      'id, profile_uid, kind, payload_json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          SrsEntityEvent(
+            SrsEntityRecord(
+              id: r.read<String>('id'),
+              profileUid: r.read<String>('profile_uid'),
+              kind:
+                  SrsEntityKind.tryParse(r.read<String>('kind')) ??
+                  SrsEntityKind.note,
+              payload: (jsonDecode(r.read<String>('payload_json')) as Map)
+                  .cast<String, Object?>(),
+            ),
+          ).canonical(),
+      ]),
+    );
+    await _pageRows(
+      'srs_field_edits',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          '{"t":"edit","x":${r.read<String>('json')}}',
+      ]),
+    );
+    await _pageRows(
+      'srs_review_logs',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows)
+          '{"t":"log","x":${r.read<String>('json')}}',
+      ]),
+    );
+    await _pageRows(
+      'srs_unknown_events',
+      'json',
+      pageSize,
+      (List<QueryRow> rows) => onPage(<String>[
+        for (final QueryRow r in rows) r.read<String>('json'),
+      ]),
+    );
+  }
+
+  /// 按页导出已知的「事件 ID → 服务器时间 S」（备份用，同 [exportServerTimes] 的内容）。
+  Future<void> forEachServerTimePage(
+    Future<void> Function(List<(String, int)> page) onPage, {
+    int pageSize = 5000,
+  }) => _pageRows(
+    'srs_event_local',
+    'event_id, server_time',
+    pageSize,
+    (List<QueryRow> rows) => onPage(<(String, int)>[
+      for (final QueryRow r in rows)
+        (r.read<String>('event_id'), r.read<int>('server_time')),
+    ]),
+    extraWhere: 'server_time IS NOT NULL',
+  );
+
+  /// 本 profile 在 [table] 里的行，按 rowid 键集分页（不用 OFFSET：深页不退化成 O(n²)）。
+  Future<void> _pageRows(
+    String table,
+    String columns,
+    int pageSize,
+    Future<void> Function(List<QueryRow> rows) onPage, {
+    String? extraWhere,
+  }) async {
+    int after = -1 << 62;
+    while (true) {
+      final List<QueryRow> rows = await db
+          .customSelect(
+            'SELECT rowid AS rid_, $columns FROM $table '
+            'WHERE profile_uid = ? AND rowid > ?'
+            '${extraWhere == null ? '' : ' AND $extraWhere'} '
+            'ORDER BY rowid LIMIT ?',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid),
+              Variable<int>(after),
+              Variable<int>(pageSize),
+            ],
+          )
+          .get();
+      if (rows.isEmpty) return;
+      await onPage(rows);
+      if (rows.length < pageSize) return;
+      after = rows.last.read<int>('rid_');
+    }
   }
 
   @override

@@ -24,7 +24,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive_io.dart' hide ZLibEncoder;
 import 'package:crypto/crypto.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -552,31 +552,6 @@ class SrsBackupStore {
       throw ArgumentError('store belongs to ${store.profileUid}');
     }
     final int createdAt = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    // 指纹、事件、服务器时间、计数在同一个事务里读：中间插不进别的写入，四者是同一个快照。
-    late final String fingerprint;
-    late final List<String> lines;
-    late final Map<String, int> serverTimes;
-    late final ({int notes, int cards, int reviews}) counts;
-    await store.db.transaction(() async {
-      fingerprint = await store.changeFingerprint();
-      lines = await store.exportCanonicalLines();
-      serverTimes = await store.exportServerTimes();
-      counts = await store.backupCounts();
-    });
-    final List<SrsBackupMediaEntry> media = await _captureMedia();
-    final SrsBackupManifest template = SrsBackupManifest(
-      createdAt: createdAt,
-      kind: kind,
-      profileUid: profileUid,
-      profileName: profileName,
-      noteCount: counts.notes,
-      cardCount: counts.cards,
-      reviewCount: counts.reviews,
-      eventCount: lines.length,
-      eventsSha256: '',
-      fingerprint: fingerprint,
-      media: media,
-    );
     await profileDir.create(recursive: true);
     final String base = srsBackupFileStem(createdAt, kind);
     String id = base;
@@ -584,21 +559,90 @@ class SrsBackupStore {
       id = '$base-$i';
     }
     final File out = File(_pathOf(id));
-    // 事件编码、摘要、deflate 与写盘在后台 isolate 做，不卡界面。
-    final SrsBackupManifest manifest = await _writeInBackground(
-      outPath: out.path,
-      template: template,
-      lines: lines,
-      serverTimes: serverTimes,
+    // 事件正文与服务器时间表先按页流式写进隐藏的暂存文件（内存只占一页），再由后台 isolate 流式压进 zip。
+    final File eventsTmp = File(p.join(profileDir.path, '.$id.events.tmp'));
+    final File serverTimesTmp = File(
+      p.join(profileDir.path, '.$id.server_times.tmp'),
     );
-    await _sidecarOf(
-      out,
-    ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
-    return SrsBackupInfo(
-      file: out,
-      manifest: manifest,
-      fileBytes: await out.length(),
-    );
+    try {
+      // 指纹、事件、服务器时间、计数在同一个事务里读：中间插不进别的写入，四者是同一个快照。
+      late final String fingerprint;
+      int eventCount = 0;
+      late final ({int notes, int cards, int reviews}) counts;
+      await store.db.transaction(() async {
+        fingerprint = await store.changeFingerprint();
+        final IOSink ev = eventsTmp.openWrite();
+        try {
+          await store.forEachCanonicalLinePage((List<String> lines) async {
+            final StringBuffer sb = StringBuffer();
+            for (final String l in lines) {
+              sb
+                ..write(l)
+                ..write('\n');
+            }
+            ev.add(utf8.encode(sb.toString()));
+            eventCount += lines.length;
+            await ev.flush();
+          });
+        } finally {
+          await ev.close();
+        }
+        final IOSink st = serverTimesTmp.openWrite();
+        try {
+          st.write('{');
+          bool first = true;
+          await store.forEachServerTimePage((List<(String, int)> page) async {
+            final StringBuffer sb = StringBuffer();
+            for (final (String eventId, int s) in page) {
+              if (!first) sb.write(',');
+              first = false;
+              sb
+                ..write(jsonEncode(eventId))
+                ..write(':')
+                ..write(s);
+            }
+            st.write(sb.toString());
+            await st.flush();
+          });
+          st.write('}');
+        } finally {
+          await st.close();
+        }
+        counts = await store.backupCounts();
+      });
+      final List<SrsBackupMediaEntry> media = await _captureMedia();
+      final SrsBackupManifest template = SrsBackupManifest(
+        createdAt: createdAt,
+        kind: kind,
+        profileUid: profileUid,
+        profileName: profileName,
+        noteCount: counts.notes,
+        cardCount: counts.cards,
+        reviewCount: counts.reviews,
+        eventCount: eventCount,
+        eventsSha256: '',
+        fingerprint: fingerprint,
+        media: media,
+      );
+      // 摘要、deflate 与写盘在后台 isolate 流式做，不卡界面、不把正文整份读进内存。
+      final SrsBackupManifest manifest = await _writeInBackground(
+        outPath: out.path,
+        template: template,
+        eventsPath: eventsTmp.path,
+        serverTimesPath: serverTimesTmp.path,
+      );
+      await _sidecarOf(
+        out,
+      ).writeAsString(jsonEncode(manifest.toJson()), flush: true);
+      return SrsBackupInfo(
+        file: out,
+        manifest: manifest,
+        fileBytes: await out.length(),
+      );
+    } finally {
+      await _deleteQuietly(eventsTmp);
+      await _deleteQuietly(serverTimesTmp);
+    }
   }
 
   String _pathOf(String id) =>
@@ -791,25 +835,114 @@ class SrsBackupStore {
 
   // ---------------------------------------------------------------- 文件读写
 
-  /// 在后台 isolate 里拼事件正文、算摘要、写 zip。静态方法：闭包只带这几个可发送的参数。
+  /// 在后台 isolate 里流式算事件摘要、deflate、写 zip。静态方法：闭包只带这几个可发送的参数。
   static Future<SrsBackupManifest> _writeInBackground({
     required String outPath,
     required SrsBackupManifest template,
-    required List<String> lines,
-    required Map<String, int> serverTimes,
+    required String eventsPath,
+    required String serverTimesPath,
   }) => Isolate.run(() async {
-    final Uint8List body = _joinLines(lines);
-    final SrsBackupManifest m = template.copyWith(
-      eventsSha256: sha256.convert(body).toString(),
-    );
-    await _writeArchive(
-      out: File(outPath),
-      manifest: m,
-      eventsBody: body,
-      serverTimes: serverTimes,
-    );
-    return m;
+    final File evDeflated = File('$eventsPath.deflate');
+    final File stDeflated = File('$serverTimesPath.deflate');
+    try {
+      final _Deflated ev = await _deflateFile(File(eventsPath), evDeflated);
+      final _Deflated st = await _deflateFile(
+        File(serverTimesPath),
+        stDeflated,
+      );
+      final SrsBackupManifest m = template.copyWith(eventsSha256: ev.sha256);
+      await _writeArchiveFiles(
+        out: File(outPath),
+        manifest: m,
+        entries: <(String, File, _Deflated)>[
+          (_kEvents, evDeflated, ev),
+          (_kServerTimes, stDeflated, st),
+        ],
+      );
+      return m;
+    } finally {
+      for (final File f in <File>[evDeflated, stDeflated]) {
+        if (await f.exists()) await f.delete();
+      }
+    }
   });
+
+  /// 把 [src] 流式压成 zip 用的裸 deflate 流写到 [dst]，同时算原文的长度、CRC-32 与 SHA-256。
+  static Future<_Deflated> _deflateFile(File src, File dst) async {
+    int size = 0;
+    int crc = 0;
+    final _DigestCapture digest = _DigestCapture();
+    final ByteConversionSink sha = sha256.startChunkedConversion(digest);
+    final IOSink out = dst.openWrite();
+    try {
+      await out.addStream(
+        src
+            .openRead()
+            .map((List<int> chunk) {
+              size += chunk.length;
+              crc = getCrc32(chunk, crc);
+              sha.add(chunk);
+              return chunk;
+            })
+            .transform(ZLibEncoder(raw: true)),
+      );
+    } finally {
+      await out.close();
+    }
+    sha.close();
+    return _Deflated(size: size, crc32: crc, sha256: digest.value.toString());
+  }
+
+  /// 写 zip：清单（内存里，小）+ 已经压好的条目（按块拷贝进 zip，不解压、不整份读入）。
+  static Future<void> _writeArchiveFiles({
+    required File out,
+    required SrsBackupManifest manifest,
+    required List<(String, File, _Deflated)> entries,
+  }) async {
+    final File tmp = File('${out.path}.tmp');
+    final ZipFileEncoder enc = ZipFileEncoder()..create(tmp.path);
+    final List<InputFileStream> inputs = <InputFileStream>[];
+    try {
+      final List<int> m = utf8.encode(
+        const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+      );
+      enc.addArchiveFile(ArchiveFile(_kManifest, m.length, m));
+      for (final (String name, File deflated, _Deflated d) in entries) {
+        final InputFileStream input = InputFileStream(deflated.path);
+        inputs.add(input);
+        enc.addArchiveFile(
+          ArchiveFile(name, d.size, input, ArchiveFile.DEFLATE)
+            ..crc32 = d.crc32,
+        );
+      }
+      await enc.close();
+    } on Object {
+      try {
+        await enc.close();
+      } on Object {
+        // 已关闭。
+      }
+      if (await tmp.exists()) await tmp.delete();
+      rethrow;
+    } finally {
+      for (final InputFileStream i in inputs) {
+        await i.close();
+      }
+    }
+    await _commitArchive(tmp, out);
+  }
+
+  /// 落盘后再改名：断电时不会留下「改名成功、内容还在缓存里」的半个备份。
+  static Future<void> _commitArchive(File tmp, File out) async {
+    final RandomAccessFile raf = await tmp.open(mode: FileMode.append);
+    try {
+      await raf.flush();
+    } finally {
+      await raf.close();
+    }
+    if (await out.exists()) await out.delete();
+    await tmp.rename(out.path);
+  }
 
   static Uint8List _encodeEvents(List<SrsEvent> events) =>
       _joinLines(<String>[for (final SrsEvent e in events) e.canonical()]);
@@ -854,15 +987,7 @@ class SrsBackupStore {
       if (await tmp.exists()) await tmp.delete();
       rethrow;
     }
-    // 落盘后再改名：断电时不会留下「改名成功、内容还在缓存里」的半个备份。
-    final RandomAccessFile raf = await tmp.open(mode: FileMode.append);
-    try {
-      await raf.flush();
-    } finally {
-      await raf.close();
-    }
-    if (await out.exists()) await out.delete();
-    await tmp.rename(out.path);
+    await _commitArchive(tmp, out);
   }
 
   static (Archive, InputFileStream) _openZip(File f) {
@@ -1025,9 +1150,17 @@ class SrsBackupStore {
     final List<(String, File)> media = <(String, File)>[];
     final List<SrsBackupMediaEntry> present = <SrsBackupMediaEntry>[];
     final Set<String> added = <String>{};
+    final Map<String, bool> verified = <String, bool>{};
     for (final SrsBackupMediaEntry m in a.manifest.media) {
       final File pooled = File(p.join(mediaPool.path, m.sha256));
-      if (!await pooled.exists()) continue;
+      // 池文件按内容哈希核对一次：损坏的不打进导出文件（否则读方校验不过、等于没带），并删掉让下次备份从
+      // 媒体目录重新入池。
+      final bool good = verified[m.sha256] ??=
+          await pooled.exists() && await _sha256Of(pooled) == m.sha256;
+      if (!good) {
+        await _deleteQuietly(pooled);
+        continue;
+      }
       present.add(m);
       if (added.add(m.sha256)) {
         media.add(('$_kEmbeddedMediaPrefix${m.sha256}', pooled));
@@ -1059,44 +1192,79 @@ class SrsBackupStore {
     return out;
   }
 
-  /// 恢复前先把备份引用的媒体放回本 profile 的媒体目录：本机已有同名同大小的不动，缺的从共享池或
-  /// 文件内嵌的正文取（校验哈希）。本机多出来的文件不删（媒体删除不跨设备传播，也不在恢复里删）。
-  /// 返回取不到的文件数。
+  /// 恢复前先把备份引用的媒体放回本 profile 的媒体目录。一律按**内容哈希**判定（共享池本来就是内容寻址的）：
+  /// - 本机已有同名文件且内容哈希与清单一致 → 不动；同名但内容不同（哪怕大小相同）→ 换成备份里的那份。
+  /// - 先从共享池取；池文件哈希不符（损坏）→ 删掉坏的池文件，改从文件内嵌的正文取，取到后连同池文件一起修好。
+  /// - 都取不到才记缺失（本机原有的同名文件保持原样，不删）。
+  /// 本机多出来的文件不删（媒体删除不跨设备传播，也不在恢复里删）。返回取不到的文件数。
   Future<int> restoreMedia(SrsBackupArchive a) async {
     int missing = 0;
     for (final SrsBackupMediaEntry m in a.manifest.media) {
       final File target = File(p.join(mediaDir.path, m.name));
-      if (await target.exists() && await target.length() == m.size) continue;
+      if (await target.exists() &&
+          await target.length() == m.size &&
+          await _sha256Of(target) == m.sha256) {
+        continue;
+      }
       await mediaDir.create(recursive: true);
       final File tmp = File('${target.path}.tmp');
       final File pooled = File(p.join(mediaPool.path, m.sha256));
-      final ArchiveFile? embedded = a._embedded[m.sha256];
       bool ok = false;
+      bool poolCorrupt = false;
       if (await pooled.exists()) {
-        await pooled.copy(tmp.path);
-        ok = true;
-      } else if (embedded != null &&
-          embedded.size == m.size &&
-          m.size <= _kMaxMediaBytes) {
-        final OutputFileStream os = OutputFileStream(tmp.path);
-        try {
-          embedded.writeContent(os);
-        } finally {
-          await os.close();
+        if (await _sha256Of(pooled) == m.sha256) {
+          await pooled.copy(tmp.path);
+          ok = await _sha256Of(tmp) == m.sha256;
+        } else {
+          poolCorrupt = true;
+          await _deleteQuietly(pooled);
         }
-        ok = true;
+      }
+      if (!ok) {
+        await _deleteQuietly(tmp);
+        final ArchiveFile? embedded = a._embedded[m.sha256];
+        if (embedded != null &&
+            embedded.size == m.size &&
+            m.size <= _kMaxMediaBytes) {
+          final OutputFileStream os = OutputFileStream(tmp.path);
+          try {
+            embedded.writeContent(os);
+          } finally {
+            await os.close();
+          }
+          ok = await _sha256Of(tmp) == m.sha256;
+          if (ok && poolCorrupt) {
+            // 坏池文件换成校验过的正文：别的备份引用的也是这份内容。
+            final File poolTmp = File('${pooled.path}.tmp');
+            await tmp.copy(poolTmp.path);
+            await poolTmp.rename(pooled.path);
+          }
+        }
       }
       if (ok) {
-        final String sha = (await sha256.bind(tmp.openRead()).first).toString();
-        if (sha == m.sha256) {
-          await tmp.rename(target.path);
-          continue;
-        }
-        await tmp.delete();
+        await tmp.rename(target.path);
+        continue;
       }
+      await _deleteQuietly(tmp);
       missing++;
     }
     return missing;
+  }
+
+  static Future<String?> _sha256Of(File f) async {
+    try {
+      return (await sha256.bind(f.openRead()).first).toString();
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  static Future<void> _deleteQuietly(File f) async {
+    try {
+      if (await f.exists()) await f.delete();
+    } on FileSystemException {
+      // 删不掉（被占用）：不影响结果判定，下次再收。
+    }
   }
 
   /// 恢复到备份 [a] 的时间点（见 srs_point_in_time_restore.dart）：先放回媒体，再写恢复事件。
@@ -1113,4 +1281,30 @@ class SrsBackupStore {
       backupId: a.id,
     );
   }
+}
+
+/// 一个已经压好的 zip 条目：原文长度、CRC-32、SHA-256。
+class _Deflated {
+  const _Deflated({
+    required this.size,
+    required this.crc32,
+    required this.sha256,
+  });
+
+  final int size;
+  final int crc32;
+  final String sha256;
+}
+
+/// 接住分块 SHA-256 的结果。
+class _DigestCapture implements Sink<Digest> {
+  Digest? _value;
+
+  Digest get value => _value!;
+
+  @override
+  void add(Digest data) => _value = data;
+
+  @override
+  void close() {}
 }

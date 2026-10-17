@@ -404,9 +404,74 @@ void main() {
     final SrsDbStore a = await device('a');
     final String n1 = await addNote(a, '雪');
     await review(a, await cardOf(a, n1), 3);
-    expect(await a.exportCanonicalLines(), <String>[
-      for (final SrsEvent e in await a.exportAll()) e.canonical(),
-    ]);
+    // 行序不进语义（恢复按 ID 取并集）；分页导出按表、表内按 rowid 排。
+    expect(
+      await a.exportCanonicalLines(),
+      unorderedEquals(<String>[
+        for (final SrsEvent e in await a.exportAll()) e.canonical(),
+      ]),
+    );
+  });
+
+  test('分页导出：跨页边界不丢不重；计数走计数查询且扣掉被撤销的复习；暂存文件不残留', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    final List<String> cards = <String>[];
+    for (final String w in <String>['雪', '雨', '風']) {
+      cards.add(await cardOf(a, await addNote(a, w)));
+    }
+    for (final String c in cards) {
+      await review(a, c, 3);
+    }
+    t += 60 * 1000;
+    final SrsReviewLog last = await a.answer(cards.first, 1);
+    expect(await a.undo(cards.first, last.id), isTrue);
+
+    final List<String> all = await a.exportCanonicalLines();
+    for (final int size in <int>[1, 2, 3, 7, 5000]) {
+      final List<String> paged = <String>[];
+      await a.forEachCanonicalLinePage((List<String> page) async {
+        expect(page.length, lessThanOrEqualTo(size));
+        paged.addAll(page);
+      }, pageSize: size);
+      expect(paged, all, reason: 'pageSize=$size');
+    }
+    final Map<String, int> times = <String, int>{};
+    await a.forEachServerTimePage((List<(String, int)> page) async {
+      for (final (String id, int s) in page) {
+        times[id] = s;
+      }
+    }, pageSize: 1);
+    expect(times, await a.exportServerTimes());
+
+    final ({int notes, int cards, int reviews}) counts = await a.backupCounts();
+    expect(counts.notes, 3);
+    expect(counts.reviews, 3, reason: '4 次评分里 1 次被撤销');
+
+    final SrsBackupInfo info = await bs.create(
+      a,
+      kind: SrsBackupKind.manual,
+      profileName: '日语',
+      nowMs: t,
+    );
+    expect(info.manifest.eventCount, all.length);
+    expect(info.manifest.reviewCount, 3);
+    final SrsBackupArchive arch = await SrsBackupStore.read(info.file);
+    try {
+      expect(
+        arch.events.map((SrsEvent e) => e.canonical()),
+        unorderedEquals(all),
+      );
+      expect(arch.serverTimes, await a.exportServerTimes());
+    } finally {
+      arch.close();
+    }
+    final List<String> leftovers = bs.profileDir
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .where((String n) => n.endsWith('.tmp') || n.endsWith('.deflate'))
+        .toList();
+    expect(leftovers, isEmpty);
   });
 
   test('恢复中途失败：库与写入者的内存状态都回到恢复前', () async {
@@ -652,6 +717,92 @@ void main() {
       ),
       isEmpty,
     );
+  });
+
+  test('恢复媒体按内容哈希判定：同名同大小但内容不同的本机文件换回备份里的那份', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    await bs.mediaDir.create(recursive: true);
+    final File img = File(p.join(bs.mediaDir.path, 'img.png'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    await addNote(a, '雪');
+    final SrsBackupInfo b1 = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    // 备份之后同名文件被换成同样大小的另一份内容：只比大小会误判「已经在」。
+    img.writeAsBytesSync(<int>[9, 9, 9]);
+    final SrsBackupArchive arch = await SrsBackupStore.read(b1.file);
+    try {
+      expect(await bs.restoreMedia(arch), 0);
+    } finally {
+      arch.close();
+    }
+    expect(img.readAsBytesSync(), <int>[1, 2, 3]);
+    expect(File('${img.path}.tmp').existsSync(), isFalse);
+  });
+
+  test('池文件损坏：回退取导出文件内嵌的正文并修好池文件；都取不到才记缺失', () async {
+    final SrsDbStore a = await device('a');
+    final SrsBackupStore bs = backups('a');
+    await bs.mediaDir.create(recursive: true);
+    final File img = File(p.join(bs.mediaDir.path, 'img.png'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    await addNote(a, '雪');
+    final SrsBackupInfo b1 = await bs.create(
+      a,
+      kind: SrsBackupKind.auto,
+      profileName: '日语',
+      nowMs: t,
+    );
+    final File pooled = File(
+      p.join(bs.mediaPool.path, b1.manifest.media.single.sha256),
+    );
+    final File exported = await bs.exportSelfContained(
+      b1,
+      File(p.join(tmp.path, 'export.fushisrs')),
+    );
+
+    // ① 池文件坏了（同样大小、内容不同），文件里有内嵌正文：从内嵌取，池文件被换成正确内容。
+    pooled.writeAsBytesSync(<int>[7, 7, 7]);
+    img.deleteSync();
+    SrsBackupArchive arch = await SrsBackupStore.read(exported);
+    try {
+      expect(await bs.restoreMedia(arch), 0);
+    } finally {
+      arch.close();
+    }
+    expect(img.readAsBytesSync(), <int>[1, 2, 3]);
+    expect(pooled.readAsBytesSync(), <int>[1, 2, 3], reason: '坏池文件被修好');
+
+    // ② 池文件坏了、本机备份不带内嵌正文：记缺失，坏池文件删掉（下次备份从媒体目录重新入池），
+    //    本机原有的同名文件保持原样。
+    pooled.writeAsBytesSync(<int>[7, 7, 7]);
+    img.writeAsBytesSync(<int>[5, 5]);
+    arch = await SrsBackupStore.read(b1.file);
+    try {
+      expect(await bs.restoreMedia(arch), 1);
+    } finally {
+      arch.close();
+    }
+    expect(pooled.existsSync(), isFalse);
+    expect(img.readAsBytesSync(), <int>[5, 5]);
+
+    // ③ 导出时池文件坏了：不打进导出文件（读方校验不过等于没带），坏池文件删掉。
+    pooled.writeAsBytesSync(<int>[7, 7, 7]);
+    final File exported2 = await bs.exportSelfContained(
+      b1,
+      File(p.join(tmp.path, 'export2.fushisrs')),
+    );
+    final SrsBackupArchive arch2 = await SrsBackupStore.read(exported2);
+    try {
+      expect(arch2.manifest.media, isEmpty);
+    } finally {
+      arch2.close();
+    }
+    expect(pooled.existsSync(), isFalse);
   });
 
   test('自动清理按保留策略删旧备份；列表从新到旧、指纹反映变动', () async {

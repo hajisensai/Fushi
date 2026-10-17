@@ -51,7 +51,9 @@ zip，扩展名 `.fushisrs`：
   外部文件不可信：清单 64 MiB、服务器时间表 512 MiB、事件正文 1 GiB、单个内嵌媒体 2 GiB 为解压上限；媒体文件名拒绝
   路径分隔符、`:`、首尾空格 / 结尾的点、控制字符与 Windows 保留设备名。
 - 一致性：指纹、事件、服务器时间、计数在同一个数据库事务里读（同一个快照）；事件规范行直接取库里存的规范编码拼外层
-  （`exportCanonicalLines`，不解析再编码），拼正文、算摘要、deflate、写 zip 在后台 isolate；zip 写完 flush 再改名。
+  （不解析再编码），按 rowid 键集分页（`forEachCanonicalLinePage` / `forEachServerTimePage`）流式写进隐藏暂存文件，
+  内存只占一页；计数走 COUNT 查询，只解码 undo 日志拿被撤销的 ID。算摘要、裸 deflate（流式）、组 zip 在后台 isolate，
+  压好的条目按块拷进 zip，不整份读入；zip 写完 flush 再改名，暂存文件一律清掉。
 - 本机布局（2026-10-17 第二版，对齐 Anki「备份放在用户看得到、卸载 / 换设备能带走的地方」）：
   备份根 = **数据根的 documents 根**下 `srs_backups/`（`AppPaths.srsBackupsDirectory`）。
   - `<profileUid>/fushi-review-<YYYY-MM-DD>_<HHMMSS>-<auto|manual|before-restore>.fushisrs`（本地时间 + 种类，
