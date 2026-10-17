@@ -57,10 +57,8 @@ class CollectionMemberInfo {
 }
 
 /// 按成员身份取展示信息；返回 null = 调用方不认识这个成员（只显示卡片本身）。
-typedef CollectionMemberInfoResolver = CollectionMemberInfo? Function(
-  String mediaType,
-  String entryKey,
-);
+typedef CollectionMemberInfoResolver =
+    CollectionMemberInfo? Function(String mediaType, String entryKey);
 
 /// 详情页里的一个成员：合集行 + 现查的标题 / 导入时间 + 调用方信息 + 所挂标签。
 @immutable
@@ -103,22 +101,23 @@ List<CollectionMemberEntry> arrangeCollectionMembers(
 }) {
   final List<({CollectionMemberEntry entry, int index})> decorated =
       <({CollectionMemberEntry entry, int index})>[
-    for (int i = 0; i < entries.length; i++)
-      if (_keep(entries[i], query: query, tagIds: tagIds, status: status))
-        (entry: entries[i], index: i),
-  ];
+        for (int i = 0; i < entries.length; i++)
+          if (_keep(entries[i], query: query, tagIds: tagIds, status: status))
+            (entry: entries[i], index: i),
+      ];
   int byIndex(
     ({CollectionMemberEntry entry, int index}) a,
     ({CollectionMemberEntry entry, int index}) b,
-  ) =>
-      a.index.compareTo(b.index);
+  ) => a.index.compareTo(b.index);
   switch (sort) {
     case CollectionMemberSort.manual:
       break;
     case CollectionMemberSort.volume:
       decorated.sort((a, b) {
-        final int c =
-            naturalCompare(a.entry.displayTitle, b.entry.displayTitle);
+        final int c = naturalCompare(
+          a.entry.displayTitle,
+          b.entry.displayTitle,
+        );
         return c != 0 ? c : byIndex(a, b);
       });
     case CollectionMemberSort.added:
@@ -162,7 +161,8 @@ bool _keep(
 }
 
 /// 「继续」按钮的目标（按合集手动序 [entries]）：最近读过且未读完的那本；没有就是
-/// 第一本没读完的；全读完 / 没有任何进度信息时是第一本。空合集 null。
+/// 最后读过的那本（即使已读完）；从没读过才取第一本没读完的；都没有时是第一本。
+/// 空合集 null。
 CollectionMemberEntry? pickContinueMember(List<CollectionMemberEntry> entries) {
   final int? index = pickContinueIndex<CollectionMemberEntry>(
     entries,
@@ -174,29 +174,42 @@ CollectionMemberEntry? pickContinueMember(List<CollectionMemberEntry> entries) {
 /// [pickContinueMember] 的判据本体，按下标给出（书架合集卡的封面也用它：系列
 /// 封面显示「继续」会打开的那本，而不是恒为首本）。[infoOf] 返回 null 的成员
 /// 视为没有进度信息。空列表 null。
+///
+/// 读完一本后（最近读的那本已读完、没有在读的），目标是**最后读的那本**，不再回落
+/// 到首本：此前回落链只看未读完成员，后几卷没有进度信息（未下载 / 远端占位）时
+/// 一路落到下标 0，读完第二卷「继续」显示第一卷（iPad 用户实报）。
 int? pickContinueIndex<T>(
   List<T> items,
   CollectionMemberInfo? Function(T item) infoOf,
 ) {
   if (items.isEmpty) return null;
-  int? recent;
-  int recentAt = 0;
+  int? recentUnfinished;
+  int recentUnfinishedAt = 0;
+  int? recentAny;
+  int recentAnyAt = 0;
   int? firstUnfinished;
   for (int i = 0; i < items.length; i++) {
     final CollectionMemberInfo? info = infoOf(items[i]);
-    if (info == null || info.completed) continue;
-    firstUnfinished ??= i;
+    if (info == null) continue;
     final int? at = info.lastReadAt;
-    if (at != null && (recent == null || at > recentAt)) {
-      recent = i;
-      recentAt = at;
+    if (at != null && (recentAny == null || at > recentAnyAt)) {
+      recentAny = i;
+      recentAnyAt = at;
+    }
+    if (info.completed) continue;
+    firstUnfinished ??= i;
+    if (at != null && (recentUnfinished == null || at > recentUnfinishedAt)) {
+      recentUnfinished = i;
+      recentUnfinishedAt = at;
     }
   }
-  return recent ?? firstUnfinished ?? 0;
+  return recentUnfinished ?? recentAny ?? firstUnfinished ?? 0;
 }
 
-/// hero 的整体进度：读完数 / 有信息的成员数，与平均进度（读完按满格）。没有任何
-/// 成员带信息时 progress = null（hero 不画进度条）。
+/// hero 的整体进度：读完数与平均进度（读完按满格），分母是**全部成员**——与 hero
+/// 上「已读完 n / 总数」同一个总数。没有进度真值的成员（没信息 / 在读但不知读到哪）
+/// 按 0 计入：此前它们被整个剔出分母，2 / 4 读完、另两卷没信息时显示 100%。
+/// [counted] = 带信息的成员数；一个都没有时 progress = null（hero 不画进度条）。
 ({int finished, int counted, double? progress}) summarizeCollectionMembers(
   List<CollectionMemberEntry> entries,
 ) {
@@ -206,21 +219,17 @@ int? pickContinueIndex<T>(
   for (final CollectionMemberEntry e in entries) {
     final CollectionMemberInfo? info = e.info;
     if (info == null) continue;
+    counted++;
     if (info.completed) {
       finished++;
-      counted++;
       sum += 1;
     } else if (info.progress != null) {
-      counted++;
       sum += info.progress!.clamp(0.0, 1.0);
-    } else if (info.lastReadAt == null) {
-      // 有信息但没进度真值、也没读过：按 0 计入（未读）。
-      counted++;
     }
   }
   return (
     finished: finished,
     counted: counted,
-    progress: counted == 0 ? null : sum / counted,
+    progress: counted == 0 ? null : sum / entries.length,
   );
 }
