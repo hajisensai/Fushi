@@ -26,7 +26,7 @@
 | Windows | ✅ | Galgame 文本 / 语音 Hook 仅限 Windows |
 | macOS | ✅ | 仅 Apple Silicon，不支持 Intel Mac |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | 按 App Store 审核指南不含发现、在线源与下载中心 |
-| Linux | 🔧 需从源码构建 | 社区维护；EPUB 阅读器需要 WPE WebKit |
+| Linux | 🔧 需从源码构建 | 暂无预编译包；EPUB 阅读器需要 WPE WebKit |
 | Fushi Server | 🧪 Beta（[fushi-server](https://github.com/hajisensai/fushi-server/releases)） | 无头服务端，支持 Linux / Windows / macOS，带 Web 管理界面，见 [packages/fushi_server](packages/fushi_server/README.md) |
 
 **设计系统**：所有平台默认 **Material 3 Expressive**；可在「设置 › 外观 › 设计系统」切换为 **Cupertino**（Apple 风格）。选用 Cupertino 时，Windows 11 窗口背景使用 Mica、macOS 使用 vibrancy（系统开启「降低透明度」或「增强对比度」时除外）。

@@ -26,7 +26,7 @@
 | Windows | ✅ | Galgame text and voice hooking is Windows-only |
 | macOS | ✅ | Apple Silicon only; Intel Macs are not supported |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | No discovery, online sources, or download center (App Store guidelines) |
-| Linux | 🔧 Build from source | Community-maintained; the EPUB reader needs WPE WebKit |
+| Linux | 🔧 Build from source | No prebuilt release yet; the EPUB reader needs WPE WebKit |
 | Fushi Server | 🧪 Beta ([fushi-server](https://github.com/hajisensai/fushi-server/releases)) | Headless host for Linux / Windows / macOS with a web UI — see [packages/fushi_server](packages/fushi_server/README.md) |
 
 **Design system** — every platform defaults to **Material 3 Expressive**; a **Cupertino** (Apple-style) design system can be selected in *Settings › Appearance › Design system*; with Cupertino, the window background uses Mica on Windows 11 and vibrancy on macOS (unless the system's reduce-transparency or high-contrast setting is on).
