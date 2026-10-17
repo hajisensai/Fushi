@@ -60,6 +60,28 @@ void main() {
     );
   });
 
+  test('最近读的那本已读完、后面有未读的已下载卷：接着读下一卷，不重开读完的', () {
+    expect(
+      pick(const <CollectionMemberInfo?>[
+        CollectionMemberInfo(completed: true, lastReadAt: 100),
+        CollectionMemberInfo(completed: true, lastReadAt: 200),
+        null,
+        CollectionMemberInfo(),
+        CollectionMemberInfo(),
+      ]),
+      3,
+    );
+    // 「后面」按合集顺序看：读完的那本**之前**的未读卷不算接着读的目标。
+    expect(
+      pick(const <CollectionMemberInfo?>[
+        CollectionMemberInfo(),
+        CollectionMemberInfo(completed: true, lastReadAt: 200),
+        null,
+      ]),
+      1,
+    );
+  });
+
   test('整体进度分母是全部成员：没信息 / 进度未知的在读按 0 计入', () {
     CollectionMemberEntry entry(String key, CollectionMemberInfo? info) =>
         CollectionMemberEntry(

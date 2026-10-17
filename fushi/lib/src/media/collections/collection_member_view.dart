@@ -161,7 +161,8 @@ bool _keep(
 }
 
 /// 「继续」按钮的目标（按合集手动序 [entries]）：最近读过且未读完的那本；没有就是
-/// 最后读过的那本（即使已读完）；从没读过才取第一本没读完的；都没有时是第一本。
+/// 最后读过那本之后的第一本未读完，再没有就是最后读过的那本（即使已读完）；从没读过
+/// 才取第一本没读完的；都没有时是第一本。
 /// 空合集 null。
 CollectionMemberEntry? pickContinueMember(List<CollectionMemberEntry> entries) {
   final int? index = pickContinueIndex<CollectionMemberEntry>(
@@ -203,7 +204,17 @@ int? pickContinueIndex<T>(
       recentUnfinishedAt = at;
     }
   }
-  return recentUnfinished ?? recentAny ?? firstUnfinished ?? 0;
+  if (recentUnfinished != null) return recentUnfinished;
+  if (recentAny != null) {
+    // 最近读的那本已读完：接着读的是它**后面**第一本有信息且没读完的（读完 1、2 卷，
+    // 第 3 卷已下载未读 → 第 3 卷）；后面都没有信息时才停在读完的那本上。
+    for (int i = recentAny + 1; i < items.length; i++) {
+      final CollectionMemberInfo? info = infoOf(items[i]);
+      if (info != null && !info.completed) return i;
+    }
+    return recentAny;
+  }
+  return firstUnfinished ?? 0;
 }
 
 /// hero 的整体进度：读完数与平均进度（读完按满格），分母是**全部成员**——与 hero
