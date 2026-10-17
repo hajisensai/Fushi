@@ -341,8 +341,10 @@ codec_case huffyuv avi 1 "${SRC_V[@]}" "${SRC_A[@]}" -c:v huffyuv -c:a pcm_s16le
 echo "[ffmpeg-min-smoke] matroska + s16le muxers (BUG-3504)"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" -map 0:v:0 -map 0:a:0 -c copy "$WORK/copy.mkv"
 assert_nonempty "$WORK/copy.mkv"
-run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" -vn -ac 1 -ar 16000 \
-  -f s16le "$WORK/asr.pcm"
+# Same shape as fushi_asr_core's asr_pcm_source.dart: raw PCM muxers take exactly
+# one stream, hence the explicit -map (the fixture also carries a mov_text track).
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" -map 0:a:0 -vn -sn -dn \
+  -ac 1 -ar 16000 -c:a pcm_s16le -f s16le "$WORK/asr.pcm"
 assert_nonempty "$WORK/asr.pcm"
 
 echo "[ffmpeg-min-smoke] TLS certificate pinning option (-tls_pin_sha256, BUG-3504)"
