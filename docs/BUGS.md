@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3504](bugs/BUG-3504-manga-local-ocr-boxes-misaligned.md) | 🚧 | 🚧 | manga-local-ocr-boxes-misaligned |
+| [BUG-3504](bugs/BUG-3504-manga-local-ocr-boxes-misaligned.md) | ✅ | ✅ | manga-local-ocr-boxes-misaligned |
 | [BUG-3503](bugs/BUG-3503-manga-volume-opens-other-volume-cached-pages.md) | ✅ | ✅ | manga-volume-opens-other-volume-cached-pages |
 | [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
 | [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |

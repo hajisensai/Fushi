@@ -6,6 +6,8 @@
 /// [OcrPageCache]，本层只依赖接口。
 library;
 
+import 'dart:math' as math;
+
 import 'package:image/image.dart' as img;
 
 import 'package:fushi_engine/ocr/ocr_types.dart';
@@ -155,6 +157,84 @@ const int _recognitionBatchSize = 8;
 bool isVerticalBlock(OcrRect box) =>
     box.height > box.width * kVerticalAspectThreshold;
 
+/// 子块面积不超过父块的这个比例才算「被包含的子块」：几乎同大的两个框是同一块
+/// 被检出两次（NMS 只删 IoU >= 0.7 的），不是父子。
+const double kOcrLeafMaxAreaRatio = 0.8;
+
+/// 子块至少这么大比例的面积落在父块里才算被父块几何包含（检测框边缘有几像素
+/// 的出入，不要求严格包含）。
+const double kOcrLeafMinInsideRatio = 0.9;
+
+/// 父块被至少这么多个已识别子块几何包含时，父块让位给子块。
+const int kOcrContainerMinLeaves = 2;
+
+/// 父块的行（按面积）至少这么大比例被子块盖住，才让位：父块里没有子块认领的那些
+/// 行，删掉父块就没人读了——宁可留着大框，也不丢字。
+const double kOcrContainerMinCoveredRatio = 0.75;
+
+double _intersectionArea(OcrRect a, OcrRect b) {
+  final double w = math.min(a.right, b.right) - math.max(a.left, b.left);
+  final double h = math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
+  return w <= 0 || h <= 0 ? 0 : w * h;
+}
+
+bool _isLeafOf(OcrRect outer, OcrRect inner) =>
+    inner.area > 0 &&
+    inner.area <= kOcrLeafMaxAreaRatio * outer.area &&
+    _intersectionArea(outer, inner) >= kOcrLeafMinInsideRatio * inner.area;
+
+/// [parent] 的行有多少被 [leaves] 盖住了（0–1，按行面积）：每行被子块盖住的
+/// 面积（各子块交集相加、封顶到行面积）占全部行面积的比例。
+///
+/// 父块没有行几何时返回 0（不让位）：不知道它的字落在哪儿，就没法确认删掉它
+/// 不丢字。逐行识别器（逐列 CTC、横排 PP rec）总会给行几何，没有的只是整块
+/// 识别、一行都没检到的块。
+double _leafCoverage(OcrBlock parent, List<OcrBlock> leaves) {
+  final List<OcrRect>? lines = parent.lineBoxes;
+  if (lines == null || lines.isEmpty) return 0;
+  double total = 0;
+  double covered = 0;
+  for (final OcrRect line in lines) {
+    total += line.area;
+    double inLeaves = 0;
+    for (final OcrBlock leaf in leaves) {
+      inLeaves += _intersectionArea(line, leaf.box);
+    }
+    covered += math.min(line.area, inLeaves);
+  }
+  return total <= 0 ? 0 : covered / total;
+}
+
+/// 去掉「容器块」：几何上包含至少 [kOcrContainerMinLeaves] 个已识别子块、且行
+/// 基本被子块盖住（[kOcrContainerMinCoveredRatio]）的父块，保留叶子块。
+///
+/// 为什么：检测器会在一页几段相邻文字外面再框一个大框（人物资料页上从页顶到页底
+/// 的那种），NMS 只删 IoU >= 0.7 的，大框与每个小块的 IoU 都很低，父子全进
+/// manga.json——大框盖在几个小块上，点哪儿都可能命中它，它的行几何又是在一张跨
+/// 栏的大裁图里检出来的。叶子块是检测器对单段文字的判断，几何更贴字。
+///
+/// 只看几何，不看父块宽高、不要求父块文本逐字包含子块文本：父块文本是另一次
+/// 识别，字稍有出入（大裁图里读错一两个字）就不再成立。只包含一个子块时不动
+/// （那是「父块漏读小字」的情形，见 [_suppressRecognizedContainedBlocks]）。
+List<OcrBlock> _dropContainerBlocks(List<OcrBlock> blocks) {
+  return <OcrBlock>[
+    for (final OcrBlock parent in blocks)
+      if (!_isContainerBlock(parent, blocks)) parent,
+  ];
+}
+
+bool _isContainerBlock(OcrBlock parent, List<OcrBlock> blocks) {
+  final List<OcrBlock> leaves = <OcrBlock>[
+    for (final OcrBlock child in blocks)
+      if (!identical(child, parent) &&
+          child.text.isNotEmpty &&
+          _isLeafOf(parent.box, child.box))
+        child,
+  ];
+  if (leaves.length < kOcrContainerMinLeaves) return false;
+  return _leafCoverage(parent, leaves) >= kOcrContainerMinCoveredRatio;
+}
+
 /// 全页识别完成后才判包含重复，允许子框补回父块漏读的小字号正文。
 /// 必须逐字包含完整子文本，不折叠空白或标点。横排按识别路由的宽 >= 高
 /// 判断，不用展示方向的 1.25 阈值。筛选只删除结果，不改变阅读顺序；父子框
@@ -177,6 +257,12 @@ List<OcrBlock> _suppressRecognizedContainedBlocks(List<OcrBlock> blocks) {
           parent.text.contains(text);
     });
   }).toList();
+}
+
+/// 字格只在区间落在块文本里时采用（与行几何同口径：给错了宁可退回均分）。
+bool _glyphsFit(OcrRecognition recognition, String text) {
+  final List<OcrGlyphBox>? glyphs = recognition.glyphBoxes;
+  return glyphs != null && ocrGlyphBoxesFitText(glyphs, text);
 }
 
 /// 整卷编排器。检测器/识别器经窄接口注入（模型路径、EP 选择在其构造侧）。
@@ -388,6 +474,9 @@ class MangaOcrPipeline {
             score: region.score,
             insideBubble: region.insideBubble,
             confidence: recognition.confidence,
+            glyphBoxes: hasLayout && _glyphsFit(recognition, text)
+                ? recognition.glyphBoxes
+                : null,
           ),
         );
       }
@@ -398,7 +487,7 @@ class MangaOcrPipeline {
       imageHeight: image.height,
       blocks: await _withSweptBlocks(
         image,
-        _suppressRecognizedContainedBlocks(blocks),
+        _suppressRecognizedContainedBlocks(_dropContainerBlocks(blocks)),
         candidates: detections.weakTextRegions,
         // 识别为空的检测框也算覆盖：检测器认过、识别器读不出的地方，补检再读一遍
         // 多半也是同一团笔触。

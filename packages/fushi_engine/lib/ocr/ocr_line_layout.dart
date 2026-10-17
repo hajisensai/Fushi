@@ -158,6 +158,16 @@ double _lengthWeightedP75(List<OcrRect> lines, {required bool vertical}) {
   return rows.last.thickness;
 }
 
+/// 同一行 / 列的两段碎片沿阅读方向的空隙上限：较厚那段行厚的这么多倍。
+///
+/// 取 3：同一行里被切开的地方是字距、空格、「っ」、句读、破折号，实测最宽的是
+/// 字距大的装饰标题——「モテる女子の」逐字断开处空隙 111 px，两侧行厚 69 / 80 px，
+/// 约为较厚者的 1.4 倍（较薄者的 1.6 倍），日文全角空格也只有 1 倍行厚。左右分栏
+/// （人物资料页两栏、同一高度的两段旁白）之间的空白一般是行厚的 4~5 倍以上。3 给
+/// 标题字距留了一倍多的余量，又低于分栏间距。按较厚者算：被切下来的小段（句读、
+/// 小假名）自己很薄，按它算上限会把同一行的正常字距也当成分栏。
+const double kOcrFragmentMaxGapRatio = 3;
+
 /// 把同一列（竖排）/同一行（横排）被检测器切碎的片段合并成一条。
 ///
 /// PP-OCR 会在一列中间的空隙（「っ」、句读、字距大的地方）把列切断；两段在跨轴
@@ -169,12 +179,18 @@ double _lengthWeightedP75(List<OcrRect> lines, {required bool vertical}) {
 /// （用户真实页「パステルカラーで / 女子力アップ♡」重叠 54%），按碎片合并会把两列
 /// 并成一条宽列，逐列 CTC 只读出一列、另一列整列丢失。并排的两段只有跨轴也重叠
 /// 到 [duplicateRatio]（同一列被检出两次）时才合并。
+///
+/// 沿阅读方向的空隙超过较厚者行厚的 [maxGapRatio] 倍不合并
+/// （[kOcrFragmentMaxGapRatio]）：只看跨轴重叠时，左右两栏同一高度的两行（竖排是
+/// 上下两段同一 x 的列）会被并成一条横跨两栏的长行，逐行识别读出串栏的句子，覆盖
+/// 层的字格也铺到两栏中间的空白上。
 List<OcrRect> mergeOcrLineFragments(
   List<OcrRect> rects, {
   required bool vertical,
   double overlapRatio = 0.5,
   double sideBySideRatio = 0.5,
   double duplicateRatio = 0.8,
+  double maxGapRatio = kOcrFragmentMaxGapRatio,
 }) {
   if (rects.isEmpty) return const <OcrRect>[];
   double crossStart(OcrRect r) => vertical ? r.left : r.top;
@@ -186,9 +202,7 @@ List<OcrRect> mergeOcrLineFragments(
       (OcrRect a, OcrRect b) =>
           (crossStart(a) + crossEnd(a)).compareTo(crossStart(b) + crossEnd(b)),
     );
-  final List<OcrRect> merged = <OcrRect>[sorted.first];
-  for (final OcrRect rect in sorted.skip(1)) {
-    final OcrRect last = merged.last;
+  bool mergeable(OcrRect last, OcrRect rect) {
     final double overlap =
         math.min(crossEnd(last), crossEnd(rect)) -
         math.max(crossStart(last), crossStart(rect));
@@ -196,9 +210,15 @@ List<OcrRect> mergeOcrLineFragments(
       ocrLineThickness(last, vertical: vertical),
       ocrLineThickness(rect, vertical: vertical),
     );
+    final double thicker = math.max(
+      ocrLineThickness(last, vertical: vertical),
+      ocrLineThickness(rect, vertical: vertical),
+    );
     final double alongOverlap =
         math.min(alongEnd(last), alongEnd(rect)) -
         math.max(alongStart(last), alongStart(rect));
+    // 负的重叠就是两段之间的空隙。
+    if (-alongOverlap > maxGapRatio * thicker) return false;
     final double shorter = math.min(
       alongEnd(last) - alongStart(last),
       alongEnd(rect) - alongStart(rect),
@@ -206,16 +226,31 @@ List<OcrRect> mergeOcrLineFragments(
     final bool sideBySide =
         shorter > 0 && alongOverlap > sideBySideRatio * shorter;
     final double required = sideBySide ? duplicateRatio : overlapRatio;
-    if (thinner > 0 && overlap >= required * thinner) {
-      merged[merged.length - 1] = OcrRect(
-        left: math.min(last.left, rect.left),
-        top: math.min(last.top, rect.top),
-        right: math.max(last.right, rect.right),
-        bottom: math.max(last.bottom, rect.bottom),
-      );
-    } else {
-      merged.add(rect);
+    return thinner > 0 && overlap >= required * thinner;
+  }
+
+  final List<OcrRect> merged = <OcrRect>[];
+  for (final OcrRect rect in sorted) {
+    // 从最近合并的往回找：跨轴位置相近的碎片按中心排序后挨在一起，但同一高度
+    // 的另一栏会夹在同一行的两段之间，只看最后一条会把这行拆成两条。
+    int target = -1;
+    for (int i = merged.length - 1; i >= 0; i--) {
+      if (mergeable(merged[i], rect)) {
+        target = i;
+        break;
+      }
     }
+    if (target < 0) {
+      merged.add(rect);
+      continue;
+    }
+    final OcrRect last = merged[target];
+    merged[target] = OcrRect(
+      left: math.min(last.left, rect.left),
+      top: math.min(last.top, rect.top),
+      right: math.max(last.right, rect.right),
+      bottom: math.max(last.bottom, rect.bottom),
+    );
   }
   return merged;
 }

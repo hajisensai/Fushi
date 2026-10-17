@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
+import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
@@ -78,13 +79,16 @@ class _FakeLineRecognizer extends PpOcrLineRecognizer {
   final List<img.Image> lines = <img.Image>[];
   String reply = 'P';
 
-  // 生产路径调的是 recognizeLineScored（recognizeLine 转调它），假件重写这一个。
+  // 生产路径调的是 recognizeLinePositioned（recognizeLineScored / recognizeLine
+  // 都转调它），假件重写这一个。
   @override
-  Future<({String text, double? confidence})> recognizeLineScored(
-    img.Image line,
-  ) async {
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image line) async {
     lines.add(line);
-    return (text: reply, confidence: null);
+    return PpOcrPositionedLine(
+      text: reply,
+      confidence: null,
+      tokens: const <OcrLineToken>[],
+    );
   }
 }
 
@@ -127,11 +131,13 @@ class _NestedLineRecognizer extends PpOcrLineRecognizer {
   final List<int> heights = <int>[];
 
   @override
-  Future<({String text, double? confidence})> recognizeLineScored(
-    img.Image crop,
-  ) async {
+  Future<PpOcrPositionedLine> recognizeLinePositioned(img.Image crop) async {
     heights.add(crop.height);
-    return (text: crop.height == 10 ? 'BODY' : 'TITLE', confidence: null);
+    return PpOcrPositionedLine(
+      text: crop.height == 10 ? 'BODY' : 'TITLE',
+      confidence: null,
+      tokens: const <OcrLineToken>[],
+    );
   }
 }
 

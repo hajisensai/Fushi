@@ -42,10 +42,18 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // detector scored below its threshold (sparse decorative titles) are re-checked
 // by the line detector + recogniser and added back. Text changes, so v5 caches
 // are not reused.
+// v7: a detector box that geometrically holds two or more recognised blocks is
+// dropped in favour of those leaves (a page-tall frame over a profile page);
+// fragments of one row/column are no longer merged across a gap wider than
+// [kOcrFragmentMaxGapRatio] line thicknesses (two side-by-side text columns at
+// the same height became one cross-column line); and per-line CTC recognisers
+// keep token positions as per-character hit boxes (`glyphBoxes` → manga.json
+// `regions`) instead of the overlay spreading characters evenly over the line.
+// Output changes, so v6 caches are not reused.
 // 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kMangaOcrPipelineRevision = 'v6-weak-text-sweep';
+const String kMangaOcrPipelineRevision = 'v7-leaf-blocks-glyph-boxes';
 const String kLocalMangaOcrEngineSignature =
     'local-onnx-$kMangaOcrPipelineRevision';
 
@@ -330,6 +338,30 @@ List<List<List<double>>>? _linesCoords(List<OcrRect>? lineBoxes, double tilt) {
   ];
 }
 
+/// 识别器给的逐字命中格 → manga.json `regions`（区间按块文本、页面坐标）。
+///
+/// 只在行是正立的（[OcrBlock.lineTilt] == 0）时写：字格是轴对齐框，斜行上
+/// 覆盖层按 `lines_coords` 的倾角沿斜线切字格更贴字。没有字格时返回 null，
+/// 覆盖层按行均分（`mangaEffectiveTextRegions`）。
+List<MangaOcrTextRegion>? _textRegions(OcrBlock block) {
+  final List<OcrGlyphBox>? glyphs = block.glyphBoxes;
+  if (glyphs == null || glyphs.isEmpty || block.lineBoxes == null) return null;
+  if (block.lineTilt != 0) return null;
+  return <MangaOcrTextRegion>[
+    for (final OcrGlyphBox glyph in glyphs)
+      MangaOcrTextRegion(
+        rectangle: MokuroRect.fromLTRB(
+          glyph.rect.left,
+          glyph.rect.top,
+          glyph.rect.right,
+          glyph.rect.bottom,
+        ),
+        utf16Start: glyph.start,
+        utf16End: glyph.end,
+      ),
+  ];
+}
+
 /// 把逐页 OCR 结果组装成 [MokuroPayload]（url = 原图相对路径，尺寸取自解码
 /// 时记录的像素值，块按阅读顺序赋 zIndex）。[pages] 与 [results] 必须等长且
 /// 按页序对齐。
@@ -363,6 +395,7 @@ MokuroPayload buildMangaPayloadFromResults(
         zIndex: b,
         lines: block.lines,
         linesCoords: _linesCoords(block.lineBoxes, block.lineTilt),
+        regions: _textRegions(block),
         confidence: block.confidence,
       ));
     }
