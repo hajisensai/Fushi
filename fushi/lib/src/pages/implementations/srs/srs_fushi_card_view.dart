@@ -1254,7 +1254,7 @@ class _MediaImage extends ConsumerWidget {
     return FushiPressScale(
       child: GestureDetector(
         onTap: () => unawaited(
-          showDialog<void>(
+          showAppDialog<void>(
             context: context,
             builder: (BuildContext context) => GestureDetector(
               onTap: () => Navigator.of(context).pop(),

@@ -502,7 +502,7 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: SizedBox.square(
               dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             ),
           ),
         FushiIconButton(

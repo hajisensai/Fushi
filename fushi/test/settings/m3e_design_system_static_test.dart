@@ -1289,6 +1289,22 @@ class AnotherPopupPart {
           '(34 bold) and the CupertinoSearchTextField metrics (radius, 13 / 17 '
           'text) reproduce the iOS / macOS Settings app header; the MD3 branch '
           'stays on the shared settings primitives.',
+      // 复习卡面（Fushi SRS）：卡面是用户的卡片内容，不是页面 chrome。
+      'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
+          'Native renderer of the built-in Fushi Card face: it reproduces the '
+          'exported Anki card template (pill tags, source link, media image '
+          'radius from the card appearance settings) and sizes card text from '
+          'the user card appearance font scale — card content mirrored from '
+          'the HTML template, not ordinary page chrome (same class as reader '
+          'content typography).',
+      'lib/src/srs/srs_card_appearance.dart':
+          'Emits the theme palette (surfaceContainer* roles) as CSS custom '
+          'properties into the card WebView so user card templates can read '
+          'them — card content data passed to HTML, not page chrome.',
+      'lib/src/srs/srs_card_dict_style.dart':
+          'fontSize: is a property name inside the injected JavaScript that '
+          'measures dictionary HTML styles in the card WebView — script '
+          'content, not a Flutter TextStyle.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1603,6 +1619,15 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/srs/srs_fushi_card_view.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/srs/srs_card_appearance.dart': <String>{
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/srs/srs_card_dict_style.dart': <String>{'fontSize:'},
     };
 
     expect(

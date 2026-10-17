@@ -596,7 +596,7 @@ void main() {
       expect(b.index.cardIdsMatching('tag:verb'), <String>{c1});
       expect(b.index.cardIdsMatching('飲'), <String>{c2});
       expect(
-        () => b.index.cardIdsMatching('prop:ivl>3'),
+        () => b.index.cardIdsMatching('prop:ease>2'),
         throwsA(isA<SrsSearchUnsupported>()),
       );
       expect(b.index.decks.map(((String, String) x) => x.$2), contains('語彙'));

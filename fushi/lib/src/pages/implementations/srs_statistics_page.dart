@@ -1246,7 +1246,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
           const SizedBox(height: 4),
           ClipRRect(
             borderRadius: BorderRadius.all(tokens.radii.chipCorner),
-            child: LinearProgressIndicator(
+            child: FushiLinearProgressIndicator(
               value: n / max,
               minHeight: 6,
               color: colors.accent,

@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -136,15 +137,16 @@ void main() {
       );
       final Finder row = find.byKey(ValueKey<String>('srs-note-type-$nt'));
       expect(row, findsOneWidget);
-      expect(
-        find.descendant(
-          of: row,
-          matching: find.textContaining(
-            t.srs_note_types_summary(notes: 1, fields: 2, cards: 1),
-          ),
-        ),
-        findsOneWidget,
-      );
+      // 摘要逐段渲染（SrsMetaLine：段内不断行），按段断言。
+      for (final String segment in SrsMetaLine.split(
+        t.srs_note_types_summary(notes: 1, fields: 2, cards: 1),
+      )) {
+        expect(
+          find.descendant(of: row, matching: find.textContaining(segment)),
+          findsOneWidget,
+          reason: segment,
+        );
+      }
       final Finder lapis = find.byKey(
         ValueKey<String>('srs-note-type-${store.lapisNoteTypeId}'),
       );

@@ -511,6 +511,8 @@ void main() {
           bytes: pkg,
           storeMedia: sink,
           zstdDecompress: (Uint8List b) => null,
+          // 继承历史随排程一起导入；导入默认（对齐 Anki）不带排程。
+          options: const SrsAnkiImportOptions(withScheduling: true),
         );
         expect((await fresh.note(note))!.noteTypeId, to);
         expect((await fresh.cardRow(newCard))!.lastLogId, l.id);
@@ -522,6 +524,8 @@ void main() {
           bytes: pkg,
           storeMedia: sink,
           zstdDecompress: (Uint8List b) => null,
+          // 继承历史随排程一起导入；导入默认（对齐 Anki）不带排程。
+          options: const SrsAnkiImportOptions(withScheduling: true),
         );
         final String otherNote = SrsIds.note(
           kProfile2,

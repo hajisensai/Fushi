@@ -146,10 +146,16 @@ class HomeSrsPanel extends ConsumerWidget {
             dense: true,
           ),
           if (target != null)
-            FushiFilledButton.tonal(
-              key: const ValueKey<String>('home-srs-panel-start'),
-              onPressed: () => onStartReview(target),
-              child: Text(t.home_srs_panel_start),
+            Flexible(
+              child: FushiFilledButton.tonal(
+                key: const ValueKey<String>('home-srs-panel-start'),
+                onPressed: () => onStartReview(target),
+                child: Text(
+                  t.home_srs_panel_start,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
         ],
       );
@@ -239,9 +245,11 @@ class _HomeSrsCountsSkeleton extends StatelessWidget {
         key: const ValueKey<String>('home-srs-panel-skeleton'),
         mainAxisSize: MainAxisSize.min,
         spacing: tokens.spacing.gap,
+        // 面板在窄列里（首页 dashboard 双列 / 手机竖屏）计数位可能不足 180 宽：
+        // 骨架按可用宽度收窄，不溢出。
         children: const <Widget>[
-          FushiSkeleton(width: 84, height: 16),
-          FushiSkeleton(width: 88, height: 36),
+          Flexible(child: FushiSkeleton(width: 84, height: 16)),
+          Flexible(child: FushiSkeleton(width: 88, height: 36)),
         ],
       ),
     );

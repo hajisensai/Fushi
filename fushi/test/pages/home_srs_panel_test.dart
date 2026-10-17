@@ -441,6 +441,26 @@ void main() {
       expect(tester.getSize(panel).height, loadingHeight);
       await unmount(tester);
     });
+
+    testWidgets('$ds · 窄列：骨架与「计数 + 开始」按可用宽度收窄，不溢出', (
+      WidgetTester tester,
+    ) async {
+      // 计数位可用宽度远小于骨架两块的 84 + 88（首页窄列 / 小屏手机）。
+      useSize(tester, const Size(240, 900));
+      await tester.runAsync(() => useSrs(target: SrsMiningTarget.srs));
+      await tester.runAsync(() => addNote('食べる'));
+      await tester.pumpWidget(app(dashboard(), apple: apple));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('home-srs-panel-skeleton')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull, reason: '骨架溢出');
+      await settle(tester);
+      expect(start, findsOneWidget);
+      expect(tester.takeException(), isNull, reason: '计数 + 开始按钮溢出');
+      await unmount(tester);
+    });
   }
 
   // ── 真实像素预览（FUSHI_PREVIEW_DIR 设了才跑） ──────────────────────────

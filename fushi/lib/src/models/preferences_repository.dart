@@ -3032,7 +3032,9 @@ class PreferencesRepository extends ChangeNotifier
         stored('last_selected_model');
     final bool existingUser = (!freshOnboardingPackImport && prefSignal) ||
         await _hasAnkiMiningData();
-    final bool moduleUnset = !stored(ModuleId.srs.prefKey);
+    // 模块开关经与 [setModuleEnabled] 同一组按 [ModuleId] 的存储原语写入：这里是存储层
+    // 的一次性落盘，只问「落没落过盘」、不读用户意愿；门控一律问模块可见性。
+    final bool moduleUnset = !_moduleStored(ModuleId.srs);
     // 显式选过「发往 Fushi 复习」= 在用复习（常见于恢复一份老用户备份：挖词目标随设置
     // 恢复，而模块开关是设备本地键、新设备上没设过）。此时不论判成老用户与否都不能关
     // 模块——关着就不读挖词目标，卡实际仍发 Anki；模块没设过就显式写成开。
@@ -3041,11 +3043,19 @@ class PreferencesRepository extends ChangeNotifier
     await setPrefs(<String, dynamic>{
       srsMiningTargetInstallDefaultKey: existingUser ? 'anki' : 'srs',
       if (moduleUnset && explicitSrs)
-        ModuleId.srs.prefKey: true
+        ..._moduleEntry(ModuleId.srs, true)
       else if (moduleUnset && existingUser)
-        ModuleId.srs.prefKey: false,
+        ..._moduleEntry(ModuleId.srs, false),
     });
   }
+
+  /// 模块开关是否显式落过盘（没落过 = 读出厂默认 / 判定规则）。
+  bool _moduleStored(ModuleId module) =>
+      getPref(module.prefKey, defaultValue: null) != null;
+
+  /// 模块开关的一条待写记录（与 [setModuleEnabled] 同一个键），供批量 [setPrefs]。
+  Map<String, dynamic> _moduleEntry(ModuleId module, bool value) =>
+      <String, dynamic>{module.prefKey: value};
 
   Future<bool> _hasAnkiMiningData() async {
     return (await _db

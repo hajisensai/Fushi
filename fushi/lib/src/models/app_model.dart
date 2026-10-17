@@ -3275,7 +3275,8 @@ class AppModel with ChangeNotifier {
       // 复习默认开之后，新装用户从不经过 [setModuleEnabled] 打开复习，那里「第一次打开
       // 复习时把日界设成凌晨 4 点（与 Anki 一致）」的落点就够不着：在这里补同一条规则。
       // 只在日界从没设过时写（老用户迁移后复习是关的，走不到这里）。
-      if (prefsRepo.moduleEnabled(ModuleId.srs) &&
+      // 经模块可见性判：正式版构建里复习整体缺席，不该替用户改统计日界。
+      if (moduleVisibility.isEnabled(ModuleId.srs) &&
           prefsRepo.getPref(kStatDayResetHourPrefKey) == null) {
         await setStatDayResetHour(SrsDayContext.defaultRolloverHour);
       }

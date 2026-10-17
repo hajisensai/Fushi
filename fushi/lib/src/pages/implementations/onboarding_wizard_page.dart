@@ -37,6 +37,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         buildSyncBackupDestination,
         buildInterconnectDestination,
         runBackupImportFlowForFile;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -268,7 +269,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       if (appModelNoUpdate.moduleEnabled(module)) _selected.add(feature);
     }
     _reviewMethod = onboardingReviewMethodOf(
-      srsModuleEnabled: appModelNoUpdate.moduleEnabled(ModuleId.srs),
+      // 经模块可见性（含正式版判据）：正式版里复习不存在，复习方式按 Anki 起步。
+      srsModuleEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
+        ModuleId.srs,
+      ),
       miningTarget: appModelNoUpdate.srsMiningTarget,
     );
     _ankiOptionExpanded = _reviewMethod == OnboardingReviewMethod.anki;
@@ -2426,7 +2430,7 @@ class OnboardingReviewMethodChooser extends StatelessWidget {
           onToggle: onToggleAnki,
         ),
         ClipRect(
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: spring.duration,
             curve: spring.curve,
             alignment: AlignmentDirectional.topStart,
