@@ -5,6 +5,7 @@
 //   POST /admin/api/reports/:id/resolve
 //   POST /admin/api/accounts/:id  {hidden}      隐藏/恢复账户（不删数据）
 //   POST /admin/api/works/:id     {title?, author?, nsfw?, clearCover?}  改标题/作者即锁定
+//   GET  /admin/api/works/:id/covers            封面候选与状态（票数 / 确认票 / 不符 / 待生效）
 //   POST /admin/api/works/merge   {from, into}  把 from 并入 into
 //   POST /admin/api/accounts/:id/role {role: 'dev'|'user'}  设 / 撤开发者（反馈处理台）
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
@@ -20,7 +21,7 @@ import {
 } from './shelf.js';
 import { accountPeriodsStatements, exactWorkPeriodsStatements, periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia } from './budget.js';
-import { recountStatement, settleStatements } from './cover_votes.js';
+import { recountStatement, settleStatements, workCoverCandidates } from './cover_votes.js';
 import { refreshSnapshots } from './snapshots.js';
 
 /**
@@ -48,7 +49,7 @@ function recountStatements(db, workIds, accountIds) {
 /** 精确重算这些作品的封面票数，再物化 + 清理（清理 RETURNING cover_key）。 */
 function coverResettleStatements(db, workIds, now) {
   const ids = JSON.stringify(workIds);
-  return [recountStatement(db, ids, now), ...settleStatements(db, ids)];
+  return [recountStatement(db, ids, now), ...settleStatements(db, ids, now)];
 }
 
 /** 这些作品的全部在架账户书架版本 +1：与之交错的上传 CAS 失败、重读后重试。 */
@@ -114,6 +115,7 @@ export async function mergeWorks(env, from, into, now) {
          SELECT cover_url FROM cover_candidates WHERE work_id = ?2 AND cover_url IS NOT NULL)`,
     ).bind(from, into),
     env.DB.prepare('UPDATE cover_votes SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
+    env.DB.prepare('UPDATE OR IGNORE cover_mismatches SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     env.DB.prepare('UPDATE cover_candidates SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     // 同一账户两边都有：与上报合并规则一致——读完时刻取较晚者，字数/时长累加。
     env.DB.prepare(
@@ -136,6 +138,12 @@ export async function mergeWorks(env, from, into, now) {
          cover_key = CASE WHEN cover_url IS NULL AND cover_key IS NULL
                           THEN (SELECT cover_key FROM works WHERE id = ?1) ELSE cover_key END,
          nsfw = MAX(nsfw, (SELECT nsfw FROM works WHERE id = ?1))
+       WHERE id = ?2`,
+    ).bind(from, into),
+    // 清封面保护期随合并带到目标作品（取两边较晚的清除时刻），免得把被清过的作品并进去就绕开保护期。
+    env.DB.prepare(
+      `UPDATE works SET cover_cleared_at = NULLIF(MAX(COALESCE(cover_cleared_at, 0),
+         COALESCE((SELECT cover_cleared_at FROM works WHERE id = ?1), 0)), 0)
        WHERE id = ?2`,
     ).bind(from, into),
     env.DB.prepare('DELETE FROM works WHERE id = ?1').bind(from),
@@ -236,6 +244,11 @@ export async function handleAdmin(env, request, path, body, now) {
     ).all();
     return json({ count, rows: rows.results });
   }
+  if (request.method === 'GET' && (r = m(/^\/admin\/api\/works\/([A-Za-z0-9_-]+)\/covers$/))) {
+    const res = await workCoverCandidates(env.DB, r[1], now);
+    if (!res) throw new HttpError(404, 'not_found');
+    return json(res);
+  }
   if (request.method !== 'POST') throw new HttpError(405, 'method');
   if ((r = m(/^\/admin\/api\/reports\/(\d+)\/resolve$/))) {
     await env.DB.prepare('UPDATE reports SET resolved = 1 WHERE id = ?1').bind(Number(r[1])).run();
@@ -285,6 +298,8 @@ export async function handleAdmin(env, request, path, body, now) {
     if (clear) {
       // 清掉的是「当前封面」这一个候选及投给它的票；其余候选按票数顶上（都没票则作品无封面）。
       // 投过这张图的客户端不会自动重投同一张（本机记着已投过），要换封面得本地先换。
+      // 记下清除时刻：COVER_CLEAR_GUARD_MS 内首张封面也要过替换门槛（cover_votes.js 文件头），
+      // 否则攻击者在清掉的瞬间再投一次就又抢回首张；所以顶上的也只能是已过门槛的候选。
       const current = `SELECT id FROM cover_candidates WHERE work_id = ?1
                        AND (cover_key = ?2 OR cover_url = ?3)`;
       stmts.push(
@@ -297,9 +312,10 @@ export async function handleAdmin(env, request, path, body, now) {
     stmts.push(env.DB.prepare(
       `UPDATE works SET title = ?2, author = ?3, locked = ?4, nsfw = ?5,
          cover_url = CASE WHEN ?6 THEN NULL ELSE cover_url END,
-         cover_key = CASE WHEN ?6 THEN NULL ELSE cover_key END
+         cover_key = CASE WHEN ?6 THEN NULL ELSE cover_key END,
+         cover_cleared_at = CASE WHEN ?6 THEN ?7 ELSE cover_cleared_at END
        WHERE id = ?1`,
-    ).bind(work.id, title, author, locked, nsfw, clear ? 1 : 0));
+    ).bind(work.id, title, author, locked, nsfw, clear ? 1 : 0, now));
     if (clear) stmts.push(...coverResettleStatements(env.DB, [work.id], now));
     const results = await env.DB.batch(stmts);
     if (clear) await deleteMedia(env, [work.cover_key, ...coverKeysOf(results)]);

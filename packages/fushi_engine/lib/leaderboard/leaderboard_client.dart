@@ -38,6 +38,70 @@ bool isCoverBytesRequired(Object e) =>
     e.status == 409 &&
     e.code == 'cover_bytes_required';
 
+/// 封面候选缩略图下载的大小上限（服务端封面上传上限 96KB，留余量）。
+const int kCoverCandidateImageMaxBytes = 128 * 1024;
+
+/// 服务端给出的、待本机比对的封面候选（services/leaderboard/src/media.js candidateRef）。
+class CoverCandidateRef {
+  const CoverCandidateRef({required this.id, required this.image});
+
+  factory CoverCandidateRef.fromJson(Map<String, dynamic> j) =>
+      CoverCandidateRef(
+        id: (j['id'] as num).toInt(),
+        image: j['image'] as String,
+      );
+
+  final int id;
+
+  /// 缩略图路径（`/img/<key>`，公开、边缘缓存）。
+  final String image;
+
+  @override
+  bool operator ==(Object other) =>
+      other is CoverCandidateRef && other.id == id && other.image == image;
+
+  @override
+  int get hashCode => Object.hash(id, image);
+}
+
+/// 封面投票 / 上传 / 查候选的结果。
+class CoverVoteResult {
+  const CoverVoteResult({
+    this.cover,
+    this.candidate,
+    this.confirmed = false,
+    this.voted = true,
+    this.legacyServer = false,
+  });
+
+  factory CoverVoteResult.fromJson(Map<String, dynamic> j) => CoverVoteResult(
+    cover: j['cover'] as String?,
+    candidate: j['candidate'] is Map
+        ? CoverCandidateRef.fromJson(
+            (j['candidate'] as Map<Object?, Object?>).cast<String, dynamic>(),
+          )
+        : null,
+    confirmed: j['confirmed'] == true,
+    voted: j['voted'] != false,
+    legacyServer: !j.containsKey('confirmed'),
+  );
+
+  /// 本账户所投封面的路径（没投票时为 null）。
+  final String? cover;
+
+  /// 服务端要客户端本机比对的候选（按哈希命中、还没有本账户的确认票时）。
+  final CoverCandidateRef? candidate;
+
+  /// 本账户的票是确认票（上传者 / URL 票 / 已比对通过）。
+  final bool confirmed;
+
+  /// 这次请求是否投了票（`check` 只查不投）。
+  final bool voted;
+
+  /// 服务端还不认识确认票协议（响应里没有 `confirmed`）：`check` 被当成普通哈希投票处理了。
+  final bool legacyServer;
+}
+
 class LeaderboardApiException implements Exception {
   const LeaderboardApiException(this.status, this.code, [this.detail]);
 
@@ -365,21 +429,95 @@ class LeaderboardClient {
     String contentType = 'image/jpeg',
     String? hash,
   }) async {
-    _requireIdentity();
     try {
-      final JsonMap j = await _sendJson(
-        'PUT',
-        '/v1/works/${_segment(workId)}/cover',
-        query: hash == null ? null : <String, String>{'h': hash},
-        bytes: bytes,
+      return (await uploadCoverChecked(
+        workId,
+        bytes,
         contentType: contentType,
-        timeout: _uploadTimeout,
-      );
-      return j['cover'] as String?;
+        hash: hash,
+      )).cover;
     } on LeaderboardApiException catch (e) {
       if (e.status == 409 && e.code == 'cover_exists') return null;
       rethrow;
     }
+  }
+
+  /// [uploadCover] 的完整结果：没命中已有候选时存图建候选（[CoverVoteResult.confirmed] 为 true，
+  /// 上传者的票就是确认票）；命中时只投了未确认票，[CoverVoteResult.candidate] 是要本机比对的候选。
+  Future<CoverVoteResult> uploadCoverChecked(
+    String workId,
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+    String? hash,
+  }) async {
+    _requireIdentity();
+    final JsonMap j = await _sendJson(
+      'PUT',
+      '/v1/works/${_segment(workId)}/cover',
+      query: hash == null ? null : <String, String>{'h': hash},
+      bytes: bytes,
+      contentType: contentType,
+      timeout: _uploadTimeout,
+    );
+    return CoverVoteResult.fromJson(j);
+  }
+
+  /// 只查 [hash] 命中哪个候选，不投票（确认票流程第一步，见 `cover_compare.dart`）。返回的
+  /// [CoverVoteResult.candidate] 是要本机比对的候选；[CoverVoteResult.confirmed] = 本账户已对它投过
+  /// 确认票。没命中抛 409 `cover_bytes_required`（[isCoverBytesRequired]）。
+  Future<CoverVoteResult> checkCover(String workId, String hash) =>
+      _coverVote(workId, <String, dynamic>{'hash': hash, 'check': true});
+
+  /// 本机比对通过：对候选 [candidateId] 投确认票。
+  Future<CoverVoteResult> confirmCover(
+    String workId,
+    String hash,
+    int candidateId,
+  ) => _coverVote(workId, <String, dynamic>{
+    'hash': hash,
+    'confirm': candidateId,
+  });
+
+  /// 本机比对不通过：记「不符」（撤掉投给它的票，之后对本账户跳过它），返回下一个命中的候选；
+  /// 没有了抛 409 `cover_bytes_required`（随后 [uploadCoverChecked] 上传自己的图）。
+  Future<CoverVoteResult> rejectCover(
+    String workId,
+    String hash,
+    int candidateId,
+  ) => _coverVote(workId, <String, dynamic>{
+    'hash': hash,
+    'mismatch': candidateId,
+  });
+
+  /// 下载候选缩略图（公开的 `/img/<key>`，不签名）。超过 [kCoverCandidateImageMaxBytes] 抛
+  /// [LeaderboardApiException]（`cover_image_too_large`）。
+  Future<Uint8List> fetchCoverImage(String path) async {
+    if (!path.startsWith('/img/')) {
+      throw ArgumentError.value(path, 'path', 'expected /img/<key>');
+    }
+    final http.Response res = await _send(
+      'GET',
+      path,
+      withAccount: false,
+      signed: false,
+    );
+    if (res.bodyBytes.length > kCoverCandidateImageMaxBytes) {
+      throw LeaderboardApiException(res.statusCode, 'cover_image_too_large');
+    }
+    return res.bodyBytes;
+  }
+
+  Future<CoverVoteResult> _coverVote(
+    String workId,
+    Map<String, dynamic> body,
+  ) async {
+    _requireIdentity();
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/works/${_segment(workId)}/cover/vote',
+      body: body,
+    );
+    return CoverVoteResult.fromJson(j);
   }
 
   /// 不带图片字节的封面投票：[hash]（缩略图 dHash）与 [url]（白名单图床地址）二选一。
