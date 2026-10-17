@@ -43,6 +43,7 @@
 | [BUG-3491](bugs/BUG-3491-video-episode-progress-refresh.md) | ✅ | ✅ | 视频剧集进度返回不刷新、重看已看集续播跳下一集、自动标记看完判定不一致 |
 | [BUG-3492](bugs/BUG-3492-mining-overwrite-same-popup.md) | ✅ | ✅ | 在线视频后台制卡后，同一查词弹窗里点 ✓ / 高级制卡确认没反应、不覆盖 |
 | [BUG-3497](bugs/BUG-3497-reader-open-fushi-local-dns.md) | ✅ | ✅ | Windows 开书/跨章白屏约 2 秒：WebView2 每次导航解析 fushi.local 走组播名称解析 |
+| [BUG-3496](bugs/BUG-3496-audio-first-play-jumps-book-start.md) | ✅ | ✅ | 有声书首次播放载入窗口位置为 0 致正文跳回书首 |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
 | [BUG-3451](bugs/BUG-3451-video-bar-menu-hides-controls.md) | ✅ | ✅ | 视频控制条「⋯」只有一项仍弹菜单、点开菜单时控制条消失 |
 | [BUG-3450](bugs/BUG-3450-browser-ext-subtitle-positioning.md) | ✅ | ✅ | 浏览器扩展字幕底板在全屏下与屏幕同高、缩放后整块上移飞出屏幕 |
