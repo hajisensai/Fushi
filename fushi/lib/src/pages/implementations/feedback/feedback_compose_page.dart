@@ -5,8 +5,9 @@
 // 本机转码成 720p（默认）/ 1080p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。
 // 成功后 `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 //
-// 压缩期间表单不锁（BUG-3489）：文字 / 截图 / 开关照常可改，视频的 × 随时取消压缩；只有
-// 提交按钮保持忙碌。压完才按表单此刻的内容组草稿提交，压缩期间的修改不会丢。
+// 视频选完就在后台压缩（用户边写边压），换档位即取消在途压缩按新档位重压；表单在压缩期间
+// 不锁（BUG-3489），× 随时取消压缩并移除视频。点提交时还没压完：提交按钮显示压缩进度，
+// 压完按表单此刻的内容自动发出；压缩失败则撤销这次提交，附件行给出原因与「重新压缩」。
 
 import 'dart:async';
 import 'dart:io';
@@ -87,7 +88,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   FeedbackSubmitStage? _stage;
   String? _error;
 
-  /// 选的视频（原件路径；提交时才转码）与它的大小。不进草稿：草稿只存表单文字与截图。
+  /// 选的视频（原件路径）与它的大小。不进草稿：草稿只存表单文字与截图。
   File? _video;
   int _videoBytes = 0;
 
@@ -98,8 +99,19 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   /// 压缩档位（默认 720p，只在本页有效，不进草稿）。
   FeedbackVideoQuality _videoQuality = FeedbackVideoQuality.p720;
 
-  /// 进行中的压缩的取消开关（× / 离开页面时完成它）；没在压缩时为 null。
+  /// 进行中的压缩的取消开关（× / 换档 / 离开页面时完成它）；没在压缩时为 null。
   Completer<void>? _videoCancel;
+
+  /// 压缩任务代号：每开一次新压缩 / 取消就 +1，旧任务的回调与结果按它丢弃。
+  int _videoJob = 0;
+
+  /// 选完视频就在后台压（用户边写边压）：正在压、压好的产物、压缩失败的原因。
+  bool _compressing = false;
+  FeedbackStagedVideo? _staged;
+  Object? _videoError;
+
+  /// 点了提交、视频还没压完：压完自动发出（提交按钮显示压缩进度）；压缩失败或点 × 撤销。
+  bool _submitWaiting = false;
 
   /// 选了 1080p，但这段视频 1080p 装不进上限，本次改按 720p 压。
   bool _videoDowngraded = false;
@@ -109,8 +121,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   bool get _busy => _stage != null;
 
-  /// 表单是否锁住：只有正文发出之后（发送 / 传附件）才锁。压缩视频期间不锁——压缩可能
-  /// 要好几分钟，期间文字、截图、开关都还能改，视频的 × 可取消压缩（BUG-3489）。
+  /// 表单是否锁住：只有正文发出之后（发送 / 传附件）才锁。等视频压完期间不锁——压缩可能
+  /// 要好几分钟，期间文字、截图、开关、档位都还能改，视频的 × 可取消（BUG-3489）。
   bool get _locked => _busy && _stage != FeedbackSubmitStage.videoPrepare;
 
   /// 联系方式框里是「上次用过的联系方式」预填的值（不算用户新写的草稿内容）。
@@ -339,8 +351,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
 
   @override
   void dispose() {
-    // 离开页面：进行中的压缩一并中止（强杀 ffmpeg、清掉半成品），不在后台白跑。
+    // 离开页面：进行中的压缩一并中止（强杀 ffmpeg、清掉半成品），压好没发的产物也删掉。
     _cancelVideoCompression();
+    unawaited(_staged?.discard());
+    _staged = null;
     // 返回 / 切走页面：把还在防抖里的改动落盘。
     _flushDraft();
     _lifecycle.dispose();
@@ -458,6 +472,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         _videoBytes = bytes;
         _error = null;
       });
+      // 选完就在后台压：用户写反馈的同时压缩，点提交时多半已经压好。
+      _startVideoCompression();
     } on Object catch (e, st) {
       ErrorLogService.instance.log('feedback.pick_video', e, st);
     } finally {
@@ -576,55 +592,39 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   Future<void> _submit() async {
     // 只有标题是必填：一句话说得清的反馈不必再逼人写详情（反馈 JHR0a8mT5M）。
     if (_title.text.trim().isEmpty) {
-      setState(() => _error = t.feedback_compose_title_missing);
+      setState(() {
+        _error = t.feedback_compose_title_missing;
+        if (_submitWaiting) {
+          _submitWaiting = false;
+          _stage = null;
+        }
+      });
       return;
     }
     final File? video = _video;
+    if (video != null && _staged == null) {
+      // 视频还没压好：压缩失败就把原因亮出来（附件行有「重新压缩」）；还在压就排队，
+      // 压完由 [_runVideoCompression] 再调一次本函数自动发出。表单在此期间不锁。
+      final Object? failure = _videoError;
+      if (failure != null) {
+        setState(() => _error = _videoErrorText(failure));
+        return;
+      }
+      if (!_compressing) _startVideoCompression();
+      setState(() {
+        _error = null;
+        _submitWaiting = true;
+        _stage = FeedbackSubmitStage.videoPrepare;
+      });
+      return;
+    }
+    final FeedbackStagedVideo? staged = video == null ? null : _staged;
     setState(() {
       _error = null;
-      _videoDowngraded = false;
-      _stage = video == null
-          ? FeedbackSubmitStage.sending
-          : FeedbackSubmitStage.videoPrepare;
+      _submitWaiting = false;
+      _stage = FeedbackSubmitStage.sending;
     });
-    FeedbackStagedVideo? staged;
     try {
-      if (video != null) {
-        // 先压视频，表单不锁（[_locked]）；压完再按表单此刻的内容提交。
-        final Completer<void> cancel = Completer<void>();
-        _videoCancel = cancel;
-        _videoFraction = null;
-        try {
-          staged = await _service.stageVideo(
-            video,
-            options: FeedbackVideoPrepareOptions(
-              quality: _videoQuality,
-              cancel: cancel.future,
-              onDowngraded: () {
-                if (mounted) setState(() => _videoDowngraded = true);
-              },
-            ),
-            onProgress: _onVideoProgress,
-          );
-        } finally {
-          if (identical(_videoCancel, cancel)) _videoCancel = null;
-        }
-        if (!mounted || cancel.isCompleted) {
-          throw const FeedbackVideoCancelledException();
-        }
-        // 压缩期间标题被清空了：同提交前的校验。
-        if (_title.text.trim().isEmpty) {
-          setState(() {
-            _stage = null;
-            _videoFraction = null;
-            _error = t.feedback_compose_title_missing;
-          });
-          return;
-        }
-        setState(() => _stage = FeedbackSubmitStage.sending);
-      }
-      final FeedbackStagedVideo? handOff = staged;
-      staged = null; // 交给 submit：成功或失败都由它清理。
       final FeedbackSubmitResult result = await _service.submit(
         FeedbackDraft(
           category: _category,
@@ -638,7 +638,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           video: video,
           reopenOf: widget.reopenOf?.id,
         ),
-        stagedVideo: handOff,
+        stagedVideo: staged,
         onStage: (FeedbackSubmitStage s) {
           if (mounted) setState(() => _stage = s);
         },
@@ -646,6 +646,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       );
       _submitted = true;
       _draftTimer?.cancel();
+      // 视频已挪进待传区（或已传完）：压缩产物的工作目录可以删了。
+      if (identical(_staged, staged)) _staged = null;
+      unawaited(staged?.discard());
       // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
       if (widget.reopenOf == null) {
         try {
@@ -655,15 +658,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         }
       }
       if (mounted) Navigator.of(context).pop(result);
-    } on FeedbackVideoCancelledException {
-      // 用户点了 ×（或离开了页面）：不是错误，表单回到可提交状态，什么也没发出去。
-      if (!mounted) return;
-      setState(() {
-        _stage = null;
-        _videoFraction = null;
-        _videoDowngraded = false;
-      });
     } on Object catch (e, st) {
+      // 正文没发出去：压好的视频留着，再点提交不用重压。
       ErrorLogService.instance.log('feedback.submit', e, st);
       if (!mounted) return;
       setState(() {
@@ -673,9 +669,100 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             feedbackVideoErrorText(e) ??
             t.feedback_submit_failed(reason: feedbackErrorReason(e));
       });
-    } finally {
-      await staged?.discard();
     }
+  }
+
+  /// 后台压缩失败的原因（太大 / 不是视频有专门文案，别的是通用的「压缩失败」）。
+  static String _videoErrorText(Object error) =>
+      feedbackVideoErrorText(error) ?? t.feedback_compose_video_failed;
+
+  /// 按当前档位（重新）开始压缩所选视频：先取消在途的压缩、丢掉旧产物。
+  void _startVideoCompression() {
+    final File? video = _video;
+    if (video == null) return;
+    _cancelVideoCompression();
+    unawaited(_staged?.discard());
+    final int job = _videoJob;
+    final Completer<void> cancel = Completer<void>();
+    _videoCancel = cancel;
+    setState(() {
+      _staged = null;
+      _compressing = true;
+      _videoError = null;
+      _videoFraction = null;
+      _videoDowngraded = false;
+    });
+    unawaited(_runVideoCompression(job, video, cancel));
+  }
+
+  Future<void> _runVideoCompression(
+    int job,
+    File video,
+    Completer<void> cancel,
+  ) async {
+    bool current() => mounted && job == _videoJob && !cancel.isCompleted;
+    try {
+      final FeedbackStagedVideo staged = await _service.stageVideo(
+        video,
+        options: FeedbackVideoPrepareOptions(
+          quality: _videoQuality,
+          cancel: cancel.future,
+          onDowngraded: () {
+            if (current()) setState(() => _videoDowngraded = true);
+          },
+        ),
+        onProgress: (double f) {
+          if (current()) _onVideoProgress(f);
+        },
+      );
+      if (!current()) {
+        await staged.discard();
+        return;
+      }
+      setState(() {
+        _staged = staged;
+        _compressing = false;
+        _videoFraction = null;
+      });
+      if (_submitWaiting) unawaited(_submit());
+    } on FeedbackVideoCancelledException {
+      // 被 × / 换档 / 离开页面取代：状态由取代的一方负责。
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.video_prepare', e, st);
+      if (!current()) return;
+      setState(() {
+        _compressing = false;
+        _videoFraction = null;
+        _videoError = e;
+        // 在等它的那次提交撤销（不悄悄发出没有视频的反馈），原因就地显示。
+        if (_submitWaiting) {
+          _submitWaiting = false;
+          _stage = null;
+          _error = _videoErrorText(e);
+        }
+      });
+    } finally {
+      if (identical(_videoCancel, cancel)) _videoCancel = null;
+    }
+  }
+
+  /// 视频附件的 ×：取消压缩、移除视频，留在页面；在等压缩的那次提交一并撤销。
+  void _removeVideo() {
+    _cancelVideoCompression();
+    unawaited(_staged?.discard());
+    setState(() {
+      _video = null;
+      _videoBytes = 0;
+      _staged = null;
+      _compressing = false;
+      _videoError = null;
+      _videoFraction = null;
+      _videoDowngraded = false;
+      if (_submitWaiting) {
+        _submitWaiting = false;
+        _stage = null;
+      }
+    });
   }
 
   void _onVideoProgress(double? f) {
@@ -686,8 +773,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     if (_percentOf(f) != before || f == null) setState(() {});
   }
 
-  /// 中止进行中的视频压缩（没在压缩时什么也不做）。
+  /// 中止进行中的视频压缩并作废它的回调（没在压缩时只作废）。
   void _cancelVideoCompression() {
+    _videoJob++;
     final Completer<void>? cancel = _videoCancel;
     _videoCancel = null;
     if (cancel != null && !cancel.isCompleted) cancel.complete();
@@ -710,16 +798,50 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     FeedbackSubmitStage.video => t.feedback_stage_video(percent: _percentText),
   };
 
-  /// 视频附件区：说明 + 「添加视频」或已选视频（文件名 · 大小 · 移除）+ 压缩档位 +
-  /// 压缩 / 上传进度条。压缩中 × 仍可点：取消压缩并移除视频（BUG-3489）；正文发出之后
-  /// （上传视频时）× 才禁用。
+  /// 视频附件区：说明 + 「添加视频」或已选视频（文件名 · 状态 · ×）+ 压缩档位。选完就在
+  /// 后台压：附件行显示压缩进度 / 压好的大小 / 失败原因与「重新压缩」；× 随时可点（取消
+  /// 压缩并移除视频，BUG-3489），正文发出之后（上传视频时）才禁用。
   List<Widget> _videoSection(FushiDesignTokens tokens) {
     final File? video = _video;
-    final FeedbackSubmitStage? stage = _stage;
-    final bool compressing =
-        video != null && stage == FeedbackSubmitStage.videoPrepare;
-    final bool transferring =
-        compressing || (video != null && stage == FeedbackSubmitStage.video);
+    final FeedbackStagedVideo? staged = _staged;
+    final Object? failure = _videoError;
+    final bool uploading = video != null && _stage == FeedbackSubmitStage.video;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Widget? status = video == null
+        ? null
+        : _compressing || uploading
+        ? Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiLinearProgressIndicator(value: _videoFraction),
+                if (_compressing) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    t.feedback_stage_video_prepare(percent: _percentText),
+                    key: const ValueKey<String>('feedback-video-compressing'),
+                    style: tokens.type.metadata,
+                  ),
+                ],
+              ],
+            ),
+          )
+        : failure != null
+        ? Text(
+            _videoErrorText(failure),
+            key: const ValueKey<String>('feedback-video-error'),
+            style: tokens.type.metadata.copyWith(color: colors.error),
+          )
+        : staged != null
+        ? Text(
+            t.feedback_compose_video_compressed(
+              size: FushiByteFormat.bytes(staged.video.bytes),
+            ),
+            key: const ValueKey<String>('feedback-video-ready'),
+          )
+        : Text(FushiByteFormat.bytes(_videoBytes));
     return <Widget>[
       SizedBox(height: tokens.spacing.card),
       Text(
@@ -752,32 +874,30 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            subtitle: transferring
-                ? Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: FushiLinearProgressIndicator(value: _videoFraction),
-                  )
-                : Text(FushiByteFormat.bytes(_videoBytes)),
+            subtitle: status,
             trailing: FushiIconButton(
               key: const ValueKey<String>('feedback-remove-video'),
               icon: FushiIcons.close,
-              tooltip: compressing
-                  ? t.feedback_compose_cancel_video_compression
+              tooltip: _compressing
+                  ? t.feedback_compose_video_cancel_remove
                   : t.feedback_compose_remove_video,
               enabled: !_locked,
-              onTap: () {
-                // 压缩中：中止压缩（提交流程收到取消后回到可提交状态）并移除视频。
-                _cancelVideoCompression();
-                setState(() {
-                  _video = null;
-                  _videoBytes = 0;
-                  _videoDowngraded = false;
-                });
-              },
+              onTap: _removeVideo,
             ),
           ),
         ),
-      if (video != null && !_busy) ...<Widget>[
+      if (video != null && failure != null && !_locked) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FushiTextButton(
+            key: const ValueKey<String>('feedback-video-retry'),
+            onPressed: _startVideoCompression,
+            child: Text(t.feedback_compose_video_retry),
+          ),
+        ),
+      ],
+      if (video != null && !_locked) ...<Widget>[
         SizedBox(height: tokens.spacing.gap),
         Align(
           alignment: Alignment.centerLeft,
@@ -794,8 +914,12 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                 ),
             ],
             selected: <FeedbackVideoQuality>{_videoQuality},
-            onSelectionChanged: (Set<FeedbackVideoQuality> v) =>
-                setState(() => _videoQuality = v.first),
+            onSelectionChanged: (Set<FeedbackVideoQuality> v) {
+              if (v.first == _videoQuality) return;
+              setState(() => _videoQuality = v.first);
+              // 换档：取消在途压缩、丢掉旧档位的产物，按新档位重压。
+              _startVideoCompression();
+            },
           ),
         ),
         if (_videoQuality == FeedbackVideoQuality.p1080) ...<Widget>[

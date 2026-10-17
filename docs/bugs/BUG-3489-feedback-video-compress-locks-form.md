@@ -3,4 +3,13 @@
 - **真实性**：✅ 真 bug。视频压缩发生在点「提交」之后（`FeedbackService.submit` 的 `videoPrepare` 阶段，`fushi/lib/src/feedback/feedback_service.dart` 旧 :397），提交页用同一个 `_busy => _stage != null`（`fushi/lib/src/pages/implementations/feedback/feedback_compose_page.dart` 旧 :98）禁用全部控件：三个文字框 `enabled: !_busy`（旧 :757/:767/:784）、视频 × `enabled: !_busy`（旧 :687）、截图 / 开关 / 分类同理。压缩在手机上要好几分钟（移动端 ffmpeg-kit 配方 `--disable-mediacodec`，只有 libx264 软编，预设 `veryfast`、不限帧率），期间整页锁死，且转码也没有任何取消通道（`FfmpegWatch.cancel` 未接）。
 - **[x] ① 已修复** — 提交页先 `FeedbackService.stageVideo` 压视频、压完才按表单此刻内容组草稿 `submit(stagedVideo:)`；压缩阶段只锁提交按钮（新 `_locked` 只在正文发出后为真），× 在压缩中可点：完成取消开关 → `prepareFeedbackVideo(cancel:)` 经 `FfmpegWatch.cancel` 强杀 ffmpeg 会话、删半成品、抛 `FeedbackVideoCancelledException`（不再落回「原样上传」），`stageVideo` 清工作目录，页面回到可提交状态；离开页面同样取消。顺带提速：高帧率源在滤镜链最前面降到 30 fps + 双线性缩放 + `ultrafast` 预设，并加 1080p 档（太长 / 转完超限自动退回 720p 并提示）。
 - **[x] ② 已加自动化测试** — `fushi/test/feedback/feedback_video_account_pages_test.dart`（「BUG-3489 压缩中：文字框可编辑、× 可点并真正取消压缩」「压缩期间改的文字随提交发出；选 1080p 透传」）、`fushi/test/feedback/feedback_video_test.dart`（取消强杀 + 删半成品、1080p 规划 / 退档 / 超限重转、提速参数）、`fushi/test/feedback/feedback_video_service_test.dart`（stageVideo + submit、取消清目录）。
-- **备注**：测速见 PR 描述（真机 APK 测速因本机 D 盘写满未能构建，只有桌面同参数对照）。是否改成「选完视频就在后台开始压缩」（进一步隐藏等待）属产品取舍，未做。
+- **[x] ③ 后续（所有者拍板，2026-10-17）** — ① 选完视频立即在后台压缩（`feedback_compose_page.dart` `_startVideoCompression` / `_runVideoCompression`），用户边写边压；换 720p / 1080p 档即取消在途压缩按新档重压；点提交时还没压完则提交按钮显示压缩进度、压完按表单此刻内容自动发出，压缩失败则撤销这次提交、附件行给出原因与「重新压缩」；正文发送失败时压好的视频保留（`FeedbackService.submit(stagedVideo:)` 不再代为清理，成功后由页面 `discard`），再提交不重压。② 压缩中点 × =「取消并移除视频」（tooltip `feedback_compose_video_cancel_remove`），取消压缩、移除视频、撤销等待中的提交、什么都不发，不是「去掉视频继续提交」。③ 编码参数改回 `veryfast` + 双三次（保留「高帧率先降 30 fps」提速），常量 `kFeedbackVideoPreset` / `kFeedbackVideoScaleFlags`（`fushi/lib/src/feedback/feedback_video.dart`）。测试：`feedback_video_account_pages_test.dart`（选完即压、× 取消并移除且不发、换档重压、等压完自动提交、压缩失败重压）、`feedback_video_service_test.dart`（正文失败保留产物再提交不重压）、`feedback_video_test.dart`（参数钉死 veryfast + bicubic）。
+- **测速 / 画质（2026-10-17）**：真机 Xiaomi Pad 5（SM8150）上 app 同款 ffmpeg-kit（libx264 软编）压 720p，1600×2560 60 fps 素材 20–24 秒，两轮取最快：
+  | 素材 | 旧（veryfast 双三次 原帧率） | #2280（ultrafast 双线性 30 fps） | 现（veryfast 双三次 30 fps） |
+  |---|---|---|---|
+  | 真实录屏 24 s | 13.6 s | 9.4 s | 12.0 s |
+  | 60 fps 字幕 24 s | 18.7 s | 8.9 s | 11.6 s |
+  | 60 fps 密集小字 20.5 s | 16.5 s | 8.1 s | 10.4 s |
+
+  画质（桌面同编码器同参数，产物放大回源分辨率对源算，SSIM All / PSNR Y）：密集小字 旧 0.950 / 24.9 dB、#2280 0.941 / 23.6 dB、现 0.953 / 25.0 dB；字幕 旧 0.985 / 30.6、#2280 0.984 / 29.2、现 0.986 / 30.6。即 #2280 的 ultrafast + 双线性在小字上掉约 1.3 dB，现方案画质不低于旧方案、比旧方案快 12–38%、比 #2280 慢约 25–30%（选完即压把这段时间藏在用户写反馈的过程中）。
+- **备注**：硬件编码（MediaCodec）需重编 ffmpeg-kit，未做。真机只测了编码耗时，提交页 UI 走查未在真机做（由 widget 测试覆盖）。
