@@ -210,9 +210,20 @@ namespace flutter_inappwebview_plugin
       // intended behavior. NOTE: all environments created against the same user
       // data folder must use identical options (mismatch fails with
       // 0x8007139F) — this is the plugin's single default-environment site.
+      //
+      // BUG-3453: `fushi.local` is a virtual host served entirely by the
+      // WebResourceRequested interceptor, yet Chromium still resolves it on
+      // every main-frame navigation. `.local` goes to Windows multicast name
+      // resolution (mDNS/LLMNR), which only fails after ~2.7 s and is not
+      // negatively cached, so every book open and chapter turn sat blank for
+      // ~2 s. The lookup already fails today (NavigationCompleted below turns
+      // that failure into success); `~NOTFOUND` makes it fail immediately
+      // without touching the system resolver. Keep the host in sync with
+      // kReaderResourceHost (guard: webview2_reader_host_resolver_guard_test).
       auto options = Make<CoreWebView2EnvironmentOptions>();
       options->put_AdditionalBrowserArguments(
-        L"--autoplay-policy=no-user-gesture-required");
+        L"--autoplay-policy=no-user-gesture-required "
+        L"--host-resolver-rules=\"MAP fushi.local ~NOTFOUND\"");
       hr = CreateCoreWebView2EnvironmentWithOptions(
         nullptr, userDataFolder.empty() ? nullptr : userDataFolder.c_str(),
         options.Get(),
