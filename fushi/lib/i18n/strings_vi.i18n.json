@@ -3593,6 +3593,8 @@
   "interconnect_leaderboard_link_host_toggle": "Let paired devices sign in with my account",
   "interconnect_leaderboard_link_host_toggle_desc": "Only applies to paired devices marked as \"my device\": if they have no Fushi account, they sign in with this device's account automatically (HTTPS required). Your private key never leaves this device.",
   "interconnect_moved_note": "Cài đặt kết nối & máy chủ nằm trong danh mục Fushi Interconnect",
+  "interconnect_peer_forget_confirm": "All ${count} addresses of this device will be removed together, and it will stop syncing with this device. Pair again to reconnect.",
+  "interconnect_peer_forget_title": "Forget this device?",
   "interconnect_peer_list_empty": "Chưa thêm peer nào. Chọn thiết bị được phát hiện từ danh sách thiết bị LAN bên dưới để ghép nối tự động, hoặc thêm địa chỉ peer thủ công.",
   "interconnect_peer_list_title": "Các peer đã thêm",
   "interconnect_profile_download": "Tải cấu hình từ máy chủ",

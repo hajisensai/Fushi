@@ -206,6 +206,100 @@ void main() {
       expect(merged[3].hostId, isNull, reason: '别的 host 不受影响');
     });
 
+    // IPv6 隐私扩展：同一 /64 下的轮换临时地址只学一条，且沿用已有那条。
+    const List<InterconnectHostAddress> rotating = <InterconnectHostAddress>[
+      InterconnectHostAddress(
+        url: 'https://[2408:821b:9a33:8900:a0dd:9f4f:3182:af78]:38765',
+        kind: InterconnectAddressKind.ipv6,
+      ),
+      InterconnectHostAddress(
+        url: 'https://[2408:821b:9a33:8900:7cbb:3de6:be5e:8b48]:38765',
+        kind: InterconnectAddressKind.ipv6,
+      ),
+      InterconnectHostAddress(
+        url: 'https://[2408:821b:9a33:8900:619b:53b8:b632:f11]:38765',
+        kind: InterconnectAddressKind.ipv6,
+      ),
+      InterconnectHostAddress(
+        url: 'https://[2408:821b:9a33:8901::1]:38765',
+        kind: InterconnectAddressKind.ipv6,
+      ),
+    ];
+
+    test('同 /64 前缀的轮换 IPv6 只学一条（不同前缀各留一条）', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[url('https://home.example')],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: rotating,
+      );
+      expect(merged.map((FushiClientUrl u) => u.url), <String>[
+        'https://[2408:821b:9a33:8900:a0dd:9f4f:3182:af78]:38765',
+        'https://[2408:821b:9a33:8901::1]:38765',
+        'https://home.example',
+      ]);
+    });
+
+    test('已堆积的同前缀 learned 地址收敛成一条，且沿用列表里已有的那条', () {
+      FushiClientUrl learnedAt(int i) => FushiClientUrl(
+        url: rotating[i].url,
+        hostId: 'A',
+        learned: true,
+        addressKind: 'ipv6',
+      );
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          learnedAt(2),
+          learnedAt(0),
+          learnedAt(1),
+          url('https://home.example', host: 'A'),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: rotating.sublist(0, 3),
+      );
+      expect(merged.map((FushiClientUrl u) => u.url), <String>[
+        rotating[2].url,
+        'https://home.example',
+      ]);
+      // 再刷一次不翻来覆去。
+      expect(
+        mergeLearnedHostAddresses(
+          merged,
+          anchorUrl: 'https://home.example',
+          hostId: 'A',
+          addresses: rotating.sublist(0, 3),
+        ).map((FushiClientUrl u) => u.url),
+        merged.map((FushiClientUrl u) => u.url),
+      );
+    });
+
+    test('collapseRotatingIpv6Addresses 不动 IPv4 / 域名 / p2p，端口不同不合并', () {
+      const List<InterconnectHostAddress> mixed = <InterconnectHostAddress>[
+        InterconnectHostAddress(
+          url: 'https://192.168.1.5:38765',
+          kind: InterconnectAddressKind.lan,
+        ),
+        InterconnectHostAddress(
+          url: 'https://[2408::5]:38765',
+          kind: InterconnectAddressKind.ipv6,
+        ),
+        InterconnectHostAddress(
+          url: 'https://[2408::6]:38766',
+          kind: InterconnectAddressKind.ipv6,
+        ),
+        InterconnectHostAddress(
+          url: 'https://home.example',
+          kind: InterconnectAddressKind.public,
+        ),
+        InterconnectHostAddress(
+          url: 'p2p://node',
+          kind: InterconnectAddressKind.p2p,
+        ),
+      ];
+      expect(collapseRotatingIpv6Addresses(mixed), mixed);
+    });
+
     test('明文 http 地址一律不学（学到的 LAN 地址换网可能是别人的机器）', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[url('https://home.example')],
