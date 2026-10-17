@@ -23,6 +23,7 @@
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
 - 发现问题直接说，不要为了顺滑把风险说轻。
 - **合并 PR 要看作者**：只有 `hajisensai`（仓库所有者）与 `W1ght` 的 PR 可以在常规审查后直接合并；**其他任何人的 PR 一律先问用户拿许可再合**，哪怕用户说过「全部合并」——那句话不覆盖后来新出现的第三方 PR。许可的可追溯形态是给 PR 打 `merge-approved` 标签。CI 侧有一条会变红的门 `.github/workflows/pr-merge-gate.yml`（白名单被守卫测试 `fushi/test/tools/pr_merge_gate_allowlist_guard_test.dart` 钉死）；它默认是建议性的——本仓刻意不设分支保护，因为日常大量直推 develop，加 required check 会把直推一起挡掉。要改白名单必须用户点头。
+- **合并 PR 先合再看整体 CI，不逐条等（用户 2026-10-18 拍板）**：批量合并时，作者合规、审查过的 PR 不等各自 PR CI 跑完，直接合进 `develop`（GitHub 报冲突的就在本地集成分支 `git merge` 依次合、解冲突、`bug.dart` 收撞号后一次直推）；合完只看 **`develop` 尖端那一轮的整体 CI 结论**。PR CI 已经红的、或合完整体 CI 红的，一律按根因修（修代码或修错钉的守卫，说明为什么），不许回滚 / 跳过 / 改成「已知红」了事。
 - 用户报 bug：按 [docs/BUGS.md](docs/BUGS.md) 文件头的流程走——先沿真实代码路径**验真伪**，一 bug 一文件（`dart run tool/bug.dart new <slug>`，禁止手动往 `docs/BUGS.md` 加正文），记根因 `file:line` → ① 根因修复 ② 在最强可落地层加自动化测试，两步勾 `[x]` 并记提交 / 测试文件；撞号用 `bug.dart renumber` / 合 develop 后 `bug.dart settle`，别手改。
 
 ## 仓库地图
