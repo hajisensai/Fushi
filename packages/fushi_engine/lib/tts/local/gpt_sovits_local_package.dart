@@ -21,9 +21,13 @@ import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi_engine/tts/local/gpt_sovits_local_server.dart';
+import 'package:fushi_engine/tts/local/local_service_support.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:path/path.dart' as p;
+
+export 'package:fushi_engine/tts/local/local_service_support.dart'
+    show detectNvidiaGpuName;
 
 /// 下载源。
 enum GptSovitsPackageSource { huggingFace, modelScope }
@@ -298,42 +302,7 @@ enum GptSovitsInstallFailure {
   disk,
 }
 
-typedef GptSovitsCommandRunner =
-    Future<({int exitCode, String output})> Function(
-      String executable,
-      List<String> arguments,
-    );
-
-Future<({int exitCode, String output})> _runCommand(
-  String executable,
-  List<String> arguments,
-) async {
-  try {
-    final ProcessResult r = await Process.run(
-      executable,
-      arguments,
-      stdoutEncoding: const Utf8Codec(allowMalformed: true),
-      stderrEncoding: const Utf8Codec(allowMalformed: true),
-    );
-    return (exitCode: r.exitCode, output: '${r.stdout}\n${r.stderr}');
-  } on ProcessException catch (e) {
-    return (exitCode: -1, output: e.message);
-  }
-}
-
-/// 本机显卡名（`nvidia-smi`）；没有 N 卡 / 没驱动返回 null。
-Future<String?> detectNvidiaGpuName({GptSovitsCommandRunner? run}) async {
-  final ({int exitCode, String output}) r = await (run ?? _runCommand)(
-    'nvidia-smi',
-    const <String>['--query-gpu=name', '--format=csv,noheader'],
-  );
-  if (r.exitCode != 0) return null;
-  final String first = const LineSplitter()
-      .convert(r.output)
-      .map((String l) => l.trim())
-      .firstWhere((String l) => l.isNotEmpty, orElse: () => '');
-  return first.isEmpty ? null : first;
-}
+typedef GptSovitsCommandRunner = LocalCommandRunner;
 
 /// 系统自带的 bsdtar。Windows 上点名 System32 那份：PATH 里常有别的工具链带的
 /// GNU tar，它不认 7z。
@@ -345,7 +314,7 @@ String get gptSovitsTarExecutable {
 
 /// 系统 tar 能不能解整合包（libarchive 编进了 lzma）。
 Future<bool> systemTarSupports7z({GptSovitsCommandRunner? run}) async {
-  final ({int exitCode, String output}) r = await (run ?? _runCommand)(
+  final ({int exitCode, String output}) r = await (run ?? runLocalCommand)(
     gptSovitsTarExecutable,
     const <String>['--version'],
   );
@@ -368,7 +337,7 @@ class GptSovitsInstaller extends EngineChangeNotifier {
     GptSovitsCommandRunner? run,
     Future<Process> Function(String exe, List<String> args)? spawn,
   }) : _httpClientFactory = httpClientFactory,
-       _run = run ?? _runCommand,
+       _run = run ?? runLocalCommand,
        _spawn =
            spawn ??
            ((String exe, List<String> args) =>
@@ -579,23 +548,7 @@ class GptSovitsInstaller extends EngineChangeNotifier {
     HttpClient client,
     Uri uri,
     Map<String, String> headers,
-  ) async {
-    final HttpClientRequest request = await client.getUrl(uri);
-    request.followRedirects = true;
-    request.maxRedirects = 8;
-    headers.forEach(request.headers.set);
-    final HttpClientResponse response = await request.close();
-    final Map<String, String> responseHeaders = <String, String>{};
-    response.headers.forEach(
-      (String name, List<String> values) =>
-          responseHeaders[name] = values.join(', '),
-    );
-    return ResumableDownloadResponse(
-      statusCode: response.statusCode,
-      headers: responseHeaders,
-      stream: response,
-    );
-  }
+  ) => openLocalServiceGet(client, uri, headers);
 
   Future<bool> _extract(String archive, String dest) async {
     final Process tar;

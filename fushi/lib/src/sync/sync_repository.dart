@@ -1642,6 +1642,8 @@ class SyncRepository {
     'tts_active_preset_id',
     // 本机 GPT-SoVITS 整合包的磁盘路径与端口：换一台设备毫无意义。
     'tts_gpt_sovits_local',
+    // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
+    'tts_irodori_local',
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────
