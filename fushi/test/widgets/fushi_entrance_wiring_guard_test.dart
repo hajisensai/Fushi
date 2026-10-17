@@ -95,7 +95,6 @@ void main() {
       // 表单类页面（笔记编辑 / 更改笔记类型 / 笔记类型编辑…）共用的分栏正文
       // SrsAdaptiveSections：窗口与逐项包装都在这里，页面经它接入（见下一条）。
       'lib/src/pages/implementations/srs/srs_ui.dart',
-      'lib/src/pages/implementations/srs/srs_deck_settings_page.dart',
       'lib/src/pages/implementations/srs/srs_conflicts_page.dart',
       'lib/src/pages/implementations/srs/srs_review_page.dart',
     ]) {
@@ -110,16 +109,20 @@ void main() {
     }
   });
 
-  test('复习笔记编辑页经共享分栏正文接入错峰进场', () {
+  test('复习表单页（笔记编辑 / 牌组设置）经共享分栏正文接入错峰进场', () {
     // 页面本身不再直接持有 scope：正文交给 SrsAdaptiveSections（上一条钉住它
     // 同时有窗口与逐项包装）。改回自己画列表时必须自己接入。
-    final String src = read(
+    for (final String path in <String>[
       'lib/src/pages/implementations/srs/srs_note_editor_page.dart',
-    );
-    expect(
-      src.contains('SrsAdaptiveSections(') ||
-          src.contains('FushiEntranceScope('),
-      isTrue,
-    );
+      'lib/src/pages/implementations/srs/srs_deck_settings_page.dart',
+    ]) {
+      final String src = read(path);
+      expect(
+        src.contains('SrsAdaptiveSections(') ||
+            src.contains('FushiEntranceScope('),
+        isTrue,
+        reason: path,
+      );
+    }
   });
 }
