@@ -115,6 +115,7 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show deleteRemovedMangaOcrModelDirs;
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -1197,7 +1198,8 @@ class AppModel with ChangeNotifier {
           t.updates_notification_open_video_episode,
         UpdateFeedKind.mangaChapter =>
           t.updates_notification_open_manga_chapter,
-        UpdateFeedKind.mangaExtension =>
+        UpdateFeedKind.mangaExtension ||
+        UpdateFeedKind.animeExtension =>
           t.updates_notification_open_manga_extension,
         UpdateFeedKind.appRelease => t.updates_notification_open_app_release,
       };
@@ -1258,6 +1260,9 @@ class AppModel with ChangeNotifier {
   /// 启动期的 `UpdateChecker.scheduleCheck` 已经在查，那条链路顺手把结果投给更新
   /// 中心即可（见 home_page 的 onUpdateAvailable），再排一个定时器只会重复请求。
   ///
+  /// 扩展两个 probe（漫画 / 视频）在「后台自动更新扩展」开着时，没建 manager 也会
+  /// 为已装扩展建一个（见 [_mihonManagerForAutoUpdate]）；其余情况与下面同理。
+  ///
   /// 漫画两个 probe 都**不主动拉起 Mihon runtime**：`mihonManager` 是懒建的，为了
   /// 后台检查而在启动时拉起一个 sidecar 进程，对没用过在线漫画的用户是纯亏。没起
   /// 来就这一轮跳过，等用户用过一次之后的检查自然会覆盖。
@@ -1293,17 +1298,25 @@ class AppModel with ChangeNotifier {
             ),
           );
         },
-        UpdateFeedKind.mangaExtension: () async {
-          final MihonManager? manager = _mihonManager;
-          if (manager == null) return;
-          await runMangaExtensionUpdateProbe(
-            feed: feed,
-            refreshStores: manager.refreshStores,
-            available: () => manager.available,
-            installed: () => manager.installed,
-          );
-        },
+        UpdateFeedKind.mangaExtension: () => _runMihonExtensionProbe(
+              feed,
+              UpdateFeedKind.mangaExtension,
+              MihonMediaKind.manga,
+            ),
+        UpdateFeedKind.animeExtension: () => _runMihonExtensionProbe(
+              feed,
+              UpdateFeedKind.animeExtension,
+              MihonMediaKind.anime,
+            ),
       },
+      // 自动更新开着时：扩展两个域在启动这一轮无视 24 小时间隔照查——自动安装
+      // 只在「刚启动、还没碰过在线源」时做，被推迟的更新要在下次启动兑现。
+      dueOnStart: mihonExtensionAutoUpdate
+          ? const <UpdateFeedKind>{
+              UpdateFeedKind.mangaExtension,
+              UpdateFeedKind.animeExtension,
+            }
+          : const <UpdateFeedKind>{},
     );
     _updateCheckScheduler = scheduler;
     scheduler.start();
@@ -4885,15 +4898,108 @@ class AppModel with ChangeNotifier {
   /// 只有进入漫画源/漫画扩展/来源设置才读取扩展数据库；桌面 runtime 又会等到
   /// 第一次真正调用扩展时才启动 M-Extension-Server。
   MihonManager? _mihonManager;
-  MihonManager get mihonManager =>
-      _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+  MihonManager get mihonManager {
+    _onlineSourcesTouched = true;
+    return _mihonManager ??= _createMihonManager(MihonMediaKind.manga);
+  }
 
   /// 视频（Aniyomi）扩展的 manager：与 [mihonManager] 共用同一个运行时，只是
   /// 三张扩展表按 `media_kind` 分片、默认仓库不同、根目录不同（`mihon_anime/`，
   /// 扩展 APK / 暂存 / 封面缓存各自独立，删一边的缓存不波及另一边）。
   MihonManager? _animeMihonManager;
-  MihonManager get animeMihonManager =>
-      _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+  MihonManager get animeMihonManager {
+    _onlineSourcesTouched = true;
+    return _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
+  }
+
+  /// 本进程里有没有任何调用方取过 [mihonManager] / [animeMihonManager]。
+  ///
+  /// 这是扩展后台自动更新的「空闲」判据。两个公开 getter 只在在线源相关的地方被
+  /// 取：漫画 / 视频在线源页、扩展页、在线漫画阅读与章节下载
+  /// （[onlineMangaLibraryService]）、在线视频播放、全局搜索、桌面 ctl 在线路由。
+  /// 运行时没有「此刻正有会话在用」的信号，装完要让运行时失效（桌面 = 重启
+  /// sidecar）——于是取最保守的判据：**一旦碰过就算在用**，本进程不再自动装，
+  /// 推迟到下次启动。自动更新自己建 manager 走 [_mihonManagerForAutoUpdate]，
+  /// 不经公开 getter，不会把自己判成「在用」。
+  bool _onlineSourcesTouched = false;
+
+  /// 「后台自动更新扩展」开关（漫画与视频扩展共用，默认关）。
+  bool get mihonExtensionAutoUpdate =>
+      prefsRepo.getPref(kMihonExtensionAutoUpdatePref, defaultValue: false)
+          as bool;
+
+  Future<void> setMihonExtensionAutoUpdate(bool value) =>
+      prefsRepo.setPref(kMihonExtensionAutoUpdatePref, value);
+
+  /// 后台扩展检查要用的 manager：已建就用；没建时只有自动更新开着、平台与合规
+  /// 门都过、且库里确有这个生态的已装扩展，才为它建一个（建 manager 不起
+  /// sidecar，sidecar 要等真去装时才起）。其余情况返回 null，这一轮跳过——与
+  /// 自动更新关着时「没用过在线源就不查」的既有行为一致。
+  Future<MihonManager?> _mihonManagerForAutoUpdate(MihonMediaKind kind) async {
+    final MihonManager? existing = switch (kind) {
+      MihonMediaKind.manga => _mihonManager,
+      MihonMediaKind.anime => _animeMihonManager,
+    };
+    if (existing != null) return existing;
+    if (!mihonExtensionAutoUpdate || !MihonRuntimeFactory.isSupported) {
+      return null;
+    }
+    final StoreRestrictedCapability capability = switch (kind) {
+      MihonMediaKind.manga => StoreRestrictedCapability.onlineMangaSource,
+      MihonMediaKind.anime => StoreRestrictedCapability.onlineVideoSource,
+    };
+    if (!capability.isAvailable) return null;
+    final List<MangaExtensionRow> installed = await database.getMangaExtensions(
+      mediaKind: kind.dbValue,
+    );
+    if (installed.isEmpty) return null;
+    final MihonManager manager = switch (kind) {
+      MihonMediaKind.manga => _mihonManager ??= _createMihonManager(
+        MihonMediaKind.manga,
+      ),
+      MihonMediaKind.anime => _animeMihonManager ??= _createMihonManager(
+        MihonMediaKind.anime,
+      ),
+    };
+    // 构造时已经起了 initialise（读库 + 拉索引）；等它完成再比版本，否则
+    // installed 还是空表。
+    await manager.initialise();
+    return manager;
+  }
+
+  /// 一个扩展域的后台检查（漫画 / 视频同构）。
+  Future<void> _runMihonExtensionProbe(
+    UpdateFeedService feed,
+    UpdateFeedKind kind,
+    MihonMediaKind mediaKind,
+  ) async {
+    final MihonManager? manager = await _mihonManagerForAutoUpdate(mediaKind);
+    if (manager == null) return;
+    await runMihonExtensionUpdateProbe(
+      feed: feed,
+      kind: kind,
+      refreshStores: manager.refreshStores,
+      available: () => manager.available,
+      installed: () => manager.installed,
+      autoUpdate: mihonExtensionAutoUpdate
+          ? MihonExtensionAutoUpdater(
+              isIdle: () => !_onlineSourcesTouched,
+              install:
+                  (
+                    List<MihonAvailableExtension> targets,
+                    bool Function() isCancelled,
+                  ) => manager.installMany(
+                    targets,
+                    upgrade: true,
+                    // 签名变了的在 SIGNATURE_CHANGED 门就进 failed；这里再保证
+                    // 后台绝不替用户信任任何新签名。
+                    trustSigner: false,
+                    isCancelled: isCancelled,
+                  ),
+            )
+          : null,
+    );
+  }
 
   /// 两个生态共用的扩展宿主：桌面端一个 sidecar JVM（`-Xmx512m`，两个太贵），
   /// Android 原生宿主本来就是进程单例。生命周期归这里管——两个 manager 都以

@@ -8,6 +8,8 @@ import 'package:fushi/src/feedback/feedback_reply_alerts.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
     show openFeedbackCenter;
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart'
@@ -625,6 +627,12 @@ SettingsDestination buildSystemDestination() {
                   FushiIcons.browserExtension,
                 ),
                 (
+                  UpdateFeedKind.animeExtension,
+                  t.updates_notify_anime_extension,
+                  t.updates_notify_anime_extension_hint,
+                  FushiIcons.browserExtension,
+                ),
+                (
                   UpdateFeedKind.appRelease,
                   t.updates_notify_app_release,
                   t.updates_notify_app_release_hint,
@@ -650,6 +658,26 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.refresh();
               },
             ),
+          // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
+          // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
+          // 合规允许在线源的平台出现。
+          SettingsSwitchItem(
+            id: 'system.updates.extension_auto_update',
+            title: t.updates_extension_auto_update,
+            subtitle: t.updates_extension_auto_update_hint,
+            icon: FushiIcons.sync,
+            defaultValue: false,
+            visible: (_) =>
+                MihonRuntimeFactory.isSupported &&
+                (StoreRestrictedCapability.onlineMangaSource.isAvailable ||
+                    StoreRestrictedCapability.onlineVideoSource.isAvailable),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.mihonExtensionAutoUpdate,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setMihonExtensionAutoUpdate(value);
+              settingsContext.refresh();
+            },
+          ),
           // 显示值 = 偏好开 && 系统已授权；打开 = 唯一会弹系统权限框的地方
           // （BUG-2498：启动期不再申请，申请只跟着用户这一下）。
           SettingsSwitchItem(
