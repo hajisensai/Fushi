@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/source_guard.dart';
 
-/// BUG-3501 守卫：app 代码不得在 UI 线程上同步碰 mpv 内核锁。
+/// BUG-3507 守卫：app 代码不得在 UI 线程上同步碰 mpv 内核锁。
 ///
 /// media_kit 的 `getProperty`（`mpv_get_property_string`）和直接 FFI 的
 /// `mpv_command` / `mpv_get_property` / `mpv_set_property*` 都在调用线程上等 mpv
@@ -38,7 +38,7 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          '同步 mpv 调用会在 UI 线程上排内核锁、冻住视频合成（BUG-3501）。'
+          '同步 mpv 调用会在 UI 线程上排内核锁、冻住视频合成（BUG-3507）。'
           '读用 getPropertyAsync，要结果码的命令用 commandWithResult。',
     );
   });
@@ -84,7 +84,7 @@ void main() {
     );
   });
 
-  // BUG-3501 收尾：事件循环（Flutter UI 线程）上的同步内核锁调用不只在 app 代码里，
+  // BUG-3507 收尾：事件循环（Flutter UI 线程）上的同步内核锁调用不只在 app 代码里，
   // 补丁里的事件分发与 on_load / on_unload 钩子体也算。observeProperty 的 FORMAT_NONE
   // 分支与钩子体改走 mpv_*_async；libmpv 没有异步版的 mpv_hook_add /
   // mpv_hook_continue（client.c 里 lock_core）只许出现在辅助 isolate 的顶层函数里。

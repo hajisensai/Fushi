@@ -57,7 +57,7 @@ const CHECK = String.raw`(async () => {
   };
   const cs = getComputedStyle(document.documentElement);
   const styleOf = (kind) => cs.getPropertyValue('--fushi-mark-' + kind + '-style').trim();
-  // BUG-3504: every stroke lies inside its own svg box. WebKit (vertical writing) gets the repaint
+  // BUG-3506: every stroke lies inside its own svg box. WebKit (vertical writing) gets the repaint
   // area of overflow:visible content wrong — strokes painted outside a 1x1 svg stopped updating on
   // screen (and never showed in vertical continuous mode) even though the DOM was right.
   const contained = (name, label) => {

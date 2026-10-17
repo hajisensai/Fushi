@@ -210,7 +210,7 @@ void main() {
     );
   });
 
-  // BUG-3502 审查跟进（视频同形缺口）：本端「从所有设备删除」过的视频，墓碑送达 host
+  // BUG-3508 审查跟进（视频同形缺口）：本端「从所有设备删除」过的视频，墓碑送达 host
   // 之前不能以远端条目复活；送达之后 host 清单里还有它 = host 删后重新导入的新条目。
   Future<void> seedDeletedRemote(int nowMs) async {
     await db.upsertVideoBook(VideoBooksCompanion(

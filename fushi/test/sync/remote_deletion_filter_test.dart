@@ -8,7 +8,7 @@ import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// BUG-3502 审查跟进：远端占位卡的删除墓碑过滤不再拿 host importedAt 比本端
+/// BUG-3508 审查跟进：远端占位卡的删除墓碑过滤不再拿 host importedAt 比本端
 /// deletedAt（跨设备时钟偏差），改为「墓碑是否已送达 host」（本端推送基线，同一台
 /// 设备的时钟）+ host 删除成功时作废远端清单缓存。
 void main() {

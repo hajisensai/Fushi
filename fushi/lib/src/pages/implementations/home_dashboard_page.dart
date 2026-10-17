@@ -1164,7 +1164,7 @@ class _HomeDashboardPageState
       // ① 过共享 TTL 缓存（书/视频清单与书架、视频页同槽，谁先拉到谁受益），
       // ② 请求并行而不是串行。
       final RemoteLibraryCache cache = ref.read(remoteLibraryCacheProvider);
-      // 与书架 / 视频库远端占位卡同一道过滤（BUG-3502）：本端「从所有设备删除」过的
+      // 与书架 / 视频库远端占位卡同一道过滤（BUG-3508）：本端「从所有设备删除」过的
       // 书 / 视频在墓碑送达 host 前不能以远端「继续」卡复活。**先于取清单读**（见
       // loadPendingRemoteDeletionKeys）。
       final Set<String> deletedBookKeys = await loadPendingRemoteDeletionKeys(

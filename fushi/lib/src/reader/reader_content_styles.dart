@@ -1159,7 +1159,7 @@ fushi-hl-lane {
 /* 笔触样式（马克笔等）的 SVG：盒子 = 这组笔划的包围盒（left/top/width/height 由窄条层写在内联
    !important 上，viewBox 同位同大，路径坐标就是 host 局部坐标）。必须压过上面给插图的通用 svg 规则
    （width/height:100% → 在 0 宽的层里算成 0×0，SVG 规范里 0 尺寸的 svg 整张不渲染；max-* 会裁小）。
-   overflow 只是兜底：笔划不靠溢出区显示（BUG-3504，WebKit 竖排算不对溢出区的重绘范围）。 */
+   overflow 只是兜底：笔划不靠溢出区显示（BUG-3506，WebKit 竖排算不对溢出区的重绘范围）。 */
 fushi-hl-lanes svg.fushi-mark-ink {
   position: absolute !important;
   max-width: none !important;

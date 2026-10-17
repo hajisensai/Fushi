@@ -7,7 +7,7 @@ The upstream MIT license and source header remain unchanged.
 
 `real.dart` carries several changes. The value-compared
 `observePropertyChanges` subscription (BUG-3315), the non-blocking property
-access and commands (BUG-3501) and the built-in Lua script options (BUG-3325)
+access and commands (BUG-3507) and the built-in Lua script options (BUG-3325)
 are described in `PATCHES.md`. The other is an imported predicate for the existing
 `loadfile` versus temporary-playlist branch of `NativePlayer.open`.
 `native_open_policy.dart` implements and tests the request boundary:

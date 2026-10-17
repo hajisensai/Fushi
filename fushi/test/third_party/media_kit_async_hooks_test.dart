@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
 
-/// BUG-3501 收尾：media_kit 补丁把 `on_load` / `on_unload` 钩子体与
+/// BUG-3507 收尾：media_kit 补丁把 `on_load` / `on_unload` 钩子体与
 /// `observeProperty`（FORMAT_NONE）的取值都挪出了事件循环、改走 `mpv_*_async`，
 /// 钩子的注册 / 放行（`mpv_hook_add` / `mpv_hook_continue`，libmpv 没有异步版、
 /// 会拿内核锁）挪到辅助 isolate。这里用真 libmpv 钉住行为没有因此走样：
@@ -116,7 +116,7 @@ void main() {
       await player.open(
         Media(
           'http://127.0.0.1:${server.port}/silence.wav',
-          httpHeaders: const <String, String>{'X-Fushi-Hook': 'bug-3501'},
+          httpHeaders: const <String, String>{'X-Fushi-Hook': 'bug-3507'},
           start: const Duration(seconds: 7),
         ),
       );
@@ -125,7 +125,7 @@ void main() {
       expect(seenHeaders, isNotEmpty, reason: 'libmpv 根本没发请求');
       expect(
         seenHeaders.first,
-        'bug-3501',
+        'bug-3507',
         reason: 'on_load 钩子必须在放行前把 http-header-fields 写进去',
       );
       final double timePos = double.parse(

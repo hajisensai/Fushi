@@ -1609,7 +1609,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 是互联还是云盘，所以来源身份只能由 source 自己申报；靠调用点分辨来源、或靠
       // 「换后端时记得失效」都治不了串味（换云盘后端根本不经过互联的失效信号）。
       //
-      // 「从所有设备删除」过的视频（BUG-3502 同形缺口）：墓碑送达 host 前 host 清单里
+      // 「从所有设备删除」过的视频（BUG-3508 同形缺口）：墓碑送达 host 前 host 清单里
       // 还有它，本地行一删去重就命不中，刚删的视频以远端占位卡复活。**先于取清单读**
       // （见 loadPendingRemoteDeletionKeys）。
       final Set<String> deletedVideoKeys = await _pendingRemoteVideoDeletions(

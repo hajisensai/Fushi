@@ -23,7 +23,7 @@ String snapshot([Map<String, Object> changes = const <String, Object>{}]) =>
     });
 
 /// Stands in for media_kit's patched `NativePlayer.commandWithResult`
-/// (BUG-3501: async `mpv_command_async`, returns libmpv's result code).
+/// (BUG-3507: async `mpv_command_async`, returns libmpv's result code).
 class _Native {
   _Native(this.mpv);
   final _Mpv mpv;

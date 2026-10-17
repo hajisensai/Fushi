@@ -1335,7 +1335,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
         run.delay = delay + dur + cfg.sweep.gap;
       });
       // svg 的盒子就是这组笔划的包围盒，viewBox 与盒子同位同大，路径坐标仍是所在层的局部坐标。
-      // BUG-3504：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
+      // BUG-3506：曾经是定在层原点的 1×1 svg 靠 overflow:visible 把笔划全画在盒外，WebKit 竖排下
       // 算不对这块溢出区的重绘范围——DOM 已换成新一句、屏上停在旧笔划（翻页重建才补上），竖排滚动
       // 更是整张不画。包围盒按 markBand 的上限放宽：沿行 ±2em（笔头斜切、收笔外延），跨行 ±3.5em
       // （粗细倍数上限 2 × 自然粗细上限 1.45em / 2 + 盖住振假名 0.6em + 抖动、滤镜外扩），与落笔
@@ -1481,7 +1481,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     };
     // 钩子装在注册表对象自己身上，所以这个对象必须一直被强引用：WebKit 的 CSS.highlights 包装对象没人
     // 引用时会被回收、下次读到的是新对象，挂在旧对象上的钩子随之消失，查词 / 搜索写进注册表后窄条层收不到
-    // 通知、不重画（BUG-3504）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
+    // 通知、不重画（BUG-3506）。hookedRegistry 由 flush 每次经 hookRegistry 读到，保证它活着；万一引擎
     // 仍换了对象，hookRegistry 给新对象补装。
     var hookedRegistry = null;
     var hookRegistry = function() {

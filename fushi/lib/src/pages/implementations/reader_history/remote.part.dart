@@ -47,7 +47,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     _remoteBookClient = client;
     if (client == null) return null;
     try {
-      // 「从所有设备删除」过的书（BUG-3502）：墓碑送达 host 前 host 清单里还有它，
+      // 「从所有设备删除」过的书（BUG-3508）：墓碑送达 host 前 host 清单里还有它，
       // 本地行一删去重就命不中，刚删的书会以云端占位卡回到书架上。**先于取清单读**
       // （见 loadPendingRemoteDeletionKeys）。
       final Set<String> deletedBookKeys = await loadPendingRemoteDeletionKeys(

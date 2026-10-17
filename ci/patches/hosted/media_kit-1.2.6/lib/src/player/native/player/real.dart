@@ -106,7 +106,7 @@ class NativePlayer extends PlatformPlayer {
       Initializer(mpv).dispose(ctx);
 
       Future.delayed(const Duration(seconds: 5), () async {
-        // Fushi patch (BUG-3501): hook continuations run on a helper isolate
+        // Fushi patch (BUG-3507): hook continuations run on a helper isolate
         // ([_hookContinueOffThread]); never destroy the handle under one.
         await Future.wait(_offThreadNativeCalls.toList());
         mpv.mpv_terminate_destroy(ctx);
@@ -1241,7 +1241,7 @@ class NativePlayer extends PlatformPlayer {
       await waitForPlayerInitialization;
       await waitForVideoControllerInitializationIfAttached;
     }
-    // Fushi patch (BUG-3501): [dispose] may have run during the awaits above and
+    // Fushi patch (BUG-3507): [dispose] may have run during the awaits above and
     // already completed every pending request; a request queued now could wait
     // forever for a reply that never reaches Dart.
     if (disposed) {
@@ -1260,7 +1260,7 @@ class NativePlayer extends PlatformPlayer {
       calloc.free(data);
       return;
     }
-    // Fushi patch (BUG-3501): `mpv_set_property_string` waits for the mpv core
+    // Fushi patch (BUG-3507): `mpv_set_property_string` waits for the mpv core
     // lock on the calling (UI) thread, see [getPropertyAsync]. Queue the write
     // instead. libmpv's contract does not order async calls against each other
     // (client.h: "Asynchronous calls may be reordered"), so a caller that needs
@@ -1320,7 +1320,7 @@ class NativePlayer extends PlatformPlayer {
     return "";
   }
 
-  /// Fushi patch (BUG-3501): same contract as [getProperty] (`''` when the
+  /// Fushi patch (BUG-3507): same contract as [getProperty] (`''` when the
   /// property is unavailable, throws once disposed), but never blocks the
   /// calling thread.
   ///
@@ -1375,7 +1375,7 @@ class NativePlayer extends PlatformPlayer {
     return completer.future;
   }
 
-  /// Fushi patch (BUG-3501): runs an mpv command without blocking the calling
+  /// Fushi patch (BUG-3507): runs an mpv command without blocking the calling
   /// thread and returns libmpv's result code (`>= 0` success). Unlike the
   /// internal `_command`, a negative result is returned, not logged, so callers
   /// that must tell a rejected command from a successful one can (Blu-ray menu
@@ -1656,7 +1656,7 @@ class NativePlayer extends PlatformPlayer {
     }
     if (event.ref.event_id ==
         generated.mpv_event_id.MPV_EVENT_GET_PROPERTY_REPLY) {
-      // Fushi patch (BUG-3501): reply to [getPropertyAsync]. The event (and the
+      // Fushi patch (BUG-3507): reply to [getPropertyAsync]. The event (and the
       // string it points to) stays valid until the event loop fetches the next
       // one, which happens only after this handler returns. A missing ID means
       // the request was already completed by [dispose].
@@ -1676,7 +1676,7 @@ class NativePlayer extends PlatformPlayer {
       }
     }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_COMMAND_REPLY) {
-      // Fushi patch (BUG-3501): [commandWithResult] shares the request counter,
+      // Fushi patch (BUG-3507): [commandWithResult] shares the request counter,
       // so its IDs never collide with `_command`'s.
       final resultCompleter =
           _commandResultRequests.remove(event.ref.reply_userdata);
@@ -2294,7 +2294,7 @@ class NativePlayer extends PlatformPlayer {
       }
       if (observed.containsKey(prop.ref.name.cast<Utf8>().toDartString())) {
         if (prop.ref.format == generated.mpv_format.MPV_FORMAT_NONE) {
-          // Fushi patch (BUG-3501): upstream answered every FORMAT_NONE event
+          // Fushi patch (BUG-3507): upstream answered every FORMAT_NONE event
           // with a synchronous `mpv_get_property_string`, i.e. the mpv core lock
           // on the event loop (the UI thread). For a value-observed property the
           // event only means "unavailable" (that read returned NULL and no
@@ -2393,7 +2393,7 @@ class NativePlayer extends PlatformPlayer {
       }
     }
     if (event.ref.event_id == generated.mpv_event_id.MPV_EVENT_HOOK) {
-      // Fushi patch (BUG-3501): upstream ran the hook body on the event loop
+      // Fushi patch (BUG-3507): upstream ran the hook body on the event loop
       // with synchronous `mpv_get_property*` / `mpv_set_property*` (core lock
       // on the UI thread) and finished with a synchronous `mpv_hook_continue`.
       // The body now runs off the event loop ([_runHook]) so it can await async
@@ -2408,7 +2408,7 @@ class NativePlayer extends PlatformPlayer {
     }
   }
 
-  /// Fushi patch (BUG-3501): body of the `on_load` / `on_unload` hooks. Every
+  /// Fushi patch (BUG-3507): body of the `on_load` / `on_unload` hooks. Every
   /// property access is an async request awaited before the next one (libmpv
   /// may reorder async calls), so the hook is released only after all of them
   /// were applied. Nothing here takes the mpv core lock on the calling thread;
@@ -2820,7 +2820,7 @@ class NativePlayer extends PlatformPlayer {
       }
 
       // Add libmpv hooks for supporting custom HTTP headers in [Media].
-      // Fushi patch (BUG-3501): `mpv_hook_add` takes the core lock and has no
+      // Fushi patch (BUG-3507): `mpv_hook_add` takes the core lock and has no
       // async variant; register on a helper isolate, not the UI thread.
       await compute(
         _hookAddLoadUnload,
@@ -2855,11 +2855,11 @@ class NativePlayer extends PlatformPlayer {
   final Set<String> _valueObserved = <String>{};
 
   /// Serializes [observeProperty] listener calls in event order now that their
-  /// value is read asynchronously, off the event loop (BUG-3501).
+  /// value is read asynchronously, off the event loop (BUG-3507).
   Future<void> _observerChain = Future<void>.value();
 
   /// Serializes `on_load` / `on_unload` hook processing, which runs off the
-  /// event loop so it can await async replies (BUG-3501).
+  /// event loop so it can await async replies (BUG-3507).
   Future<void> _hookChain = Future<void>.value();
 
   /// Native calls running on helper isolates; [dispose] waits for them before
@@ -3182,7 +3182,7 @@ Uint8List? _screenshot(_ScreenshotData data) {
   return image;
 }
 
-/// Fushi patch (BUG-3501): arguments of [_hookAddLoadUnload].
+/// Fushi patch (BUG-3507): arguments of [_hookAddLoadUnload].
 class _HookAddData {
   final int ctx;
   final String lib;
@@ -3203,7 +3203,7 @@ void _hookAddLoadUnload(_HookAddData data) {
   calloc.free(unload);
 }
 
-/// Fushi patch (BUG-3501): arguments of [_hookContinue].
+/// Fushi patch (BUG-3507): arguments of [_hookContinue].
 class _HookContinueData {
   final int ctx;
   final String lib;

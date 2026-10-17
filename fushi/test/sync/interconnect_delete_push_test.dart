@@ -350,7 +350,7 @@ void main() {
         reason: 'host 删书后必须记同步墓碑，否则删除传播在 host 这里断链');
   });
 
-  // BUG-3502 审查跟进：远端占位卡在墓碑送达后就不再藏这个键，前提是送达之后拿到的
+  // BUG-3508 审查跟进：远端占位卡在墓碑送达后就不再藏这个键，前提是送达之后拿到的
   // 清单一定是删除之后取的——删除成功必须通知清单缓存作废（provider 订阅本计数）。
   test('host 删除成功才推进 remoteLibraryMutationRevision；不支持的删除不推进', () async {
     await hostDb.insertEpubBook(EpubBooksCompanion.insert(

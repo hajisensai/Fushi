@@ -33,25 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3131 条。点号进各自文件。
+> 共 3138 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3502](bugs/BUG-3502-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |
-| [BUG-3501](bugs/BUG-3501-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
-> 共 3132 条。点号进各自文件。
-> 共 3134 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3508](bugs/BUG-3508-deleted-book-returns-as-remote-placeholder.md) | ✅ | ✅ | deleted-book-returns-as-remote-placeholder |
+| [BUG-3507](bugs/BUG-3507-video-mpv-sync-getproperty-ui-stall.md) | ✅ | ✅ | Windows 视频播放偶发冻帧：UI 线程同步读写 mpv 排内核锁 |
+| [BUG-3506](bugs/BUG-3506-ios-stroke-highlight-stall.md) | ✅ | ✅ | iOS 笔触样式高亮停住不跟随、查词无高亮 |
+| [BUG-3505](bugs/BUG-3505-anki-crossref-deeplink-includes-furigana.md) | ✅ | ✅ | anki-crossref-deeplink-includes-furigana |
 | [BUG-3504](bugs/BUG-3504-ffmpeg-min-missing-decoders-tls-pin.md) | ✅ | ✅ | 桌面捆绑 ffmpeg-min 缺一批可导入格式的解码器 / muxer，且没打证书钉扎补丁（-tls_pin_sha256 不认） |
 | [BUG-3503](bugs/BUG-3503-dash-mpd-mining-demuxer.md) | ✅ | ✅ | 在线视频源给 DASH 清单（manifest.mpd）时制卡失败：捆绑 ffmpeg 缺 dash demuxer（required audio missing / Invalid data） |
-> 共 3134 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3504](bugs/BUG-3504-ios-stroke-highlight-stall.md) | ✅ | ✅ | iOS 笔触样式高亮停住不跟随、查词无高亮 |
-| [BUG-3503](bugs/BUG-3503-anki-crossref-deeplink-includes-furigana.md) | ✅ | ✅ | anki-crossref-deeplink-includes-furigana |
 | [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
 | [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |
