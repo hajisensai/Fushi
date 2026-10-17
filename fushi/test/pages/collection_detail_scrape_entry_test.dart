@@ -251,7 +251,7 @@ void main() {
       reason: '单集不得再打开带 legacy 重刮/在线匹配动作的旧资料弹窗',
     );
     expect(
-      find.text(t.collection_episode_download),
+      find.text(t.collection_remove_member),
       findsOneWidget,
       reason: '非刮削菜单项不受影响',
     );

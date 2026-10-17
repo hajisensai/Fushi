@@ -16,6 +16,8 @@ import 'package:fushi/src/media/manga/library/manga_book_ocr.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
+import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
+    show currentRevealHost, revealFirstOf;
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -476,6 +478,26 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     if (job == null || appModel == null) return;
     await appModel.mangaDownloadService.retry(job.jobId);
     await _refreshDownloadState();
+  }
+
+  /// 在系统文件管理器里定位某章的本地下载：与书架漫画卷同形，优先选中该章的
+  /// `manga.json`，不在了再退回打开章目录；都打不开才提示。
+  Future<void> _revealChapterDownload(OnlineMangaChapter chapter) async {
+    final EpubBookRow? row = _row;
+    if (row == null) return;
+    final Directory chapterDir = mangaChapterDirectory(
+      await MangaStorage.bookPath(row.bookKey),
+      chapter.key,
+    );
+    final bool revealed = await revealFirstOf(<String>[
+      mangaChapterJsonFile(chapterDir).path,
+      chapterDir.path,
+    ]);
+    if (revealed || !mounted) return;
+    FushiToast.show(
+      msg: t.media_file_location_failed,
+      severity: ToastSeverity.error,
+    );
   }
 
   /// 删除某章的本地下载。
@@ -1574,6 +1596,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               ? null
               : (OnlineMangaChapter chapter) =>
                     unawaited(_deleteChapterDownload(chapter)),
+          onRevealDownload: _bookKey == null || currentRevealHost() == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_revealChapterDownload(chapter)),
           onOcr: _bookKey == null
               ? null
               : (OnlineMangaChapter chapter) =>
