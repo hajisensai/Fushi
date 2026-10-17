@@ -1431,9 +1431,11 @@ function rewriteExportedGlossaryAnchors(root) {
         if (/^https?:\/\//i.test(href) || href.startsWith('#')) {
             return;
         }
+        // 词头只取基字：textContent 会把 <rt> 振假名拼进去（「歯が立たない」→
+        // 「歯はが立たたない」），与 handleGlossaryAnchorClick 同一口径（BUG-2456）。
         const word = /^(?:sound|image|dictmedia):/i.test(href)
             ? ''
-            : (anchor.textContent || '').trim();
+            : linkVisibleBaseText(anchor);
         if (!word) {
             anchor.removeAttribute('href');
             return;
