@@ -5,6 +5,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/profile/profile_document.dart'
     show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
@@ -2991,6 +2992,28 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewZoom(double value) async {
     await setPref('srs_review_zoom', value);
+    notifyListeners();
+  }
+
+  /// 复习自动备份开关（默认开）。设备本地。
+  static const String srsBackupAutoKey = 'srs_backup_auto';
+
+  /// 复习自动备份的间隔与保留份数（JSON，缺省 = Anki 默认）。设备本地。
+  static const String srsBackupLimitsKey = 'srs_backup_limits';
+
+  bool get srsBackupAuto =>
+      getPref(srsBackupAutoKey, defaultValue: true) as bool;
+
+  Future<void> setSrsBackupAuto(bool value) async {
+    await setPref(srsBackupAutoKey, value);
+    notifyListeners();
+  }
+
+  SrsBackupLimits get srsBackupLimits =>
+      srsBackupLimitsFromJson(getPref(srsBackupLimitsKey, defaultValue: ''));
+
+  Future<void> setSrsBackupLimits(SrsBackupLimits value) async {
+    await setPref(srsBackupLimitsKey, srsBackupLimitsToJson(value));
     notifyListeners();
   }
 

@@ -9,6 +9,10 @@ import 'field_edit.dart' show srsCanonicalJson;
 /// 日志格式版本。不认识的字段原样保留（[SrsReviewLog.extra]），不认识的 kind 原样保留且不参与状态选取。
 const int srsLogFormatVersion = 1;
 
+/// 「恢复到备份时间点」写出的日志在 `extra` 里带这个键（值 = 备份 ID；持久化名冻结）。
+/// 带它的 manual 日志是记忆状态的起点（见 valid_logs.dart `srsIsRestoreState`）；旧版本原样保留。
+const String srsRestoreLogExtraKey = 'restoreOf';
+
 /// 日志种类（持久化名冻结）。
 abstract final class SrsLogKind {
   static const String review = 'review';

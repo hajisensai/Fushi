@@ -161,5 +161,13 @@
 		-->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
+		<!-- 复习自动备份（<Documents>/…/srs_backups）与 Anki / AnkiMobile 一样放在用户看得到的地方：
+		     「文件」App ›「我的 iPhone」› Fushi。Documents 里只有书 / 有声书 / 视频 / 词典资源 / 导出物 /
+		     错误日志等用户内容；数据库、偏好、TLS 私钥与同步凭据在 Library（support 根），不会因此暴露。
+		     守卫：test/ios/info_plist_file_sharing_guard_test.dart -->
+		<key>UIFileSharingEnabled</key>
+		<true/>
+		<key>LSSupportsOpeningDocumentsInPlace</key>
+		<true/>
 </dict>
 </plist>
