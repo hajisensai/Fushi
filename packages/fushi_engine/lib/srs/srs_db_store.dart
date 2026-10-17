@@ -1618,7 +1618,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// - 只看 [root] 这棵子树（null = 全部顶层）：点子牌组复习时祖先的上限不参与，与 Anki 一致。
   ///
   /// 以前每个牌组各自拿整棵子树的卡数去比自己的上限，子牌组的上限不往上截断，
-  /// 于是会出现「子牌组都是 0、父牌组却有 50」（BUG-3454）。
+  /// 于是会出现「子牌组都是 0、父牌组却有 50」（BUG-3502）。
   Map<String, _DeckCount> _countTree(
     _CountContext ctx,
     Iterable<SrsCardCacheRow> cards, {

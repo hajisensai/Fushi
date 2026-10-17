@@ -125,7 +125,7 @@ const double kSettingsRowLabelMinWidth = 96;
 
 /// [AdaptiveSettingsRow] 回答 intrinsic 宽度时，标题的「舒展」宽度（1x；随文字
 /// 缩放放大）。只在父级做 intrinsic 测量时用（对话框的 `IntrinsicWidth`），
-/// 普通设置页不问 intrinsic，不受影响（BUG-3453）。
+/// 普通设置页不问 intrinsic，不受影响（BUG-3501）。
 const double kSettingsRowIntrinsicLabelWidth = 280;
 
 /// 同上：没有声明 [AdaptiveSettingsRow.trailingWidth] 的 trailing 按这个宽度估
@@ -1079,7 +1079,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
     final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
-    // BUG-3453：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
+    // BUG-3501：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
     // 而 Material AlertDialog 把正文包在 IntrinsicWidth 里——设置行直接当对话框正文
     // 时对话框被量成只有标题 / 按钮那么宽。这里替 LayoutBuilder 回答：宽度按「行内
     // 布局舒展时」估（标题舒展宽 + trailing），最小宽按堆叠布局；高度只是给父级算
@@ -1233,7 +1233,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 
   Widget _buildInlineTrailing(Widget child, {required bool flexible}) {
-    // heightFactor 必须是 1（BUG-3453）：Align 不给 heightFactor 时在有界高度下
+    // heightFactor 必须是 1（BUG-3501）：Align 不给 heightFactor 时在有界高度下
     // 撑满最大高度。设置页里行高无界看不出来；行一旦直接放进有界高度的容器（对话框
     // 正文的 Flexible），trailing 就把整行撑到容器那么高，标题孤零零居中。竖直居中
     // 由外层 Row 的 crossAxisAlignment.center 负责。
@@ -1256,7 +1256,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
             : tokens.density.controlHeight + tokens.spacing.gap + 4,
       ),
       child: Column(
-        // 有界高度下也按内容收高（BUG-3453，同 _buildInlineTrailing 的说明）。
+        // 有界高度下也按内容收高（BUG-3501，同 _buildInlineTrailing 的说明）。
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1286,7 +1286,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
   }
 }
 
-/// 替 [AdaptiveSettingsRow] 里的 LayoutBuilder 回答 intrinsic 尺寸（BUG-3453）。
+/// 替 [AdaptiveSettingsRow] 里的 LayoutBuilder 回答 intrinsic 尺寸（BUG-3501）。
 ///
 /// 布局 / 绘制 / 命中全部原样交给子树；只有 intrinsic 查询不往下问（往下问就撞上
 /// LayoutBuilder：release 答 0、debug 抛「LayoutBuilder does not support returning
@@ -4223,7 +4223,7 @@ class _SettingsLabel extends StatelessWidget {
       );
     }
     return Column(
-      // BUG-3453：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
+      // BUG-3501：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
       // Flexible）里标题列撑满、整行被撑高；设置页行高无界看不出来。竖直居中由
       // 外层 Row 的 crossAxisAlignment.center 负责。
       mainAxisSize: MainAxisSize.min,
@@ -4294,7 +4294,7 @@ class _CompactSettingsLabel extends StatelessWidget {
           maxLines: kSettingsRowTitleMaxLines,
         );
         return Column(
-          mainAxisSize: MainAxisSize.min, // 同 _SettingsLabel（BUG-3453）。
+          mainAxisSize: MainAxisSize.min, // 同 _SettingsLabel（BUG-3501）。
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[

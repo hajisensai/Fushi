@@ -4,7 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-3453：设置行直接当 AlertDialog 正文。
+/// BUG-3501：设置行直接当 AlertDialog 正文。
 ///
 /// 两处根因：① AlertDialog 的 IntrinsicWidth 问到行里的 LayoutBuilder（release 答 0、
 /// debug 抛错），对话框被量成只有标题 / 按钮那么宽；② 行内 trailing 的 Align 不给

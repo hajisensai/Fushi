@@ -1,4 +1,4 @@
-## BUG-3453 · settings-row-dialog-intrinsic-layout
+## BUG-3501 · settings-row-dialog-intrinsic-layout
 - **报告**：2026-10-16（用户：Windows 桌面，复习页 ⋯ → 导入 → 选完文件后的选项弹窗被画成约 350px 宽、几乎撑满窗口高的窄长条：图标 + 标题在顶、开关行孤零零在正中、按钮在最底，开关标题被挤成两行）
 - **真实性**：✅ 真 bug。弹窗（`fushi/lib/src/srs/srs_import_entry.dart` 旧 `_askImportOptions`）把 `AdaptiveSettingsSwitchRow` 直接当 `FushiAlertDialog` 的 `content`，撞上 `AdaptiveSettingsRow` 的两处缺陷：
   1. 宽：Material `AlertDialog` 把正文包在 `IntrinsicWidth` 里，intrinsic 查询一路问到行里的 `LayoutBuilder`（旧 `fushi/lib/src/utils/components/settings_shared.dart:1069`）——`_RenderLayoutBuilder` 的 intrinsic 在 release 恒答 0、debug 直接抛「LayoutBuilder does not support returning intrinsic dimensions」，于是对话框只按标题 / 按钮量宽（≈350px），标题折成两行。

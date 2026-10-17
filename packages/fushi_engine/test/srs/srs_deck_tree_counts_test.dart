@@ -1,4 +1,4 @@
-// BUG-3454：牌组树计数自底向上（Anki v3 limit tree），列表数字与复习页实际出卡一致；
+// BUG-3502：牌组树计数自底向上（Anki v3 limit tree），列表数字与复习页实际出卡一致；
 // 以及牌组折叠（collapsed）的存储、合并与排序。
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
@@ -65,7 +65,7 @@ void main() {
     return decksOfPicked;
   }
 
-  group('BUG-3454 牌组树计数', () {
+  group('BUG-3502 牌组树计数', () {
     late SrsDbStore s;
     late String root, a, a1, a2, b, b1;
 

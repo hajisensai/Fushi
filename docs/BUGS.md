@@ -33,17 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3110 条。点号进各自文件。
+> 共 3132 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3455](bugs/BUG-3455-srs-apkg-proto3-zero-defaults.md) | ✅ | ✅ | srs-apkg-proto3-zero-defaults |
-| [BUG-3454](bugs/BUG-3454-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
-| [BUG-3453](bugs/BUG-3453-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
-> 共 3129 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3502](bugs/BUG-3502-srs-deck-count-rollup.md) | ✅ | ✅ | 复习牌组列表：父牌组新卡/到期数没按子牌组截断后自底向上汇总 |
+| [BUG-3501](bugs/BUG-3501-settings-row-dialog-intrinsic-layout.md) | ✅ | ✅ | settings-row-dialog-intrinsic-layout |
 | [BUG-3500](bugs/BUG-3500-snapshot-mkv-video-missing-dts.md) | ✅ | ✅ | 在线视频同步片段画面花屏（缓冲副本丢掉 Matroska B 帧视频包） |
 | [BUG-3499](bugs/BUG-3499-snapshot-laced-opus-audio-truncated.md) | ✅ | ✅ | 在线视频同步片段的音频只剩 0.2～0.4 秒且断续（缓冲副本丢音频包） |
 | [BUG-3498](bugs/BUG-3498-seekbar-click-toggles-pause.md) | ✅ | ✅ | seekbar-click-toggles-pause |
@@ -64,6 +59,7 @@
 | [BUG-3482](bugs/BUG-3482-ios-continuous-cross-axis-drag.md) | ✅ | ✅ | iOS 滚动模式交叉轴能被拖动（竖排上下 / 横排左右） |
 | [BUG-3481](bugs/BUG-3481-audiobook-gap-fill-skipped-text.md) | ✅ | ✅ | 有声书 ASR 漏转后半句时合缝切点落空、整句无人认领 |
 | [BUG-3480](bugs/BUG-3480-screen-ocr-hdr-capture.md) | ✅ | ✅ | Windows 截屏识字在系统开 HDR 时截图发白过曝 |
+| [BUG-3455](bugs/BUG-3455-srs-apkg-proto3-zero-defaults.md) | ✅ | ✅ | srs-apkg-proto3-zero-defaults |
 | [BUG-3454](bugs/BUG-3454-hidden-term-dict-still-in-lookup-engine.md) | ✅ | ✅ | hidden-term-dict-still-in-lookup-engine |
 | [BUG-3453](bugs/BUG-3453-reader-cue-gap-glues-last-word.md) | ✅ | ✅ | reader-cue-gap-glues-last-word |
 | [BUG-3452](bugs/BUG-3452-peer-book-download-followups.md) | ✅ | ✅ | 对端书下载后多出未下载卡、合集册数翻倍、跳回顶部、最近阅读排序错位 |
