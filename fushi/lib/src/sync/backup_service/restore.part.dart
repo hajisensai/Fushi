@@ -2358,44 +2358,20 @@ class BackupRestoreService {
   }
 
   /// Streams one [file]'s uncompressed bytes to [destPath] without buffering the
-  /// whole entry. Fushi backups are written STORE (see
-  /// [_writeBackupZipInIsolate]) so the raw window IS the uncompressed data and is
-  /// copied in bounded 4 MB chunks (each chunk's size reported via [port]); a
-  /// DEFLATE entry (small metadata / test fixtures — never a multi-GB file in
-  /// practice) is inflated streaming.
+  /// whole entry: STORE is copied and DEFLATE is inflated by the native zlib,
+  /// both in bounded 4 MB chunks ([extractZipEntryToFile]), each written chunk's
+  /// uncompressed size reported via [port] so the progress bar keeps moving.
+  ///
+  /// Do NOT go back to archive 3.6.1's `Inflate.stream(raw, OutputFileStream)`:
+  /// it resolves every LZ77 back-reference through `OutputFileStream.subset`
+  /// (flush + seek + read per match). Measured 1.13 MB/s on desktop, i.e. hours
+  /// for the deflated recommended pack.
   static void _streamArchiveFileToDisk(
     ArchiveFile file,
     String destPath,
     SendPort port,
   ) {
-    File(destPath).parent.createSync(recursive: true);
-    final OutputFileStream output = OutputFileStream(destPath);
-    try {
-      final InputStreamBase? raw = file.rawContent;
-      if (raw != null && !file.isCompressed) {
-        const int chunkSize = 4 * 1024 * 1024; // 4 MB peak heap per chunk
-        final int total = raw.length;
-        int written = 0;
-        while (written < total) {
-          final int want =
-              (total - written) < chunkSize ? (total - written) : chunkSize;
-          final Uint8List bytes = raw.readBytes(want).toUint8List();
-          if (bytes.isEmpty) break;
-          output.writeBytes(bytes);
-          written += bytes.length;
-          port.send(bytes.length);
-        }
-      } else if (raw != null && file.compressionType == ArchiveFile.DEFLATE) {
-        Inflate.stream(raw, output);
-        port.send(file.size);
-      } else {
-        // Last resort (already-materialized content): write buffered bytes.
-        output.writeBytes(file.content as List<int>);
-        port.send(file.size);
-      }
-    } finally {
-      output.closeSync();
-    }
+    extractZipEntryToFile(file, destPath, onBytes: port.send);
   }
 }
 

@@ -50,6 +50,15 @@ void main(List<String> argv) async {
 
   final int totalBytes = input.lengthSync();
   final String packName = _basename(args.input);
+  final String? collision = deflatePartNameCollision(
+    packName,
+    args.deflateManifest,
+  );
+  if (collision != null) {
+    stderr.writeln(collision);
+    exitCode = 2;
+    return;
+  }
   stdout.writeln('输入：$packName（$totalBytes 字节，${_human(totalBytes)}）');
   stdout.writeln('模式：${args.slice ? 'slice（切片）' : 'range（整包 + Range）'}');
 
@@ -60,8 +69,9 @@ void main(List<String> argv) async {
   }
 
   // 整包摘要边读边算；切片模式下同一遍读顺手把片写出去 + 算片摘要。
-  final ByteConversionSink wholeSink =
-      sha256.startChunkedConversion(_DigestSink((Digest d) => _whole = d));
+  final ByteConversionSink wholeSink = sha256.startChunkedConversion(
+    _DigestSink((Digest d) => _whole = d),
+  );
 
   final RandomAccessFile reader = await input.open();
   try {
@@ -75,13 +85,15 @@ void main(List<String> argv) async {
           '$packName.${partIndex.toString().padLeft(3, '0')}';
 
       Digest? partDigest;
-      final ByteConversionSink partSink = sha256
-          .startChunkedConversion(_DigestSink((Digest d) => partDigest = d));
+      final ByteConversionSink partSink = sha256.startChunkedConversion(
+        _DigestSink((Digest d) => partDigest = d),
+      );
 
       IOSink? sliceSink;
       if (outDir != null) {
-        sliceSink = File('${outDir.path}${Platform.pathSeparator}$partName')
-            .openWrite();
+        sliceSink = File(
+          '${outDir.path}${Platform.pathSeparator}$partName',
+        ).openWrite();
       }
 
       int remaining = partLength;
@@ -132,15 +144,16 @@ void main(List<String> argv) async {
       'part_base_urls': args.partBaseUrls,
       'parts': parts,
     },
+    if (args.deflateManifest != null) 'deflate_pack': args.deflateManifest,
   };
 
   final String outPath = args.manifestPath ??
       (args.slice
           ? '${outDir!.path}${Platform.pathSeparator}$packName.manifest.json'
           : '${input.parent.path}${Platform.pathSeparator}$packName.manifest.json');
-  File(outPath).writeAsStringSync(
-    const JsonEncoder.withIndent('  ').convert(manifest),
-  );
+  File(
+    outPath,
+  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 
   stdout.writeln('\n整包 sha256：$_whole');
   stdout.writeln('清单写入：$outPath');
@@ -210,6 +223,7 @@ class _Args {
     required this.mirrors,
     required this.partBaseUrls,
     required this.manifestPath,
+    required this.deflateManifest,
   });
 
   final String input;
@@ -221,6 +235,10 @@ class _Args {
   final List<String> mirrors;
   final List<String> partBaseUrls;
   final String? manifestPath;
+
+  /// `--deflate-manifest` 读进来的 deflate 包清单，原样嵌进 `deflate_pack` 键
+  /// （见 app 侧 `kRecommendedPackDeflateManifestKey`：新版取它，旧版只认顶层）。
+  final Map<String, Object?>? deflateManifest;
 
   static _Args parse(List<String> argv) {
     final Map<String, String> single = <String, String>{};
@@ -283,15 +301,79 @@ class _Args {
       mirrors: mirrors,
       partBaseUrls: partBaseUrls,
       manifestPath: single['--manifest-out'],
+      deflateManifest: _readDeflateManifest(single['--deflate-manifest']),
     );
   }
+}
+
+/// 两个包的切片会上传到同一个 release，切片名是 `<包名>.NNN`。deflate 包若与
+/// 本包同名，切片会互相覆盖，旧版下到的就是 deflate 字节（sha256 必然对不上，
+/// 但白下一整包）。返回错误文案；不撞名返回 null。
+String? deflatePartNameCollision(
+  String packName,
+  Map<String, Object?>? deflateManifest,
+) {
+  if (deflateManifest == null) return null;
+  final Object? parts = deflateManifest['parts'];
+  if (parts is! List) return null;
+  for (final Object? part in parts) {
+    if (part is Map && part['name'] is String) {
+      final String name = part['name'] as String;
+      if (name.startsWith('$packName.')) {
+        return '拒绝：deflate 包切片 $name 与本包 $packName 的切片同名，'
+            '上传到同一个 release 会互相覆盖。请给 deflate 包换个文件名'
+            '（如 fushi-recommended.deflate.fushi.zip）后重新切片。';
+      }
+    }
+  }
+  return null;
+}
+
+/// 读 `--deflate-manifest` 指向的清单（本工具对 deflate 包跑一遍的产物）。
+///
+/// 它会被新版 app 当成真实下载源，所以和顶层地址过同一道门：https + 不得指向
+/// 主 app 仓库的 release。嵌套清单自己不能再带 `deflate_pack`，免得套娃。
+Map<String, Object?>? _readDeflateManifest(String? path) {
+  if (path == null) return null;
+  final File file = File(path);
+  if (!file.existsSync()) {
+    throw FormatException('找不到 --deflate-manifest：$path');
+  }
+  final Object? decoded = json.decode(file.readAsStringSync());
+  if (decoded is! Map<String, Object?>) {
+    throw FormatException('--deflate-manifest 不是 JSON 对象：$path');
+  }
+  if (decoded.containsKey('deflate_pack')) {
+    throw FormatException('--deflate-manifest 里不能再嵌 deflate_pack：$path');
+  }
+  final Object? url = decoded['url'];
+  if (url is! String) {
+    throw FormatException('--deflate-manifest 缺少 url：$path');
+  }
+  final List<String> urls = <String>[
+    url,
+    for (final String key in <String>['mirrors', 'part_base_urls'])
+      if (decoded[key] is List)
+        for (final Object? item in decoded[key] as List<Object?>)
+          if (item is String) item,
+  ];
+  for (final String u in urls) {
+    if (!u.startsWith('https://')) {
+      throw FormatException('--deflate-manifest 的下载地址必须是 https：$u');
+    }
+    final String? hazard = hazardousReleaseHost(u);
+    if (hazard != null) throw FormatException(hazard);
+  }
+  return decoded;
 }
 
 /// 支持 `1073741824` / `1GiB` / `64MiB` / `512KiB` 三种写法。
 int? _parseSize(String? raw) {
   if (raw == null) return null;
-  final RegExpMatch? match =
-      RegExp(r'^(\d+)(B|KiB|MiB|GiB)?$', caseSensitive: false).firstMatch(raw);
+  final RegExpMatch? match = RegExp(
+    r'^(\d+)(B|KiB|MiB|GiB)?$',
+    caseSensitive: false,
+  ).firstMatch(raw);
   if (match == null) {
     throw FormatException('看不懂的大小：$raw');
   }
@@ -333,4 +415,8 @@ const String _usage = '''
   --part-base-url <url>    切片所在目录，可重复（slice 模式）
   --version <str>          包版本标识（默认取输入文件名）
   --manifest-out <path>    清单输出路径（默认与切片/输入同目录）
+  --deflate-manifest <path>
+                           先对 deflate 包单独跑一遍本工具得到的清单；嵌进本清单的
+                           deflate_pack 键（新版 app 下它，旧版只认顶层 STORE 包）。
+                           deflate 包文件名必须与 STORE 包不同，否则切片同名互相覆盖
 ''';

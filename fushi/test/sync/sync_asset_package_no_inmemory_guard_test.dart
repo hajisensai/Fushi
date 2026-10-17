@@ -22,10 +22,14 @@ void main() {
         reason: 'zip 编解码必须在后台 isolate，勿阻塞 UI isolate');
     expect(src.contains('ZipFileEncoder'), isTrue);
     expect(src.contains('InputFileStream'), isTrue);
-    expect(src.contains('Inflate.stream('), isTrue,
-        reason: '导入 DEFLATE 条目必须 Inflate.stream(raw,out) 逐块落盘，不得整文件入内存');
-    expect(src.contains('writeInputStream('), isTrue,
-        reason: '导入 STORE 条目必须 out.writeInputStream(raw) 逐块拷贝');
+    // 条目读写交给引擎的原生 zlib 通道（native_zip.dart，行为由
+    // packages/fushi_engine/test/utils/archive/native_zip_test.dart 钉住）。
+    expect(src.contains('writeZipEntryStreaming(file, out)'), isTrue,
+        reason: '导入条目必须分块流式落盘（STORE 拷贝 / DEFLATE 原生 zlib），不得整文件入内存');
+    expect(src.contains('addFileNativeDeflate(encoder, file, entry.key)'), isTrue,
+        reason: '词典包导出必须走原生 zlib deflate，不用 archive 纯 Dart 的 GZIP 档');
+    expect(src.contains('ZipFileEncoder.GZIP'), isFalse,
+        reason: 'archive 的 GZIP 档是纯 Dart Deflate 且整文件入内存');
     expect(src.contains('ZipFileEncoder.STORE'), isTrue,
         reason: '音频包导出必须用 STORE 流式（避免大文件整入内存 + deflate 浪费）');
   });

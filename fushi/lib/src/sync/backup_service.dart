@@ -8,6 +8,7 @@ import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath;
 import 'package:fushi/src/models/local_audio_manager.dart';

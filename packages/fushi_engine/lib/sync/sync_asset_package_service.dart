@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1261,17 +1262,16 @@ DateTime? _nullableDate(Map<String, Object?> map, String key) {
 //   `ArchiveFile.stream` 真流式（getFileCrc32 分块读 + writeInputStream 直接转发，
 //   不 toUint8List），单个几百 MB 的音频/封面文件不会整入内存；音频/图片本就是
 //   压缩格式，deflate 也只是浪费 CPU。
-// - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。注意
-//   archive 3.6.1 的 GZIP/deflate 分支会 `toUint8List()` 把单个文件整入内存再整块
-//   Deflate（addFile 的 InputFileStream 在此被 buffer 化），是 archive 3.6.1 的已知
-//   限制；词典资源文件较小，逐文件入内存可接受（如需进一步降内存可改 STORE 词典）。
-// - 导入用 ArchiveFile.decompress(OutputFileStream)：STORE→writeInputStream、
-//   DEFLATE→Inflate.stream，两者都逐块落盘、无整文件入内存。
+// - 词典包用 deflate（[storeResources]=false）：词典 JSON 可压缩省上传体积。走
+//   [addFileNativeDeflate]：原生 zlib 分块读文件压缩，内存峰值 = 压缩后体积；
+//   不用 archive 的 GZIP 档（纯 Dart `Deflate`，且先整文件 `toUint8List()`）。
+// - 导入走 [writeZipEntryStreaming]：STORE 分块拷贝、DEFLATE 原生 zlib 分块解压，
+//   逐块落盘、无整文件入内存。
 
 /// 把 [archivePathToSource]（zip 内路径 → 磁盘绝对路径）的每个文件写入
 /// [outputPath]，并把 [manifestJson] 作为 `manifest.json` 写入。
-/// [storeResources]=true 用 STORE（流式、不整文件入内存），false 用 deflate
-/// （逐文件压缩、单文件入内存，详见上方说明）。
+/// [storeResources]=true 用 STORE（流式、不整文件入内存），false 用原生 zlib
+/// deflate（详见上方说明）。
 Future<void> _zipPackageInIsolate({
   required String outputPath,
   required String manifestJson,
@@ -1284,17 +1284,17 @@ Future<void> _zipPackageInIsolate({
     try {
       final List<int> manifestBytes = utf8.encode(manifestJson);
       encoder.addArchiveFile(
-        ArchiveFile('manifest.json', manifestBytes.length, manifestBytes),
+        nativeDeflatedArchiveFile('manifest.json', manifestBytes),
       );
       for (final MapEntry<String, String> entry
           in archivePathToSource.entries) {
         final File file = File(entry.value);
         if (!file.existsSync()) continue;
-        await encoder.addFile(
-          file,
-          entry.key,
-          storeResources ? ZipFileEncoder.STORE : ZipFileEncoder.GZIP,
-        );
+        if (storeResources) {
+          await encoder.addFile(file, entry.key, ZipFileEncoder.STORE);
+        } else {
+          addFileNativeDeflate(encoder, file, entry.key);
+        }
       }
       encoder.closeSync();
     } catch (_) {
@@ -1332,7 +1332,7 @@ Future<String> _readManifestInIsolate(String packagePath) async {
 
 /// 把 [prefix]/ 下的资源解压到 [targetDirPath]。保留 zip-slip 路径安全校验
 /// （与旧 _extractArchivePrefix 等价），每个文件经 [_streamArchiveFileTo] 逐块落盘
-/// （STORE→writeInputStream、DEFLATE→Inflate.stream，均不整文件入内存）。
+/// （STORE 分块拷贝、DEFLATE 原生 zlib 分块解压，均不整文件入内存）。
 Future<void> _extractResourcesInIsolate({
   required String packagePath,
   required String targetDirPath,
@@ -1378,33 +1378,10 @@ Future<void> _extractResourcesInIsolate({
 
 /// 把 `decodeBuffer` 出来的 [file] 流式写入 [out]，不整文件入内存。
 ///
-/// 不能用 `ArchiveFile.decompress(out)`：archive 3.6.1 的 `ZipDecoder.decodeBuffer`
-/// 把每个条目构造成 `ArchiveFile(name, size, ZipFile, compressionMethod)`，`ZipFile`
-/// 是 `FileContent`，于是 `ArchiveFile._content` 被设为该 ZipFile（**非 null**），
-/// `decompress(out)` 的前置 `_content==null && _rawContent!=null` 不成立 → 直接 no-op
-/// 写出 0 字节。`writeContent(out)` 又会先 `_content.content`（`ZipFile.content` getter）
-/// 把整文件解压进内存（STORE→toUint8List、DEFLATE→inflateBuffer）——正是导入侧 OOM 源。
-///
-/// 真正的流式落盘：直接消费条目的原始压缩流 [ArchiveFile.rawContent]（从
-/// `InputFileStream` 解出来时是惰性窗口文件流，不在内存），按压缩类型分流：
-/// - STORE：`out.writeInputStream(raw)` 逐块拷贝（raw 即未压缩字节）；
-/// - DEFLATE：`Inflate.stream(raw, out)` 逐块 inflate 直接写 out。
+/// 不能用 `ArchiveFile.decompress(out)`（对 `ZipDecoder` 解出的条目是 no-op、写出
+/// 0 字节），也不能用 `writeContent(out)`（先把整条目解压进内存，正是导入侧 OOM
+/// 源）。[writeZipEntryStreaming] 直接消费原始压缩窗口：STORE 分块拷贝、DEFLATE
+/// 原生 zlib 分块解压（archive 自带的 `Inflate.stream` 写文件实测 1.13 MB/s）。
 void _streamArchiveFileTo(ArchiveFile file, OutputFileStream out) {
-  final InputStreamBase? raw = file.rawContent;
-  if (raw == null) {
-    // 防御：无原始流时回退到 writeContent（会整文件入内存，但保证正确性）。
-    file.writeContent(out);
-    return;
-  }
-  switch (file.compressionType) {
-    case ArchiveFile.STORE:
-      out.writeInputStream(raw);
-      break;
-    case ArchiveFile.DEFLATE:
-      Inflate.stream(raw, out);
-      break;
-    default:
-      // 其它压缩（bzip2/aes 等）本打包格式不产出；回退到 writeContent 保正确。
-      file.writeContent(out);
-  }
+  writeZipEntryStreaming(file, out);
 }

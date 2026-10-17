@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
+import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 
 class DictionaryImportManager {
@@ -424,7 +425,11 @@ class DictionaryImportManager {
     try {
       progressNotifier.value = t.import_extract;
       await Future<void>.delayed(Duration.zero);
-      await extractFileToDisk(archive.path, work.path);
+      // 后台 isolate + 原生 zlib 逐条目流式落盘：archive 的 extractFileToDisk 在
+      // 主 isolate 上把每个条目整个解压进内存再写（几百 MB 的 MDD 直接卡 UI / OOM）。
+      final String zipPath = archive.path;
+      final String workPath = work.path;
+      await Isolate.run(() => extractZipFileToDirectory(zipPath, workPath));
 
       final List<File> dictionaries =
           work.listSync(recursive: true).whereType<File>().where((File f) {

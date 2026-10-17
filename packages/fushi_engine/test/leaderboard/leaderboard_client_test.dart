@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/feedback/feedback_models.dart';
+import 'package:fushi_engine/leaderboard/install_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -711,13 +712,36 @@ void main() {
   });
 
   group('安装统计心跳', () {
-    test('ping：POST /v1/ping，不签名不带账户，字段齐全', () async {
+    final InstallAttestation install = InstallAttestation(
+      InstallIdentity.fromMachineId('client-test-machine-id'),
+      '7',
+    );
+
+    bool verifyInstall(http.Request r) {
+      final String pq = r.url.hasQuery
+          ? '${r.url.path}?${r.url.query}'
+          : r.url.path;
+      return r.headers[kInstallKeyHeader] == install.identity.pubkeyBase64Url &&
+          r.headers[kInstallPowHeader] == '7' &&
+          LeaderboardIdentity.verify(
+            install.identity.spki,
+            InstallIdentity.signingString(
+              r.method,
+              pq,
+              int.parse(r.headers[kInstallTimeHeader]!),
+              r.bodyBytes,
+            ),
+            r.headers[kInstallSigHeader]!,
+          );
+    }
+
+    test('ping：POST /v1/ping，不带账户签名，带安装证明，字段齐全', () async {
       final _Harness h = _Harness(
         (http.Request r) async => http.Response('', 204),
         identity: _id,
       );
       await h.client.ping(
-        installId: '0f8fad5b-d9cb-469f-a165-70867728950e',
+        install: install,
         version: '2.10.0-debug.8',
         platform: 'windows',
         channel: 'debug',
@@ -727,8 +751,9 @@ void main() {
       expect(r.url.path, '/v1/ping');
       expect(r.headers.containsKey('X-Fushi-Account'), isFalse);
       expect(r.headers.containsKey('X-Fushi-Sig'), isFalse);
+      expect(verifyInstall(r), isTrue);
       expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, String>{
-        'installId': '0f8fad5b-d9cb-469f-a165-70867728950e',
+        'installId': install.installId,
         'version': '2.10.0-debug.8',
         'platform': 'windows',
         'channel': 'debug',
@@ -742,7 +767,7 @@ void main() {
       );
       await expectLater(
         h.client.ping(
-          installId: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          install: install,
           version: '2.10.0',
           platform: 'android',
           channel: 'stable',
@@ -753,7 +778,40 @@ void main() {
       );
     });
 
-    test('submitFeedback 带 installId 时上报，空 / null 时不带该字段', () async {
+    test('ping 遇 401 stale_install_time 按服务器时钟重签重发一次', () async {
+      int calls = 0;
+      final DateTime server = DateTime.utc(2026, 10, 17, 12);
+      final _Harness h = _Harness((http.Request r) async {
+        calls++;
+        if (calls == 1) {
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, String>{'error': 'stale_install_time'}),
+            ),
+            401,
+            headers: <String, String>{
+              'content-type': 'application/json',
+              'date': HttpDate.format(server),
+            },
+          );
+        }
+        return http.Response('', 204);
+      }, clock: () => 0);
+      await h.client.ping(
+        install: install,
+        version: '2.10.0',
+        platform: 'windows',
+        channel: 'stable',
+      );
+      expect(h.requests, hasLength(2));
+      expect(
+        int.parse(h.requests[1].headers[kInstallTimeHeader]!),
+        greaterThanOrEqualTo(server.millisecondsSinceEpoch),
+      );
+      expect(verifyInstall(h.requests[1]), isTrue);
+    });
+
+    test('submitFeedback 带安装证明时上报 installId 并签名，null 时都不带', () async {
       final _Harness h = _Harness(
         (http.Request r) async => _json(<String, dynamic>{
           'id': 'f1',
@@ -762,18 +820,17 @@ void main() {
           'createdAt': 1,
           'updatedAt': 1,
         }, 201),
+        identity: _id,
       );
-      for (final String? installId in <String?>[
-        '0f8fad5b-d9cb-469f-a165-70867728950e',
-        '',
+      for (final InstallAttestation? att in <InstallAttestation?>[
+        install,
         null,
       ]) {
         await h.client.submitFeedback(
           category: FeedbackCategory.bug,
           title: 't',
           body: 'b',
-          linkAccount: false,
-          installId: installId,
+          install: att,
         );
       }
       final List<Map<String, dynamic>> bodies = h.requests
@@ -782,9 +839,12 @@ void main() {
                 .cast<String, dynamic>(),
           )
           .toList();
-      expect(bodies[0]['installId'], '0f8fad5b-d9cb-469f-a165-70867728950e');
+      expect(bodies[0]['installId'], install.installId);
+      expect(verifyInstall(h.requests[0]), isTrue);
+      // 账户签名与安装签名并存、各自成立。
+      expect(_verifySigned(h.requests[0], _id), isTrue);
       expect(bodies[1].containsKey('installId'), isFalse);
-      expect(bodies[2].containsKey('installId'), isFalse);
+      expect(h.requests[1].headers.containsKey(kInstallSigHeader), isFalse);
     });
   });
 

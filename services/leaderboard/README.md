@@ -72,6 +72,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
+> `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -141,8 +142,8 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/reports` `{targetKind, targetId, reason}` | 签名·写 | 举报账户 / 作品（理由 ≤ 500 字符、目标须存在）→ 201 `{id}`；同一目标未处理举报去重 |
 | GET | `/img/<key>` | — | R2 出图 |
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
-| POST | `/v1/ping` `{installId, version, platform, channel}` | — | 安装统计心跳 → 204。`installId` 小写 UUID v4，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活与分布 |
-| POST | `/v1/feedback` `{category, title, body, contact?, meta?, installId?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（`installId` 同心跳，不合法当没带，处理台据此显示该安装的版本轨迹）（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
+| POST | `/v1/ping` `{installId, version, platform, channel}` | 可选安装证明 | 安装统计心跳 → 204。`installId` 小写 UUID v4 形状，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。新客户端的 `installId` 由系统机器标识经 HMAC 派生成 P-256 钥匙、再取公钥指纹（重装不变，原始机器标识不上传），并带 `X-Fushi-Install-Key / -Time / -Sig / -Pow` 安装证明：id == 公钥指纹、签名覆盖方法 + 路径 + 时刻 + 请求体哈希（±5 分钟，签名串防重放）、工作量证明 18 位前导 0，都过了记已验证，带了但不对 401（`install_id_mismatch` / `bad_install_signature` / `stale_install_time` / `install_replayed` / `install_pow_required` / `bad_install_proof`）；不带证明（旧客户端）照收、记未验证。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活与分布（只数已验证，未验证另列）。细节见 `src/installs.js` 文件头 |
+| POST | `/v1/feedback` `{category, title, body, contact?, meta?, installId?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（`installId` 同心跳，不合法当没带，处理台据此显示该安装的版本轨迹；可带同一套安装证明头，验过标「已验证」，带了但不对 401）（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
 | PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 50MB，必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
 | GET | `/v1/feedback/mine?cursor&limit` | 签名 | 本账户提交过的反馈（跨设备找回工单）→ `{items, next}`，摘要同 status，按创建时间倒序游标分页（limit 默认 30、上限 50） |
