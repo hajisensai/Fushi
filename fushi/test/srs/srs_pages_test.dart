@@ -353,7 +353,8 @@ void main() {
         (Widget w) =>
             w.key is ValueKey<String> &&
             (w.key! as ValueKey<String>).value.startsWith('srs-deck-') &&
-            !(w.key! as ValueKey<String>).value.contains('toggle'),
+            !(w.key! as ValueKey<String>).value.contains('toggle') &&
+            !(w.key! as ValueKey<String>).value.contains('indent'),
       );
       expect(rows, findsNWidgets(7));
       for (final Element e in rows.evaluate()) {
@@ -373,7 +374,7 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('[$ds] 牌组列表宽屏：保留图标、三列计数与行尾「⋯」', (WidgetTester tester) async {
+    testWidgets('[$ds] 牌组列表宽屏：三列计数与行尾「⋯」，行首不放图标', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await tester.runAsync(
         () => store.ensureDeckPath('Spark::JP-Mining-Note::Vocabulary'),
@@ -390,9 +391,10 @@ void main() {
           (Widget w) =>
               w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
         ),
-        findsNWidgets(4),
-        reason: '宽屏每行保留行尾「⋯」',
+        findsNWidgets(3),
+        reason: '宽屏每行保留行尾「⋯」（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
       );
+      expect(find.byType(FushiListLeadingIcon), findsNothing);
       await _unmount(tester);
     });
 
