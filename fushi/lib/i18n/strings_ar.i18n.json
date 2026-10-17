@@ -7488,6 +7488,7 @@
   "video_mine_in_progress": "جارٍ إنشاء $count بطاقة…",
   "video_mine_overwrite_cancelled": "Card not saved; overwrite cancelled",
   "video_mine_overwrite_cancelled_episode": "Episode changed; overwrite cancelled",
+  "video_mine_overwrite_cancelled_no_target": "Saved card not found; overwrite cancelled",
   "video_mine_overwrite_cancelled_reason": "Card not saved ($reason); overwrite cancelled",
   "video_mine_queue_badge": "$count للإضافة",
   "video_mine_queue_commit_all": "إضافة الكل إلى Anki",

@@ -162,15 +162,34 @@ class MinePopupResult {
 /// 提示的文案（收下时说「写入后自动覆盖」，不收时说为什么）。null 时 popup.js 用
 /// 通用的「还没写进 Anki」文案。
 class QueuedOverwriteReply {
-  const QueuedOverwriteReply({this.accepted = false, this.message});
+  const QueuedOverwriteReply({
+    this.accepted = false,
+    this.message,
+    this.settled,
+  });
 
   final bool accepted;
   final String? message;
 
+  /// 宿主没收下、因为这次后台写入**已经结束**了（弹窗问 Anki 与请求到达宿主之间
+  /// 落地 / 失败）：popup.js 据此走已制卡的正常覆盖路径（[QueuedOverwriteSettled.landed]）
+  /// 或撤掉「已加入」（[QueuedOverwriteSettled.failed]），而不是说「还在写入」。
+  final QueuedOverwriteSettled? settled;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'accepted': accepted,
     if (message != null) 'message': message,
+    if (settled != null) 'settled': settled!.name,
   };
+}
+
+/// [QueuedOverwriteReply.settled]：那次后台写入的结局。
+enum QueuedOverwriteSettled {
+  /// 写进了 Anki。
+  landed,
+
+  /// 没写进去。
+  failed,
 }
 
 /// 用户建议 q16Apecgbg：「制卡后关闭查词弹窗」（偏好 `close_popup_after_mining`）。
@@ -2772,11 +2791,14 @@ JSON.stringify((function(){
                   _dictionaryMediaForLocalMining(fields),
                 );
                 // 宿主在首个 await 之前同步冻结覆盖要用的全部输入（区间 / 覆盖项 /
-                // 锁帧），之后对话框就可以关了。
-                final Future<QueuedOverwriteReply> pending =
-                    widget.onQueueOverwrite!(fields);
-                _markConfirmMinePayloadConsumed();
-                return (await pending).toJson();
+                // 锁帧）。只有**收下了**才算读走 payload、允许对话框提前关：没收下时
+                // popup.js 会在同一次点击里接着走 minedCardAction（已落地）等正常
+                // 路径，那条桥还要读本次往返的覆盖项，提前关窗会把它们清掉。
+                _markConfirmMineHostEntered();
+                final QueuedOverwriteReply reply =
+                    await widget.onQueueOverwrite!(fields);
+                if (reply.accepted) _markConfirmMinePayloadConsumed();
+                return reply.toJson();
               }
             } catch (e, stack) {
               ErrorLogService.instance.log(

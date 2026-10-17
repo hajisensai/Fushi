@@ -7488,6 +7488,7 @@
   "video_mine_in_progress": "カード作成中 $count",
   "video_mine_overwrite_cancelled": "カードを保存できず、上書きを取り消しました",
   "video_mine_overwrite_cancelled_episode": "エピソードが変わり、上書きを取り消しました",
+  "video_mine_overwrite_cancelled_no_target": "書き込んだカードが見つからず、上書きを取り消しました",
   "video_mine_overwrite_cancelled_reason": "カードを保存できず（$reason）、上書きを取り消しました",
   "video_mine_queue_badge": "保留 $count",
   "video_mine_queue_commit_all": "すべて Anki に追加",

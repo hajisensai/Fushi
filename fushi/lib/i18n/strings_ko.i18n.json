@@ -7488,6 +7488,7 @@
   "video_mine_in_progress": "카드 $count장 만드는 중…",
   "video_mine_overwrite_cancelled": "Card not saved; overwrite cancelled",
   "video_mine_overwrite_cancelled_episode": "Episode changed; overwrite cancelled",
+  "video_mine_overwrite_cancelled_no_target": "Saved card not found; overwrite cancelled",
   "video_mine_overwrite_cancelled_reason": "Card not saved ($reason); overwrite cancelled",
   "video_mine_queue_badge": "추가할 카드 $count장",
   "video_mine_queue_commit_all": "모두 Anki에 추가",

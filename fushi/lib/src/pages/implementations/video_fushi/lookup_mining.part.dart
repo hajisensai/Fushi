@@ -429,12 +429,23 @@ extension _VideoLookupMining on _VideoFushiPageState {
       fields['expression'] ?? '',
       fields['reading'] ?? '',
     );
-    if (controller == null ||
-        !_discExtractionAllowed(controller) ||
-        !_pendingOverwrites.isAddPending(key)) {
-      // 不是这条后台写入路径上的卡（看完再制卡的暂存、或已经落地 / 失败）：不收，
-      // 弹窗说「还没写进 Anki」。
+    if (controller == null || !_discExtractionAllowed(controller)) {
       return const QueuedOverwriteReply();
+    }
+    if (!_pendingOverwrites.isAddPending(key)) {
+      // 这次后台写入在弹窗问过 Anki 之后、请求到这里之前已经落地 / 失败了：把结局
+      // 告诉弹窗，由它走已制卡的正常覆盖路径（落地）或撤掉「已加入」（失败），
+      // 不能再说「还在写入」。不是这条后台写入路径上的卡（看完再制卡的暂存）：不收。
+      return switch (_pendingOverwrites.lastLanded(key)) {
+        true => const QueuedOverwriteReply(
+          settled: QueuedOverwriteSettled.landed,
+        ),
+        false => QueuedOverwriteReply(
+          settled: QueuedOverwriteSettled.failed,
+          message: t.video_mine_overwrite_cancelled,
+        ),
+        null => const QueuedOverwriteReply(),
+      };
     }
     final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
       fields,
@@ -482,6 +493,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
   /// 后台写入落地（成功或失败）：结算这个词排队的覆盖请求。
   Future<void> _settleQueuedOverwrite(
     String key,
+    int addId,
     Map<String, String> fields,
     MinePopupResult landed, {
     String? failureReason,
@@ -489,6 +501,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     try {
       await _pendingOverwrites.settle(
         key,
+        addId,
         landed: landed.ankiConnect,
         noteId: landed.noteId,
         findNoteId: (_QueuedVideoOverwrite request) async {
@@ -509,16 +522,18 @@ extension _VideoLookupMining on _VideoFushiPageState {
         onCancelled: (_QueuedVideoOverwrite _, PendingOverwriteCancel reason) {
           if (!mounted) return;
           // 写入失败：OSD 只有一条，后来的会顶掉 [_landVideoMine] 刚报的失败原因，
-          // 所以原因并进这一条一起说。
+          // 所以原因并进这一条一起说。写入成功却找不到那张笔记是另一回事，不能说
+          // 「卡没写进 Anki」。
           final String? why = failureReason;
-          _showOsd(
-            reason == PendingOverwriteCancel.addFailed &&
-                    why != null &&
-                    why.isNotEmpty
-                ? t.video_mine_overwrite_cancelled_reason(reason: why)
-                : t.video_mine_overwrite_cancelled,
-            severity: ToastSeverity.warning,
-          );
+          _showOsd(switch (reason) {
+            PendingOverwriteCancel.noTargetNote =>
+              t.video_mine_overwrite_cancelled_no_target,
+            PendingOverwriteCancel.addFailed
+                when why != null && why.isNotEmpty =>
+              t.video_mine_overwrite_cancelled_reason(reason: why),
+            PendingOverwriteCancel.addFailed =>
+              t.video_mine_overwrite_cancelled,
+          }, severity: ToastSeverity.warning);
         },
       );
     } catch (e, stack) {
@@ -1007,17 +1022,41 @@ extension _VideoLookupMining on _VideoFushiPageState {
         stageNote == null && reviewSession == null && updateNoteId == null
         ? mineEntryKeyOf(fields['expression'] ?? '', fields['reading'] ?? '')
         : null;
-    if (overwriteKey != null) _pendingOverwrites.addStarted(overwriteKey);
+    final int? overwriteAddId = overwriteKey == null
+        ? null
+        : _pendingOverwrites.addStarted(overwriteKey);
+    // 写入出错（job 抛错，或落地收尾 [land] 自己抛错）同样要结算：在途标记必须清掉、
+    // 排队的覆盖取消并说明，错误照旧交给后台跟踪报 OSD。
+    void settleFailed(Object error) {
+      if (overwriteKey == null || overwriteAddId == null) return;
+      unawaited(
+        _settleQueuedOverwrite(
+          overwriteKey,
+          overwriteAddId,
+          fields,
+          const MinePopupResult(),
+          failureReason: '$error',
+        ),
+      );
+    }
+
     // 后台 / 看完再制卡：弹窗不陪着等。结局（成功 / 暂存 / 失败）在落地时由 OSD 报告。
     _trackBackgroundMine(
       job
           .then<MinePopupResult>(
             (ImmersionMiningResult res) {
-              final MinePopupResult landed = land(res);
-              if (overwriteKey != null) {
+              final MinePopupResult landed;
+              try {
+                landed = land(res);
+              } on Object catch (error) {
+                settleFailed(error);
+                rethrow;
+              }
+              if (overwriteKey != null && overwriteAddId != null) {
                 unawaited(
                   _settleQueuedOverwrite(
                     overwriteKey,
+                    overwriteAddId,
                     fields,
                     landed,
                     failureReason: landed.ankiConnect
@@ -1029,17 +1068,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
               return landed;
             },
             onError: (Object error, StackTrace stack) {
-              // 写入抛错同样要结算：排队的覆盖取消并说明，错误照旧交给后台跟踪报 OSD。
-              if (overwriteKey != null) {
-                unawaited(
-                  _settleQueuedOverwrite(
-                    overwriteKey,
-                    fields,
-                    const MinePopupResult(),
-                    failureReason: '$error',
-                  ),
-                );
-              }
+              settleFailed(error);
               Error.throwWithStackTrace(error, stack);
             },
           )

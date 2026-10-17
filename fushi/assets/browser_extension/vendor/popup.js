@@ -4664,14 +4664,21 @@ function createEntryHeader(entry, idx) {
                     if (landed !== true) {
                         const reply = await queueOverwrite(
                             expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
-                        setMineState(false);
                         const accepted = !!(reply && reply.accepted === true);
                         const message = reply && typeof reply.message === 'string' ? reply.message : '';
-                        const hint = message || (accepted
-                            ? ''
-                            : (window.i18nMineStillQueued || '还在写入 Anki，稍后再试'));
-                        if (hint) showInlineHint(mineButton, hint);
-                        return;
+                        // 宿主说这次后台写入在上面那次回问之后才结束（赛跑窗口）：落地了 →
+                        // 落到下面已制卡的正常路径；失败了 → 撤掉「已加入」，卡不在 Anki 里，
+                        // 不能再说「还在写入」。
+                        const settled = !accepted && reply ? reply.settled : null;
+                        if (settled !== 'landed') {
+                            if (settled === 'failed') queuedLocally = false;
+                            setMineState(false);
+                            const hint = message || (accepted
+                                ? ''
+                                : (window.i18nMineStillQueued || '还在写入 Anki，稍后再试'));
+                            if (hint) showInlineHint(mineButton, hint);
+                            return;
+                        }
                     }
                     setMineState(true);
                 }

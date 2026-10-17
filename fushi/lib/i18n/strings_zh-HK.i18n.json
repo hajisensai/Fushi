@@ -7488,6 +7488,7 @@
   "video_mine_in_progress": "正在製卡 $count",
   "video_mine_overwrite_cancelled": "卡未寫入 Anki，已取消覆蓋",
   "video_mine_overwrite_cancelled_episode": "已換集，已取消覆蓋",
+  "video_mine_overwrite_cancelled_no_target": "找不到剛寫入的卡，已取消覆蓋",
   "video_mine_overwrite_cancelled_reason": "卡未寫入 Anki（$reason），已取消覆蓋",
   "video_mine_queue_badge": "待製卡 $count",
   "video_mine_queue_commit_all": "全部寫入 Anki",
