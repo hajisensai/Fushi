@@ -184,6 +184,13 @@ const double kOcrFragmentMaxGapRatio = 3;
 /// （[kOcrFragmentMaxGapRatio]）：只看跨轴重叠时，左右两栏同一高度的两行（竖排是
 /// 上下两段同一 x 的列）会被并成一条横跨两栏的长行，逐行识别读出串栏的句子，覆盖
 /// 层的字格也铺到两栏中间的空白上。
+///
+/// 合并做到不动点（传递闭包）：一趟按跨轴中心排序的贪心合并里，同一行的 A、B、C
+/// 可能按 A、C、B 的顺序到达——C 与 A 隔着整个 B 的长度超过空隙上限而单独成条，B
+/// 并进 C 之后再没有机会与 A 比较，一行被拆成两条。所以每趟合并后只要条数还在减少
+/// 就再来一趟，直到没有任何两条可合并；结果与输入顺序无关。条数每趟严格减少，
+/// 至多 `rects.length` 趟。返回顺序不是阅读序，调用方按 [orderOcrLinesForReading]
+/// 等重排。
 List<OcrRect> mergeOcrLineFragments(
   List<OcrRect> rects, {
   required bool vertical,
@@ -193,6 +200,31 @@ List<OcrRect> mergeOcrLineFragments(
   double maxGapRatio = kOcrFragmentMaxGapRatio,
 }) {
   if (rects.isEmpty) return const <OcrRect>[];
+  List<OcrRect> current = rects;
+  while (true) {
+    final List<OcrRect> next = _mergeOcrLineFragmentsOnce(
+      current,
+      vertical: vertical,
+      overlapRatio: overlapRatio,
+      sideBySideRatio: sideBySideRatio,
+      duplicateRatio: duplicateRatio,
+      maxGapRatio: maxGapRatio,
+    );
+    // 条数没变 = 这一趟一次合并都没发生，已到不动点。
+    if (next.length == current.length) return next;
+    current = next;
+  }
+}
+
+/// [mergeOcrLineFragments] 的一趟贪心合并。
+List<OcrRect> _mergeOcrLineFragmentsOnce(
+  List<OcrRect> rects, {
+  required bool vertical,
+  required double overlapRatio,
+  required double sideBySideRatio,
+  required double duplicateRatio,
+  required double maxGapRatio,
+}) {
   double crossStart(OcrRect r) => vertical ? r.left : r.top;
   double crossEnd(OcrRect r) => vertical ? r.right : r.bottom;
   double alongStart(OcrRect r) => vertical ? r.top : r.left;
