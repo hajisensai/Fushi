@@ -2212,6 +2212,8 @@
   "download_task_status_seeding": "En partage",
   "download_task_status_stalled": "Bloqué",
   "download_task_toggle_failed": "Échec de la pause/reprise",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "Tâches",
   "download_test_connection": "Tester la connexion",
   "download_test_connection_failed": "Connexion échouée. Vérifiez l'adresse et les identifiants.",

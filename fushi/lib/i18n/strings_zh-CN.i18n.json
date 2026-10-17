@@ -2212,6 +2212,8 @@
   "download_task_status_seeding": "做种中",
   "download_task_status_stalled": "等待资源",
   "download_task_toggle_failed": "暂停/恢复操作失败",
+  "download_task_work_focus_clear": "显示全部任务",
+  "download_task_work_focus_label": "仅显示「$title」的任务",
   "download_tasks_tab": "任务",
   "download_test_connection": "测试连接",
   "download_test_connection_failed": "连接失败，请检查地址与账号密码。",

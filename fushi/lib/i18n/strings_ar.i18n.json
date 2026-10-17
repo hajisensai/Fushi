@@ -2212,6 +2212,8 @@
   "download_task_status_seeding": "جارٍ الرفع",
   "download_task_status_stalled": "متوقف",
   "download_task_toggle_failed": "فشل الإيقاف المؤقت/الاستئناف",
+  "download_task_work_focus_clear": "Show all tasks",
+  "download_task_work_focus_label": "Tasks for $title",
   "download_tasks_tab": "المهام",
   "download_test_connection": "اختبار الاتصال",
   "download_test_connection_failed": "فشل الاتصال. تحقق من العنوان وبيانات الاعتماد.",

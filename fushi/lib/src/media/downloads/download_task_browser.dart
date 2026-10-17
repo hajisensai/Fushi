@@ -125,7 +125,8 @@ bool downloadTaskMatchesStatusFilter(
 String downloadTaskStatusFilterLabel(DownloadTaskStatusFilter filter) =>
     switch (filter) {
       DownloadTaskStatusFilter.all => t.download_task_status_all,
-      DownloadTaskStatusFilter.downloading => t.download_task_status_downloading,
+      DownloadTaskStatusFilter.downloading =>
+        t.download_task_status_downloading,
       DownloadTaskStatusFilter.seeding => t.download_task_status_seeding,
       DownloadTaskStatusFilter.completed => t.download_task_status_completed,
       DownloadTaskStatusFilter.error => t.download_task_status_error,
@@ -148,8 +149,18 @@ class DownloadTaskBrowser extends StatefulWidget {
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
     this.header,
+    this.workFocus,
+    this.onClearWorkFocus,
   });
   final List<DownloadTaskEntry> tasks;
+
+  /// 只看某部作品的任务（发现详情页「任务」入口）。由宿主持有：宿主换一个新对象
+  /// 就是「新的一次定位」，本页据此清掉会把这部作品的任务藏起来的筛选（状态段、
+  /// 类型、搜索词）。筛选在界面上以一枚可清除的条显示，不偷偷过滤。
+  final DownloadTaskWorkFocus? workFocus;
+
+  /// 用户点了「显示全部任务」：宿主把 [workFocus] 置空。
+  final VoidCallback? onClearWorkFocus;
 
   /// 列表最上方（汇总之前）随列表一起滚动的一块（网络问题横幅 / 加载失败提示）。
   final Widget? header;
@@ -181,14 +192,75 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   bool _collapseAll = false;
   final Map<String, bool> _expandedGroups = <String, bool>{};
   bool _selectionMode = false;
+
   /// 整批执行中：期间禁掉全部批量按钮。没有这道锁，连点两下就是整批跑两遍
   /// （同一 hash 被 addTorrent 两次 / 对已删条目再删一遍），也把 runDownloadTaskBatch
   /// 的串行保证在整批层面破掉了。
   bool _batchRunning = false;
+
   /// 选中的任务 id。可见集合会随筛选 / 刷新变化，所以每次真正执行前都拿当前
   /// 可见列表与它取交集（见 [_selectedVisible]）——不这么做，批量动作会作用在
   /// 用户已经看不见、甚至已经不存在的条目上。
   final Set<String> _selectedIds = <String>{};
+
+  @override
+  void didUpdateWidget(DownloadTaskBrowser oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final DownloadTaskWorkFocus? focus = widget.workFocus;
+    if (focus != null && !identical(focus, oldWidget.workFocus)) {
+      // 一次新的定位要看到这部作品的**全部**任务（含已完成 / 出错 / 已取消）：
+      // 之前留下的状态段、类型和搜索词会把其中一部分藏掉，让用户以为任务丢了。
+      _statusFilter = DownloadTaskStatusFilter.all;
+      _kind = null;
+      _search.clear();
+      // 所在分组展开：列表里只剩这部作品，折叠着等于什么都没定位到。之后用户
+      // 再折叠 / 全部折叠照常生效。
+      _collapseAll = false;
+      _expandedGroups.clear();
+    }
+  }
+
+  bool _groupExpanded(String key) => _expandedGroups[key] ?? !_collapseAll;
+
+  Widget _buildWorkFocusBar(DownloadTaskWorkFocus focus) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Material(
+      key: const ValueKey<String>('download-task-work-focus'),
+      color: cs.secondaryContainer,
+      shape: const StadiumBorder(),
+      child: Padding(
+        padding: const EdgeInsetsDirectional.only(start: 16, end: 4),
+        child: Row(
+          children: <Widget>[
+            FushiIcon(
+              FushiIcons.filterList,
+              size: 18,
+              color: cs.onSecondaryContainer,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                t.download_task_work_focus_label(title: focus.title),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.labelLarge.copyWith(
+                  color: cs.onSecondaryContainer,
+                ),
+              ),
+            ),
+            if (widget.onClearWorkFocus != null)
+              FushiIconButton(
+                key: const ValueKey<String>('download-task-work-focus-clear'),
+                tooltip: t.download_task_work_focus_clear,
+                icon: FushiIcons.close,
+                enabledColor: cs.onSecondaryContainer,
+                onTap: widget.onClearWorkFocus,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -261,9 +333,9 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     });
     final String message = describeDownloadBatchOutcome(outcome);
     if (message.isEmpty) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      FushiSnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 剔掉选中集里已经不存在的 id，并在真的空了之后退出选择态。
@@ -364,13 +436,11 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         tooltip: tooltip,
         icon: icon,
         enabledColor: enabledColor,
-        onTap: onTap ??
+        onTap:
+            onTap ??
             () => unawaited(
-                  _runBatchOn(
-                    List<DownloadTaskEntry>.of(selected),
-                    batchAction,
-                  ),
-                ),
+              _runBatchOn(List<DownloadTaskEntry>.of(selected), batchAction),
+            ),
       );
     }
 
@@ -661,6 +731,11 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
           ),
           SizedBox(height: tokens.spacing.gap + 4),
         ],
+        if (widget.workFocus
+            case final DownloadTaskWorkFocus focus) ...<Widget>[
+          _buildWorkFocusBar(focus),
+          SizedBox(height: tokens.spacing.gap),
+        ],
         _buildStatusFilter(),
         SizedBox(height: tokens.spacing.gap),
         FushiSearchBar(
@@ -680,7 +755,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
 
   Widget _buildGroupHeader(MapEntry<String, List<DownloadTaskEntry>> group) {
     final String key = '${_grouping.name}:${group.key}';
-    final bool expanded = _expandedGroups[key] ?? !_collapseAll;
+    final bool expanded = _groupExpanded(key);
     final int completed = group.value
         .where(
           (DownloadTaskEntry task) =>
@@ -817,6 +892,19 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 icon: const FushiIcon(FushiIcons.add),
                 label: Text(t.download_task_add),
               )
+            // 定位到的作品一条任务都没有：给出回到全部任务的出口，别让「没有匹配」
+            // 看起来像任务被清掉了。
+            : !none &&
+                  widget.workFocus != null &&
+                  widget.onClearWorkFocus != null
+            ? FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>(
+                  'download-task-empty-clear-work-focus',
+                ),
+                onPressed: widget.onClearWorkFocus,
+                icon: const FushiIcon(FushiIcons.close),
+                label: Text(t.download_task_work_focus_clear),
+              )
             : null,
       ),
     );
@@ -824,16 +912,22 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
 
   @override
   Widget build(BuildContext context) {
-    final List<DownloadTaskEntry> visible = selectDownloadTasks(
-      widget.tasks,
-      query: _search.text,
-      kind: _kind,
-      sort: _sort,
-      reverse: _reverse,
-    ).where(
-      (DownloadTaskEntry task) =>
-          downloadTaskMatchesStatusFilter(task, _statusFilter),
-    ).toList();
+    final DownloadTaskWorkFocus? focus = widget.workFocus;
+    final List<DownloadTaskEntry> visible =
+        selectDownloadTasks(
+              focus == null
+                  ? widget.tasks
+                  : widget.tasks.where(focus.matches).toList(),
+              query: _search.text,
+              kind: _kind,
+              sort: _sort,
+              reverse: _reverse,
+            )
+            .where(
+              (DownloadTaskEntry task) =>
+                  downloadTaskMatchesStatusFilter(task, _statusFilter),
+            )
+            .toList();
     final Map<String, List<DownloadTaskEntry>> groups =
         <String, List<DownloadTaskEntry>>{};
     for (final DownloadTaskEntry task in visible) {
@@ -847,8 +941,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
         in groups.entries) {
       if (_grouping != DownloadTaskGrouping.none) rows.add(group);
       if (_grouping == DownloadTaskGrouping.none ||
-          (_expandedGroups['${_grouping.name}:${group.key}'] ??
-              !_collapseAll)) {
+          _groupExpanded('${_grouping.name}:${group.key}')) {
         rows.addAll(group.value);
       }
     }
